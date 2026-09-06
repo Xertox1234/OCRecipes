@@ -7,7 +7,7 @@ module: server
 applies_to: [".claude/hooks/**"]
 symptoms: ["A quote-aware command-position matcher (`${_PREFIX}verb${_SUFFIX}` shaped) fails to detect a real, executing invocation of the gated verb", "The SAME verb, unwrapped, is correctly detected — isolating the gap to the anchor's boundary character classes, not the verb pattern itself", "A brace-grouped ({ verb; }), backtick-substituted (`verb`), or !-prefixed (! verb) form of the command is silently ALLOWED by a blocking deny gate", "A verb with no whitespace before the next separator (verb;date) is silently ALLOWED even though a spaced form (verb ;date) is correctly DENIED", "A sibling anchor in the same codebase (e.g. a guard-local one) already covers the missing boundary characters, proving the gap is an under-scoped port, not a fundamental limitation"]
 created: 2026-08-28
-last_updated: '2026-09-05'
+last_updated: '2026-09-06'
 severity: high
 ---
 
@@ -571,6 +571,31 @@ regression tests. Retracted in place, not silently rewritten — per this repo's
 `a-retracted-claim-survives-in-every-artifact-you-did-not-grep-2026-09-03.md` — because a
 copy of this exact "still open" claim was independently found to have survived two later
 comment sweeps inside the guard files themselves.
+
+**A THIRD redirect position, found 2026-09-06 while closing the other two — still open,
+and out of scope.** Findings A and B between them cover a redirect that CLOSES the verb
+(`merge>log`) and one that PRECEDES it (`2>/dev/null gh pr merge`). Neither reaches a
+redirect glued *between* the namespace word and the verb: `gh pr>/dev/null merge 42`,
+which real bash tokenizes to argv `(gh, pr, merge, 42)` with stdout redirected — a
+genuine merge. The anchors require whitespace between `pr` and `merge`, and a redirect is
+not whitespace.
+
+The reason this is worth recording here rather than only in the guard: it shows the
+"boundary character class" framing has a blind spot that widening the class cannot fix.
+A/B/`{`/`}`/backtick were all *boundary* problems — the verb was present and adjacent to
+the wrong character. This one is a *separator* problem: two required-adjacent words pushed
+apart by a token the pattern does not model. The same shape recurs for any multi-word verb
+(`railway variable set`, `gh release create`), so a future fix should be one interior
+absorber applied uniformly, not a per-regex patch — the selectivity trap
+[occurrence-ambiguity-guard-applied-selectively-not-uniformly](occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md)
+already cost this file three separate repairs.
+
+Deliberately NOT fixed by the folded repair (Scope Contract allows widening existing
+boundary classes and reusing the lib's `_CMD_REDIR`, not a new anchor shape at a new
+position). It has an executable record instead: `repro-outward-cli-corpus.sh`'s
+`nssufx-ghmerge` / `nssufx-ghcomment` rows, whose expectations are deliberately left at
+`DENY` so they keep reporting as gaps. See that file's `NOTE6` for why a
+reachable-but-unfixed row must never be flipped to match current behaviour.
 
 **A second, distinct still-open gap found by independent PR #910 review (2026-09-02,
 round 4 — disclosure only, deliberately not fixed).** Neither `_OUT_POS_SUFFIX` nor

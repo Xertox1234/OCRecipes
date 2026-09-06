@@ -1,9 +1,9 @@
 ---
 title: "DECISION: should guard-outward-cli.sh deny by default when an unquoted expansion sits in command position?"
-status: backlog
+status: done
 priority: critical
 created: 2026-09-02
-updated: 2026-09-03
+updated: 2026-09-06
 assignee:
 labels: [security, harness, decision]
 github_issue:
@@ -194,3 +194,70 @@ anchors. They must not be implemented as two independent unattended runs against
 regex pair — the second would be reviewing a file the first has already moved. Land one,
 re-run the full hook suite, then start the other; or scope them into one change with a
 single corpus covering both mechanisms.
+
+## 2026-09-06 — IMPLEMENTED AND CLOSED
+
+Landed on `todo/P0-2026-09-05-outward-cli-guard-folded-repair`, taking the **second arm** of
+the sequencing note above — folded with the vanishing-sigil decision and the
+boundary/absorber defect report into one branch and one generated corpus, at the repository
+owner's direction (2026-09-05).
+
+**Option (c) delivered. The ruling was explicit that WHERE THE LINE FALLS is the
+deliverable, not settled by the ruling.** Where it fell:
+
+- **DENIED** — a gated binary in command position immediately followed by an expansion
+  where the verb belongs (`eas ${v:-update}`, `gh pr ${v:-merge} 42`), and an expansion in
+  command position immediately followed by a gated verb (`${e:-eas} update`).
+- **NOT DENIED** — a bare expansion in command position (`${EDITOR:-vim} notes.txt`), an
+  expansion in ARGUMENT position (`gh pr view ${NUM:-42}`), a variable script name
+  (`npm run ${SCRIPT:-build}`), and every ungated binary. Ten negative controls pin this
+  line and deliberately outnumber the six positives.
+- **The expansion is never evaluated.** Both sibling todos rule that out, and executing
+  attacker-supplied text to decide whether to block it would itself be the vulnerability.
+
+**The degraded path was closed in the SAME change**, as this todo's own ruling requires —
+_"a narrow deny that exists only on the precise path leaves the degraded path exactly as
+open as option (b) would have."_ `crude_smells_outward` gained a mirror that runs BEFORE its
+`$` strip (the only reason the sigil is still visible there). The verified cause of the
+fail-open was the LETTERS INSIDE an expansion breaking that function's `[^a-zA-Z]+`
+separator class. The mirror keys on BOTH sigils: a `$`-only class left a backtick-split verb
+allowed on all three degraded paths — found by measurement, not prediction.
+
+**Placement turned out to be load-bearing.** The predicate sits AFTER every eas/railway/npm
+boolean matcher and BEFORE the `gh pr merge` block, because two sibling constructions
+(`npm ${FLAGS} publish`, `railway ${X} up`) match this predicate's shape as well as their own
+family's check. Placed earlier it fires first and STEALS their deny reason, silently turning
+those assertions into decorations — the
+`deny-reason-assertion-goes-stale-when-a-stricter-branch-fires-first` defect. Those rows
+assert their family's reason string, so moving the block up now fails the suite loudly.
+
+**FALSE-POSITIVE POPULATION, measured by execution** — the ruling requires this and forbids
+estimating it. 17,913 unique historical Bash commands were harvested from this project's
+transcripts; the 4,525 containing a `$` or backtick (provably the only ones this predicate
+can match) were run against both the pre-change and post-change hooks:
+
+```
+tested=4525  decision_flips=0
+```
+
+The harness was validated against a known flip first, because a zero from an unvalidated
+harness is worthless.
+
+**Reported per the ruling's own standard — that a corpus containing zero instances of a
+construct is evidence about that construct's FREQUENCY, not about the fix's safety.** A
+raw-text census of the same 4,525: shape (a) 3 matches, all of them argv-probe
+constructions from this repo's own earlier guard sessions rather than real work; shape (b)
+0; shape (c) 4, of which three are prose fragments and one is a real command whose match
+sits inside a quoted `--jq` argument that `cmd_words` blanks — which is why it did not flip.
+
+**So the over-denial is accepted on "this shape does not occur in practice here" grounds,
+explicitly, not as a measured-zero false-positive rate.** This position was approved
+2026-09-05.
+
+**Residual this ruling creates**, now disclosed in the guard: flag SYNTHESIS as opposed to
+the flag-text DONATION that C1 closed — `${x:-$(printf -- --repo)}`. The narrow-deny rule
+targets VERBS, not flags.
+
+**Verification:** `test-guard-outward-cli.sh` `414 passed, 0 failed`; corpus precise-path
+gaps `32 → 3`. Mutation tests for both the precise predicate and the degraded mirror are
+quoted in the implementing commits.

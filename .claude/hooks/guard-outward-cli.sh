@@ -363,6 +363,57 @@
 #     workaround (detecting the placeholder's own text as a THIRD
 #     "unreadable" signal) was not attempted — it would need its own
 #     dedicated design and false-positive review, not a same-commit patch.
+#     RE-CONFIRMED STILL OPEN 2026-09-06 (outward-CLI-guard-folded-repair):
+#     measured again against this tree, and it now has an executable
+#     counterpart — repro-outward-cli-corpus.sh's `c2-ansic-hex` row, one of
+#     that file's three deliberate remaining gaps (see its NOTE6). The
+#     measured rendering is `-X xx50xx4fxx53xx54`: no surviving sigil for
+#     C2's "not literal text" branch and no literal POST for the method
+#     branch. Its expectation is deliberately left at DENY so the row keeps
+#     pointing at the hole. Note the DEGRADED paths deny it, so a summary
+#     count alone misreads this one.
+#
+#   * UNHANDLED, NEW (2026-09-06, outward-CLI-guard-folded-repair): an
+#     INTERIOR redirect, glued between the `gh` NAMESPACE word and the verb
+#     (`gh pr>/dev/null merge 42`). Real bash tokenizes that to argv
+#     (gh, pr, merge, 42) with stdout redirected, so it genuinely merges.
+#     This is NOT the same mechanism as finding A (a redirect closing the
+#     VERB's own boundary, fixed) nor finding B (a redirect BEFORE the verb,
+#     fixed): the redirect sits between two words the anchors require to be
+#     separated by whitespace. Closing it needs a new anchor shape at a new
+#     position across GH_PR_MERGE_RE, GH_PR_CREATE_RE and GH_MUTATING_RE,
+#     which the folded repair's Scope Contract does not authorise. The
+#     vanished rendering deliberately does NOT reach it either — a redirect
+#     is not a provably-empty expansion and must never be deleted as if it
+#     were. Corpus rows `nssufx-ghmerge`/`nssufx-ghcomment`.
+#
+#   * NEVER LIVE, not a gap — recorded so it is not "fixed" into a
+#     regression: `${#x}`-glued forms (`gh pr ${#x}merge`). `${#x}` always
+#     yields a non-empty digit string, so that command runs `0merge`, which
+#     is not an invocation at all. It is excluded from cmd_words_vanished's
+#     allow-list precisely because INCLUDING it would MANUFACTURE a false
+#     match — the 2026-09-02 regression that got an earlier deletion pass
+#     reverted. Nothing is missed by excluding it.
+#
+#   * UNHANDLED (2026-09-06): a NESTED expansion (`${a:-${b}}`) fails
+#     cmd_words_vanished's grammar test and is left verbatim. A safe MISS —
+#     the brace bytes survive in the rendering, so no two halves of a split
+#     verb can rejoin through it. Never a false match.
+#
+#   * UNHANDLED, NEW (2026-09-06): flag SYNTHESIS, as opposed to the flag-text
+#     DONATION that C1 closed. `${x:-$(printf -- --repo)}` supplies the flag
+#     itself from a substitution. The 2026-09-03 narrow-deny rule targets
+#     VERBS, not flags, so this is a residual that ruling creates rather than
+#     one it closes.
+#
+#   * ACCEPTED OVER-DENIAL (2026-09-06, degraded paths only): the
+#     degraded-path mirror in crude_smells_outward denies any command whose
+#     segment names a gated binary AND contains a `$` or backtick, so
+#     `npm run test -- $ARGS` DENIES on the no-jq/no-lib/no-awk paths while
+#     the precise path allows it. Deliberate: those paths only run when jq,
+#     awk, or the lib is already broken, their contract is to fail closed,
+#     and they already deny quoted mentions and read-only forms the precise
+#     path allows. Consistent with that posture, not a new class.
 #
 # Escape: `ALLOW_OUTWARD_CLI=1 <command>` as an INLINE prefix on the one Bash
 # command (recognized from the command string itself — see the case

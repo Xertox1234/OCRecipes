@@ -1,9 +1,9 @@
 ---
 title: "DECISION: how should guard-outward-cli.sh treat a bash sigil that expands to nothing at a command-position boundary?"
-status: backlog
+status: done
 priority: critical
 created: 2026-09-02
-updated: 2026-09-03
+updated: 2026-09-06
 assignee:
 labels: [security, harness, decision]
 github_issue:
@@ -271,3 +271,51 @@ See the matching note in
 `todos/P0-2026-09-02-outward-cli-guard-command-position-expansion-decision.md` (ruled the
 same day, option (c) narrow deny). Both change `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX`; do not
 run them as two independent unattended jobs against the same regex pair.
+
+## 2026-09-06 — IMPLEMENTED AND CLOSED
+
+Landed on `todo/P0-2026-09-05-outward-cli-guard-folded-repair`, taking the **second arm**
+this sequencing note offers — _"or scope them into one change with a single corpus covering
+both mechanisms."_ At the repository owner's direction (2026-09-05) this todo, the
+command-position expansion decision, and the boundary/absorber defect report were folded
+into one branch and one generated corpus, `.claude/hooks/repro-outward-cli-corpus.sh`.
+
+**Option (a) delivered in full — all three positions:**
+
+- **Suffix** — a closer-class widening: `_OUT_POS_SUFFIX` and BOTH branches of
+  `_OUT_POS_SUFFIX_MERGE_CLAUSE` now carry `<`/`>`, byte-identical to the lib's
+  `_CMD_POS_SUFFIX`.
+- **Prefix and mid-token** — NOT reachable by widening any character class, exactly as this
+  todo's own analysis predicted: bash consumes the whole balanced sigil (no boundary byte
+  to add), and a mid-token sigil SPLITS the verb (no boundary at all). Closed instead by a
+  new rendering, `cmd_words_vanished` in `.claude/hooks/lib/cmd-detect.sh`, which DELETES
+  every construct provably capable of expanding to empty so a split verb rejoins into the
+  word bash actually builds (`gh pr me${UNSET}rge` → `gh pr merge`).
+
+**The rendering is the inverse of `cmd_words_deep`**, and both are needed: `cmd_words_deep`
+APPENDS substitution bodies so a verb hiding _inside_ one is seen; `cmd_words_vanished`
+DELETES them so a verb split _by_ one is seen. Neither subsumes the other.
+
+**Two safety properties that were designed for, not discovered:**
+
+1. **The consuming surface is split three ways.** The union feeds only the 11 boolean
+   matchers (all `if … then deny`). The three occurrence counters take a per-rendering
+   MAXIMUM instead — feeding them the union would double every verb occurrence and trip
+   each block's `>1 is ambiguous` deny, over-denying every ordinary single invocation.
+2. **`$WORDS` stays byte-identical.** It has the file's one grant-shaped reader (the
+   `--auto` carve-out clause). A split `--a${UNSET}uto` rejoined into a literal `--auto`
+   would GRANT the carve-out on a flag never passed — a bypass worse than the one closed.
+   Two GRANT INVERSION assertions pin this.
+
+**Allow-list discipline** (this todo's central concern): a construct must be PROVEN capable
+of evaluating to empty before it may be deleted. `${#x}` is deliberately excluded — it
+always yields a non-empty digit string, so `gh pr ${#x}merge` runs `0merge`, not an
+invocation; including it would MANUFACTURE a false match, which is the 2026-09-02 regression
+that got an earlier deletion pass reverted. Recorded in the guard's residuals as
+**NEVER LIVE, not a gap**, so it is not "fixed" into a regression later.
+
+**Verification:** `test-guard-outward-cli.sh` `414 passed, 0 failed`; `test-cmd-detect.sh`
+`492 passed, 0 failed`; corpus precise-path gaps `32 → 3`. Every new assertion was measured
+ALLOW pre-fix and mutation-tested by reverting its fix. Full disposition, the three
+deliberate remaining gaps, and the false-positive measurement are in the Updates section of
+`todos/P0-2026-09-02-outward-cli-guard-boundary-and-absorber-bypasses.md`.
