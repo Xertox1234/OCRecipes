@@ -1473,19 +1473,35 @@ assert_deny "same brace-glued construction with a LITERAL mutating method attrib
 # comment documents the cut as appending (`[^;&|]*`) — if the clause line's
 # actual text does not contain the CURRENT anchor immediately followed by
 # that suffix, the two sides have diverged.
+#
+# WIDENED 2026-09-05 (vanishing sigil, Task 7): there are now TWO
+# `GH_API_CLAUSE=$(printf` assignments — the WORDS_DEEP cut and its
+# WORDS_VANISHED fallback — so a `grep -m1` reading only the FIRST would leave
+# the second free to diverge unnoticed. That is precisely the
+# detector-widened-without-its-sibling-consumer shape this very assertion
+# exists to catch, so the check iterates over EVERY assignment and the count
+# is asserted too: a third cut added later without updating this number fails
+# here rather than silently going unchecked.
 GH_API_RE_LINE=$(grep -m1 '^GH_API_RE=' "$HOOK")
-GH_API_CLAUSE_LINE=$(grep -m1 'GH_API_CLAUSE=\$(printf' "$HOOK")
 _ANCHOR_RE="${GH_API_RE_LINE#GH_API_RE=\"}"
 _ANCHOR_RE="${_ANCHOR_RE%\"}"
+_CLAUSE_CUTS=$(grep -c 'GH_API_CLAUSE=\$(printf' "$HOOK")
+_CUTS_OK=1
+_BAD_CUT=""
+while IFS= read -r _line; do
+  printf '%s' "$_line" | grep -qF -- "${_ANCHOR_RE}[^;&|]*" || { _CUTS_OK=0; _BAD_CUT="$_line"; }
+done < <(grep 'GH_API_CLAUSE=\$(printf' "$HOOK")
 if [ -n "$_ANCHOR_RE" ] \
    && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh[[:space:]]+api' \
-   && printf '%s' "$GH_API_CLAUSE_LINE" | grep -qF -- "${_ANCHOR_RE}[^;&|]*"; then
-  echo "PASS: GH_API_RE and the GH_API_CLAUSE cut share one anchor (structural, not behavioural)"; PASS=$((PASS+1))
+   && [ "$_CLAUSE_CUTS" -eq 2 ] \
+   && [ "$_CUTS_OK" -eq 1 ]; then
+  echo "PASS: GH_API_RE and ALL $_CLAUSE_CUTS GH_API_CLAUSE cuts share one anchor (structural, not behavioural)"; PASS=$((PASS+1))
 else
-  echo "FAIL: GH_API_RE and the GH_API_CLAUSE cut share one anchor (structural, not behavioural) -- they have DIVERGED, reopening the empty-clause fall-through to ALLOW"
+  echo "FAIL: GH_API_RE and the GH_API_CLAUSE cuts share one anchor (structural, not behavioural) -- they have DIVERGED, reopening the empty-clause fall-through to ALLOW"
   echo "  GH_API_RE line:     $GH_API_RE_LINE"
   echo "  extracted anchor:   $_ANCHOR_RE"
-  echo "  GH_API_CLAUSE line: $GH_API_CLAUSE_LINE"
+  echo "  clause cuts found:  $_CLAUSE_CUTS (expected 2)"
+  echo "  diverged cut:       $_BAD_CUT"
   FAIL=$((FAIL+1))
 fi
 # Negative controls — this is the change's largest new over-denial surface,
@@ -1535,6 +1551,91 @@ assert_deny "CO-OCCURRENCE: a literal mutating gh api method still denies glued 
   "$(json 'gh api repos/o/r -X POST>/dev/null')" "mutating HTTP method"
 assert_deny "CO-OCCURRENCE: two gh api invocations, one read-only and one with an unreadable method, still deny (the pre-existing multi-occurrence ambiguity check fires first, before either single-clause check runs)" \
   "$(json 'gh api repos/o/r && gh api repos/o/r -X ${x:-POST}')" "ambiguous, cannot verify"
+
+# ---------- 2026-09-05: the vanishing-sigil class, all three positions -------
+# Ruled 2026-09-03, option (a): close the SUFFIX, PREFIX and MID-TOKEN
+# positions. The suffix is a closer-class widening (the finding A block above).
+# The other two are not reachable that way: bash consumes the whole balanced
+# sigil, so the prefix has no single boundary byte to add, and the mid-token
+# case SPLITS the verb, so there is no boundary to widen at all. Both are
+# closed instead by $WORDS_VANISHED -- a rendering with every provably-empty
+# construct DELETED, so `me` + sigil + `rge` rejoins into the `merge` bash
+# actually builds.
+#
+# ATTRIBUTION. Every assert_deny below was measured ALLOW on the pre-fix tree
+# (this branch @ eca7cc3) before being written, so each fails without the
+# rendering rather than passing on an unrelated branch. That check matters
+# especially here: three of these carry a `$`, and the merge family has a
+# pre-existing coarse guard that denies any `$`-bearing merge clause with THE
+# SAME reason string this block asserts. It does not mask these rows only
+# because the verb is not detected at all pre-fix, so that guard is never
+# reached -- verified, not assumed. See NOTE5 in repro-outward-cli-corpus.sh
+# for the same masking trap catching a row that was NOT attributable.
+assert_deny "mid-token backtick pair denies" \
+  "$(json 'gh pr me``rge 42')" "without a REAL --auto flag"
+assert_deny "mid-token empty substitution denies" \
+  "$(json 'gh pr me$()rge 42')" "without a REAL --auto flag"
+assert_deny "mid-token unset parameter denies" \
+  "$(json 'gh pr me${UNSET}rge 42')" "without a REAL --auto flag"
+assert_deny "mid-token split in an eas verb denies" \
+  "$(json 'eas up${UNSET}date --branch preview')" "eas update/publish/submit"
+assert_deny "prefix vanishing substitution denies" \
+  "$(json '$() gh pr merge 42')" "without a REAL --auto flag"
+assert_deny "prefix vanishing parameter denies" \
+  "$(json '${UNSET} gh pr merge 42')" "without a REAL --auto flag"
+assert_deny "mid-token split reaches the gh api block" \
+  "$(json 'gh a${UNSET}pi repos/o/r -X POST')" "mutating HTTP method"
+# A vanishing sigil standing where a WHOLE WORD would go, rather than inside
+# the verb. Same mechanism, different position: deleting the word leaves the
+# tool and its verb separated by whitespace the `[[:space:]]+` anchors already
+# accept. Both measured ALLOW pre-fix; both are real invocations (`npm ${FLAGS}
+# publish` genuinely publishes), so these are catches, not over-denials.
+assert_deny "a vanishing word between npm and publish denies" \
+  "$(json 'npm ${FLAGS} publish')" "'npm publish' pushes a package"
+assert_deny "a vanishing word between railway and up denies" \
+  "$(json 'railway ${X} up')" "railway up/deploy/redeploy"
+
+# GRANT INVERSION -- the single most dangerous direction for this change.
+# $WORDS (shallow) has exactly one grant-shaped reader: the --auto carve-out
+# clause cut, which GRANTS on a real --auto rather than merely adding a deny.
+# If the vanished rendering ever reached it, a SPLIT `--a${UNSET}uto` would be
+# deleted into a literal `--auto` and would GRANT the carve-out on a flag the
+# user never really passed -- turning this fix into a bypass strictly worse
+# than the one it closes. These two pin that it does not. They are regression
+# guards, NOT attributable rows: both already deny pre-fix (the `$`/backtick
+# makes --auto unverifiable), and they must go on denying. A flip to ALLOW
+# here means the union reached the clause cut at the `CLAUSE=` assignment.
+assert_deny "GRANT INVERSION: a split --auto must NOT be rejoined into a granted carve-out" \
+  "$(json 'gh pr merge 42 --a${UNSET}uto')" "without a REAL --auto flag"
+assert_deny "GRANT INVERSION: a backtick-split --auto must NOT be rejoined into a granted carve-out" \
+  "$(json 'gh pr merge 42 --a``uto')" "without a REAL --auto flag"
+
+# COUNTER CONTROLS -- the union must NOT reach the three occurrence counters.
+# Each of them gates a `>1 is ambiguous => deny` branch, so feeding a whole
+# extra rendering into them would count every ordinary single invocation twice
+# and deny it. That would be a mass over-denial of routine, sanctioned work,
+# which is why the counters take a per-rendering MAXIMUM instead of scanning
+# the union. These four are the two-sided control on that split.
+assert_allow "a single ordinary gh api call is still counted once" \
+  "$(json 'gh api repos/o/r')"
+assert_allow "a single automerge call is still counted once" \
+  "$(json 'gh pr merge 42 --auto')"
+assert_allow "a single gh pr create is still counted once" \
+  "$(json 'gh pr create --title t --body b')"
+assert_deny "two gh api occurrences still read as ambiguous" \
+  "$(json 'gh api repos/o/r && gh api -X PUT repos/o/r/pulls/1/merge')" "more than one command-position 'gh api'"
+
+# FALSE-POSITIVE CONTROLS -- over-denial is this change's real risk, so the
+# everyday idioms that merely CONTAIN a deletable construct must stay allowed.
+# All four measured ALLOW pre-fix; a flip to DENY is a regression, not a catch.
+assert_allow "a quoted mention containing a split verb stays allowed" \
+  "$(jsonc 'echo "gh pr me${UNSET}rge 42"')"
+assert_allow "an ordinary parameter expansion stays allowed" \
+  "$(json 'ls ${HOME}/tmp')"
+assert_allow "an ordinary default-value expansion stays allowed" \
+  "$(json 'echo ${HOME:-/tmp}')"
+assert_allow "an ordinary empty substitution stays allowed" \
+  "$(json 'echo $() done')"
 
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend

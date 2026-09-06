@@ -777,6 +777,51 @@ fi
 # stays completely unmodified so that one read keeps its existing contract.
 WORDS_DEEP=$(cmd_words_deep "$CMD")
 
+# A THIRD rendering, and the INVERSE operation to WORDS_DEEP: every construct
+# PROVABLY capable of expanding to the empty string is DELETED, so a verb SPLIT
+# by a vanishing sigil rejoins into the word bash actually builds (`me` +
+# `${UNSET}` + `rge` -> `merge`). WORDS_DEEP APPENDS substitution bodies so a
+# verb HIDING INSIDE one is seen; this one DELETES them so a verb SPLIT BY one
+# is seen. Neither subsumes the other and they must stay separate lines --
+# collapsing either into the other loses a whole family. Closes the prefix and
+# mid-token positions of the vanishing-sigil class (ruled 2026-09-03, option
+# (a)); the suffix position is a closer-class widening handled at
+# _OUT_POS_SUFFIX. No boundary class can reach the mid-token case at all: the
+# verb is SPLIT, not bounded, so there is no boundary byte to add.
+# See lib/cmd-detect.sh:cmd_words_vanished for the allow-list and why a
+# construct must be PROVEN able to evaluate to empty before it may be deleted.
+WORDS_VANISHED=$(cmd_words_vanished "$CMD")
+
+# Union, for BOOLEAN detection ONLY. Every consumer switched to this is of the
+# form `if grep -Eqi ... ; then deny`, so over-matching can only ever ADD a
+# deny -- the safe direction, and the same monotonicity argument WORDS_DEEP
+# already rests on. Two kinds of reader must NEVER be pointed at it:
+#   1. The occurrence COUNTERS. Appending a whole-command rendering doubles
+#      every verb occurrence, so an ordinary single invocation would count 2
+#      and trip the ">1 is ambiguous" deny -- a mass over-denial of routine
+#      sanctioned work. They use _out_max_count below instead.
+#   2. $WORDS's one GRANT-shaped consumer (the `gh pr merge --auto` carve-out
+#      $CLAUSE extraction further down). A split `--a${UNSET}uto` deleted into
+#      a literal `--auto` would GRANT the carve-out on a flag the user never
+#      passed -- a bypass strictly worse than the one this rendering closes.
+#      $WORDS stays byte-identical; the two GRANT INVERSION assertions in
+#      test-guard-outward-cli.sh pin that it does.
+WORDS_SCAN="$WORDS_DEEP
+$WORDS_VANISHED"
+
+# Occurrence count across both renderings, taking the LARGER rather than
+# counting the union. Preserves the ambiguity semantics exactly (two real
+# invocations still count 2, one still counts 1) while letting a verb that only
+# the vanished rendering can see raise its block's count from 0 to 1 -- without
+# which the merge and gh api blocks, both GATED BEHIND their counters, are
+# never entered at all and a mid-token split falls straight through to ALLOW.
+_out_max_count() {  # $1=regex -> larger of the two per-rendering match counts
+  local a b
+  a=$(printf '%s' "$WORDS_DEEP"     | grep -oiE "$1" | wc -l | tr -d '[:space:]')
+  b=$(printf '%s' "$WORDS_VANISHED" | grep -oiE "$1" | wc -l | tr -d '[:space:]')
+  if [ "${a:-0}" -ge "${b:-0}" ]; then printf '%s' "${a:-0}"; else printf '%s' "${b:-0}"; fi
+}
+
 # Dual-rendering flag scan, for DENY-ONLY checks. One pattern, both renderings,
 # because each hides a spelling the other shows: a quoted VALUE (`--auto
 # "--admin"`) survives only in raw $CMD, while a quoted-split NAME (`--ad"min"`)
@@ -813,21 +858,21 @@ $WORDS"; }
 
 # --- eas -------------------------------------------------------------------
 # eas update/publish/submit (space-separated subcommand).
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'eas update/publish/submit' publishes an OTA update or app-store submission — the exact class of the 2026-08-16 accidental-OTA incident. Read-only forms (eas update:list, eas update:view, eas whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # eas update:* MUTATING colon subcommands — verified against `eas update
 # --help` (eas-cli 20.1.0); see the header's DOCUMENTED RESIDUALS entry for
 # the verified-read-only counterpart (update:list/view/insights, unaffected
 # by this pattern since the colon puts them outside this alternation).
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' mutates what OTA update end users receive — the same incident class as bare 'eas update'. Read-only colon forms (eas update:list, eas update:view, eas update:insights) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # eas channel:*/branch:* MUTATING colon subcommands — a channel repoint or a
 # branch delete changes which update end users receive, an effect identical to
 # the already-denied `eas update:*` forms (review round 3 found all of these
 # ALLOWED). Read-only `:list`/`:view` forms stay allowed.
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'eas channel:/branch: create/edit/delete/rename' repoints or deletes the channel/branch that decides which OTA update end users receive — the same effect class as 'eas update'. Read-only forms (eas channel:list, eas branch:view, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # `eas build --auto-submit` (and --auto-submit-with-profile) submits the
@@ -838,7 +883,7 @@ fi
 # `--auto-submit-with-profile` is caught by the same pattern. Leading boundary
 # is `_OUT_FLAG_LEAD` (see its own definition) so a default-value expansion
 # (`${x:---auto-submit}`) cannot donate the flag's boundary.
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP" \
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    && scan_both "${_OUT_FLAG_LEAD}"'--auto-submit'; then
   deny "guard-outward-cli: command-position 'eas build --auto-submit' submits the finished binary to the app store — an outward mutation, not just a build. Plain 'eas build' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
@@ -848,22 +893,22 @@ fi
 # live service's env injected — including the production DATABASE_URL (this
 # repo's own prod backfill/seed docs use exactly that shape), so it is at least
 # as outward as `railway up`.
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' mutates a live Railway service ('railway run' executes an arbitrary command with the LIVE service env, incl. the production DATABASE_URL). Read-only forms (railway status, railway logs, railway whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # railway variable set/delete (production secrets/env vars) and
 # service/environment delete — a level deeper than the top-level verbs
 # above, and at least as dangerous (an overwritten secret or a deleted
 # service/environment is not recoverable by a redeploy the way up/down are).
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(variable|variables|vars|var)[[:space:]]+(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(variable|variables|vars|var)[[:space:]]+(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'railway variable/vars/var set/delete' mutates a live service's environment variables (may include production secrets). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(service|environment)[[:space:]]+delete${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(service|environment)[[:space:]]+delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'railway service/environment delete' deletes a live Railway service or environment. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 # --- npm publish -------------------------------------------------------------
-if grep -Eqi "${_OUT_POS_PREFIX}npm[[:space:]]+publish${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
+if grep -Eqi "${_OUT_POS_PREFIX}npm[[:space:]]+publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm publish' pushes a package to the registry. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -908,8 +953,8 @@ fi
 # is fail-CLOSED on a command essentially nobody writes, and the plain
 # no-flag form (`npm run build update:preview`) still ALLOWS — pinned both ways.
 _OUT_FLAG_RUN='([[:space:]]+-{1,2}[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
-if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP" \
-   || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
+if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
 
@@ -928,7 +973,7 @@ GH_PR_MERGE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SU
 # not prove the two renderings found the SAME occurrence
 # (`gh pr merge"x" 42 --auto; gh pr "merge" 99` counts 1 in each, from different
 # clauses, and read --auto out of the wrong one).
-GH_PR_MERGE_OCCURRENCES=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$GH_PR_MERGE_RE" | wc -l | tr -d '[:space:]')
+GH_PR_MERGE_OCCURRENCES=$(_out_max_count "$GH_PR_MERGE_RE")
 if [ "${GH_PR_MERGE_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh pr merge' occurrence — ambiguous, cannot verify each carries --auto. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
@@ -1192,7 +1237,7 @@ fi
 # --- gh: other mutating subcommands (pr create/comment allowed only without
 #     --repo/-R, see the header) -------------------------------------------
 GH_MUTATING_RE="${_OUT_POS_PREFIX}gh[[:space:]]+(pr[[:space:]]+(close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release[[:space:]]+(create|delete|delete-asset|edit|upload)|repo[[:space:]]+(create|delete|archive|unarchive|edit|rename|sync|fork))${_OUT_POS_SUFFIX}"
-if grep -Eqi "$GH_MUTATING_RE" <<< "$WORDS_DEEP"; then
+if grep -Eqi "$GH_MUTATING_RE" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position mutating 'gh pr/release/repo' subcommand. Read-only forms (gh pr view/checks/list, gh release view/list, gh repo view/list, ...) are unaffected; gh pr create/comment are deliberately allowed (routine PR workflow) unless retargeted with --repo/-R. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -1211,7 +1256,7 @@ fi
 # create --repo other/org --title x` was ALLOWED). Deny outright on >1
 # occurrence rather than guess which clause to inspect.
 GH_PR_CREATE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+(create|comment)${_OUT_POS_SUFFIX}"
-GH_PR_CREATE_OCCURRENCES=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$GH_PR_CREATE_RE" | wc -l | tr -d '[:space:]')
+GH_PR_CREATE_OCCURRENCES=$(_out_max_count "$GH_PR_CREATE_RE")
 if [ "${GH_PR_CREATE_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh pr create/comment' occurrence — ambiguous, cannot verify each is free of --repo/-R. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_PR_CREATE_OCCURRENCES:-0}" -eq 1 ] && gh_pr_clause_has_repo 'create|comment'; then
@@ -1260,7 +1305,7 @@ GH_API_RE="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}"
 # Reading $WORDS_DEEP makes the quoted spellings AND a live-substitution-hidden
 # occurrence visible, without resorting to raw $CMD, which would lose the
 # command-position anchor and the separator neutralisation with it.
-GH_API_OCCURRENCES=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$GH_API_RE" | wc -l | tr -d '[:space:]')
+GH_API_OCCURRENCES=$(_out_max_count "$GH_API_RE")
 if [ "${GH_API_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
@@ -1311,6 +1356,23 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # can only ever ADD a deny) — unlike the grant-shaped `gh pr merge` CLAUSE
   # above, which must stay on shallow `$WORDS` for the reason documented there.
   GH_API_CLAUSE=$(printf '%s' "$WORDS_DEEP" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}[^;&|]*" | head -1)
+  # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is
+  # now a MAXIMUM across both renderings, so it can be 1 because the VANISHED
+  # rendering saw a split verb (`gh a${UNSET}pi ...`) that WORDS_DEEP cannot
+  # see. In exactly that case the cut just above yields an EMPTY clause — and
+  # this block ALLOWS by default on an empty clause (unlike the `gh pr merge`
+  # CLAUSE, which denies by default), so the deny would fall straight through
+  # and the raised count would buy nothing. Retry the identical cut on the
+  # vanished rendering. This is the "widen the detector AND its consumers in
+  # ONE change" rule that
+  # docs/solutions/logic-errors/occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md
+  # exists for: GH_API_RE (via _out_max_count) and this cut are a
+  # detector/consumer pair and must move together. Safe because this clause is
+  # DENY-shaped — over-capture can only ever ADD a deny, the same argument the
+  # WORDS_DEEP cut above already rests on.
+  if [ -z "$GH_API_CLAUSE" ]; then
+    GH_API_CLAUSE=$(printf '%s' "$WORDS_VANISHED" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}[^;&|]*" | head -1)
+  fi
   # FIXED 2026-09-05 (C2): a method value that is not literal text (an
   # expansion or substitution, e.g. `-X ${x:-POST}`, `-X $METHOD`, `--method
   # $(printf PUT)`) never matches the literal POST/PUT/PATCH/DELETE text the

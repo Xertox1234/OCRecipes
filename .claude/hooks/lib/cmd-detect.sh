@@ -633,8 +633,11 @@ cmd_words_deep() {
 # unset under this file's callers' `set -u` and aborts) -- NOT the stdin
 # convention plain cmd_words/cmd_bare/cmd_extract_substitutions use. Produces
 # ONE line on stdout with NO trailing newline (unlike cmd_words_deep, this is
-# not newline-joined with anything -- there is nothing to join). Task 7 is its
-# only caller -- this task does not wire it into any guard.
+# not newline-joined with anything -- there is nothing to join). WIRED
+# 2026-09-05 into guard-outward-cli.sh, which is its only caller: it feeds
+# $WORDS_SCAN (the boolean-matcher union), _out_max_count (the per-rendering
+# occurrence maximum) and the GH_API_CLAUSE fallback cut. Never $WORDS, whose
+# one grant-shaped reader must not see a deletion-synthesized flag.
 #
 # UNBALANCED INPUT is asymmetric depending on which construct is unbalanced:
 # an unterminated $(...)/backtick emits NOTHING (see the depth check at the
