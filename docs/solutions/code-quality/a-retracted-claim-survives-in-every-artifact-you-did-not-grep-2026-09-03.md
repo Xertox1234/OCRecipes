@@ -7,7 +7,7 @@ module: shared
 applies_to: ["e2e/**", "todos/**", "docs/**", ".github/**"]
 symptoms: ["A claim was investigated, found wrong, and retracted in the place it was discovered — but the same sentence still ships in a source comment, a todo, or a second PR body", "The surviving copy carries a stronger confidence marker than the original, e.g. a header labelled \"Measured, not argued\"", "Two CI runs on the SAME commit disagree about which items failed, so an outcome attributed to a code change is not reproducible", "A grep for the concept finds nothing but a grep for the literal numbers finds several copies"]
 created: 2026-09-03
-last_updated: '2026-09-03'
+last_updated: '2026-09-06'
 severity: high
 ---
 
@@ -125,9 +125,42 @@ was the original error wearing different numbers.
   credentials and still reports green — is readable off the semantics and cannot rot
   when a flaky suite changes its mind.
 
+## The same sweep applies when you MOVE a file (added 2026-09-06)
+
+Archiving is the structural twin of retracting. `git mv todos/X.md todos/archive/X.md`
+succeeds unconditionally and reports a clean `R100` rename — while silently breaking
+**every document that pointed at the old path**. Git tracks the file's identity; it does
+not track the prose references to it.
+
+Measured on PR #927 (archiving three closed P0s): exactly one *tracked* file still named a
+pre-archive path — an open critical todo whose `## Related` section pointed at the todo
+that held the prior art. The concrete cost is not cosmetic: an executor picking up that
+open critical follows the pointer for context, hits a nonexistent path, and either proceeds
+without it or burns a round recovering it.
+
+Two details that decide whether the sweep finds anything:
+
+- **Scope the grep to tracked files.** `git grep -- $(git ls-files)` — an unscoped search
+  drowns the one real hit in untracked scratch (`docs/superpowers/`, `.superpowers/sdd/`
+  here), which is how a reviewer concludes "lots of stale refs, probably fine".
+- **Re-run it after the fix and require zero.** The fix is one line; the proof that it was
+  the *only* one is the second grep.
+
+While repointing such a reference, read the sentence around it. The stale pointer here sat
+inside the claim that the merged PR "closed **every other spelling** of the class" — which
+a later review round had already disproved. A path fix and a claim retraction arrive at the
+same line more often than chance, because both decay for the same reason: nothing
+recomputes prose.
+
 ## Related
 
 - `docs/solutions/logic-errors/two-prs-rewriting-one-line-on-different-axes-2026-09-03.md`
   — the sibling case: verified work silently lost at merge, also invisible to CI.
 - `docs/solutions/logic-errors/optional-e2e-steps-cannot-fail-dead-selectors-stay-green-2026-08-30.md`
   — the semantic argument that replaced the retracted numbers.
+- `docs/solutions/code-quality/summary-count-cannot-express-a-row-getting-strictly-worse-2026-09-06.md`
+  — the wrong-number case one step earlier: how the false figure gets produced before it
+  propagates.
+- `docs/solutions/logic-errors/one-form-property-asserted-of-whole-syntax-class-2026-09-06.md`
+  — a retraction whose subject was a *justification for not fixing*, which is the costliest
+  kind: it converts an open bug into a settled decision.
