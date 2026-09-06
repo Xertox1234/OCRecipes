@@ -1,5 +1,5 @@
 ---
-title: "lib/cmd-detect.sh: a bare-paren subshell inside $(...) desynchronises the shared substitution scanner, defeating the outward-CLI guard"
+title: "lib/cmd-detect.sh: two defects in cmd_words_vanished — a bare-paren subshell desynchronises the shared scanner, and the deletable-form allow-list is incomplete against its own criterion"
 status: backlog
 priority: critical
 created: 2026-09-06
@@ -9,9 +9,21 @@ labels: [security, harness, cmd-detect]
 github_issue:
 ---
 
-# A bare `(` subshell inside `$(...)` desynchronises the shared substitution scanner
+# Two defects in `cmd_words_vanished`, both in `lib/cmd-detect.sh`
 
-## Summary
+Filed as one todo because both are defects of the **same function in the same file**, both are
+fixed by the same kind of change (the deletion grammar), and both are covered by the identical
+Scope Contract and test/corpus files below. Splitting them would produce two todos that must be
+worked in one session anyway.
+
+- **Defect A — bare-paren desync.** The scanner mis-locates where a `$(...)` span ENDS.
+- **Defect B — incomplete allow-list.** The scanner correctly locates spans but refuses to
+  delete whole families of expansion that satisfy its own stated eligibility rule.
+
+Defect A is below in full (it was this todo's original subject). Defect B is in its own section
+after it.
+
+## Summary — Defect A
 
 `lib/cmd-detect.sh`'s substitution scanner counts depth for `$(` but not for a **bare** `(`,
 so the first `)` of an inner subshell is read as closing the OUTER `$(...)`. Every consumer
@@ -107,12 +119,98 @@ over-deletion was itself a miss. The table above is the post-repair measurement.
 rather than trusting either version**: this row's verdict has already moved twice for reasons
 unrelated to the defect itself.
 
+## Summary — Defect B: the deletable-form allow-list is incomplete against its own criterion
+
+`cmd_words_vanished`'s stated rule is that **an expansion form must be PROVEN capable of
+evaluating to EMPTY before it may be deleted**. Measured against that rule, the allow-list is
+missing two whole families that satisfy it, so a verb or binary name split by one of them never
+rejoins and the guard **ALLOWS** the invocation.
+
+Found by `security-auditor` in the round-4 review of PR #926, reproduced independently by
+execution with controls. **Not a regression** — `main` allows them identically — and explicitly
+**not closed by PR #926**, whose body now states the narrowed claim ("closes the class for the
+forms ON the allow-list").
+
+### B1 — SPECIAL parameters
+
+`$!`, `$@`, `$*`, `$?`, `$$`, `$#`, `$1`–`$9`. Each is **one character** long and therefore
+_terminates_ against a following letter instead of absorbing it, so it splits a token exactly
+the way `${UNSET}` does. Each can be empty (`$1` with no positional args; `$!` in a fresh
+shell), which is precisely the allow-list's own eligibility test.
+
+This is worth stating loudly because PR #926 shipped a comment asserting the opposite — that a
+bare `$name` "greedily consumes following alphanumerics, so it cannot rejoin two halves of a
+verb". **That is true only of an ORDINARY identifier** (`$RUNNER`); it was generalised to the
+whole syntax class and is false for every special parameter. The claim has been retracted in
+`guard-outward-cli.sh`; this todo is the fix it was wrongly used to defer.
+
+### B2 — ANSI-C quoting
+
+`$'\x61'` and friends. A `$'...'` construct is not empty, but it _respells a character_, which
+splits the token just as effectively: `e$'\x61's update` never renders `eas`. Note this is a
+respelling, not a deletion, so the fix may belong in `cmd_words`' quote handling rather than in
+the vanishing allow-list — decide from the code, and say which in the fix.
+
+### Measured, all four execution paths
+
+| construction                    | precise   | no-jq     | no-lib    | no-awk    | real argv         |
+| ------------------------------- | --------- | --------- | --------- | --------- | ----------------- |
+| `e$!as update --branch preview` | **ALLOW** | **ALLOW** | **ALLOW** | **ALLOW** | an OTA publish    |
+| `e$1as update --branch preview` | **ALLOW** | **ALLOW** | **ALLOW** | **ALLOW** | an OTA publish    |
+| `g$1h pr merge 42`              | **ALLOW** | **ALLOW** | **ALLOW** | **ALLOW** | a PR merge        |
+| `e$'\x61's update --branch p`   | **ALLOW** | **ALLOW** | **ALLOW** | **ALLOW** | an OTA publish    |
+| `eas up$!date --branch preview` | **ALLOW** | DENY      | DENY      | DENY      | an OTA publish    |
+| `gh pr me$!rge 42`              | **ALLOW** | DENY      | DENY      | DENY      | a PR merge        |
+| `npm pub$1lish`                 | **ALLOW** | DENY      | DENY      | DENY      | a package publish |
+
+Controls, isolating the SPELLING as the only variable — both DENY on all four:
+
+```
+e${UNSET}as update --branch preview      ->  DENY
+eas up${UNSET}date --branch preview      ->  DENY
+e$'a's update --branch preview           ->  DENY
+```
+
+**Read the last three rows carefully — the asymmetry INVERTS.** For a split VERB the _precise_
+path ALLOWs while all three degraded paths DENY, because the degraded mirror keys on a gated
+binary near a `$` sigil and the precise path has no equivalent. Every other finding in this
+chain went the other way. Do **not** assume "degraded fails closed" while working this todo;
+it is a per-check property, not an invariant.
+
+### Corpus rows already exist
+
+`repro-outward-cli-corpus.sh` carries 42 rows for this defect (`r4spec-*`, `r4dig-*`,
+`r4ansic-*` — 3 mechanisms × 2 glue positions × 7 families), all with **DENY** expectations and
+all currently reporting as gaps. They are part of the documented `precise-path gaps=73`. When
+this todo lands, those 42 must flip to `ok` **and the corpus's NOTE6 gap attribution must be
+updated in the same change**, or the file will contradict itself.
+
 ## Acceptance Criteria
 
-- [ ] Reproduce first, on the current tree, before changing anything: run each construction
+Criteria below marked **(A)** apply to the bare-paren defect, **(B)** to the allow-list defect,
+and unmarked ones to both.
+
+- [ ] **(B)** Reproduce every row of Defect B's table on the current tree before changing
+      anything, and confirm the three controls DENY. If the inverted precise/degraded asymmetry
+      does not reproduce, that is itself a finding — report it rather than fixing past it.
+- [ ] **(B)** `cmd_words_vanished` deletes every SPECIAL parameter that can expand to empty, so
+      `cmd_words_vanished 'e$1as update'` renders `eas update`. Decide and DOCUMENT the
+      treatment of forms that can be non-empty (`$$`, `$?` are never empty in practice) — the
+      allow-list's criterion is "provably capable of being empty", and a form that cannot be
+      empty must NOT be deleted.
+- [ ] **(B)** ANSI-C respelling is handled, so `e$'\x61's update` renders `eas update`. State
+      in the fix whether this belongs in the vanishing allow-list or in `cmd_words`' quote
+      handling, and why.
+- [ ] **(B)** The 42 `r4spec-*` / `r4dig-*` / `r4ansic-*` corpus rows flip to `ok`, and the
+      corpus NOTE6 gap attribution (currently `14 + 56 + 2 + 1 = 73`) is recomputed in the same
+      change. Do NOT hand-edit the total — re-run and attribute BY ID.
+- [ ] **(B)** The retracted claim in `guard-outward-cli.sh`'s DOCUMENTED RESIDUALS (the
+      special-parameter entry, and residual 3/5 in PR #926's body) is updated to say the gap is
+      CLOSED rather than merely retracted-and-open.
+- [ ] **(A)** Reproduce first, on the current tree, before changing anything: run each construction
       above through the hook and record the ACTUAL exit code. If any does not reproduce, that
       is a finding — report it rather than fixing something that is not broken.
-- [ ] The scanner tracks bare-paren depth (or otherwise resolves the desynchronisation) so
+- [ ] **(A)** The scanner tracks bare-paren depth (or otherwise resolves the desynchronisation) so
       that `cmd_words_vanished 'e$( (:) )as update'` renders `eas update` and
       `cmd_extract_substitutions` on the same input yields `(:)`.
 - [ ] The fix is applied to **every** function sharing the scanner shape, not just the one
@@ -132,8 +230,9 @@ unrelated to the defect itself.
       `$(...)` is ordinary shell (`x=$( (cd /tmp && pwd) )`), so a depth change here can
       alter renderings for real commands. Harvest historical commands and diff decisions
       before/after; validate the harness on a known flip before trusting a zero.
-- [ ] Corpus rows added to `repro-outward-cli-corpus.sh` for the bare-paren mechanism at the
+- [ ] **(A)** Corpus rows added to `repro-outward-cli-corpus.sh` for the bare-paren mechanism at the
       TOOL, VERB and FLAG positions — generated from the mechanism axis, not hand-listed.
+      (Defect B's rows already exist; see its section.)
 - [ ] `docs/solutions/` entry via `/codify` if the root cause generalises.
 
 ## Implementation Notes
@@ -180,4 +279,10 @@ unrelated to the defect itself.
 - `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — a
   separate, also-open critical gap in the same guard. Different mechanism (an interior
   redirect, not a substitution scanner); do not fold them.
+- `todos/P0-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md` — the
+  round-4 sibling. Same review round and the same "a token is split and the guard cannot see
+  it" symptom, but a brace range carries no `$` at all, so the fix is a **guard-side narrow
+  deny**, not a lib scanner change. Deliberately not folded here. Both todos edit
+  `repro-outward-cli-corpus.sh` and its NOTE6 gap attribution, so **whichever lands second must
+  re-run the corpus and re-attribute BY ID** rather than assuming the first one's totals.
 - `docs/solutions/logic-errors/quoted-command-substitution-always-executes-2026-08-17.md`
