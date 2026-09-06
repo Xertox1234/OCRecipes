@@ -1,0 +1,185 @@
+---
+title: "guard-outward-cli.sh: a redirect glued between the tool word and the verb silently ALLOWS every gated family"
+status: backlog
+priority: critical
+created: 2026-09-06
+updated: 2026-09-06
+assignee:
+labels: [security, harness]
+github_issue:
+---
+
+# An interior redirect defeats every gated verb family
+
+## Summary
+
+A redirect operator glued between a gated tool word and its verb (`eas>/dev/null update
+--branch preview`) is a real, executing invocation that `guard-outward-cli.sh` silently
+**ALLOWS**. It is not scoped to one family or to multi-word verbs: **every gated family
+measured is defeated by it**, including the `eas update` OTA-publish path that caused this
+repo's real 2026-08-16 incident.
+
+## Background
+
+Found 2026-09-06 while closing the folded repair (PR #926). That work fixed two redirect
+positions — finding A (a redirect CLOSING the verb, `merge>log`) and finding B (a redirect
+PRECEDING the command, `2>/dev/null gh pr merge`). This is a **third position** neither
+reaches, and it is the broadest of the three.
+
+**Why no boundary widening reaches it.** A/B, `{`/`}` and backtick were all _boundary_
+problems: the verb was present, adjacent to a character the class did not accept. This is a
+_separator_ problem — the anchors require `[[:space:]]+` between the tool word and the verb,
+and a redirect is not whitespace, so the verb pattern simply never matches. The detection
+failure is total: no check runs at all, so even the `--repo` cross-repo egress check is
+skipped.
+
+The shared lib does not cover it either — `_CMD_POS_PREFIX` absorbs `_CMD_REDIR` only as part
+of the _prefix_ run before the command word (`.claude/hooks/lib/cmd-detect.sh:118`). This is
+not a case of the guard lagging the lib.
+
+Verified undocumented before 2026-09-06: `git show main:.claude/hooks/guard-outward-cli.sh`
+has no residual describing a redirect between tool and verb.
+
+### Measured matrix
+
+Every row run against the live hook, JSON envelope built with `jq -cn --arg` exactly as
+`test-guard-outward-cli.sh`'s own harness does. No outward-facing CLI was executed — the hook
+only reads text. The spaced baselines are included to prove each verb is gated at all, so an
+ALLOW below is a detection failure and not an ungated verb.
+
+| construction                                   | spaced baseline          | with interior redirect |
+| ---------------------------------------------- | ------------------------ | ---------------------- |
+| `eas … update --branch preview`                | DENY (OTA publish)       | **ALLOW**              |
+| `npm … publish`                                | DENY                     | **ALLOW**              |
+| `railway … up`                                 | DENY                     | **ALLOW**              |
+| `gh … api repos/o/r -X POST`                   | DENY (mutating method)   | **ALLOW**              |
+| `gh pr … merge 42`                             | DENY                     | **ALLOW**              |
+| `gh pr … comment 5 --body hi --repo other/org` | DENY (cross-repo egress) | **ALLOW**              |
+| `gh release … create v1.0`                     | DENY                     | **ALLOW**              |
+| `gh repo … delete o/r`                         | DENY                     | **ALLOW**              |
+| `railway variable … set K=V`                   | DENY                     | **ALLOW**              |
+| `railway service … delete svc`                 | DENY                     | **ALLOW**              |
+
+In each "with interior redirect" row the redirect is glued directly after the word preceding
+the verb, with no space before it.
+
+**Not redirect-syntax-specific.** The output-redirect form, the fd-duplicating form
+(`2>&1`-shaped) and the input-redirect form were each measured and each ALLOWS. Any
+redirection token bash strips from argv should be assumed to work.
+
+**Why these are real invocations.** Bash tokenizes a redirect out of argv wherever it sits, so
+`eas>/dev/null update --branch preview` yields argv `(eas, update, --branch, preview)` with
+stdout redirected — bash-identical to the spaced form this guard correctly denies.
+
+### Severity
+
+`critical`, on this repo's own standard that a silent ALLOW in this gate is treated as
+critical rather than theoretical, because the gate exists in response to a real incident
+(`project_ota_accidental_publish_2026_08_16`) — and the `eas update` row above **is** that
+incident's exact command class.
+
+Two honest qualifiers for whoever prioritises this: the construction is not one an agent
+writes by accident, and the guard's own header states it is a guardrail, not a sandbox. It
+is filed critical for blast radius (every family, total detection failure), not for
+likelihood of accidental triggering.
+
+## Acceptance Criteria
+
+- [ ] Reproduced first against unmodified `main` — construct each input, run the hook, record
+      its actual exit code. If any row does not reproduce, that is a finding: report it
+      rather than fixing something that is not broken.
+- [ ] The interior-redirect absorber is applied **uniformly** to every gated family in one
+      change. A per-regex patch is the failure mode here: this file has already paid three
+      times for the `occurrence-ambiguity-guard-applied-selectively-not-uniformly` shape
+      (`GH_API_CLAUSE`, then `gh_pr_clause_has_repo`, then a structural test's own `grep -m1`).
+      Enumerate every consumer of any construct you widen before changing it.
+- [ ] Both the tool→verb gap **and** the namespace→verb gap are closed (`eas … update` and
+      `gh pr … merge` are different positions in the same pattern).
+- [ ] Every fix carries a **two-sided** regression test in `test-guard-outward-cli.sh`: a
+      positive that fails without the fix, and a negative control that would catch
+      over-matching. A control that stays green under mutation is not a control.
+- [ ] **Mutation-tested per row, not in aggregate**: revert/stub the fix, confirm the named
+      assertions FAIL, restore, confirm they pass. Quote before/after counts.
+- [ ] **Deny reasons asserted on every new row.** A DENY is not evidence the intended check
+      fired — several of these families have a coarser guard that can deny first for an
+      unrelated reason.
+- [ ] **False-positive population measured by execution, not estimated.** A "decline to act"
+      branch is only safe for inputs the OLD code did not act on — run the old code to learn
+      that set. Harvest real historical commands and diff decisions between the pre- and
+      post-change hooks; validate the harness against a known flip before trusting a zero.
+      At minimum confirm ordinary redirect use stays allowed (`grep -r foo . >/dev/null 2>&1`,
+      `npm run build > build.log`, `cat < input.txt`).
+- [ ] The corpus rows `nssufx-ghmerge` / `nssufx-ghcomment` in
+      `.claude/hooks/repro-outward-cli-corpus.sh` flip from GAP to `ok`, and rows are ADDED
+      for the families this todo newly measured, so the fixture covers the real blast radius
+      rather than the two rows that happened to exist.
+- [ ] Full `.claude/hooks/test-guard-outward-cli.sh` and `scripts/run-hook-tests.sh` pass;
+      real counts quoted.
+- [ ] The guard's `DOCUMENTED RESIDUALS` entry for this gap is updated from "unhandled, out
+      of scope" to closed — append/amend, never silently delete a prior claim. Same for
+      `NOTE6` in the corpus and the "A THIRD redirect position" section of
+      `docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md`.
+
+## Implementation Notes
+
+- The likely shape is **one interior absorber**, defined once and interpolated wherever the
+  patterns currently hardcode `[[:space:]]+` between two required-adjacent words — reusing
+  the lib's existing `_CMD_REDIR` rather than hand-rolling a second redirect pattern. A
+  hand-rolled copy diverging from the shared one is exactly how `GH_API_CLAUSE` came to be
+  missed.
+- **Ordering trap, already paid for once:** the anchor definitions were relocated below the
+  lib source during finding B precisely because interpolating `$_CMD_REDIR` before the lib is
+  sourced expands to the empty string — no error, suite green, bypass open. Anything new that
+  interpolates a lib construct must stay below that source, and it is worth proving the
+  interpolation is non-empty at definition time.
+- Consider whether the _clause-cut_ patterns need the same treatment as the _detector_
+  patterns. The detector deciding a verb is present is not the same as the clause cut
+  capturing the flags that follow it, and this file's history is a series of exactly that
+  mismatch.
+- Watch the `gh pr merge --auto` carve-out specifically. It is the file's **one grant-shaped
+  read**: widening what its clause captures can turn a deny into an allow, unlike every other
+  check here where widening only adds denies.
+- Never execute a real outward-facing CLI. Use argv-printing stubs on `PATH`; shadow a binary
+  rather than stripping `PATH`.
+- Writing about these constructions trips the guard's own heredoc-prose false positive
+  (`todos/P3-2026-08-16-command-guards-fire-on-heredoc-prose.md`), and `ALLOW_OUTWARD_CLI=1`
+  clears only the single check that fired. Use file tools, not shell command strings.
+
+## Scope Contract
+
+- **Mechanisms to use:** one interior-redirect absorber, defined once, reusing the lib's
+  existing `_CMD_REDIR`. No new parsing layer, no expansion evaluation, no new dependency.
+- **Files in scope:** `.claude/hooks/guard-outward-cli.sh`,
+  `.claude/hooks/test-guard-outward-cli.sh`, `.claude/hooks/repro-outward-cli-corpus.sh`,
+  the disclosure sites named in the Acceptance Criteria, and `.claude/hooks/lib/cmd-detect.sh`
+  only if the shared absorber genuinely needs to change.
+- No new mechanisms, files, or abstractions beyond those listed.
+
+## Dependencies
+
+- **Land PR #926 first**, then rebase. It touches every file in scope here, and its corpus is
+  the fixture this todo's acceptance criteria measure against.
+
+## Risks
+
+- **Over-denial is the real risk, not under-denial.** An absorber placed where whitespace is
+  currently required loosens a pattern used by every gated family at once — the widest blast
+  radius of any change made to this file so far. Measure the false-positive population by
+  execution; this repo has previously lost 144 real denies to one unverified "the old code
+  did not act on this" claim.
+- Ordinary redirect use is extremely common in this repo's own command history, so a careless
+  absorber could deny routine work. The negative controls are the deliverable as much as the
+  positives.
+
+## Updates
+
+### 2026-09-06
+
+- Filed at the user's request after PR #926's final verification surfaced it. Found while
+  investigating why two corpus rows (`nssufx-*`) remained GAPs.
+- **Initial scoping was too narrow and is corrected here.** It was first described as
+  affecting the namespace→verb position for multi-word `gh pr` verbs. Measurement across
+  families showed it also defeats the tool→verb position for every single-word-verb family —
+  `eas update`, `npm publish`, `railway up`, `gh api` — i.e. the entire guard, not a corner
+  of it. The narrower framing was written into several artifacts before being measured and
+  had to be swept; treat the matrix above as the authority.

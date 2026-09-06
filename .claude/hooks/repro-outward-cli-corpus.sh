@@ -427,18 +427,38 @@ done
 # reachable-but-unfixed stays a visible gap.
 #
 #   nssufx-ghmerge / nssufx-ghcomment -- UNHANDLED, OUT OF SCOPE.
-#     `gh pr>/dev/null merge 42` glues a redirect between the NAMESPACE word
-#     and the verb. Real bash tokenizes this to argv (gh, pr, merge, 42) with
-#     stdout redirected, so it genuinely merges. Neither mechanism in this
-#     repair reaches it: the vanished rendering leaves it untouched (a
-#     redirect is NOT a provably-empty expansion, and must not be treated as
-#     one), and finding A's closer-class widening covers the verb's own
-#     boundary, not an INTERIOR redirect. Closing it needs a new anchor shape
-#     at a new position across GH_PR_MERGE_RE, GH_PR_CREATE_RE and
-#     GH_MUTATING_RE -- which the Scope Contract ("widen existing boundary
-#     character classes; reuse the shared lib's existing _CMD_REDIR; no new
-#     parsing layer") does not authorise. This axis was already labelled "a
-#     real, DISTINCT mechanism" by this file's own FAM_NS_* comment above.
+#     `gh pr>/dev/null merge 42` glues a redirect where the anchors require
+#     whitespace between two words. Real bash tokenizes this to argv
+#     (gh, pr, merge, 42) with stdout redirected, so it genuinely merges.
+#     Neither mechanism in this repair reaches it: the vanished rendering
+#     leaves it untouched (a redirect is NOT a provably-empty expansion, and
+#     must not be treated as one), and finding A's closer-class widening
+#     covers the verb's own boundary, not an INTERIOR redirect. Closing it
+#     needs ONE interior absorber applied uniformly -- which the Scope
+#     Contract ("widen existing boundary character classes; reuse the shared
+#     lib's existing _CMD_REDIR; no new parsing layer") does not authorise.
+#     This axis was already labelled "a real, DISTINCT mechanism" by this
+#     file's own FAM_NS_* comment above.
+#
+#     *** THESE TWO ROWS SEVERELY UNDER-REPRESENT THE GAP. DO NOT READ THE
+#     GAP COUNT AS ITS SIZE. *** Measured across families 2026-09-06: the
+#     same glue defeats EVERY gated family, including the single-word-verb
+#     ones via the TOOL->VERB position, which no row here covers:
+#       eas>/dev/null update --branch preview   -> ALLOW  (OTA publish)
+#       npm>/dev/null publish                   -> ALLOW
+#       railway>/dev/null up                    -> ALLOW
+#       gh>/dev/null api repos/o/r -X POST      -> ALLOW
+#       gh release>/dev/null create v1.0        -> ALLOW
+#       gh repo>/dev/null delete o/r            -> ALLOW
+#       railway variable>/dev/null set K=V      -> ALLOW
+#       railway service>/dev/null delete svc    -> ALLOW
+#     Every spaced baseline DENIES, so each is a total detection failure.
+#     An earlier version of this note scoped the gap to a `gh` NAMESPACE word
+#     before a multi-word verb; that was written before the cross-family
+#     measurement and understated it. Rows for the families above belong here
+#     and are deliberately left for the tracking todo's own change, so this
+#     PR's quoted gap count stays a like-for-like before/after:
+#     todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md
 #
 #   c2-ansic-hex -- UNHANDLED, OUT OF SCOPE, NEEDS A DECODER.
 #     `gh api repos/o/r -X $'\x50\x4f\x53\x54'` supplies POST as ANSI-C hex.

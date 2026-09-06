@@ -361,18 +361,36 @@ work. Each is a real, reachable bypass that is out of this repair's Scope Contra
 keeps its `DENY` expectation so it stays visible — flipping a reachable-but-unfixed row to
 match current behaviour would encode the bypass as acceptable. They are:
 
-- `nssufx-ghmerge` / `nssufx-ghcomment` — an **interior redirect between the namespace word
-  and the verb** (`gh pr>/dev/null merge 42`, which real bash tokenizes to a genuine merge).
-  A separator problem, not a boundary problem, so no character-class widening reaches it.
-  Needs one interior absorber applied uniformly across three regexes. Written up in
-  `docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md`.
+- `nssufx-ghmerge` / `nssufx-ghcomment` — an **interior redirect**, glued where the anchors
+  require whitespace between two words (`gh pr>/dev/null merge 42`, which real bash tokenizes
+  to a genuine merge). A _separator_ problem, not a _boundary_ problem, so no character-class
+  widening reaches it; it needs one interior absorber applied uniformly.
+
+  > **SCOPE CORRECTED 2026-09-06, and it is much wider than these two rows.** This entry
+  > first described the gap as specific to the namespace word before a multi-word `gh pr`
+  > verb. That was read off the two corpus rows that happened to exist, before any
+  > cross-family measurement, and it **understated the finding**. Measured against the live
+  > hook, the same glue defeats **every gated family**, including single-word-verb families
+  > via the tool→verb position: `eas>/dev/null update` (this repo's own OTA-incident command
+  > class), `npm>/dev/null publish`, `railway>/dev/null up`, `gh>/dev/null api … -X POST`,
+  > plus `gh release`, `gh repo`, `railway variable set` and `railway service delete`. Every
+  > spaced baseline denies, so each is a **total detection failure** — no check runs at all,
+  > which is why even the `--repo` egress check is skipped.
+  >
+  > **Do not read the corpus gap count as this gap's size**; the two rows cover two of ten
+  > measured families. Now tracked as its own `critical` todo:
+  > `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, with
+  > the full matrix. Also written up in
+  > `docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md`.
+
 - `c2-ansic-hex` — an **ANSI-C hex method value** (`-X $'\x50\x4f\x53\x54'`). Measured cause:
   the shared word-splitting renders it `-X xx50xx4fxx53xx54`, so C2's "not literal text"
   branch sees no surviving sigil and the literal branch sees no `POST`. Needs an escape
-  decoder — a new parsing layer the Scope Contract forbids.
+  decoder — a new parsing layer the Scope Contract forbids. Tracked as
+  `todos/P2-2026-09-06-outward-cli-guard-ansic-escape-method-value.md`.
 
-If either is to be closed, it needs its own todo and its own false-positive review; neither
-should be patched into this branch.
+Neither was patched into this branch: each needs its own false-positive review, and the
+interior-redirect one has the widest blast radius of any change yet made to this file.
 
 **False-positive measurement**, required by the narrow-deny ruling and forbidden from being
 estimated: 17,913 unique historical Bash commands were harvested from this project's

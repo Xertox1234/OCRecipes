@@ -572,30 +572,52 @@ regression tests. Retracted in place, not silently rewritten — per this repo's
 copy of this exact "still open" claim was independently found to have survived two later
 comment sweeps inside the guard files themselves.
 
-**A THIRD redirect position, found 2026-09-06 while closing the other two — still open,
-and out of scope.** Findings A and B between them cover a redirect that CLOSES the verb
-(`merge>log`) and one that PRECEDES it (`2>/dev/null gh pr merge`). Neither reaches a
-redirect glued *between* the namespace word and the verb: `gh pr>/dev/null merge 42`,
-which real bash tokenizes to argv `(gh, pr, merge, 42)` with stdout redirected — a
-genuine merge. The anchors require whitespace between `pr` and `merge`, and a redirect is
-not whitespace.
+**A THIRD redirect position, found 2026-09-06 while closing the other two — still open, out
+of scope, and the widest gap this document has recorded.** Findings A and B between them
+cover a redirect that CLOSES the verb (`merge>log`) and one that PRECEDES the command
+(`2>/dev/null gh pr merge`). Neither reaches a redirect glued *where the anchors require
+whitespace between two words*.
 
-The reason this is worth recording here rather than only in the guard: it shows the
-"boundary character class" framing has a blind spot that widening the class cannot fix.
-A/B/`{`/`}`/backtick were all *boundary* problems — the verb was present and adjacent to
-the wrong character. This one is a *separator* problem: two required-adjacent words pushed
-apart by a token the pattern does not model. The same shape recurs for any multi-word verb
-(`railway variable set`, `gh release create`), so a future fix should be one interior
-absorber applied uniformly, not a per-regex patch — the selectivity trap
+**The lesson this section exists for: the "boundary character class" framing has a blind spot
+that widening the class cannot reach.** A, B, `{`/`}` and backtick were all *boundary*
+problems — the verb was present, adjacent to a character the class did not accept. This is a
+*separator* problem: two required-adjacent words pushed apart by a token the pattern does not
+model. Every fix in this document so far has been "add a character to a class"; this one
+cannot be, and recognising that distinction is the transferable part.
+
+**Scope, measured 2026-09-06 across families — and larger than first written.** The initial
+note here described the gap as specific to a namespace word before a multi-word verb
+(`gh pr>/dev/null merge`). That was written from the two corpus rows that happened to exist,
+before any cross-family measurement, and it **understated the gap**. Measurement against the
+live hook shows the same glue defeats *every gated family*, including single-word-verb
+families via the tool→verb position: `eas>/dev/null update` (the 2026-08-16 OTA incident's
+own command class), `npm>/dev/null publish`, `railway>/dev/null up`,
+`gh>/dev/null api … -X POST`, plus `gh release`/`gh repo`/`railway variable`/`railway
+service`. Every spaced baseline denies, so each is a **total detection failure** — no check
+runs at all, which is why even the `--repo` cross-repo egress check is skipped. The
+output-redirect, fd-duplicating and input-redirect forms were each measured and each allows.
+
+That correction is itself the recurring lesson of this document: **a scope claim written from
+the fixtures that happen to exist, rather than from a measurement across the axis, will
+understate the finding.** The two corpus rows were an artifact of which families the
+generator's `FAM_NS_*` list covered, not of where the defect lives.
+
+The lib does not cover it either — `_CMD_POS_PREFIX` absorbs `_CMD_REDIR` only in the prefix
+run *before* the command word, so this is not a case of the guard lagging the lib.
+
+A future fix should be **one interior absorber applied uniformly**, not a per-regex patch —
+the selectivity trap
 [occurrence-ambiguity-guard-applied-selectively-not-uniformly](occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md)
-already cost this file three separate repairs.
+already cost this file three separate repairs, twice inside a single chain.
 
-Deliberately NOT fixed by the folded repair (Scope Contract allows widening existing
+Deliberately NOT fixed by the folded repair (its Scope Contract allows widening existing
 boundary classes and reusing the lib's `_CMD_REDIR`, not a new anchor shape at a new
-position). It has an executable record instead: `repro-outward-cli-corpus.sh`'s
-`nssufx-ghmerge` / `nssufx-ghcomment` rows, whose expectations are deliberately left at
-`DENY` so they keep reporting as gaps. See that file's `NOTE6` for why a
-reachable-but-unfixed row must never be flipped to match current behaviour.
+position). Tracked in
+`todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, with an
+executable record in `repro-outward-cli-corpus.sh`'s `nssufx-ghmerge` / `nssufx-ghcomment`
+rows — whose expectations are deliberately left at `DENY` so they keep reporting as gaps, but
+which cover only two of the ten measured families, so the corpus gap count must not be read
+as this gap's size. See that file's `NOTE6`.
 
 **A second, distinct still-open gap found by independent PR #910 review (2026-09-02,
 round 4 — disclosure only, deliberately not fixed).** Neither `_OUT_POS_SUFFIX` nor

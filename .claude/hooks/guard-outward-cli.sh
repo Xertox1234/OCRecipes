@@ -373,19 +373,48 @@
 #     pointing at the hole. Note the DEGRADED paths deny it, so a summary
 #     count alone misreads this one.
 #
-#   * UNHANDLED, NEW (2026-09-06, outward-CLI-guard-folded-repair): an
-#     INTERIOR redirect, glued between the `gh` NAMESPACE word and the verb
-#     (`gh pr>/dev/null merge 42`). Real bash tokenizes that to argv
-#     (gh, pr, merge, 42) with stdout redirected, so it genuinely merges.
-#     This is NOT the same mechanism as finding A (a redirect closing the
-#     VERB's own boundary, fixed) nor finding B (a redirect BEFORE the verb,
-#     fixed): the redirect sits between two words the anchors require to be
-#     separated by whitespace. Closing it needs a new anchor shape at a new
-#     position across GH_PR_MERGE_RE, GH_PR_CREATE_RE and GH_MUTATING_RE,
-#     which the folded repair's Scope Contract does not authorise. The
-#     vanished rendering deliberately does NOT reach it either — a redirect
-#     is not a provably-empty expansion and must never be deleted as if it
-#     were. Corpus rows `nssufx-ghmerge`/`nssufx-ghcomment`.
+#   * UNHANDLED, NEW (2026-09-06, outward-CLI-guard-folded-repair) —
+#     ***THE WIDEST KNOWN OPEN GAP IN THIS FILE. READ BEFORE TRUSTING ANY
+#     OTHER ENTRY HERE.*** An INTERIOR redirect, glued where the anchors
+#     require whitespace between two words, silently ALLOWS **every gated
+#     family measured**, not one corner of the file:
+#       eas>/dev/null update --branch preview        -> ALLOW  (OTA publish —
+#                                                     the 2026-08-16 incident's
+#                                                     own command class)
+#       npm>/dev/null publish                        -> ALLOW
+#       railway>/dev/null up                         -> ALLOW
+#       gh>/dev/null api repos/o/r -X POST           -> ALLOW
+#       gh pr>/dev/null merge 42                     -> ALLOW
+#       gh pr>/dev/null comment ... --repo other/org -> ALLOW
+#       gh release>/dev/null create v1.0             -> ALLOW
+#       gh repo>/dev/null delete o/r                 -> ALLOW
+#       railway variable>/dev/null set K=V           -> ALLOW
+#       railway service>/dev/null delete svc         -> ALLOW
+#     Each spaced baseline correctly DENIES, so every row above is a total
+#     detection failure, not an ungated verb — no check runs at all, which
+#     is why even the --repo cross-repo egress check is skipped. Measured
+#     2026-09-06 against the live hook. The output-redirect, fd-duplicating
+#     (`2>&1`-shaped) and input-redirect forms were each measured and each
+#     ALLOWS; assume any redirection token bash strips from argv works.
+#     CORRECTION: an earlier version of this entry described the gap as
+#     specific to a `gh` NAMESPACE word before a multi-word verb. That was
+#     written before the cross-family measurement and UNDERSTATED it — the
+#     tool->verb position (`eas>/dev/null update`) is affected identically.
+#     This is NOT finding A (a redirect closing the VERB's own boundary,
+#     fixed) nor finding B (a redirect BEFORE the command, fixed): those are
+#     BOUNDARY problems, where the verb is present next to an unaccepted
+#     character. This is a SEPARATOR problem — two required-adjacent words
+#     pushed apart by a token the pattern does not model — so no character
+#     class widening reaches it. The lib does not cover it either:
+#     _CMD_POS_PREFIX absorbs _CMD_REDIR only in the PREFIX run before the
+#     command word. The vanished rendering deliberately does not reach it —
+#     a redirect is not a provably-empty expansion and must never be deleted
+#     as if it were. Closing it needs ONE interior absorber applied
+#     uniformly, which the folded repair's Scope Contract does not
+#     authorise. Tracked:
+#     todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md
+#     Corpus rows `nssufx-ghmerge`/`nssufx-ghcomment` cover only two of the
+#     ten families above — do not read the corpus gap count as this gap's size.
 #
 #   * NEVER LIVE, not a gap — recorded so it is not "fixed" into a
 #     regression: `${#x}`-glued forms (`gh pr ${#x}merge`). `${#x}` always
