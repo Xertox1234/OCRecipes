@@ -149,8 +149,25 @@ done
 # live ALLOW on all four paths. The mechanisms below are chosen to break a
 # first-closer scan specifically: a NESTED span, and two spans whose body
 # QUOTES a closer character.
-TOOL_MECHS=('$()' '${UNSET}' '``' '$(: $(:))' '$(: "x)y")' "\$(: 'a)b')")
-TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose)
+# WIDENED AGAIN 2026-09-06 (round-3 review). The previous widening added the
+# nested and single-type-quoted-closer mechanisms, and BOTH reviewers then found
+# spellings it still could not see — the mechanism axis was the blind spot one
+# more level up. Three added here, each defeating a different assumption the
+# prefilter used to make:
+#   vmixq   quote of one type nested inside the other. Both quote counts come out
+#           EVEN while the closer is genuinely inside quotes, which is what broke
+#           the "odd count means ambiguous" test.
+#   vbareparen  a bare `(` subshell. Carries NO sigil digraph, so no
+#           digraph-based enumeration can see it at all.
+#   vcasearm    a `case` arm's `)`. Same property, different grammar.
+# The last two are ALSO defeated by lib/cmd-detect.sh's own scanner (measured:
+# `cmd_words_vanished 'e$( (:) )as update'` -> `e )as update`), so their rows are
+# expected to report as GAPS until
+# todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
+# lands. That is deliberate: they keep pointing at an open bypass.
+TOOL_MECHS=('$()' '${UNSET}' '``' '$(: $(:))' '$(: "x)y")' "\$(: 'a)b')" \
+            "\$(: '\"' \"a)b\" )" '$( (:) )' '$(case x in a) : ;; esac)')
+TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
   for m in "${!TOOL_MECHS[@]}"; do
@@ -171,6 +188,17 @@ add cap-199-ghmerge DENY "$(_capline 199 'g${x}h pr merge 42')"
 add cap-200-ghmerge DENY "$(_capline 200 'g${x}h pr merge 42')"
 add cap-250-ghmerge DENY "$(_capline 250 'g${x}h pr merge 42')"
 add cap-250-easupd  DENY "$(_capline 250 'e${x}as update --branch preview')"
+
+# CLOSER-AFTER-THE-VERB axis (2026-09-06, round 3). Every span row above places
+# the gated verb at the END of the command, so nothing exercised a closer
+# appearing AFTER it — and that position is exactly what defeated the greedy
+# rendering the round-3 repair removed (greedy deleted from the first opener to
+# the LAST closer, so a trailing `(echo done)` swallowed the verb). Held fixed,
+# it was invisible; varied, it is one line. Paired with its own control, since
+# the whole point is that only the trailing subshell differs.
+add trailclose-easupd DENY 'e$(: $(:))as update --branch preview && (echo done)'
+add trailclose-ctl    DENY 'e$(: $(:))as update --branch preview && echo done'
+add trailclose-ghmrg  DENY 'g$(: $(:))h pr merge 42 && (echo done)'
 
 # axis: FLAG position -- a flag NAME the guard keys on, split by a vanishing
 # construct. ADDED 2026-09-06 with the tool axis and for the same reason: the
@@ -535,11 +563,36 @@ done
 #      dimensions this file generates. The wording corrected at
 #      guard-outward-cli.sh's WORDS_VANISHED assignment failed exactly that test.
 #
-# With that scope stated: `precise-path gaps=3` is the CORRECT expected output
-# of this file, not a failure to finish. Each remaining row is a REAL, reachable
-# bypass that is out of the folded repair's Scope Contract — the list below is
-# exhaustive OF THIS FILE'S ROWS, which is not the same as exhaustive of the
-# guard. Their expectations are
+# GAP INVENTORY, 2026-09-06 after round 3. `precise-path gaps=17` is the CORRECT
+# expected output of this file. The number went UP from 3, and reading that as a
+# regression would be exactly the mistake this note exists to prevent — it is the
+# corpus finally SEEING classes it was blind to, not the guard getting worse.
+# Attributed by ID against the previous hook, running THIS corpus on both sides
+# (the only like-for-like comparison; comparing an old corpus's count against a
+# new corpus's count compares two different questions):
+#
+#   precise-path gaps  24 -> 17   SEVEN CLOSED, none opened. The closures are
+#                                 toolvmixq-* (all 7 families): a quote of one
+#                                 type nested inside the other, which the
+#                                 prefilter's since-deleted "odd quote count"
+#                                 test mis-judged as unambiguous.
+#   all-path gaps      47 -> 69   29 rows newly degraded-dirty, and every one is
+#                                 toolvnest-* / toolvdqclose-* / toolvsqclose-* /
+#                                 toolvmixq-* (4 mechanisms x 7 families) plus
+#                                 trailclose-ctl. That is precisely the cost of
+#                                 deleting the GREEDY rendering, disclosed rather
+#                                 than absorbed. See the guard's DOCUMENTED
+#                                 RESIDUALS entry for why greedy was unsound.
+#
+# The 14 remaining NEW precise-path gaps are toolvbareparen-* and toolvcasearm-*
+# (7 families each). They are NOT guard defects: lib/cmd-detect.sh's own scanner
+# desynchronises on a bare `(`, so no prefilter change can reach them. Tracked at
+# todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
+# and expected to clear when that lands. They allow on `main` too.
+#
+# Each remaining row is a REAL, reachable bypass out of the folded repair's Scope
+# Contract — the list below is exhaustive OF THIS FILE'S ROWS, which is not the
+# same as exhaustive of the guard. Their expectations are
 # deliberately left at DENY: flipping a reachable-but-unfixed row to match
 # current behaviour would encode "this bypass is fine" into the fixture and
 # retire the only thing still pointing at it. Contrast c1-threedash (NOTE5),

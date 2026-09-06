@@ -506,6 +506,44 @@
 #     read with no `-X`/`--method` is untouched (`${X} gh api repos/o/r` and
 #     `${X} gh api repos/o/r --jq .name` both still ALLOW, pinned).
 #
+#   * UNHANDLED, DEGRADED PATHS ONLY (2026-09-06, round 3): a NESTED or
+#     QUOTED-CLOSER span defeats crude_smells_outward's span-deleting rendering,
+#     so on no-jq / no-lib / no-awk these are ALLOWED:
+#         e$(: $(:))as update --branch preview          (an OTA publish)
+#         g$(: "x)y")h pr merge 42
+#         e$(: '"' "a)b" )as update --branch preview
+#     The PRECISE path denies all of them. This is disclosed rather than fixed
+#     because the previous round's fix for it — a GREEDY rendering deleting from
+#     the first opener to the LAST closer — was itself unsound: greedy was the
+#     ONLY rendering reconstructing the needle, so its over-deletion WAS the
+#     miss, and any `)` after the verb (`&& (echo done)`) defeated it. A union
+#     cannot restore what no rendering holds. Ending a span correctly needs the
+#     depth- and quote-stateful scanner in lib/cmd-detect.sh, which these paths
+#     exist precisely because they cannot reach. Corpus rows toolvnest-*,
+#     toolvdqclose-*, toolvsqclose-*, toolvmixq-* keep this reporting every run.
+#
+#   * UNHANDLED, ALL PATHS, CAUSE IS IN THE LIB (2026-09-06, round 3): a bare `(`
+#     subshell or a `case` arm's `)` inside `$(...)` desynchronises
+#     lib/cmd-detect.sh's substitution scanner, which counts depth for `$(` but
+#     not for a bare `(`. Measured: `cmd_words_vanished 'e$( (:) )as update'`
+#     renders `e )as update`, so the needle never forms and
+#         e$( (echo) )as update --branch preview
+#         e$(case x in a) : ;; esac)as update --branch preview
+#     are ALLOWED. NOT a guard defect and not fixable here — the same
+#     desynchronisation is present in cmd_extract_substitutions on `main`. Filed:
+#     todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
+#     Corpus rows toolvbareparen-*, toolvcasearm-*.
+#
+#   * ACCEPTED COST, not a gap (2026-09-06, round 3): the fast path DECLINES its
+#     cheap exit for any command containing `${`, `$(` or a backtick, so those
+#     run the full guard. Measured ~16 ms -> ~105-125 ms per call; span-carrying
+#     commands are ~16% of this project's harvested history, so roughly +16 ms on
+#     the average Bash tool call. Commands with no span are unaffected. Three
+#     attempts to decide reliability cheaply here each shipped a live bypass —
+#     see the STAGE 3 block for the sequence. Revisiting the cost is an owner's
+#     decision; the sound direction is to make the lib's real scanner reachable
+#     from the fast path, not to re-derive its grammar in `case` patterns.
+#
 #   * ATTRIBUTION RESIDUAL (2026-09-06): `gh pr merge 42 --auto --ad${UNSET}min`
 #     DENIES — the decision is correct — but for "without a REAL --auto flag",
 #     not for `--admin`. Any literal `$` in the merge CLAUSE trips that check
@@ -712,78 +750,65 @@ gh_pr_clause_has_repo() {
 # global $_OUT_CRUDE_VANISHED; bash 3.2 has no nameref and a command
 # substitution would fork, so a global is the calling convention.
 #
+# ONE CALLER, AND THAT IS LOAD-BEARING: crude_smells_outward, which UNIONS this
+# rendering with the untouched original. Every safety claim below depends on
+# that union, so it is stated as a property of the caller and not of this
+# function. (2026-09-06: a second caller was added in the fast path, inherited
+# this function's safety sentences, and the sentences were false for it. The
+# second caller has been removed. If you add one, re-derive every claim here
+# against ITS contract — that inheritance is the exact defect that produced
+# three rounds of CRITICALs on this file.)
+#
 # PURE PARAMETER EXPANSION, deliberately: no awk, no sed, no tr. The no-jq
 # path's own test fixture links only bash/cat/grep, and depending on a tool
 # that can be absent is precisely the failure class these fallbacks exist for
-# (the same reason the newline normalization below is `${t//...}` and not `tr`).
+# (the same reason the newline normalization above is `${t//...}` and not `tr`).
 #
-# CRUDE BY DESIGN, and correct in the only direction that matters here: it is
-# neither quote- nor grammar-aware, so it deletes spans real bash would leave
-# inert (a single-quoted `${x}`). That is OVER-deletion, which on a fail-closed
-# path can only make the smell test fire MORE often. The failure direction it
-# must not have is UNDER-deletion, and it has none that matters: the caller
-# greps the ORIGINAL rendering as well as this one (newline-joined, evaluated
-# per line), so anything this pass mangles or gives up on is still tested
-# intact. That union is also why the 200-iteration cap is safe rather than a
-# hole: a command with more than 200 expansion spans stops early and keeps
-# whatever remains, it never loses the original.
-# Sets THREE globals, and the third one is the point:
-#   _OUT_CRUDE_VANISHED  first-closer rendering (the useful one)
-#   _OUT_CRUDE_GREEDY    everything from the FIRST opener to the LAST closer
-#                        deleted in one bite -- a deliberately crude second
-#                        rendering, for the fail-closed caller only
-#   _OUT_CRUDE_EXACT     1 only if EVERY span parsed unambiguously
-#
-# WHY _OUT_CRUDE_EXACT EXISTS (2026-09-06, security RE-review of the C1 fix; the
-# fix below is the second attempt and this comment replaces a false one). The
-# first version claimed: "deletes a SUPERSET of the spans cmd_words_vanished
-# deletes, so it can only over-PASS the filter, never under-pass it." THAT IS
-# FALSE, and it cost a live ALLOW of the incident class. Finding the span end by
-# scanning for the FIRST closer character is wrong whenever a closer appears
-# INSIDE the span -- through nesting or through quoting -- and the result is not
-# a superset deletion but a WRONG one: a strict PREFIX of the span is removed and
-# its tail is left behind, wedged between the two halves that were supposed to
-# rejoin.
+# CRUDE, AND KNOWN-INCOMPLETE. It ends a span at the FIRST closer character. That
+# is wrong whenever a closer sits INSIDE the span, and the output is then not a
+# wider deletion but a WRONG one — a strict prefix removed, its tail left wedged
+# between the two halves that were supposed to rejoin:
 #
 #   in    : e$(: $(:))as update --branch preview
-#   crude : e)as update --branch preview     <- stray `)`, no `eas` needle
-#   awk   : eas update --branch preview      <- cmd_words_vanished, correct
+#   crude : e)as update --branch preview      <- stray `)`, no `eas` needle
+#   awk   : eas update --branch preview       <- cmd_words_vanished, correct
 #
-# Measured before this fix, ALLOWED on all four paths: the row above (an OTA
-# publish to real users), `g$(: $(:))h pr merge 42`, `n$(: $(:))pm publish`,
-# `rail$(: $(:))way up`, plus the quoted-closer spellings `g$(: "x)y")h pr merge
-# 42` and `e$(: 'a)b')as update ...`. The isolating control: `gh p$(: $(:))r
-# merge 42` suffers the IDENTICAL mis-parse but DENIES, because its literal `gh`
-# satisfies stage 1 and stage 3 never runs -- which pins the defect to stage 3's
-# `exit 0`, not to any matcher.
+# THREE REVIEW ROUNDS ESTABLISHED THAT THIS CANNOT BE PATCHED HERE, and the
+# history is recorded because the next reader's first instinct will be to try
+# again. Three successive attempts to decide reliability from the text —
+# "superset deletion", then "any quote is ambiguous", then "an ODD quote count
+# is ambiguous" — each looked sound, each shipped, and each was defeated by a
+# construction the enumeration had not anticipated: a nested `$( )`, then a
+# quote of one type nested inside the other (`e$(: '"' "a)b" )as update`, whose
+# quote counts are both EVEN while the closer is genuinely inside quotes), then
+# constructs carrying NO sigil digraph at all — a bare `(` subshell
+# (`e$( (echo) )as update`) and a `case` arm's `)`
+# (`e$(case x in a) : ;; esac)as update`). Every one of those was a live ALLOW
+# of a real OTA publish. The pattern is not bad luck: deciding where a span ends
+# requires the depth- and quote-stateful scanner in lib/cmd-detect.sh, and this
+# function runs where that lib is by definition unavailable.
 #
-# The superset argument was wrong in a specific, generalizable way: it reasoned
-# about letters DESTROYED (and correctly noted stage 1 already saw those), while
-# the actual failure is letters that FAIL TO REJOIN -- a needle that never
-# existed in raw text and that stage 1 therefore cannot cover.
+# So this function makes NO reliability claim, and no caller may infer one. Its
+# output is a HINT that is unioned in, never a rendering anything is decided
+# from. The fast path does not consult it at all — see the STAGE 3 block, which
+# declines outright rather than trusting any answer from here.
 #
-# THE FIX IS TO DECLINE, NOT TO PARSE BETTER. This cannot be made a superset of
-# cmd_words_vanished by improving the scan: that awk is depth- AND quote-stateful,
-# and this runs BEFORE lib/cmd-detect.sh is sourced, so the stateful version is
-# not available here by construction. So the scan reports its own reliability and
-# the caller declines to decide when it is not reliable -- the same "cannot verify
-# -> deny" posture the rest of this file already takes, applied to "cannot verify
-# -> do not take the cheap exit".
+# WHAT THIS COSTS, stated rather than hidden: a nested or quoted-closer span
+# defeats this rendering, so on the three degraded paths
+# `e$(: $(:))as update --branch preview` is ALLOWED. Those paths run only when
+# jq, awk, or the lib is already broken. Documented in DOCUMENTED RESIDUALS
+# rather than papered over — claiming closure this function does not have is
+# what made three review rounds block.
 #
-# THE CAP IS NOW A SAFETY NET, NOT A LIMIT. It was a fixed 200, and that was a
-# second, independent live bypass with a sharp boundary: 199 leading `${z}` spans
-# before `g${x}h pr merge 42` DENIED and 200 ALLOWED. The old comment called the
-# cap "safe rather than a hole" on the grounds that the caller unions the original
-# back in -- true of crude_smells_outward, and the SAME COMMIT then added a second
-# caller for which it is false. (That is the identical invalid transfer this whole
-# review chain is about: a safety argument written for one consumer, inherited by
-# another with a different contract.) The bound is now derived from the input:
-# every iteration consumes at least the opener, so length+8 iterations cannot be
-# reached by any well-formed input, and hitting it marks the parse inexact.
+# THE CAP IS DERIVED FROM THE INPUT, not a magic number. It was a fixed 200, and
+# that was itself a live bypass with a sharp edge: 199 leading `${z}` spans
+# before `g${x}h pr merge 42` DENIED (200 spans, all processed) and 200 ALLOWED
+# (201 spans, the last one unreached). Every iteration consumes at least the
+# two-character opener, so `length + 8` cannot be reached by any input and the
+# cap is a non-termination backstop rather than a limit on what is scanned.
 _out_crude_vanish() {
-  local s="$1" out="" x rest close best kind n=0 pb pp pt seg
+  local s="$1" out="" x rest close best kind n=0 pb pp pt
   local cap=$(( ${#1} + 8 ))
-  _OUT_CRUDE_EXACT=1
   while [ "$n" -lt "$cap" ]; do
     n=$((n + 1))
     pb=-1; pp=-1; pt=-1
@@ -805,89 +830,16 @@ _out_crude_vanish() {
     esac
     out="$out${s:0:$best}"
     case "$rest" in
-      *"$close"*)
-        seg=${rest%%"$close"*}   # the span body this scan is about to delete
-        # IS THE CLOSER WE FOUND THE REAL ONE? `seg` is by definition the text
-        # BEFORE the first closer, so it can never contain that closer. The only
-        # two ways the answer can be wrong are:
-        #   - a NESTED opener, meaning the closer found belongs to the inner
-        #     span, not this one; or
-        #   - the closer sits INSIDE A QUOTED REGION, which -- precisely because
-        #     `seg` stops at it -- shows up as an UNBALANCED (odd) count of that
-        #     quote character in `seg`.
-        # A backslash can escape either a quote or the closer itself, so it is
-        # unconditionally disqualifying.
-        #
-        # ODD COUNT, not "contains a quote" (tightened 2026-09-06 after
-        # measuring the first version). Flagging any quote is sound but far too
-        # blunt: a substitution containing a balanced quote is ordinary
-        # (`git commit -m "$(date +'%Y')"`, `x=$(grep -c "foo" f.txt)`), and
-        # declining on those cost 88-145 ms against a ~15 ms baseline on a hook
-        # that runs on every Bash tool call. Balanced quotes cannot move the
-        # closer, so they are not ambiguity. Counted by literal substitution and
-        # length difference: lib/fastpath-filter.sh's header measures the literal
-        # form at ~5.5 ms against ~1450 ms for the bracket-class form on bash
-        # 3.2, so this stays cheap. Conservative in the safe direction where it
-        # is imprecise -- `$(echo "it's")` counts one `'` and declines.
-        case "$seg" in
-          *\\*|*'${'*|*'$('*|*'`'*) _OUT_CRUDE_EXACT=0 ;;
-          *)
-            x=${seg//\'/}; [ $(( (${#seg} - ${#x}) % 2 )) -eq 0 ] || _OUT_CRUDE_EXACT=0
-            x=${seg//\"/}; [ $(( (${#seg} - ${#x}) % 2 )) -eq 0 ] || _OUT_CRUDE_EXACT=0
-            ;;
-        esac
-        s=${rest#*"$close"}
-        ;;
+      *"$close"*) s=${rest#*"$close"} ;;
       # Unterminated opener: nothing to delete, so keep the remainder and stop.
-      # Marked inexact rather than trusted -- this scan gave up, and a caller
-      # that takes a cheap exit on a give-up is exactly the defect above.
-      *) _OUT_CRUDE_EXACT=0; s="$rest"; break ;;
+      *) s="$rest"; break ;;
     esac
   done
-  [ "$n" -lt "$cap" ] || _OUT_CRUDE_EXACT=0
   _OUT_CRUDE_VANISHED="$out$s"
-
-  # GREEDY second rendering, for the fail-closed caller ONLY. The degraded paths
-  # cannot use the decline strategy -- there is nothing fuller to fall through
-  # TO, they ARE the last resort -- so they get an extra, deliberately crude
-  # rendering instead: delete from the first opener to the LAST closer in one
-  # bite. On the nested and quoted-closer spellings this reconstructs the needle
-  # the first-closer scan destroys. It over-deletes freely on inputs with several
-  # separate spans, which is the safe direction for a fail-closed test AND is
-  # harmless besides, because the caller UNIONS it with the untouched original
-  # and the first-closer rendering rather than replacing either.
-  _OUT_CRUDE_GREEDY=""
-  s="$1"
-  pb=-1; pp=-1; pt=-1
-  case "$s" in *'${'*) x=${s%%'${'*}; pb=${#x} ;; esac
-  case "$s" in *'$('*) x=${s%%'$('*}; pp=${#x} ;; esac
-  case "$s" in *'`'*)  x=${s%%'`'*};  pt=${#x} ;; esac
-  best=-1
-  [ "$pb" -ge 0 ] && best=$pb
-  [ "$pp" -ge 0 ] && { [ "$best" -lt 0 ] || [ "$pp" -lt "$best" ]; } && best=$pp
-  [ "$pt" -ge 0 ] && { [ "$best" -lt 0 ] || [ "$pt" -lt "$best" ]; } && best=$pt
-  [ "$best" -ge 0 ] || return 0
-  rest=${s:$best}
-  # `${rest##*C}` strips through the LAST C, so what remains is the tail after
-  # the last closer of that kind. Across the three kinds, the LAST closer in the
-  # string is the one leaving the SHORTEST tail. Written with an explicit
-  # have-a-candidate flag rather than a chained `[ ] || [ ] && `, whose
-  # left-to-right grouping means something else entirely.
-  local tail="" cand have=0
-  for close in '}' ')' '`'; do
-    case "$rest" in
-      *"$close"*)
-        cand=${rest##*"$close"}
-        if [ "$have" -eq 0 ] || [ ${#cand} -lt ${#tail} ]; then tail="$cand"; have=1; fi
-        ;;
-    esac
-  done
-  [ "$have" -eq 1 ] || return 0
-  _OUT_CRUDE_GREEDY="${s:0:$best}$tail"
 }
 
 crude_smells_outward() {
-  local t=${1//$'\n'/ } _crude_body
+  local t=${1//$'\n'/ }
   t=${t//\\n/ }
   # Strip quote/backslash/$ characters (review round 4, 2026-08-17): this is a
   # non-quote-aware smell test by design, but leaving these characters in
@@ -946,32 +898,36 @@ crude_smells_outward() {
   # neither (the same construction, and the same reason, as scan_renderings
   # below). Substituting would trade this family for the ones the untouched
   # rendering catches.
+  # UNIONED IN, never SUBSTITUTED FOR the original. The renderings are
+  # newline-joined and grep is line-oriented, so each is matched independently
+  # and the seam cannot spell a verb present in neither — the same construction
+  # and the same reason as scan_renderings below.
+  #
+  # SIMPLIFIED 2026-09-06 (round-3 review). Two additions from the previous round
+  # were REMOVED rather than repaired, because both were unsound in the same way:
+  #   - A GREEDY second rendering (first opener to LAST closer, in one bite). It
+  #     was justified as "over-deletion, which is the safe direction, and harmless
+  #     because it is unioned". False: for a nested span greedy was the ONLY
+  #     rendering that reconstructed the needle, so its over-deletion WAS the
+  #     miss — any `)` occurring after the verb swallowed it, and
+  #     `e$(: $(:))as update --branch preview && (echo done)` ALLOWED on all
+  #     three degraded paths while the version without the trailing subshell
+  #     denied. A union cannot restore what no rendering holds.
+  #   - A crude JSON-envelope trim, to stop the envelope's own trailing `"}}`
+  #     from being the last closer greedy found. It was measured against this
+  #     project's real transcripts afterwards: 247/247 real Bash envelopes carry
+  #     a `description` (and often a `timeout`) AFTER `command`, so the `"}}`
+  #     anchor only ever fired for the TEST HARNESS's envelope shape. It was
+  #     tuned to the fixture, not to production.
+  # Neither is replaced with a third hand-rolled scanner. The residual — a nested
+  # or quoted-closer span defeats this rendering on the degraded paths — is
+  # recorded in DOCUMENTED RESIDUALS instead. A stated residual is honest; a
+  # scanner that looks sound until someone constructs the case it missed is what
+  # three review rounds have now shown this position cannot support.
   if case "$t" in *'${'*|*'$('*|*'`'*) true ;; *) false ;; esac; then
-    # The no-jq caller passes the whole JSON ENVELOPE, not a command, and the
-    # envelope's own trailing `"}}` is then the LAST closer in the string — so
-    # the greedy rendering below would delete everything from the first opener
-    # to the end of the envelope and contribute nothing. Measured: that is
-    # exactly why `e$(: $(:))as update ...` still ALLOWED on no-jq after the
-    # other three paths were fixed. Trim to the command field first. Crude on
-    # purpose (this path exists BECAUSE jq is unavailable, so it cannot parse
-    # JSON properly), and safe to be crude precisely because both renderings are
-    # UNIONED with the untouched `$t`: a failed trim can add noise, never remove
-    # a detection. Same technique raw_inline_bypass already uses on this path.
-    _crude_body="$t"
-    case "$_crude_body" in *'"command":"'*) _crude_body=${_crude_body#*'"command":"'} ;; esac
-    case "$_crude_body" in *'"}}'*)         _crude_body=${_crude_body%'"}}'*}        ;; esac
-    _out_crude_vanish "$_crude_body"
+    _out_crude_vanish "$t"
     [ "$_OUT_CRUDE_VANISHED" = "$t" ] || t="$t
 $_OUT_CRUDE_VANISHED"
-    # The GREEDY rendering too (2026-09-06, security RE-review). The first-closer
-    # scan mis-parses a nested or quoted-closer span and leaves the needle
-    # unformed; the precise path answers that by declining to take its cheap
-    # exit, but a degraded path has nothing fuller to decline TO — it IS the last
-    # resort. So it gets the cruder rendering as well. Measured: without this,
-    # `e$(: $(:))as update --branch preview` ALLOWED on all three degraded paths.
-    # Unioned, never substituted — the whole rule this review turned on.
-    [ -z "$_OUT_CRUDE_GREEDY" ] || [ "$_OUT_CRUDE_GREEDY" = "$t" ] || t="$t
-$_OUT_CRUDE_GREEDY"
   fi
   t=${t//\'/}; t=${t//\"/}; t=${t//\\/}; t=${t//\$/}
   # Command-word patterns — case-INSENSITIVE (macOS APFS resolves `EAS`).
@@ -1122,61 +1078,51 @@ if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >
   # only cmd_bare/cmd_words, so their superset claim still holds, and widening
   # the shared helper would move every one of them onto the slow path too.
   #
-  # WHY THIS RE-FILTERS INSTEAD OF JUST DECLINING. The first version of this
-  # fix simply skipped the `exit 0` whenever $CMD held one of the three
-  # digraphs. Correct, but MEASURED at 8x: ~13 ms -> ~100-123 ms per call for
-  # ordinary span-carrying commands (`git commit -m "$(date)"`,
-  # `echo ${HOME}/projects`), and 109 ms -> 392 ms on a 2.3 KB command with 60
-  # spans — on a hook that runs on EVERY Bash tool call, for a shape that is a
-  # large fraction of real commands. The fast path exists for exactly this cost
-  # (project_per_bash_hook_overhead), so paying it on every `$(...)` to catch a
-  # rare split spelling is the wrong trade. Deleting the spans and RE-TESTING
-  # the same needles keeps the answer and gives the cost back.
+  # IT DECLINES. IT DOES NOT PARSE. If $CMD contains any of the three digraphs,
+  # this hook does not take the cheap exit — full stop, no analysis of what the
+  # spans are or where they end.
   #
-  # SOUNDNESS. The stages compose as an OR: stage 3 runs only after 1 and 2 have
-  # both missed, so it can only ADD passes, never remove one they found. That
-  # part was and remains true. What was NOT true is the sentence that used to
-  # follow it — "_out_crude_vanish deletes a SUPERSET of the spans
-  # cmd_words_vanished deletes, so it can only over-PASS this filter and cannot
-  # under-pass it, because the only letters it can destroy are ones literally
-  # present in raw $CMD and stage 1 already tested raw $CMD."
+  # THREE ATTEMPTS TO BE CLEVERER THAN THIS EACH SHIPPED A LIVE OTA-PUBLISH
+  # BYPASS, and the sequence is recorded because the next reader's instinct will
+  # be to try a fourth. Each attempt deleted the spans and re-tested the needles,
+  # trusting a text-only judgement about where each span ended:
+  #   1. "deletes a SUPERSET of the spans cmd_words_vanished deletes, so it can
+  #      only over-PASS" — defeated by a NESTED span, `e$(: $(:))as update
+  #      --branch preview`. The argument reasoned about letters DESTROYED (which
+  #      stage 1 does cover) while the failure is letters that FAIL TO REJOIN — a
+  #      needle in no rendering stages 1-2 can see, because it never exists in
+  #      raw text at all.
+  #   2. "any quote inside the span body is ambiguous" — sound, and rejected for
+  #      cost, which was the mistake.
+  #   3. "an ODD count of a quote is ambiguous" — defeated by a quote of one type
+  #      nested inside the other: in `e$(: '"' "a)b" )as update --branch preview`
+  #      both counts are EVEN while the closer genuinely sits inside quotes. And
+  #      defeated again by constructs carrying no sigil digraph at all, which no
+  #      digraph-based enumeration can ever see: a bare `(` subshell
+  #      (`e$( (echo) )as update`) and a `case` arm's `)`
+  #      (`e$(case x in a) : ;; esac)as update`).
+  # Composing (3)'s two gaps produced one command ALLOWED on all four execution
+  # paths. The pattern is structural, not bad luck: deciding where a span ends
+  # needs the depth- and quote-stateful scanner in lib/cmd-detect.sh, and this
+  # code runs BEFORE that lib is sourced, by design. Any enumeration written here
+  # is a guess about a grammar this position cannot read.
   #
-  # WHY THAT WAS WRONG (2026-09-06, security RE-review; it cost a live ALLOW of
-  # `e$(: $(:))as update --branch preview`, an OTA publish). It reasons about
-  # letters DESTROYED. The failure mode is letters that FAIL TO REJOIN — a needle
-  # that exists in NO rendering stage 1 or 2 can see, precisely because it never
-  # appears in raw text. And the deletion is not a superset at all when a closer
-  # sits inside a span: the scan removes a strict PREFIX of that span and leaves
-  # its tail wedged between the halves that were supposed to fuse.
+  # THE COST IS REAL AND IS THE POINT. Measured: a span-carrying command goes
+  # from ~16 ms to ~105-125 ms, and span-carrying commands are ~16% of this
+  # project's harvested history — roughly +16 ms on the average Bash tool call,
+  # on a hook that runs on every one of them (project_per_bash_hook_overhead).
+  # Commands with NO span are untouched at ~16 ms. That is the price of not
+  # guessing, and it is an owner's cost decision to revisit, not something to
+  # optimize away a fourth time. If it must come down, the sound direction is to
+  # make lib/cmd-detect.sh's real scanner reachable from here — not to
+  # re-derive its grammar in `case` patterns.
   #
-  # What actually makes this exit safe is _OUT_CRUDE_EXACT: the scan reports
-  # whether it parsed the spans unambiguously, and the `exit 0` is taken ONLY
-  # when it did. An ambiguous parse falls through to the full guard, which has
-  # the depth- and quote-stateful awk. See _out_crude_vanish for the measured
-  # bypasses and for why parsing better is not an option at this point in the
-  # file. Feeding the result back through cmd_fastpath_has (rather than a bare
-  # `case`) keeps the quote/backslash strip, so a needle that is BOTH span-split
-  # and quote-split (`e${UNSET}a"s" update`) is still reconstructed.
+  # The OR composition still holds and is what keeps this local to reason about:
+  # stage 3 runs only after 1 and 2 have both missed, so declining can only ever
+  # ADD work and denies, never remove a pass they already found.
   if [ "$_OUT_FP_RC" != 0 ]; then
     case "$CMD" in
-      *'${'*|*'$('*|*'`'*)
-        _out_crude_vanish "$CMD"
-        # DECLINE TO DECIDE on an unreliable parse (2026-09-06, security
-        # RE-review). Taking the cheap `exit 0` is only sound when the span scan
-        # actually found the spans; on a nested or quoted-closer span it deletes
-        # a WRONG one, the needle never reforms, and the whole guard is skipped
-        # for a live OTA publish. `_OUT_CRUDE_EXACT` is that scan reporting its
-        # own reliability — see its definition for the measured bypasses and why
-        # parsing better is not available here. Falling through costs only the
-        # full path on inputs that are genuinely ambiguous.
-        if [ "${_OUT_CRUDE_EXACT:-0}" = 1 ]; then
-          shopt -s nocasematch
-          cmd_fastpath_has "$_OUT_CRUDE_VANISHED" '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*'
-          _OUT_FP_RC=$?
-          shopt -u nocasematch
-          [ "$_OUT_FP_RC" = 0 ] || exit 0
-        fi
-        ;;
+      *'${'*|*'$('*|*'`'*) : ;;   # a span may build a needle we cannot see here
       *) exit 0 ;;
     esac
   fi

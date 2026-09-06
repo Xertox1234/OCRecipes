@@ -2061,24 +2061,64 @@ assert_deny "RE1 control: same mis-parse, but stage 1 hits on a literal gh (deni
 # for another.
 assert_deny "RE1 control: a NON-nested span in the tool name still denies" \
   "$(json 'e$(:)as update --branch preview')" "eas update/publish/submit"
+
+# --- 2026-09-06 round 3: the spellings that ended the "parse it here" attempts -
+# Both reviewers independently reached the same conclusion from different
+# constructions: no text-only enumeration written at the prefilter can decide
+# where a span ends. These are the two that carry NO sigil digraph at all, so no
+# digraph-based test could ever have seen them, plus the mixed-quote one whose
+# quote counts are both EVEN while the closer is genuinely inside quotes. Stage 3
+# now declines on ANY span rather than judging, so all three deny on the precise
+# path — and they are pinned here so a future "optimization" that reintroduces a
+# judgement goes red immediately.
+assert_deny "R3: quote of one type nested inside the other (both counts EVEN, closer still quoted)" \
+  "$(jsonc "e\$(: '\"' \"a)b\" )as update --branch preview")" "eas update/publish/submit"
+assert_deny "R3: closer AFTER the verb (defeated the deleted greedy rendering)" \
+  "$(json 'e$(: $(:))as update --branch preview && (echo done)')" "eas update/publish/submit"
+assert_deny "R3: composed — mixed quotes AND a closer after the verb (was ALLOW on all four paths)" \
+  "$(jsonc "e\$(: '\"' \"a)b\" )as update --branch preview && (echo done)")" "eas update/publish/submit"
+# The bare-paren and case-arm spellings are NOT pinned as denies: they are still
+# ALLOWED, and the cause is one level down in lib/cmd-detect.sh's scanner, which
+# desynchronises on a bare `(` (measured: cmd_words_vanished renders
+# `e$( (:) )as update` as `e )as update`). Filed as
+# todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md.
+# Asserting the ALLOW here would encode the bypass as acceptable; the corpus
+# carries them with a DENY expectation so they report as gaps instead.
 # The second, independent trigger: a fixed 200-iteration cap was a decision
 # boundary with a sharp edge — 199 leading spans denied, 200 allowed. The bound
 # is now derived from the input length, so it cannot be reached by well-formed
 # input, and reaching it marks the parse inexact rather than trusted.
 _re_cap() { local i=0 p=""; while [ $i -lt "$1" ]; do p="$p\${z}"; i=$((i+1)); done; printf '%s%s' "$p" "$2"; }
-assert_deny "RE2: 199 leading empty spans (the old cap's allowed side)" \
+# LABELS CORRECTED 2026-09-06 (code review): these two parentheticals were
+# INVERTED. `_re_cap 199` emits 199 leading spans PLUS the one embedded in
+# `g${x}h` = 200 spans, exactly the old fixed cap, so all of them were processed
+# and the old code DENIED. `_re_cap 200` makes 201, leaving the last span
+# unreached, which is the side that ALLOWED. Verified against the old code:
+# 199 -> DENY, 200 -> ALLOW. Both assertions were correct and passing; only the
+# names lied — which is worse than a failing test, because a reader trusts them
+# to say which side was the bypass.
+assert_deny "RE2: 199 leading empty spans = 200 total, the old cap's DENIED side" \
   "$(json "$(_re_cap 199 'g${x}h pr merge 42')")" "gh pr merge"
-assert_deny "RE2: 200 leading empty spans (the old cap's denied side — the boundary itself)" \
+assert_deny "RE2: 200 leading empty spans = 201 total, the old cap's ALLOWED side — the actual bypass" \
   "$(json "$(_re_cap 200 'g${x}h pr merge 42')")" "gh pr merge"
 assert_deny "RE2: 250 leading empty spans, well past the old cap" \
   "$(json "$(_re_cap 250 'e${x}as update --branch preview')")" "eas update/publish/submit"
-# Both triggers were open on all four paths, so both halves are pinned there.
-check "RE1 no-jq: nested span in the TOOL name fails closed" \
-  deny "$(nojq_hook "$(json 'e$(: $(:))as update --branch preview')")"
-check "RE1 no-lib: nested span in the TOOL name fails closed" \
-  deny "$(nolib_hook "$(json 'e$(: $(:))as update --branch preview')")"
-check "RE1 no-awk: nested span in the TOOL name fails closed" \
-  deny "$(noawk_hook "$(json 'e$(: $(:))as update --branch preview')")"
+# DEGRADED-PATH COVERAGE FOR A NESTED SPAN WAS REMOVED, NOT RELAXED
+# (2026-09-06, round-3 review). Three assertions here used to pin
+# `e$(: $(:))as update --branch preview` as failing closed on no-jq/no-lib/
+# no-awk. They passed only because of a GREEDY rendering (first opener to LAST
+# closer) that the round-3 repair DELETED as unsound — it was the only rendering
+# reconstructing the needle, so its over-deletion was the miss, and any `)` after
+# the verb defeated it.
+#
+# They are DELETED rather than flipped to assert_allow. Flipping a
+# reachable-but-unfixed row to match current behaviour would encode the bypass as
+# acceptable and retire the only artifact pointing at it — this suite's sibling
+# corpus states that rule for itself in NOTE6, and it applies here. The gap stays
+# VISIBLE where gaps belong: `repro-outward-cli-corpus.sh` carries the rows with
+# their DENY expectation, so they report as gaps every run, and
+# guard-outward-cli.sh's DOCUMENTED RESIDUALS block names the construction.
+# The PRECISE path denies it, and that IS pinned, directly above.
 check "RE2 no-jq: 250 leading empty spans fails closed" \
   deny "$(nojq_hook "$(json "$(_re_cap 250 'g${x}h pr merge 42')")")"
 # Negative controls: nested and quoted spans are ORDINARY in real commands, and
