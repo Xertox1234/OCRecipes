@@ -444,6 +444,53 @@
 #     and they already deny quoted mentions and read-only forms the precise
 #     path allows. Consistent with that posture, not a new class.
 #
+#     SCOPE CORRECTED 2026-09-06 (security review of PR #926): the sentence
+#     above described the over-denial as reaching commands that INVOKE a gated
+#     binary, and it is wider than that in two ways, both measured.
+#       - READ-ONLY invocations of a gated binary: `gh pr view $NUM`,
+#         `eas update:list --branch $BRANCH`, `gh api repos/o/r` with a split
+#         verb and no method flag.
+#       - Commands that invoke NO gated CLI AT ALL. The mirror's `gh` alternative
+#         needs only a non-letter before it, which any path separator supplies,
+#         so `sed -i "" "s/gh/$NEW/" docs/gh-actions.md` denies on the strength
+#         of the `/gh` inside a FILENAME. This shape is the one the original
+#         wording did not cover; it is the same fail-closed trade (the mirror is
+#         deliberately neither quote- nor grammar-aware and cannot tell a
+#         filename from a command word), but a reader must not have to discover
+#         it from a denial.
+#     All of these were verified DENY on both the pre-fix and fixed trees — the
+#     span-deleting pass added for finding C1 widened NONE of them (measured
+#     across both degraded paths on read-only and no-gated-CLI shapes; zero
+#     decision flips).
+#
+#   * ACCEPTED OVER-DENIAL, NEW (2026-09-06, precise path): a `gh api` clause
+#     that is readable ONLY after deleting an expansion, WITH a method flag
+#     present, denies even when the method value itself is literal and
+#     read-only. Measured: `${X} gh api repos/o/r -X GET` denies (it allowed
+#     before), because a leading `${X}` leaves the deep cut empty — `}` is not a
+#     command-position opener — so the clause survives only in the vanished
+#     rendering, and a clause reconstructed by deletion cannot be verified.
+#     This is the mechanism that closes finding C2 and it is not narrowable
+#     without re-deriving the method value's own token boundary a second time,
+#     which the C2 block below explicitly refuses (a boundary bug in that second
+#     derivation would silently reopen the gap). It is the SAME accepted trade
+#     that block already documents for `gh api repos/o/r -X GET -f note=$SOME`
+#     — an unrelated sigil elsewhere in the clause — just reached by deletion
+#     instead of by a surviving character. Bounded by the method-flag gate: a
+#     read with no `-X`/`--method` is untouched (`${X} gh api repos/o/r` and
+#     `${X} gh api repos/o/r --jq .name` both still ALLOW, pinned).
+#
+#   * ATTRIBUTION RESIDUAL (2026-09-06): `gh pr merge 42 --auto --ad${UNSET}min`
+#     DENIES — the decision is correct — but for "without a REAL --auto flag",
+#     not for `--admin`. Any literal `$` in the merge CLAUSE trips that check
+#     first, so the `--admin` check never runs for that spelling. The backtick
+#     spelling (no `$`) does reach it and reports the `--admin` reason. Fixing
+#     the attribution means reordering this file's most heavily pinned branch,
+#     which is its own decision with its own mutation evidence — deliberately
+#     NOT bundled into the C4 fix. A DENY is not evidence the intended check
+#     fired; that is exactly why this is written down rather than left to be
+#     rediscovered by someone reading a green corpus row.
+#
 # Escape: `ALLOW_OUTWARD_CLI=1 <command>` as an INLINE prefix on the one Bash
 # command (recognized from the command string itself — see the case
 # statement below the CMD extraction for why this differs from an exported
@@ -1593,13 +1640,27 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # and why they must stay newline-joined (this check is the seam example there).
   # Leading boundary is `_OUT_FLAG_LEAD` (see its own definition) so a
   # default-value expansion (`${x:---admin}`) cannot donate the flag's
-  # boundary. NOT independently regression-tested on this family: ANY literal
-  # `$` surviving in CLAUSE already denies earlier, at the "without a REAL
-  # --auto flag" check (documented at that check's own CLAUSE= assignment),
-  # before this line ever runs — a `${x:---admin}` assertion here would pass
-  # on the unfixed tree too and pin nothing. Applied anyway, for the same
-  # reason the other two sites are: leaving one of three copies of a widened
-  # detector unfixed is this file's own documented recurring defect.
+  # boundary.
+  #
+  # CORRECTED 2026-09-06 (security review of PR #926, finding C4). This comment
+  # used to say the check was "NOT independently regression-tested on this
+  # family", on the reasoning that any literal `$` in CLAUSE already denies
+  # earlier at the "without a REAL --auto flag" check, so no assertion here
+  # could pin anything. That reasoning holds ONLY for `$`-carrying spellings.
+  # An empty BACKTICK pair carries no `$` at all: `gh pr merge 42 --auto
+  # --ad``min` sailed past the `$`-mask, reached this line with `--admin`
+  # invisible to both $CMD and $WORDS, and was ALLOWED — an effective GRANT of
+  # an administrator merge that bypasses branch protection, since the --auto
+  # carve-out then proceeded. This check IS now independently pinned, by
+  # test-guard-outward-cli.sh's "C4: --admin split by an empty backtick pair"
+  # assertion, which fails on the pre-fix tree and passes here with THIS
+  # check's own reason string.
+  #
+  # The `${UNSET}` spelling still denies for "without a REAL --auto flag"
+  # instead — correct decision, wrong attribution. Recorded as an attribution
+  # residual in this file's DOCUMENTED RESIDUALS block rather than fixed by
+  # reordering, which would move this file's most heavily pinned branch and
+  # needs its own mutation evidence.
   if scan_renderings "${_OUT_FLAG_LEAD}"'--admin([^-A-Za-z0-9]|$)'; then
     deny "guard-outward-cli: command-position 'gh pr merge --admin' uses administrator privileges to merge a PR that may not meet requirements — this contradicts the --auto carve-out's premise (branch protection gating). Denying regardless of --auto. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi

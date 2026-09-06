@@ -280,7 +280,15 @@ both mechanisms."_ At the repository owner's direction (2026-09-05) this todo, t
 command-position expansion decision, and the boundary/absorber defect report were folded
 into one branch and one generated corpus, `.claude/hooks/repro-outward-cli-corpus.sh`.
 
-**Option (a) delivered in full — all three positions:**
+**Option (a) delivered in full — all three positions THIS TODO SCOPED (of the VERB):**
+
+> **CORRECTED 2026-09-06.** "All three positions" scoped the class to the three positions
+> this todo happened to enumerate — suffix, prefix, mid-token of the VERB. The security
+> review of PR #926 established the class also has a **TOOL** position (`e${UNSET}as update`
+> — an OTA publish to real users, ALLOWED on all four execution paths) and a **FLAG**
+> position (`--re${UNSET}po`, ``--ad`​`min``), and both were open. Neither was a regression;
+> both were fixed on the same branch. Read "three positions" here as the scope this todo
+> ruled on, never as an enumeration of the class.
 
 - **Suffix** — a closer-class widening: `_OUT_POS_SUFFIX` and BOTH branches of
   `_OUT_POS_SUFFIX_MERGE_CLAUSE` now carry `<`/`>`, byte-identical to the lib's

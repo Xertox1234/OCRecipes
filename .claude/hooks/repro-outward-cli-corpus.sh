@@ -120,6 +120,63 @@ for i in "${!FAM_NS_IDS[@]}"; do
   add "nsvvar-$id" DENY "$(sed -E "s/^(${np})/\1\${UNSET}/" <<< "$cmd")"
 done
 
+# axis: TOOL position -- the binary NAME itself split by a vanishing construct.
+# ADDED 2026-09-06 (security review of PR #926). THIS AXIS'S ABSENCE IS WHY THE
+# REVIEW FOUND FOUR CRITICALS AND THIS FILE FOUND NONE. Every glue axis above
+# varies the MECHANISM while holding the POSITION fixed at the verb (or, for
+# gh, the namespace). A corpus that varies one axis reproduces the blind spot
+# that chose the axis: `e${UNSET}as update --branch preview` -- an OTA publish
+# to real users -- was ALLOWED on all four execution paths the entire time, and
+# no row here could see it. Confirmed empirically: adding the C1 FIX alone moved
+# this file's counts not at all (rows=125 gaps=3 before and after), because
+# nothing in it exercised the position the fix repairs.
+#
+# ONLY VANISHING mechanisms belong at this position, and that is a semantic
+# claim, not an oversight. A redirect glued INSIDE a name does not rejoin it:
+# real bash tokenizes `e>/dev/null as update` as the command `e` with argument
+# `as`, which never invokes `eas`, so DENY would be the wrong expectation. The
+# interior-redirect question is a different mechanism with its own todo (see
+# NOTE6).
+for i in "${!FAM_IDS[@]}"; do
+  id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
+  add "toolvsub-$id" DENY "$(sed -E 's/^(.)/\1$()/'      <<< "$cmd")"
+  add "toolvvar-$id" DENY "$(sed -E 's/^(.)/\1${UNSET}/' <<< "$cmd")"
+  add "toolvbt-$id"  DENY "$(sed -E 's/^(.)/\1``/'       <<< "$cmd")"
+done
+
+# axis: FLAG position -- a flag NAME the guard keys on, split by a vanishing
+# construct. ADDED 2026-09-06 with the tool axis and for the same reason: the
+# review's findings C3 and C4 both live here and no row covered the position.
+# Each entry names the flag and where to cut it; the cut point is inside the
+# flag's own letters, so the two halves can only rejoin by DELETING the span --
+# which is exactly what the consumers had to be taught to look at.
+# `gh pr merge --admin` gets its own family: --admin is absent from the ghmerge
+# base command above (that row exists to exercise the --auto carve-out), and
+# --admin is the grant-adjacent one -- with no deny, the carve-out proceeds on
+# an administrator merge that bypasses branch protection.
+FAM_FLAG_IDS=(easbld ghcomment ghapi ghadmin)
+FAM_FLAG_CMDS=(
+  'eas build --platform ios --auto-submit'
+  'gh pr comment 5 --body hi --repo other/org'
+  'gh api repos/o/r -X POST'
+  'gh pr merge 42 --auto --admin'
+)
+FAM_FLAG_LHS=('--auto-su' '--re' '-'  '--ad')
+FAM_FLAG_RHS=('bmit'      'po'   'X'  'min')
+for i in "${!FAM_FLAG_IDS[@]}"; do
+  id=${FAM_FLAG_IDS[$i]}; cmd=${FAM_FLAG_CMDS[$i]}
+  lhs=${FAM_FLAG_LHS[$i]}; rhs=${FAM_FLAG_RHS[$i]}
+  # Parameter expansion, not sed: the flag text contains `-` and the
+  # replacements contain `$`/backticks, both of which need escaping in a sed
+  # program and neither of which does here. A `$new` in the replacement position
+  # expands to its VALUE and is not re-scanned, so the sigils stay literal.
+  for m in '$()' '${UNSET}' '``'; do
+    case "$m" in '$()') mid=vsub ;; '${UNSET}') mid=vvar ;; *) mid=vbt ;; esac
+    new="${lhs}${m}${rhs}"
+    add "flag${mid}-$id" DENY "${cmd/${lhs}${rhs}/$new}"
+  done
+done
+
 # axis: flag-boundary donation (C1) -- families with NO masking guard, so the
 # assertion is anchored to the C1 mechanism and not to an unrelated branch.
 add c1-submit-lit    DENY  'eas build --platform ios --auto-submit'
@@ -261,6 +318,21 @@ add co-pos-create    DENY  'gh pr create --title t --body b ${1:---repo} other/o
 add co-c2-predB      DENY  '2>/dev/null gh api repos/o/r -X ${x:-POST}'   # C2 x finding B: leading redirect + unreadable method
 add co-c2-predA      DENY  'gh api repos/o/r -X ${x:-POST}>/dev/null'   # C2 x finding A: trailing glued redirect + unreadable method
 add co-two-api-c2    DENY  'gh api repos/o/r && gh api repos/o/r -X ${x:-POST}'   # two occurrences, second carries an unreadable method — the pre-existing >1-occurrence ambiguity check fires first
+# ADDED 2026-09-06 (security review of PR #926). The review named the absence of
+# a `C2 x vanishing sigil` co-occurrence row as a gap, and that row IS finding
+# C2: `gh a${UNSET}pi repos/o/r -X ${METHOD}` was a live ALLOW. It is the exact
+# shape this whole CO-OCCURRENCE section exists for -- each half alone DENIES
+# (both controls are directly below), and only together did they cancel, because
+# the ONE deletion that rejoins `api` for the clause cut also deletes the
+# `${METHOD}` sigil the unreadable-method check keys on. No cross product could
+# have reached it: it needs the same mechanism at two positions at once.
+add co-c2-toolsplit  DENY  'gh a${UNSET}pi repos/o/r -X ${METHOD}'
+add co-c2-toolsub    DENY  'gh a${UNSET}pi repos/o/r -X $(printf POST)'
+add co-c2-halfA      DENY  'gh api repos/o/r -X ${METHOD}'          # control: unreadable method alone
+add co-c2-halfB      DENY  'gh a${UNSET}pi repos/o/r -X POST'       # control: split verb alone
+# The narrowing that keeps the span-derived rule from denying every dynamic
+# route: a split verb with NO method flag is still a read, and stays allowed.
+add fp-c2-noflag     ALLOW 'gh a${UNSET}pi repos/o/r'
 
 # FALSE-POSITIVE controls -- everyday idioms that MUST stay allowed. A control
 # that stays green under mutation is not a control; these are re-checked after
@@ -416,9 +488,30 @@ done
 # NOTE6 -- THE THREE ROWS THAT ARE STILL GAPS, AND WHY THEY STAY GAPS
 # (2026-09-06, outward-CLI-guard-folded-repair, Tasks 7-9 complete).
 #
-# `precise-path gaps=3` is the CORRECT expected output of this file, not a
-# failure to finish. Each remaining row is a REAL, reachable bypass that is
-# out of the folded repair's Scope Contract. Their expectations are
+# READ THIS FIRST (added 2026-09-06, security review of PR #926). "gaps=3" is a
+# statement about THE ROWS IN THIS FILE, never about the guard. A corpus can
+# only report on the axes it varies, and this one's original glue axis varied
+# the sigil MECHANISM while holding the POSITION fixed at the verb. The review
+# generated 272 rows from 5 glue POSITIONS x 7 mechanisms and found 105 branch
+# ALLOWs, four of them CRITICAL — including `e${UNSET}as update --branch
+# preview`, an OTA publish to real users, allowed on all four execution paths.
+# This file reported gaps=3 throughout, and adding the fix for that CRITICAL
+# alone changed its counts not at all.
+#
+# Two consequences, both binding on whoever reads this next:
+#   1. The tool- and flag-position axes now exist above. Any NEW dimension
+#      (a position, a mechanism, a path) must be added as a GENERATED axis, not
+#      as hand-listed rows — hand-listing is what silently fixed the position.
+#   2. A sentence of the form "this class is closed", anywhere in this
+#      repository, may not cite this file unless the class's own dimensions are
+#      dimensions this file generates. The wording corrected at
+#      guard-outward-cli.sh's WORDS_VANISHED assignment failed exactly that test.
+#
+# With that scope stated: `precise-path gaps=3` is the CORRECT expected output
+# of this file, not a failure to finish. Each remaining row is a REAL, reachable
+# bypass that is out of the folded repair's Scope Contract — the list below is
+# exhaustive OF THIS FILE'S ROWS, which is not the same as exhaustive of the
+# guard. Their expectations are
 # deliberately left at DENY: flipping a reachable-but-unfixed row to match
 # current behaviour would encode "this bypass is fine" into the fixture and
 # retire the only thing still pointing at it. Contrast c1-threedash (NOTE5),

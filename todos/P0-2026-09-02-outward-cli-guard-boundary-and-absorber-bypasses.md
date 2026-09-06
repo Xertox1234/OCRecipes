@@ -341,9 +341,23 @@ by reverting it and confirming the named assertions fail.
 | A — `_OUT_POS_SUFFIX` lacks `<`/`>`                  | **Fixed** on both anchors and both branches of the merge clause, with one disclosed accepted over-denial.                                                                                       |
 | B — `_OUT_POS_PREFIX` lacks `_CMD_REDIR` absorption  | **Fixed** by reference to the lib's construct, which required relocating the anchor definitions below the lib source.                                                                           |
 
-**Also closed here, from the two folded decision todos:** the vanishing-sigil class at all
-three positions (suffix / prefix / mid-token) via the new `cmd_words_vanished` rendering,
-and the narrow-deny rule for a synthesized verb on both the precise and degraded paths.
+**Also closed here, from the two folded decision todos:** the vanishing-sigil class at the
+suffix / prefix / mid-token positions **of the VERB** via the new `cmd_words_vanished`
+rendering, and the narrow-deny rule for a synthesized verb on both the precise and degraded
+paths.
+
+> **CORRECTED 2026-09-06 — this paragraph originally read "the vanishing-sigil class at all
+> three positions", which was false.** The security review of PR #926 established that the
+> class has a TOOL position and a FLAG position too, and both were open: `e${UNSET}as update
+--branch preview` (an OTA publish to real users) was ALLOWED on all four execution paths,
+> and `--re${UNSET}po` / ``--ad`​`min`` defeated the `--repo` and `--admin` checks. Four
+> CRITICALs, none a regression — all pre-existing gaps this PR claimed to have closed. The
+> claim was made from a corpus whose glue axis varied the sigil MECHANISM while holding the
+> POSITION fixed at the verb, so it could not have seen them. Fixed on this same branch; the
+> corpus now generates the position axis (`rows=125 → 163`), the guard suite is
+> `435 passed, 0 failed`, and both "closes the class" comments in the hook and the lib are
+> reworded to say what they actually establish. "Three positions" was never the whole class —
+> counting the positions someone happened to test is not the same as enumerating them.
 
 **Measured counts** (real, quoted from the runs — not estimates):
 

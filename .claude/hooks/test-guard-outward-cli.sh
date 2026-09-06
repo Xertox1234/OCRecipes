@@ -1598,7 +1598,11 @@ assert_deny "CO-OCCURRENCE: a literal mutating gh api method still denies glued 
 assert_deny "CO-OCCURRENCE: two gh api invocations, one read-only and one with an unreadable method, still deny (the pre-existing multi-occurrence ambiguity check fires first, before either single-clause check runs)" \
   "$(json 'gh api repos/o/r && gh api repos/o/r -X ${x:-POST}')" "ambiguous, cannot verify"
 
-# ---------- 2026-09-05: the vanishing-sigil class, all three positions -------
+# ---------- 2026-09-05: the vanishing-sigil class, three VERB positions ------
+# (suffix/prefix/mid-token OF THE VERB. The class also has a TOOL position and a
+# FLAG position, both found open by the PR #926 security review and covered by
+# the "four CRITICALs" block further down. "All three positions" was this
+# heading's original wording and it was an overclaim.)
 # Ruled 2026-09-03, option (a): close the SUFFIX, PREFIX and MID-TOKEN
 # positions. The suffix is a closer-class widening (the finding A block above).
 # The other two are not reachable that way: bash consumes the whole balanced
@@ -1972,6 +1976,20 @@ assert_deny "C2: same, with a command substitution supplying the method" \
 # and stays allowed, or the span-derived rule would deny every dynamic route.
 assert_allow "C2 control: split gh api verb with NO method flag stays allowed" \
   "$(json 'gh a${UNSET}pi repos/o/r')"
+# The ACCEPTED OVER-DENIAL this rule introduces, pinned so it is deliberate
+# rather than discovered: a leading `${X}` leaves the deep cut empty (`}` is not
+# a command-position opener), so the clause survives only in the vanished
+# rendering and denies even though the method value is a literal, read-only GET.
+# This ALLOWED before the fix. It is the same trade this block already documents
+# for an unrelated sigil elsewhere in the clause, and it is bounded by the
+# method-flag gate — the two controls below are that bound, and they are what
+# would go red if the rule ever widened past it.
+assert_deny "C2 accepted over-denial: a span-derived clause with a LITERAL read-only method still denies" \
+  "$(json '${X} gh api repos/o/r -X GET')" "not literal text"
+assert_allow "C2 bound: same leading expansion, NO method flag, stays allowed" \
+  "$(json '${X} gh api repos/o/r')"
+assert_allow "C2 bound: same leading expansion with a --jq filter stays allowed" \
+  "$(json '${X} gh api repos/o/r --jq .name')"
 
 # --- C3: `[ -z "$clause" ]` made both fallbacks empty-only -------------------
 # With a LITERAL verb the deep cut is non-empty, so the vanished rendering was
@@ -2021,7 +2039,7 @@ assert_allow "C4 control: the \$WORDS/\$WORDS_VANISHED seam cannot forge --admin
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
 _PIN_RAN=1
-EXPECTED_TOTAL=435
+EXPECTED_TOTAL=438
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

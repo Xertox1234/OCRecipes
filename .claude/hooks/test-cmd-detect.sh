@@ -1309,6 +1309,16 @@ van 'empty no-colon default vanishes' 'gh pr me${x-}rge 42'   'gh pr merge 42'
 van 'prefix sigil vanishes'          '${UNSET} gh pr merge'   ' gh pr merge'
 van 'suffix sigil vanishes'          'eas update$() --branch p' 'eas update --branch p'
 van 'non-empty substitution body goes too' 'gh pr me$(printf x)rge' 'gh pr merge'
+# ADDED 2026-09-06 (security review of PR #926). The function's own header names
+# EIGHT deletable brace forms; only four of them were pinned, so half the
+# documented allow-list was regression-proofed by nothing but the comment that
+# claimed it. All four below were verified working when this was written, so
+# these are pins, not fixes — but an allow-list is exactly the kind of table
+# that gets edited by someone reading the header, and the header is not a test.
+van 'empty alternate vanishes'        'gh pr me${x:+}rge 42'  'gh pr merge 42'
+van 'empty no-colon alternate vanishes' 'gh pr me${x+}rge 42' 'gh pr merge 42'
+van 'empty assign-default vanishes'   'gh pr me${x:=}rge 42'  'gh pr merge 42'
+van 'empty no-colon assign vanishes'  'gh pr me${x=}rge 42'   'gh pr merge 42'
 
 echo "--- cmd_words_vanished: NOT deletable -- an expansion form must be PROVEN capable of ---"
 echo "--- evaluating to empty before it may be neutralized, not merely opened with \${ ---"
