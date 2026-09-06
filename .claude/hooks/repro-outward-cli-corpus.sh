@@ -166,22 +166,34 @@ add c2-glued         DENY  'gh api repos/o/r -X${x:-POST}'
 add c2-readonly      ALLOW 'gh api repos/o/r'
 add c2-dynpath       ALLOW 'gh api repos/$OWNER/$REPO'
 # DESIGN CHOICE (guard-outward-cli.sh's own GH_API_CLAUSE= comment has the
-# full reasoning): the predicate keys on "a $ ANYWHERE in
-# GH_API_CLAUSE once a method flag is present", not "a $ inside the method
-# VALUE specifically" — matching this file's own `gh pr merge` CLAUSE
-# precedent (the co-mask-c1 row above) for the identical allow/deny shape.
-# Accepted over-denial: a real literal GET with an unrelated $ elsewhere in
-# the same clause also denies.
+# full reasoning): the predicate keys on "a $ or backtick ANYWHERE in
+# GH_API_CLAUSE once a method flag is present", not "a $ or backtick inside
+# the method VALUE specifically" — matching this file's own `gh pr merge`
+# CLAUSE precedent (row co-mask-c1 in this same file) for the identical
+# allow/deny shape. Accepted over-denial: a real literal GET with an
+# unrelated $ elsewhere in the same clause also denies.
 add c2-tension       DENY  'gh api repos/o/r -X GET -f note=$SOMETHING'
+# A second unreadable-value SPELLING (found by constructing the legacy
+# command-substitution form): no deny row above this one lacks a literal `$`
+# character, so this row alone pins the ruled MECHANISM ("not literal text")
+# rather than the implementation detail ("contains a dollar sign"). Confirmed
+# a live, silent ALLOW before the fix's own backtick widening: WORDS_DEEP
+# keeps a NON-empty backtick pair's literal text intact (a DIFFERENT
+# mechanism from the mid-backtick row's EMPTY pair, which vanishes and fuses
+# the surrounding text instead).
+add c2-backtick      DENY  'gh api repos/o/r -X `printf POST`'
 # False-positive corpus: read-only/benign gh api idioms that must survive the
 # new co-occurrence gate untouched (none carry a -X/--method flag, so the new
-# check's flag-presence gate excludes them regardless of the $ elsewhere).
+# check's flag-presence gate excludes them regardless of the $ or backtick
+# elsewhere).
 add c2-fp-user       ALLOW 'gh api /user'
 add c2-fp-paginate   ALLOW 'gh api --paginate repos/o/r/issues'
 add c2-fp-jq         ALLOW 'gh api repos/o/r --jq ".[] | .name"'
 add c2-fp-getf       ALLOW 'gh api repos/o/r -X GET -f name=value'
 add c2-fp-header     ALLOW 'gh api repos/o/r -H "Accept: application/vnd.github+json"'
 add c2-fp-methodology ALLOW 'gh api repos/o/r -f notes=$X --methodology=custom'
+add c2-fp-backtick   ALLOW 'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here'
+add c2-tension-bt    DENY  'gh api repos/o/r -X GET -f note=see `code` here'
 
 # axis: gh api literal method + redirect boundary (found while closing C2 via
 # this task's own mandated finding-A co-occurrence test; a SEPARATE mechanism

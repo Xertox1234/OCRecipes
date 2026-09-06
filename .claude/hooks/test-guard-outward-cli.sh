@@ -579,8 +579,23 @@ assert_allow "time npm run test allows (keyword position, unrelated script)" \
 # before/after PASS counts from the mutation test).
 assert_deny "gh api comma-brace expansion denies (glued, no space — GH_API_CLAUSE gap)" \
   "$(jsonc 'gh api{,x} -X POST repos/o/r/pulls/1/merge')" "mutating HTTP method"
-assert_deny "gh api backtick-glue denies (pre-existing gap, same root cause)" \
-  "$(jsonc 'gh api`x` -X POST repos/o/r/pulls/1/merge')" "mutating HTTP method"
+# REASON UPDATED 2026-09-05 (task 5, C2's backtick widening) per
+# docs/solutions/logic-errors/deny-reason-assertion-goes-stale-when-a-stricter-branch-fires-first-2026-09-03.md:
+# this row's own glue character IS a backtick, and C2's unreadable-method
+# check now reads for a backtick anywhere in GH_API_CLAUSE once a method flag
+# is present — so it fires FIRST and denies for "not literal text" before the
+# literal-mutating check below it ever runs, even though the method value
+# here ("POST") is itself perfectly literal. This is not a relaxation that
+# turns the row into a decoration: the row still meaningfully proves the SAME
+# original mechanism (the clause-cut correctly reaches a backtick-glued verb
+# rather than coming back empty) — if that regressed, BOTH this check's
+# flag-presence scan and the literal check below it would find nothing in an
+# empty clause and this row would flip to a silent ALLOW, exactly as it did
+# before the original round-2 fix. The brace-glued form just above keeps its
+# original "mutating HTTP method" attribution because a bare `{`/`}` glue
+# character carries no `$`/backtick of its own to trip the newer check.
+assert_deny "gh api backtick-glue denies (pre-existing gap, same root cause; reason re-attributed to C2's backtick widening — see comment above)" \
+  "$(jsonc 'gh api`x` -X POST repos/o/r/pulls/1/merge')" "not literal text"
 # Third distinct code shape: GH_MUTATING_RE (a single-step `grep -Eqi`, no
 # separate clause-cut variable) already used `${_OUT_POS_SUFFIX}` correctly
 # BEFORE this round — pins that it stays denied rather than re-testing the
@@ -1372,15 +1387,17 @@ assert_deny "CO-OCCURRENCE: a positional parameter supplying --repo on the gh pr
   "$(json 'gh pr create --title t --body b ${1:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
 
 # ---------- 2026-09-05: C2 — an unreadable gh api method denies -------------
-# The mutating-method check just below requires the LITERAL text
+# The `_GH_API_M`-consuming mutating-method check requires the LITERAL text
 # POST/PUT/PATCH/DELETE after -X/--method. An expansion or substitution is
 # not that literal text, so `-X ${x:-POST}` fell through to this block's
 # ALLOW-by-default (see the fix's own comment on GH_API_CLAUSE for why this
 # block, unlike the `gh pr merge` CLAUSE, allows by default). Reuses the
-# house rule already pinned above for the merge clause: a surviving `$` means
-# the token cannot be read statically. Scoped to CO-OCCURRENCE with a method
-# flag on purpose, so a dynamic ROUTE or --jq filter (no -X/--method at all)
-# is unaffected — the narrowing is the deliverable, not an afterthought.
+# house rule this file's own `gh pr merge` CLAUSE `$`-unverifiability check
+# already established: a surviving `$` (or, per the fix's own follow-up,
+# a backtick command substitution) means the token cannot be read
+# statically. Scoped to CO-OCCURRENCE with a method flag on purpose, so a
+# dynamic ROUTE or --jq filter (no -X/--method at all) is unaffected — the
+# narrowing is the deliverable, not an afterthought.
 assert_deny "gh api -X via a default-value expansion denies" \
   "$(json 'gh api repos/o/r -X ${x:-POST}')" "not literal text"
 assert_deny "gh api -X via a bare variable denies" \
@@ -1389,6 +1406,19 @@ assert_deny "gh api --method via a substitution denies" \
   "$(json 'gh api repos/o/r --method $(printf PUT)')" "not literal text"
 assert_deny "gh api -X glued directly to a default-value expansion denies (no space between flag and value, mirrors the pre-existing glued-literal spelling -XPOST)" \
   "$(json 'gh api repos/o/r -X${x:-POST}')" "not literal text"
+# A second unreadable-value SPELLING, found by constructing the legacy
+# backtick command-substitution form (every deny row above this one happens
+# to contain a literal `$` character; the mechanism this check exists to
+# close is "not literal text", not "contains a dollar sign", so the corpus
+# needs a row with no `$` at all to avoid pinning an implementation detail
+# instead of the ruled mechanism). Confirmed a live, silent ALLOW before this
+# row's own fix: WORDS_DEEP keeps a NON-empty backtick pair's literal text
+# intact (a DIFFERENT mechanism from an EMPTY backtick pair, which vanishes
+# and fuses the surrounding text — corpus row mid-backtick in
+# repro-outward-cli-corpus.sh), so no `$` was ever present and the original
+# `$`-only test fell through.
+assert_deny "gh api -X via a legacy backtick command substitution denies" \
+  "$(json 'gh api repos/o/r -X `printf POST`')" "not literal text"
 # STRUCTURAL-TRAP PROOF: this block ALLOWS by default, so an EMPTY
 # GH_API_CLAUSE would fall through to a silent allow (neither this check's
 # flag-presence grep nor the pre-existing check's `[ -n "$GH_API_CLAUSE" ]`
@@ -1428,13 +1458,18 @@ assert_allow "gh api -H header flag (no method flag) stays allowed" \
   "$(jsonc 'gh api repos/o/r -H "Accept: application/vnd.github+json"')"
 assert_allow "a longer flag sharing the --method prefix is not mistaken for the real flag (boundary precision — \$ elsewhere in the same clause must not trip on '"'"'--methodology'"'"')" \
   "$(json 'gh api repos/o/r -f notes=$X --methodology=custom')"
+assert_allow "a literal backtick used as markdown formatting, no method flag, stays allowed" \
+  "$(jsonc 'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here')"
 # DESIGN CHOICE, accepted over-denial (see the fix's own DESIGN CHOICE
-# comment on GH_API_CLAUSE): the predicate reads for a \$ ANYWHERE in the
-# clause once a method flag is present, not only inside the flag's own
-# value — a real literal GET with an unrelated \$ elsewhere also denies, in
-# exchange for not re-deriving the value's own token boundary a second time.
+# comment on GH_API_CLAUSE): the predicate reads for a \$ or backtick
+# ANYWHERE in the clause once a method flag is present, not only inside the
+# flag's own value — a real literal GET with an unrelated \$ (or backtick)
+# elsewhere also denies, in exchange for not re-deriving the value's own
+# token boundary a second time.
 assert_deny "ACCEPTED OVER-DENIAL: a literal -X GET with an unrelated \$ elsewhere in the same clause denies" \
   "$(json 'gh api repos/o/r -X GET -f note=$SOMETHING')" "not literal text"
+assert_deny "ACCEPTED OVER-DENIAL: a literal -X GET with an unrelated backtick elsewhere in the same clause denies (same design choice, backtick axis)" \
+  "$(jsonc 'gh api repos/o/r -X GET -f note=see `code` here')" "not literal text"
 # CO-OCCURRENCE — mandatory per this task: a cross product picks ONE value
 # per axis, so a guard firing only on the intersection of two mechanisms is
 # never reached by any row above and passes by agreeing, per findings A/B/C1's
