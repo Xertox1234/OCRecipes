@@ -521,6 +521,33 @@ crude_smells_outward() {
   # punctuation, never letters, so it can only make this fail-closed check
   # fire MORE often, never less — the safe direction for a fallback that only
   # runs when everything else (jq, awk, or the lib itself) is already broken.
+  # Degraded-path mirror of the precise narrow-deny rule, and it MUST run here
+  # — before the `$` strip on the next line, which is the only reason the sigil
+  # is still visible at all. Without this the narrow deny would exist only on
+  # the precise path, leaving the degraded path exactly as open as the ruling's
+  # rejected option (b); the verified cause of that fail-open is the LETTERS
+  # INSIDE an expansion (`${v:-merge}`) breaking the `[^a-zA-Z]+` separator
+  # class every pattern below relies on.
+  #
+  # This function is deliberately neither quote- nor grammar-aware, so it
+  # cannot tell WHICH expansion supplies WHAT — but a gated binary name sharing
+  # a command segment with an expansion sigil is unverifiable HERE by
+  # construction, and this path's whole contract is to fail CLOSED (it only
+  # runs when jq, awk, or the lib is already broken). That posture is already
+  # established: it denies every `gh api` and every `gh pr merge` regardless of
+  # flags, and denies quoted mentions the precise path allows.
+  #
+  # The `[^;&|]*` segment class keeps it inside ONE command, so an unrelated
+  # `$VAR` after a `&&` cannot reach back to an earlier gated binary.
+  #
+  # BOTH sigils, not just `$`. A backtick substitution carries no `$` at all,
+  # so a `$`-only class left `gh pr me``rge 42` ALLOWED on all three degraded
+  # paths while the precise path denied it — measured, not predicted, via
+  # repro-outward-cli-corpus.sh's `mid-backtick` row, which was the single
+  # remaining degraded ALLOW after the `$` mirror landed. Adding one character
+  # to the class closes it, in the same fail-closed direction as everything
+  # else in this function.
+  grep -Eq '(^|[^a-zA-Z])(eas|railway|npm|pnpm|yarn|gh)[^;&|]*[$`]' <<< "$t" && return 0
   t=${t//\'/}; t=${t//\"/}; t=${t//\\/}; t=${t//\$/}
   # Command-word patterns — case-INSENSITIVE (macOS APFS resolves `EAS`).
   grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run-script|run)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
@@ -956,6 +983,44 @@ _OUT_FLAG_RUN='([[:space:]]+-{1,2}[^[:space:]]*([[:space:]]+[^-[:space:]][^[:spa
 if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
+fi
+
+# --- narrow deny: a gated binary whose VERB is not literal text --------------
+# Ruled 2026-09-03, option (c). This guard is a static-text matcher, but the
+# shell produces the real token at expansion time, so a synthesized verb is
+# invisible to EVERY rendering above -- not hidden by a boundary (finding
+# A/B/C1) and not split by a vanishing sigil (Task 7), simply ABSENT until the
+# shell builds it. Two shapes, both requiring the outward-facing smell to be
+# present ALREADY:
+#   (a) a gated BINARY in command position immediately followed by an
+#       expansion where the verb belongs (`eas ${v:-update}`);
+#   (b) an expansion in command position immediately followed by a gated VERB
+#       (`${e:-eas} update`).
+# A bare expansion in command position is NOT denied (`${EDITOR:-vim} notes`),
+# and neither is an expansion in ARGUMENT position (`gh pr view ${NUM:-42}`).
+# That narrowing is the deliverable -- the ruling is explicit that where the
+# line falls was left to this implementation, not settled by the ruling.
+#
+# NEVER EVALUATES THE EXPANSION. Both sibling todos rule that mechanism out;
+# executing attacker-supplied text to decide whether to block it would itself
+# be the vulnerability.
+#
+# PLACEMENT IS LOAD-BEARING, not cosmetic. This block sits AFTER every
+# eas/railway/npm boolean matcher and BEFORE the gh pr merge block, because
+# two Task 7 constructions (`npm ${FLAGS} publish`, `railway ${X} up`) match
+# shape (a) as well as their own family's check. Placed any earlier it would
+# fire first and STEAL their deny reason, turning the assertions that pin
+# those families into decorations -- this repo's own
+# docs/solutions/logic-errors/deny-reason-assertion-goes-stale-when-a-stricter-branch-fires-first-2026-09-03.md
+# defect, which is why those two rows assert their family's reason string and
+# would fail loudly if this block were moved up.
+_OUT_EXPANSION_TOKEN='(\$\{[^}]*\}|\$\([^)]*\)|`[^`]*`|\$[A-Za-z_][A-Za-z0-9_]*)'
+_OUT_GATED_BIN='(eas|railway|npm|pnpm|yarn|gh)'
+_OUT_GATED_VERB='(update|publish|submit|build|up|deploy|redeploy|restart|down|delete|remove|rm|run|pr|release|repo|api)'
+if grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}[[:space:]]+${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}[[:space:]]+pr[[:space:]]+${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX}${_OUT_EXPANSION_TOKEN}[[:space:]]+${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 # --- gh: bare 'gh pr merge' (see the --auto/--admin carve-out in the header) -

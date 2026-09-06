@@ -1637,6 +1637,56 @@ assert_allow "an ordinary default-value expansion stays allowed" \
 assert_allow "an ordinary empty substitution stays allowed" \
   "$(json 'echo $() done')"
 
+# ---------- 2026-09-05: narrow deny — a gated binary with a NON-LITERAL verb --
+# The guard is a static-text matcher; the shell produces the real token at
+# expansion time. No boundary widening reaches this and neither does the
+# vanished rendering above -- the verb text simply is not present in ANY
+# rendering, because it does not exist until the shell expands it.
+# Ruled 2026-09-03, option (c): deny only where a gated BINARY is present and
+# the VERB is not literal. A bare expansion in command position is NOT denied;
+# that narrowing IS the deliverable, so the controls below outnumber the
+# positives and are the part to read first.
+# All six positives measured ALLOW on the post-Task-7 tree before being
+# written, so none of them passes for Task 7's reason.
+assert_deny "gh pr with a default-value verb denies" \
+  "$(json 'gh pr ${v:-merge} 42')" "verb is not literal"
+assert_deny "gh pr with a no-colon default verb denies" \
+  "$(json 'gh pr ${v-merge} 42')" "verb is not literal"
+assert_deny "gh pr with an indirect verb denies" \
+  "$(json 'gh pr ${!ind} 42')" "verb is not literal"
+assert_deny "gh pr with a substituted verb denies" \
+  "$(json 'gh pr $(printf merge) 42')" "verb is not literal"
+assert_deny "a synthesized eas binary denies" \
+  "$(json '${e:-eas} update --branch preview')" "verb is not literal"
+assert_deny "eas with a synthesized subcommand denies" \
+  "$(json 'eas ${v:-update} --branch preview')" "verb is not literal"
+# NEGATIVE CONTROLS -- the narrowing is the deliverable, so these carry the
+# weight. Every one measured ALLOW before the predicate was written; a flip to
+# DENY here is a false positive on ordinary work, not a catch.
+assert_allow "a bare expansion in command position stays allowed" \
+  "$(json '${EDITOR:-vim} notes.txt')"
+assert_allow "an expansion as an ARGUMENT stays allowed" \
+  "$(json 'gh pr view ${NUM:-42}')"
+assert_allow "npm run with a variable script name stays allowed" \
+  "$(json 'npm run ${SCRIPT:-build}')"
+assert_allow "a for-loop variable near a read-only verb stays allowed" \
+  "$(json 'for b in preview; do gh pr view $b; done')"
+# Additional everyday idioms, added beyond the plan's four because this
+# predicate's blast radius is wider than any other in this change: it is the
+# only one that fires on a command whose gated VERB never appears at all.
+assert_allow "an ungated binary with a variable argument stays allowed" \
+  "$(json 'git checkout $BRANCH')"
+assert_allow "npm run with forwarded variable args stays allowed" \
+  "$(json 'npm run test -- $ARGS')"
+assert_allow "a read-only gh list with a variable repo stays allowed" \
+  "$(json 'gh pr list --repo $R')"
+assert_allow "an entirely ungated tool with a variable file stays allowed" \
+  "$(json 'kubectl apply -f $FILE')"
+assert_allow "a quoted mention of a gated binary with a variable stays allowed" \
+  "$(jsonc 'echo "npm $X"')"
+assert_allow "a read-only eas colon subcommand with a variable stays allowed" \
+  "$(json 'eas update:list --branch $B')"
+
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend
 # on any other external tool (that is C4's lesson applied one layer down).
@@ -1732,6 +1782,51 @@ check "no-awk: benign command stays allowed"  allow "$(noawk_hook "$(json 'ls -l
 check "no-awk: inline bypass prefix allows"   allow "$(noawk_hook "$(json 'ALLOW_OUTWARD_CLI=1 eas update')")"
 check "no-awk: line-continuation eas update closed" deny "$(noawk_hook "$LC_EAS")"
 check "no-awk: \$-sigil-split eas update fails closed" deny "$(noawk_hook "$(jsonc "e\$'a's update --branch preview --platform all")")"
+
+# ---------- 2026-09-05: degraded path must not fail open on an expansion -----
+# The narrow-deny ruling is explicit that a precise-path-only fix "leaves the
+# degraded path exactly as open as option (b) would have". The verified cause
+# is crude_smells_outward()'s `[^a-zA-Z]+` separator class: the LETTERS INSIDE
+# an expansion (`${v:-merge}`) break it, so the fallback that exists precisely
+# to fail closed did not catch a synthesized verb.
+#
+# ATTRIBUTION, stated honestly: `check` matches only the generic deny marker,
+# and each degraded path emits ONE reason for every rule it has, so a reason
+# substring here would pin the PATH, not the RULE. Rule-level attribution for
+# these rows therefore comes from the mutation test recorded in this task's
+# commit message (comment out the new grep => exactly these rows fail), plus
+# the pre-fix measurement that every row below allowed before the fix.
+check "no-jq: synthesized gh pr verb fails closed" \
+  deny "$(nojq_hook "$(json 'gh pr ${v:-merge} 42')")"
+check "no-jq: substituted gh pr verb fails closed" \
+  deny "$(nojq_hook "$(json 'gh pr $(printf merge) 42')")"
+check "no-jq: mid-token split verb fails closed" \
+  deny "$(nojq_hook "$(json 'gh pr me${UNSET}rge 42')")"
+check "no-lib: synthesized gh pr verb fails closed" \
+  deny "$(nolib_hook "$(json 'gh pr ${v:-merge} 42')")"
+check "no-awk: synthesized gh pr verb fails closed" \
+  deny "$(noawk_hook "$(json 'gh pr ${v:-merge} 42')")"
+# Negative controls — the degraded path is ALREADY far stricter than the
+# precise one (it denies quoted mentions and read-only forms by design), but a
+# widening here must still not reach commands naming no gated binary at all.
+check "no-jq: a benign command with a variable stays allowed" \
+  allow "$(nojq_hook "$(json 'echo ${HOME:-/tmp}')")"
+check "no-jq: git commit with a variable message stays allowed" \
+  allow "$(nojq_hook "$(jsonc 'git commit -m "$MSG"')")"
+check "no-jq: ls with a variable path stays allowed" \
+  allow "$(nojq_hook "$(json 'ls -la $DIR')")"
+# The mirror keys on BOTH sigils. A backtick substitution carries no `$`, so a
+# `$`-only class left this one construction ALLOWED on all three degraded
+# paths while precise denied it — the last degraded ALLOW among the corpus's
+# mid-*/syn-* rows. Two-sided: the control names no gated binary.
+check "no-jq: mid-token BACKTICK split verb fails closed" \
+  deny "$(nojq_hook "$(json 'gh pr me``rge 42')")"
+check "no-lib: mid-token BACKTICK split verb fails closed" \
+  deny "$(nolib_hook "$(json 'gh pr me``rge 42')")"
+check "no-awk: mid-token BACKTICK split verb fails closed" \
+  deny "$(noawk_hook "$(json 'gh pr me``rge 42')")"
+check "no-jq: a backtick with no gated binary stays allowed" \
+  allow "$(nojq_hook "$(json 'echo `date`')")"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
