@@ -171,7 +171,7 @@ construction at all, independent of the guard.
       input, run the hook, record its actual exit code. If any does not reproduce, that is a
       finding: report it instead of fixing something that is not broken.
 - [ ] C1 fixed: the boundary class no longer treats a `-` contributed by a default-value
-      expansion operator as a legitimate preceding character, for every `scan_both`
+      expansion operator as a legitimate preceding character, for every `scan_renderings` (named `scan_both` at the time)
       boundary-guarded flag check — not only the administrator-override one.
 - [ ] C2 fixed: the `gh api` method check is not defeated by an expansion standing in for
       the literal method token.
@@ -247,7 +247,7 @@ construction at all, independent of the guard.
   > SMALLER than this paragraph claims.** Counted in the implemented tree, not estimated:
   > the shared constant `_OUT_FLAG_LEAD` feeds **3** consumer sites —
   > `_OUT_REPO_FLAG_RE`, the `eas build --auto-submit` scan, and the `gh pr merge --admin`
-  > scan — out of **6** `scan_both` callers in the file. The other flag checks keep their
+  > scan — out of **6** `scan_renderings` (named `scan_both` at the time) callers in the file. The other flag checks keep their
   > own boundary text and were not touched.
   >
   > The instruction that followed ("give it the largest corpus") was still followed, so the

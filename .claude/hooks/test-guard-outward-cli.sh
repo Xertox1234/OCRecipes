@@ -2015,8 +2015,80 @@ assert_deny "C4: --auto-submit split by an empty backtick pair (store submission
 # seam with the identical forging hazard the $CMD/$WORDS seam already has. This
 # is that seam's own two-sided control: `--ad` ending one rendering and `min`
 # starting the next must not read as `--admin`.
+# CORRECTED 2026-09-06 (code review of this same commit). The first version of
+# this control was `gh pr merge 42 --auto --ad` — which contains no `min`
+# anywhere, so the $WORDS/$WORDS_VANISHED join it is named for can never be
+# exercised. Mutation-proven inert: collapsing that newline (or the whole join)
+# left its outcome UNCHANGED at ALLOW. It was a decoration for its stated
+# purpose, in a suite whose own rule is that a control which survives mutation
+# is not a control. The input below puts `--ad` at the END of $WORDS and `min`
+# at the START of $WORDS_VANISHED (the leading `${UNSET}` is deleted only in the
+# vanished rendering), so it isolates the SECOND seam specifically: ALLOW here,
+# DENY under the seam-collapsing mutation — verified both ways.
 assert_allow "C4 control: the \$WORDS/\$WORDS_VANISHED seam cannot forge --admin" \
-  "$(json 'gh pr merge 42 --auto --ad')"
+  "$(json '${UNSET}min; gh pr merge 42 --auto --ad')"
+
+# ---------- 2026-09-06 (RE-review): the C1 fix's OWN crude scanner ------------
+# The first C1 fix shipped with a false soundness claim — that _out_crude_vanish
+# deletes a SUPERSET of the spans cmd_words_vanished deletes, so it could only
+# over-pass the prefilter. It cannot under-pass by DESTROYING letters (stage 1
+# already saw those), but it can fail to REJOIN them, which is a needle no
+# earlier stage can see. Finding a span's end at the FIRST closer character is
+# wrong whenever a closer sits inside the span, and the result is not a superset
+# deletion but a WRONG one: a strict prefix of the span goes, its tail stays
+# wedged between the halves. Every row below was a live ALLOW on all four paths.
+assert_deny "RE1: NESTED span inside the eas TOOL name (an OTA publish)" \
+  "$(json 'e$(: $(:))as update --branch preview')" "eas update/publish/submit"
+assert_deny "RE1: NESTED span inside the gh TOOL name" \
+  "$(json 'g$(: $(:))h pr merge 42')" "gh pr merge"
+assert_deny "RE1: NESTED span inside the npm TOOL name" \
+  "$(json 'n$(: $(:))pm publish')" "npm publish"
+assert_deny "RE1: NESTED span inside the railway TOOL name" \
+  "$(json 'rail$(: $(:))way up')" "railway"
+# jsonc, not json: this command contains double quotes, which json()'s raw
+# printf interpolation would emit as invalid JSON — the hook would then take its
+# envelope-unparseable path and this row would test the wrong thing.
+assert_deny "RE1: span body DOUBLE-QUOTES a closer" \
+  "$(jsonc 'g$(: "x)y")h pr merge 42')" "gh pr merge"
+assert_deny "RE1: span body SINGLE-QUOTES a closer" \
+  "$(json "e\$(: 'a)b')as update --branch preview")" "eas update/publish/submit"
+# The isolating control: the IDENTICAL mis-parse, but a literal `gh` satisfies
+# stage 1 so stage 3 never runs. It denied before the fix and must still deny —
+# this is what pins the defect to the stage-3 exit rather than to any matcher.
+assert_deny "RE1 control: same mis-parse, but stage 1 hits on a literal gh (denied before AND after)" \
+  "$(json 'gh p$(: $(:))r merge 42')" "gh pr merge"
+# Single-level spans must keep working: the fix must not have traded one class
+# for another.
+assert_deny "RE1 control: a NON-nested span in the tool name still denies" \
+  "$(json 'e$(:)as update --branch preview')" "eas update/publish/submit"
+# The second, independent trigger: a fixed 200-iteration cap was a decision
+# boundary with a sharp edge — 199 leading spans denied, 200 allowed. The bound
+# is now derived from the input length, so it cannot be reached by well-formed
+# input, and reaching it marks the parse inexact rather than trusted.
+_re_cap() { local i=0 p=""; while [ $i -lt "$1" ]; do p="$p\${z}"; i=$((i+1)); done; printf '%s%s' "$p" "$2"; }
+assert_deny "RE2: 199 leading empty spans (the old cap's allowed side)" \
+  "$(json "$(_re_cap 199 'g${x}h pr merge 42')")" "gh pr merge"
+assert_deny "RE2: 200 leading empty spans (the old cap's denied side — the boundary itself)" \
+  "$(json "$(_re_cap 200 'g${x}h pr merge 42')")" "gh pr merge"
+assert_deny "RE2: 250 leading empty spans, well past the old cap" \
+  "$(json "$(_re_cap 250 'e${x}as update --branch preview')")" "eas update/publish/submit"
+# Both triggers were open on all four paths, so both halves are pinned there.
+check "RE1 no-jq: nested span in the TOOL name fails closed" \
+  deny "$(nojq_hook "$(json 'e$(: $(:))as update --branch preview')")"
+check "RE1 no-lib: nested span in the TOOL name fails closed" \
+  deny "$(nolib_hook "$(json 'e$(: $(:))as update --branch preview')")"
+check "RE1 no-awk: nested span in the TOOL name fails closed" \
+  deny "$(noawk_hook "$(json 'e$(: $(:))as update --branch preview')")"
+check "RE2 no-jq: 250 leading empty spans fails closed" \
+  deny "$(nojq_hook "$(json "$(_re_cap 250 'g${x}h pr merge 42')")")"
+# Negative controls: nested and quoted spans are ORDINARY in real commands, and
+# the declining behaviour must cost decisions, not correctness.
+assert_allow "RE control: an ordinary nested substitution stays allowed" \
+  "$(json 'echo $(echo $(echo hi))')"
+assert_allow "RE control: a quoted closer in an ordinary command stays allowed" \
+  "$(jsonc 'git commit -m "$(printf "a)b")"')"
+assert_allow "RE control: 250 leading empty spans with NO gated tool stays allowed" \
+  "$(json "$(_re_cap 250 'ec${x}ho done')")"
 
 # ---------- assertion-total pin (2026-09-05, outward-CLI-guard-folded-repair)
 # Every mutation claim this suite's commits make is of the form "reverting the
@@ -2039,7 +2111,7 @@ assert_allow "C4 control: the \$WORDS/\$WORDS_VANISHED seam cannot forge --admin
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
 _PIN_RAN=1
-EXPECTED_TOTAL=438
+EXPECTED_TOTAL=456
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -137,12 +137,40 @@ done
 # `as`, which never invokes `eas`, so DENY would be the wrong expectation. The
 # interior-redirect question is a different mechanism with its own todo (see
 # NOTE6).
+#
+# MECHANISM AXIS WIDENED 2026-09-06 (security RE-review of the C1 fix). The
+# first version of this axis iterated exactly three mechanisms -- `$()`,
+# `${UNSET}`, backtick-pair -- all single-level, and all of which the fix's own
+# crude span scanner happens to parse correctly. That is 708edd2d's own critique
+# ("a corpus that varies one axis reproduces the blind spot that chose the
+# axis") applied one level up: the POSITION axis was added while the MECHANISM
+# axis stayed fixed, and the corpus reported rows=163 gaps=3 with the suite at
+# 438/0 while `e$(: $(:))as update --branch preview` -- an OTA publish -- was a
+# live ALLOW on all four paths. The mechanisms below are chosen to break a
+# first-closer scan specifically: a NESTED span, and two spans whose body
+# QUOTES a closer character.
+TOOL_MECHS=('$()' '${UNSET}' '``' '$(: $(:))' '$(: "x)y")' "\$(: 'a)b')")
+TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
-  add "toolvsub-$id" DENY "$(sed -E 's/^(.)/\1$()/'      <<< "$cmd")"
-  add "toolvvar-$id" DENY "$(sed -E 's/^(.)/\1${UNSET}/' <<< "$cmd")"
-  add "toolvbt-$id"  DENY "$(sed -E 's/^(.)/\1``/'       <<< "$cmd")"
+  for m in "${!TOOL_MECHS[@]}"; do
+    # Parameter expansion, not sed: these mechanisms contain `$`, `(`, `)` and
+    # quotes, every one of which would need escaping in a sed program. The
+    # replacement expands to a VALUE and is not re-scanned, so the sigils stay
+    # literal.
+    first=${cmd:0:1}; restc=${cmd:1}
+    add "tool${TOOL_MIDS[$m]}-$id" DENY "${first}${TOOL_MECHS[$m]}${restc}"
+  done
 done
+# The span cap must not be a decision boundary. Before the fix this had a sharp
+# edge: 199 leading empty spans DENIED and 200 ALLOWED, because the scanner's
+# fixed 200-iteration limit was reached and the needle never reformed. Pinned
+# on BOTH sides of that old edge, plus well past it.
+_capline() { local i=0 p=""; while [ $i -lt "$1" ]; do p="$p\${z}"; i=$((i+1)); done; printf '%s%s' "$p" "$2"; }
+add cap-199-ghmerge DENY "$(_capline 199 'g${x}h pr merge 42')"
+add cap-200-ghmerge DENY "$(_capline 200 'g${x}h pr merge 42')"
+add cap-250-ghmerge DENY "$(_capline 250 'g${x}h pr merge 42')"
+add cap-250-easupd  DENY "$(_capline 250 'e${x}as update --branch preview')"
 
 # axis: FLAG position -- a flag NAME the guard keys on, split by a vanishing
 # construct. ADDED 2026-09-06 with the tool axis and for the same reason: the
