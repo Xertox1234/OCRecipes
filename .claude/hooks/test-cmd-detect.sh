@@ -1494,18 +1494,48 @@ van 'a substitution nested INSIDE arithmetic is not independently deleted' \
 # ALLOWED. A PATH-stubbed binary confirmed real bash DOES invoke it. The clean
 # arithmetic rows above all pass with the broken scanner: none of them contains a
 # quote, so none exercised this arm.
-van 'a QUOTED paren inside arithmetic does not extend the verbatim span' \
+# THE SECURITY PROPERTY IS THAT `eas update` RE-FORMS -- i.e. the `$!` deletion is
+# NOT disabled by an over-consumed span. Whether the arithmetic survives verbatim
+# is a false-positive concern, not a security one, and it deliberately changed on
+# 2026-09-07: these spans contain a `;` (inside a nested substitution, where it is
+# perfectly legal), and the evidence test is deliberately COARSE about that -- it
+# voids on a `;` anywhere in the span rather than walking the span a second time
+# to find out whether the `;` is top-level. Refusing the verbatim path costs an
+# over-DENIAL, the direction this arm already argues for; the alternative is a
+# fourth grammar bet in a walk that has already produced three defects.
+van 'a QUOTED paren inside arithmetic cannot disable the deletion after it' \
   "(echo start; \$(( \$(echo '(' >/dev/null; echo 5) )); e\$!as update --branch preview)" \
-  '(echo start; $(( $(echo x >/dev/null; echo 5) )); eas update --branch preview)'
-van 'a quoted paren in a DOUBLE-quoted arithmetic body does not extend it either' \
+  '(echo start; ; eas update --branch preview)'
+van 'a quoted paren in a DOUBLE-quoted arithmetic body cannot either' \
   "(echo s; \$(( \$(echo \")\" >/dev/null; echo 5) )); e\$!as update)" \
-  '(echo s; $(( $(echo x >/dev/null; echo 5) )); eas update)'
+  '(echo s; ; eas update)'
+# The plain arithmetic forms -- no `;`, no comment -- still take the verbatim path,
+# which is what keeps `f$((1+2))oo` from rendering the manufactured word `foo`.
+# Those are the three rows immediately above this block.
 # A balanced walk is not on its own evidence the construct was arithmetic:
 # `$((a) b)` balances but is not an arithmetic expansion. Verbatim copying is the
 # only outcome that can HIDE a deletion, so it is taken ONLY on the positive `))`
 # evidence; anything else falls through to deletion, an over-denial.
 van 'a balanced-but-not-arithmetic span falls through to deletion' \
   'gh pr me$((x) y)rge' 'gh pr merge'
+# `$((a) b)` lacks the trailing `))` so it only exercises the EASY half of the
+# evidence test. `$((X) ; (Y))` balances AND ends in `))` while being a command
+# substitution bash actually executes — that is the shape that matters, and it
+# was untested (found in review). It must NOT take the verbatim path.
+van 'a balanced span ending in )) that is NOT arithmetic still deletes' \
+  'echo $((gh pr me$()rge 42) ; (:))' 'echo '
+# arith_end is comment-blind the way its predecessor was quote-blind: a `#`
+# inside the span makes the walk count parens bash never sees. Rather than teach
+# it comment grammar, a `#` or backtick in the span voids the evidence and the
+# construct falls through to deletion (over-denial, the safe direction).
+# The COUNTING pass legitimately returns nothing here (the comment defeats its
+# paren count, so the level never closes) -- that is the mechanism, not a bug.
+# The BLIND pass is what carries the verb, which is precisely why the two are
+# unioned. Asserting the counting pass alone would have pinned the wrong half.
+van  'a # in the arithmetic span leaves the counting pass empty' \
+  "$(printf 'gh pr me$(( $(: # ((\n) + 1 ))rge 42')" ''
+vanb 'and the blind pass still carries the verb through it' \
+  "$(printf 'gh pr me$(( $(: # ((\n) + 1 ))rge 42')" 'gh pr me + 1 ))rge 42'
 echo "--- cmd_words_vanished_blind: the union half the counter cannot supply ---"
 vanb() {  # $1=name $2=input $3=expected output
   local got; got=$(cmd_words_vanished_blind "$2")

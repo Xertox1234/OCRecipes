@@ -900,8 +900,34 @@ _cmd_vanish_pass() {
             # path below, where the construct is DELETED. That is an over-denial
             # for a real arithmetic expression -- the safe direction for a
             # deny-shaped rendering -- instead of a silent miss.
-            if (k > 1 && substr(buf, k-1, 1) == ")") {
-              if (d == 0) out = out substr(buf, i, k + 1 - i)
+            # A `#` OR A BACKTICK ANYWHERE IN THE SPAN VOIDS THE EVIDENCE, added
+            # 2026-09-07 after review showed arith_end is comment-blind exactly
+            # the way its predecessor was quote-blind. `#` opens a comment at word
+            # start, so the walk counts parens bash never sees and can settle on a
+            # `)` past the true end -- and everything in the over-consumed span is
+            # then copied verbatim, disabling the deletions inside it. That is
+            # CRITICAL-1 again through a different character. Rather than teach
+            # this walk comment grammar (the fifth grammar bet), the span is simply
+            # not trusted when it contains one: it falls through to DELETION, an
+            # over-denial, which is the direction this arm already argues for.
+            # A `;` OR A NEWLINE VOIDS IT TOO, and this one is not a grammar bet:
+            # `;` is a SYNTAX ERROR inside bash arithmetic (verified --
+            # `$(( 1 ; 2 ))` reports "invalid arithmetic operator"; the sequencing
+            # operator is `,`). So its presence PROVES the span is not arithmetic.
+            # Without this, `$((X) ; (Y))` balances AND ends in `))` while being a
+            # command substitution bash really executes, and it took the verbatim
+            # path -- disabling the deletions inside it. Found in review; the
+            # counter-example previously pinned here (`$((a) b)`) lacks the
+            # trailing `))` and so only ever exercised the easy half of the test.
+            #
+            # `$(` is deliberately NOT in this set -- a nested substitution inside
+            # arithmetic is legitimate and must stay verbatim, which the
+            # "not independently deleted" pin covers. `&` and `|` are likewise
+            # kept: both are real arithmetic operators.
+            span = substr(buf, i, k + 1 - i)
+            if (k > 1 && substr(buf, k-1, 1) == ")" && index(span, "#") == 0 && index(span, BT) == 0 \
+                && index(span, ";") == 0 && index(span, "\n") == 0) {
+              if (d == 0) out = out span
               i = k
               continue
             }
@@ -1051,8 +1077,27 @@ cmd_words_vanished() {
 #
 # Comment-tracking was considered and rejected: `#` opens a comment only at word
 # start, so a wrong guess there under-counts, closes early, and re-opens the
-# original bug -- a fifth grammar bet to repair the fourth. A union has no
-# missed-deny direction at all.
+# original bug -- a fifth grammar bet to repair the fourth.
+#
+# RETRACTED 2026-09-07, and the narrowing matters. This comment shipped the claim
+# "a union has no missed-deny direction at all". THAT IS FALSE, and review found
+# the counter-example by COMPOSING the two mechanisms the union is built from:
+#
+#     e$( (: # (        <- a bare-paren subshell whose body also holds a comment
+#     ) )as update --branch preview
+#
+# The counting pass counts BOTH the subshell `(` and the comment `(`, so the level
+# never closes and it emits nothing; the blind pass closes at the first unquoted
+# `)` -- the SUBSHELL closer -- so `eas` never re-forms. Both halves fail on the
+# same input, and it is a live invocation (PATH-stubbed ground truth). ALLOW on
+# `main` too, so this is a pre-existing class rather than something the union
+# opened -- but the sentence claiming coverage was written here by this change.
+#
+# THE TRUE STATEMENT IS NARROWER: a union of two close semantics covers each
+# mechanism IN ISOLATION; it does not cover their COMPOSITION, because neither
+# pass is correct for an input that defeats both. Whoever adds a third pass should
+# assume the same is true of it. Tracked at
+# todos/P0-2026-09-07-cmd-detect-composed-span-mechanisms-defeat-both-union-passes.md
 #
 # WHY NOT A SECOND LINE INSIDE cmd_words_vanished, which was tried first and
 # MEASURED WRONG: guard-outward-cli.sh`s `_out_max_count` COUNTS occurrences

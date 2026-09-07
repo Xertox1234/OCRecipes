@@ -679,7 +679,17 @@ done
 # real OTA publish, on a branch where this corpus reported 60 clean closures and
 # zero problems. It could not see it: every row was single-line, and a comment
 # needs a newline to terminate. The row parser is newline-safe now, and the
-# mechanism is generated at all three positions so the blind spot cannot reopen.
+# mechanism is generated at all three positions.
+#
+# THAT SENTENCE ORIGINALLY ENDED "so the blind spot cannot reopen." RETRACTED
+# 2026-09-07: it reopened one review round later, by COMPOSING two mechanisms this
+# file already generates separately. `e$( (: # (` newline `) )as update` defeats
+# BOTH halves of the union and ALLOWs on every path, and no row here can see it,
+# because every TOOL_MECHS/SPAN2_MECHS entry is ONE mechanism. That is the same
+# root cause as the single-line blindness above, one level up: a corpus that
+# varies mechanisms one at a time cannot see a defect that needs two at once.
+# Tracked at
+# todos/P0-2026-09-07-cmd-detect-composed-span-mechanisms-defeat-both-union-passes.md
 # The fix was to UNION the paren-counting rendering with a paren-blind one rather
 # than substitute it -- which is this file's own governing rule, applied one layer
 # down.

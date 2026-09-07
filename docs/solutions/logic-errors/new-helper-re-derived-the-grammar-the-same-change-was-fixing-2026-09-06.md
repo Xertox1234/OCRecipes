@@ -111,8 +111,31 @@ produced a second one, and the old one still covers inputs the new one cannot re
 
 The fix keeps both and unions them at the deny-shaped consumers. Comment-tracking was
 considered and rejected: `#` opens a comment only at word start, so a wrong guess under-counts,
-closes early, and re-opens the original bug — a fifth grammar bet to repair the fourth. **A
-union has no missed-deny direction at all; a smarter parser has two.**
+closes early, and re-opens the original bug — a fifth grammar bet to repair the fourth.
+
+> **RETRACTION, 2026-09-07.** This section originally ended *"A union has no missed-deny
+> direction at all; a smarter parser has two."* The first clause is **false**, and the next
+> review round found the counter-example one level up — by **composing** the two mechanisms the
+> union is built from:
+>
+> ```
+> e$( (: # (        ← a bare-paren subshell whose body also contains a comment
+> ) )as update --branch preview
+> ```
+>
+> The counting pass counts both the subshell `(` and the comment `(`, so the level never closes
+> and it emits nothing. The blind pass closes at the first unquoted `)` — the *subshell's* —
+> so the verb never re-forms. **Both halves fail on the same input**, and it is a live
+> invocation (PATH-stubbed ground truth).
+>
+> **The true statement is narrower: a union of two close semantics covers each mechanism IN
+> ISOLATION; it does not cover their COMPOSITION**, because neither pass is correct for an
+> input that defeats both. Anyone adding a third pass should assume the same of it.
+>
+> This is the section's own lesson recurring at the next level. "I fixed the thing my fix
+> broke" was true; "and now it is closed" was the overclaim — the same shape as the
+> `NO BALANCED-BRACE WALK IS NEEDED` and `superset by construction` sentences this codebase has
+> already had to retract. **A comment asserting coverage is a test obligation, not a rationale.**
 
 One caveat worth carrying, because the first attempt got it wrong: the two renderings must stay
 in **separate variables**, not be concatenated into one multi-line rendering. A consumer that

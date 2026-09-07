@@ -1610,14 +1610,20 @@ _out_max_count() {  # $1=regex -> largest per-rendering match count
 # "the $CMD/$WORDS seam cannot forge ..." assertions in
 # test-guard-outward-cli.sh go RED if this is ever "simplified" to "$CMD$WORDS";
 # the third rendering adds a second seam with the identical hazard and its own
-# assertion.
+# assertion. A FOURTH rendering ($WORDS_VANISHED_BLIND) joined on 2026-09-06 and
+# introduces a THIRD seam, which is NOT yet pinned — the sentence above claimed
+# each new rendering brings its own assertion, and that stopped being true at the
+# fourth. Not live (newline-joined, grep is line-oriented), so this is a
+# mutation-detection gap rather than a bypass: "simplifying" the join would go
+# undetected at that seam specifically.
 #
 # Case-SENSITIVE by design — no `-i`, unlike the invocation matchers below.
 # These patterns match flag NAMES, which the target CLIs themselves treat
 # case-sensitively: `--ADMIN` is not a real flag, and a case-insensitive `-R`
 # would false-match ordinary text. See the header's FLAG-detection note.
 #
-# PRECONDITION: call only AFTER `$CMD` (from the jq extraction), `$WORDS` and `$WORDS_VANISHED`
+# PRECONDITION: call only AFTER `$CMD` (from the jq extraction), `$WORDS`, `$WORDS_VANISHED`
+# and `$WORDS_VANISHED_BLIND`
 # are assigned, and only from a DENY-shaped check — never to GRANT a carve-out. Extracting this
 # helper removed the last per-call-site reminder of both, so they are stated here, on the
 # code that depends on them. An early call does NOT abort: `set -uo pipefail` has no `-e`, so

@@ -2033,6 +2033,14 @@ assert_deny "C4: --auto-submit split by an empty backtick pair (store submission
 # DENY under the seam-collapsing mutation — verified both ways.
 assert_allow "C4 control: the \$WORDS/\$WORDS_VANISHED seam cannot forge --admin" \
   "$(json '${UNSET}min; gh pr merge 42 --auto --ad')"
+# THIRD SEAM, added 2026-09-06 with $WORDS_VANISHED_BLIND. scan_renderings now
+# joins FOUR renderings, so there are three seams; the comment beside it claimed
+# each new rendering arrives with its own assertion, and that stopped being true
+# at the fourth. `--ad` ends the counting rendering (which deletes the bare-paren
+# span) while `min` starts the blind one (which does not), isolating the
+# VANISHED/BLIND boundary specifically.
+assert_allow "the \$WORDS_VANISHED/\$WORDS_VANISHED_BLIND seam cannot forge --admin" \
+  "$(json 'min$( (:) ); gh pr merge 42 --auto --ad')"
 
 # ---------- 2026-09-06 (RE-review): the C1 fix's OWN crude scanner ------------
 # The first C1 fix shipped with a false soundness claim — that _out_crude_vanish
@@ -2296,9 +2304,15 @@ assert_allow "union control: one gh api read stays ONE occurrence" \
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
 _PIN_RAN=1
-# 462 -> 488 on 2026-09-06: +21 for the widened STAGE 3 decline set and the
-# bare-paren scanner fix (8 denies attributed by reason, 13 controls/FP allows).
-EXPECTED_TOTAL=488
+# 462 -> 489 on 2026-09-06/07: +27 across three rounds, itemised because the
+# breakdown was WRONG once (it said "+21" beside a total of 488 -- 462+21=483, so
+# the sentence and the number disagreed and only the number was ever checked):
+#   +21  the widened STAGE 3 decline set and the bare-paren scanner fix
+#         (8 denies attributed by reason, 13 controls/FP allows)
+#    +5  review round 1: the arithmetic-decoy and comment-mechanism denies, plus
+#         the union occurrence-count control
+#    +1  review round 2: the third scan_renderings seam control
+EXPECTED_TOTAL=489
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
