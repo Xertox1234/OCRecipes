@@ -1542,10 +1542,13 @@ WORDS_VANISHED=$(cmd_words_vanished "$CMD")
 # variables keep "the larger of the per-rendering counts" meaning what it says.
 #
 # SKIPPED ENTIRELY WHEN $CMD HOLDS NO `(`, and that is provable rather than a
-# heuristic: the ONLY two branches the `pcount` flag gates are the arithmetic arm
-# (`substr(buf, i+1, 2) == "(("`) and `parens[d]++` (`c == "("`). Both require a
-# literal `(` byte, so with none present the two passes are byte-identical by
-# construction and the second awk fork buys nothing. This hook runs on EVERY Bash
+# heuristic: the ONLY branch the `pcount` flag gates is `parens[d]++` (`c == "("`),
+# which requires a literal `(` byte — so with none present the two passes are
+# byte-identical by construction and the second awk fork buys nothing. (This read
+# "the ONLY two branches … the arithmetic arm and `parens[d]++`" until the
+# arithmetic arm was deleted on 2026-09-07; the skip is sound a fortiori with one
+# gated branch instead of two, but a stale count here is the same drift class this
+# file's header names as its dominant defect, so it is corrected rather than left.) This hook runs on EVERY Bash
 # tool call and most commands contain no `(` at all, so the common case now costs
 # one fork instead of two. The equality de-dup below still runs for the commands
 # that DO contain one — it is what keeps a consumer from scanning the same

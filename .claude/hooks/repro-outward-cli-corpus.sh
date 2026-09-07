@@ -180,8 +180,8 @@ done
 TOOL_MECHS=('$()' '${UNSET}' '``' '$(: $(:))' '$(: "x)y")' "\$(: 'a)b')" \
             "\$(: '\"' \"a)b\" )" '$( (:) )' '$(case x in a) : ;; esac)' \
             "\$(: # (
-)")
-TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment)
+)" '$((:)|(:))')
+TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
   for m in "${!TOOL_MECHS[@]}"; do
@@ -261,9 +261,23 @@ done
 #   vcasearm    a `case` arm's `)` -- an unmatched closer with NO opener, which
 #               no depth arithmetic can reach. Still a GAP by design; see NOTE6
 #               and todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+# varithsep / varithdecoy: added 2026-09-07 because this corpus was BLIND to the
+# entire class the arithmetic-arm removal closes. Running all 308 rows across
+# main / pre-fix / post-fix gave `head_DENY - base_DENY = {}` — no losses, but no
+# GAINS either, so the differential came back clean while a hand-built
+# construction found a CRITICAL. A corpus that cannot see a change's security
+# gain cannot testify to it.
+#   varithsep    `$((:)|(:))` -- a command SUBSTITUTION bash executes, which the
+#                deleted verbatim-copy arm preserved. Seventeen sibling
+#                separator spellings behave identically; one stands for the axis.
+#   varithdecoy  `$(sq)\c(sq)` before the split. The `\c` arm consumed the CLOSING
+#                quote, so state 3 never exited and every later byte was mangled
+#                — a DENY->ALLOW regression this PR introduced and then fixed.
+#                The decoy is a PREFIX, so this row also pins that the corruption
+#                does not travel forward.
 SPAN2_MECHS=('$( (:) )' '$(case x in a) : ;; esac)' "\$(: # (
-)")
-SPAN2_IDS=(vbareparen vcasearm vcomment)
+)" '$((:)|(:))')
+SPAN2_IDS=(vbareparen vcasearm vcomment varithsep)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
   lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
@@ -669,8 +683,22 @@ done
 #      guard-outward-cli.sh's WORDS_VANISHED assignment failed exactly that test.
 #
 # GAP INVENTORY, 2026-09-06 after the cmd-detect bare-paren + vanishing-allow-list
-# change. `rows=308  precise-path gaps=33  all-path gaps=113` is the CORRECT
+# change. `rows=326  precise-path gaps=33  all-path gaps=120` is the CORRECT
 # expected output of this file.
+#
+# THE 18 varithsep-* ROWS ARE NEW (2026-09-07) AND SEVEN OF THEM ARE
+# PRECISE-CLEAN / DEGRADED-DIRTY, which is why all-path went 113 -> 120 while
+# precise-path stayed at 33. That +7 is a DISCLOSURE, not a regression: the rows
+# did not exist before, the precise path denies all 18, and the degraded mirror
+# (_out_crude_vanish) was deliberately NOT widened in this change — a scope
+# decision recorded rather than absorbed.
+#
+# They exist because this corpus was BLIND to the security gain of the same
+# change. Run across main / pre-fix / post-fix, all 308 previous rows gave
+# `head_DENY - base_DENY = {}`: no losses, and no GAINS either. The differential
+# came back clean while a hand-built construction found a CRITICAL. A corpus that
+# cannot see a change's gain cannot testify to it, and "0 opened" from such a
+# corpus is a weaker statement than it looks.
 #
 # THE 18 vcomment-* ROWS ARE `ok` ON BOTH SIDES, and they are here because of what
 # they caught while the change was in flight. A `(` inside a shell COMMENT is

@@ -948,7 +948,21 @@ _cmd_vanish_pass() {
             # \cX consumes the X. Emitting only one placeholder for the `c` and
             # then letting X fall through as a literal rendered \cA as `xA`,
             # two characters where real bash builds one control byte.
-            else if (esc == "c") { if (i < n) i++; code = -3 }
+            # \cX consumes its operand -- BUT NOT WHEN THE OPERAND IS THE CLOSING
+            # QUOTE. Consuming it unconditionally ate the `(sq)` that ends the span,
+            # so state 3 never exited and every later byte was placeholder-mangled:
+            # the `${...}`/`$(` deletion arms are gated on s == 0 || s == 2 and
+            # never ran again. A two-character decoy anywhere EARLIER in the string
+            # therefore disarmed both vanishing renderings for everything after it:
+            #     x=$(sq)\c(sq); e${UNSET}as update --branch preview
+            #     main DENY   this branch ALLOW   real argv: eas update ...
+            # A DENY->ALLOW regression introduced by this PR, bisected to the
+            # commit that added ANSI-C decoding, and live for 40/40 combinations
+            # of gated family x split mechanism. Real bash 3.2 renders $(sq)\c(sq) as a
+            # single backslash and zsh as `c`; NEITHER consumes the closing quote.
+            # The corruption is forward-only, which is what bounds it: a trailing
+            # $(sq)\c(sq) after the verb denies on every version.
+            else if (esc == "c") { if (i < n && substr(buf, i+1, 1) != SQ) i++; code = -3 }
             # \a \b \e \E \f \n \r \t \v \\ \(sq) \" \? -- a control character, a
             # quote, a backslash or punctuation, never a word character. The
             # list must be COMPLETE: omitting `r` sent \r down the unknown-escape

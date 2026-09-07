@@ -1647,6 +1647,20 @@ van 'hex decoding is case-insensitive'      "e\$'\\x41\\x4A'b" 'eAJb'
 van 'ANSI-C \\u accepts uppercase digits'    "e\$'\\u004A'b" 'eJb'
 # \cX consumes its operand. No `\c` row existed at all.
 van 'a \\cX control escape consumes its operand' "e\$'\\cA'as update" 'exas update'
+# THE ROW ABOVE USES A LETTER OPERAND, SO IT NEVER REACHES THE BOUNDARY THAT WAS
+# BROKEN. It was added one round earlier under a comment claiming it closed a
+# zero-coverage arm; it certified a DEFECTIVE arm as covered. Applying the fix
+# left it green, which is the definition of a decoration.
+#
+# The defect: `\c` immediately before the CLOSING quote consumed that quote, so
+# state 3 never exited and every later byte was mangled -- disarming the deletion
+# arms for the rest of the command. `x=$(sq)\c(sq); e${UNSET}as update` was a
+# DENY->ALLOW regression versus main, ground-truthed as a live invocation.
+# These two rows discriminate: they FAIL without the `!= SQ` guard.
+van 'a \\c before the CLOSING quote does not eat it' \
+  "x=\$'\\c'; e\${UNSET}as update" 'x=x; eas update'
+van 'and the corruption does not survive into a later command' \
+  "x=\$'\\c'; gh pr me\${UNSET}rge 42" 'x=x; gh pr merge 42'
 # A hex/unicode escape with NO digits is an UNKNOWN escape (two bytes in real
 # bash), not a control character (one). The -1/-3 sentinel collision rendered one.
 van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
@@ -1666,7 +1680,7 @@ van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
 # LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
 # assertion in a run that otherwise completed. It cannot catch an early
 # `return`/`exit` or a truncated file, because those terminate before this line.
-EXPECTED_TOTAL=556
+EXPECTED_TOTAL=558
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
