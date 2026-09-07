@@ -247,7 +247,7 @@ the separator OPTIONAL on both sides, not just glued.
 ## Resolution, 2026-09-07 — CLOSED
 
 Fixed by **one interior absorber, `_OUT_SEP`**, defined once next to the other command-position
-anchors (below the lib source, so `$_CMD_REDIR` interpolates) and applied to **all 28**
+anchors (below the lib source, so `$_CMD_REDIR` interpolates) and applied to **all 30**
 tool→verb and namespace→verb separator slots in a single change:
 
 ```sh
@@ -273,9 +273,12 @@ family since 2026-09-01 — see the correction below.
   exactly the set that ALLOWed before, so no command that denied before can flip.
 - **Two-sided, reason-asserted tests:** +41 assertions (494 → 535), every deny attributed to
   its own family's reason string.
-- **Mutation-tested per row.** Reverting `_OUT_SEP` to a bare `[[:space:]]+` turns exactly 29
-  named assertions RED (27 family denies + the occurrence-counter gain + the no-`--auto`
-  grant deny). A second mutation to the looser `([[:space:]]|REDIR)+` form turns exactly one
+- **Mutation-tested per row.** Reverting `_OUT_SEP` to a bare `[[:space:]]+` turns 30
+  named assertions RED — 27 family denies, the occurrence-counter gain, the no-`--auto`
+  grant deny, and the structural shape check. (This read "exactly 29" when written, which
+  was accurate before the structural pair was added two commits later and stale after;
+  corrected rather than left standing, since a superseded number survives in every artifact
+  nobody greps.) A second mutation to the looser `([[:space:]]|REDIR)+` form turns exactly one
   control RED — which **corrected a claim this work wrote**: `eas > update` does NOT
   discriminate between the two absorber forms (`_CMD_REDIR`'s target class greedily absorbs
   `update` as the filename), only `eas>/dev/nullupdate` does. Both comments were fixed.

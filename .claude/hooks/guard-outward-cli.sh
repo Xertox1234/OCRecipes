@@ -380,7 +380,7 @@
 #
 #     WHAT CLOSED IT: `_OUT_SEP` (defined below, next to the other anchors) —
 #     ONE interior absorber, `([[:space:]]*$_CMD_REDIR)*[[:space:]]+`, reusing
-#     the lib's `_CMD_REDIR` and applied UNIFORMLY to all 28 tool->verb and
+#     the lib's `_CMD_REDIR` and applied UNIFORMLY to all 30 tool->verb and
 #     namespace->verb separator slots in one change, detectors AND clause cuts.
 #     At zero iterations it is byte-identical to the `[[:space:]]+` it replaces,
 #     so only redirect-bearing commands can change decision at all. Measured on

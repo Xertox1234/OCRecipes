@@ -574,7 +574,7 @@ comment sweeps inside the guard files themselves.
 
 **A THIRD redirect position, found 2026-09-06 while closing the other two — the widest gap
 this document has recorded. CLOSED 2026-09-07 by `_OUT_SEP`, one interior absorber applied
-uniformly to all 28 separator slots (detectors *and* clause cuts) in a single change; 53
+uniformly to all 30 separator slots (detectors *and* clause cuts) in a single change; 53
 corpus rows closed / 0 opened by per-ID diff, and 0 decision changes across 14,151
 redirect-bearing commands harvested from real history.** Findings A and B between them
 cover a redirect that CLOSES the verb (`merge>log`) and one that PRECEDES the command

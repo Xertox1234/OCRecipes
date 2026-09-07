@@ -1458,7 +1458,12 @@ assert_deny "interior redirect GAIN: a second, interior-redirect merge is now CO
 # THE TWO ALLOW ROWS BELOW ARE THE PIN ON THAT DECISION, and it was verified with
 # a THIRD mutation aimed only at them: reverting the CLAUSE= line alone back to
 # `gh[[:space:]]+pr[[:space:]]+merge` while leaving every detector widened turns
-# EXACTLY these two rows RED and nothing else. Without them, a later
+# these two rows RED. (When first written this said "EXACTLY these two rows and
+# nothing else", which was true THEN and went stale two commits later: the
+# structural uniformity check added below also fires, because that mutation
+# reintroduces two hardcoded separators. THREE rows fail, not two — corrected
+# rather than left, since this file's whole discipline is that the number is the
+# thing that gets checked.) Without them, a later
 # "make the grant-shaped read conservative again" refactor would land silently
 # under a green suite -- an allow row is invisible to the NARROWING mutation that
 # kills the deny rows (mutation 1), so it needs a mutation of its own.
@@ -1786,8 +1791,23 @@ fi
 # test's own grep -m1) —
 # docs/solutions/logic-errors/occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md.
 # A gated family ADDED LATER with a hardcoded [[:space:]]+ would pass every
-# assertion above, because there is no behavioural row for a family that does
-# not exist yet. This is the assertion that catches it.
+# behavioural assertion above, because there is no row for a family that does not
+# exist yet. This assertion catches that — WITHIN A STATED LIMIT, and the limit
+# has to be stated because an earlier revision of this comment claimed the
+# unlimited version ("this is the assertion that catches it").
+#
+# THE LIMIT: the alternation below is a HAND-CURATED list of the words gated
+# today. A new family whose left-hand word is NOT in it — a new tool (`vercel
+# deploy`), or a new namespace under an existing tool (`gh workflow run`, where
+# `workflow` is absent) — leaves _SEP_LEFT at 0 and this check PASSES. Verified by
+# injecting both shapes into a copy of the hook. So this is DRIFT DETECTION for
+# the currently enumerated families, not a guarantee about future ones.
+#
+# Widening the list to "every possible word" is not the fix — that is an
+# unbounded arms race, and the same over-generalisation this file has already been
+# bitten by twice (a property proven of one form asserted of its whole class).
+# The real protection for a NEW family is that whoever adds it writes its rows;
+# this check's job is to stop an EXISTING family silently regressing.
 #
 # COUNTS OCCURRENCES, NOT LINES, and the distinction is load-bearing: `grep -c`
 # counts matching LINES, so a line carrying TWO separators (GH_MUTATING_RE
@@ -1816,8 +1836,15 @@ fi
 # over-denial trap in one assertion, and it fails on BOTH documented mutations:
 # reverting to a bare '[[:space:]]+' loses $_CMD_REDIR, and "simplifying" to
 # '([[:space:]]|'"$_CMD_REDIR"')+' loses the literal trailing '[[:space:]]+'.
+# COUNTED, not `grep -m1`-ed. The comment fifteen lines up names "a structural
+# test's own grep -m1" as one of three historical instances of this file's
+# selectivity defect, and the first draft of THIS check used one — reading the
+# first definition and silently ignoring any second. There is exactly one today;
+# asserting that is what makes reading the first one sound, and it costs a line.
+_SEP_DEFS=$(grep -c '^_OUT_SEP=' "$HOOK" | tr -d '[:space:]')
 _SEP_DEF=$(grep -m1 '^_OUT_SEP=' "$HOOK")
-if printf '%s' "$_SEP_DEF" | grep -qF '$_CMD_REDIR' \
+if [ "${_SEP_DEFS:-0}" = 1 ] \
+   && printf '%s' "$_SEP_DEF" | grep -qF '$_CMD_REDIR' \
    && printf '%s' "$_SEP_DEF" | grep -qF '[[:space:]]+'; then
   echo "PASS: _OUT_SEP interpolates the lib's \$_CMD_REDIR and keeps its mandatory trailing [[:space:]]+"; PASS=$((PASS+1))
 else
