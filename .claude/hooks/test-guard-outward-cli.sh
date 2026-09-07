@@ -1518,6 +1518,59 @@ assert_allow "a railway READ-ONLY verb redirecting into a file NAMED like a gate
 assert_allow "eas whoami with a redirect stays allowed" \
   "$(json 'eas whoami > who.txt')"
 
+# ---------- 2026-09-07: the UNANCHORED clause cut must scan EVERY clause -----
+# CRITICAL, found by security review OF the interior-redirect change and fixed in
+# the same PR. gh_pr_clause_has_repo's cut is the only one in the file with NO
+# `${_OUT_POS_PREFIX}` anchor, while the occurrence counters that gate it ARE
+# anchored. So "exactly one COMMAND-POSITION occurrence" never implied "exactly
+# one extractable clause", and its `head -1` could be steered onto a decoy
+# mention that is not in command position at all -- leaving the REAL clause's
+# --repo/-R unexamined and allowing unbounded PAT egress to an arbitrary repo.
+#
+# The decoy needs no redirect: the plain-spaced form allows on `main` too, so the
+# root cause PREDATES the absorber. What the absorber did was enlarge the set of
+# decoy spellings from plain-spaced to every redirect form, converting specific
+# `main` DENYs into ALLOWs -- a real regression, caught before landing.
+#
+# ARGV FOR EVERY ROW BELOW WAS TAKEN BY EXECUTION (PATH-shadowed argv-printing
+# stubs to a sentinel FILE): each really runs `gh pr <sub> ... --repo o/r`.
+assert_deny "decoy clause cannot hide a merge's --repo (redirect-spelled decoy)" \
+  "$(json 'echo gh >x pr merge && gh pr merge 42 --auto --repo o/r')" \
+  "targets a DIFFERENT GitHub repository"
+assert_deny "decoy clause cannot hide a comment's --repo" \
+  "$(json 'echo gh >x pr comment && gh pr comment 5 --body hi --repo other/org')" \
+  "--repo/-R writes to a DIFFERENT"
+assert_deny "decoy clause cannot hide a create's --repo" \
+  "$(json 'echo gh >x pr create && gh pr create --title t --repo o/r')" \
+  "--repo/-R writes to a DIFFERENT"
+assert_deny "decoy clause cannot hide the -R spelling either" \
+  "$(json 'echo gh >x pr merge && gh pr merge 42 --auto -R o/r')" \
+  "targets a DIFFERENT GitHub repository"
+assert_deny "a SPACED interior redirect in the decoy works the same way" \
+  "$(json 'echo gh 2>&1 pr merge && gh pr merge 42 --auto --repo o/r')" \
+  "targets a DIFFERENT GitHub repository"
+assert_deny "the decoy at the NAMESPACE slot is equally ineffective" \
+  "$(json 'echo gh pr >x merge && gh pr merge 42 --auto --repo o/r')" \
+  "targets a DIFFERENT GitHub repository"
+# The PRE-EXISTING form, with no redirect anywhere. It ALLOWED on `main`; the
+# clause-union fix closes it as a side effect, confirmed by the before/after
+# diff rather than predicted. Its argv really carries --repo.
+assert_deny "a plain-spaced decoy clause (allowed on main -- closed here as a side effect)" \
+  "$(json 'echo gh pr create && gh pr create --title t --repo o/r')" \
+  "--repo/-R writes to a DIFFERENT"
+# NEGATIVE CONTROLS. Scanning every clause instead of the first can only ADD
+# denies, so over-denial is this fix's whole risk surface. These two are the
+# shapes this file has ALREADY once reverted a clause-scoping change for: an
+# unrelated `-R` on a DIFFERENT command in the same line. They must stay allowed,
+# and they do -- the cut only ever extracts text that STARTS at `gh`, so a
+# `cp -R` or `grep -R` can never land inside an extracted clause.
+assert_allow "an unrelated cp -R on the same line does not make a clean gh pr create deny" \
+  "$(json 'cp -R src dst && gh pr create --title t')"
+assert_allow "an unrelated grep -R on the same line does not make a clean gh pr comment deny" \
+  "$(json 'grep -R foo . && gh pr comment 5 --body hi')"
+assert_allow "the sanctioned automerge is unaffected by the clause union" \
+  "$(json 'gh pr merge 42 --auto')"
+
 # ---------- 2026-09-05: C1 grammar widening (coordinator ruling) ------------
 # The plain-name-only alternative above closed C1 for ONE bash parameter-
 # expansion spelling; every other spelling that can legally precede `:-`/bare
@@ -2566,7 +2619,7 @@ _PIN_RAN=1
 #    +3  review round 2: the third scan_renderings seam control, plus the two
 #         blind-arm consumer rows (GH_API method, gh pr --repo) that had NO
 #         coverage -- removing either arm left the whole suite green
-# 494 -> 537 on 2026-09-07: +43, the interior-redirect absorber (_OUT_SEP).
+# 494 -> 547 on 2026-09-07: +53, the interior-redirect absorber (_OUT_SEP).
 #   +27  interior-redirect denies, each asserted on its OWN family's reason
 #         string: 6 eas, 5 railway, 5 npm/OTA-script, 10 gh, 1 narrow-deny
 #         expansion. Both gluings per family where both are reachable.
@@ -2584,7 +2637,15 @@ _PIN_RAN=1
 #         are the only two assertions here that can fail for a family that does
 #         not exist yet: every behavioural row above tests a construction, and no
 #         construction can cover a gated verb somebody adds next month with a
-#         hardcoded [[:space:]]+. 27 + 1 + 3 + 10 + 2 = 43.
+#         hardcoded [[:space:]]+.
+#   +10  the UNANCHORED-CLAUSE block: 7 denies (a decoy `gh pr <sub>` mention
+#         steering head -1 off the real clause, at both slots, both flag
+#         spellings, all three subcommands, plus the plain-spaced form that
+#         allowed on main) and 3 controls (an unrelated `cp -R`/`grep -R` on the
+#         same line, and the sanctioned automerge). These exist because a
+#         security review found the absorber turned specific main DENYs into
+#         ALLOWs through a consumer nobody had examined -- see the block itself.
+#         27 + 1 + 3 + 10 + 2 + 10 = 53.
 #
 # UNRESOLVED, and NOT introduced by this change: the 2026-09-06/07 entry above
 # does not sum. It reads "462 -> 491 ... +27" while itemising 21+5+3 = 29, and
@@ -2592,7 +2653,7 @@ _PIN_RAN=1
 # rewritten: this block's own rule is that the NUMBER is the thing that gets
 # checked, and while 494 + 41 = 535 is verifiable by running this file, the
 # provenance of that earlier discrepancy is not.
-EXPECTED_TOTAL=537
+EXPECTED_TOTAL=547
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

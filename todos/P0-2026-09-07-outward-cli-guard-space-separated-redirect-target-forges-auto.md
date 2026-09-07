@@ -65,6 +65,25 @@ which is not equal to `--auto`, so the scan does not fire and the merge is corre
 The only difference between the two failing/passing rows is the SPACE — which isolates the
 defect to the field-splitting, not to anything else in the block.
 
+### The forge also works at the INTERIOR slots (added 2026-09-07)
+
+The table above varies only the TRAILING position. The `_OUT_SEP` interior absorber makes the
+same forge reachable at the tool→namespace and namespace→verb slots, because the absorbed
+redirect becomes part of the extracted CLAUSE and its target is a separate awk field:
+
+| construction                       | real argv        | main  | with \_OUT_SEP |
+| ---------------------------------- | ---------------- | ----- | -------------- |
+| `gh > --auto pr merge 42`          | `gh pr merge 42` | ALLOW | ALLOW          |
+| `gh pr > --auto merge 42`          | `gh pr merge 42` | ALLOW | ALLOW          |
+| `gh > --auto pr > --auto merge 42` | `gh pr merge 42` | ALLOW | ALLOW          |
+
+**Not a regression — the decision is unchanged on both trees, so no row was opened.** But the
+MECHANISM differs, and that matters for whoever fixes this: on `main` these allow because the
+detector never fires at all (the interior-redirect gap); with `_OUT_SEP` the detector fires
+and they allow because the forged `--auto` GRANTS the carve-out. A fix that only teaches the
+trailing position to treat `<`/`>` as token boundaries would leave these three live. Include
+them in the acceptance criteria's mutation controls, not just the trailing row.
+
 ### Severity
 
 `critical`. This is a silent ALLOW on an immediate, unarmed `gh pr merge` — the single
@@ -93,7 +112,7 @@ critical for effect, not for likelihood.
 - [ ] False-positive population measured by execution over real command history, both
       directions, with the harness validated against a known flip.
 - [ ] Check whether the sibling value-flag logic has the same blindness: `gh pr merge 42
-    -b>x --auto` reads `prev` as `-b>x`, which does not match `^-b$`, so the `--auto` is
+  -b>x --auto` reads `prev` as `-b>x`, which does not match `^-b$`, so the `--auto` is
       counted as real — while bash gives `-b` the `--auto` as its VALUE. Measure it; if it
       reproduces it belongs in this same fix, since it is the same field-splitting cause.
 

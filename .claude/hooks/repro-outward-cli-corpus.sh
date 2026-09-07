@@ -181,6 +181,55 @@ for i in "${!INTR_FAM_IDS[@]}"; do
   done
 done
 
+# axis: DECOY CLAUSE -- a NON-command-position `gh pr <sub>` mention sitting
+# BEFORE a real, executing clause on the same line.
+#
+# THIS AXIS EXISTS BECAUSE ITS ABSENCE HID A CRITICAL. Every row generated above
+# is a SINGLE invocation, and the only multi-invocation rows in this file put both
+# mentions in COMMAND POSITION -- where the ">1 occurrence is ambiguous" deny
+# fires first and the clause cut is never reached. So no row here could exercise
+# `gh_pr_clause_has_repo`'s leftmost selection, which is the file's ONLY cut with
+# no `${_OUT_POS_PREFIX}` anchor while the counters that gate it ARE anchored.
+# A mention that is not in command position adds a clause the counter cannot see,
+# `head -1` examines the decoy, and the real clause's --repo/-R goes unexamined:
+# unbounded PAT egress to an arbitrary repository. This corpus reported clean
+# throughout, and test-guard-outward-cli.sh was 537/0 green, on a branch that had
+# converted specific `main` DENYs into ALLOWs.
+#
+# The lesson, and the reason this is a GENERATED axis rather than three hand rows:
+# a corpus that varies WHAT a construction contains cannot see a defect about
+# WHICH OF SEVERAL CANDIDATES a check picks. That needs a second occurrence, in a
+# position the gating count does not count.
+#
+# EXPECTED=DENY on its own merits: argv taken from PATH-shadowed argv-printing
+# stubs shows the real clause executing with --repo/-R in every row. The `plain`
+# spelling (no redirect at all) allowed on `main` too -- the root cause predates
+# the interior absorber, which only enlarged the set of decoy spellings.
+DECOY_IDS=(ghmerge ghcomment ghcreate)
+DECOY_CMDS=(
+  'gh pr merge 42 --auto --repo o/r'
+  'gh pr comment 5 --body hi --repo other/org'
+  'gh pr create --title t --repo o/r'
+)
+DECOY_MENTION=('gh pr merge' 'gh pr comment' 'gh pr create')
+DECOY_SPELL_IDS=(plain glue sp fd)
+DECOY_SPELL_SEDS=('\1' '\1>\/dev\/null' '\1 >\/dev\/null' '\1 2>\&1')
+for i in "${!DECOY_IDS[@]}"; do
+  id=${DECOY_IDS[$i]}; real=${DECOY_CMDS[$i]}; men=${DECOY_MENTION[$i]}
+  for j in "${!DECOY_SPELL_IDS[@]}"; do
+    sp=${DECOY_SPELL_IDS[$j]}; rp=${DECOY_SPELL_SEDS[$j]}
+    add "decoytool$sp-$id" DENY "echo $(sed -E "s/^(gh)/${rp}/" <<< "$men") && $real"
+    add "decoyns$sp-$id"   DENY "echo $(sed -E "s/^(gh pr)/${rp}/" <<< "$men") && $real"
+  done
+done
+# False-positive controls for the clause UNION that closes the axis above.
+# Scanning every clause instead of the first can only ADD denies, so these are
+# the rows that would catch it over-denying -- and they are the exact shapes this
+# file once reverted a clause-scoping change for.
+add "decoyfp-cpR"   ALLOW 'cp -R src dst && gh pr create --title t'
+add "decoyfp-grepR" ALLOW 'grep -R foo . && gh pr comment 5 --body hi'
+add "decoyfp-auto"  ALLOW 'gh pr merge 42 --auto'
+
 # axis: TOOL position -- the binary NAME itself split by a vanishing construct.
 # ADDED 2026-09-06 (security review of PR #926). THIS AXIS'S ABSENCE IS WHY THE
 # REVIEW FOUND FOUR CRITICALS AND THIS FILE FOUND NONE. Every glue axis above

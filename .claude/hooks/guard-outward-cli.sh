@@ -913,13 +913,59 @@ gh_pr_clause_has_repo() {
   # `--admin` / a literal HTTP method at the other two sites). Evaluate the
   # WHOLE predicate against EACH rendering and OR the results — never pick one.
   #
-  # Per-rendering `head -1` stays correct: both call sites gate on an occurrence
-  # count that is already a per-rendering MAXIMUM, so reaching here means each
-  # rendering holds at most one clause. This is not choosing among several.
+  # THE UNION EXTENDS TO CLAUSES, NOT JUST RENDERINGS — fixed 2026-09-07
+  # (security review of the interior-redirect change). The previous line was
+  # `grep -oiE "$re" | head -1`, defended by this claim:
+  #
+  #     "Per-rendering `head -1` stays correct: both call sites gate on an
+  #      occurrence count that is already a per-rendering MAXIMUM, so reaching
+  #      here means each rendering holds at most one clause."
+  #
+  # THAT CLAIM WAS FALSE, and the reason is a one-word difference nobody read:
+  # the occurrence counters run the ANCHORED `GH_PR_MERGE_RE`/`GH_PR_CREATE_RE`
+  # (both carry `${_OUT_POS_PREFIX}`), while `$re` here is the file's ONLY cut
+  # with NO anchor at all. "Exactly one COMMAND-POSITION occurrence" and
+  # "exactly one extractable clause" were therefore never the same quantity, and
+  # a mention that is not in command position adds a clause the counter cannot
+  # see. `head -1` then examines the DECOY and the real clause goes unexamined.
+  #
+  # MEASURED, this branch, before the fix — real argv taken from PATH-shadowed
+  # argv-printing stubs, so these genuinely execute:
+  #     echo gh >x pr merge && gh pr merge 42 --auto --repo o/r      -> ALLOW
+  #     echo gh >x pr comment && gh pr comment 5 --body hi --repo o/r -> ALLOW
+  #     echo gh >x pr create && gh pr create --title t --repo o/r     -> ALLOW
+  # Each is unbounded PAT egress to an ARBITRARY repository — precisely what
+  # this function exists to stop. The decoy needs no redirect to work at all
+  # (`echo gh pr create && gh pr create --title t --repo o/r` allows on `main`
+  # too, so the root cause PREDATES the absorber); widening `_OUT_SEP` merely
+  # enlarged the set of decoy spellings from plain-spaced to every redirect
+  # form, which is what turned specific `main` DENYs into ALLOWs.
+  #
+  # WHY THIS FILE'S OWN DEFENCES MISSED IT. The loop below already unions over
+  # RENDERINGS, and that rule ("UNION, never SUBSTITUTE") was satisfied — every
+  # rendering independently picked the same wrong clause, so no amount of
+  # rendering-level unioning could help. The leftmost-selection defect lives
+  # INSIDE a rendering. A union has to cover every axis on which the check can
+  # pick one candidate out of several, and "which clause" was an axis nobody had
+  # named.
+  #
+  # Scanning EVERY clause is monotone in the safe direction: this function's
+  # result is consumed by two call sites that deny() on true with no carve-out
+  # branch, so examining more text can only ever ADD a deny. That is the same
+  # argument the vanished-rendering union rests on, applied one axis over.
+  #
+  # CAPTURE FIRST, THEN TEST — not `grep -oiE … | grep -Eq …`. This file runs
+  # under `set -uo pipefail`, and an early-exiting reader makes the pipeline
+  # report failure when `grep -q` stops at its first match and the writer takes
+  # SIGPIPE (docs/rules/harness.md). Written as a pipeline this check would fail
+  # OPEN on exactly the inputs it is supposed to catch.
+  local clauses
   for rendering in "$WORDS_DEEP" "$WORDS_VANISHED" "$WORDS_VANISHED_BLIND"; do
-    clause=$(printf '%s' "$rendering" | grep -oiE "$re" | head -1)
-    [ -n "$clause" ] || continue
-    grep -Eq "$_OUT_REPO_FLAG_RE" <<< "$clause" && return 0
+    clauses=$(printf '%s' "$rendering" | grep -oiE "$re")
+    [ -n "$clauses" ] || continue
+    # grep is line-oriented and `grep -o` puts each clause on its own line, so a
+    # `--repo` cannot be forged across the seam between two clauses.
+    grep -Eq "$_OUT_REPO_FLAG_RE" <<< "$clauses" && return 0
   done
   return 1
 }
