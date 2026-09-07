@@ -689,7 +689,7 @@ done
 # root cause as the single-line blindness above, one level up: a corpus that
 # varies mechanisms one at a time cannot see a defect that needs two at once.
 # Tracked at
-# todos/P0-2026-09-07-cmd-detect-composed-span-mechanisms-defeat-both-union-passes.md
+# todos/P1-2026-09-07-outward-cli-guard-threat-model-decision.md
 # The fix was to UNION the paren-counting rendering with a paren-blind one rather
 # than substitute it -- which is this file's own governing rule, applied one layer
 # down.

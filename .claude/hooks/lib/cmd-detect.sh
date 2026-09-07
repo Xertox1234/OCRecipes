@@ -1097,7 +1097,7 @@ cmd_words_vanished() {
 # mechanism IN ISOLATION; it does not cover their COMPOSITION, because neither
 # pass is correct for an input that defeats both. Whoever adds a third pass should
 # assume the same is true of it. Tracked at
-# todos/P0-2026-09-07-cmd-detect-composed-span-mechanisms-defeat-both-union-passes.md
+# todos/P1-2026-09-07-outward-cli-guard-threat-model-decision.md
 #
 # WHY NOT A SECOND LINE INSIDE cmd_words_vanished, which was tried first and
 # MEASURED WRONG: guard-outward-cli.sh`s `_out_max_count` COUNTS occurrences
