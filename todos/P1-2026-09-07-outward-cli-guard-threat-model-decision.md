@@ -62,8 +62,10 @@ incident class this guard was built for, and no finding in the last five days to
 
 ### 4. The guard's own charter already concedes the span layer cannot be complete
 
-`guard-outward-cli.sh`'s header: _"guardrail, not a sandbox — a determined bypass is always
-possible; that is what the `SKIP\__` env bypasses are for."\*
+`guard-outward-cli.sh`'s header, quoted verbatim:
+
+> guardrail, not a sandbox — a determined bypass is always possible; that is what the
+> `SKIP_*` env bypasses are for.
 
 ## Three adversaries, and they need different things
 
