@@ -1522,6 +1522,12 @@ assert_deny "same brace-glued construction with a LITERAL mutating method attrib
 # still agrees with GH_API_RE's anchor, and EVERY clause cut actually goes
 # through that constant. A third cut added later with the anchor inlined again
 # fails here, which is the same failure this has always caught.
+#
+# 2 -> 3 on 2026-09-06, DELIBERATELY, and the arity edit IS the review moment: a
+# third cut (the paren-BLIND vanishing rendering) was added and it goes through
+# $_GH_API_CUT like the other two, so only the count moved. Bumping this number
+# is where a reviewer confirms the new cut shares the anchor instead of inlining
+# its own -- which is what this assertion exists to force.
 GH_API_RE_LINE=$(grep -m1 '^GH_API_RE=' "$HOOK")
 _ANCHOR_RE="${GH_API_RE_LINE#GH_API_RE=\"}"
 _ANCHOR_RE="${_ANCHOR_RE%\"}"
@@ -1537,7 +1543,7 @@ if [ -n "$_ANCHOR_RE" ] \
    && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh[[:space:]]+api' \
    && [ "$_CUT_DEFS" -eq 1 ] \
    && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}[^;&|]*" \
-   && [ "$_CLAUSE_CUTS" -eq 2 ] \
+   && [ "$_CLAUSE_CUTS" -eq 3 ] \
    && [ "$_CUTS_OK" -eq 1 ]; then
   echo "PASS: GH_API_RE and ALL $_CLAUSE_CUTS GH_API_CLAUSE cuts share one anchor via a single _GH_API_CUT constant (structural, not behavioural)"; PASS=$((PASS+1))
 else
@@ -2249,6 +2255,25 @@ assert_deny "arithmetic decoy with a quoted paren cannot hide a split binary nam
 assert_deny "arithmetic decoy control: clean arithmetic, same payload" \
   "$(json '(echo start; $(( 1+2 )); e$!as update --branch preview)')" \
   "eas update/publish/submit"
+# CRITICAL found in review of this change, and a DENY->ALLOW REGRESSION versus
+# main rather than a missed widening: a `(` inside a shell COMMENT is inert to
+# bash, but the bare-paren counter counts it, so the substitution level never
+# closes and $WORDS_VANISHED comes back EMPTY. main DENIED this; the counter
+# alone ALLOWED it, and a PATH-stubbed binary confirmed real bash invokes
+# `eas update --branch preview`. Closed by UNIONING the paren-blind rendering
+# ($WORDS_VANISHED_BLIND) rather than substituting the counting one for it.
+assert_deny "a ( inside a shell comment cannot hide a split binary name" \
+  "$(jsonc "$(printf 'e$(: # (\n)as update --branch preview')")" \
+  "eas update/publish/submit"
+assert_deny "a comment whose ( mis-closes at a later ) cannot hide it either" \
+  "$(jsonc "$(printf 'e$( : # (\n)as update --branch preview # )')")" \
+  "eas update/publish/submit"
+# The union must cost latency, not verdicts: a single real occurrence must not be
+# double-counted into the ">1 occurrence -> ambiguous" deny. Folding the blind
+# rendering into $WORDS_VANISHED as a second LINE did exactly that to a genuine
+# read-only `gh api`, found in a false-positive harvest over real history.
+assert_allow "union control: one gh api read stays ONE occurrence" \
+  "$(jsonc 'x=$( (:) ); gh api repos/o/r --jq ".name"')"
 
 # ---------- assertion-total pin (2026-09-05, outward-CLI-guard-folded-repair)
 # Every mutation claim this suite's commits make is of the form "reverting the
@@ -2271,9 +2296,9 @@ assert_deny "arithmetic decoy control: clean arithmetic, same payload" \
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
 _PIN_RAN=1
-# 462 -> 485 on 2026-09-06: +21 for the widened STAGE 3 decline set and the
+# 462 -> 488 on 2026-09-06: +21 for the widened STAGE 3 decline set and the
 # bare-paren scanner fix (8 denies attributed by reason, 13 controls/FP allows).
-EXPECTED_TOTAL=485
+EXPECTED_TOTAL=488
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

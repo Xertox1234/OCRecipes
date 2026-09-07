@@ -1506,6 +1506,36 @@ van 'a quoted paren in a DOUBLE-quoted arithmetic body does not extend it either
 # evidence; anything else falls through to deletion, an over-denial.
 van 'a balanced-but-not-arithmetic span falls through to deletion' \
   'gh pr me$((x) y)rge' 'gh pr merge'
+echo "--- cmd_words_vanished_blind: the union half the counter cannot supply ---"
+vanb() {  # $1=name $2=input $3=expected output
+  local got; got=$(cmd_words_vanished_blind "$2")
+  if [ "$got" = "$3" ]; then echo "PASS: $1"; PASS=$((PASS+1))
+  else echo "FAIL: $1"; echo "  in:  $2"; echo "  got: $got"; echo "  want: $3"; FAIL=$((FAIL+1)); fi
+}
+# `#` opens a comment at word start, so the `(` after it is INERT to bash -- but
+# the paren counter cannot read that, counts it, and the substitution level never
+# closes, so cmd_words_vanished returns NOTHING. The blind pass reproduces the
+# pre-counter close semantics and still carries the verb. Ground truth
+# (PATH-stubbed binary): real bash invokes `eas update --branch preview`, so this
+# was a DENY->ALLOW regression until the two renderings were UNIONED at the
+# consumers instead of one being substituted for the other.
+van  'a ( inside a comment makes the COUNTING pass return nothing' \
+  "$(printf 'e$(: # (\n)as update --branch preview')" ''
+vanb 'and the BLIND pass still carries the verb' \
+  "$(printf 'e$(: # (\n)as update --branch preview')" 'eas update --branch preview'
+vanb 'a comment whose ( mis-closes at a LATER ) still keeps the verb' \
+  "$(printf 'e$( : # (\n)as update --branch preview # )')" \
+  'eas update --branch preview # )'
+# The blind pass must NOT be a copy of the counting one: it deliberately keeps
+# the OLD (wrong-for-a-subshell) close, which is what makes the union non-trivial.
+vanb 'the blind pass still closes at the FIRST unquoted )' \
+  'e$( (:) )as update --branch preview' 'e )as update --branch preview'
+# Everything that does not involve a bare paren must render IDENTICALLY in both,
+# so the common case adds no second rendering for consumers to scan.
+vanb 'a plain vanishing sigil renders identically in both passes' \
+  'gh pr me${UNSET}rge 42' 'gh pr merge 42'
+vanb 'special-parameter deletion is present in the blind pass too' \
+  'e$1as update' 'eas update'
 
 echo "--- cmd_words_vanished: SPECIAL parameters are deletable, by the same criterion ---"
 # Each is ONE character long, so unlike an ordinary $name it TERMINATES against a

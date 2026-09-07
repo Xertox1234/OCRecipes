@@ -171,9 +171,17 @@ done
 #               todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #               Deliberately left as a visible gap: it keeps pointing at a live
 #               bypass.
+# vcomment: a `(` inside a shell COMMENT. Inert to bash (a comment runs to
+# end-of-line), so the substitution's real closer is the `)` on the NEXT line --
+# but a paren-counting scanner counts it and the level never closes. This
+# mechanism was a live DENY->ALLOW regression that this corpus could not see,
+# because every row was single-line and a comment needs a newline to terminate
+# (the row parser is newline-safe as of the same change). ADDED 2026-09-06.
 TOOL_MECHS=('$()' '${UNSET}' '``' '$(: $(:))' '$(: "x)y")' "\$(: 'a)b')" \
-            "\$(: '\"' \"a)b\" )" '$( (:) )' '$(case x in a) : ;; esac)')
-TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm)
+            "\$(: '\"' \"a)b\" )" '$( (:) )' '$(case x in a) : ;; esac)' \
+            "\$(: # (
+)")
+TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
   for m in "${!TOOL_MECHS[@]}"; do
@@ -253,8 +261,9 @@ done
 #   vcasearm    a `case` arm's `)` -- an unmatched closer with NO opener, which
 #               no depth arithmetic can reach. Still a GAP by design; see NOTE6
 #               and todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
-SPAN2_MECHS=('$( (:) )' '$(case x in a) : ;; esac)')
-SPAN2_IDS=(vbareparen vcasearm)
+SPAN2_MECHS=('$( (:) )' '$(case x in a) : ;; esac)' "\$(: # (
+)")
+SPAN2_IDS=(vbareparen vcasearm vcomment)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
   lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
@@ -509,9 +518,14 @@ GAPS=0
 ALLGAPS=0
 IDS=(); EXPS=(); CMDS=(); PS=(); JS=(); LS=(); AS=()
 for row in "${ROWS[@]}"; do
-  id=$( awk -F' @@ ' '{print $1}' <<< "$row")
-  exp=$(awk -F' @@ ' '{print $2}' <<< "$row")
-  cmd=$(awk -F' @@ ' '{print $3}' <<< "$row")
+  # Parameter expansion, NOT awk: awk is line-oriented, so a row whose COMMAND
+  # contains a newline had only its first line extracted. That silently excluded
+  # every multi-line construction from this corpus -- including a `#` comment
+  # inside a substitution, which needs a newline to terminate and which was a
+  # live DENY->ALLOW regression no row here could see (2026-09-06 security
+  # review). Parameter expansion is newline-safe and needs no subprocess.
+  id=${row%% @@ *}; _rest=${row#* @@ }
+  exp=${_rest%% @@ *}; cmd=${_rest#* @@ }
   p=$(decide precise "$cmd"); j=$(decide nojq "$cmd")
   l=$(decide nolib "$cmd");   a=$(decide noawk "$cmd")
   if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); fi
@@ -543,8 +557,7 @@ done
 echo ""
 echo "=== deny-reason attribution (which check actually fired) ==="
 for row in "${ROWS[@]}"; do
-  id=$( awk -F' @@ ' '{print $1}' <<< "$row")
-  cmd=$(awk -F' @@ ' '{print $3}' <<< "$row")
+  id=${row%% @@ *}; _rest=${row#* @@ }; cmd=${_rest#* @@ }
   [ "$(decide precise "$cmd")" = "DENY" ] || continue
   printf '%-18s : %s\n' "$id" "$(reason precise "$cmd")"
 done
@@ -656,8 +669,20 @@ done
 #      guard-outward-cli.sh's WORDS_VANISHED assignment failed exactly that test.
 #
 # GAP INVENTORY, 2026-09-06 after the cmd-detect bare-paren + vanishing-allow-list
-# change. `rows=290  precise-path gaps=33  all-path gaps=113` is the CORRECT
+# change. `rows=308  precise-path gaps=33  all-path gaps=113` is the CORRECT
 # expected output of this file.
+#
+# THE 18 vcomment-* ROWS ARE `ok` ON BOTH SIDES, and they are here because of what
+# they caught while the change was in flight. A `(` inside a shell COMMENT is
+# inert to bash, but the bare-paren counter counted it, so the substitution level
+# never closed and the rendering came back EMPTY -- a DENY->ALLOW regression on a
+# real OTA publish, on a branch where this corpus reported 60 clean closures and
+# zero problems. It could not see it: every row was single-line, and a comment
+# needs a newline to terminate. The row parser is newline-safe now, and the
+# mechanism is generated at all three positions so the blind spot cannot reopen.
+# The fix was to UNION the paren-counting rendering with a paren-blind one rather
+# than substitute it -- which is this file's own governing rule, applied one layer
+# down.
 #
 # HISTORY OF THE NUMBER, so nobody reads a movement as a regression: it was 3
 # while the corpus was blind to the tool and flag POSITIONS, went UP to 73 when

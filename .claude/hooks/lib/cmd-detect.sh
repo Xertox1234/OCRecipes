@@ -743,8 +743,14 @@ cmd_words_deep() {
 # caught by comparing this function's output against cmd_extract_substitutions
 # on the same input (see the differential pins in test-cmd-detect.sh) before
 # either draft shipped.
-cmd_words_vanished() {
-  printf '%s' "$1" | awk '
+# _cmd_vanish_pass <pcount>  -- ONE pass of the vanishing rendering, reading the
+# command text on STDIN. `pcount=1` counts bare-paren depth (so a subshell inside
+# a substitution does not close it early); `pcount=0` reproduces the ORIGINAL
+# close semantics exactly -- first unquoted `)` wins -- while keeping every other
+# deletion this rendering performs. Not called directly by anything but
+# cmd_words_vanished, which unions the two.
+_cmd_vanish_pass() {
+  awk -v pcount="$1" '
     # ANSI-C decoding helpers. BSD awk (this runtime) has NO strtonum, so hex and
     # octal are converted by digit-position lookup rather than a library call.
     function hexval(s,   k, v, p) {
@@ -874,7 +880,7 @@ cmd_words_vanished() {
           # `$(( $(printf 1) + 1 ))` evaluates to 2), so the extractor must still
           # descend into it. The differential invariant the two share is
           # agreement on COMMAND-substitution liveness; arithmetic is outside it.
-          if (c == "$" && i + 1 < n && substr(buf, i+1, 2) == "((") {
+          if (pcount && c == "$" && i + 1 < n && substr(buf, i+1, 2) == "((") {
             # arith_end is QUOTE-AWARE; a raw byte counter here was a CRITICAL
             # (its header carries the construction that defeated it).
             k = arith_end(i + 1)
@@ -921,7 +927,11 @@ cmd_words_vanished() {
           # still written out exactly as before. Gated to state 0 for the same
           # reason the close condition is -- a paren inside a quoted span is
           # literal text, and counting it there would unbalance the level.
-          if (c == "(" && s == 0) parens[d]++
+          # pcount=0 never increments, so parens[d] stays 0 and the close below
+          # fires at the FIRST unquoted `)` -- byte-for-byte the original
+          # semantics. That pass is what the union restores; see the function
+          # header for why a second pass exists at all.
+          if (c == "(" && s == 0 && pcount) parens[d]++
           if (c == ")" && s == 0) {
             if (d >= 1 && kind[d] == "P" && parens[d] == 0) { depth--; continue }
             if (parens[d] > 0) parens[d]--
@@ -1018,7 +1028,44 @@ cmd_words_vanished() {
       if (depth >= 1) exit
       sub(/\n$/, "", out)
       printf "%s", out
-    }' | cmd_words
+    }'
+}
+
+cmd_words_vanished() {
+  printf '%s' "$1" | _cmd_vanish_pass 1 | cmd_words
+}
+
+# cmd_words_vanished_blind <cmd>  -- the SECOND HALF of the vanishing rendering,
+# and a SEPARATE VARIABLE rather than an extra line inside cmd_words_vanished.
+#
+# WHY IT EXISTS. The bare-paren counter moved the close decision LATER, which is
+# right for a subshell and wrong for a construct the counter cannot read: a `(`
+# inside a shell COMMENT (`e$(: # (` newline `)as update`) is inert to bash but
+# counted here, so the level never closed, the rendering came back EMPTY, and a
+# real OTA publish that the OLD close semantics DENIED was ALLOWED. Confirmed
+# against a PATH-stubbed binary -- a DENY->ALLOW regression, not a missed
+# widening. This function reproduces those old semantics (first unquoted `)`
+# wins) while keeping every other deletion, so the two are UNIONED at the
+# consumers rather than one SUBSTITUTED for the other -- the rule
+# cmd_words_vanished`s own header states, applied to itself.
+#
+# Comment-tracking was considered and rejected: `#` opens a comment only at word
+# start, so a wrong guess there under-counts, closes early, and re-opens the
+# original bug -- a fifth grammar bet to repair the fourth. A union has no
+# missed-deny direction at all.
+#
+# WHY NOT A SECOND LINE INSIDE cmd_words_vanished, which was tried first and
+# MEASURED WRONG: guard-outward-cli.sh`s `_out_max_count` COUNTS occurrences
+# across a rendering, so two lines carrying the same `gh api` turned ONE
+# occurrence into two and tripped the ">1 occurrence means ambiguous" branch.
+# Found in a false-positive harvest over real command history, on a genuine
+# `gh api` read that had denied nowhere before. Keeping the renderings in
+# separate variables lets each be counted on its own, which is what "the larger
+# of the per-rendering counts" always meant.
+#
+# DENY-SHAPED CONSUMERS ONLY, same contract as cmd_words_vanished.
+cmd_words_vanished_blind() {
+  printf '%s' "$1" | _cmd_vanish_pass 0 | cmd_words
 }
 
 # cmd_bare_deep <command>  → cmd_bare(command), joined by NEWLINE with

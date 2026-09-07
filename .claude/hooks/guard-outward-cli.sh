@@ -868,7 +868,7 @@ gh_pr_clause_has_repo() {
   # Per-rendering `head -1` stays correct: both call sites gate on an occurrence
   # count that is already a per-rendering MAXIMUM, so reaching here means each
   # rendering holds at most one clause. This is not choosing among several.
-  for rendering in "$WORDS_DEEP" "$WORDS_VANISHED"; do
+  for rendering in "$WORDS_DEEP" "$WORDS_VANISHED" "$WORDS_VANISHED_BLIND"; do
     clause=$(printf '%s' "$rendering" | grep -oiE "$re" | head -1)
     [ -n "$clause" ] || continue
     grep -Eq "$_OUT_REPO_FLAG_RE" <<< "$clause" && return 0
@@ -1517,6 +1517,22 @@ WORDS_DEEP=$(cmd_words_deep "$CMD")
 # See lib/cmd-detect.sh:cmd_words_vanished for the allow-list and why a
 # construct must be PROVEN able to evaluate to empty before it may be deleted.
 WORDS_VANISHED=$(cmd_words_vanished "$CMD")
+# The paren-BLIND half of the vanishing rendering, kept in its OWN variable so
+# every consumer below counts it as a rendering of its own. The bare-paren
+# counter cannot read a `(` inside a shell COMMENT, so it over-counts, the
+# substitution level never closes, and $WORDS_VANISHED comes back EMPTY —
+# `e$(: # (` newline `)as update --branch preview` was a DENY→ALLOW regression
+# on a real OTA publish (PATH-stubbed ground truth). This rendering reproduces
+# the pre-counter close semantics, so the two are UNIONED rather than one
+# substituted for the other.
+#
+# NOT folded into $WORDS_VANISHED as a second line, which was tried and measured
+# wrong: `_out_max_count` COUNTS occurrences across a rendering, so two lines
+# carrying the same `gh api` turned ONE occurrence into two and tripped the
+# ">1 occurrence → ambiguous" deny on a genuine read-only call. Separate
+# variables keep "the larger of the per-rendering counts" meaning what it says.
+WORDS_VANISHED_BLIND=$(cmd_words_vanished_blind "$CMD")
+[ "$WORDS_VANISHED_BLIND" = "$WORDS_VANISHED" ] && WORDS_VANISHED_BLIND=""
 
 # Union, for BOOLEAN detection ONLY. Every consumer switched to this is of the
 # form `if grep -Eqi ... ; then deny`, so over-matching can only ever ADD a
@@ -1533,7 +1549,8 @@ WORDS_VANISHED=$(cmd_words_vanished "$CMD")
 #      $WORDS stays byte-identical; the two GRANT INVERSION assertions in
 #      test-guard-outward-cli.sh pin that it does.
 WORDS_SCAN="$WORDS_DEEP
-$WORDS_VANISHED"
+$WORDS_VANISHED
+$WORDS_VANISHED_BLIND"
 
 # Occurrence count across both renderings, taking the LARGER rather than
 # counting the union. Preserves the ambiguity semantics exactly (two real
@@ -1541,11 +1558,21 @@ $WORDS_VANISHED"
 # the vanished rendering can see raise its block's count from 0 to 1 -- without
 # which the merge and gh api blocks, both GATED BEHIND their counters, are
 # never entered at all and a mid-token split falls straight through to ALLOW.
-_out_max_count() {  # $1=regex -> larger of the two per-rendering match counts
-  local a b
-  a=$(printf '%s' "$WORDS_DEEP"     | grep -oiE "$1" | wc -l | tr -d '[:space:]')
-  b=$(printf '%s' "$WORDS_VANISHED" | grep -oiE "$1" | wc -l | tr -d '[:space:]')
-  if [ "${a:-0}" -ge "${b:-0}" ]; then printf '%s' "${a:-0}"; else printf '%s' "${b:-0}"; fi
+_out_max_count() {  # $1=regex -> largest per-rendering match count
+  # THREE renderings, each counted SEPARATELY and the largest returned — never
+  # counted over a concatenation. That distinction is the whole point of this
+  # helper and it was re-learned the hard way: folding the paren-blind rendering
+  # into $WORDS_VANISHED as a second LINE made one `gh api` count as two and
+  # denied a genuine read-only call as "ambiguous". Counting per rendering keeps
+  # the ambiguity semantics exact (two real invocations still count 2, one still
+  # counts 1) no matter how many renderings are added here.
+  local r n best=0
+  for r in "$WORDS_DEEP" "$WORDS_VANISHED" "$WORDS_VANISHED_BLIND"; do
+    [ -n "$r" ] || continue
+    n=$(printf '%s' "$r" | grep -oiE "$1" | wc -l | tr -d '[:space:]')
+    [ "${n:-0}" -gt "$best" ] && best=${n:-0}
+  done
+  printf '%s' "$best"
 }
 
 # Multi-rendering flag scan, for DENY-ONLY checks. One pattern, every rendering,
@@ -1600,7 +1627,8 @@ _out_max_count() {  # $1=regex -> larger of the two per-rendering match counts
 # blank rendering) would create if one ever grew a flag scan.
 scan_renderings() { grep -Eq "$1" <<< "$CMD
 $WORDS
-$WORDS_VANISHED"; }
+$WORDS_VANISHED
+$WORDS_VANISHED_BLIND"; }
 
 # Necessary-substring fast path (project_per_bash_hook_overhead): a command
 # without ANY of these literal substrings cannot match any predicate below.
@@ -2201,6 +2229,14 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # documents. deny() exits, so no input can be denied twice.
   GH_API_CLAUSE_VANISHED=$(printf '%s' "$WORDS_VANISHED" | grep -oiE "$_GH_API_CUT" | head -1)
   [ "$GH_API_CLAUSE_VANISHED" = "$GH_API_CLAUSE_DEEP" ] && GH_API_CLAUSE_VANISHED=""
+  # The paren-BLIND vanishing rendering is a third cut for the same reason the
+  # vanished one is a second: it is the only rendering that survives a `(` inside
+  # a shell comment, where the paren-counting pass returns nothing at all. It is
+  # span-derived exactly like the vanished cut, so it carries the same marker.
+  # De-duplicated against BOTH earlier cuts so the common case still costs one pass.
+  GH_API_CLAUSE_BLIND=$(printf '%s' "$WORDS_VANISHED_BLIND" | grep -oiE "$_GH_API_CUT" | head -1)
+  { [ "$GH_API_CLAUSE_BLIND" = "$GH_API_CLAUSE_DEEP" ] || \
+    [ "$GH_API_CLAUSE_BLIND" = "$GH_API_CLAUSE_VANISHED" ]; } && GH_API_CLAUSE_BLIND=""
   # BOTH checks below run once per rendering (the empty entry is skipped, and an
   # identical vanished cut was blanked just above so the common case still costs
   # one pass). $GH_API_CLAUSE is the loop variable; nothing after `done` reads
@@ -2224,10 +2260,11 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # method flag exactly as the `$` test is, so the documented narrowing holds:
   # a split-verb READ (`gh a${UNSET}pi repos/o/r`, `--jq`, `--paginate`, a
   # dynamic route) has no method flag and stays allowed.
-  for _GH_API_WHICH in deep vanished; do
+  for _GH_API_WHICH in deep vanished blind; do
   case "$_GH_API_WHICH" in
     deep)     GH_API_CLAUSE="$GH_API_CLAUSE_DEEP";     _GH_API_SPAN_DERIVED=no  ;;
     vanished) GH_API_CLAUSE="$GH_API_CLAUSE_VANISHED"; _GH_API_SPAN_DERIVED=yes ;;
+    blind)    GH_API_CLAUSE="$GH_API_CLAUSE_BLIND";    _GH_API_SPAN_DERIVED=yes ;;
   esac
   [ -n "$GH_API_CLAUSE" ] || continue
   # FIXED 2026-09-05 (C2): a method value that is not literal text (an
