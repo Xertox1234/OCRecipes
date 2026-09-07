@@ -1,15 +1,36 @@
 ---
 title: "lib/cmd-detect.sh: a `case` arm's unmatched `)` closes the enclosing $(...) early, and no paren counter can reach it"
 status: backlog
-priority: critical
+priority: medium
 created: 2026-09-06
 updated: 2026-09-06
 assignee:
-labels: [security, harness, cmd-detect]
+labels: [deferred, security, harness, cmd-detect]
 github_issue:
 ---
 
 # A `case` arm's `)` closes the enclosing `$(...)` early
+
+## RECLASSIFIED 2026-09-07 — model B, documented residual (was P0)
+
+The owner ruled that `guard-outward-cli.sh` is accountable for **Model A only**: an agent
+MISFIRING, not defeating a deliberate evader. See
+`todos/archive/P1-2026-09-07-outward-cli-guard-threat-model-decision.md`.
+
+This mechanism is **model B** — it requires deliberate construction, and no accident produces
+it. Under the ruling that makes it a documented residual rather than a critical defect:
+
+- **It stays measured.** Its corpus rows keep their DENY expectations and report as gaps on
+  every run, so the gap is never invisible.
+- **It is not in the critical queue.** A text-matching guard cannot enumerate shell grammar,
+  and the guard's own header concedes it ("guardrail, not a sandbox — a determined bypass is
+  always possible").
+- **The structural answer is filed separately**:
+  `todos/P1-2026-09-07-outward-cli-path-wrapper.md` attacks PATH resolution rather than command
+  text, so it covers this mechanism and every unfound sibling without reading the command at all.
+
+Everything below is the original filing and its measurements, which remain accurate. Nothing
+here is retracted — only its priority changed.
 
 ## Summary
 

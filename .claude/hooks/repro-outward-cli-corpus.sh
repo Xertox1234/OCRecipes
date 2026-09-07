@@ -168,7 +168,7 @@ done
 #   vcasearm    STILL OPEN. That `)` has no matching opener, so no depth
 #               arithmetic can reach it, and the obvious keyword tracker is a
 #               deny->ALLOW regression generator. Tracked at
-#               todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#               todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #               Deliberately left as a visible gap: it keeps pointing at a live
 #               bypass.
 # vcomment: a `(` inside a shell COMMENT. Inert to bash (a comment runs to
@@ -260,7 +260,7 @@ done
 #               in lib/cmd-detect.sh's two scanners. Expected `ok`.
 #   vcasearm    a `case` arm's `)` -- an unmatched closer with NO opener, which
 #               no depth arithmetic can reach. Still a GAP by design; see NOTE6
-#               and todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#               and todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 # varithsep / varithdecoy: added 2026-09-07 because this corpus was BLIND to the
 # entire class the arithmetic-arm removal closes. Running all 308 rows across
 # main / pre-fix / post-fix gave `head_DENY - base_DENY = {}` — no losses, but no
@@ -717,7 +717,7 @@ done
 # root cause as the single-line blindness above, one level up: a corpus that
 # varies mechanisms one at a time cannot see a defect that needs two at once.
 # Tracked at
-# todos/P1-2026-09-07-outward-cli-guard-threat-model-decision.md
+# todos/archive/P1-2026-09-07-outward-cli-guard-threat-model-decision.md
 # The fix was to UNION the paren-counting rendering with a paren-blind one rather
 # than substitute it -- which is this file's own governing rule, applied one layer
 # down.
@@ -773,7 +773,7 @@ done
 #   14  r4brange-tool-* and r4brange-verb-*. A brace RANGE carries no `$` and no
 #       backtick anywhere, so no sigil-keyed decline can see it and no deleting
 #       rendering can reach it. Needs a narrow guard-side deny. Tracked at
-#       todos/P0-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
+#       todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
 #
 #   17  toolvcasearm-* (7), verbvcasearm-* (7), flagvcasearm-* (3 of 4). A `case`
 #       arm's `)` has NO matching opener, so the paren counter that closed the
@@ -781,7 +781,7 @@ done
 #       tracker is a deny->ALLOW regression generator (`e$(echo case)as update`
 #       DENIES today and would render EMPTY under it). Deliberately deferred with
 #       its reasoning, not overlooked. Tracked at
-#       todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#       todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #
 #       flagvcasearm-ghadmin is the FOURTH flag row and reports `ok` — READ ITS
 #       ATTRIBUTION, NOT ITS VERDICT. It denies from a different check entirely:

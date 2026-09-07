@@ -1,6 +1,6 @@
 ---
 title: "guard-outward-cli.sh: an ANSI-C escape-encoded gh api method value is silently ALLOWED"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-06
 updated: 2026-09-06

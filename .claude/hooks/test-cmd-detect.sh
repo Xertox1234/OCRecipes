@@ -1530,7 +1530,7 @@ vanb() {  # $1=name $2=input $3=expected output
 # already-tracked composition class reached through a third path (the arithmetic
 # evidence test voiding on `#`, then falling through to a counter the same `#`
 # defeats), recorded in
-# todos/P1-2026-09-07-outward-cli-guard-threat-model-decision.md.
+# todos/archive/P1-2026-09-07-outward-cli-guard-threat-model-decision.md.
 #
 # Pinned at the TRUE value deliberately: this row now documents a known residual
 # instead of asserting a coverage that does not exist. If a future change makes

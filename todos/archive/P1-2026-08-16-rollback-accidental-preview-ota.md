@@ -56,4 +56,4 @@ Incident details: update group `2735c5f5-7b5a-468e-852c-1184e93fa49c`, message "
   ("rollback: revert accidental publish (group 2735c5f5)") is at the channel
   head, above the incident group. Residual decision (fresh publish from main
   vs. leaving the restored probe build) left with the operator; prevention
-  work tracked in `todos/P2-2026-08-16-outward-cli-pretooluse-deny-hook.md`.
+  work tracked in `todos/archive/P2-2026-08-16-outward-cli-pretooluse-deny-hook.md`.
