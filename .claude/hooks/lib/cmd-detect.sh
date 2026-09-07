@@ -962,7 +962,28 @@ _cmd_vanish_pass() {
             # single backslash and zsh as `c`; NEITHER consumes the closing quote.
             # The corruption is forward-only, which is what bounds it: a trailing
             # $(sq)\c(sq) after the verb denies on every version.
-            else if (esc == "c") { if (i < n && substr(buf, i+1, 1) != SQ) i++; code = -3 }
+            #
+            # THE GUARD IS ON THE CLASS, NOT ON TWO BYTES. A first repair excluded
+            # only SQ and was defeated one round later by a BACKSLASH operand:
+            # consuming it shifted escape pairing by one, so the NEXT backslash
+            # paired with the closing quote and the span again never ended.
+            #     x=$(sq)\c\\(sq); e${UNSET}as update --branch preview
+            #     main DENY   that repair ALLOW   real argv: eas update ...
+            # Enumerating a second bad byte would have invited a third. The rule
+            # below is bash-s own lexer instead: inside $(sq)...(sq) a backslash escapes
+            # exactly ONE character and an unescaped quote terminates, so `\c` may
+            # never consume a character that is itself structurally significant.
+            else if (esc == "c") {
+              cop = (i < n) ? substr(buf, i+1, 1) : ""
+              if (cop != "" && cop != SQ && cop != BS) i++
+              # \c@, \c<space> and \c(backtick) all decode to NUL, which bash
+              # DROPS -- so the token REJOINS and the rendering must delete, not
+              # emit a placeholder. Exactly the rule fromcode() already applies to
+              # \0, verified the same way (od on the real argv): e$(sq)\c@(sq)as builds
+              # the three bytes `eas`. Missing this left `e$(sq)\c@(sq)as update` ALLOWED
+              # while the sibling \0 and \x00 spellings denied.
+              code = (cop == "@" || cop == " " || cop == BT) ? 0 : -3
+            }
             # \a \b \e \E \f \n \r \t \v \\ \(sq) \" \? -- a control character, a
             # quote, a backslash or punctuation, never a word character. The
             # list must be COMPLETE: omitting `r` sent \r down the unknown-escape

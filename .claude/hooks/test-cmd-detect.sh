@@ -1661,6 +1661,24 @@ van 'a \\c before the CLOSING quote does not eat it' \
   "x=\$'\\c'; e\${UNSET}as update" 'x=x; eas update'
 van 'and the corruption does not survive into a later command' \
   "x=\$'\\c'; gh pr me\${UNSET}rge 42" 'x=x; gh pr merge 42'
+# THE TWO ROWS ABOVE USE THE QUOTE OPERAND AND DO NOT DISCRIMINATE A BACKSLASH
+# ONE -- the first repair excluded only SQ and was defeated a round later by
+# `\c\`, which shifts escape pairing so the NEXT backslash pairs with the closing
+# quote. Same failure as the `\cA` row before them: a fix verified on the one
+# operand it was written for. These fail without the `!= BS` half.
+van 'a \\c before a BACKSLASH does not shift the escape pairing' \
+  "x=\$'\\c\\\\'; e\${UNSET}as update" 'x=xx; eas update'
+van 'the backslash variant does not survive into a later command either' \
+  "x=\$'\\c\\\\'; gh pr me\${UNSET}rge 42" 'x=xx; gh pr merge 42'
+# \c@, \c<space> and \c(backtick) decode to NUL, which bash DROPS, so the token
+# REJOINS -- verified by od on the real argv: e$'\c@'as builds the bytes `eas`.
+# Emitting a placeholder for them left the split verb invisible while the sibling
+# \0 and \x00 spellings denied.
+van 'a \\c@ NUL is dropped, so the token rejoins'      "e\$'\\c@'as update" 'eas update'
+van 'a \\c<space> NUL is dropped too'                  "e\$'\\c 'as update" 'eas update'
+van 'a \\c<backtick> NUL is dropped too'               "e\$'\\c\`'as update" 'eas update'
+# Control: a \cX that is NOT a NUL must still split the token.
+van 'a \\cA is a real control byte and still splits'   "e\$'\\cA'as update" 'exas update'
 # A hex/unicode escape with NO digits is an UNKNOWN escape (two bytes in real
 # bash), not a control character (one). The -1/-3 sentinel collision rendered one.
 van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
@@ -1680,7 +1698,7 @@ van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
 # LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
 # assertion in a run that otherwise completed. It cannot catch an early
 # `return`/`exit` or a truncated file, because those terminate before this line.
-EXPECTED_TOTAL=558
+EXPECTED_TOTAL=564
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
