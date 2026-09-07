@@ -40,8 +40,16 @@ echo gh >x pr merge && gh pr merge 42 --auto --repo o/r     -> ALLOW
 ```
 
 Real argv, from a PATH-shadowed argv-printing stub: `gh pr merge 42 --auto --repo o/r` —
-an auto-merge in an arbitrary repository. Measured across 3 subcommands × 8 redirect
-spellings × 2 slots × both flag spellings, **512 rows that really execute**.
+an auto-merge in an arbitrary repository. Directly measured on **6 constructed rows** (all
+three subcommands, both flag spellings, both decoy slots) against the pre-change tree and
+the fixed one, with 8 paired controls; pinned in the repo corpus as a generated **24-row**
+axis (3 subcommands × 4 redirect spellings × 2 slots) plus 3 false-positive controls.
+
+> An earlier revision of this paragraph said "3 subcommands × 8 redirect spellings × 2 slots
+> × both flag spellings, **512 rows that really execute**". Both halves were wrong and they
+> were wrong *independently*: those factors multiply to 96, not 512, and neither number was
+> what had been run. It is left recorded rather than quietly replaced because this document
+> is about unverified quantities, and it shipped carrying one.
 
 ## Root cause
 
@@ -122,7 +130,10 @@ both, or re-derived.
 
 - [Occurrence-ambiguity guard applied selectively, not uniformly](occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md)
   — the same detector/consumer split, one layer over.
-- [A subtractive rendering disarms presence checks](../code-quality/summary-count-cannot-express-a-row-getting-strictly-worse-2026-09-06.md)
-  — the union rule this check obeyed, and which was not enough.
+- [A summary count cannot express a row getting strictly worse](../code-quality/summary-count-cannot-express-a-row-getting-strictly-worse-2026-09-06.md)
+  — the per-ID `comm` discipline that measured this fix. (The link text used to name a
+  different lesson, "a subtractive rendering disarms presence checks" — the union rule this
+  check obeyed and which was not enough. That lesson has no `docs/solutions/` home; it lives
+  only in the guard's own comments, and the link pointed somewhere else entirely.)
 - [Command-position anchor missed brace/backtick/bang boundaries](cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md)
   — the interior-redirect absorber whose landing exposed this.

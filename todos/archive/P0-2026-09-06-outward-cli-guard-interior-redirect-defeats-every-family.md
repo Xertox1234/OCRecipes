@@ -271,8 +271,12 @@ family since 2026-09-01 — see the correction below.
 - **The grant-shaped merge CLAUSE was widened too**, on the user's ruling, and the safety
   argument was verified rather than asserted: the set the widened detector newly matches is
   exactly the set that ALLOWed before, so no command that denied before can flip.
-- **Two-sided, reason-asserted tests:** +41 assertions (494 → 535), every deny attributed to
-  its own family's reason string.
+- **Two-sided, reason-asserted tests:** +54 assertions for THIS todo's mechanism (494 → 548),
+  every deny attributed to its own family's reason string. The suite ends the PR at **559**:
+  the other +11 belong to a SEPARATE, pre-existing mechanism the security review of this
+  change surfaced (a redirect adjacent to a value-taking FLAG, not between two command
+  words), folded into the same PR and recorded under "Found while measuring" below. Kept
+  split rather than reported as one number, because this todo's closure evidence is the 54.
 - **Mutation-tested per row.** Reverting `_OUT_SEP` to a bare `[[:space:]]+` turns 30
   named assertions RED — 27 family denies, the occurrence-counter gain, the no-`--auto`
   grant deny, and the structural shape check. (This read "exactly 29" when written, which

@@ -156,6 +156,6 @@ rule NOTE6 states for `co-mask-c1`.
 - `todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md`
   — the sibling that closed the bare-paren half and added the paren counter this builds on.
 - `todos/P0-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md` and
-  `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — the other
+  `todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — the other
   two open criticals in the same guard. All three edit NOTE6, so **whichever lands last
   re-runs the corpus and re-attributes BY ID** rather than trusting an earlier total.

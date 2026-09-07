@@ -647,7 +647,7 @@ already cost this file three separate repairs, twice inside a single chain.
 Deliberately NOT fixed by the folded repair (its Scope Contract allows widening existing
 boundary classes and reusing the lib's `_CMD_REDIR`, not a new anchor shape at a new
 position). Tracked in
-`todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, with an
+`todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, with an
 executable record in `repro-outward-cli-corpus.sh`'s `nssufx-ghmerge` / `nssufx-ghcomment`
 rows — whose expectations are deliberately left at `DENY` so they keep reporting as gaps, but
 which cover only two of the ten measured families, so the corpus gap count must not be read

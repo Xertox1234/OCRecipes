@@ -449,7 +449,7 @@ and unmarked ones to both.
 - PR #926 (merged `4113d3ac`) / `todos/archive/P0-2026-09-02-outward-cli-guard-boundary-and-absorber-bypasses.md`
   — the folded repair that introduced `cmd_words_vanished` and closed the allow-listed spellings
   of the split-binary-name class. **Archived, so read it from `todos/archive/`.**
-- `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — a
+- `todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — a
   separate, also-open critical gap in the same guard. Different mechanism (an interior
   redirect, not a substitution scanner); do not fold them.
 - `todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md` — the

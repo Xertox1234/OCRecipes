@@ -269,8 +269,11 @@
 #         pattern) — which is why the whole "command-position anchors"
 #         definition block had to move to follow the lib source further down
 #         in this file (interpolating `$_CMD_REDIR` before the lib is sourced
-#         would silently resolve to the empty string, no error, bypass
-#         open). This also closes a related multi-occurrence undercount:
+#         is an unbound-variable error under `set -u` — the hook aborts, so
+#         no deny is emitted and the bypass is open, but LOUDLY: stderr is
+#         dirtied and the suite goes 53/495. Corrected 2026-09-07; this used
+#         to claim a silent empty expansion). This also closes a related
+#         multi-occurrence undercount:
 #         `gh pr merge 42 --auto ; 2>/dev/null gh pr merge 7` used to see
 #         only the FIRST occurrence (the second's leading redirect hid it
 #         from the count) and ALLOWED on the strength of the first's real
@@ -363,15 +366,29 @@
 #     workaround (detecting the placeholder's own text as a THIRD
 #     "unreadable" signal) was not attempted — it would need its own
 #     dedicated design and false-positive review, not a same-commit patch.
-#     RE-CONFIRMED STILL OPEN 2026-09-06 (outward-CLI-guard-folded-repair):
-#     measured again against this tree, and it now has an executable
-#     counterpart — repro-outward-cli-corpus.sh's `c2-ansic-hex` row, one of
-#     that file's three deliberate remaining gaps (see its NOTE6). The
-#     measured rendering is `-X xx50xx4fxx53xx54`: no surviving sigil for
-#     C2's "not literal text" branch and no literal POST for the method
-#     branch. Its expectation is deliberately left at DENY so the row keeps
-#     pointing at the hole. Note the DEGRADED paths deny it, so a summary
-#     count alone misreads this one.
+#     CLOSED — and this entry said otherwise for a day. It read "RE-CONFIRMED
+#     STILL OPEN 2026-09-06 ... one of that file's three deliberate remaining
+#     gaps". Measured 2026-09-07 against BOTH `origin/main` and this branch,
+#     the corpus row reports:
+#
+#       c2-ansic-hex | DENY | DENY | DENY | DENY | DENY | ok
+#
+#     DENY on all five paths, identically on both trees, via C2's own "method
+#     flag whose value is not literal text" branch. PR #929 closed it and swept
+#     the corpus's NOTE6 (which records it CLOSED 2026-09-06 and counts it among
+#     the 60) without sweeping THIS entry — so the two artifacts contradicted
+#     each other for a day, and the DOCUMENTED RESIDUALS list, the one a reader
+#     consults to learn what is still broken, held the wrong half.
+#
+#     "Three deliberate remaining gaps" was stale the same way: the file reports
+#     31. A residual entry that names a COUNT takes on a dependency on that
+#     count; prefer naming the row.
+#
+#     Kept rather than deleted, per this section's append-don't-delete rule. The
+#     original measurement stands: the rendering is `-X xx50xx4fxx53xx54`, with
+#     no surviving sigil for C2's "not literal text" branch and no literal POST
+#     for the method branch — that reasoning was right about the RENDERING and
+#     wrong about the DECISION, because a different branch catches it.
 #
 #   * CLOSED 2026-09-07 (todos/archive/P0-2026-09-06-outward-cli-guard-interior-
 #     redirect-defeats-every-family.md). Kept in full, amended rather than
@@ -441,7 +458,7 @@
 #     as if it were. Closing it needs ONE interior absorber applied
 #     uniformly, which the folded repair's Scope Contract does not
 #     authorise. Tracked:
-#     todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md
+#     todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md
 #     CORRECTED 2026-09-07 — that sentence read "The LIB does not cover it
 #     either", which is true of the ANCHOR (`_CMD_POS_PREFIX`, as stated) and
 #     FALSE of the lib: `_CMD_GIT_GLOBALS` (lib/cmd-detect.sh:151) has carried
@@ -454,6 +471,39 @@
 #     generalised, not a second redirect pattern invented alongside it.
 #     Corpus rows `nssufx-ghmerge`/`nssufx-ghcomment` cover only two of the
 #     ten families above — do not read the corpus gap count as this gap's size.
+#
+#   * OPEN (2026-09-07) — A REDIRECT ADJACENT TO A FLAG, in the ONE reader of
+#     that shape which is GRANT-shaped. The other three readers were fixed in
+#     this same PR (the `_OUT_FLAG_RUN` value sub-group, the `gh api` method
+#     separator, and both clause bodies' `&` exclusion), because all three are
+#     deny-shaped and widening them is monotone. `HAS_REAL_AUTO`'s awk scan is
+#     not: it GRANTS the `--auto` carve-out, so a change there can convert a
+#     DENY into an ALLOW, which is precisely how this PR introduced its own
+#     CRITICAL. It needs paired over-granting controls and its own review round.
+#
+#     The scan splits on WHITESPACE and has no notion that `<`/`>` are token
+#     boundaries in bash, so it is wrong in BOTH directions — it reads a
+#     redirect TARGET as a real flag, and it fails to recognise a real flag
+#     carrying a glued redirect. Seven positions measured live, all ALLOW on
+#     `origin/main` and on this branch (so none is a regression):
+#
+#       gh pr merge 42 > --auto        argv: gh pr merge 42        (merges NOW)
+#       gh pr merge 42 2> --auto       argv: gh pr merge 42
+#       gh pr merge 42 >> --auto       argv: gh pr merge 42
+#       > --auto gh pr merge 42        argv: gh pr merge 42        (via the
+#                                      PREFIX absorber, a different code path)
+#       gh pr merge 42 -b>x --auto     argv: gh pr merge 42 -b --auto
+#       gh pr merge 42 --body-file>x --auto
+#       gh pr merge 42 -t>x --auto     argv: gh pr merge 42 -t --auto
+#
+#     In the last three the `--auto` is REAL and reaches gh — but bash gives it
+#     to `-b`/`-t`/`--body-file` as that flag's VALUE, so no auto-merge flag
+#     survives and the PR merges immediately. `GH_MERGE_VALUE_FLAGS` exists to
+#     catch exactly this and fails because `prev` reads `-b>x`, which does not
+#     match `^-b$`. The glued `>--auto` (one awk field, not equal to `--auto`)
+#     correctly denies and is the attribution control. Tracked, with the full
+#     measured table:
+#     todos/P0-2026-09-07-outward-cli-guard-space-separated-redirect-target-forges-auto.md
 #
 #   * NEVER LIVE, not a gap — recorded so it is not "fixed" into a
 #     regression: `${#x}`-glued forms (`gh pr ${#x}merge`). `${#x}` always
@@ -768,8 +818,12 @@ set -uo pipefail
 
 # COMMAND-POSITION ANCHORS: defined AFTER lib/cmd-detect.sh is sourced (below),
 # because _OUT_POS_PREFIX interpolates the lib's $_CMD_REDIR. Defining them here
-# would interpolate an UNSET variable to the empty string — no error, suite
-# green, bypass open. See the definitions further down.
+# would reference an UNSET variable under this file's `set -u`, which is a hard
+# error, not an empty expansion: the hook aborts with empty stdout and a dirtied
+# stderr, and the suite goes 53/495. (Corrected 2026-09-07 — this used to read
+# "the empty string — no error, suite green", inherited prose that had never been
+# run. The bypass-open conclusion survives; the silent mechanism does not.)
+# See the definitions further down.
 
 # Leading boundary for the three DENY-ONLY flag checks (this file's --repo/-R,
 # --auto-submit, and --admin scans). Two alternatives:
@@ -880,7 +934,30 @@ _OUT_REPO_FLAG_RE="${_OUT_FLAG_LEAD}"'(--repo([^-A-Za-z0-9]|$)|-R)'
 # not shallow, is SAFE here (unlike the `gh pr merge --auto` CLAUSE below):
 # `--repo`/`-R` only ever ADDS a deny, it never grants a carve-out.
 gh_pr_clause_has_repo() {
-  local clause rendering re="gh${_OUT_SEP}pr${_OUT_SEP}($1)[^;&|]*"
+  # CLAUSE BODY ADMITS AN fd-DUPLICATING `&` (2026-09-07). Same defect, same fix
+  # and same justification as _GH_API_CUT below: `[^;&|]` excluded `&` to stop the
+  # clause running past a command separator, but `2>&1`'s `&` is part of a
+  # REDIRECT, so the clause truncated mid-token and the --repo flag was never
+  # reached. Found by extending the gh api fix's own row set to this function
+  # rather than assuming the two cuts differed. PRE-EXISTING on main:
+  #
+  #   gh pr comment 5 --body hi 2>&1 --repo other/org   -> ALLOWED on main
+  #   gh pr create --title t 2>&1 --repo o/r            -> ALLOWED on main
+  #
+  # Both build a real cross-repo argv (argv-stub confirmed) -- PAT egress to an
+  # arbitrary repository, the same class as this function's original CRITICAL.
+  # `gh pr merge` masked the defect: it denies anyway when no --auto is present,
+  # so only comment/create expose it.
+  #
+  # `&[0-9-]` and not a bare `&`: bash takes an fd only when a digit or `-`
+  # follows, which `&&` and `& ` never do, so a --repo belonging to the NEXT
+  # command still cannot be pulled into this clause. Monotone -- both call sites
+  # deny on true, so a longer clause can only ADD a deny.
+  #
+  # (`local clause` was dropped here at the same time: the multi-clause rewrite
+  # moved to `clauses`, declared at its own use site, and left the singular name
+  # declared but unread -- a name a future assignment could silently reuse.)
+  local rendering re="gh${_OUT_SEP}pr${_OUT_SEP}($1)([^;&|]|&[0-9-])*"
   # ADDED 2026-09-05 (vanishing sigil): both occurrence counters that gate this
   # function now read a per-rendering MAXIMUM, so the count can be 1 because
   # the VANISHED rendering saw a NAMESPACE-glued sigil (`gh pr${UNSET} comment`)
@@ -1543,8 +1620,13 @@ _OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
 #     — which REAL BASH DOES NOT RUN as the invocation it resembles: it redirects
 #     to a file named `/dev/nullupdate`, and (measured with argv stubs) bash cannot
 #     create that file, so it never execs `eas` at all. That row is pinned in
-#     test-guard-outward-cli.sh and is the ONE that goes RED on a "simplification"
-#     to the looser form — confirmed by running that mutation, not assumed.
+#     test-guard-outward-cli.sh and is the only CONTROL ROW that goes RED on a
+#     "simplification" to the looser form — confirmed by running that mutation,
+#     not assumed. (Corrected 2026-09-07: this said "is the ONE that goes RED",
+#     which is false — the mutation turns TWO assertions red, that control plus
+#     the structural shape check added later. Third instance in this PR of a
+#     count going stale because a structural assertion was added after the
+#     sentence was written; the qualifier "control row" is what makes it durable.)
 #     `eas > update` is NOT such a discriminator, and an earlier revision of this
 #     comment wrongly claimed it was: under BOTH forms `_CMD_REDIR`'s target class
 #     greedily absorbs `update` as the redirect's FILENAME, leaving no verb to
@@ -1557,14 +1639,31 @@ _OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
 #     a second, subtly-different redirect pattern in this codebase is exactly how
 #     `GH_API_CLAUSE` came to be missed.
 #
-# MUST STAY BELOW THE LIB SOURCE: it interpolates `$_CMD_REDIR`. Defined above it,
-# that expands to the empty string — no error, suite green, bypass open (the
-# ordering trap finding B already paid for). Proven by BEHAVIOUR rather than a
-# `[ -n ]` assertion: every glued-form deny row in test-guard-outward-cli.sh goes
-# RED the moment this interpolation empties.
+# MUST STAY BELOW THE LIB SOURCE: it interpolates `$_CMD_REDIR`.
+#
+# THE FAILURE MODE IS LOUD, NOT SILENT — corrected 2026-09-07 after MEASURING it.
+# Every copy of this warning in this file, the corpus and the test suite used to
+# say a misordered definition "expands to the empty string — no error, suite
+# green, bypass open". That was inherited prose, never run. This file sets
+# `set -uo pipefail`, and nothing defines `_CMD_REDIR` except the lib, so above
+# the source it is UNBOUND, not empty. Measured by moving the definition to
+# immediately above the source and changing nothing else:
+#
+#   stderr: guard-outward-cli.sh: line 1453: _CMD_REDIR: unbound variable
+#   stdout: (empty)                       suite: 53 passed, 495 failed
+#
+# The CONSEQUENCE the old wording named is still right — a hook that aborts with
+# no JSON emits no deny, so the bypass is open — but it gets there by crashing,
+# not by silently degrading. Worth the correction because a maintainer reasoning
+# from "no error, suite green" would conclude the ordering constraint is
+# untestable, when in fact any test at all catches it.
+#
+# Pinned by BEHAVIOUR rather than a `[ -n ]` assertion: 495 of 559 assertions go
+# RED on the misordering, and the structural shape check below fails too.
 #
 # COST, MEASURED rather than assumed (project_per_bash_hook_overhead). This is a
-# NESTED quantifier — `(...)*` followed by `+` — interpolated into ~28 patterns in
+# NESTED quantifier — `(...)*` followed by `+` — interpolated at 30 separator
+# slots across 20 distinct patterns in
 # a hook that runs on EVERY Bash tool call, which is the shape that produces
 # catastrophic backtracking when it produces it at all. It does not here: macOS
 # grep -E runs these as a DFA. Before/after, 10 invocations each, several runs:
@@ -1924,12 +2023,34 @@ fi
 # flag-leading slot covers `npm >/dev/null --silent run update:preview`, which the
 # trailing fix ALONE still allowed (the flag group demands `-` right after its
 # whitespace, so a redirect before a FLAG kept the whole run from matching).
-# Both build the real OTA-publish argv. The flag-VALUE sub-group keeps its plain
-# `[[:space:]]+` deliberately: that slot separates a flag from its VALUE, not two
-# required-adjacent command words, so it is not this absorber's job.
-# Single-quoted, so `$_OUT_SEP` is CONCATENATED, not interpolated in place; it is
-# defined above (below the lib source), which is what makes that legal here.
-_OUT_FLAG_RUN='('"$_OUT_SEP"'-{1,2}[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'"$_OUT_SEP"
+# Both build the real OTA-publish argv.
+#
+# THE FLAG-VALUE SUB-GROUP TAKES THE ABSORBER TOO (2026-09-07, security review).
+# An earlier revision of this comment declined that slot: "it separates a flag
+# from its VALUE, not two required-adjacent command words, so it is not this
+# absorber's job." That reasoned about the slot's SEMANTICS and never measured
+# its EFFECT, and the effect was a live bypass of exactly the incident class this
+# check exists for:
+#
+#   npm --loglevel silent run update:preview        -> DENY
+#   npm --loglevel 2>&1 silent run update:preview   -> ALLOWED
+#
+# Both build the identical real argv (`npm --loglevel silent run update:preview`,
+# confirmed with a PATH-shadowed argv stub) -- an OTA publish to real users. The
+# mechanism needs a VALUE-TAKING flag: `npm --silent 2>&1 run update:preview`
+# correctly DENIES, because a boolean flag lets the value sub-group absorb the
+# redirect as its optional value. That control is what makes this precise rather
+# than a guess, and it is pinned below.
+#
+# Deny-shaped, so the widening is monotone: `$_OUT_SEP` at zero iterations is
+# byte-identical to the `[[:space:]]+` it replaces, so only redirect-bearing
+# commands can change decision, and this check's only outcome is `deny`.
+#
+# Single-quoted so that the LITERAL TEXT `$_OUT_SEP` never survives into the
+# pattern: each occurrence is expanded at assignment time and spliced between the
+# single-quoted fragments. It is defined above (below the lib source), which is
+# what makes that legal here.
+_OUT_FLAG_RUN='('"$_OUT_SEP"'-{1,2}[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?)*'"$_OUT_SEP"
 if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
@@ -2384,7 +2505,28 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # safe for THIS clause specifically because it is DENY-shaped (over-capture
   # can only ever ADD a deny) — unlike the grant-shaped `gh pr merge` CLAUSE
   # above, which must stay on shallow `$WORDS` for the reason documented there.
-  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}[^;&|]*"
+  # THE CLAUSE BODY ADMITS AN fd-DUPLICATING `&` (2026-09-07, security review).
+  # `[^;&|]*` excludes `&` because `&&` and a bare trailing `&` are COMMAND
+  # SEPARATORS and must not be captured past. But `2>&1` carries a `&` that is
+  # part of a REDIRECT, not a separator, so the body truncated mid-token and the
+  # method never reached either check:
+  #
+  #   gh api repos/o/r -X DELETE        -> DENY
+  #   gh api repos/o/r -X 2>&1 DELETE   -> ALLOWED   (clause cut at `2>`)
+  #
+  # Identical real argv, argv-stub confirmed. Widening the SEPARATOR at the
+  # method check alone closed the `>/dev/null`, `>x` and `--method >x` spellings
+  # but NOT these two, because the truncation happens earlier, here.
+  #
+  # `&[0-9-]` is the precise admission: bash takes an fd only when a digit or `-`
+  # FOLLOWS the `&` (`>&1`, `>&-`), while `&&` and `& ` — the two separator forms
+  # — never do. So a mutating method sitting after a real `&&` still cannot be
+  # captured into this clause, which is the false positive this exclusion exists
+  # to prevent, and which is pinned with its own control.
+  #
+  # Monotone for the same reason the block above states: BOTH consumers of
+  # GH_API_CLAUSE are deny-shaped, so a longer clause can only ever ADD a deny.
+  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-])*"
   GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT" | head -1)
   # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is
   # now a MAXIMUM across all three renderings, so it can be 1 because the VANISHED
@@ -2584,7 +2726,24 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # lifted back out of the loop. Noted so the next reader does not have to work
   # out whether it is load-bearing. The sibling unreadable-method check above
   # carries no such guard, for the same reason.
-  if [ -n "$GH_API_CLAUSE" ] && grep -Eq "(^|[[:space:]])(-X${_GH_API_M}${_OUT_POS_SUFFIX}|(-X|--method)([[:space:]]+|=)${_GH_API_M}${_OUT_POS_SUFFIX})" <<< "$GH_API_CLAUSE"; then
+  # THE FLAG->VALUE SEPARATOR TAKES THE ABSORBER (2026-09-07, security review).
+  # This separator was hand-spelled `([[:space:]]+|=)` and lagged the 2026-09-07
+  # interior-redirect widening, leaving a live bypass:
+  #
+  #   gh api repos/o/r -X DELETE        -> DENY
+  #   gh api repos/o/r -X 2>&1 DELETE   -> ALLOWED
+  #
+  # Identical real argv (`gh api repos/o/r -X DELETE`, argv-stub confirmed) --
+  # arbitrary destructive GitHub REST with the user's PAT. `--method 2>&1 POST`
+  # was live the same way. Deny-shaped, so widening is monotone: `$_OUT_SEP`
+  # reduces to `[[:space:]]+` at zero iterations, so `(${_OUT_SEP}|=)` matches a
+  # strict superset of `([[:space:]]+|=)`. Only the SEPARATOR widens -- the
+  # method class and the closer are untouched -- so the only reachable change is
+  # a command that already carried a mutating method starting to deny.
+  # NOTE the block above already migrated the CLOSER to ${_OUT_POS_SUFFIX} on
+  # 2026-09-05; the SEPARATOR is what was missed. Third instance of the same
+  # "a hand-spelled class lagged a widening" defect this file keeps paying for.
+  if [ -n "$GH_API_CLAUSE" ] && grep -Eq "(^|[[:space:]])(-X${_GH_API_M}${_OUT_POS_SUFFIX}|(-X|--method)(${_OUT_SEP}|=)${_GH_API_M}${_OUT_POS_SUFFIX})" <<< "$GH_API_CLAUSE"; then
     deny "guard-outward-cli: command-position 'gh api' with a mutating HTTP method (-X/--method POST/PUT/PATCH/DELETE, spaced/=/glued) can invoke an arbitrary GitHub REST mutation — including a PR merge via a different subcommand than the dedicated 'gh pr merge' check above. Read-only 'gh api' (GET, the default with no -X/--method) is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
   done

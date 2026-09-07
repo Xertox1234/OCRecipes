@@ -145,7 +145,11 @@ done
 # separator absorbs a letter-FREE redirect (2>&1) but NOT a letter-bearing one
 # (>/dev/null -- the `dev` breaks the class), and it was deliberately not widened:
 # it runs on the no-jq and no-lib paths, which reach it BEFORE/WITHOUT the lib
-# source, so interpolating $_CMD_REDIR there would expand to the empty string.
+# source, so interpolating $_CMD_REDIR there would reference an UNSET variable
+# under the guard's `set -u` -- a hard error that aborts the hook mid-check, not
+# a silent empty expansion. (Corrected 2026-09-07; measured. On the no-lib path
+# especially this is not hypothetical: the lib really did fail to source, so the
+# reference would fire on exactly the run that needs the fallback most.)
 # Recorded in the guard's DOCUMENTED RESIDUALS rather than papered over.
 #
 # intrnsglue-ghmerge / intrnsglue-ghcomment intentionally duplicate the commands
@@ -229,6 +233,61 @@ done
 add "decoyfp-cpR"   ALLOW 'cp -R src dst && gh pr create --title t'
 add "decoyfp-grepR" ALLOW 'grep -R foo . && gh pr comment 5 --body hi'
 add "decoyfp-auto"  ALLOW 'gh pr merge 42 --auto'
+
+# axis: FLAG-ADJACENT redirect -- the operator sits next to a FLAG rather than
+# between two required-adjacent COMMAND WORDS. ADDED 2026-09-07 (security review
+# of PR #931). THIS AXIS'S ABSENCE IS WHY THIS FILE DID NOT MOVE AT ALL WHEN FOUR
+# LIVE BYPASSES WERE CLOSED: every interior row above varies the redirect's
+# POSITION between two command words, so the whole grid holds "adjacent to a
+# flag" fixed at "never". Same failure this file already recorded for the tool
+# position and the decoy clause -- a corpus that varies one axis reproduces the
+# blind spot that chose the axis.
+#
+# All 18 generated rows ALLOWED on the pre-change tree with an argv identical to
+# their spaced baseline; the npm/yarn ones are OTA publishes to real users.
+#
+# THE MECHANISM NEEDS A VALUE-TAKING FLAG, which is why FLAGADJ_CMDS uses
+# --loglevel/--cwd/-X/--method/--body/--title rather than a boolean: with a
+# boolean flag the value sub-group absorbs the redirect as its own optional value
+# and the deny still fires. That is a REAL distinction, not a corpus artifact, so
+# it gets an ALLOW-expecting control row rather than being silently omitted.
+FLAGADJ_IDS=(npmlog yarncwd ghapix ghapimeth ghcomment ghcreate)
+FLAGADJ_PRE=(
+  'npm --loglevel'
+  'yarn --cwd'
+  'gh api repos/o/r -X'
+  'gh api repos/o/r --method'
+  'gh pr comment 5 --body'
+  'gh pr create --title'
+)
+FLAGADJ_POST=(
+  'silent run update:preview'
+  '. update:production'
+  'DELETE'
+  'POST'
+  'hi --repo other/org'
+  't --repo o/r'
+)
+FLAGADJ_SPELL_IDS=(glue sp fd)
+FLAGADJ_SPELL=('>x' ' >/dev/null' ' 2>&1')
+for i in "${!FLAGADJ_IDS[@]}"; do
+  for j in "${!FLAGADJ_SPELL_IDS[@]}"; do
+    add "flagadj${FLAGADJ_SPELL_IDS[$j]}-${FLAGADJ_IDS[$i]}" DENY \
+      "${FLAGADJ_PRE[$i]}${FLAGADJ_SPELL[$j]} ${FLAGADJ_POST[$i]}"
+  done
+done
+# The narrowing control: a BOOLEAN flag is not a value-taking one, and this row
+# denies on BOTH trees. It is the row that keeps the 18 above attributable to
+# value-taking flags rather than to "a redirect somewhere near a flag".
+add "flagadjctrl-boolean" DENY 'npm --silent 2>&1 run update:preview'
+# Clause-boundary controls for admitting `&[0-9-]` into the two clause bodies: a
+# mutating method or a --repo belonging to the NEXT command must never be pulled
+# into gh's clause. These go ALLOW on both trees and are what catch the widening
+# turning into a bare `&`.
+add "flagadjfp-andand"  ALLOW 'gh api repos/o/r && curl -X DELETE http://example.com'
+add "flagadjfp-semi"    ALLOW 'gh api repos/o/r ; curl -X DELETE http://example.com'
+add "flagadjfp-repo"    ALLOW 'gh pr list && curl --repo o/r'
+add "flagadjfp-roredir" ALLOW 'gh api repos/o/r 2>&1'
 
 # axis: TOOL position -- the binary NAME itself split by a vanishing construct.
 # ADDED 2026-09-06 (security review of PR #926). THIS AXIS'S ABSENCE IS WHY THE
@@ -796,17 +855,46 @@ done
 # change. `rows=326  precise-path gaps=33  all-path gaps=120` WAS the correct
 # expected output of this file.
 #
-# SUPERSEDED 2026-09-07 by the interior-redirect absorber (_OUT_SEP). The CURRENT
-# correct output is `rows=404  precise-path gaps=31  all-path gaps=155`.
-# Attributed BY ID against the pre-change tree, one corpus against two
-# implementations, never by subtracting totals:
+# SUPERSEDED 2026-09-07 by the interior-redirect absorber (_OUT_SEP) and, in the
+# same PR, the FLAG-ADJACENT fixes. The CURRENT correct output is
+# `rows=427  precise-path gaps=31  all-path gaps=164`.
 #
-#   precise-path dirty  90 -> 31   59 CLOSED, **0 OPENED**
-#   all-path dirty     178 -> 155  23 CLOSED, **0 newly dirty**
+# THE BASELINE IS `origin/main` AT a9d77417 (PR #930). Naming it matters: the only
+# commit NOTE6 used to name in this area was b01fcff2, the PREVIOUS change's
+# baseline, so a reader re-deriving these numbers would have diffed the wrong tree.
+# Method: ONE corpus script, two guards -- main's guard with the CURRENT corpus,
+# so both sides see the same 427 rows.
 #
-# The 53: the 51 NEW intrtool-*/intrns-* rows (which allowed on the pre-change
-# tree, hence the 84 denominator) plus the 2 pre-existing nssufx-* rows. The 33
-# unrelated pre-existing gaps went to 31 for exactly that reason and no other.
+# Attributed BY ID (`comm` of the two dirty sets), never by subtracting totals:
+#
+#   precise-path dirty  102 -> 31   71 CLOSED, **0 OPENED**
+#   all-path dirty      194 -> 164  30 CLOSED, **0 newly dirty**
+#
+# The 71 decomposes exactly, and the decomposition is the check that no row moved
+# for an unexplained reason:
+#
+#     51  intrtool-*/intrns-*   (33 tool slot + 18 namespace slot)
+#     12  flagadj*-*            (6 fd + 4 sp + 2 glue -- see below)
+#      6  decoytoolplain-*/decoynsplain-*
+#      2  nssufx-*  (pre-existing)
+#     --
+#     71  denominator 102
+#
+# ONLY 12 OF THE 18 flagadj ROWS WERE GAPS ON MAIN, and that is reported rather
+# than rounded up: the other 6 family x spelling combinations already denied on
+# main, so the axis contains 18 rows of which 12 were live bypasses. Reporting
+# "18 closed" would have been the easy sentence and a false one.
+#
+# THE FOUR ALLOW-EXPECTING CONTROL ROWS (decoyfp-auto, flagadjfp-andand,
+# flagadjfp-roredir, flagadjfp-semi) ARE PRECISE-CLEAN AND DEGRADED-DIRTY ON BOTH
+# TREES. That is the varithsep-* precedent -- a disclosure, not a regression: the
+# degraded mirror over-denies them and does so identically before and after, so
+# no row got strictly worse. It is also why this block's all-path union counted by
+# hand (167) differs by 3 from the file's own printed `all-path gaps` (164): the
+# printed metric counts GAPS (want DENY, got ALLOW) and does not count an
+# ALLOW-expecting row that a degraded path denies. Both numbers are right for
+# their own definition; the one that carries the safety claim is **0 newly dirty**,
+# which is a set difference and independent of either denominator.
 #
 # ALL-PATH MOVED LESS THAN PRECISE, AND THAT IS THE DISCLOSURE, NOT A MISS: the
 # degraded mirror (crude_smells_outward) was deliberately NOT widened, so its
@@ -814,9 +902,15 @@ done
 # misses a letter-bearing one (>/dev/null). Widening it is not a one-line change
 # deferred out of laziness -- that function runs on the no-jq and no-lib paths,
 # which reach it BEFORE/WITHOUT the lib source, so interpolating $_CMD_REDIR
-# there would expand to the EMPTY STRING: no error, suite green, and the
-# separator silently reduced to nothing. Recorded in the guard's DOCUMENTED
-# RESIDUALS.
+# there would reference an UNSET variable under the guard's `set -uo pipefail`.
+# CORRECTED 2026-09-07, by measurement: that is a hard error, NOT the "empty
+# string, no error, suite green, separator silently reduced to nothing" this
+# block used to claim. Moving a $_CMD_REDIR reference above the lib source and
+# changing nothing else yields `_CMD_REDIR: unbound variable`, empty stdout, and
+# 53 passed / 495 failed. The reason to leave crude_smells_outward alone is
+# unchanged -- the reference is simply unavailable there -- but the failure mode
+# is loud, and the old wording implied the constraint was untestable when in fact
+# almost every assertion catches it. Recorded in the guard's DOCUMENTED RESIDUALS.
 #
 # THE 18 varithsep-* ROWS ARE NEW (2026-09-07) AND SEVEN OF THEM ARE
 # PRECISE-CLEAN / DEGRADED-DIRTY, which is why all-path went 113 -> 120 while
@@ -853,6 +947,15 @@ done
 # The fix was to UNION the paren-counting rendering with a paren-blind one rather
 # than substitute it -- which is this file's own governing rule, applied one layer
 # down.
+#
+# SUPERSEDED 2026-09-07 -- MARKER ADDED because this block reads as current and is
+# not. Every figure below describes the tree at b01fcff2 (the PREVIOUS change's
+# baseline, not this one's) and is two changes stale: `33` became 31 with the
+# interior absorber and the corpus is now 427 rows against `origin/main` at
+# a9d77417. See the 2026-09-07 block above for the live numbers. Kept, not
+# rewritten, for its arithmetic lesson -- but it sat in the PRESENT TENSE between
+# two blocks that contradict it, forty lines from a line that already reconciles
+# `33 -> 31`, which is exactly how a superseded number gets quoted forward.
 #
 # HISTORY OF THE NUMBER, so nobody reads a movement as a regression: it was 3
 # while the corpus was blind to the tool and flag POSITIONS, went UP to 73 when
@@ -1013,7 +1116,7 @@ done
 #     measurement and understated it. Rows for the families above belong here
 #     and are deliberately left for the tracking todo's own change, so this
 #     PR's quoted gap count stays a like-for-like before/after:
-#     todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md
+#     todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md
 #
 #   c2-ansic-hex -- CLOSED 2026-09-06, and it needed exactly the decoder the
 #     previous revision of this entry said the Scope Contract forbade.

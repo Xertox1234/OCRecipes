@@ -510,7 +510,9 @@ assert_deny "gh api -X PUT ...; denies (terminal ';', gh api family)" \
 # reference (not a duplicated literal pattern) — pinned in this file's own
 # "2026-09-05: finding B" assertion block. `_OUT_POS_PREFIX`'s own definition
 # in guard-outward-cli.sh was relocated to follow the lib source so the
-# `$_CMD_REDIR` reference resolves to something other than the empty string.
+# `$_CMD_REDIR` reference resolves at all. (Wording corrected 2026-09-07: above
+# the source it is UNBOUND under `set -u`, a hard error -- not, as this used to
+# say, a resolution to the empty string.)
 assert_deny 'backtick command substitution denies' \
   "$(json '`eas update`')" "eas update/publish/submit"
 assert_deny "brace group denies" \
@@ -1541,6 +1543,97 @@ assert_allow "a railway READ-ONLY verb redirecting into a file NAMED like a gate
 assert_allow "eas whoami with a redirect stays allowed" \
   "$(json 'eas whoami > who.txt')"
 
+# ---------- 2026-09-07: FLAG-ADJACENT redirects (security review of this PR) --
+# A SEPARATE MECHANISM from the interior-redirect block above, and PRE-EXISTING
+# on main -- this PR did not open it, it measured it. The absorber above covers
+# the separator between two required-adjacent COMMAND WORDS. A redirect sitting
+# next to a FLAG defeated every flag-adjacency reader in the file instead, and an
+# earlier revision of the _OUT_FLAG_RUN comment declined that slot on exactly the
+# reasoning that made it invisible: "it separates a flag from its VALUE, not two
+# required-adjacent command words, so it is not this absorber's job." True about
+# the slot's SEMANTICS, never checked against its EFFECT.
+#
+# THE NARROWING IS THE POINT, and it is what makes these rows precise rather than
+# a guess: the mechanism needs a VALUE-TAKING flag. With a boolean flag the value
+# sub-group absorbs the redirect as its own optional value and the deny still
+# fires -- pinned by the control row below. Every deny here was measured to build
+# a real gated argv with a PATH-shadowed argv-printing stub; the npm row is an
+# OTA publish to real users, the 2026-08-16 incident class.
+assert_deny "FLAG-VALUE slot: a redirect between a VALUE-TAKING flag and its value no longer hides the OTA publish (argv: npm --loglevel silent run update:preview)" \
+  "$(json 'npm --loglevel 2>&1 silent run update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "FLAG-VALUE slot, yarn's bare-script form (argv: yarn --cwd . update:production)" \
+  "$(json 'yarn --cwd 2>&1 . update:production')" \
+  "npm run update:preview/update:production"
+assert_deny "BOOLEAN-FLAG CONTROL: the deny still fires when the flag takes no value -- this is what proves the two rows above are about VALUE-taking flags specifically, not about redirects near flags in general" \
+  "$(json 'npm --silent 2>&1 run update:preview')" \
+  "npm run update:preview/update:production"
+
+# `gh api`'s method flag: the SEPARATOR was hand-spelled ([[:space:]]+|=) and
+# lagged the widening, and the CLAUSE BODY excluded `&` outright so an
+# fd-duplicating spelling truncated mid-token before the method was ever read.
+# Both had to move; the separator alone closes only the first two of these four.
+assert_deny "gh api method flag, output-redirect spelling (argv: gh api repos/o/r -X DELETE)" \
+  "$(json 'gh api repos/o/r -X >/dev/null DELETE')" "mutating HTTP method"
+assert_deny "gh api method flag, glued-redirect spelling (argv: gh api repos/o/r -X DELETE)" \
+  "$(json 'gh api repos/o/r -X>x DELETE')" "mutating HTTP method"
+assert_deny "gh api method flag, fd-duplicating spelling -- needs the clause BODY to admit &, not just the separator (argv: gh api repos/o/r -X DELETE)" \
+  "$(json 'gh api repos/o/r -X 2>&1 DELETE')" "mutating HTTP method"
+assert_deny "gh api --method, fd-duplicating spelling (argv: gh api repos/o/r --method POST)" \
+  "$(json 'gh api repos/o/r --method 2>&1 POST')" "mutating HTTP method"
+
+# THE CONTROL THE CLAUSE-BODY WIDENING EXISTS TO NOT BREAK. `[^;&|]` excluded `&`
+# so that a mutating method belonging to a DIFFERENT command could never be
+# captured into gh api's clause. Admitting `&[0-9-]` keeps that: bash takes an fd
+# only when a digit or `-` follows the `&`, which `&&` and `& ` never do. If this
+# row ever denies, the widening has started swallowing the next command.
+assert_allow "CLAUSE-BOUNDARY CONTROL: a curl -X DELETE after a real && belongs to curl, not to the read-only gh api before it" \
+  "$(json 'gh api repos/o/r && curl -X DELETE http://example.com')"
+assert_allow "CLAUSE-BOUNDARY CONTROL: the same across a background & " \
+  "$(json 'gh api repos/o/r & curl -X POST http://example.com')"
+assert_allow "CLAUSE-BOUNDARY CONTROL: the same across a ;" \
+  "$(json 'gh api repos/o/r ; curl -X DELETE http://example.com')"
+assert_allow "a read-only gh api carrying an fd-duplicating redirect of its own stays allowed" \
+  "$(json 'gh api repos/o/r 2>&1')"
+
+# gh_pr_clause_has_repo's cut carried the IDENTICAL `[^;&|]*` body, and therefore
+# the identical truncation. Found by running the gh api row set against this
+# function too instead of assuming the two cuts differed -- the assumption would
+# have been wrong, and this is cross-repo PAT egress, the same class as this
+# function's original CRITICAL. PRE-EXISTING on main.
+#
+# `gh pr merge` MASKS the defect and is why it survived: with no --auto it denies
+# for a different reason entirely, so only comment/create expose it. A row set
+# that tested merge alone would have reported this area clean.
+assert_deny "--repo clause, fd-duplicating spelling on gh pr comment (argv: gh pr comment 5 --body hi --repo other/org)" \
+  "$(json 'gh pr comment 5 --body hi 2>&1 --repo other/org')" \
+  "writes to a DIFFERENT GitHub repository"
+assert_deny "--repo clause, fd-duplicating spelling on gh pr create (argv: gh pr create --title t --repo o/r)" \
+  "$(json 'gh pr create --title t 2>&1 --repo o/r')" \
+  "writes to a DIFFERENT GitHub repository"
+assert_allow "CLAUSE-BOUNDARY CONTROL: a --repo belonging to a DIFFERENT command after && is not pulled into gh pr list's clause" \
+  "$(json 'gh pr list && curl --repo o/r')"
+
+# ---------- 2026-09-07: the clause scan must CAPTURE, then test --------------
+# The multi-clause fix above is written as `clauses=$(grep -oiE ...)` followed by
+# a separate `grep -Eq ... <<< "$clauses"`, and its comment says a
+# `grep -oiE ... | grep -Eq ...` PIPELINE would fail OPEN under `set -o pipefail`
+# (the reader exits at its first match, the writer takes SIGPIPE, the && never
+# fires). Security review CONSTRUCTED that rewrite and the suite stayed fully
+# green -- so the rationale was correct and entirely unpinned, and a future
+# "simplification" back to the pipeline would have shipped silently.
+#
+# THE ROW HAS TO BE BIG. SIGPIPE needs the writer to still be writing when the
+# reader exits, so the crossover is around 400 clauses / ~24KB; every short decoy
+# row above stays green under the pipeline form and proves nothing about it.
+_FO_DECOYS=''
+_fo_i=0
+while [ "$_fo_i" -lt 420 ]; do _FO_DECOYS="${_FO_DECOYS}echo gh pr merge && "; _fo_i=$((_fo_i+1)); done
+assert_deny "FAIL-OPEN PIN: 420 decoy clauses ahead of a real cross-repo merge still denies -- a grep -o | grep -q rewrite loses this DENY to SIGPIPE under pipefail" \
+  "$(jsonc "${_FO_DECOYS}gh pr merge 42 --auto --repo o/r")" \
+  "targets a DIFFERENT GitHub repository"
+unset _FO_DECOYS _fo_i
+
 # ---------- 2026-09-07: the UNANCHORED clause cut must scan EVERY clause -----
 # CRITICAL, found by security review OF the interior-redirect change and fixed in
 # the same PR. gh_pr_clause_has_repo's cut is the only one in the file with NO
@@ -1773,6 +1866,13 @@ assert_deny "same brace-glued construction with a LITERAL mutating method attrib
 # $_GH_API_CUT like the other two, so only the count moved. Bumping this number
 # is where a reviewer confirms the new cut shares the anchor instead of inlining
 # its own -- which is what this assertion exists to force.
+#
+# BODY LITERAL UPDATED 2026-09-07: `[^;&|]*` -> `([^;&|]|&[0-9-])*`. The invariant
+# this assertion defends -- the cut BEGINS with exactly GH_API_RE's anchor -- is
+# unchanged; only the clause BODY moved, to admit the `&` of an fd-duplicating
+# redirect (`-X 2>&1 DELETE` truncated mid-token and allowed). Pinning the body
+# too is deliberate: it means a silent revert of that admission ALSO trips here,
+# not just an anchor divergence.
 GH_API_RE_LINE=$(grep -m1 '^GH_API_RE=' "$HOOK")
 _ANCHOR_RE="${GH_API_RE_LINE#GH_API_RE=\"}"
 _ANCHOR_RE="${_ANCHOR_RE%\"}"
@@ -1787,7 +1887,7 @@ done < <(grep 'GH_API_CLAUSE_[A-Z]*=\$(printf' "$HOOK")
 if [ -n "$_ANCHOR_RE" ] \
    && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh${_OUT_SEP}api' \
    && [ "$_CUT_DEFS" -eq 1 ] \
-   && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}[^;&|]*" \
+   && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}([^;&|]|&[0-9-])*" \
    && [ "$_CLAUSE_CUTS" -eq 3 ] \
    && [ "$_CUTS_OK" -eq 1 ]; then
   echo "PASS: GH_API_RE and ALL $_CLAUSE_CUTS GH_API_CLAUSE cuts share one anchor via a single _GH_API_CUT constant (structural, not behavioural)"; PASS=$((PASS+1))
@@ -1866,7 +1966,7 @@ if [ "${_SEP_DEFS:-0}" = 1 ] \
    && printf '%s' "$_SEP_DEF" | grep -qF '[[:space:]]+'; then
   echo "PASS: _OUT_SEP interpolates the lib's \$_CMD_REDIR and keeps its mandatory trailing [[:space:]]+"; PASS=$((PASS+1))
 else
-  echo "FAIL: _OUT_SEP no longer interpolates \$_CMD_REDIR (which would resolve to the EMPTY STRING above the lib source), or lost the mandatory trailing [[:space:]]+ that keeps 'eas>/dev/nullupdate' allowed"
+  echo "FAIL: _OUT_SEP no longer interpolates \$_CMD_REDIR (which is UNBOUND above the lib source -- a set -u abort, not an empty expansion), or lost the mandatory trailing [[:space:]]+ that keeps 'eas>/dev/nullupdate' allowed"
   echo "  got: $_SEP_DEF"
   FAIL=$((FAIL+1))
 fi
@@ -2707,9 +2807,28 @@ _PIN_RAN=1
 # does not sum. It reads "462 -> 491 ... +27" while itemising 21+5+3 = 29, and
 # the pin it sat above was 494, not 491. Recorded here rather than silently
 # rewritten: this block's own rule is that the NUMBER is the thing that gets
-# checked, and while 494 + 41 = 535 is verifiable by running this file, the
+# checked, and while the CURRENT total is verifiable by running this file, the
 # provenance of that earlier discrepancy is not.
-EXPECTED_TOTAL=548
+# 548 -> 559 on 2026-09-07: +11, FLAG-ADJACENT redirects. A SEPARATE mechanism
+# from the interior absorber and PRE-EXISTING on main -- found by the security
+# review OF this PR, folded in because both halves are deny-shaped and monotone.
+#    +3  the flag->VALUE slot inside _OUT_FLAG_RUN: 2 denies (npm's
+#         --loglevel/value form, yarn's --cwd bare-script form, both measured to
+#         build a real OTA-publish argv) plus the BOOLEAN-FLAG control. The
+#         control is not decoration: it is the row that establishes the mechanism
+#         needs a VALUE-taking flag, which is what keeps the claim precise.
+#    +4  gh api's method flag: -X with the output-redirect, glued and
+#         fd-duplicating spellings, and --method fd-duplicating. TWO fixes were
+#         needed and the split is worth keeping visible -- widening the SEPARATOR
+#         closes the first two, and only admitting `&[0-9-]` in the CLAUSE BODY
+#         closes the fd pair, because the body truncated at the `&` of `2>&1`
+#         before the method was ever read.
+#    +4  boundary controls for that body widening: a mutating method belonging to
+#         the NEXT command (after `&&`, `&`, `;`) must never be captured into gh
+#         api's clause, plus a read-only gh api carrying its own `2>&1`. These are
+#         the rows that go RED if `&[0-9-]` ever becomes a bare `&`.
+#         3 + 4 + 4 = 11.
+EXPECTED_TOTAL=563
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

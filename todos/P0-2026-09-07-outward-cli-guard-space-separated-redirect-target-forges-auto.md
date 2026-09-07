@@ -65,6 +65,41 @@ which is not equal to `--auto`, so the scan does not fire and the merge is corre
 The only difference between the two failing/passing rows is the SPACE — which isolates the
 defect to the field-splitting, not to anything else in the block.
 
+### Three more REDIRECT spellings, and a second mechanism (added 2026-09-07, security review of PR #931)
+
+Same harness, same day. All ALLOW on **both** trees, so none is a regression — and none was
+listed anywhere before, which is the point: the table above varied the _position_ of one
+operator and held the _operator_ fixed, so it could not see these.
+
+| construction                          | real argv                           | main  | PR #931 |
+| ------------------------------------- | ----------------------------------- | ----- | ------- |
+| `gh pr merge 42 2> --auto`            | `gh pr merge 42`                    | ALLOW | ALLOW   |
+| `gh pr merge 42 >> --auto`            | `gh pr merge 42`                    | ALLOW | ALLOW   |
+| `> --auto gh pr merge 42`             | `gh pr merge 42`                    | ALLOW | ALLOW   |
+| `gh pr merge 42 -b>x --auto`          | `gh pr merge 42 -b --auto`          | ALLOW | ALLOW   |
+| `gh pr merge 42 --body-file>x --auto` | `gh pr merge 42 --body-file --auto` | ALLOW | ALLOW   |
+| `gh pr merge 42 -t>x --auto`          | `gh pr merge 42 -t --auto`          | ALLOW | ALLOW   |
+
+**The LEADING row needs its own fix and a fixer following this todo would not find it.**
+`> --auto gh pr merge 42` forges through `_OUT_POS_PREFIX`'s absorber run, not through the
+trailing clause — a different code path from every other row here.
+
+**The last three are the SECOND mechanism, and this todo already predicted them.** The
+"Implementation Notes" below say of `-b>x --auto`: _"Measure it."_ Measured: the `--auto`
+is real and reaches gh, but bash gives it to `-b` as its VALUE, so no auto-merge flag
+survives and the PR merges immediately. `GH_MERGE_VALUE_FLAGS` exists precisely to catch
+this and fails because `prev` reads `-b>x`, which does not match `^-b$`.
+
+So the awk scan is redirect-unaware in **both** directions — it reads a redirect target as a
+flag, and it fails to read a flag that carries a glued redirect. One fix (teach the scan that
+`<`/`>` are token boundaries) addresses both, and it is **grant-shaped**, which is why it was
+deliberately kept out of PR #931: that PR already introduced one CRITICAL through a
+grant-shaped read, and this change needs its own paired over-granting controls.
+
+**Count correction:** the Acceptance Criteria below say this "would leave these three live".
+There are at least **seven** live positions across two mechanisms. The three-row framing came
+from enumerating one operator's positions rather than the operator × position grid.
+
 ### The forge also works at the INTERIOR slots (added 2026-09-07)
 
 The table above varies only the TRAILING position. The `_OUT_SEP` interior absorber makes the
@@ -112,7 +147,7 @@ critical for effect, not for likelihood.
 - [ ] False-positive population measured by execution over real command history, both
       directions, with the harness validated against a known flip.
 - [ ] Check whether the sibling value-flag logic has the same blindness: `gh pr merge 42
-  -b>x --auto` reads `prev` as `-b>x`, which does not match `^-b$`, so the `--auto` is
+-b>x --auto` reads `prev` as `-b>x`, which does not match `^-b$`, so the `--auto` is
       counted as real — while bash gives `-b` the `--auto` as its VALUE. Measure it; if it
       reproduces it belongs in this same fix, since it is the same field-splitting cause.
 
