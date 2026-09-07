@@ -2524,8 +2524,21 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # captured into this clause, which is the false positive this exclusion exists
   # to prevent, and which is pinned with its own control.
   #
-  # Monotone for the same reason the block above states: BOTH consumers of
-  # GH_API_CLAUSE are deny-shaped, so a longer clause can only ever ADD a deny.
+  # Monotone -- but state the consumers exhaustively, because an UNNAMED consumer
+  # of a widened value is the precise shape that produced this PR's CRITICAL.
+  # There are THREE, not the two an earlier draft of this comment named:
+  #   1. the mutating-method check below            -- deny-shaped
+  #   2. the unreadable-method check below          -- deny-shaped
+  #   3. the equality dedup at the CLAUSE_VANISHED / CLAUSE_BLIND assignments,
+  #      which BLANKS a rendering whose clause equals DEEP's, after which
+  #      `[ -n "$GH_API_CLAUSE" ] || continue` SKIPS it. That one can REMOVE a
+  #      check, so "deny-shaped" is not an argument about it.
+  # (3) is safe, and the reason is worth writing down rather than assuming: this
+  # widening only ever EXTENDS a clause that was already being cut, and the
+  # extension is a function of the same input text, so two renderings whose
+  # clauses differed before cannot become equal after -- unequal prefixes stay
+  # unequal when both are extended by their own suffixes. A rendering that was
+  # previously checked therefore cannot newly collapse into DEEP and vanish.
   _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-])*"
   GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT" | head -1)
   # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is

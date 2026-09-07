@@ -1623,16 +1623,27 @@ assert_allow "CLAUSE-BOUNDARY CONTROL: a --repo belonging to a DIFFERENT command
 # green -- so the rationale was correct and entirely unpinned, and a future
 # "simplification" back to the pipeline would have shipped silently.
 #
-# THE ROW HAS TO BE BIG. SIGPIPE needs the writer to still be writing when the
-# reader exits, so the crossover is around 400 clauses / ~24KB; every short decoy
-# row above stays green under the pipeline form and proves nothing about it.
-_FO_DECOYS=''
+# ORDER MATTERS MORE THAN SIZE, and getting this wrong is how the first version
+# of this pin became a decoration. SIGPIPE needs the READER to quit while the
+# WRITER still has output to push. `grep -q` quits at its FIRST match -- so the
+# matching clause must come FIRST and the bulk of the output AFTER it.
+#
+# The first attempt put 420 decoys BEFORE the real --repo clause. `grep -q` then
+# had to consume the entire stream to reach its only match, never exited early,
+# never SIGPIPEd the writer, and the pipeline rewrite kept the suite fully green
+# at 420, 1000, 2000, 4000 and 8000 decoys (160KB). It asserted nothing.
+#
+# MEASURED against a scratch copy of the guard mutated to the pipeline form,
+# real clause first: identical at 200 and 1000 decoys, DIVERGES from 2000
+# (~40KB) upward -- shipped DENY, pipeline ALLOW. 3000 is used here for margin.
+# Do not shrink it, and do not move the --repo clause to the end.
+_FO_TAIL=''
 _fo_i=0
-while [ "$_fo_i" -lt 420 ]; do _FO_DECOYS="${_FO_DECOYS}echo gh pr merge && "; _fo_i=$((_fo_i+1)); done
-assert_deny "FAIL-OPEN PIN: 420 decoy clauses ahead of a real cross-repo merge still denies -- a grep -o | grep -q rewrite loses this DENY to SIGPIPE under pipefail" \
-  "$(jsonc "${_FO_DECOYS}gh pr merge 42 --auto --repo o/r")" \
+while [ "$_fo_i" -lt 3000 ]; do _FO_TAIL="${_FO_TAIL} && echo gh pr merge"; _fo_i=$((_fo_i+1)); done
+assert_deny "FAIL-OPEN PIN: a real cross-repo merge FOLLOWED by 3000 decoy clauses still denies -- a grep -o | grep -q rewrite loses this DENY to SIGPIPE under pipefail (measured divergence starts at 2000)" \
+  "$(jsonc "gh pr merge 42 --auto --repo o/r${_FO_TAIL}")" \
   "targets a DIFFERENT GitHub repository"
-unset _FO_DECOYS _fo_i
+unset _FO_TAIL _fo_i
 
 # ---------- 2026-09-07: the UNANCHORED clause cut must scan EVERY clause -----
 # CRITICAL, found by security review OF the interior-redirect change and fixed in
