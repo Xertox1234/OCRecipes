@@ -93,9 +93,11 @@ and false of this narrow set.
 - ANSI-C decoder ground-truthed against real bash argv byte-by-byte via an argv-printing shell
   function: **24 rows exact, 1 documented divergence** (`\u`, which zsh decodes and bash 3.2
   does not — decoding is the deny direction).
-- **8 mutations, all caught**, 22 named assertions red across them; restore verified.
-- Suites: `test-cmd-detect.sh` 496 → **530**, `test-guard-outward-cli.sh` 462 → **483**, both 0
-  failed. The guard suite's deliberate assertion-total pin was updated by hand, as intended.
+- **13 mutations, all caught**; restore verified. (Was 8 before review round 1 added the
+  arithmetic-quote, `))`-evidence, `\u`, paren-blind and guard-wiring arms.)
+- Suites: `test-cmd-detect.sh` 496 → **542**, `test-guard-outward-cli.sh` 462 → **488**, both 0
+  failed. Both deliberate arity pins — the assertion total and the GH_API cut count — were
+  updated by hand, which is the review moment each exists to force.
 - **False positives measured by execution, not estimated**: 1,658 unique real commands from
   this project's transcripts (the decision-relevant subset), diffed per command against the
   pre-change hook, with a **known flip injected first to validate the harness**. Result: **1
