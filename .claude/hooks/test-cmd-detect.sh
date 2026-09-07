@@ -1474,74 +1474,69 @@ sub_eq() {  # $1=name $2=input $3=expected single body
 sub_eq 'extractor yields the WHOLE subshell body, not a truncation' \
   'f$( (:) )oo bar' ' (:) '
 
-echo "--- cmd_words_vanished: ARITHMETIC is never empty and must survive ---"
-# With paren depth tracked, `$((expr))` otherwise reads as a substitution level
-# whose body happens to balance, and would be DELETED -- manufacturing `foo` from
-# `f$((1+2))oo`, whose real argv is `f3oo`. Same class as ${#x}.
-van 'arithmetic expansion is copied verbatim' 'f$((1+2))oo bar' 'f$((1+2))oo bar'
-van 'arithmetic expansion mid-command survives'  'x=$((i+1))' 'x=$((i+1))'
-# The interior is never re-scanned, so an embedded $(...) inside arithmetic is
-# not independently deleted -- the reversed-pass-order trap ${x:-$(echo hi)}
-# already pins for the brace form. An earlier draft of the arithmetic arm got
-# this wrong and rendered `gh pr me$((  ))rge`.
-van 'a substitution nested INSIDE arithmetic is not independently deleted' \
-  'gh pr me$(( $(printf 1) ))rge' 'gh pr me$(( $(printf 1) ))rge'
-# CRITICAL, review of this change. The arithmetic end-finder counted raw bytes
-# with NO quote state, so a QUOTED paren inside a nested substitution inflated
-# the count and the walk ran PAST the true end of the arithmetic. Everything in
-# the over-consumed span is copied verbatim, which silently disables every
-# deletion inside it -- here the `$!`, so `eas` never re-formed and the guard
-# ALLOWED. A PATH-stubbed binary confirmed real bash DOES invoke it. The clean
-# arithmetic rows above all pass with the broken scanner: none of them contains a
-# quote, so none exercised this arm.
-# THE SECURITY PROPERTY IS THAT `eas update` RE-FORMS -- i.e. the `$!` deletion is
-# NOT disabled by an over-consumed span. Whether the arithmetic survives verbatim
-# is a false-positive concern, not a security one, and it deliberately changed on
-# 2026-09-07: these spans contain a `;` (inside a nested substitution, where it is
-# perfectly legal), and the evidence test is deliberately COARSE about that -- it
-# voids on a `;` anywhere in the span rather than walking the span a second time
-# to find out whether the `;` is top-level. Refusing the verbatim path costs an
-# over-DENIAL, the direction this arm already argues for; the alternative is a
-# fourth grammar bet in a walk that has already produced three defects.
-van 'a QUOTED paren inside arithmetic cannot disable the deletion after it' \
-  "(echo start; \$(( \$(echo '(' >/dev/null; echo 5) )); e\$!as update --branch preview)" \
-  '(echo start; ; eas update --branch preview)'
-van 'a quoted paren in a DOUBLE-quoted arithmetic body cannot either' \
-  "(echo s; \$(( \$(echo \")\" >/dev/null; echo 5) )); e\$!as update)" \
-  '(echo s; ; eas update)'
-# The plain arithmetic forms -- no `;`, no comment -- still take the verbatim path,
-# which is what keeps `f$((1+2))oo` from rendering the manufactured word `foo`.
-# Those are the three rows immediately above this block.
-# A balanced walk is not on its own evidence the construct was arithmetic:
-# `$((a) b)` balances but is not an arithmetic expansion. Verbatim copying is the
-# only outcome that can HIDE a deletion, so it is taken ONLY on the positive `))`
-# evidence; anything else falls through to deletion, an over-denial.
-van 'a balanced-but-not-arithmetic span falls through to deletion' \
-  'gh pr me$((x) y)rge' 'gh pr merge'
-# `$((a) b)` lacks the trailing `))` so it only exercises the EASY half of the
-# evidence test. `$((X) ; (Y))` balances AND ends in `))` while being a command
-# substitution bash actually executes — that is the shape that matters, and it
-# was untested (found in review). It must NOT take the verbatim path.
-van 'a balanced span ending in )) that is NOT arithmetic still deletes' \
-  'echo $((gh pr me$()rge 42) ; (:))' 'echo '
-# arith_end is comment-blind the way its predecessor was quote-blind: a `#`
-# inside the span makes the walk count parens bash never sees. Rather than teach
-# it comment grammar, a `#` or backtick in the span voids the evidence and the
-# construct falls through to deletion (over-denial, the safe direction).
-# The COUNTING pass legitimately returns nothing here (the comment defeats its
-# paren count, so the level never closes) -- that is the mechanism, not a bug.
-# The BLIND pass is what carries the verb, which is precisely why the two are
-# unioned. Asserting the counting pass alone would have pinned the wrong half.
-van  'a # in the arithmetic span leaves the counting pass empty' \
+echo "--- cmd_words_vanished: ARITHMETIC gets NO special case, deliberately ---"
+# The arm that copied `$((...))` out verbatim was REMOVED 2026-09-07 after review.
+# It only ever prevented a FALSE POSITIVE -- an over-denial, never a bypass -- and
+# deciding "is this span arithmetic?" from text produced four defects in a row
+# (quote-blind, comment-blind, command-list-blind, separator-blind). Its measured
+# value was zero: in 3,883 real commands the mid-token `$((` shape appears twice,
+# and both are this suite's own fixtures.
+#
+# So arithmetic now deletes like any other `$(...)`. These rows pin the COST
+# honestly rather than hiding it: a manufactured word, which is an over-DENIAL.
+van 'arithmetic deletes like any other substitution' 'f$((1+2))oo bar' 'foo bar'
+van 'the cost is a manufactured word (real argv is f3oo)' 'f$((1+2))oo' 'foo'
+van 'a substitution nested inside arithmetic goes with the whole span' \
+  'gh pr me$(( $(printf 1) ))rge' 'gh pr merge'
+van 'grouped arithmetic deletes'  'echo $(( (1+2)*3 ))' 'echo '
+van 'base notation deletes'       'gh pr me$(( 16#FF ))rge 42' 'gh pr merge 42'
+van 'a comment-bearing span still leaves the counting pass empty' \
   "$(printf 'gh pr me$(( $(: # ((\n) + 1 ))rge 42')" ''
-vanb 'and the blind pass still carries the verb through it' \
-  "$(printf 'gh pr me$(( $(: # ((\n) + 1 ))rge 42')" 'gh pr me + 1 ))rge 42'
+
+echo "--- and this is what the removal BUYS: the separator spellings close ---"
+# `$((X)|(Y))` is a command SUBSTITUTION bash executes, not arithmetic -- the
+# construction really invokes the CLI (PATH-stubbed ground truth). The old arm
+# copied every one of these out VERBATIM, so the verb never re-formed and all of
+# them ALLOWED. They ALLOW on `main` too, so this is a class the removal CLOSES
+# rather than a regression it repairs. The `;` spelling denied even before,
+# because the old arm happened to void on it -- kept as the attribution control.
+for _sep in '|' '&&' '||' '&' '|&' ' ' '	'; do
+  van "separator [$_sep] cannot preserve a split binary name" \
+    "n\$((:)${_sep}(:))pm publish" 'npm publish'
+done
+van 'the ; spelling closes too (the only one the old arm caught)' \
+  'n$((:);(:))pm publish' 'npm publish'
+van 'a bare space between the subshells closes at the verb position too' \
+  'gh pr me$((:) (:))rge 42' 'gh pr merge 42'
+
 echo "--- cmd_words_vanished_blind: the union half the counter cannot supply ---"
 vanb() {  # $1=name $2=input $3=expected output
   local got; got=$(cmd_words_vanished_blind "$2")
   if [ "$got" = "$3" ]; then echo "PASS: $1"; PASS=$((PASS+1))
   else echo "FAIL: $1"; echo "  in:  $2"; echo "  got: $got"; echo "  want: $3"; FAIL=$((FAIL+1)); fi
 }
+# THIS ROW WAS CALLED BEFORE `vanb` WAS DEFINED, three lines above its own
+# definition. Under `set -uo pipefail` with no `-e` that is a silent
+# "vanb: command not found" on stderr which increments NEITHER counter -- the
+# suite reported 544/0 while this assertion never ran at all. Found in review;
+# the assertion-total pin at the end of this file now catches the class.
+#
+# AND ITS PINNED VALUE WAS WRONG, which is the more interesting half. The comment
+# here used to claim "the BLIND pass is what carries the verb". For THIS input it
+# does NOT: the nested substitution closes two characters late and the blind pass
+# yields `gh pr me)rge 42`, so `merge` never re-forms in EITHER pass. That makes
+# the construction a live bypass -- ALLOW on `main` and on this branch alike,
+# with a PATH-stubbed `gh` confirming it really invokes `pr merge 42`. It is the
+# already-tracked composition class reached through a third path (the arithmetic
+# evidence test voiding on `#`, then falling through to a counter the same `#`
+# defeats), recorded in
+# todos/P1-2026-09-07-outward-cli-guard-threat-model-decision.md.
+#
+# Pinned at the TRUE value deliberately: this row now documents a known residual
+# instead of asserting a coverage that does not exist. If a future change makes
+# `merge` re-form here, this row goes red and that is the correct signal.
+vanb 'KNOWN RESIDUAL: the blind pass does NOT carry the verb through this one' \
+  "$(printf 'gh pr me$(( $(: # ((\n) + 1 ))rge 42')" 'gh pr me)rge 42'
 # `#` opens a comment at word start, so the `(` after it is INERT to bash -- but
 # the paren counter cannot read that, counts it, and the substitution level never
 # closes, so cmd_words_vanished returns NOTHING. The blind pass reproduces the
@@ -1644,6 +1639,38 @@ van 'ANSI-C \\u escape respells a letter'   "e\$'\\u0061's update" 'eas update'
 van 'ANSI-C \\U escape respells a letter'   "e\$'\\U00000061's update" 'eas update'
 van 'a non-ASCII \\u code point collapses to one placeholder' \
   "echo \$'\\u00e9'" 'echo x'
+# FOUR ARMS THAT STAYED GREEN WHEN DELETED (found in review by mutating each).
+# An arm with no discriminating row is not covered, however many rows sit near it.
+# UPPERCASE hex: every existing row used lowercase, so hexval's tolower() could be
+# deleted with both suites green.
+van 'hex decoding is case-insensitive'      "e\$'\\x41\\x4A'b" 'eAJb'
+van 'ANSI-C \\u accepts uppercase digits'    "e\$'\\u004A'b" 'eJb'
+# \cX consumes its operand. No `\c` row existed at all.
+van 'a \\cX control escape consumes its operand' "e\$'\\cA'as update" 'exas update'
+# A hex/unicode escape with NO digits is an UNKNOWN escape (two bytes in real
+# bash), not a control character (one). The -1/-3 sentinel collision rendered one.
+van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
+
+# ---------- assertion-total pin (2026-09-07) ---------------------------------
+# ADDED BECAUSE THIS FILE SHIPPED A SILENTLY-SKIPPED ASSERTION AND REPORTED GREEN.
+# A `vanb` row was written three lines ABOVE the `vanb` definition; under
+# `set -uo pipefail` with no `-e` that is a "command not found" on stderr which
+# increments neither PASS nor FAIL, so the row vanished from the run without
+# producing a single failure. 544/0 looked identical to 545/0.
+#
+# The sibling suite test-guard-outward-cli.sh has carried this pin for exactly
+# that reason since 2026-09-05; this file did not, which is why the skip survived
+# review twice. Update the number DELIBERATELY when adding assertions — that edit
+# is the point at which you confirm the new count is the one you intended.
+#
+# LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
+# assertion in a run that otherwise completed. It cannot catch an early
+# `return`/`exit` or a truncated file, because those terminate before this line.
+EXPECTED_TOTAL=556
+if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
+  echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
+  FAIL=$((FAIL + 1))
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

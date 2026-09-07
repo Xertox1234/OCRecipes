@@ -451,7 +451,7 @@
 #     spans vanish and rejoin, so cmd_words_vanished reconstructs the flag;
 #     a non-empty body is DELETED by that same rendering, leaving `--ad`, and
 #     WORDS_DEEP keeps the body's literal text but not the fused word. So the
-#     flag appears in none of the three renderings scan_renderings reads.
+#     flag appears in none of the FOUR renderings scan_renderings reads.
 #     Pre-existing and not a regression (base ALLOWs identically). NOT fixed
 #     here, and deliberately not patched: the one-line move (widening the merge
 #     CLAUSE's `grep -qF '$'` to the `$`+backtick class its gh api sibling
@@ -550,17 +550,26 @@
 #     exist precisely because they cannot reach. Corpus rows toolvnest-*,
 #     toolvdqclose-*, toolvsqclose-*, toolvmixq-* keep this reporting every run.
 #
-#   * UNHANDLED, ALL PATHS, CAUSE IS IN THE LIB (2026-09-06, round 3): a bare `(`
-#     subshell or a `case` arm's `)` inside `$(...)` desynchronises
-#     lib/cmd-detect.sh's substitution scanner, which counts depth for `$(` but
-#     not for a bare `(`. Measured: `cmd_words_vanished 'e$( (:) )as update'`
-#     renders `e )as update`, so the needle never forms and
-#         e$( (echo) )as update --branch preview
-#         e$(case x in a) : ;; esac)as update --branch preview
-#     are ALLOWED. NOT a guard defect and not fixable here — the same
-#     desynchronisation is present in cmd_extract_substitutions on `main`. Filed:
-#     todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
-#     Corpus rows toolvbareparen-*, toolvcasearm-*.
+#   * PARTLY CLOSED 2026-09-06/07 — READ THIS BEFORE TRUSTING THE HALF THAT IS
+#     STILL OPEN. This entry originally read "UNHANDLED, ALL PATHS" for BOTH a
+#     bare `(` subshell and a `case` arm's `)` inside `$(...)`, on the measurement
+#     that `cmd_words_vanished 'e$( (:) )as update'` renders `e )as update`.
+#
+#     THE BARE-PAREN HALF IS CLOSED. That measurement is `main`'s output; the
+#     scanner now carries a per-level paren counter and renders `eas update`, so
+#     `e$( (echo) )as update --branch preview` DENIES here (it ALLOWs on `main`).
+#     The CLOSED entry ~90 lines below is the authority; this text contradicted it
+#     for one review round, which is exactly the comment-drift class this file's
+#     own header names as its dominant defect. Corpus rows toolvbareparen-* now
+#     report `ok`.
+#
+#     THE `case`-ARM HALF IS STILL OPEN and unchanged:
+#         e$(case x in a) : ;; esac)as update --branch preview   -> ALLOW
+#     That `)` has no matching opener, so no depth arithmetic reaches it. Corpus
+#     rows toolvcasearm-*/verbvcasearm-*/flagvcasearm-* stay GAPs by design. Filed:
+#     todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#     The bare-paren todo is archived at
+#     todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
 #
 #   * SIDE EFFECT OF DECLINING, and it is a CORRECTNESS GAIN, not just a cost
 #     (2026-09-06, round 3): the 2026-09-03 narrow-deny rule denies an expansion
@@ -619,7 +628,7 @@
 #     "degraded is the fail-closed direction" is not a safe default here. Second,
 #     the TOOL rows allow on all four, which is a live outward-CLI bypass.
 #
-#     CLOSED 2026-09-06 (todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-
+#     CLOSED 2026-09-06 (todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-
 #     breaks-substitution-scanners.md). Every construction in the table above now
 #     DENIES on the precise path, each attributed to the intended
 #     command-position check rather than to an ambiguity fallback.
@@ -797,7 +806,7 @@ _OUT_FLAG_LEAD='(^|[^-A-Za-z0-9]|\$\{(!([A-Za-z_][A-Za-z0-9_]*|[0-9]+)(\[[^]]*\]
 _OUT_REPO_FLAG_RE="${_OUT_FLAG_LEAD}"'(--repo([^-A-Za-z0-9]|$)|-R)'
 
 # gh_pr_clause_has_repo <subcommand-alternation> → exit 0 if the first
-# `gh pr <sub>` clause in EITHER the deep or the vanished rendering carries
+# `gh pr <sub>` clause in ANY of the three renderings (deep, vanished, blind) carries
 # --repo/-R. (Said "$WORDS_DEEP" only until 2026-09-06; the fix for finding C3
 # rewrote every comment INSIDE the function and left this summary one paragraph
 # above it untouched — the exact comment-drift class this file's whole defect
@@ -1566,7 +1575,7 @@ WORDS_SCAN="$WORDS_DEEP
 $WORDS_VANISHED
 $WORDS_VANISHED_BLIND"
 
-# Occurrence count across both renderings, taking the LARGER rather than
+# Occurrence count across all THREE renderings, taking the LARGEST rather than
 # counting the union. Preserves the ambiguity semantics exactly (two real
 # invocations still count 2, one still counts 1) while letting a verb that only
 # the vanished rendering can see raise its block's count from 0 to 1 -- without
@@ -1600,7 +1609,7 @@ _out_max_count() {  # $1=regex -> largest per-rendering match count
 # gets waved through.
 #
 # RENAMED from `scan_both` 2026-09-06 (security review of PR #926, finding C4).
-# It reads three renderings now, and a name asserting "both" while the body
+# It reads FOUR renderings now (a fourth joined 2026-09-07), and a name asserting a count while the body
 # reads three is the kind of drift this file has been bitten by before.
 #
 # $WORDS_VANISHED ADDED in the same change, and this was an effective GRANT, not
@@ -1675,7 +1684,7 @@ fi
 # `eas build --auto-submit` (and --auto-submit-with-profile) submits the
 # resulting binary to the store as soon as the build finishes — a store
 # mutation wearing a build command's name. Plain `eas build` stays allowed.
-# Flag scan via scan_renderings (see its definition for why all three renderings are read
+# Flag scan via scan_renderings (see its definition for why all four renderings are read
 # and why they must stay newline-joined). No trailing boundary, so
 # `--auto-submit-with-profile` is caught by the same pattern. Leading boundary
 # is `_OUT_FLAG_LEAD` (see its own definition) so a default-value expansion
@@ -2053,7 +2062,7 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # whitespace-only check). The boundary class is "not a word/dash character"
   # rather than strictly whitespace, so it also catches `--admin=true`,
   # `--admin=1`, and a trailing quote/comma/etc.
-  # Flag scan via scan_renderings — see its definition for why all three renderings are read
+  # Flag scan via scan_renderings — see its definition for why all four renderings are read
   # and why they must stay newline-joined (this check is the seam example there).
   # Leading boundary is `_OUT_FLAG_LEAD` (see its own definition) so a
   # default-value expansion (`${x:---admin}`) cannot donate the flag's
@@ -2207,7 +2216,7 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   _GH_API_CUT="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}[^;&|]*"
   GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT" | head -1)
   # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is
-  # now a MAXIMUM across both renderings, so it can be 1 because the VANISHED
+  # now a MAXIMUM across all three renderings, so it can be 1 because the VANISHED
   # rendering saw a split verb (`gh a${UNSET}pi ...`) that WORDS_DEEP cannot
   # see. In exactly that case the cut just above yields an EMPTY clause — and
   # this block ALLOWS by default on an empty clause (unlike the `gh pr merge`

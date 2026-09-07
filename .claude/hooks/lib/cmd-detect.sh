@@ -658,7 +658,7 @@ cmd_words_deep() {
 # not newline-joined with anything -- there is nothing to join). WIRED
 # 2026-09-05 into guard-outward-cli.sh, which is its only caller: it feeds
 # $WORDS_SCAN (the boolean-matcher union), _out_max_count (the per-rendering
-# occurrence maximum), both GH_API_CLAUSE cuts, gh_pr_clause_has_repo's clause
+# occurrence maximum), all three GH_API_CLAUSE cuts, gh_pr_clause_has_repo's clause
 # loop and scan_renderings' flag scan. Never $WORDS, whose one grant-shaped
 # reader must not see a deletion-synthesized flag.
 #
@@ -789,43 +789,6 @@ _cmd_vanish_pass() {
       if (code == 0) return ""
       return (code >= 32 && code < 127) ? safech(sprintf("%c", code)) : PH
     }
-    # arith_end(p) -- index of the `)` that closes the `(` at position p, counting
-    # ONLY in unquoted state; 0 if it never balances.
-    #
-    # QUOTE AWARENESS IS THE WHOLE POINT, and its absence was a CRITICAL found in
-    # review of the change that introduced this arm. A first version counted raw
-    # bytes with no quote state, so a quoted paren inside a nested substitution
-    # inflated the count and the walk ran PAST the true end of the arithmetic. The
-    # over-consumed span is copied verbatim, which silently disables every
-    # deletion inside it -- including the special-parameter deletions this same
-    # change adds. Constructed and RUN end-to-end, not traced:
-    #   (echo start; $(( $(echo (sq)((sq) >/dev/null; echo 5) )); e$!as update --branch preview)
-    # A PATH-stubbed binary confirmed real bash DOES invoke it, while the guard
-    # returned ALLOW; the same payload without the arithmetic decoy DENIES.
-    #
-    # A `(` inside a double-quoted span is NOT counted either, even though a live
-    # $(...) nested in one has real parens. That direction is safe: under-counting
-    # makes the walk fail to balance, which returns 0 and drops the caller into
-    # the ordinary $( path, where the construct is DELETED -- an over-denial, the
-    # safe direction for this rendering, rather than a missed deny.
-    function arith_end(p,   k, st, ch, pd) {
-      pd = 0; st = 0
-      for (k = p; k <= n; k++) {
-        ch = substr(buf, k, 1)
-        if (st == 0) {
-          if (ch == BS) { k++; continue }
-          if (ch == "$" && k < n && substr(buf, k+1, 1) == SQ) { st = 3; k++; continue }
-          if (ch == SQ) { st = 1; continue }
-          if (ch == DQ) { st = 2; continue }
-          if (ch == "(") { pd++; continue }
-          if (ch == ")") { pd--; if (pd == 0) return k; continue }
-        }
-        else if (st == 1) { if (ch == SQ) st = 0 }
-        else if (st == 3) { if (ch == BS) k++; else if (ch == SQ) st = 0 }
-        else { if (ch == BS) k++; else if (ch == DQ) st = 0 }
-      }
-      return 0
-    }
     BEGIN {
       SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96); PH = "x"
       SAFE = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./:=+,@%"
@@ -862,76 +825,34 @@ _cmd_vanish_pass() {
             i++
             continue
           }
-          # ARITHMETIC EXPANSION is NEVER EMPTY and must NOT be deleted. Tested
-          # BEFORE the $( walk below, never after: with the bare-paren counter in
-          # place `$((expr))` otherwise reads as a substitution level whose body
-          # happens to balance, and would be deleted -- manufacturing `foo` from
-          # `f$((1+2))oo`, whose real argv is `f3oo`. That is precisely the
-          # ${#x} class this allow-list exists to exclude. The whole span is
-          # copied VERBATIM and `i` advanced past it in ONE step; its interior is
-          # never re-scanned, so an embedded $(...) inside the arithmetic is
-          # never independently reached and deleted -- the same reversed-pass-
-          # order trap the ${...} grammar-failure path above avoids, and the
-          # reason the two are written the same way. A safe MISS on that inner
-          # substitution, never a false match.
+          # ARITHMETIC EXPANSION IS NOT SPECIAL-CASED, and the removal of that
+          # arm is deliberate. It once copied `$((...))` out VERBATIM, because
+          # arithmetic is never empty and deleting it manufactures `foo` from
+          # `f$((1+2))oo` (real argv `f3oo`) -- the ${#x} hazard.
           #
-          # NOTE cmd_extract_substitutions deliberately does NOT mirror this: an
-          # embedded $(...) inside arithmetic genuinely EXECUTES (verified:
-          # `$(( $(printf 1) + 1 ))` evaluates to 2), so the extractor must still
-          # descend into it. The differential invariant the two share is
-          # agreement on COMMAND-substitution liveness; arithmetic is outside it.
-          if (pcount && c == "$" && i + 1 < n && substr(buf, i+1, 2) == "((") {
-            # arith_end is QUOTE-AWARE; a raw byte counter here was a CRITICAL
-            # (its header carries the construction that defeated it).
-            k = arith_end(i + 1)
-            # `k` is where the paren opened at i+1 CLOSES, which is the final `)`
-            # of the whole `$((...))` construct -- not the inner one. An earlier
-            # draft required substr(buf, k+1, 1) to be `)`, on the assumption k
-            # landed on the INNER closer; for a nested substitution
-            # (`$(( $(printf 1) ))`) that test failed, the span fell through and
-            # the inner $(...) was deleted independently -- the reversed-pass-order
-            # regression this arm exists to prevent. Caught by running it.
-            #
-            # REQUIRING `))` IS THE SECOND HALF OF THE REPAIR. A balanced walk is
-            # not on its own evidence the construct was arithmetic: `$((a) b)`
-            # balances but is not an arithmetic expansion. Verbatim copying is the
-            # only outcome here that can HIDE a deletion, so it is taken ONLY on
-            # positive evidence; anything else falls through to the ordinary $(
-            # path below, where the construct is DELETED. That is an over-denial
-            # for a real arithmetic expression -- the safe direction for a
-            # deny-shaped rendering -- instead of a silent miss.
-            # A `#` OR A BACKTICK ANYWHERE IN THE SPAN VOIDS THE EVIDENCE, added
-            # 2026-09-07 after review showed arith_end is comment-blind exactly
-            # the way its predecessor was quote-blind. `#` opens a comment at word
-            # start, so the walk counts parens bash never sees and can settle on a
-            # `)` past the true end -- and everything in the over-consumed span is
-            # then copied verbatim, disabling the deletions inside it. That is
-            # CRITICAL-1 again through a different character. Rather than teach
-            # this walk comment grammar (the fifth grammar bet), the span is simply
-            # not trusted when it contains one: it falls through to DELETION, an
-            # over-denial, which is the direction this arm already argues for.
-            # A `;` OR A NEWLINE VOIDS IT TOO, and this one is not a grammar bet:
-            # `;` is a SYNTAX ERROR inside bash arithmetic (verified --
-            # `$(( 1 ; 2 ))` reports "invalid arithmetic operator"; the sequencing
-            # operator is `,`). So its presence PROVES the span is not arithmetic.
-            # Without this, `$((X) ; (Y))` balances AND ends in `))` while being a
-            # command substitution bash really executes, and it took the verbatim
-            # path -- disabling the deletions inside it. Found in review; the
-            # counter-example previously pinned here (`$((a) b)`) lacks the
-            # trailing `))` and so only ever exercised the easy half of the test.
-            #
-            # `$(` is deliberately NOT in this set -- a nested substitution inside
-            # arithmetic is legitimate and must stay verbatim, which the
-            # "not independently deleted" pin covers. `&` and `|` are likewise
-            # kept: both are real arithmetic operators.
-            span = substr(buf, i, k + 1 - i)
-            if (k > 1 && substr(buf, k-1, 1) == ")" && index(span, "#") == 0 && index(span, BT) == 0 \
-                && index(span, ";") == 0 && index(span, "\n") == 0) {
-              if (d == 0) out = out span
-              i = k
-              continue
-            }
-          }
+          # WHY IT IS GONE (2026-09-07, security review of this change). Deciding
+          # "is this span arithmetic?" from text is undecidable here, and every
+          # attempt produced a defect: the end-finder was quote-blind (CRITICAL),
+          # then comment-blind, then command-list-blind, and then separator-blind
+          # -- `$((X)|(Y))` is a command SUBSTITUTION bash executes: run
+          # `e$((:)|(:))as` through a real shell and it really invokes `eas`.
+          # Seven separator
+          # spellings (`|`, `&&`, `||`, `&`, `|&`, a bare SPACE, a TAB) reached a
+          # live invocation, and the arm is what PRESERVED them: without it the
+          # bare-paren counter deletes the span and the verb rejoins.
+          #
+          # The arm only ever prevented a FALSE POSITIVE -- an over-denial, never
+          # a bypass -- so trading four defects and seven live spellings for it
+          # was the wrong direction for a deny gate. Its measured value was also
+          # zero: across 3,883 unique commands in this project`s own history, the
+          # mid-token `$((` shape it protects appears TWICE, and both are this
+          # suite`s own fixtures. Deleting the arm is the simplification, not a
+          # regression to be repaired by a fifth grammar bet.
+          #
+          # CONSEQUENCE, pinned in test-cmd-detect.sh: `$((expr))` now deletes
+          # like any other `$(...)`, so a gated verb split by one renders as
+          # rejoined. That is an over-DENIAL, which this rendering documents as
+          # its safe direction.
           if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
             depth++; state[depth] = 0; kind[depth] = "P"; parens[depth] = 0; i++
             continue
@@ -1038,6 +959,16 @@ _cmd_vanish_pass() {
             # character, two bytes (verified by od: bash 3.2 and zsh both build
             # `e\qas` for e$(sq)\q(sq)as), so it must render as two, not one.
             else { if (d == 0) out = out PH safech(esc); code = -4 }
+            # A HEX OR UNICODE ESCAPE WITH ZERO DIGITS IS AN UNKNOWN ESCAPE, not a
+            # control character. `$(sq)\x(sq)` is the literal two bytes backslash-x in real
+            # bash (verified by execution), but the branches above leave `code`
+            # at its -1 initialiser when the digit loop consumes nothing, and
+            # fromcode(-1) returns ONE placeholder -- indistinguishable from the
+            # -3 "known single-byte control escape" case. A sentinel collision:
+            # -1 meant "parsed nothing" and -3 meant "deliberately one char", and
+            # only -3 was handled. Re-route to the two-character arm so the
+            # rendering keeps bash-s own byte count.
+            if (code == -1) { if (d == 0) out = out PH safech(esc); code = -4 }
             if (d == 0 && code != -4) out = out fromcode(code)
           }
           else if (c == SQ) { state[d] = 0 }

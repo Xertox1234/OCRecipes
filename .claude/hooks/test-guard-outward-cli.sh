@@ -2243,8 +2243,31 @@ assert_deny "bare-paren subshell splits the verb" \
   "eas update/publish/submit"
 # ARITHMETIC is never empty, so the paren counter must not start deleting it --
 # `f$((1+2))oo` is really `f3oo`. Two-sided: the gated shape must NOT deny.
-assert_allow "bare-paren control: arithmetic is not deleted into a gated verb" \
-  "$(json 'e$((1+2))as update --branch preview')"
+# THIS ROW FLIPPED DELIBERATELY on 2026-09-07. It used to assert that arithmetic
+# is NOT deleted into a gated verb, which the (now removed) verbatim-copy arm
+# guaranteed. That arm was what PRESERVED seven live bypass spellings
+# (`e$((:)|(:))as update` and friends are command SUBSTITUTIONS bash executes),
+# so it was removed and arithmetic now deletes like any other `$(...)`.
+#
+# The consequence is an OVER-DENIAL and it is pinned here rather than hidden:
+# real argv for this input is `e3as update --branch preview`, which invokes
+# nothing, and the guard denies it anyway. That is the safe direction for a deny
+# gate, and its measured cost is nil — across 3,883 real commands the mid-token
+# `$((` shape appears twice, both this repo's own test fixtures.
+assert_deny "arithmetic mid-token now over-denies (the removal's disclosed cost)" \
+  "$(json 'e$((1+2))as update --branch preview')" \
+  "eas update/publish/submit"
+# What the removal BUYS, at the guard level: the separator spellings the old arm
+# copied out verbatim. All ALLOW on main; all deny now.
+assert_deny "a | between subshells cannot preserve a split binary name" \
+  "$(json 'e$((:)|(:))as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a bare SPACE between subshells cannot either" \
+  "$(json 'e$((:) (:))as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "and it closes at gh's namespace position too" \
+  "$(json 'g$((:)|(:))h pr merge 42')" \
+  "gh pr merge"
 assert_allow "bare-paren FP: an ordinary subshell assignment stays allowed" \
   "$(json 'x=$( (cd /tmp && pwd) )')"
 assert_allow "bare-paren FP: arithmetic in an ordinary command stays allowed" \
@@ -2326,7 +2349,7 @@ _PIN_RAN=1
 #    +3  review round 2: the third scan_renderings seam control, plus the two
 #         blind-arm consumer rows (GH_API method, gh pr --repo) that had NO
 #         coverage -- removing either arm left the whole suite green
-EXPECTED_TOTAL=491
+EXPECTED_TOTAL=494
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
