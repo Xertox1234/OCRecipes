@@ -1725,6 +1725,54 @@ else
   echo "  cut not using const: $_BAD_CUT"
   FAIL=$((FAIL+1))
 fi
+# ---------- 2026-09-07: structural — the interior absorber is UNIFORM ---------
+# The behavioural rows in the interior-redirect block prove the absorber works
+# where it was applied. They cannot prove it was applied EVERYWHERE, and
+# "applied selectively, not uniformly" is the defect this file has already paid
+# for three times (GH_API_CLAUSE, then gh_pr_clause_has_repo, then a structural
+# test's own grep -m1) —
+# docs/solutions/logic-errors/occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md.
+# A gated family ADDED LATER with a hardcoded [[:space:]]+ would pass every
+# assertion above, because there is no behavioural row for a family that does
+# not exist yet. This is the assertion that catches it.
+#
+# COUNTS OCCURRENCES, NOT LINES, and the distinction is load-bearing: `grep -c`
+# counts matching LINES, so a line carrying TWO separators (GH_MUTATING_RE
+# carries four) reports 1 and a half-migrated line reads as whole; `grep -m1` /
+# `head -1` stop at the first hit, which is literally how the previous instance
+# of this defect got through review. `grep -o | wc -l` is the only form that
+# counts what this assertion claims to count.
+#
+# COMMENT LINES ARE EXCLUDED. The hook's ~700-line header quotes these exact
+# fragments verbatim (DOCUMENTED RESIDUALS spells out `gh[[:space:]]+api` among
+# others), so an unscoped grep fails on prose — and the tempting "fix" for that
+# is to loosen the pattern until it stops matching comments, which would also
+# stop it matching real code.
+_SEP_LEFT=$(grep -v '^[[:space:]]*#' "$HOOK" \
+  | grep -oE '(eas|railway|npm|pnpm|yarn|gh|pr|api|release|repo|variable|variables|vars|var|service|environment)\[\[:space:\]\]\+|\$\{_OUT_(GATED_BIN|EXPANSION_TOKEN)\}\[\[:space:\]\]\+' \
+  | wc -l | tr -d '[:space:]')
+if [ "${_SEP_LEFT:-x}" = 0 ]; then
+  echo "PASS: every tool->verb / namespace->verb separator goes through \$_OUT_SEP (structural: 0 hardcoded [[:space:]]+ left on code lines)"; PASS=$((PASS+1))
+else
+  echo "FAIL: $_SEP_LEFT hardcoded [[:space:]]+ separator(s) still sit between a gated word and its verb — the interior-redirect absorber is applied SELECTIVELY, so those families remain bypassable by a redirect"
+  grep -v '^[[:space:]]*#' "$HOOK" | grep -nE '(eas|railway|npm|pnpm|yarn|gh|pr|api|release|repo|variable|variables|vars|var|service|environment)\[\[:space:\]\]\+' | head -5
+  FAIL=$((FAIL+1))
+fi
+# The absorber itself must still interpolate the LIB constant and still carry its
+# mandatory trailing [[:space:]]+. This is the ordering trap and the
+# over-denial trap in one assertion, and it fails on BOTH documented mutations:
+# reverting to a bare '[[:space:]]+' loses $_CMD_REDIR, and "simplifying" to
+# '([[:space:]]|'"$_CMD_REDIR"')+' loses the literal trailing '[[:space:]]+'.
+_SEP_DEF=$(grep -m1 '^_OUT_SEP=' "$HOOK")
+if printf '%s' "$_SEP_DEF" | grep -qF '$_CMD_REDIR' \
+   && printf '%s' "$_SEP_DEF" | grep -qF '[[:space:]]+'; then
+  echo "PASS: _OUT_SEP interpolates the lib's \$_CMD_REDIR and keeps its mandatory trailing [[:space:]]+"; PASS=$((PASS+1))
+else
+  echo "FAIL: _OUT_SEP no longer interpolates \$_CMD_REDIR (which would resolve to the EMPTY STRING above the lib source), or lost the mandatory trailing [[:space:]]+ that keeps 'eas>/dev/nullupdate' allowed"
+  echo "  got: $_SEP_DEF"
+  FAIL=$((FAIL+1))
+fi
+
 # Negative controls — this is the change's largest new over-denial surface,
 # so the false-positive corpus is deliberately wider than the minimum: every
 # read-only/benign gh api idiom this repo or a real user would write.
@@ -2518,7 +2566,7 @@ _PIN_RAN=1
 #    +3  review round 2: the third scan_renderings seam control, plus the two
 #         blind-arm consumer rows (GH_API method, gh pr --repo) that had NO
 #         coverage -- removing either arm left the whole suite green
-# 494 -> 535 on 2026-09-07: +41, the interior-redirect absorber (_OUT_SEP).
+# 494 -> 537 on 2026-09-07: +43, the interior-redirect absorber (_OUT_SEP).
 #   +27  interior-redirect denies, each asserted on its OWN family's reason
 #         string: 6 eas, 5 railway, 5 npm/OTA-script, 10 gh, 1 narrow-deny
 #         expansion. Both gluings per family where both are reachable.
@@ -2532,6 +2580,11 @@ _PIN_RAN=1
 #   +10  negative controls, including the two that pin _OUT_SEP's mandatory
 #         trailing space -- 'eas > update' and 'eas>/dev/nullupdate', both
 #         MEASURED with argv stubs to run no gated invocation at all.
+#    +2  the STRUCTURAL pair (uniformity, and the absorber's own shape). These
+#         are the only two assertions here that can fail for a family that does
+#         not exist yet: every behavioural row above tests a construction, and no
+#         construction can cover a gated verb somebody adds next month with a
+#         hardcoded [[:space:]]+. 27 + 1 + 3 + 10 + 2 = 43.
 #
 # UNRESOLVED, and NOT introduced by this change: the 2026-09-06/07 entry above
 # does not sum. It reads "462 -> 491 ... +27" while itemising 21+5+3 = 29, and
@@ -2539,7 +2592,7 @@ _PIN_RAN=1
 # rewritten: this block's own rule is that the NUMBER is the thing that gets
 # checked, and while 494 + 41 = 535 is verifiable by running this file, the
 # provenance of that earlier discrepancy is not.
-EXPECTED_TOTAL=535
+EXPECTED_TOTAL=537
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
