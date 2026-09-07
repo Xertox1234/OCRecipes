@@ -6,6 +6,7 @@ tags: [harness, parsing, shell-quoting, security, performance]
 module: server
 applies_to: [".claude/hooks/**"]
 created: 2026-08-17
+last_updated: 2026-09-06
 ---
 
 # A fast-path pre-filter's superset proof must be re-verified when the matcher's character set changes
@@ -58,6 +59,55 @@ case "$_T" in *gh*pr*create*) _PRE=1 ;; esac
 _T=${CMD//\'/}; _T=${_T//\"/}; _T=${_T//\\/}; _T=${_T//$'\n'/}; _T=${_T//\$/}
 case "$_T" in *gh*pr*create*) _PRE=1 ;; esac
 ```
+
+## The corollary: a fix in the right file can still be UNREACHABLE (added 2026-09-06)
+
+The rule above is about a pre-filter that STRIPS characters. The same lockstep failure has a
+second form, and it is worth stating separately because it changes **where a fix has to
+land**, not merely whether two lists agree:
+
+> **A correct fix in the right file is still unreachable when a pre-filter upstream of it
+> declines on a NARROWER signal than the fix's own grammar.**
+
+`guard-outward-cli.sh`'s stage-3 pre-filter does not strip; it DECLINES its cheap exit for any
+command containing `${`, `$(` or a backtick, on the argument that no construct the matcher can
+neutralise exists without one of those digraphs. True when written. Then
+`cmd_words_vanished` learned to delete SPECIAL parameters (`$!`, `$@`, `$*`, `$1`–`$9`) and to
+decode ANSI-C respellings (`$'\x65'`) — none of which carries any of the three digraphs. So:
+
+```
+e$1as update --branch preview     # a real OTA publish to end users
+  stage 1 (raw needle)      miss
+  stage 2 (stripped needle) miss   -- stripping `$` gives `e1as`, never `eas`
+  stage 3 (digraph decline) CHEAP EXIT
+  => ALLOWED, before cmd_words_vanished was ever computed
+```
+
+The trap is that **two separate places named the wrong single fix location and both read as
+authoritative**: the tracking todo's acceptance criteria, and the guard's own DOCUMENTED
+RESIDUALS, which asserted "the fix is in lib/cmd-detect.sh's allow-list". Necessary, not
+sufficient — and nothing in the allow-list's own file could have revealed that, because
+reachability is a property of the call path, not of the file where the logic belongs.
+
+**How to check it in five minutes, before writing the fix.** Do not reason about the pre-filter
+from its comment — run it on the construction and see which branch decides:
+
+```bash
+. .claude/hooks/lib/fastpath-filter.sh
+cmd_fastpath_has 'e$1as update --branch preview' '*eas*' '*gh*' '*npm*'; echo "stage1/2 rc=$?"
+case 'e$1as update --branch preview' in *'${'*|*'$('*|*'`'*) echo DECLINE ;; *) echo cheap-exit ;; esac
+```
+
+Then apply the smallest widening and a single arm of the real fix, run ONE construction
+end-to-end, and read the deny **REASON** — not the verdict. A deny from an unrelated ambiguity
+branch looks exactly like success and means the intended mechanism never fired.
+
+**Widen on a measured cost, not an asserted one.** The previous residual declined to widen
+because "`$` alone appears in a large share of real commands" — true of a bare `$`, false of
+the narrow set actually needed. Measured over 28,469 real Bash tool calls harvested from this
+project's transcripts: the three original digraphs match 13.0%; adding `$!`, `$@`, `$*`,
+`$'` and `$<digit>` pushes only **0.8% (238 commands) newly onto the slow path**, about
++0.7 ms on the average call. Harvest and count before accepting a cost objection.
 
 ## Exceptions
 

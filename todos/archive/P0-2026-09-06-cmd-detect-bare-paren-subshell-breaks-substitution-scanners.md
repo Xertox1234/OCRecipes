@@ -104,6 +104,75 @@ and false of this narrow set.
   `todos/P3-2026-08-16-command-guards-fire-on-heredoc-prose.md`, which is `human_led` and
   blocked on a decision that was deliberately not taken here.
 
+### REVIEW ROUND 1 — two CRITICALs, both in code this change ADDED
+
+The section above was written before review and claimed closure that both findings
+contradicted. Corrected here rather than left standing. Both were reproduced independently
+before being accepted, each with a PATH-stubbed binary proving real bash invokes the CLI.
+
+**CRITICAL 1 — the arithmetic end-finder was quote-unaware.** It located the end of `$((…))`
+with a standalone byte-level paren counter carrying no quote state, so a quoted paren inside a
+nested substitution inflated the count and the walk ran PAST the true end. Everything in the
+over-consumed span is copied verbatim, which silently disabled the special-parameter deletions
+this same change added:
+
+```
+(echo start; $(( $(echo '(' >/dev/null; echo 5) )); e$!as update --branch preview)
+  guard ALLOW   ·   PATH-stub: eas CALLED WITH: update --branch preview
+```
+
+**The irony is the lesson: this todo exists to fix a quote-unaware paren counter, and
+introduced a second one three lines away.** Fixed with `arith_end()`, which walks with the
+same 0/1/2/3 quote model the rest of the file uses, plus a positive-evidence `))` requirement
+— verbatim copying is the only outcome that can HIDE a deletion, so it must not be the default.
+
+**CRITICAL 2 — a `(` inside a shell COMMENT, and a genuine DENY→ALLOW REGRESSION versus
+`main`.** A comment runs to end-of-line and is inert to bash, but the new paren counter counts
+it, so the level never closes and the whole rendering comes back EMPTY:
+
+```
+e$(: # (
+)as update --branch preview
+  main DENY  ·  branch ALLOW  ·  PATH-stub: eas CALLED WITH: update --branch preview
+```
+
+The diagnosis is this file's own governing rule applied one layer down: _"EVERY CONSUMER UNIONS
+THIS IN; NONE SUBSTITUTES IT FOR the deep rendering."_ The paren counter was **substituted for**
+the old close semantics rather than **unioned with** them. Fixed by adding
+`cmd_words_vanished_blind` (the pre-counter semantics, every other deletion intact) and unioning
+it at the deny-shaped consumers. Comment-tracking was considered and rejected — `#` opens a
+comment only at word start, so a wrong guess under-counts, closes early, and re-opens the
+original bug: a fifth grammar bet to repair the fourth.
+
+**A second line inside `cmd_words_vanished` was tried first and MEASURED WRONG.**
+`_out_max_count` counts occurrences across a rendering, so two lines carrying the same `gh api`
+turned ONE occurrence into two and denied a genuine read-only call as "ambiguous". Found by the
+false-positive harvest, not by review. Separate variables keep per-rendering counting honest.
+
+**Why the corpus saw none of it:** every row was single-line, and a comment needs a newline to
+terminate. The row parser is newline-safe now (parameter expansion, not `awk`), and a
+`vcomment` mechanism is generated at all three positions — 18 rows, all DENY on all four paths.
+
+**Final state:** corpus `rows=308 gaps=33/113`, 0 opened by per-ID diff against `main`; suites
+542 and 488, 0 failed; 34 hook suites green; 13 mutation arms, all caught; FP harvest 1 flip in
+1,658 (the known heredoc-prose class).
+
+### A PRE-EXISTING gap found while checking a review claim — NOT fixed here
+
+The security review reported `$_` as a missing empty-capable special parameter. Measured, the
+claim is real but the mechanism is broader and is not `$_`-specific:
+
+```
+eas$X update --branch preview     main ALLOW · branch ALLOW · PATH-stub: eas CALLED WITH: update --branch preview
+eas${X} update --branch preview   DENY (both)
+```
+
+A bare `$name` GLUED between an intact binary and its verb defeats the anchor, which requires
+whitespace there; `${X}` and `$()` deny because the vanished rendering deletes them and the
+whitespace reappears. It allows on `main` too, so it is **not a regression**, and it is a
+different mechanism from either defect in this todo. Surfaced rather than filed, per the
+Critical/High rule.
+
 ### Landmine for the next editor
 
 `cmd_words_vanished`'s awk program lives inside a **bash single-quoted string**. A literal
