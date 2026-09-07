@@ -1510,6 +1510,24 @@ assert_allow "ordinary redirect use: a grep with both stdout and stderr redirect
   "$(json 'grep -r foo . >/dev/null 2>&1')"
 assert_allow "ordinary redirect use: npm run build with its output captured to a file" \
   "$(json 'npm run build > build.log')"
+# _OUT_FLAG_RUN was widened at BOTH its separator slots, and it is the one place
+# the absorber sits inside a group whose purpose is to match FLAGS. So the thing
+# to rule out is not over-denial in general but a specific direction: that the
+# group can now be satisfied by something that is not a flag, which would widen
+# what counts as `npm run <script>`. It cannot -- the group still requires
+# `-{1,2}` immediately after the separator -- and this row is the pin. Measured
+# with argv stubs: bash really execs `npm build run update:preview`, whose first
+# word is `build`, so npm never runs the gated script and the ALLOW is correct.
+# Identical decision before and after the change.
+#
+# ITS OWN MUTATION, because an allow row is invisible to the NARROWING mutation
+# that kills every deny row here: drop the mandatory `-{1,2}` from the flag group
+# on the _OUT_FLAG_RUN line alone (a one-line, cmp-verified edit) and exactly two
+# rows go RED -- this one and its plain-spaced sibling below. Scoping the sed to
+# that single line is the point: an unscoped `s/-{1,2}[^[:space:]]*/` also hits
+# crude_smells_outward, and then a RED row is not evidence about the flag group.
+assert_allow "FLAG SLOT, NON-FLAG WORD: a bare word after the interior redirect does NOT satisfy the flag group, so 'npm >/dev/null build run update:preview' (real argv: npm build ...) stays allowed" \
+  "$(json 'npm >/dev/null build run update:preview')"
 assert_allow "ordinary redirect use: an input redirect on an unrelated command" \
   "$(json 'cat < input.txt')"
 assert_allow "a read-only gh listing with a redirect stays allowed" \
@@ -2646,7 +2664,7 @@ _PIN_RAN=1
 #    +3  review round 2: the third scan_renderings seam control, plus the two
 #         blind-arm consumer rows (GH_API method, gh pr --repo) that had NO
 #         coverage -- removing either arm left the whole suite green
-# 494 -> 547 on 2026-09-07: +53, the interior-redirect absorber (_OUT_SEP).
+# 494 -> 548 on 2026-09-07: +54, the interior-redirect absorber (_OUT_SEP).
 #   +27  interior-redirect denies, each asserted on its OWN family's reason
 #         string: 6 eas, 5 railway, 5 npm/OTA-script, 10 gh, 1 narrow-deny
 #         expansion. Both gluings per family where both are reachable.
@@ -2657,14 +2675,25 @@ _PIN_RAN=1
 #    +3  the grant-shaped --auto carve-out under an interior redirect: 2 allows
 #         (spaced and glued) plus the no---auto deny that proves the carve-out
 #         is still granted on the FLAG and never on the redirect.
-#   +10  negative controls, including the two that pin _OUT_SEP's mandatory
+#   +11  negative controls, including the two that pin _OUT_SEP's mandatory
 #         trailing space -- 'eas > update' and 'eas>/dev/nullupdate', both
-#         MEASURED with argv stubs to run no gated invocation at all.
+#         MEASURED with argv stubs to run no gated invocation at all -- and the
+#         FLAG-SLOT control ('npm >/dev/null build run update:preview'), which
+#         is the only one aimed at a direction rather than at over-denial in
+#         general: _OUT_SEP is applied inside _OUT_FLAG_RUN, a group whose job
+#         is to match flags, so that row pins that a NON-flag word still cannot
+#         satisfy it. Added after review asked what the flag slot widened.
 #    +2  the STRUCTURAL pair (uniformity, and the absorber's own shape). These
-#         are the only two assertions here that can fail for a family that does
-#         not exist yet: every behavioural row above tests a construction, and no
-#         construction can cover a gated verb somebody adds next month with a
-#         hardcoded [[:space:]]+.
+#         are the only two assertions here that are not tied to a specific
+#         construction, so they are what catches a hardcoded [[:space:]]+
+#         reappearing at an existing slot. Scope per the note at the check
+#         itself: drift detection over the currently ENUMERATED families, not a
+#         guarantee about future ones -- a tool word outside the hand-curated
+#         alternation would not be seen. (An earlier revision of this bullet
+#         claimed these rows "can fail for a family that does not exist yet",
+#         which is the retracted claim; it survived the correction sweep because
+#         the phrase wraps across two comment lines and a contiguous grep for it
+#         matches nothing.)
 #   +10  the UNANCHORED-CLAUSE block: 7 denies (a decoy `gh pr <sub>` mention
 #         steering head -1 off the real clause, at both slots, both flag
 #         spellings, all three subcommands, plus the plain-spaced form that
@@ -2672,7 +2701,7 @@ _PIN_RAN=1
 #         same line, and the sanctioned automerge). These exist because a
 #         security review found the absorber turned specific main DENYs into
 #         ALLOWs through a consumer nobody had examined -- see the block itself.
-#         27 + 1 + 3 + 10 + 2 + 10 = 53.
+#         27 + 1 + 3 + 11 + 2 + 10 = 54.
 #
 # UNRESOLVED, and NOT introduced by this change: the 2026-09-06/07 entry above
 # does not sum. It reads "462 -> 491 ... +27" while itemising 21+5+3 = 29, and
@@ -2680,7 +2709,7 @@ _PIN_RAN=1
 # rewritten: this block's own rule is that the NUMBER is the thing that gets
 # checked, and while 494 + 41 = 535 is verifiable by running this file, the
 # provenance of that earlier discrepancy is not.
-EXPECTED_TOTAL=547
+EXPECTED_TOTAL=548
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
