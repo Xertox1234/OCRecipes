@@ -2235,6 +2235,20 @@ assert_allow "bare-paren FP: an ordinary subshell assignment stays allowed" \
   "$(json 'x=$( (cd /tmp && pwd) )')"
 assert_allow "bare-paren FP: arithmetic in an ordinary command stays allowed" \
   "$(json 'echo $((i+1))')"
+# CRITICAL found in review of this change: the arithmetic end-finder counted raw
+# bytes with no quote state, so a QUOTED paren inside a nested substitution
+# inflated the count, the walk ran past the true end, and everything in the
+# over-consumed span was copied verbatim -- disabling the `$!` deletion, so `eas`
+# never re-formed and this ALLOWED. A PATH-stubbed binary confirmed real bash DOES
+# invoke `eas update --branch preview` here.
+assert_deny "arithmetic decoy with a quoted paren cannot hide a split binary name" \
+  "$(jsonc "(echo start; \$(( \$(echo '(' >/dev/null; echo 5) )); e\$!as update --branch preview)")" \
+  "eas update/publish/submit"
+# Isolation control: same payload, clean arithmetic. Both must deny, and the
+# attack row must not be passing for the clean row's reason.
+assert_deny "arithmetic decoy control: clean arithmetic, same payload" \
+  "$(json '(echo start; $(( 1+2 )); e$!as update --branch preview)')" \
+  "eas update/publish/submit"
 
 # ---------- assertion-total pin (2026-09-05, outward-CLI-guard-folded-repair)
 # Every mutation claim this suite's commits make is of the form "reverting the
@@ -2257,9 +2271,9 @@ assert_allow "bare-paren FP: arithmetic in an ordinary command stays allowed" \
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
 _PIN_RAN=1
-# 462 -> 483 on 2026-09-06: +21 for the widened STAGE 3 decline set and the
+# 462 -> 485 on 2026-09-06: +21 for the widened STAGE 3 decline set and the
 # bare-paren scanner fix (8 denies attributed by reason, 13 controls/FP allows).
-EXPECTED_TOTAL=483
+EXPECTED_TOTAL=485
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

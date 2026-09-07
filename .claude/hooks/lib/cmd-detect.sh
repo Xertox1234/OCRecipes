@@ -783,6 +783,43 @@ cmd_words_vanished() {
       if (code == 0) return ""
       return (code >= 32 && code < 127) ? safech(sprintf("%c", code)) : PH
     }
+    # arith_end(p) -- index of the `)` that closes the `(` at position p, counting
+    # ONLY in unquoted state; 0 if it never balances.
+    #
+    # QUOTE AWARENESS IS THE WHOLE POINT, and its absence was a CRITICAL found in
+    # review of the change that introduced this arm. A first version counted raw
+    # bytes with no quote state, so a quoted paren inside a nested substitution
+    # inflated the count and the walk ran PAST the true end of the arithmetic. The
+    # over-consumed span is copied verbatim, which silently disables every
+    # deletion inside it -- including the special-parameter deletions this same
+    # change adds. Constructed and RUN end-to-end, not traced:
+    #   (echo start; $(( $(echo (sq)((sq) >/dev/null; echo 5) )); e$!as update --branch preview)
+    # A PATH-stubbed binary confirmed real bash DOES invoke it, while the guard
+    # returned ALLOW; the same payload without the arithmetic decoy DENIES.
+    #
+    # A `(` inside a double-quoted span is NOT counted either, even though a live
+    # $(...) nested in one has real parens. That direction is safe: under-counting
+    # makes the walk fail to balance, which returns 0 and drops the caller into
+    # the ordinary $( path, where the construct is DELETED -- an over-denial, the
+    # safe direction for this rendering, rather than a missed deny.
+    function arith_end(p,   k, st, ch, pd) {
+      pd = 0; st = 0
+      for (k = p; k <= n; k++) {
+        ch = substr(buf, k, 1)
+        if (st == 0) {
+          if (ch == BS) { k++; continue }
+          if (ch == "$" && k < n && substr(buf, k+1, 1) == SQ) { st = 3; k++; continue }
+          if (ch == SQ) { st = 1; continue }
+          if (ch == DQ) { st = 2; continue }
+          if (ch == "(") { pd++; continue }
+          if (ch == ")") { pd--; if (pd == 0) return k; continue }
+        }
+        else if (st == 1) { if (ch == SQ) st = 0 }
+        else if (st == 3) { if (ch == BS) k++; else if (ch == SQ) st = 0 }
+        else { if (ch == BS) k++; else if (ch == DQ) st = 0 }
+      }
+      return 0
+    }
     BEGIN {
       SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96); PH = "x"
       SAFE = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./:=+,@%"
@@ -838,29 +875,30 @@ cmd_words_vanished() {
           # descend into it. The differential invariant the two share is
           # agreement on COMMAND-substitution liveness; arithmetic is outside it.
           if (c == "$" && i + 1 < n && substr(buf, i+1, 2) == "((") {
-            k = i + 1; pdepth = 0
-            while (k <= n) {
-              ch = substr(buf, k, 1)
-              if (ch == "(") pdepth++
-              else if (ch == ")") { pdepth--; if (pdepth == 0) break }
-              k++
-            }
-            # `k` is where the paren opened at i+1 CLOSES, which is the final
-            # `)` of the whole `$((...))` construct -- not the inner one. An
-            # earlier draft additionally required substr(buf, k+1, 1) to be `)`,
-            # on the assumption k landed on the inner closer; for a NESTED
-            # substitution (`$(( $(printf 1) ))`) that test failed, the span fell
-            # into the rescan branch below, and the inner $(...) was deleted
-            # independently -- the exact reversed-pass-order regression this arm
-            # exists to prevent. Caught by running the nested form, not by review.
-            if (k <= n) {
+            # arith_end is QUOTE-AWARE; a raw byte counter here was a CRITICAL
+            # (its header carries the construction that defeated it).
+            k = arith_end(i + 1)
+            # `k` is where the paren opened at i+1 CLOSES, which is the final `)`
+            # of the whole `$((...))` construct -- not the inner one. An earlier
+            # draft required substr(buf, k+1, 1) to be `)`, on the assumption k
+            # landed on the INNER closer; for a nested substitution
+            # (`$(( $(printf 1) ))`) that test failed, the span fell through and
+            # the inner $(...) was deleted independently -- the reversed-pass-order
+            # regression this arm exists to prevent. Caught by running it.
+            #
+            # REQUIRING `))` IS THE SECOND HALF OF THE REPAIR. A balanced walk is
+            # not on its own evidence the construct was arithmetic: `$((a) b)`
+            # balances but is not an arithmetic expansion. Verbatim copying is the
+            # only outcome here that can HIDE a deletion, so it is taken ONLY on
+            # positive evidence; anything else falls through to the ordinary $(
+            # path below, where the construct is DELETED. That is an over-denial
+            # for a real arithmetic expression -- the safe direction for a
+            # deny-shaped rendering -- instead of a silent miss.
+            if (k > 1 && substr(buf, k-1, 1) == ")") {
               if (d == 0) out = out substr(buf, i, k + 1 - i)
               i = k
               continue
             }
-            # Unbalanced: emit the sigil and rescan normally (safe miss).
-            if (d == 0) out = out c
-            continue
           }
           if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
             depth++; state[depth] = 0; kind[depth] = "P"; parens[depth] = 0; i++

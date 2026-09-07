@@ -1486,6 +1486,26 @@ van 'arithmetic expansion mid-command survives'  'x=$((i+1))' 'x=$((i+1))'
 # this wrong and rendered `gh pr me$((  ))rge`.
 van 'a substitution nested INSIDE arithmetic is not independently deleted' \
   'gh pr me$(( $(printf 1) ))rge' 'gh pr me$(( $(printf 1) ))rge'
+# CRITICAL, review of this change. The arithmetic end-finder counted raw bytes
+# with NO quote state, so a QUOTED paren inside a nested substitution inflated
+# the count and the walk ran PAST the true end of the arithmetic. Everything in
+# the over-consumed span is copied verbatim, which silently disables every
+# deletion inside it -- here the `$!`, so `eas` never re-formed and the guard
+# ALLOWED. A PATH-stubbed binary confirmed real bash DOES invoke it. The clean
+# arithmetic rows above all pass with the broken scanner: none of them contains a
+# quote, so none exercised this arm.
+van 'a QUOTED paren inside arithmetic does not extend the verbatim span' \
+  "(echo start; \$(( \$(echo '(' >/dev/null; echo 5) )); e\$!as update --branch preview)" \
+  '(echo start; $(( $(echo x >/dev/null; echo 5) )); eas update --branch preview)'
+van 'a quoted paren in a DOUBLE-quoted arithmetic body does not extend it either' \
+  "(echo s; \$(( \$(echo \")\" >/dev/null; echo 5) )); e\$!as update)" \
+  '(echo s; $(( $(echo x >/dev/null; echo 5) )); eas update)'
+# A balanced walk is not on its own evidence the construct was arithmetic:
+# `$((a) b)` balances but is not an arithmetic expansion. Verbatim copying is the
+# only outcome that can HIDE a deletion, so it is taken ONLY on the positive `))`
+# evidence; anything else falls through to deletion, an over-denial.
+van 'a balanced-but-not-arithmetic span falls through to deletion' \
+  'gh pr me$((x) y)rge' 'gh pr merge'
 
 echo "--- cmd_words_vanished: SPECIAL parameters are deletable, by the same criterion ---"
 # Each is ONE character long, so unlike an ordinary $name it TERMINATES against a
@@ -1555,6 +1575,15 @@ van 'a NUL escape is DROPPED, so the token rejoins' "e\$'\\0'as update" 'eas upd
 # Both bash and zsh keep an unknown escape as the backslash AND the character,
 # two bytes; rendering one placeholder lost a letter.
 van 'an unknown escape renders as TWO characters' "e\$'\\q'as update" 'exqas update'
+# The \u/\U arm had no assertion at all (flagged in review). zsh decodes these and
+# bash 3.2 does not, so the guard takes the REJOIN-capable reading deliberately --
+# decoding is the deny direction. A non-ASCII code point collapses to ONE
+# placeholder regardless of the multi-byte length real bash would build, which
+# cannot manufacture a boundary or a keyword.
+van 'ANSI-C \\u escape respells a letter'   "e\$'\\u0061's update" 'eas update'
+van 'ANSI-C \\U escape respells a letter'   "e\$'\\U00000061's update" 'eas update'
+van 'a non-ASCII \\u code point collapses to one placeholder' \
+  "echo \$'\\u00e9'" 'echo x'
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
