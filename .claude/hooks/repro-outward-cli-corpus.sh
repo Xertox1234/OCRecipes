@@ -120,6 +120,67 @@ for i in "${!FAM_NS_IDS[@]}"; do
   add "nsvvar-$id" DENY "$(sed -E "s/^(${np})/\1\${UNSET}/" <<< "$cmd")"
 done
 
+# axis: INTERIOR REDIRECT (2026-09-07 -- the P0 tracked as
+# outward-cli-guard-interior-redirect-defeats-every-family, now closed).
+# A redirect BETWEEN two required-adjacent words. Generated across families x
+# {glued, spaced-output, spaced-fd} at the TOOL->next-word slot, and again at the
+# NAMESPACE->verb slot for every family whose verb is two words after the tool.
+#
+# ITS OWN FAMILY LIST, deliberately NOT appended to FAM_IDS. The gap was measured
+# across TEN families, four of which (gh release, gh repo, railway variable,
+# railway service) FAM_IDS does not carry. Adding them there would multiply every
+# OTHER axis by four unrelated families at once and flood the before/after per-ID
+# diff with movement this change did not cause -- the exact thing NOTE6's
+# "attributed by ID, not by subtracting totals" rule exists to keep readable.
+#
+# EXPECTED=DENY on its own merits, not copied from the lit-* row: bash tokenizes a
+# redirect out of argv WHEREVER it sits, so every construction below builds argv
+# IDENTICAL to its spaced baseline. Verified by EXECUTION under PATH-shadowed
+# argv-printing stubs writing to a sentinel FILE -- a stub reporting on STDOUT
+# reads "not invoked" for every row here, because these constructions redirect
+# stdout to /dev/null.
+#
+# THE DEGRADED PATHS ARE NOT ALL CLEAN, and that is a DISCLOSURE, not a regression
+# -- same shape as the varithsep-* rows above. crude_smells_outward's [^a-zA-Z]+
+# separator absorbs a letter-FREE redirect (2>&1) but NOT a letter-bearing one
+# (>/dev/null -- the `dev` breaks the class), and it was deliberately not widened:
+# it runs on the no-jq and no-lib paths, which reach it BEFORE/WITHOUT the lib
+# source, so interpolating $_CMD_REDIR there would expand to the empty string.
+# Recorded in the guard's DOCUMENTED RESIDUALS rather than papered over.
+#
+# intrnsglue-ghmerge / intrnsglue-ghcomment intentionally duplicate the commands
+# of nssufx-ghmerge / nssufx-ghcomment. The overlap is kept rather than special-
+# cased: NOTE6 requires new dimensions to be GENERATED, and a hand-carved hole in
+# a cross product is how the tool position came to be missing in the first place.
+INTR_FAM_IDS=(easupd easbld npmpub railup ghmerge ghcomment ghapi ghrelease ghrepo railvar railsvc)
+INTR_FAM_CMDS=(
+  'eas update --branch preview'
+  'eas build --platform ios --auto-submit'
+  'npm publish'
+  'railway up'
+  'gh pr merge 42'
+  'gh pr comment 5 --body hi --repo other/org'
+  'gh api repos/o/r -X POST'
+  'gh release create v1.0'
+  'gh repo delete o/r'
+  'railway variable set K=V'
+  'railway service delete svc'
+)
+INTR_FAM_TOOL=(eas eas npm railway gh gh gh gh gh railway railway)
+# Empty where the verb sits directly after the tool word (no namespace slot).
+INTR_FAM_NS=('' '' '' '' 'gh pr' 'gh pr' '' 'gh release' 'gh repo' 'railway variable' 'railway service')
+INTR_SPELL_IDS=(glue sp fd)
+INTR_SPELL_SEDS=('\1>\/dev\/null' '\1 >\/dev\/null' '\1 2>\&1')
+for i in "${!INTR_FAM_IDS[@]}"; do
+  id=${INTR_FAM_IDS[$i]}; cmd=${INTR_FAM_CMDS[$i]}
+  tw=${INTR_FAM_TOOL[$i]}; np=${INTR_FAM_NS[$i]}
+  for j in "${!INTR_SPELL_IDS[@]}"; do
+    sp=${INTR_SPELL_IDS[$j]}; rp=${INTR_SPELL_SEDS[$j]}
+    add "intrtool$sp-$id" DENY "$(sed -E "s/^(${tw})/${rp}/" <<< "$cmd")"
+    [ -n "$np" ] && add "intrns$sp-$id" DENY "$(sed -E "s/^(${np})/${rp}/" <<< "$cmd")"
+  done
+done
+
 # axis: TOOL position -- the binary NAME itself split by a vanishing construct.
 # ADDED 2026-09-06 (security review of PR #926). THIS AXIS'S ABSENCE IS WHY THE
 # REVIEW FOUND FOUR CRITICALS AND THIS FILE FOUND NONE. Every glue axis above
@@ -683,8 +744,30 @@ done
 #      guard-outward-cli.sh's WORDS_VANISHED assignment failed exactly that test.
 #
 # GAP INVENTORY, 2026-09-06 after the cmd-detect bare-paren + vanishing-allow-list
-# change. `rows=326  precise-path gaps=33  all-path gaps=120` is the CORRECT
+# change. `rows=326  precise-path gaps=33  all-path gaps=120` WAS the correct
 # expected output of this file.
+#
+# SUPERSEDED 2026-09-07 by the interior-redirect absorber (_OUT_SEP). The CURRENT
+# correct output is `rows=377  precise-path gaps=31  all-path gaps=154`.
+# Attributed BY ID against the pre-change tree, one corpus against two
+# implementations, never by subtracting totals:
+#
+#   precise-path dirty  84 -> 31   53 CLOSED, **0 OPENED**
+#   all-path dirty     171 -> 154  17 CLOSED, **0 newly dirty**
+#
+# The 53: the 51 NEW intrtool-*/intrns-* rows (which allowed on the pre-change
+# tree, hence the 84 denominator) plus the 2 pre-existing nssufx-* rows. The 33
+# unrelated pre-existing gaps went to 31 for exactly that reason and no other.
+#
+# ALL-PATH MOVED LESS THAN PRECISE, AND THAT IS THE DISCLOSURE, NOT A MISS: the
+# degraded mirror (crude_smells_outward) was deliberately NOT widened, so its
+# [^a-zA-Z]+ separator still absorbs a letter-FREE redirect (2>&1) and still
+# misses a letter-bearing one (>/dev/null). Widening it is not a one-line change
+# deferred out of laziness -- that function runs on the no-jq and no-lib paths,
+# which reach it BEFORE/WITHOUT the lib source, so interpolating $_CMD_REDIR
+# there would expand to the EMPTY STRING: no error, suite green, and the
+# separator silently reduced to nothing. Recorded in the guard's DOCUMENTED
+# RESIDUALS.
 #
 # THE 18 varithsep-* ROWS ARE NEW (2026-09-07) AND SEVEN OF THEM ARE
 # PRECISE-CLEAN / DEGRADED-DIRTY, which is why all-path went 113 -> 120 while
@@ -766,9 +849,10 @@ done
 #       mutating-method branch matches. Its own entry below is updated.
 #       Confirmed by ID in the before/after diff, not predicted in advance.
 #
-# FULL ATTRIBUTION of the 33 remaining precise-path gaps (14 + 17 + 2 = 33), each
-# with an OPEN todo — none of them is a defect this change introduced, and every
-# one allows on `main` too:
+# FULL ATTRIBUTION of the remaining precise-path gaps. Was 14 + 17 + 2 = 33;
+# the `2` bucket closed on 2026-09-07, so it is now 14 + 17 = 31. Each has an
+# OPEN todo — none is a defect this change introduced, and every one allows on
+# `main` too:
 #
 #   14  r4brange-tool-* and r4brange-verb-*. A brace RANGE carries no `$` and no
 #       backtick anywhere, so no sigil-keyed decline can see it and no deleting
@@ -788,8 +872,11 @@ done
 #       the construct breaks the `--auto` spelling in `gh pr merge 42 --auto
 #       --admin`, so the "no REAL --auto" rule fires. Same rule as co-mask-c1.
 #
-#    2  nssufx-ghmerge and nssufx-ghcomment — an INTERIOR redirect, a different
-#       mechanism with its own entry below and its own todo.
+#    0  (was 2) nssufx-ghmerge and nssufx-ghcomment — an INTERIOR redirect, a
+#       different mechanism with its own entry below and its own todo. CLOSED
+#       2026-09-07 by `_OUT_SEP`, together with the 51 generated intrtool-*/
+#       intrns-* rows added in the same change. The bucket is kept at zero rather
+#       than deleted: the entry below records what the two rows could NOT see.
 #
 # SUPERSEDED INVENTORY, KEPT FOR ITS ARITHMETIC LESSON ONLY (round 4, gaps=73).
 # The counts below describe the tree BEFORE the bare-paren + vanishing-allow-list
@@ -835,7 +922,17 @@ done
 # a masking guard will always deny it. Unreachable-by-design gets corrected;
 # reachable-but-unfixed stays a visible gap.
 #
-#   nssufx-ghmerge / nssufx-ghcomment -- UNHANDLED, OUT OF SCOPE.
+#   nssufx-ghmerge / nssufx-ghcomment -- CLOSED 2026-09-07 by `_OUT_SEP`, the
+#     one interior absorber this entry called for. Both rows now report `ok` on
+#     the precise path. The entry is kept in full, because its warning below
+#     ("THESE TWO ROWS SEVERELY UNDER-REPRESENT THE GAP") was CORRECT and is the
+#     reason the fix generated 51 rows across ELEVEN families instead of
+#     satisfying itself with flipping these two: the same mechanism defeated
+#     gh release, gh repo, railway variable and railway service, none of which
+#     FAM_IDS carries. A corpus that had only these two rows would have gone
+#     fully green on a change that closed a fifth of the real blast radius.
+#     ORIGINAL ENTRY, retained:
+#     nssufx-ghmerge / nssufx-ghcomment -- UNHANDLED, OUT OF SCOPE.
 #     `gh pr>/dev/null merge 42` glues a redirect where the anchors require
 #     whitespace between two words. Real bash tokenizes this to argv
 #     (gh, pr, merge, 42) with stdout redirected, so it genuinely merges.

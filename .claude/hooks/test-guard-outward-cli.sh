@@ -1349,6 +1349,158 @@ assert_deny "CO-OCCURRENCE (C1 x finding A): a default-value expansion still den
 assert_deny "CO-OCCURRENCE: two default-value expansions in one clause both still deny (a second, unrelated \${y:--R} in the same clause must not confuse the single grep -Eq match into missing or mis-scoping the first)" \
   "$(json 'gh pr comment 5 --body hi ${x:---repo} ${y:--R} other/org')" "--repo/-R writes to a DIFFERENT"
 
+# ---------- 2026-09-07: interior redirect (the THIRD redirect position) -----
+# A redirect BETWEEN a gated tool word and its verb. Findings A and B were
+# BOUNDARY problems (the verb present, next to an unaccepted character); this is
+# a SEPARATOR problem -- two required-adjacent words pushed apart by a token the
+# pattern did not model -- so no character-class widening reached it, and EVERY
+# gated family was defeated with no check running at all (which is why even the
+# --repo cross-repo egress check was skipped). Closed by _OUT_SEP; see its
+# definition in the hook for the shape and why the trailing space is mandatory.
+#
+# GROUND TRUTH FOR EVERY DENY ROW BELOW WAS TAKEN BY EXECUTION, under
+# PATH-shadowed argv-printing stubs writing to a sentinel FILE: each denied
+# construction builds argv IDENTICAL to its spaced baseline. The sentinel must be
+# a FILE -- a stub reporting on STDOUT reads "not invoked" for every row here,
+# because these constructions redirect stdout to /dev/null.
+#
+# BOTH GLUINGS ARE PINNED, and the SPACED one is the likelier vector: nobody
+# types 'eas>/dev/null update' by accident, but 'eas 2>&1 update' is ordinary
+# shell carrying no evasion intent at all.
+#
+# Reasons are asserted on every row. Several of these families have a coarser
+# guard that can deny first, so a bare DENY would not prove the intended check
+# fired -- and the narrow-deny expansion block sits between the eas/railway/npm
+# matchers and the gh ones specifically so it cannot steal their attribution.
+
+# --- eas
+assert_deny "interior redirect GLUED: eas + redirect + update denies (the 2026-08-16 incident's own command class)" \
+  "$(json 'eas>/dev/null update --branch preview')" "eas update/publish/submit"
+assert_deny "interior redirect SPACED: eas 2>&1 update denies (ordinary shell, no evasion intent -- the likelier vector)" \
+  "$(json 'eas 2>&1 update --branch preview')" "eas update/publish/submit"
+assert_deny "interior redirect SPACED, output-redirect spelling: eas + >/dev/null + update denies" \
+  "$(json 'eas >/dev/null update --branch preview')" "eas update/publish/submit"
+assert_deny "interior redirect: eas + redirect + update:rollback denies (mutating colon subcommand)" \
+  "$(json 'eas 2>&1 update:rollback')" "eas update:delete/edit/republish"
+assert_deny "interior redirect: eas + redirect + channel:edit denies (repoints which OTA users receive)" \
+  "$(json 'eas 2>&1 channel:edit prod')" "eas channel:/branch: create/edit/delete/rename"
+assert_deny "interior redirect: eas + redirect + build --auto-submit denies (store submission)" \
+  "$(json 'eas 2>&1 build --auto-submit')" "eas build --auto-submit"
+
+# --- railway
+assert_deny "interior redirect GLUED: railway + redirect + up denies" \
+  "$(json 'railway>/dev/null up')" "railway up/deploy/redeploy"
+assert_deny "interior redirect SPACED: railway 2>&1 up denies" \
+  "$(json 'railway 2>&1 up')" "railway up/deploy/redeploy"
+assert_deny "interior redirect at the NAMESPACE->verb slot: railway variable + redirect + set denies" \
+  "$(json 'railway variable 2>&1 set K=V')" "railway variable/vars/var set/delete"
+assert_deny "interior redirect at the TOOL->namespace slot: railway + redirect + variable set denies (the SAME pattern has two separator slots and both had to move)" \
+  "$(json 'railway 2>&1 variable set K=V')" "railway variable/vars/var set/delete"
+assert_deny "interior redirect at the NAMESPACE->verb slot: railway service + redirect + delete denies" \
+  "$(json 'railway service 2>&1 delete svc')" "railway service/environment delete"
+
+# --- npm / this repo's own OTA publish scripts
+assert_deny "interior redirect GLUED: npm + redirect + publish denies" \
+  "$(json 'npm>/dev/null publish')" "npm publish"
+assert_deny "interior redirect SPACED: npm 2>&1 publish denies" \
+  "$(json 'npm 2>&1 publish')" "npm publish"
+assert_deny "interior redirect BEFORE the run word: npm + redirect + run update:preview denies (a real OTA to real users)" \
+  "$(json 'npm 2>&1 run update:preview')" "npm run update:preview/update:production"
+assert_deny "interior redirect AFTER the run word: npm run + redirect + update:preview denies (_OUT_FLAG_RUN's TRAILING separator slot)" \
+  "$(json 'npm run 2>&1 update:preview')" "npm run update:preview/update:production"
+assert_deny "interior redirect before a FLAG: npm + redirect + --silent run update:preview denies (_OUT_FLAG_RUN's FLAG-LEADING separator slot -- fixing only the trailing slot still allowed this, because the flag group demands a dash immediately after its whitespace)" \
+  "$(json 'npm >/dev/null --silent run update:preview')" "npm run update:preview/update:production"
+
+# --- gh
+assert_deny "interior redirect GLUED at the TOOL slot: gh + redirect + api -X POST denies" \
+  "$(json 'gh>/dev/null api repos/o/r -X POST')" "mutating HTTP method"
+assert_deny "interior redirect SPACED at the TOOL slot: gh 2>&1 api -X POST denies (the clause CUT had to widen too -- an empty GH_API clause falls through to ALLOW)" \
+  "$(json 'gh 2>&1 api repos/o/r -X POST')" "mutating HTTP method"
+assert_deny "interior redirect GLUED at the NAMESPACE slot: gh pr + redirect + merge denies" \
+  "$(json 'gh pr>/dev/null merge 42')" "without a REAL --auto flag"
+assert_deny "interior redirect SPACED at the NAMESPACE slot: gh pr 2>&1 merge denies" \
+  "$(json 'gh pr 2>&1 merge 42')" "without a REAL --auto flag"
+assert_deny "interior redirect at the TOOL slot reaches the merge family too: gh 2>&1 pr merge denies" \
+  "$(json 'gh 2>&1 pr merge 42')" "without a REAL --auto flag"
+assert_deny "interior redirect GLUED: gh pr + redirect + comment --repo denies (cross-repo PAT egress -- gh_pr_clause_has_repo's cut had to widen with the detector, since an empty clause there means ALLOW)" \
+  "$(json 'gh pr>/dev/null comment 5 --body hi --repo other/org')" "--repo/-R writes to a DIFFERENT"
+assert_deny "interior redirect SPACED: gh pr 2>&1 comment --repo denies" \
+  "$(json 'gh pr 2>&1 comment 5 --body hi --repo other/org')" "--repo/-R writes to a DIFFERENT"
+assert_deny "interior redirect: gh release + redirect + create denies" \
+  "$(json 'gh release 2>&1 create v1.0')" "mutating 'gh pr/release/repo' subcommand"
+assert_deny "interior redirect: gh repo + redirect + delete denies" \
+  "$(json 'gh repo 2>&1 delete o/r')" "mutating 'gh pr/release/repo' subcommand"
+assert_deny "interior redirect: gh pr + redirect + ready denies" \
+  "$(json 'gh pr 2>&1 ready 42')" "mutating 'gh pr/release/repo' subcommand"
+
+# --- the narrow-deny expansion family shares the same separator slots
+assert_deny "interior redirect x narrow-deny: a gated binary, an interior redirect, then an EXPANSION where the verb belongs, still denies" \
+  "$(json 'eas 2>&1 ${v:-update}')" "verb is not literal text"
+
+# --- THE GAIN, which no single-invocation row can see
+# A second, interior-redirect merge was INVISIBLE to GH_PR_MERGE_RE, so the
+# occurrence count stayed 1 and the FIRST invocation's real --auto granted the
+# carve-out for the pair -- while the second merged immediately with no --auto
+# reaching gh at all. Measured ALLOW before this change. This is finding B's
+# recorded multi-occurrence gain reappearing at the interior position.
+assert_deny "interior redirect GAIN: a second, interior-redirect merge is now COUNTED, so the pair is ambiguous instead of riding the first invocation's --auto" \
+  "$(json 'gh pr merge 42 --auto; gh pr 2>&1 merge 43')" "ambiguous, cannot verify"
+
+# --- the GRANT-shaped clause: widened UNIFORMLY (ruled 2026-09-07)
+# _OUT_SEP is applied to the `gh pr merge` CLAUSE cut as well as to the detector,
+# rather than leaving the clause narrow so every interior-redirect merge denies.
+# Safe, and the reason is a SET argument verified by execution: the set the
+# widened detector newly matches is EXACTLY the set that ALLOWed before (a total
+# detection failure), so no command that DENIED before can flip to ALLOW -- the
+# corpus diff reports that direction empty. The awk --auto scan compares whole
+# fields ($i == "--auto"), so a redirect TARGET cannot masquerade as the flag.
+assert_allow "interior redirect x --auto carve-out: a sanctioned automerge with an interior redirect ALLOWS, matching the argv bash actually builds" \
+  "$(json 'gh pr 2>&1 merge 42 --auto')"
+assert_allow "the same carve-out with the redirect GLUED to the namespace word" \
+  "$(json 'gh pr>/dev/null merge 42 --auto')"
+assert_deny "but the same shape WITHOUT --auto denies -- the carve-out is granted on the flag, never on the redirect" \
+  "$(json 'gh pr 2>&1 merge 42')" "without a REAL --auto flag"
+
+# --- NEGATIVE CONTROLS -- the deliverable as much as the denies above.
+# This absorber loosens a separator used by EVERY gated family at once, the
+# widest-reaching edit made to this file, so OVER-denial is the real risk here,
+# not under-denial.
+#
+# The first two are shapes real bash does NOT run as the invocation they
+# resemble, both MEASURED with argv stubs rather than reasoned about:
+# 'eas > update' redirects to a file named `update` and runs eas with NO
+# arguments, and 'eas>/dev/nullupdate' never execs eas at all (bash cannot create
+# that file, so the redirect fails before the exec).
+#
+# ONLY THE SECOND IS MUTATION EVIDENCE, and the difference was measured, not
+# assumed. Replacing _OUT_SEP with the looser ([[:space:]]|REDIR)+ form turns
+# 'eas>/dev/nullupdate' RED and leaves 'eas > update' GREEN -- under BOTH forms
+# _CMD_REDIR's target class greedily absorbs `update` as the redirect's FILENAME,
+# so no verb remains to match and both correctly allow. An earlier revision of
+# this comment claimed both rows caught that regression; running the mutation
+# showed one of them cannot. 'eas > update' stays as a plain false-positive
+# control; 'eas>/dev/nullupdate' is what stops _OUT_SEP being "simplified".
+assert_allow "REDIRECT TARGET NAMED LIKE A VERB: 'eas > update' runs eas with NO arguments (measured), so it must stay allowed" \
+  "$(json 'eas > update')"
+assert_allow "NO SEPARATOR AT ALL: 'eas>/dev/nullupdate' never execs eas (measured), so it must stay allowed" \
+  "$(json 'eas>/dev/nullupdate')"
+assert_allow "ordinary redirect use: a grep with both stdout and stderr redirected" \
+  "$(json 'grep -r foo . >/dev/null 2>&1')"
+assert_allow "ordinary redirect use: npm run build with its output captured to a file" \
+  "$(json 'npm run build > build.log')"
+assert_allow "ordinary redirect use: an input redirect on an unrelated command" \
+  "$(json 'cat < input.txt')"
+assert_allow "a read-only gh listing with a redirect stays allowed" \
+  "$(json 'gh pr list > pr.txt')"
+assert_allow "a read-only gh api GET with a redirect stays allowed" \
+  "$(json 'gh api repos/o/r > out.json')"
+assert_allow "this repo's own ci-failed-logs probe stays allowed -- gh is an ARGUMENT to command -v, not in command position, and the -v breaks the prefix absorber run" \
+  "$(json 'if ! command -v gh >/dev/null 2>&1; then echo no; fi')"
+assert_allow "a railway READ-ONLY verb redirecting into a file NAMED like a gated verb stays allowed" \
+  "$(json 'railway logs > up')"
+assert_allow "eas whoami with a redirect stays allowed" \
+  "$(json 'eas whoami > who.txt')"
+
 # ---------- 2026-09-05: C1 grammar widening (coordinator ruling) ------------
 # The plain-name-only alternative above closed C1 for ONE bash parameter-
 # expansion spelling; every other spelling that can legally precede `:-`/bare
@@ -1540,7 +1692,7 @@ while IFS= read -r _line; do
   printf '%s' "$_line" | grep -qF -- '"$_GH_API_CUT"' || { _CUTS_OK=0; _BAD_CUT="$_line"; }
 done < <(grep 'GH_API_CLAUSE_[A-Z]*=\$(printf' "$HOOK")
 if [ -n "$_ANCHOR_RE" ] \
-   && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh[[:space:]]+api' \
+   && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh${_OUT_SEP}api' \
    && [ "$_CUT_DEFS" -eq 1 ] \
    && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}[^;&|]*" \
    && [ "$_CLAUSE_CUTS" -eq 3 ] \
@@ -2349,7 +2501,28 @@ _PIN_RAN=1
 #    +3  review round 2: the third scan_renderings seam control, plus the two
 #         blind-arm consumer rows (GH_API method, gh pr --repo) that had NO
 #         coverage -- removing either arm left the whole suite green
-EXPECTED_TOTAL=494
+# 494 -> 535 on 2026-09-07: +41, the interior-redirect absorber (_OUT_SEP).
+#   +27  interior-redirect denies, each asserted on its OWN family's reason
+#         string: 6 eas, 5 railway, 5 npm/OTA-script, 10 gh, 1 narrow-deny
+#         expansion. Both gluings per family where both are reachable.
+#    +1  the occurrence-counter GAIN row -- a second, interior-redirect merge is
+#         now COUNTED, so the pair denies as ambiguous instead of riding the
+#         first invocation's --auto. No single-invocation row can see this one,
+#         which is why it is called out separately rather than folded above.
+#    +3  the grant-shaped --auto carve-out under an interior redirect: 2 allows
+#         (spaced and glued) plus the no---auto deny that proves the carve-out
+#         is still granted on the FLAG and never on the redirect.
+#   +10  negative controls, including the two that pin _OUT_SEP's mandatory
+#         trailing space -- 'eas > update' and 'eas>/dev/nullupdate', both
+#         MEASURED with argv stubs to run no gated invocation at all.
+#
+# UNRESOLVED, and NOT introduced by this change: the 2026-09-06/07 entry above
+# does not sum. It reads "462 -> 491 ... +27" while itemising 21+5+3 = 29, and
+# the pin it sat above was 494, not 491. Recorded here rather than silently
+# rewritten: this block's own rule is that the NUMBER is the thing that gets
+# checked, and while 494 + 41 = 535 is verifiable by running this file, the
+# provenance of that earlier discrepancy is not.
+EXPECTED_TOTAL=535
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

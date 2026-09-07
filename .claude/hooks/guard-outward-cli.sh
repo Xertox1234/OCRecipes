@@ -373,9 +373,26 @@
 #     pointing at the hole. Note the DEGRADED paths deny it, so a summary
 #     count alone misreads this one.
 #
-#   * UNHANDLED, NEW (2026-09-06, outward-CLI-guard-folded-repair) —
-#     ***THE WIDEST KNOWN OPEN GAP IN THIS FILE. READ BEFORE TRUSTING ANY
-#     OTHER ENTRY HERE.*** An INTERIOR redirect, glued where the anchors
+#   * CLOSED 2026-09-07 (todos/archive/P0-2026-09-06-outward-cli-guard-interior-
+#     redirect-defeats-every-family.md). Kept in full, amended rather than
+#     deleted, because the entry's own history is the lesson: it was rescoped
+#     TWICE while open, and one of its measurements was wrong.
+#
+#     WHAT CLOSED IT: `_OUT_SEP` (defined below, next to the other anchors) —
+#     ONE interior absorber, `([[:space:]]*$_CMD_REDIR)*[[:space:]]+`, reusing
+#     the lib's `_CMD_REDIR` and applied UNIFORMLY to all 28 tool->verb and
+#     namespace->verb separator slots in one change, detectors AND clause cuts.
+#     At zero iterations it is byte-identical to the `[[:space:]]+` it replaces,
+#     so only redirect-bearing commands can change decision at all. Measured on
+#     the whole corpus: 53 rows closed, **0 opened**, per-ID, on the precise
+#     path; 17 closed / 0 opened all-path. The two clause CUTS had to move with
+#     the detectors — `gh_pr_clause_has_repo` and `_GH_API_CUT` both treat an
+#     EMPTY clause as "nothing to deny", so a widened detector with a narrow cut
+#     would have re-opened cross-repo PAT egress and the mutating-method check
+#     while looking fixed.
+#
+#     ORIGINAL ENTRY, 2026-09-06, retained verbatim below except where marked:
+#     An INTERIOR redirect, glued where the anchors
 #     require whitespace between two words, silently ALLOWS **every gated
 #     family measured**, not one corner of the file:
 #       eas>/dev/null update --branch preview        -> ALLOW  (OTA publish —
@@ -393,9 +410,21 @@
 #     Each spaced baseline correctly DENIES, so every row above is a total
 #     detection failure, not an ungated verb — no check runs at all, which
 #     is why even the --repo cross-repo egress check is skipped. Measured
-#     2026-09-06 against the live hook. The output-redirect, fd-duplicating
-#     (`2>&1`-shaped) and input-redirect forms were each measured and each
-#     ALLOWS; assume any redirection token bash strips from argv works.
+#     2026-09-06 against the live hook.
+#     CORRECTED 2026-09-07 — the sentence that stood here said "the
+#     output-redirect, fd-duplicating (`2>&1`-shaped) and input-redirect forms
+#     were each measured and each ALLOWS". IT CONFLATED A GUARD VERDICT WITH A
+#     BYPASS, and one of its three forms was not a bypass at all: in the GLUED
+#     fd spelling (`eas2>&1 update`) bash takes an fd number only when the
+#     characters before the operator are ALL DIGITS, so `eas2` is the COMMAND
+#     WORD — a different, non-existent binary. Nothing gated runs, and ALLOW was
+#     the CORRECT answer, not a miss. This entry is careful about that
+#     distinction two lines above ("the spaced baselines prove each verb is
+#     gated at all") and lost it here. The fd form IS a real vector, but only
+#     SPACE-SEPARATED (`eas 2>&1 update`) — which is the likelier vector of the
+#     two, because unlike the glued spelling it is ordinary shell that nobody
+#     writes with evasion in mind. Both gluings are now pinned in
+#     test-guard-outward-cli.sh and generated as corpus axes.
 #     CORRECTION: an earlier version of this entry described the gap as
 #     specific to a `gh` NAMESPACE word before a multi-word verb. That was
 #     written before the cross-family measurement and UNDERSTATED it — the
@@ -405,7 +434,7 @@
 #     BOUNDARY problems, where the verb is present next to an unaccepted
 #     character. This is a SEPARATOR problem — two required-adjacent words
 #     pushed apart by a token the pattern does not model — so no character
-#     class widening reaches it. The lib does not cover it either:
+#     class widening reaches it. The ANCHOR does not cover it either:
 #     _CMD_POS_PREFIX absorbs _CMD_REDIR only in the PREFIX run before the
 #     command word. The vanished rendering deliberately does not reach it —
 #     a redirect is not a provably-empty expansion and must never be deleted
@@ -413,6 +442,16 @@
 #     uniformly, which the folded repair's Scope Contract does not
 #     authorise. Tracked:
 #     todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md
+#     CORRECTED 2026-09-07 — that sentence read "The LIB does not cover it
+#     either", which is true of the ANCHOR (`_CMD_POS_PREFIX`, as stated) and
+#     FALSE of the lib: `_CMD_GIT_GLOBALS` (lib/cmd-detect.sh:151) has carried
+#     `([[:space:]]*$_CMD_REDIR)` — an INTERIOR absorber, in the run between
+#     `git` and its subcommand — since 2026-09-01, with `[[:space:]]*` rather
+#     than `+` for exactly the glued-redirect reason. The claim mattered
+#     practically, not just pedantically: it read as "nothing in this repo
+#     models this position", when in fact the shape to generalise was already
+#     written, tested and shipped one file away. `_OUT_SEP` is that shape
+#     generalised, not a second redirect pattern invented alongside it.
 #     Corpus rows `nssufx-ghmerge`/`nssufx-ghcomment` cover only two of the
 #     ten families above — do not read the corpus gap count as this gap's size.
 #
@@ -841,7 +880,7 @@ _OUT_REPO_FLAG_RE="${_OUT_FLAG_LEAD}"'(--repo([^-A-Za-z0-9]|$)|-R)'
 # not shallow, is SAFE here (unlike the `gh pr merge --auto` CLAUSE below):
 # `--repo`/`-R` only ever ADDS a deny, it never grants a carve-out.
 gh_pr_clause_has_repo() {
-  local clause rendering re="gh[[:space:]]+pr[[:space:]]+($1)[^;&|]*"
+  local clause rendering re="gh${_OUT_SEP}pr${_OUT_SEP}($1)[^;&|]*"
   # ADDED 2026-09-05 (vanishing sigil): both occurrence counters that gate this
   # function now read a per-rendering MAXIMUM, so the count can be 1 because
   # the VANISHED rendering saw a NAMESPACE-glued sigil (`gh pr${UNSET} comment`)
@@ -1430,6 +1469,64 @@ _OUT_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'
 # "round 5" section.
 _OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
 
+# INTERIOR SEPARATOR — the drop-in replacement for a bare `[[:space:]]+` between
+# two REQUIRED-ADJACENT words (tool->verb, namespace->verb). Bash tokenizes a
+# redirect out of argv WHEREVER it sits, including between a tool word and its
+# verb, so `eas>/dev/null update`, `eas >/dev/null update` and `eas 2>&1 update`
+# all build the SAME argv as the plain spaced form this guard correctly denies
+# (verified by execution with PATH-shadowed argv-printing stubs, not by reading).
+# Before this constant every such slot hardcoded `[[:space:]]+`, and a redirect is
+# not whitespace, so the verb pattern never matched AT ALL — a TOTAL detection
+# failure for every gated family, which is why even the --repo cross-repo egress
+# check was skipped. No character-class widening could reach it: findings A (a
+# redirect closing the VERB) and B (a redirect BEFORE the command) were BOUNDARY
+# problems, where the verb sits next to an unaccepted character; this is a
+# SEPARATOR problem, where the two words are pushed apart by a token the pattern
+# does not model.
+#
+# THE SHAPE IS NOT INTERCHANGEABLE WITH THE OBVIOUS ALTERNATIVE:
+#   * At ZERO iterations it reduces to EXACTLY `[[:space:]]+`. So the only inputs
+#     whose decision can change are those carrying a redirect operator between two
+#     required-adjacent words; every redirect-free command decides byte-identically
+#     to before. That is the monotonicity argument this change rests on, and it is
+#     what makes the false-positive population ENUMERABLE rather than merely
+#     sampled — a command containing no `<`/`>` cannot flip, so the harvest is a
+#     census, not a survey.
+#   * The MANDATORY TRAILING `[[:space:]]+` is load-bearing, not tidiness. The
+#     looser `([[:space:]]|REDIR)+` form additionally matches `eas>/dev/nullupdate`
+#     — which REAL BASH DOES NOT RUN as the invocation it resembles: it redirects
+#     to a file named `/dev/nullupdate`, and (measured with argv stubs) bash cannot
+#     create that file, so it never execs `eas` at all. That row is pinned in
+#     test-guard-outward-cli.sh and is the ONE that goes RED on a "simplification"
+#     to the looser form — confirmed by running that mutation, not assumed.
+#     `eas > update` is NOT such a discriminator, and an earlier revision of this
+#     comment wrongly claimed it was: under BOTH forms `_CMD_REDIR`'s target class
+#     greedily absorbs `update` as the redirect's FILENAME, leaving no verb to
+#     match, so both correctly allow. It is kept as a plain false-positive control
+#     (real bash runs `eas` with NO arguments there), not as mutation evidence.
+#   * `[[:space:]]*` INSIDE the group and `+` outside, so a GLUED redirect has no
+#     hole. This is precisely the shape lib/cmd-detect.sh's `_CMD_GIT_GLOBALS`
+#     (:151) has already shipped for the git family — see its own comment for the
+#     identical `*`-vs-`+` reasoning. Generalised here, deliberately NOT reinvented:
+#     a second, subtly-different redirect pattern in this codebase is exactly how
+#     `GH_API_CLAUSE` came to be missed.
+#
+# MUST STAY BELOW THE LIB SOURCE: it interpolates `$_CMD_REDIR`. Defined above it,
+# that expands to the empty string — no error, suite green, bypass open (the
+# ordering trap finding B already paid for). Proven by BEHAVIOUR rather than a
+# `[ -n ]` assertion: every glued-form deny row in test-guard-outward-cli.sh goes
+# RED the moment this interpolation empties.
+#
+# DELIBERATELY NOT APPLIED to crude_smells_outward's degraded mirror (search this
+# file for `[^a-zA-Z]+`). That function runs on the no-jq and no-lib paths, which
+# reach it BEFORE/WITHOUT the lib source, so `$_CMD_REDIR` there WOULD be the empty
+# string — the same ordering trap in a new location, and under `set -u` it would
+# also dirty stderr and break every allow assertion. Its `[^a-zA-Z]+` separator
+# already absorbs letter-FREE redirects (`2>&1`) but not letter-bearing ones
+# (`>/dev/null` — the `dev` breaks the class); that asymmetry is recorded in
+# DOCUMENTED RESIDUALS rather than papered over.
+_OUT_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
+
 BARE=$(printf '%s' "$CMD" | cmd_bare)
 # WORDS is the argv-faithful rendering (lib/cmd-detect.sh): quote characters
 # deleted so `eas "update"` / `eas up"date"` read as the `eas update` the shell
@@ -1667,21 +1764,21 @@ $WORDS_VANISHED_BLIND"; }
 
 # --- eas -------------------------------------------------------------------
 # eas update/publish/submit (space-separated subcommand).
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'eas update/publish/submit' publishes an OTA update or app-store submission — the exact class of the 2026-08-16 accidental-OTA incident. Read-only forms (eas update:list, eas update:view, eas whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # eas update:* MUTATING colon subcommands — verified against `eas update
 # --help` (eas-cli 20.1.0); see the header's DOCUMENTED RESIDUALS entry for
 # the verified-read-only counterpart (update:list/view/insights, unaffected
 # by this pattern since the colon puts them outside this alternation).
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' mutates what OTA update end users receive — the same incident class as bare 'eas update'. Read-only colon forms (eas update:list, eas update:view, eas update:insights) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # eas channel:*/branch:* MUTATING colon subcommands — a channel repoint or a
 # branch delete changes which update end users receive, an effect identical to
 # the already-denied `eas update:*` forms (review round 3 found all of these
 # ALLOWED). Read-only `:list`/`:view` forms stay allowed.
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'eas channel:/branch: create/edit/delete/rename' repoints or deletes the channel/branch that decides which OTA update end users receive — the same effect class as 'eas update'. Read-only forms (eas channel:list, eas branch:view, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # `eas build --auto-submit` (and --auto-submit-with-profile) submits the
@@ -1692,7 +1789,7 @@ fi
 # `--auto-submit-with-profile` is caught by the same pattern. Leading boundary
 # is `_OUT_FLAG_LEAD` (see its own definition) so a default-value expansion
 # (`${x:---auto-submit}`) cannot donate the flag's boundary.
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+if grep -Eqi "${_OUT_POS_PREFIX}eas${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    && scan_renderings "${_OUT_FLAG_LEAD}"'--auto-submit'; then
   deny "guard-outward-cli: command-position 'eas build --auto-submit' submits the finished binary to the app store — an outward mutation, not just a build. Plain 'eas build' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
@@ -1702,22 +1799,22 @@ fi
 # live service's env injected — including the production DATABASE_URL (this
 # repo's own prod backfill/seed docs use exactly that shape), so it is at least
 # as outward as `railway up`.
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' mutates a live Railway service ('railway run' executes an arbitrary command with the LIVE service env, incl. the production DATABASE_URL). Read-only forms (railway status, railway logs, railway whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # railway variable set/delete (production secrets/env vars) and
 # service/environment delete — a level deeper than the top-level verbs
 # above, and at least as dangerous (an overwritten secret or a deleted
 # service/environment is not recoverable by a redeploy the way up/down are).
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(variable|variables|vars|var)[[:space:]]+(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway${_OUT_SEP}(variable|variables|vars|var)${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'railway variable/vars/var set/delete' mutates a live service's environment variables (may include production secrets). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(service|environment)[[:space:]]+delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway${_OUT_SEP}(service|environment)${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'railway service/environment delete' deletes a live Railway service or environment. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 # --- npm publish -------------------------------------------------------------
-if grep -Eqi "${_OUT_POS_PREFIX}npm[[:space:]]+publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX}npm${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm publish' pushes a package to the registry. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -1761,7 +1858,19 @@ fi
 # as a later argument (`npm run --silent build update:preview`) now denies. That
 # is fail-CLOSED on a command essentially nobody writes, and the plain
 # no-flag form (`npm run build update:preview`) still ALLOWS — pinned both ways.
-_OUT_FLAG_RUN='([[:space:]]+-{1,2}[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
+# INTERIOR REDIRECTS, 2026-09-07: both SEPARATOR slots here take `$_OUT_SEP` —
+# the one before each flag word and the mandatory trailing one before the next
+# real word. Two distinct bypasses, not one: the trailing slot covers
+# `npm>/dev/null run update:preview` and `npm run 2>&1 update:preview`, and the
+# flag-leading slot covers `npm >/dev/null --silent run update:preview`, which the
+# trailing fix ALONE still allowed (the flag group demands `-` right after its
+# whitespace, so a redirect before a FLAG kept the whole run from matching).
+# Both build the real OTA-publish argv. The flag-VALUE sub-group keeps its plain
+# `[[:space:]]+` deliberately: that slot separates a flag from its VALUE, not two
+# required-adjacent command words, so it is not this absorber's job.
+# Single-quoted, so `$_OUT_SEP` is CONCATENATED, not interpolated in place; it is
+# defined above (below the lib source), which is what makes that legal here.
+_OUT_FLAG_RUN='('"$_OUT_SEP"'-{1,2}[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'"$_OUT_SEP"
 if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
@@ -1799,14 +1908,14 @@ fi
 _OUT_EXPANSION_TOKEN='(\$\{[^}]*\}|\$\([^)]*\)|`[^`]*`|\$[A-Za-z_][A-Za-z0-9_]*)'
 _OUT_GATED_BIN='(eas|railway|npm|pnpm|yarn|gh)'
 _OUT_GATED_VERB='(update|publish|submit|build|up|deploy|redeploy|restart|down|delete|remove|rm|run|pr|release|repo|api)'
-if grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}[[:space:]]+${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
-   || grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}[[:space:]]+pr[[:space:]]+${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
-   || grep -Eq "${_OUT_POS_PREFIX}${_OUT_EXPANSION_TOKEN}[[:space:]]+${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"; then
+if grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 # --- gh: bare 'gh pr merge' (see the --auto/--admin carve-out in the header) -
-GH_PR_MERGE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SUFFIX}"
+GH_PR_MERGE_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX}"
 # The OCCURRENCE COUNT just below is counted on $WORDS_DEEP (so a merge hidden
 # inside a live substitution is not silently invisible to this whole block);
 # the CLAUSE extraction feeding the --auto carve-out further down deliberately
@@ -1993,7 +2102,7 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # whitespace boundary; a hard separator/bracket or end-of-string ends the
   # clause immediately with nothing captured past it. Two-sided regression
   # test: test-guard-outward-cli.sh's "2026-09-02 FIX (round 3)" block.
-  CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SUFFIX_MERGE_CLAUSE}" | head -1)
+  CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX_MERGE_CLAUSE}" | head -1)
   # A naive "--auto present" substring check is bypassable: several of `gh pr
   # merge`'s own flags (and the cross-subcommand --repo/-R every gh command
   # accepts) are VALUE-TAKING, so the token immediately after one of them is
@@ -2097,7 +2206,7 @@ fi
 
 # --- gh: other mutating subcommands (pr create/comment allowed only without
 #     --repo/-R, see the header) -------------------------------------------
-GH_MUTATING_RE="${_OUT_POS_PREFIX}gh[[:space:]]+(pr[[:space:]]+(close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release[[:space:]]+(create|delete|delete-asset|edit|upload)|repo[[:space:]]+(create|delete|archive|unarchive|edit|rename|sync|fork))${_OUT_POS_SUFFIX}"
+GH_MUTATING_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}(pr${_OUT_SEP}(close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release${_OUT_SEP}(create|delete|delete-asset|edit|upload)|repo${_OUT_SEP}(create|delete|archive|unarchive|edit|rename|sync|fork))${_OUT_POS_SUFFIX}"
 if grep -Eqi "$GH_MUTATING_RE" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position mutating 'gh pr/release/repo' subcommand. Read-only forms (gh pr view/checks/list, gh release view/list, gh repo view/list, ...) are unaffected; gh pr create/comment are deliberately allowed (routine PR workflow) unless retargeted with --repo/-R. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
@@ -2116,7 +2225,7 @@ fi
 # clause's --repo/-R sail through unexamined (`gh pr create --fill && gh pr
 # create --repo other/org --title x` was ALLOWED). Deny outright on >1
 # occurrence rather than guess which clause to inspect.
-GH_PR_CREATE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+(create|comment)${_OUT_POS_SUFFIX}"
+GH_PR_CREATE_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}pr${_OUT_SEP}(create|comment)${_OUT_POS_SUFFIX}"
 GH_PR_CREATE_OCCURRENCES=$(_out_max_count "$GH_PR_CREATE_RE")
 if [ "${GH_PR_CREATE_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh pr create/comment' occurrence — ambiguous, cannot verify each is free of --repo/-R. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
@@ -2157,7 +2266,7 @@ fi
 # mutating second one (`gh api repos/x/y && gh api -X PUT .../merge` was
 # ALLOWED). Deny on >1, mirroring the identical multi-occurrence safe
 # direction the `gh pr merge` check above already takes.
-GH_API_RE="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}"
+GH_API_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}"
 # Counted AND clause-scoped on $WORDS_DEEP (unlike the `gh pr merge` block
 # above, whose CLAUSE stays shallow — see that block's own comment for why).
 # This check ALLOWS by default (a read-only `gh api` is fine) and only denies
@@ -2216,7 +2325,7 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # safe for THIS clause specifically because it is DENY-shaped (over-capture
   # can only ever ADD a deny) — unlike the grant-shaped `gh pr merge` CLAUSE
   # above, which must stay on shallow `$WORDS` for the reason documented there.
-  _GH_API_CUT="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}[^;&|]*"
+  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}[^;&|]*"
   GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT" | head -1)
   # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is
   # now a MAXIMUM across all three renderings, so it can be 1 because the VANISHED
