@@ -160,14 +160,28 @@ done
 #   vbareparen  a bare `(` subshell. Carries NO sigil digraph, so no
 #           digraph-based enumeration can see it at all.
 #   vcasearm    a `case` arm's `)`. Same property, different grammar.
-# The last two are ALSO defeated by lib/cmd-detect.sh's own scanner (measured:
-# `cmd_words_vanished 'e$( (:) )as update'` -> `e )as update`), so their rows are
-# expected to report as GAPS until
-# todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
-# lands. That is deliberate: they keep pointing at an open bypass.
+# The last two were ALSO defeated by lib/cmd-detect.sh's own scanner (measured at
+# the time: `cmd_words_vanished 'e$( (:) )as update'` -> `e )as update`). THEY
+# HAVE SINCE DIVERGED, and the split is the point rather than an inconsistency:
+#   vbareparen  CLOSED 2026-09-06 by a per-level paren counter in both shared
+#               scanners. These rows now report `ok`.
+#   vcasearm    STILL OPEN. That `)` has no matching opener, so no depth
+#               arithmetic can reach it, and the obvious keyword tracker is a
+#               deny->ALLOW regression generator. Tracked at
+#               todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#               Deliberately left as a visible gap: it keeps pointing at a live
+#               bypass.
+# vcomment: a `(` inside a shell COMMENT. Inert to bash (a comment runs to
+# end-of-line), so the substitution's real closer is the `)` on the NEXT line --
+# but a paren-counting scanner counts it and the level never closes. This
+# mechanism was a live DENY->ALLOW regression that this corpus could not see,
+# because every row was single-line and a comment needs a newline to terminate
+# (the row parser is newline-safe as of the same change). ADDED 2026-09-06.
 TOOL_MECHS=('$()' '${UNSET}' '``' '$(: $(:))' '$(: "x)y")' "\$(: 'a)b')" \
-            "\$(: '\"' \"a)b\" )" '$( (:) )' '$(case x in a) : ;; esac)')
-TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm)
+            "\$(: '\"' \"a)b\" )" '$( (:) )' '$(case x in a) : ;; esac)' \
+            "\$(: # (
+)" '$((:)|(:))')
+TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
   for m in "${!TOOL_MECHS[@]}"; do
@@ -235,6 +249,44 @@ for i in "${!FAM_IDS[@]}"; do
   done
 done
 
+# axis: BARE-PAREN / CASE-ARM at the VERB and FLAG positions (2026-09-06,
+# cmd-detect-bare-paren todo). The TOOL position already carries both mechanisms
+# via TOOL_MECHS above; holding the POSITION axis fixed is the blind spot that
+# hid the tool-position class for three rounds, so the same two mechanisms are
+# generated at the other two positions rather than hand-listed at one.
+#
+# The two mechanisms differ in what closes them, and the split is the point:
+#   vbareparen  a bare `(` subshell -- CLOSED by the per-level paren counter now
+#               in lib/cmd-detect.sh's two scanners. Expected `ok`.
+#   vcasearm    a `case` arm's `)` -- an unmatched closer with NO opener, which
+#               no depth arithmetic can reach. Still a GAP by design; see NOTE6
+#               and todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+# varithsep / varithdecoy: added 2026-09-07 because this corpus was BLIND to the
+# entire class the arithmetic-arm removal closes. Running all 308 rows across
+# main / pre-fix / post-fix gave `head_DENY - base_DENY = {}` — no losses, but no
+# GAINS either, so the differential came back clean while a hand-built
+# construction found a CRITICAL. A corpus that cannot see a change's security
+# gain cannot testify to it.
+#   varithsep    `$((:)|(:))` -- a command SUBSTITUTION bash executes, which the
+#                deleted verbatim-copy arm preserved. Seventeen sibling
+#                separator spellings behave identically; one stands for the axis.
+#   varithdecoy  `$(sq)\c(sq)` before the split. The `\c` arm consumed the CLOSING
+#                quote, so state 3 never exited and every later byte was mangled
+#                — a DENY->ALLOW regression this PR introduced and then fixed.
+#                The decoy is a PREFIX, so this row also pins that the corruption
+#                does not travel forward.
+SPAN2_MECHS=('$( (:) )' '$(case x in a) : ;; esac)' "\$(: # (
+)" '$((:)|(:))')
+SPAN2_IDS=(vbareparen vcasearm vcomment varithsep)
+for i in "${!FAM_IDS[@]}"; do
+  id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
+  lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
+  vhead="${lead}${lw:0:$h}"; vtail="${lw:$h}"; vrest=${cmd#"$vp"}
+  for m in "${!SPAN2_MECHS[@]}"; do
+    add "verb${SPAN2_IDS[$m]}-$id" DENY "${vhead}${SPAN2_MECHS[$m]}${vtail}${vrest}"
+  done
+done
+
 # The span cap must not be a decision boundary. Before the fix this had a sharp
 # edge: 199 leading empty spans DENIED and 200 ALLOWED, because the scanner's
 # fixed 200-iteration limit was reached and the needle never reformed. Pinned
@@ -286,6 +338,13 @@ for i in "${!FAM_FLAG_IDS[@]}"; do
     case "$m" in '$()') mid=vsub ;; '${UNSET}') mid=vvar ;; *) mid=vbt ;; esac
     new="${lhs}${m}${rhs}"
     add "flag${mid}-$id" DENY "${cmd/${lhs}${rhs}/$new}"
+  done
+  # SPAN2 (bare paren / case arm) at this same FLAG position -- the second half
+  # of the axis whose verb-position half is generated above, kept here because
+  # FAM_FLAG_* is not defined until this point in the file.
+  for m in "${!SPAN2_MECHS[@]}"; do
+    new="${lhs}${SPAN2_MECHS[$m]}${rhs}"
+    add "flag${SPAN2_IDS[$m]}-$id" DENY "${cmd/${lhs}${rhs}/$new}"
   done
 done
 
@@ -473,9 +532,14 @@ GAPS=0
 ALLGAPS=0
 IDS=(); EXPS=(); CMDS=(); PS=(); JS=(); LS=(); AS=()
 for row in "${ROWS[@]}"; do
-  id=$( awk -F' @@ ' '{print $1}' <<< "$row")
-  exp=$(awk -F' @@ ' '{print $2}' <<< "$row")
-  cmd=$(awk -F' @@ ' '{print $3}' <<< "$row")
+  # Parameter expansion, NOT awk: awk is line-oriented, so a row whose COMMAND
+  # contains a newline had only its first line extracted. That silently excluded
+  # every multi-line construction from this corpus -- including a `#` comment
+  # inside a substitution, which needs a newline to terminate and which was a
+  # live DENY->ALLOW regression no row here could see (2026-09-06 security
+  # review). Parameter expansion is newline-safe and needs no subprocess.
+  id=${row%% @@ *}; _rest=${row#* @@ }
+  exp=${_rest%% @@ *}; cmd=${_rest#* @@ }
   p=$(decide precise "$cmd"); j=$(decide nojq "$cmd")
   l=$(decide nolib "$cmd");   a=$(decide noawk "$cmd")
   if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); fi
@@ -507,8 +571,7 @@ done
 echo ""
 echo "=== deny-reason attribution (which check actually fired) ==="
 for row in "${ROWS[@]}"; do
-  id=$( awk -F' @@ ' '{print $1}' <<< "$row")
-  cmd=$(awk -F' @@ ' '{print $3}' <<< "$row")
+  id=${row%% @@ *}; _rest=${row#* @@ }; cmd=${_rest#* @@ }
   [ "$(decide precise "$cmd")" = "DENY" ] || continue
   printf '%-18s : %s\n' "$id" "$(reason precise "$cmd")"
 done
@@ -619,73 +682,148 @@ done
 #      dimensions this file generates. The wording corrected at
 #      guard-outward-cli.sh's WORDS_VANISHED assignment failed exactly that test.
 #
-# GAP INVENTORY, 2026-09-06 after round 4. `precise-path gaps=73` is the CORRECT
-# expected output of this file. The number went UP from 3, and reading that as a
-# regression would be exactly the mistake this note exists to prevent — it is the
-# corpus finally SEEING classes it was blind to, not the guard getting worse.
+# GAP INVENTORY, 2026-09-06 after the cmd-detect bare-paren + vanishing-allow-list
+# change. `rows=326  precise-path gaps=33  all-path gaps=120` is the CORRECT
+# expected output of this file.
 #
-# ROUND 4 ADDED 56 ROWS AND 56 GAPS (17 -> 73 precise, 69 -> 125 all-path). The
-# deltas are equal to the row count on BOTH axes, which is the check that matters
-# here: every new row is a gap AND no pre-existing row changed status. Verified by
-# diffing per-ID dirty sets across the two corpora, not by subtracting totals.
-# The 56 are the r4spec-/r4dig-/r4ansic-/r4brange- rows (4 mechanisms x 2 glue
-# positions x 7 families) described at the generator. They are pre-existing
-# bypasses this PR does NOT close, recorded so they are measured every run:
+# THE 18 varithsep-* ROWS ARE NEW (2026-09-07) AND SEVEN OF THEM ARE
+# PRECISE-CLEAN / DEGRADED-DIRTY, which is why all-path went 113 -> 120 while
+# precise-path stayed at 33. That +7 is a DISCLOSURE, not a regression: the rows
+# did not exist before, the precise path denies all 18, and the degraded mirror
+# (_out_crude_vanish) was deliberately NOT widened in this change — a scope
+# decision recorded rather than absorbed.
+#
+# They exist because this corpus was BLIND to the security gain of the same
+# change. Run across main / pre-fix / post-fix, all 308 previous rows gave
+# `head_DENY - base_DENY = {}`: no losses, and no GAINS either. The differential
+# came back clean while a hand-built construction found a CRITICAL. A corpus that
+# cannot see a change's gain cannot testify to it, and "0 opened" from such a
+# corpus is a weaker statement than it looks.
+#
+# THE 18 vcomment-* ROWS ARE `ok` ON BOTH SIDES, and they are here because of what
+# they caught while the change was in flight. A `(` inside a shell COMMENT is
+# inert to bash, but the bare-paren counter counted it, so the substitution level
+# never closed and the rendering came back EMPTY -- a DENY->ALLOW regression on a
+# real OTA publish, on a branch where this corpus reported 60 clean closures and
+# zero problems. It could not see it: every row was single-line, and a comment
+# needs a newline to terminate. The row parser is newline-safe now, and the
+# mechanism is generated at all three positions.
+#
+# THAT SENTENCE ORIGINALLY ENDED "so the blind spot cannot reopen." RETRACTED
+# 2026-09-07: it reopened one review round later, by COMPOSING two mechanisms this
+# file already generates separately. `e$( (: # (` newline `) )as update` defeats
+# BOTH halves of the union and ALLOWs on every path, and no row here can see it,
+# because every TOOL_MECHS/SPAN2_MECHS entry is ONE mechanism. That is the same
+# root cause as the single-line blindness above, one level up: a corpus that
+# varies mechanisms one at a time cannot see a defect that needs two at once.
+# Tracked at
+# todos/P1-2026-09-07-outward-cli-guard-threat-model-decision.md
+# The fix was to UNION the paren-counting rendering with a paren-blind one rather
+# than substitute it -- which is this file's own governing rule, applied one layer
+# down.
+#
+# HISTORY OF THE NUMBER, so nobody reads a movement as a regression: it was 3
+# while the corpus was blind to the tool and flag POSITIONS, went UP to 73 when
+# those axes were added (the corpus finally SEEING classes, not the guard getting
+# worse), and is now 33 because 60 rows were genuinely closed.
+#
+# ATTRIBUTED BY ID, NOT BY SUBTRACTING TOTALS. The current corpus was run against
+# BOTH the pre-change hook+lib (b01fcff2) and the current one — one question
+# against two implementations, which is the only like-for-like form; comparing an
+# old corpus's count against a new corpus's count compares two different
+# questions. Per-ID `comm` of the two dirty sets:
+#
+#   precise-path gaps  93 -> 33   60 CLOSED, **0 OPENED**
+#   all-path gaps     145 -> 113  32 CLOSED, **0 newly dirty**
+#
+# The zero on BOTH "opened" axes is the check that matters, and it is a per-ID
+# set difference, not a total. A summary count cannot express a row getting
+# strictly worse (docs/solutions/code-quality/summary-count-cannot-express-a-row-
+# getting-strictly-worse-2026-09-06.md), and an earlier revision of this note was
+# corrected for exactly that arithmetic.
+#
+# THE 60 CLOSED, counted BY ID (21 + 21 + 17 + 1 = 60):
+#   21  r4spec-/r4dig-/r4ansic-VERB-* (7 families each) — the special parameters
+#       and the ANSI-C respelling at the verb position. cmd_words_vanished now
+#       deletes `$!`, `$@`, `$*` and `$1`..`$9` and DECODES ANSI-C escapes.
+#   21  the same three mechanisms at the TOOL position. These needed BOTH halves:
+#       the lib fix AND guard-outward-cli.sh's STAGE 3 decline set, which keyed
+#       on `${`/`$(`/backtick and so cheap-exited before the rendering was ever
+#       computed. A lib-only change could not have moved them.
+#   17  the bare-paren mechanism, from the per-level paren counter now in BOTH
+#       shared scanners: toolvbareparen-* (7), verbvbareparen-* (7, new axis
+#       below) and flagvbareparen-* (3, new axis below).
+#
+#       THREE, not four, and the fourth is an attribution lesson rather than an
+#       off-by-one: flagvbareparen-ghadmin was ALREADY denying before this change,
+#       from the "gh pr merge without a REAL --auto" rule, because the construct
+#       breaks the `--auto` spelling in its base command. It reports `ok` on both
+#       sides and so is not a closure. A verdict is not evidence the intended
+#       check fired.
+#    1  c2-ansic-hex, as a SIDE EFFECT of the ANSI-C decoding rather than by a
+#       change aimed at it: the vanished rendering now reduces
+#       `-X $'\x50\x4f\x53\x54'` to a literal `-X POST`, which the
+#       mutating-method branch matches. Its own entry below is updated.
+#       Confirmed by ID in the before/after diff, not predicted in advance.
+#
+# FULL ATTRIBUTION of the 33 remaining precise-path gaps (14 + 17 + 2 = 33), each
+# with an OPEN todo — none of them is a defect this change introduced, and every
+# one allows on `main` too:
+#
+#   14  r4brange-tool-* and r4brange-verb-*. A brace RANGE carries no `$` and no
+#       backtick anywhere, so no sigil-keyed decline can see it and no deleting
+#       rendering can reach it. Needs a narrow guard-side deny. Tracked at
+#       todos/P0-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
+#
+#   17  toolvcasearm-* (7), verbvcasearm-* (7), flagvcasearm-* (3 of 4). A `case`
+#       arm's `)` has NO matching opener, so the paren counter that closed the
+#       bare-paren rows cannot reach it, and the obvious `case`/`esac` keyword
+#       tracker is a deny->ALLOW regression generator (`e$(echo case)as update`
+#       DENIES today and would render EMPTY under it). Deliberately deferred with
+#       its reasoning, not overlooked. Tracked at
+#       todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#
+#       flagvcasearm-ghadmin is the FOURTH flag row and reports `ok` — READ ITS
+#       ATTRIBUTION, NOT ITS VERDICT. It denies from a different check entirely:
+#       the construct breaks the `--auto` spelling in `gh pr merge 42 --auto
+#       --admin`, so the "no REAL --auto" rule fires. Same rule as co-mask-c1.
+#
+#    2  nssufx-ghmerge and nssufx-ghcomment — an INTERIOR redirect, a different
+#       mechanism with its own entry below and its own todo.
+#
+# SUPERSEDED INVENTORY, KEPT FOR ITS ARITHMETIC LESSON ONLY (round 4, gaps=73).
+# The counts below describe the tree BEFORE the bare-paren + vanishing-allow-list
+# change and are NOT the expected output of this file any more; the current
+# inventory is the one above. It is kept because the correction recorded in it is
+# the reason this note insists on per-ID diffs:
+#
+#   A COUNT HIDES ROWS THAT GOT WORSE WITHOUT CROSSING THE THRESHOLD. In the
+#   round-3 delta, toolvmixq-*, toolvbareparen-* and toolvcasearm-* were ALREADY
+#   all-path-dirty on both sides, so they could not appear in the "22 newly
+#   dirty" figure — yet each went from ONE failing degraded path (noawk) to
+#   THREE. An earlier revision said "29 rows newly degraded-dirty ... 4
+#   mechanisms", which double-counted toolvmixq-* as new when it was
+#   pre-existing, and 47 + 29 = 76 never equalled the 69 printed two lines above
+#   it. Only running THIS corpus against both hooks and diffing the per-ID dirty
+#   sets found that; subtracting the two totals never could.
+#
+# Round 4 added 56 rows and 56 gaps (17 -> 73 precise, 69 -> 125 all-path), the
+# r4spec-/r4dig-/r4ansic-/r4brange- rows (4 mechanisms x 2 glue positions x 7
+# families). Their asymmetries at that time are worth keeping too, because the
+# verb-position one INVERTS this file's usual direction and that is a per-check
+# property, not an invariant:
 #
 #   r4*-tool-*     (28 rows)  ALLOW on ALL FOUR paths — a total detection
-#                             failure at the binary-name position.
+#                             failure at the binary-name position. 21 of these
+#                             are now closed; r4brange-tool-* remains.
 #   r4spec/r4dig/r4ansic-verb-*
-#                  (21 rows)  precise ALLOW, all three degraded DENY. This
-#                             INVERTS the file's usual asymmetry and is the
-#                             reason "degraded fails closed" must not be
-#                             assumed: here the precise path is the weak one.
+#                  (21 rows)  precise ALLOW, all three degraded DENY — the
+#                             precise path was the WEAK one, so "degraded fails
+#                             closed" is not a safe default. All 21 now closed.
 #   r4brange-verb-*  (7 rows) ALLOW on all four — the ONLY verb-position
 #                             mechanism that also defeats the degraded paths,
 #                             because that mirror keys on `$`/backtick and a
-#                             brace range contains neither.
-# Attributed by ID against the previous hook, running THIS corpus on both sides
-# (the only like-for-like comparison; comparing an old corpus's count against a
-# new corpus's count compares two different questions):
-#
-#   precise-path gaps  24 -> 17   SEVEN CLOSED, none opened. The closures are
-#                                 toolvmixq-* (all 7 families): a quote of one
-#                                 type nested inside the other, which the
-#                                 prefilter's since-deleted "odd quote count"
-#                                 test mis-judged as unambiguous.
-#   all-path gaps      47 -> 69   22 rows NEWLY all-path-dirty: toolvnest-*,
-#                                 toolvdqclose-* and toolvsqclose-* (3 mechanisms
-#                                 x 7 families) plus trailclose-ctl. 47 + 22 = 69
-#                                 exactly. That is the cost of deleting the
-#                                 GREEDY rendering, disclosed rather than
-#                                 absorbed. See the guard's DOCUMENTED RESIDUALS
-#                                 entry for why greedy was unsound.
-#
-# A COUNT HIDES ROWS THAT GOT WORSE WITHOUT CROSSING THE THRESHOLD, and this
-# delta has three of them. toolvmixq-*, toolvbareparen-* and toolvcasearm-* were
-# ALREADY all-path-dirty on both sides, so they cannot appear in the 22 — but
-# each went from ONE failing degraded path (noawk) to THREE (nojq, nolib, noawk).
-# For toolvmixq-* that is the trade the closure bought: its PRECISE column went
-# ALLOW -> DENY (those are the seven closures above) while its degraded columns
-# went 1 -> 3. An earlier revision of this note said "29 rows newly
-# degraded-dirty ... 4 mechanisms": that double-counted toolvmixq-* as new when
-# it was pre-existing, and 47 + 29 = 76 never equalled the 69 printed two lines
-# above it. Verified by running THIS corpus against both hooks and diffing the
-# per-ID dirty sets, not by subtracting the two totals.
-#
-# FULL ATTRIBUTION of the 73 precise-path gaps, so no reader has to infer any
-# part of the total (14 + 56 + 3 = 73):
-#
-#   14  toolvbareparen-* and toolvcasearm-* (7 families each). NOT guard
-#       defects: lib/cmd-detect.sh's own scanner desynchronises on a bare `(`,
-#       so no prefilter change can reach them. Tracked at
-#       todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
-#       and expected to clear when that lands.
-#   56  the round-4 r4spec-/r4dig-/r4ansic-/r4brange- rows, itemised above.
-#    3  nssufx-ghmerge, nssufx-ghcomment and c2-ansic-hex, each with its own
-#       named entry below.
-#
-# Every one of the 73 allows on `main` too — this corpus has never reported a
-# gap that the guard's own changes opened.
+#                             brace range contains neither. Still open.
 #
 # Each remaining row is a REAL, reachable bypass out of the folded repair's Scope
 # Contract — the list below is exhaustive OF THIS FILE'S ROWS, which is not the
@@ -731,17 +869,19 @@ done
 #     PR's quoted gap count stays a like-for-like before/after:
 #     todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md
 #
-#   c2-ansic-hex -- UNHANDLED, OUT OF SCOPE, NEEDS A DECODER.
+#   c2-ansic-hex -- CLOSED 2026-09-06, and it needed exactly the decoder the
+#     previous revision of this entry said the Scope Contract forbade.
 #     `gh api repos/o/r -X $'\x50\x4f\x53\x54'` supplies POST as ANSI-C hex.
-#     Measured cause (not inferred): cmd_words renders it
-#     `-X xx50xx4fxx53xx54`, so the `$` is CONSUMED -- C2's "method value is
-#     not literal text" branch reads for a surviving `$`/backtick and finds
-#     none, while the literal-method branch finds no POST either. Closing it
-#     requires decoding ANSI-C escapes, a new parsing layer the Scope Contract
-#     forbids. Already recorded as a confirmed gap in commit 3131de37; this
-#     row is its executable counterpart. Note the degraded paths DENY it --
-#     precise-clean/degraded-dirty inverted, which is why it must not be read
-#     from a summary count alone.
+#     Measured cause at the time: cmd_words rendered it `-X xx50xx4fxx53xx54`,
+#     so the `$` was CONSUMED -- C2's "method value is not literal text" branch
+#     reads for a surviving `$`/backtick and found none, while the
+#     literal-method branch found no POST either. cmd_words_vanished now DECODES
+#     ANSI-C escapes, so the clause cut sees a literal `-X POST` and the
+#     mutating-method branch matches. Decoded in the VANISHED rendering and not
+#     in cmd_words specifically because that rendering is deny-shaped-consumers
+#     only, so a decoder there can never manufacture a flag that GRANTS a
+#     carve-out. This row was NOT the target of that change and is recorded as a
+#     side effect confirmed by the per-ID before/after diff.
 #
 # Do not "fix" any of these by editing this file. Fix the guard, or leave the
 # gap visible.

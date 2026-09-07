@@ -451,7 +451,7 @@
 #     spans vanish and rejoin, so cmd_words_vanished reconstructs the flag;
 #     a non-empty body is DELETED by that same rendering, leaving `--ad`, and
 #     WORDS_DEEP keeps the body's literal text but not the fused word. So the
-#     flag appears in none of the three renderings scan_renderings reads.
+#     flag appears in none of the FOUR renderings scan_renderings reads.
 #     Pre-existing and not a regression (base ALLOWs identically). NOT fixed
 #     here, and deliberately not patched: the one-line move (widening the merge
 #     CLAUSE's `grep -qF '$'` to the `$`+backtick class its gh api sibling
@@ -550,17 +550,26 @@
 #     exist precisely because they cannot reach. Corpus rows toolvnest-*,
 #     toolvdqclose-*, toolvsqclose-*, toolvmixq-* keep this reporting every run.
 #
-#   * UNHANDLED, ALL PATHS, CAUSE IS IN THE LIB (2026-09-06, round 3): a bare `(`
-#     subshell or a `case` arm's `)` inside `$(...)` desynchronises
-#     lib/cmd-detect.sh's substitution scanner, which counts depth for `$(` but
-#     not for a bare `(`. Measured: `cmd_words_vanished 'e$( (:) )as update'`
-#     renders `e )as update`, so the needle never forms and
-#         e$( (echo) )as update --branch preview
-#         e$(case x in a) : ;; esac)as update --branch preview
-#     are ALLOWED. NOT a guard defect and not fixable here — the same
-#     desynchronisation is present in cmd_extract_substitutions on `main`. Filed:
-#     todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
-#     Corpus rows toolvbareparen-*, toolvcasearm-*.
+#   * PARTLY CLOSED 2026-09-06/07 — READ THIS BEFORE TRUSTING THE HALF THAT IS
+#     STILL OPEN. This entry originally read "UNHANDLED, ALL PATHS" for BOTH a
+#     bare `(` subshell and a `case` arm's `)` inside `$(...)`, on the measurement
+#     that `cmd_words_vanished 'e$( (:) )as update'` renders `e )as update`.
+#
+#     THE BARE-PAREN HALF IS CLOSED. That measurement is `main`'s output; the
+#     scanner now carries a per-level paren counter and renders `eas update`, so
+#     `e$( (echo) )as update --branch preview` DENIES here (it ALLOWs on `main`).
+#     The CLOSED entry ~90 lines below is the authority; this text contradicted it
+#     for one review round, which is exactly the comment-drift class this file's
+#     own header names as its dominant defect. Corpus rows toolvbareparen-* now
+#     report `ok`.
+#
+#     THE `case`-ARM HALF IS STILL OPEN and unchanged:
+#         e$(case x in a) : ;; esac)as update --branch preview   -> ALLOW
+#     That `)` has no matching opener, so no depth arithmetic reaches it. Corpus
+#     rows toolvcasearm-*/verbvcasearm-*/flagvcasearm-* stay GAPs by design. Filed:
+#     todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#     The bare-paren todo is archived at
+#     todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
 #
 #   * SIDE EFFECT OF DECLINING, and it is a CORRECTNESS GAIN, not just a cost
 #     (2026-09-06, round 3): the 2026-09-03 narrow-deny rule denies an expansion
@@ -619,13 +628,61 @@
 #     "degraded is the fail-closed direction" is not a safe default here. Second,
 #     the TOOL rows allow on all four, which is a live outward-CLI bypass.
 #
-#     Still deliberately not widened in THIS block, but the reason is cost, not
-#     the false claim above: `$` alone appears in a large share of real commands.
-#     The gap is real, is NOT a regression (it allows on `main` too), and is an
-#     open finding surfaced to the owner rather than closed here — the fix is in
-#     lib/cmd-detect.sh's allow-list, which by its own stated criterion ("an
-#     expansion form must be PROVEN capable of evaluating to EMPTY before it may
-#     be deleted") should already admit these forms and does not.
+#     CLOSED 2026-09-06 (todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-
+#     breaks-substitution-scanners.md). Every construction in the table above now
+#     DENIES on the precise path, each attributed to the intended
+#     command-position check rather than to an ambiguity fallback.
+#
+#     THE FIX WAS IN TWO PLACES AND THE PREVIOUS REVISION OF THIS ENTRY NAMED
+#     ONLY ONE. It said "the fix is in lib/cmd-detect.sh's allow-list". That was
+#     necessary and NOT sufficient, and the missing half was in this very file:
+#     the STAGE 3 decline keyed on `${`, `$(` and a backtick, none of which a
+#     special parameter or an ANSI-C respelling carries, so
+#     `e$1as update --branch preview` missed stages 1 and 2 and took the CHEAP
+#     EXIT — $WORDS_VANISHED was never computed, and no allow-list change could
+#     have been reached. A correct fix in the right file is still unreachable
+#     when a prefilter upstream of it declines on a NARROWER signal than the
+#     fix's own grammar. Both halves landed in one change:
+#       * lib/cmd-detect.sh — cmd_words_vanished now deletes `$!`, `$@`, `$*` and
+#         `$1`..`$9` (each PROVABLY capable of expanding to empty) and DECODES
+#         ANSI-C escapes. `$?`, `$$`, `$#`, `$0` and `$-` are deliberately NEVER
+#         deleted: none can be empty, and deleting a never-empty form
+#         manufactures a clean match for text that never executes.
+#       * this file — the STAGE 3 decline set was widened, on a MEASURED cost of
+#         +0.8% of Bash tool calls moving to the slow path (the block itself
+#         carries the harvest and the numbers).
+#
+#     A bare `$name` (`$RUNNER up`) remains an ACCEPTED residual and still takes
+#     the cheap exit. The greedy-absorption argument that was wrongly
+#     generalised to the whole syntax class is TRUE of an ordinary identifier:
+#     `$RUNNERup` is one variable name, so it cannot rejoin two halves of a verb.
+#
+#   * BARE-PAREN SUBSHELL — CLOSED 2026-09-06, same change. lib/cmd-detect.sh's
+#     shared substitution scanner counted depth for `$(` but not for a bare `(`,
+#     so the first `)` of an inner subshell closed the OUTER construct early:
+#     `e$( (:) )as update --branch preview` rendered as `e )as update …`, the
+#     verb never re-formed, and all four paths ALLOWED an OTA publish. Both
+#     functions sharing that scanner shape — cmd_extract_substitutions and
+#     cmd_words_vanished — now carry a per-level paren counter, fixed in ONE
+#     change rather than one function at a time.
+#
+#     ARITHMETIC EXPANSION had to be exempted in the same edit, and that is a
+#     consequence of the counter rather than a separate concern: with paren depth
+#     tracked, `$((expr))` otherwise reads as a substitution level whose body
+#     happens to balance, and would be DELETED — but it always evaluates to a
+#     number, so deleting it manufactures `foo` from `f$((1+2))oo`, whose real
+#     argv is `f3oo`. It is copied verbatim instead, exactly like `${#x}`.
+#
+#   * A `case` ARM'S `)` IS THE SAME SYMPTOM AND IS STILL OPEN.
+#     `e$(case x in a) : ;; esac)as update --branch preview` ALLOWS on all four.
+#     A paren counter cannot reach it: that `)` has no matching opener, so no
+#     depth arithmetic can distinguish it from the construct's real closer.
+#     Deliberately NOT fixed by tracking the `case`/`esac` keywords — a naive
+#     tracker is a deny→ALLOW regression generator, because `e$(echo case)as
+#     update` DENIES today and would leave the depth permanently open, emptying
+#     the rendering and silently losing that coverage. Tracked at
+#     todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#     and measured every run by this repo's corpus (`toolvcasearm-*`).
 #
 #   * UNHANDLED, PRE-EXISTING (round 4, same measurement session): BRACE RANGE
 #     expansion splits a token with NO `$` and NO backtick anywhere in the
@@ -749,7 +806,7 @@ _OUT_FLAG_LEAD='(^|[^-A-Za-z0-9]|\$\{(!([A-Za-z_][A-Za-z0-9_]*|[0-9]+)(\[[^]]*\]
 _OUT_REPO_FLAG_RE="${_OUT_FLAG_LEAD}"'(--repo([^-A-Za-z0-9]|$)|-R)'
 
 # gh_pr_clause_has_repo <subcommand-alternation> → exit 0 if the first
-# `gh pr <sub>` clause in EITHER the deep or the vanished rendering carries
+# `gh pr <sub>` clause in ANY of the three renderings (deep, vanished, blind) carries
 # --repo/-R. (Said "$WORDS_DEEP" only until 2026-09-06; the fix for finding C3
 # rewrote every comment INSIDE the function and left this summary one paragraph
 # above it untouched — the exact comment-drift class this file's whole defect
@@ -820,7 +877,7 @@ gh_pr_clause_has_repo() {
   # Per-rendering `head -1` stays correct: both call sites gate on an occurrence
   # count that is already a per-rendering MAXIMUM, so reaching here means each
   # rendering holds at most one clause. This is not choosing among several.
-  for rendering in "$WORDS_DEEP" "$WORDS_VANISHED"; do
+  for rendering in "$WORDS_DEEP" "$WORDS_VANISHED" "$WORDS_VANISHED_BLIND"; do
     clause=$(printf '%s' "$rendering" | grep -oiE "$re" | head -1)
     [ -n "$clause" ] || continue
     grep -Eq "$_OUT_REPO_FLAG_RE" <<< "$clause" && return 0
@@ -1203,24 +1260,47 @@ if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >
   # `cd gh-notes && e${UNSET}as update --branch preview` DENIES, differing only
   # by an unrelated literal `gh` substring restoring the stage-1 needle.
   #
-  # WHY A RAW-TEXT DIGRAPH TEST IS A COMPLETE SUPERSET, not an approximation:
-  # cmd_words_vanished's awk deletes a span only on `$`+`{`, `$`+`(`, or a
-  # backtick found in its input buffer, which is the RAW $CMD (it is called as
-  # `cmd_words_vanished "$CMD"`, not through cmd_words) — and real bash likewise
-  # requires those two bytes ADJACENT and UNESCAPED in source text for a live
-  # expansion at all (`e"$"{U}as` is the literal string `e${U}as`, not an
-  # expansion; the awk's own backslash arm emits `\$` verbatim). So no deletable
-  # span can exist without one of these three digraphs appearing literally here.
-  # Over-broad only on inert spellings (an escaped or single-quoted `${`), which
-  # is the deny-monotone direction.
+  # WHY A RAW-TEXT SIGIL TEST IS A COMPLETE SUPERSET, not an approximation:
+  # cmd_words_vanished's awk neutralises a construct only where one of the
+  # sigils below appears in its input buffer, which is the RAW $CMD (it is
+  # called as `cmd_words_vanished "$CMD"`, not through cmd_words) — and real
+  # bash likewise requires those bytes ADJACENT and UNESCAPED in source text for
+  # a live expansion at all (`e"$"{U}as` is the literal string `e${U}as`, not an
+  # expansion; the awk's own backslash arm emits `\$` verbatim). So no
+  # neutralisable construct can exist without one of them appearing literally
+  # here. Over-broad only on inert spellings (an escaped or single-quoted
+  # `${`), which is the deny-monotone direction.
+  #
+  # THE SET GREW ON 2026-09-06 and the reason is worth stating, because the
+  # entry in DOCUMENTED RESIDUALS above previously asserted the fix for this
+  # class lived entirely in lib/cmd-detect.sh's allow-list. THAT WAS NECESSARY
+  # BUT NOT SUFFICIENT, and the lib fix was unreachable without this line:
+  # `$!`, `$@`, `$*`, `$1`..`$9` and the ANSI-C `$'…'` respelling carry NONE of
+  # the three original digraphs, so `e$1as update --branch preview` — an OTA
+  # publish — missed stage 1 and stage 2 and took the cheap exit HERE, before
+  # $WORDS_VANISHED was ever computed. Measured on this tree by running the real
+  # cmd_fastpath_has and this very `case`, not inferred.
+  #
+  # THE COST WAS THE ONLY REASON NOT TO, and it is now measured rather than
+  # asserted. The old entry declined on the grounds that "`$` alone appears in a
+  # large share of real commands" — true of a bare `$`, false of this narrow
+  # set. Over 28,469 real Bash tool calls harvested from this project's own
+  # transcripts: the three original digraphs match 3,709 (13.0%); these
+  # additions match 333 (1.2%); and only 238 (0.8%) are NEWLY pushed onto the
+  # slow path, i.e. roughly +0.7 ms on the average Bash tool call. A bare
+  # `$name` still takes the cheap exit and is still a documented residual — it
+  # cannot split a token, because an ordinary identifier greedily absorbs the
+  # following alphanumerics. That absorption argument is TRUE HERE and false for
+  # the special parameters above, which is exactly the over-generalisation this
+  # widening repairs.
   #
   # NOT pushed into cmd_fastpath_has: the other six hooks that share it read
   # only cmd_bare/cmd_words, so their superset claim still holds, and widening
   # the shared helper would move every one of them onto the slow path too.
   #
-  # IT DECLINES. IT DOES NOT PARSE. If $CMD contains any of the three digraphs,
-  # this hook does not take the cheap exit — full stop, no analysis of what the
-  # spans are or where they end.
+  # IT DECLINES. IT DOES NOT PARSE. If $CMD contains any of these sigils, this
+  # hook does not take the cheap exit — full stop, no analysis of what the
+  # constructs are or where they end.
   #
   # THREE ATTEMPTS TO BE CLEVERER THAN THIS EACH SHIPPED A LIVE OTA-PUBLISH
   # BYPASS, and the sequence is recorded because the next reader's instinct will
@@ -1263,6 +1343,17 @@ if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >
   if [ "$_OUT_FP_RC" != 0 ]; then
     case "$CMD" in
       *'${'*|*'$('*|*'`'*) : ;;   # a span may build a needle we cannot see here
+      # A SPECIAL parameter or an ANSI-C respelling may do the same (2026-09-06).
+      # Each is ONE character long, so it terminates against a following letter
+      # instead of absorbing it, and each can expand to empty or respell a
+      # character -- so each can rejoin two halves of a binary name or verb that
+      # no needle in stage 1 or 2 can see. `$?`, `$$` and `$#` are deliberately
+      # ABSENT: each is always set to a non-empty string, so cmd_words_vanished
+      # leaves it verbatim by its own allow-list criterion and declining here
+      # would buy nothing. `$0` is swept in by the digit class and is likewise
+      # never deleted downstream -- declining on it costs a slow path, not a
+      # verdict.
+      *'$!'*|*'$@'*|*'$*'*|*'$'"'"*|*'$'[0-9]*) : ;;
       *) exit 0 ;;
     esac
   fi
@@ -1435,6 +1526,39 @@ WORDS_DEEP=$(cmd_words_deep "$CMD")
 # See lib/cmd-detect.sh:cmd_words_vanished for the allow-list and why a
 # construct must be PROVEN able to evaluate to empty before it may be deleted.
 WORDS_VANISHED=$(cmd_words_vanished "$CMD")
+# The paren-BLIND half of the vanishing rendering, kept in its OWN variable so
+# every consumer below counts it as a rendering of its own. The bare-paren
+# counter cannot read a `(` inside a shell COMMENT, so it over-counts, the
+# substitution level never closes, and $WORDS_VANISHED comes back EMPTY —
+# `e$(: # (` newline `)as update --branch preview` was a DENY→ALLOW regression
+# on a real OTA publish (PATH-stubbed ground truth). This rendering reproduces
+# the pre-counter close semantics, so the two are UNIONED rather than one
+# substituted for the other.
+#
+# NOT folded into $WORDS_VANISHED as a second line, which was tried and measured
+# wrong: `_out_max_count` COUNTS occurrences across a rendering, so two lines
+# carrying the same `gh api` turned ONE occurrence into two and tripped the
+# ">1 occurrence → ambiguous" deny on a genuine read-only call. Separate
+# variables keep "the larger of the per-rendering counts" meaning what it says.
+#
+# SKIPPED ENTIRELY WHEN $CMD HOLDS NO `(`, and that is provable rather than a
+# heuristic: the ONLY branch the `pcount` flag gates is `parens[d]++` (`c == "("`),
+# which requires a literal `(` byte — so with none present the two passes are
+# byte-identical by construction and the second awk fork buys nothing. (This read
+# "the ONLY two branches … the arithmetic arm and `parens[d]++`" until the
+# arithmetic arm was deleted on 2026-09-07; the skip is sound a fortiori with one
+# gated branch instead of two, but a stale count here is the same drift class this
+# file's header names as its dominant defect, so it is corrected rather than left.) This hook runs on EVERY Bash
+# tool call and most commands contain no `(` at all, so the common case now costs
+# one fork instead of two. The equality de-dup below still runs for the commands
+# that DO contain one — it is what keeps a consumer from scanning the same
+# rendering twice.
+if case "$CMD" in *'('*) true ;; *) false ;; esac; then
+  WORDS_VANISHED_BLIND=$(cmd_words_vanished_blind "$CMD")
+  [ "$WORDS_VANISHED_BLIND" = "$WORDS_VANISHED" ] && WORDS_VANISHED_BLIND=""
+else
+  WORDS_VANISHED_BLIND=""
+fi
 
 # Union, for BOOLEAN detection ONLY. Every consumer switched to this is of the
 # form `if grep -Eqi ... ; then deny`, so over-matching can only ever ADD a
@@ -1451,19 +1575,30 @@ WORDS_VANISHED=$(cmd_words_vanished "$CMD")
 #      $WORDS stays byte-identical; the two GRANT INVERSION assertions in
 #      test-guard-outward-cli.sh pin that it does.
 WORDS_SCAN="$WORDS_DEEP
-$WORDS_VANISHED"
+$WORDS_VANISHED
+$WORDS_VANISHED_BLIND"
 
-# Occurrence count across both renderings, taking the LARGER rather than
+# Occurrence count across all THREE renderings, taking the LARGEST rather than
 # counting the union. Preserves the ambiguity semantics exactly (two real
 # invocations still count 2, one still counts 1) while letting a verb that only
 # the vanished rendering can see raise its block's count from 0 to 1 -- without
 # which the merge and gh api blocks, both GATED BEHIND their counters, are
 # never entered at all and a mid-token split falls straight through to ALLOW.
-_out_max_count() {  # $1=regex -> larger of the two per-rendering match counts
-  local a b
-  a=$(printf '%s' "$WORDS_DEEP"     | grep -oiE "$1" | wc -l | tr -d '[:space:]')
-  b=$(printf '%s' "$WORDS_VANISHED" | grep -oiE "$1" | wc -l | tr -d '[:space:]')
-  if [ "${a:-0}" -ge "${b:-0}" ]; then printf '%s' "${a:-0}"; else printf '%s' "${b:-0}"; fi
+_out_max_count() {  # $1=regex -> largest per-rendering match count
+  # THREE renderings, each counted SEPARATELY and the largest returned — never
+  # counted over a concatenation. That distinction is the whole point of this
+  # helper and it was re-learned the hard way: folding the paren-blind rendering
+  # into $WORDS_VANISHED as a second LINE made one `gh api` count as two and
+  # denied a genuine read-only call as "ambiguous". Counting per rendering keeps
+  # the ambiguity semantics exact (two real invocations still count 2, one still
+  # counts 1) no matter how many renderings are added here.
+  local r n best=0
+  for r in "$WORDS_DEEP" "$WORDS_VANISHED" "$WORDS_VANISHED_BLIND"; do
+    [ -n "$r" ] || continue
+    n=$(printf '%s' "$r" | grep -oiE "$1" | wc -l | tr -d '[:space:]')
+    [ "${n:-0}" -gt "$best" ] && best=${n:-0}
+  done
+  printf '%s' "$best"
 }
 
 # Multi-rendering flag scan, for DENY-ONLY checks. One pattern, every rendering,
@@ -1477,7 +1612,7 @@ _out_max_count() {  # $1=regex -> larger of the two per-rendering match counts
 # gets waved through.
 #
 # RENAMED from `scan_both` 2026-09-06 (security review of PR #926, finding C4).
-# It reads three renderings now, and a name asserting "both" while the body
+# It reads FOUR renderings now (a fourth joined 2026-09-07), and a name asserting a count while the body
 # reads three is the kind of drift this file has been bitten by before.
 #
 # $WORDS_VANISHED ADDED in the same change, and this was an effective GRANT, not
@@ -1501,14 +1636,20 @@ _out_max_count() {  # $1=regex -> larger of the two per-rendering match counts
 # "the $CMD/$WORDS seam cannot forge ..." assertions in
 # test-guard-outward-cli.sh go RED if this is ever "simplified" to "$CMD$WORDS";
 # the third rendering adds a second seam with the identical hazard and its own
-# assertion.
+# assertion. A FOURTH rendering ($WORDS_VANISHED_BLIND) joined on 2026-09-06 and
+# introduces a THIRD seam, which is NOT yet pinned — the sentence above claimed
+# each new rendering brings its own assertion, and that stopped being true at the
+# fourth. Not live (newline-joined, grep is line-oriented), so this is a
+# mutation-detection gap rather than a bypass: "simplifying" the join would go
+# undetected at that seam specifically.
 #
 # Case-SENSITIVE by design — no `-i`, unlike the invocation matchers below.
 # These patterns match flag NAMES, which the target CLIs themselves treat
 # case-sensitively: `--ADMIN` is not a real flag, and a case-insensitive `-R`
 # would false-match ordinary text. See the header's FLAG-detection note.
 #
-# PRECONDITION: call only AFTER `$CMD` (from the jq extraction), `$WORDS` and `$WORDS_VANISHED`
+# PRECONDITION: call only AFTER `$CMD` (from the jq extraction), `$WORDS`, `$WORDS_VANISHED`
+# and `$WORDS_VANISHED_BLIND`
 # are assigned, and only from a DENY-shaped check — never to GRANT a carve-out. Extracting this
 # helper removed the last per-call-site reminder of both, so they are stated here, on the
 # code that depends on them. An early call does NOT abort: `set -uo pipefail` has no `-e`, so
@@ -1518,7 +1659,8 @@ _out_max_count() {  # $1=regex -> larger of the two per-rendering match counts
 # blank rendering) would create if one ever grew a flag scan.
 scan_renderings() { grep -Eq "$1" <<< "$CMD
 $WORDS
-$WORDS_VANISHED"; }
+$WORDS_VANISHED
+$WORDS_VANISHED_BLIND"; }
 
 # Necessary-substring fast path (project_per_bash_hook_overhead): a command
 # without ANY of these literal substrings cannot match any predicate below.
@@ -1545,7 +1687,7 @@ fi
 # `eas build --auto-submit` (and --auto-submit-with-profile) submits the
 # resulting binary to the store as soon as the build finishes — a store
 # mutation wearing a build command's name. Plain `eas build` stays allowed.
-# Flag scan via scan_renderings (see its definition for why all three renderings are read
+# Flag scan via scan_renderings (see its definition for why all four renderings are read
 # and why they must stay newline-joined). No trailing boundary, so
 # `--auto-submit-with-profile` is caught by the same pattern. Leading boundary
 # is `_OUT_FLAG_LEAD` (see its own definition) so a default-value expansion
@@ -1923,7 +2065,7 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # whitespace-only check). The boundary class is "not a word/dash character"
   # rather than strictly whitespace, so it also catches `--admin=true`,
   # `--admin=1`, and a trailing quote/comma/etc.
-  # Flag scan via scan_renderings — see its definition for why all three renderings are read
+  # Flag scan via scan_renderings — see its definition for why all four renderings are read
   # and why they must stay newline-joined (this check is the seam example there).
   # Leading boundary is `_OUT_FLAG_LEAD` (see its own definition) so a
   # default-value expansion (`${x:---admin}`) cannot donate the flag's
@@ -2077,7 +2219,7 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   _GH_API_CUT="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}[^;&|]*"
   GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT" | head -1)
   # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is
-  # now a MAXIMUM across both renderings, so it can be 1 because the VANISHED
+  # now a MAXIMUM across all three renderings, so it can be 1 because the VANISHED
   # rendering saw a split verb (`gh a${UNSET}pi ...`) that WORDS_DEEP cannot
   # see. In exactly that case the cut just above yields an EMPTY clause — and
   # this block ALLOWS by default on an empty clause (unlike the `gh pr merge`
@@ -2119,6 +2261,14 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # documents. deny() exits, so no input can be denied twice.
   GH_API_CLAUSE_VANISHED=$(printf '%s' "$WORDS_VANISHED" | grep -oiE "$_GH_API_CUT" | head -1)
   [ "$GH_API_CLAUSE_VANISHED" = "$GH_API_CLAUSE_DEEP" ] && GH_API_CLAUSE_VANISHED=""
+  # The paren-BLIND vanishing rendering is a third cut for the same reason the
+  # vanished one is a second: it is the only rendering that survives a `(` inside
+  # a shell comment, where the paren-counting pass returns nothing at all. It is
+  # span-derived exactly like the vanished cut, so it carries the same marker.
+  # De-duplicated against BOTH earlier cuts so the common case still costs one pass.
+  GH_API_CLAUSE_BLIND=$(printf '%s' "$WORDS_VANISHED_BLIND" | grep -oiE "$_GH_API_CUT" | head -1)
+  { [ "$GH_API_CLAUSE_BLIND" = "$GH_API_CLAUSE_DEEP" ] || \
+    [ "$GH_API_CLAUSE_BLIND" = "$GH_API_CLAUSE_VANISHED" ]; } && GH_API_CLAUSE_BLIND=""
   # BOTH checks below run once per rendering (the empty entry is skipped, and an
   # identical vanished cut was blanked just above so the common case still costs
   # one pass). $GH_API_CLAUSE is the loop variable; nothing after `done` reads
@@ -2142,10 +2292,11 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # method flag exactly as the `$` test is, so the documented narrowing holds:
   # a split-verb READ (`gh a${UNSET}pi repos/o/r`, `--jq`, `--paginate`, a
   # dynamic route) has no method flag and stays allowed.
-  for _GH_API_WHICH in deep vanished; do
+  for _GH_API_WHICH in deep vanished blind; do
   case "$_GH_API_WHICH" in
     deep)     GH_API_CLAUSE="$GH_API_CLAUSE_DEEP";     _GH_API_SPAN_DERIVED=no  ;;
     vanished) GH_API_CLAUSE="$GH_API_CLAUSE_VANISHED"; _GH_API_SPAN_DERIVED=yes ;;
+    blind)    GH_API_CLAUSE="$GH_API_CLAUSE_BLIND";    _GH_API_SPAN_DERIVED=yes ;;
   esac
   [ -n "$GH_API_CLAUSE" ] || continue
   # FIXED 2026-09-05 (C2): a method value that is not literal text (an

@@ -96,3 +96,28 @@ It is specifically heredoc bodies.
 - Filed during the review round for PRs #833–#845, after the same class fired twice: once
   on `pr-preflight-guard.sh` (reported by #844's executor) and once on
   `guard-outward-cli.sh` while opening #846.
+
+### 2026-09-06 — REACHABILITY WIDENED, and now measured. No decision taken here.
+
+The bare-paren fix in `lib/cmd-detect.sh` (todo
+`P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners`) made
+`cmd_extract_substitutions` stop truncating, so **more heredoc prose now reaches the
+scanners than before** — and this class fires proportionally more often. The decision this
+todo is blocked on is unchanged and was deliberately NOT made while measuring it.
+
+Measured by execution, 1,658 unique real Bash commands harvested from this project's own
+transcripts (the decision-relevant subset: those containing a `(` or one of the `$` digraphs),
+run through the pre-change and post-change hooks and diffed per command:
+
+- **1 decision flip in 1,658 (0.06%)**, ALLOW → DENY, and it is this class.
+- The command was a `git commit -m "$(cat <<'EOF' … EOF)"`. Extraction went from 52 bytes to
+  2,099 — the whole message body instead of a fragment truncated at the `)` of `fix(e2e):`.
+- The trigger is one prose phrase: **`` `patch-package` `` followed by the word `run`**. A
+  markdown code span renders as a backtick-substitution token, and `run` is in
+  `_OUT_GATED_VERB`, so the narrow-deny rule's "expansion in command position followed by a
+  gated verb" alternative matches. Attribution read from the deny REASON, not inferred.
+
+So the practical shape of this todo has changed: writing a commit message in markdown, with
+code spans, is now the common way to hit it — not just naming a guarded command on its own
+line. The workaround is unchanged (`--body-file`, or `ALLOW_OUTWARD_CLI=1` for one command),
+and the direction is still safe (an over-DENY, never an allow).

@@ -1439,6 +1439,271 @@ van 'a bare ) inside a double-quoted span inside $(...) does not close it early'
 van 'a backtick inside a double-quoted span inside a backtick body opens, not closes' \
   'gh pr me`echo "x`echo y`z"`rge' 'gh pr merge'
 
+# ---------- 2026-09-06: bare-paren depth + the widened deletable allow-list ----
+# EXACT-VALUE PINS, NOT diff_live ROWS, and that choice is forced rather than
+# stylistic: diff_live only asserts that an extracted body's RAW TEXT is absent
+# from the vanished output, so a rendering that GARBLES a construct into
+# fragments satisfies it exactly as well as a clean deletion does (this file's
+# own diff_live header says so). The bare-paren defect is precisely that class --
+# it left a stray `)` behind -- so only an exact-value comparison can catch it.
+echo "--- cmd_words_vanished: a bare ( inside \$(...) must not close it early ---"
+# Before: 'gh pr me )rge 42' -- the first `)` of the inner subshell closed the
+# OUTER construct three characters early, `merge` never re-formed, and the guard
+# ALLOWED `e$( (:) )as update --branch preview`, a real OTA publish to end users.
+van 'bare-paren subshell does not close the outer substitution' \
+  'gh pr me$( (:) )rge 42' 'gh pr merge 42'
+van 'bare-paren subshell at the binary-name position' \
+  'e$( (:) )as update --branch preview' 'eas update --branch preview'
+van 'nested bare parens balance' 'gh pr me$( ( (:) ) )rge 42' 'gh pr merge 42'
+van 'a top-level bare paren is still emitted verbatim' \
+  'x=$( (cd /tmp) ) && (echo a)' 'x= && (echo a)'
+# A paren inside a quoted span is LITERAL TEXT. Counting it would unbalance the
+# level and reopen the desynchronisation, so the counter is gated to state 0 --
+# the same gate the close condition already had.
+van 'a ( inside a double-quoted span does not move depth' \
+  'gh pr me$(echo "(")rge' 'gh pr merge'
+van 'a ( inside a single-quoted span does not move depth' \
+  "gh pr me\$(echo '(')rge" 'gh pr merge'
+
+echo "--- cmd_extract_substitutions must agree: same input, whole body ---"
+sub_eq() {  # $1=name $2=input $3=expected single body
+  local got; got=$(printf '%s' "$2" | cmd_extract_substitutions)
+  if [ "$got" = "$3" ]; then echo "PASS: $1"; PASS=$((PASS+1))
+  else echo "FAIL: $1"; echo "  in:  $2"; echo "  got: [$got]"; echo "  want: [$3]"; FAIL=$((FAIL+1)); fi
+}
+sub_eq 'extractor yields the WHOLE subshell body, not a truncation' \
+  'f$( (:) )oo bar' ' (:) '
+
+echo "--- cmd_words_vanished: ARITHMETIC gets NO special case, deliberately ---"
+# The arm that copied `$((...))` out verbatim was REMOVED 2026-09-07 after review.
+# It only ever prevented a FALSE POSITIVE -- an over-denial, never a bypass -- and
+# deciding "is this span arithmetic?" from text produced four defects in a row
+# (quote-blind, comment-blind, command-list-blind, separator-blind). Its measured
+# value was zero: in 3,883 real commands the mid-token `$((` shape appears twice,
+# and both are this suite's own fixtures.
+#
+# So arithmetic now deletes like any other `$(...)`. These rows pin the COST
+# honestly rather than hiding it: a manufactured word, which is an over-DENIAL.
+van 'arithmetic deletes like any other substitution' 'f$((1+2))oo bar' 'foo bar'
+van 'the cost is a manufactured word (real argv is f3oo)' 'f$((1+2))oo' 'foo'
+van 'a substitution nested inside arithmetic goes with the whole span' \
+  'gh pr me$(( $(printf 1) ))rge' 'gh pr merge'
+van 'grouped arithmetic deletes'  'echo $(( (1+2)*3 ))' 'echo '
+van 'base notation deletes'       'gh pr me$(( 16#FF ))rge 42' 'gh pr merge 42'
+van 'a comment-bearing span still leaves the counting pass empty' \
+  "$(printf 'gh pr me$(( $(: # ((\n) + 1 ))rge 42')" ''
+
+echo "--- and this is what the removal BUYS: the separator spellings close ---"
+# `$((X)|(Y))` is a command SUBSTITUTION bash executes, not arithmetic -- the
+# construction really invokes the CLI (PATH-stubbed ground truth). The old arm
+# copied every one of these out VERBATIM, so the verb never re-formed and all of
+# them ALLOWED. They ALLOW on `main` too, so this is a class the removal CLOSES
+# rather than a regression it repairs. The `;` spelling denied even before,
+# because the old arm happened to void on it -- kept as the attribution control.
+for _sep in '|' '&&' '||' '&' '|&' ' ' '	'; do
+  van "separator [$_sep] cannot preserve a split binary name" \
+    "n\$((:)${_sep}(:))pm publish" 'npm publish'
+done
+van 'the ; spelling closes too (the only one the old arm caught)' \
+  'n$((:);(:))pm publish' 'npm publish'
+van 'a bare space between the subshells closes at the verb position too' \
+  'gh pr me$((:) (:))rge 42' 'gh pr merge 42'
+
+echo "--- cmd_words_vanished_blind: the union half the counter cannot supply ---"
+vanb() {  # $1=name $2=input $3=expected output
+  local got; got=$(cmd_words_vanished_blind "$2")
+  if [ "$got" = "$3" ]; then echo "PASS: $1"; PASS=$((PASS+1))
+  else echo "FAIL: $1"; echo "  in:  $2"; echo "  got: $got"; echo "  want: $3"; FAIL=$((FAIL+1)); fi
+}
+# THIS ROW WAS CALLED BEFORE `vanb` WAS DEFINED, three lines above its own
+# definition. Under `set -uo pipefail` with no `-e` that is a silent
+# "vanb: command not found" on stderr which increments NEITHER counter -- the
+# suite reported 544/0 while this assertion never ran at all. Found in review;
+# the assertion-total pin at the end of this file now catches the class.
+#
+# AND ITS PINNED VALUE WAS WRONG, which is the more interesting half. The comment
+# here used to claim "the BLIND pass is what carries the verb". For THIS input it
+# does NOT: the nested substitution closes two characters late and the blind pass
+# yields `gh pr me)rge 42`, so `merge` never re-forms in EITHER pass. That makes
+# the construction a live bypass -- ALLOW on `main` and on this branch alike,
+# with a PATH-stubbed `gh` confirming it really invokes `pr merge 42`. It is the
+# already-tracked composition class reached through a third path (the arithmetic
+# evidence test voiding on `#`, then falling through to a counter the same `#`
+# defeats), recorded in
+# todos/P1-2026-09-07-outward-cli-guard-threat-model-decision.md.
+#
+# Pinned at the TRUE value deliberately: this row now documents a known residual
+# instead of asserting a coverage that does not exist. If a future change makes
+# `merge` re-form here, this row goes red and that is the correct signal.
+vanb 'KNOWN RESIDUAL: the blind pass does NOT carry the verb through this one' \
+  "$(printf 'gh pr me$(( $(: # ((\n) + 1 ))rge 42')" 'gh pr me)rge 42'
+# `#` opens a comment at word start, so the `(` after it is INERT to bash -- but
+# the paren counter cannot read that, counts it, and the substitution level never
+# closes, so cmd_words_vanished returns NOTHING. The blind pass reproduces the
+# pre-counter close semantics and still carries the verb. Ground truth
+# (PATH-stubbed binary): real bash invokes `eas update --branch preview`, so this
+# was a DENY->ALLOW regression until the two renderings were UNIONED at the
+# consumers instead of one being substituted for the other.
+van  'a ( inside a comment makes the COUNTING pass return nothing' \
+  "$(printf 'e$(: # (\n)as update --branch preview')" ''
+vanb 'and the BLIND pass still carries the verb' \
+  "$(printf 'e$(: # (\n)as update --branch preview')" 'eas update --branch preview'
+vanb 'a comment whose ( mis-closes at a LATER ) still keeps the verb' \
+  "$(printf 'e$( : # (\n)as update --branch preview # )')" \
+  'eas update --branch preview # )'
+# The blind pass must NOT be a copy of the counting one: it deliberately keeps
+# the OLD (wrong-for-a-subshell) close, which is what makes the union non-trivial.
+vanb 'the blind pass still closes at the FIRST unquoted )' \
+  'e$( (:) )as update --branch preview' 'e )as update --branch preview'
+# Everything that does not involve a bare paren must render IDENTICALLY in both,
+# so the common case adds no second rendering for consumers to scan.
+vanb 'a plain vanishing sigil renders identically in both passes' \
+  'gh pr me${UNSET}rge 42' 'gh pr merge 42'
+vanb 'special-parameter deletion is present in the blind pass too' \
+  'e$1as update' 'eas update'
+
+echo "--- cmd_words_vanished: SPECIAL parameters are deletable, by the same criterion ---"
+# Each is ONE character long, so unlike an ordinary $name it TERMINATES against a
+# following letter instead of absorbing it, and each can be empty -- which is
+# exactly this allow-list's own eligibility test. PR #926 shipped a comment
+# asserting the opposite of the whole syntax class; it was true only of an
+# ordinary identifier.
+van 'last-background-pid special vanishes' 'e$!as update' 'eas update'
+van 'positional parameter vanishes'        'e$1as update' 'eas update'
+van 'ninth positional vanishes'            'gh pr me$9rge 42' 'gh pr merge 42'
+van 'all-positional @ vanishes'            'e$@as update' 'eas update'
+van 'all-positional * vanishes'            'e$*as update' 'eas update'
+
+echo "--- cmd_words_vanished: NEVER-empty specials must NOT be deleted ---"
+# $?, $$, $# and $0 are always set to a non-empty string, so deleting one would
+# manufacture a clean match for text that never executes -- `e$?as update` is
+# really `e0as update`, which invokes nothing.
+van 'exit-status special is never empty' 'e$?as update' 'e$?as update'
+van 'pid special is never empty'         'e$$as update' 'e$$as update'
+van 'argc special is never empty'        'e$#as update' 'e$#as update'
+van 'argv0 special is never empty'       'e$0as update' 'e$0as update'
+# Bare $10 is $1 followed by a LITERAL 0 -- one digit only, never two.
+van 'bare $10 consumes ONE digit, leaving the 0' 'e$10as update' 'e0as update'
+# An ordinary identifier greedily absorbs the following alphanumerics, so it
+# cannot rejoin two halves of a word. This is the claim that was wrongly
+# generalised to the whole class above; here it is the correct one.
+van 'an ordinary identifier is NOT deleted' 'e$_as update' 'e$_as update'
+van 'a plain $name is NOT deleted'          'e$RUNNERas update' 'e$RUNNERas update'
+
+echo "--- cmd_words_vanished: ANSI-C respelling is DECODED ---"
+# $(sq)\x61(sq) is not empty, but it RESPELLS a character, which splits a token just as
+# effectively. Decoded HERE and not in cmd_words because this rendering is
+# deny-shaped-consumers only, so a decoder here can never manufacture a flag that
+# GRANTS a carve-out. Ground-truthed against real bash argv via an argv-printing
+# shell function, byte by byte.
+van 'ANSI-C hex escape respells a letter'  "e\$'\\x61's update" 'eas update'
+van 'ANSI-C hex at the binary-name position' "\$'\\x65'as update" 'eas update'
+van 'ANSI-C octal escape'                  "e\$'\\141's update" 'eas update'
+van 'ANSI-C plain character still works'   "e\$'a's update" 'eas update'
+van 'ANSI-C respells a whole flag'         "gh api -X \$'\\x50\\x4f\\x53\\x54'" 'gh api -X POST'
+# A decoded byte is RE-SCANNED by cmd_words, so a decoded quote would open a span
+# and corrupt everything after it. Only characters inert to both cmd_words state
+# and every consumer boundary class survive literally; every other decoded byte
+# becomes the placeholder. Structural closure, not an enumeration of bad bytes.
+# THE TRAILING TEXT IS LOAD-BEARING IN THESE TWO ROWS. An earlier version pinned
+# the bare `echo $(sq)\x27(sq)` -> `echo x`, which stayed GREEN when the safe-character
+# filter was deleted -- cmd_words swallows a trailing unterminated span and
+# produces the same answer either way, so the row proved nothing. Caught by
+# mutation testing, not by review. With a real command AFTER the decoded quote
+# the difference is the whole point: unfiltered, the quote opens a span in
+# cmd_words and the rest collapses into ONE word (`echo xghxprxmergex42x`), so
+# the `gh pr merge` deny is LOST. A row that survives its own mutation is a
+# decoration.
+van 'a decoded quote cannot swallow the following command' \
+  "echo \$'\\x27' gh pr merge 42" 'echo x gh pr merge 42'
+van 'a decoded double quote cannot swallow the following command' \
+  "echo \$'\\x22' gh pr merge 42" 'echo x gh pr merge 42'
+van 'a decoded backtick cannot reach the consumer sigil class' \
+  "echo \$'\\x60' gh pr merge 42" 'echo x gh pr merge 42'
+van 'a decoded \$( cannot inject syntax'    "echo \$'\\x24\\x28foo\\x29'" 'echo xxfoox'
+van 'a decoded newline stays inside one word' "echo \$'a\\nb'" 'echo axb'
+# VERIFIED BY od, bash 3.2: e$(sq)\0(sq)as builds the three bytes `eas` -- the NUL is
+# DROPPED and the token REJOINS. Emitting a placeholder here rendered `exas`,
+# which matches no deny pattern, so the guard would have ALLOWED a real
+# invocation. This row is a security property, not a fidelity one.
+van 'a NUL escape is DROPPED, so the token rejoins' "e\$'\\0'as update" 'eas update'
+# Both bash and zsh keep an unknown escape as the backslash AND the character,
+# two bytes; rendering one placeholder lost a letter.
+van 'an unknown escape renders as TWO characters' "e\$'\\q'as update" 'exqas update'
+# The \u/\U arm had no assertion at all (flagged in review). zsh decodes these and
+# bash 3.2 does not, so the guard takes the REJOIN-capable reading deliberately --
+# decoding is the deny direction. A non-ASCII code point collapses to ONE
+# placeholder regardless of the multi-byte length real bash would build, which
+# cannot manufacture a boundary or a keyword.
+van 'ANSI-C \\u escape respells a letter'   "e\$'\\u0061's update" 'eas update'
+van 'ANSI-C \\U escape respells a letter'   "e\$'\\U00000061's update" 'eas update'
+van 'a non-ASCII \\u code point collapses to one placeholder' \
+  "echo \$'\\u00e9'" 'echo x'
+# FOUR ARMS THAT STAYED GREEN WHEN DELETED (found in review by mutating each).
+# An arm with no discriminating row is not covered, however many rows sit near it.
+# UPPERCASE hex: every existing row used lowercase, so hexval's tolower() could be
+# deleted with both suites green.
+van 'hex decoding is case-insensitive'      "e\$'\\x41\\x4A'b" 'eAJb'
+van 'ANSI-C \\u accepts uppercase digits'    "e\$'\\u004A'b" 'eJb'
+# \cX consumes its operand. No `\c` row existed at all.
+van 'a \\cX control escape consumes its operand' "e\$'\\cA'as update" 'exas update'
+# THE ROW ABOVE USES A LETTER OPERAND, SO IT NEVER REACHES THE BOUNDARY THAT WAS
+# BROKEN. It was added one round earlier under a comment claiming it closed a
+# zero-coverage arm; it certified a DEFECTIVE arm as covered. Applying the fix
+# left it green, which is the definition of a decoration.
+#
+# The defect: `\c` immediately before the CLOSING quote consumed that quote, so
+# state 3 never exited and every later byte was mangled -- disarming the deletion
+# arms for the rest of the command. `x=$(sq)\c(sq); e${UNSET}as update` was a
+# DENY->ALLOW regression versus main, ground-truthed as a live invocation.
+# These two rows discriminate: they FAIL without the `!= SQ` guard.
+van 'a \\c before the CLOSING quote does not eat it' \
+  "x=\$'\\c'; e\${UNSET}as update" 'x=x; eas update'
+van 'and the corruption does not survive into a later command' \
+  "x=\$'\\c'; gh pr me\${UNSET}rge 42" 'x=x; gh pr merge 42'
+# THE TWO ROWS ABOVE USE THE QUOTE OPERAND AND DO NOT DISCRIMINATE A BACKSLASH
+# ONE -- the first repair excluded only SQ and was defeated a round later by
+# `\c\`, which shifts escape pairing so the NEXT backslash pairs with the closing
+# quote. Same failure as the `\cA` row before them: a fix verified on the one
+# operand it was written for. These fail without the `!= BS` half.
+van 'a \\c before a BACKSLASH does not shift the escape pairing' \
+  "x=\$'\\c\\\\'; e\${UNSET}as update" 'x=xx; eas update'
+van 'the backslash variant does not survive into a later command either' \
+  "x=\$'\\c\\\\'; gh pr me\${UNSET}rge 42" 'x=xx; gh pr merge 42'
+# \c@, \c<space> and \c(backtick) decode to NUL, which bash DROPS, so the token
+# REJOINS -- verified by od on the real argv: e$'\c@'as builds the bytes `eas`.
+# Emitting a placeholder for them left the split verb invisible while the sibling
+# \0 and \x00 spellings denied.
+van 'a \\c@ NUL is dropped, so the token rejoins'      "e\$'\\c@'as update" 'eas update'
+van 'a \\c<space> NUL is dropped too'                  "e\$'\\c 'as update" 'eas update'
+van 'a \\c<backtick> NUL is dropped too'               "e\$'\\c\`'as update" 'eas update'
+# Control: a \cX that is NOT a NUL must still split the token.
+van 'a \\cA is a real control byte and still splits'   "e\$'\\cA'as update" 'exas update'
+# A hex/unicode escape with NO digits is an UNKNOWN escape (two bytes in real
+# bash), not a control character (one). The -1/-3 sentinel collision rendered one.
+van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
+
+# ---------- assertion-total pin (2026-09-07) ---------------------------------
+# ADDED BECAUSE THIS FILE SHIPPED A SILENTLY-SKIPPED ASSERTION AND REPORTED GREEN.
+# A `vanb` row was written three lines ABOVE the `vanb` definition; under
+# `set -uo pipefail` with no `-e` that is a "command not found" on stderr which
+# increments neither PASS nor FAIL, so the row vanished from the run without
+# producing a single failure. 544/0 looked identical to 545/0.
+#
+# The sibling suite test-guard-outward-cli.sh has carried this pin for exactly
+# that reason since 2026-09-05; this file did not, which is why the skip survived
+# review twice. Update the number DELIBERATELY when adding assertions — that edit
+# is the point at which you confirm the new count is the one you intended.
+#
+# LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
+# assertion in a run that otherwise completed. It cannot catch an early
+# `return`/`exit` or a truncated file, because those terminate before this line.
+EXPECTED_TOTAL=564
+if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
+  echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
+  FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

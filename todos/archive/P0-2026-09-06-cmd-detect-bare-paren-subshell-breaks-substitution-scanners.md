@@ -1,6 +1,6 @@
 ---
 title: "lib/cmd-detect.sh: two defects in cmd_words_vanished — a bare-paren subshell desynchronises the shared scanner, and the deletable-form allow-list is incomplete against its own criterion"
-status: backlog
+status: done
 priority: critical
 created: 2026-09-06
 updated: 2026-09-06
@@ -8,6 +8,179 @@ assignee:
 labels: [security, harness, cmd-detect]
 github_issue:
 ---
+
+## OUTCOME (2026-09-06)
+
+**Defect A closed for the bare-paren mechanism; Defect B closed in full. 60 corpus rows
+closed, 0 opened.** `precise-path gaps 93 -> 33`, `all-path 145 -> 113`, attributed BY ID by
+running the current corpus against both the pre-change hook (`b01fcff2`) and the current one.
+
+### The finding that changed this todo's scope
+
+**Acceptance criterion (B) was not achievable as written, and the reason was one level below
+the allow-list.** `guard-outward-cli.sh`'s STAGE 3 prefilter declined its cheap exit only for
+`${`, `$(` and a backtick. `$!`, `$1`, `$@`, `$*` and `$'…'` carry none of them, so
+`e$1as update --branch preview` missed stages 1 and 2 and **took the cheap exit before
+`cmd_words_vanished` was ever computed**. The 21 `r4*-tool-*` rows could not have been closed
+by any lib change. Verified by running the real `cmd_fastpath_has` and the real stage-3
+`case`, not by reading.
+
+The guard shipped that mistake as a claim in tracked code — its DOCUMENTED RESIDUALS said
+"the fix is in lib/cmd-detect.sh's allow-list". Necessary, not sufficient. Corrected in this
+change. **Generalisable: a correct fix in the right file is still unreachable when a prefilter
+upstream of it declines on a NARROWER signal than the fix's own grammar.**
+
+The prefilter was widened on a **measured** cost, since the guard's own note declined it on
+cost grounds: over 28,469 harvested Bash calls the three original digraphs match 13.0%, the
+additions match 1.2%, and only **0.8% (238) are newly on the slow path** — about +0.7 ms on
+the average call. "`$` alone appears in a large share of real commands" is true of a bare `$`
+and false of this narrow set.
+
+### Scope decisions taken with the owner
+
+1. **STAGE 3 widened** so the lib fix is reachable.
+2. **Bare-paren closed; the `case`-arm half deliberately deferred.** A paren counter cannot
+   see `case x in a)` — an unmatched closer with no opener — and the obvious keyword tracker
+   is a deny→ALLOW regression generator (`e$(echo case)as update` DENIES today and would
+   render EMPTY under it). 17 rows stay visible gaps under
+   `todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md`.
+3. **The degraded mirror (`_out_crude_vanish`) was NOT widened** — stated, not absorbed. The
+   corpus's `ok` is the precise column only; tool-position rows remain degraded-dirty.
+
+### What shipped
+
+- **Per-level paren counter** in BOTH scanner-shaped functions in one change —
+  `cmd_extract_substitutions` and `cmd_words_vanished`. Gated to state 0, so a paren inside a
+  quoted span still cannot move depth. Emission is untouched: the counter changes only the
+  close decision.
+- **Arithmetic exempted in the same edit**, because the counter creates the hazard: `$((expr))`
+  would otherwise read as a balanced substitution and be DELETED, manufacturing `foo` from
+  `f$((1+2))oo` whose real argv is `f3oo` — the `${#x}` class. Copied verbatim, interior never
+  re-scanned. `cmd_extract_substitutions` deliberately does NOT mirror this: a substitution
+  inside arithmetic genuinely executes (`$(( $(printf 1) + 1 ))` → 2), so the extractor must
+  still descend. The shared invariant is agreement on COMMAND-substitution liveness.
+- **Special parameters deletable**: `$!`, `$@`, `$*`, `$1`–`$9` (one digit — bare `$10` is `$1`
+  then a literal `0`). **Never deleted**: `$?`, `$$`, `$#`, `$0`, `$-`, none of which can be
+  empty; `$_` is excluded structurally as an ordinary greedy identifier.
+- **ANSI-C decoded in `cmd_words_vanished`, NOT in `cmd_words`** — criterion (B) asked for this
+  to be stated. That rendering is deny-shaped-consumers-only, so a decoder there can never
+  manufacture a flag that GRANTS a carve-out (`cmd_words` feeds the one grant-shaped check via
+  `$WORDS`), and the blast radius is one rendering rather than all seven fast-path hooks. Its
+  output is re-scanned by `cmd_words`, so only characters inert to both `cmd_words` state and
+  every consumer boundary class are emitted literally; every other decoded byte becomes the
+  placeholder — a structural closure of the injection surface, not an enumeration.
+
+### Three defects found by EXECUTION that review had passed
+
+1. **`\0` must delete, not placeholder.** Verified by `od`: bash builds the three bytes `eas`
+   for `e$'\0'as` — the NUL is dropped and the token REJOINS. Emitting a placeholder rendered
+   `exas`, matching no deny pattern. That was a live bypass in the first draft of the decoder.
+2. **The arithmetic span-end test was wrong**, so `$(( $(printf 1) ))` fell into the rescan
+   branch and the inner substitution was deleted independently — the reversed-pass-order
+   regression the function's own header warns about.
+3. **A test row was a decoration.** `echo $'\x27'` → `echo x` stayed GREEN when the
+   safe-character filter was deleted. Replaced with rows carrying trailing text, where the
+   difference is the point: unfiltered, the decoded quote opens a span and the rest collapses
+   to `echo xghxprxmergex42x`, losing the `gh pr merge` deny. Found by mutation testing.
+
+### Verification performed
+
+- Reproduced every row of both tables on the pre-change tree first, including the inverted
+  precise/degraded asymmetry. Constructions fed as JSON; **no outward CLI was ever executed**.
+- Smoke-tested the load-bearing assumption end-to-end before building the rest, reading the
+  deny **REASON**: `e$1as update` denies as "command-position 'eas update/publish/submit'",
+  the intended check — not an ambiguity fallback.
+- ANSI-C decoder ground-truthed against real bash argv byte-by-byte via an argv-printing shell
+  function: **24 rows exact, 1 documented divergence** (`\u`, which zsh decodes and bash 3.2
+  does not — decoding is the deny direction).
+- **13 mutations, all caught**; restore verified. (Was 8 before review round 1 added the
+  arithmetic-quote, `))`-evidence, `\u`, paren-blind and guard-wiring arms.)
+- Suites: `test-cmd-detect.sh` 496 → **542**, `test-guard-outward-cli.sh` 462 → **488**, both 0
+  failed. Both deliberate arity pins — the assertion total and the GH_API cut count — were
+  updated by hand, which is the review moment each exists to force.
+- **False positives measured by execution, not estimated**: 1,658 unique real commands from
+  this project's transcripts (the decision-relevant subset), diffed per command against the
+  pre-change hook, with a **known flip injected first to validate the harness**. Result: **1
+  flip in 1,658 (0.06%)**, ALLOW → DENY, and it is the already-documented heredoc-prose class
+  (`` `patch-package` `` followed by the word `run` in a commit message). Recorded on
+  `todos/P3-2026-08-16-command-guards-fire-on-heredoc-prose.md`, which is `human_led` and
+  blocked on a decision that was deliberately not taken here.
+
+### REVIEW ROUND 1 — two CRITICALs, both in code this change ADDED
+
+The section above was written before review and claimed closure that both findings
+contradicted. Corrected here rather than left standing. Both were reproduced independently
+before being accepted, each with a PATH-stubbed binary proving real bash invokes the CLI.
+
+**CRITICAL 1 — the arithmetic end-finder was quote-unaware.** It located the end of `$((…))`
+with a standalone byte-level paren counter carrying no quote state, so a quoted paren inside a
+nested substitution inflated the count and the walk ran PAST the true end. Everything in the
+over-consumed span is copied verbatim, which silently disabled the special-parameter deletions
+this same change added:
+
+```
+(echo start; $(( $(echo '(' >/dev/null; echo 5) )); e$!as update --branch preview)
+  guard ALLOW   ·   PATH-stub: eas CALLED WITH: update --branch preview
+```
+
+**The irony is the lesson: this todo exists to fix a quote-unaware paren counter, and
+introduced a second one three lines away.** Fixed with `arith_end()`, which walks with the
+same 0/1/2/3 quote model the rest of the file uses, plus a positive-evidence `))` requirement
+— verbatim copying is the only outcome that can HIDE a deletion, so it must not be the default.
+
+**CRITICAL 2 — a `(` inside a shell COMMENT, and a genuine DENY→ALLOW REGRESSION versus
+`main`.** A comment runs to end-of-line and is inert to bash, but the new paren counter counts
+it, so the level never closes and the whole rendering comes back EMPTY:
+
+```
+e$(: # (
+)as update --branch preview
+  main DENY  ·  branch ALLOW  ·  PATH-stub: eas CALLED WITH: update --branch preview
+```
+
+The diagnosis is this file's own governing rule applied one layer down: _"EVERY CONSUMER UNIONS
+THIS IN; NONE SUBSTITUTES IT FOR the deep rendering."_ The paren counter was **substituted for**
+the old close semantics rather than **unioned with** them. Fixed by adding
+`cmd_words_vanished_blind` (the pre-counter semantics, every other deletion intact) and unioning
+it at the deny-shaped consumers. Comment-tracking was considered and rejected — `#` opens a
+comment only at word start, so a wrong guess under-counts, closes early, and re-opens the
+original bug: a fifth grammar bet to repair the fourth.
+
+**A second line inside `cmd_words_vanished` was tried first and MEASURED WRONG.**
+`_out_max_count` counts occurrences across a rendering, so two lines carrying the same `gh api`
+turned ONE occurrence into two and denied a genuine read-only call as "ambiguous". Found by the
+false-positive harvest, not by review. Separate variables keep per-rendering counting honest.
+
+**Why the corpus saw none of it:** every row was single-line, and a comment needs a newline to
+terminate. The row parser is newline-safe now (parameter expansion, not `awk`), and a
+`vcomment` mechanism is generated at all three positions — 18 rows, all DENY on all four paths.
+
+**Final state:** corpus `rows=308 gaps=33/113`, 0 opened by per-ID diff against `main`; suites
+542 and 488, 0 failed; 34 hook suites green; 13 mutation arms, all caught; FP harvest 1 flip in
+1,658 (the known heredoc-prose class).
+
+### A PRE-EXISTING gap found while checking a review claim — NOT fixed here
+
+The security review reported `$_` as a missing empty-capable special parameter. Measured, the
+claim is real but the mechanism is broader and is not `$_`-specific:
+
+```
+eas$X update --branch preview     main ALLOW · branch ALLOW · PATH-stub: eas CALLED WITH: update --branch preview
+eas${X} update --branch preview   DENY (both)
+```
+
+A bare `$name` GLUED between an intact binary and its verb defeats the anchor, which requires
+whitespace there; `${X}` and `$()` deny because the vanished rendering deletes them and the
+whitespace reappears. It allows on `main` too, so it is **not a regression**, and it is a
+different mechanism from either defect in this todo. Surfaced rather than filed, per the
+Critical/High rule.
+
+### Landmine for the next editor
+
+`cmd_words_vanished`'s awk program lives inside a **bash single-quoted string**. A literal
+apostrophe anywhere in its comments closes that string and makes the whole lib unsourceable —
+the guard then fails closed with "broken install", which reads like a guard bug rather than a
+syntax error. `bash -n .claude/hooks/lib/cmd-detect.sh` after every edit. This cost a round.
 
 # Two defects in `cmd_words_vanished`, both in `lib/cmd-detect.sh`
 

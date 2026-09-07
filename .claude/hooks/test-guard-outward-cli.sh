@@ -1522,6 +1522,12 @@ assert_deny "same brace-glued construction with a LITERAL mutating method attrib
 # still agrees with GH_API_RE's anchor, and EVERY clause cut actually goes
 # through that constant. A third cut added later with the anchor inlined again
 # fails here, which is the same failure this has always caught.
+#
+# 2 -> 3 on 2026-09-06, DELIBERATELY, and the arity edit IS the review moment: a
+# third cut (the paren-BLIND vanishing rendering) was added and it goes through
+# $_GH_API_CUT like the other two, so only the count moved. Bumping this number
+# is where a reviewer confirms the new cut shares the anchor instead of inlining
+# its own -- which is what this assertion exists to force.
 GH_API_RE_LINE=$(grep -m1 '^GH_API_RE=' "$HOOK")
 _ANCHOR_RE="${GH_API_RE_LINE#GH_API_RE=\"}"
 _ANCHOR_RE="${_ANCHOR_RE%\"}"
@@ -1537,7 +1543,7 @@ if [ -n "$_ANCHOR_RE" ] \
    && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh[[:space:]]+api' \
    && [ "$_CUT_DEFS" -eq 1 ] \
    && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}[^;&|]*" \
-   && [ "$_CLAUSE_CUTS" -eq 2 ] \
+   && [ "$_CLAUSE_CUTS" -eq 3 ] \
    && [ "$_CUTS_OK" -eq 1 ]; then
   echo "PASS: GH_API_RE and ALL $_CLAUSE_CUTS GH_API_CLAUSE cuts share one anchor via a single _GH_API_CUT constant (structural, not behavioural)"; PASS=$((PASS+1))
 else
@@ -1546,7 +1552,7 @@ else
   echo "  extracted anchor:    $_ANCHOR_RE"
   echo "  _GH_API_CUT defs:    $_CUT_DEFS (expected 1)"
   echo "  _GH_API_CUT line:    $_CUT_DEF_LINE"
-  echo "  clause cuts found:   $_CLAUSE_CUTS (expected 2)"
+  echo "  clause cuts found:   $_CLAUSE_CUTS (expected 3)"
   echo "  cut not using const: $_BAD_CUT"
   FAIL=$((FAIL+1))
 fi
@@ -2027,6 +2033,14 @@ assert_deny "C4: --auto-submit split by an empty backtick pair (store submission
 # DENY under the seam-collapsing mutation — verified both ways.
 assert_allow "C4 control: the \$WORDS/\$WORDS_VANISHED seam cannot forge --admin" \
   "$(json '${UNSET}min; gh pr merge 42 --auto --ad')"
+# THIRD SEAM, added 2026-09-06 with $WORDS_VANISHED_BLIND. scan_renderings now
+# joins FOUR renderings, so there are three seams; the comment beside it claimed
+# each new rendering arrives with its own assertion, and that stopped being true
+# at the fourth. `--ad` ends the counting rendering (which deletes the bare-paren
+# span) while `min` starts the blind one (which does not), isolating the
+# VANISHED/BLIND boundary specifically.
+assert_allow "the \$WORDS_VANISHED/\$WORDS_VANISHED_BLIND seam cannot forge --admin" \
+  "$(json 'min$( (:) ); gh pr merge 42 --auto --ad')"
 
 # ---------- 2026-09-06 (RE-review): the C1 fix's OWN crude scanner ------------
 # The first C1 fix shipped with a false soundness claim — that _out_crude_vanish
@@ -2156,6 +2170,154 @@ assert_allow "RE control: mixed-quote nested span in a NON-gated command stays a
 assert_allow "RE control: a closer after the verb in a NON-gated command stays allowed" \
   "$(json 'ec$(: $(:))ho done && (echo done)')"
 
+# ---------- 2026-09-06: the widened STAGE 3 decline set -------------------------
+# These constructions carry NONE of the three original digraphs (`${`, `$(`,
+# backtick), so before this change they missed stage 1, missed stage 2, and took
+# the CHEAP EXIT -- $WORDS_VANISHED was never computed and no lib fix could be
+# reached. Each is a real invocation: `e$1as update --branch preview` is an OTA
+# publish to end users. The deny REASON is asserted, not just the verdict,
+# because a deny from the occurrence-ambiguity or `$`-unverifiability branch
+# would look identical to success while meaning the intended check never fired.
+assert_deny "stage3: positional parameter splits the binary name" \
+  "$(json 'e$1as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "stage3: last-background-pid special splits the binary name" \
+  "$(json 'e$!as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "stage3: all-positional @ splits the binary name" \
+  "$(json 'e$@as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "stage3: all-positional * splits the binary name" \
+  "$(json 'e$*as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "stage3: ANSI-C respelling splits the binary name" \
+  "$(jsonc "\$'\\x65'as update --branch preview")" \
+  "eas update/publish/submit"
+assert_deny "stage3: positional parameter splits gh's binary name" \
+  "$(json 'g$1h pr merge 42')" \
+  "gh pr merge"
+# The VERB position reached the lib before this change (stage 1 hits the intact
+# binary name) but the allow-list did not delete these forms, so the PRECISE path
+# allowed while all three degraded paths denied -- this file's usual asymmetry
+# INVERTED. Pinned so a regression shows up on the strong path.
+assert_deny "stage3: special parameter splits the verb, precise path" \
+  "$(json 'eas up$!date --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "stage3: positional parameter splits npm's verb" \
+  "$(json 'npm pub$1lish')" \
+  "npm publish"
+
+# NEVER-EMPTY specials must NOT gain a deny. `$?`, `$$`, `$#` and `$0` are always
+# set to a non-empty string, so `e$?as update` is really `e0as update` and
+# invokes nothing -- deleting them would manufacture a match for text that never
+# executes. Declining the cheap exit for them costs a slow path, not a verdict.
+assert_allow "stage3 control: \$? cannot be empty, so no deny is manufactured" \
+  "$(json 'e$?as update --branch preview')"
+assert_allow "stage3 control: \$# cannot be empty, so no deny is manufactured" \
+  "$(json 'e$#as update --branch preview')"
+assert_allow "stage3 control: \$0 cannot be empty, so no deny is manufactured" \
+  "$(json 'e$0as update --branch preview')"
+# THE COST MUST BE LATENCY, NOT VERDICTS. Everyday commands carrying the newly
+# declined sigils and no gated binary must still allow -- the widening moves them
+# onto the slow path and the slow path must then say nothing.
+assert_allow "stage3 FP: \"\$@\" passthrough with no gated binary stays allowed" \
+  "$(jsonc 'bash script.sh "$@"')"
+assert_allow "stage3 FP: a positional parameter with no gated binary stays allowed" \
+  "$(json 'echo $1 && mv $2 $3')"
+assert_allow "stage3 FP: ANSI-C quoting with no gated binary stays allowed" \
+  "$(jsonc "printf \$'a\\tb\\n'")"
+assert_allow "stage3 FP: a bare \$name still takes the cheap exit and allows" \
+  "$(json 'echo $HOME')"
+
+# ---------- 2026-09-06: bare-paren subshell (lib scanner desync) ----------------
+# The first `)` of an inner subshell used to close the OUTER $(...) three
+# characters early, so the verb never re-formed and all four paths ALLOWED.
+assert_deny "bare-paren subshell splits the binary name" \
+  "$(json 'e$( (:) )as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "bare-paren subshell splits gh's binary name" \
+  "$(json 'g$( (:) )h pr merge 42')" \
+  "gh pr merge"
+assert_deny "bare-paren subshell splits the verb" \
+  "$(json 'eas up$( (:) )date --branch preview')" \
+  "eas update/publish/submit"
+# ARITHMETIC is never empty, so the paren counter must not start deleting it --
+# `f$((1+2))oo` is really `f3oo`. Two-sided: the gated shape must NOT deny.
+# THIS ROW FLIPPED DELIBERATELY on 2026-09-07. It used to assert that arithmetic
+# is NOT deleted into a gated verb, which the (now removed) verbatim-copy arm
+# guaranteed. That arm was what PRESERVED seven live bypass spellings
+# (`e$((:)|(:))as update` and friends are command SUBSTITUTIONS bash executes),
+# so it was removed and arithmetic now deletes like any other `$(...)`.
+#
+# The consequence is an OVER-DENIAL and it is pinned here rather than hidden:
+# real argv for this input is `e3as update --branch preview`, which invokes
+# nothing, and the guard denies it anyway. That is the safe direction for a deny
+# gate, and its measured cost is nil — across 3,883 real commands the mid-token
+# `$((` shape appears twice, both this repo's own test fixtures.
+assert_deny "arithmetic mid-token now over-denies (the removal's disclosed cost)" \
+  "$(json 'e$((1+2))as update --branch preview')" \
+  "eas update/publish/submit"
+# What the removal BUYS, at the guard level: the separator spellings the old arm
+# copied out verbatim. All ALLOW on main; all deny now.
+assert_deny "a | between subshells cannot preserve a split binary name" \
+  "$(json 'e$((:)|(:))as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a bare SPACE between subshells cannot either" \
+  "$(json 'e$((:) (:))as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "and it closes at gh's namespace position too" \
+  "$(json 'g$((:)|(:))h pr merge 42')" \
+  "gh pr merge"
+assert_allow "bare-paren FP: an ordinary subshell assignment stays allowed" \
+  "$(json 'x=$( (cd /tmp && pwd) )')"
+assert_allow "bare-paren FP: arithmetic in an ordinary command stays allowed" \
+  "$(json 'echo $((i+1))')"
+# CRITICAL found in review of this change: the arithmetic end-finder counted raw
+# bytes with no quote state, so a QUOTED paren inside a nested substitution
+# inflated the count, the walk ran past the true end, and everything in the
+# over-consumed span was copied verbatim -- disabling the `$!` deletion, so `eas`
+# never re-formed and this ALLOWED. A PATH-stubbed binary confirmed real bash DOES
+# invoke `eas update --branch preview` here.
+assert_deny "arithmetic decoy with a quoted paren cannot hide a split binary name" \
+  "$(jsonc "(echo start; \$(( \$(echo '(' >/dev/null; echo 5) )); e\$!as update --branch preview)")" \
+  "eas update/publish/submit"
+# Isolation control: same payload, clean arithmetic. Both must deny, and the
+# attack row must not be passing for the clean row's reason.
+assert_deny "arithmetic decoy control: clean arithmetic, same payload" \
+  "$(json '(echo start; $(( 1+2 )); e$!as update --branch preview)')" \
+  "eas update/publish/submit"
+# CRITICAL found in review of this change, and a DENY->ALLOW REGRESSION versus
+# main rather than a missed widening: a `(` inside a shell COMMENT is inert to
+# bash, but the bare-paren counter counts it, so the substitution level never
+# closes and $WORDS_VANISHED comes back EMPTY. main DENIED this; the counter
+# alone ALLOWED it, and a PATH-stubbed binary confirmed real bash invokes
+# `eas update --branch preview`. Closed by UNIONING the paren-blind rendering
+# ($WORDS_VANISHED_BLIND) rather than substituting the counting one for it.
+assert_deny "a ( inside a shell comment cannot hide a split binary name" \
+  "$(jsonc "$(printf 'e$(: # (\n)as update --branch preview')")" \
+  "eas update/publish/submit"
+assert_deny "a comment whose ( mis-closes at a later ) cannot hide it either" \
+  "$(jsonc "$(printf 'e$( : # (\n)as update --branch preview # )')")" \
+  "eas update/publish/submit"
+# THE OTHER TWO CONSUMERS OF THE BLIND RENDERING HAD NO COVERAGE AT ALL, found by
+# mutation in review: removing `blind` from the GH_API_CLAUSE loop, or
+# $WORDS_VANISHED_BLIND from gh_pr_clause_has_repo's loop, left 489/489 GREEN
+# while turning a real invocation from DENY to ALLOW. Wiring a rendering into a
+# consumer is not coverage of that consumer — each arm needs its own row, and the
+# `eas` rows above only exercised the boolean verb matchers.
+assert_deny "a ( inside a comment cannot hide a mutating gh api method" \
+  "$(jsonc "$(printf 'g$(: # (\n)h api repos/o/r -X POST')")" \
+  "gh api"
+assert_deny "a ( inside a comment cannot hide a cross-repo gh pr comment" \
+  "$(jsonc "$(printf 'g$(: # (\n)h pr comment 5 --body hi --repo other/org')")" \
+  "--repo"
+# The union must cost latency, not verdicts: a single real occurrence must not be
+# double-counted into the ">1 occurrence -> ambiguous" deny. Folding the blind
+# rendering into $WORDS_VANISHED as a second LINE did exactly that to a genuine
+# read-only `gh api`, found in a false-positive harvest over real history.
+assert_allow "union control: one gh api read stays ONE occurrence" \
+  "$(jsonc 'x=$( (:) ); gh api repos/o/r --jq ".name"')"
+
 # ---------- assertion-total pin (2026-09-05, outward-CLI-guard-folded-repair)
 # Every mutation claim this suite's commits make is of the form "reverting the
 # fix fails exactly N assertions". That evidence rests on the total being what
@@ -2177,7 +2339,17 @@ assert_allow "RE control: a closer after the verb in a NON-gated command stays a
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
 _PIN_RAN=1
-EXPECTED_TOTAL=462
+# 462 -> 491 on 2026-09-06/07: +27 across three rounds, itemised because the
+# breakdown was WRONG once (it said "+21" beside a total of 488 -- 462+21=483, so
+# the sentence and the number disagreed and only the number was ever checked):
+#   +21  the widened STAGE 3 decline set and the bare-paren scanner fix
+#         (8 denies attributed by reason, 13 controls/FP allows)
+#    +5  review round 1: the arithmetic-decoy and comment-mechanism denies, plus
+#         the union occurrence-count control
+#    +3  review round 2: the third scan_renderings seam control, plus the two
+#         blind-arm consumer rows (GH_API method, gh pr --repo) that had NO
+#         coverage -- removing either arm left the whole suite green
+EXPECTED_TOTAL=494
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

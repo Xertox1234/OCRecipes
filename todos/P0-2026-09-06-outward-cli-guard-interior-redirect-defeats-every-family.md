@@ -67,6 +67,12 @@ the verb, with no space before it.
 (`2>&1`-shaped) and the input-redirect form were each measured and each ALLOWS. Any
 redirection token bash strips from argv should be assumed to work.
 
+> **CORRECTED 2026-09-07 — the sentence above conflates an ALLOW with a bypass, and one of
+> its three forms is not a bypass at all.** See the "Re-measurement" section below. The same
+> sentence was written into `guard-outward-cli.sh`'s DOCUMENTED RESIDUALS and into
+> `docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md`;
+> both must be swept when this todo is worked.
+
 **Why these are real invocations.** Bash tokenizes a redirect out of argv wherever it sits, so
 `eas>/dev/null update --branch preview` yields argv `(eas, update, --branch, preview)` with
 stdout redirected — bash-identical to the spaced form this guard correctly denies.
@@ -170,6 +176,62 @@ likelihood of accidental triggering.
 - Ordinary redirect use is extremely common in this repo's own command history, so a careless
   absorber could deny routine work. The negative controls are the deliverable as much as the
   positives.
+
+## Re-measurement, 2026-09-07 (AC #1 satisfied, plus two corrections)
+
+Reproduced against unmodified `main` (`b01fcff2`). **All 10 rows of the matrix reproduce**:
+every spaced baseline DENIES and every glued interior-redirect form ALLOWS. Ground truth taken
+with PATH-shadowed argv-printing stubs, with a positive and a negative control passing in the
+same run.
+
+**Harness note, because it lied first.** The stub originally reported on STDOUT — which these
+constructions redirect to `/dev/null`. Every row read "not invoked", i.e. reassuring and wrong.
+The stub must write to a sentinel FILE that no redirect in the construction can reach.
+
+### Correction 1 — `eas2>&1 update` is NOT a bypass, and the ALLOW is correct
+
+The "not redirect-syntax-specific" sentence lists the fd-duplicating form as one of three
+measured bypasses. Measured with a working ground truth:
+
+```
+eas2>&1 update --branch preview     ALLOW   ->  real argv: eas2 (update --branch preview)
+```
+
+Bash takes an fd number only when the characters before the operator are ALL digits. `eas2` is
+not, so `eas2` is the COMMAND WORD — a different, non-existent binary. Nothing gated runs, so
+ALLOW is the right answer. **The original sentence measured guard verdicts and reported them as
+bypasses**; the todo is careful about that distinction elsewhere ("the spaced baselines are
+included to prove each verb is gated at all") and lost it here.
+
+The fd-duplicating form IS a real vector — but only SPACED, which is correction 2.
+
+### Correction 2 — the SPACE-separated interior redirect is the bigger and far likelier vector
+
+The matrix varies the redirect SPELLING while holding the gluing fixed. Varying the gluing
+instead: **a space-separated interior redirect defeats the guard identically, and is ordinary
+shell that carries no evasion intent at all.** All ALLOW on `main`, all confirmed real
+invocations:
+
+| construction                              | real argv                       |
+| ----------------------------------------- | ------------------------------- |
+| `eas >/dev/null update --branch preview`  | `eas (update --branch preview)` |
+| `eas 2>&1 update --branch preview`        | `eas (update --branch preview)` |
+| `eas 2>/dev/null update --branch preview` | `eas (update --branch preview)` |
+| `gh pr >/dev/null merge 42`               | `gh (pr merge 42)`              |
+| `gh pr 2>&1 merge 42`                     | `gh (pr merge 42)`              |
+| `gh 2>&1 api repos/o/r -X POST`           | `gh (api repos/o/r -X POST)`    |
+| `npm >/dev/null publish`                  | `npm (publish)`                 |
+| `railway 2>&1 up`                         | `railway (up)`                  |
+
+**This materially changes the severity argument.** The todo's own qualifier says "the
+construction is not one an agent writes by accident" — true of `eas>/dev/null update`, and
+**false of `eas 2>&1 update`**, which is a shape someone types without thinking. Of the open
+P0s on this guard, this is the only one reachable without deliberate construction, and it is
+the one whose originating incident class (an accidental plain `eas update`) it actually
+resembles.
+
+Any fix must therefore absorb the redirect at the tool→verb and namespace→verb positions with
+the separator OPTIONAL on both sides, not just glued.
 
 ## Updates
 

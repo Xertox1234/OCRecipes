@@ -465,6 +465,7 @@ cmd_extract_substitutions() {
       n = length(buf)
       depth = 0
       state[0] = 0
+      parens[0] = 0
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1)
         d = depth
@@ -476,12 +477,12 @@ cmd_extract_substitutions() {
             if (i <= n) { if (d >= 1) accbuf[d] = accbuf[d] substr(buf, i, 1) }
           }
           else if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
-            depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""
+            depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""; parens[depth] = 0
             i++
           }
           else if (c == BT) {
             if (d >= 1 && kind[d] == "B") { print accbuf[d]; depth-- }
-            else { depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = "" }
+            else { depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = ""; parens[depth] = 0 }
           }
           else if (c == "$" && i < n && substr(buf, i+1, 1) == SQ) {
             state[d] = 3
@@ -497,7 +498,17 @@ cmd_extract_substitutions() {
           }
           else if (c == SQ) { state[d] = 1; if (d >= 1) accbuf[d] = accbuf[d] c }
           else if (c == DQ) { state[d] = 2; if (d >= 1) accbuf[d] = accbuf[d] c }
-          else if (c == ")" && d >= 1 && kind[d] == "P") { print accbuf[d]; depth-- }
+          # BARE-PAREN DEPTH, per level, state 0 ONLY (2026-09-06). A bare `(`
+          # opens a SUBSHELL inside a substitution body, and its `)` must not be
+          # mistaken for the one closing the enclosing $(...). Before this, the
+          # first `)` of `$( (:) )` closed the outer construct three characters
+          # early and everything after it was re-scanned as if outside the
+          # substitution. Gated to state 0 because a paren inside a quoted span
+          # is literal text -- counting it there would unbalance the level and
+          # reopen the very desynchronisation this closes.
+          else if (c == "(") { parens[d]++; if (d >= 1) accbuf[d] = accbuf[d] c }
+          else if (c == ")" && d >= 1 && kind[d] == "P" && parens[d] == 0) { print accbuf[d]; depth-- }
+          else if (c == ")" && parens[d] > 0) { parens[d]--; if (d >= 1) accbuf[d] = accbuf[d] c }
           else { if (d >= 1) accbuf[d] = accbuf[d] c }
         }
         else if (s == 1) {
@@ -559,11 +570,11 @@ cmd_extract_substitutions() {
             if (i <= n) { if (d >= 1) accbuf[d] = accbuf[d] substr(buf, i, 1) }
           }
           else if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
-            depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""
+            depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""; parens[depth] = 0
             i++
           }
           else if (c == BT) {
-            depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = ""
+            depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = ""; parens[depth] = 0
           }
           else if (c == DQ) { state[d] = 0; if (d >= 1) accbuf[d] = accbuf[d] c }
           else { if (d >= 1) accbuf[d] = accbuf[d] c }
@@ -647,7 +658,7 @@ cmd_words_deep() {
 # not newline-joined with anything -- there is nothing to join). WIRED
 # 2026-09-05 into guard-outward-cli.sh, which is its only caller: it feeds
 # $WORDS_SCAN (the boolean-matcher union), _out_max_count (the per-rendering
-# occurrence maximum), both GH_API_CLAUSE cuts, gh_pr_clause_has_repo's clause
+# occurrence maximum), all three GH_API_CLAUSE cuts, gh_pr_clause_has_repo's clause
 # loop and scan_renderings' flag scan. Never $WORDS, whose one grant-shaped
 # reader must not see a deletion-synthesized flag.
 #
@@ -732,12 +743,59 @@ cmd_words_deep() {
 # caught by comparing this function's output against cmd_extract_substitutions
 # on the same input (see the differential pins in test-cmd-detect.sh) before
 # either draft shipped.
-cmd_words_vanished() {
-  printf '%s' "$1" | awk '
-    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96) }
+# _cmd_vanish_pass <pcount>  -- ONE pass of the vanishing rendering, reading the
+# command text on STDIN. `pcount=1` counts bare-paren depth (so a subshell inside
+# a substitution does not close it early); `pcount=0` reproduces the ORIGINAL
+# close semantics exactly -- first unquoted `)` wins -- while keeping every other
+# deletion this rendering performs. Not called directly by anything but
+# cmd_words_vanished, which unions the two.
+_cmd_vanish_pass() {
+  awk -v pcount="$1" '
+    # ANSI-C decoding helpers. BSD awk (this runtime) has NO strtonum, so hex and
+    # octal are converted by digit-position lookup rather than a library call.
+    function hexval(s,   k, v, p) {
+      v = 0
+      for (k = 1; k <= length(s); k++) {
+        p = index("0123456789abcdef", tolower(substr(s, k, 1))) - 1
+        v = v * 16 + p
+      }
+      return v
+    }
+    function octval(s,   k, v) {
+      v = 0
+      for (k = 1; k <= length(s); k++) v = v * 8 + (substr(s, k, 1) + 0)
+      return v
+    }
+    # A decoded byte is emitted LITERALLY only when it is inert to cmd_words
+    # state (not a quote, backslash or dollar) and to every consumer boundary
+    # class in this file and in guard-outward-cli.sh (not whitespace, not a
+    # separator, not a command-position opener or closer). Everything else
+    # becomes the placeholder, which keeps the span ONE argv word and makes
+    # syntax injection through a decoded byte structurally impossible.
+    function safech(ch) {
+      return (ch != "" && index(SAFE, ch) > 0) ? ch : PH
+    }
+    # CODE 0 EMITS NOTHING, and that is the one case here that is a security
+    # property rather than a fidelity one. Verified by od, bash 3.2:
+    # e$(sq)\0(sq)as builds the three bytes `eas` -- the NUL is DROPPED and the token
+    # REJOINS. Emitting a placeholder there would render `exas`, which matches no
+    # deny pattern, so the guard would ALLOW a real invocation. zsh keeps a NUL
+    # byte instead, which cannot survive execve either; deleting is the
+    # over-DENY direction and over-denial is this rendering documented posture.
+    # Every other sub-space or DEL code becomes the placeholder: those are real
+    # bytes in argv that keep the token split, exactly like a separator inside a
+    # quoted span.
+    function fromcode(code) {
+      if (code == 0) return ""
+      return (code >= 32 && code < 127) ? safech(sprintf("%c", code)) : PH
+    }
+    BEGIN {
+      SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96); PH = "x"
+      SAFE = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./:=+,@%"
+    }
     { buf = buf $0 "\n" }
     END {
-      n = length(buf); depth = 0; state[0] = 0; out = ""
+      n = length(buf); depth = 0; state[0] = 0; parens[0] = 0; out = ""
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1); d = depth; s = state[d]
         if (s == 0 || s == 2) {
@@ -763,21 +821,75 @@ cmd_words_vanished() {
             if (d == 0) out = out c
             continue
           }
+          if (c == "$" && i < n && index("!@*123456789", substr(buf, i+1, 1)) > 0) {
+            i++
+            continue
+          }
+          # ARITHMETIC EXPANSION IS NOT SPECIAL-CASED, and the removal of that
+          # arm is deliberate. It once copied `$((...))` out VERBATIM, because
+          # arithmetic is never empty and deleting it manufactures `foo` from
+          # `f$((1+2))oo` (real argv `f3oo`) -- the ${#x} hazard.
+          #
+          # WHY IT IS GONE (2026-09-07, security review of this change). Deciding
+          # "is this span arithmetic?" from text is undecidable here, and every
+          # attempt produced a defect: the end-finder was quote-blind (CRITICAL),
+          # then comment-blind, then command-list-blind, and then separator-blind
+          # -- `$((X)|(Y))` is a command SUBSTITUTION bash executes: run
+          # `e$((:)|(:))as` through a real shell and it really invokes `eas`.
+          # Seven separator
+          # spellings (`|`, `&&`, `||`, `&`, `|&`, a bare SPACE, a TAB) reached a
+          # live invocation, and the arm is what PRESERVED them: without it the
+          # bare-paren counter deletes the span and the verb rejoins.
+          #
+          # The arm only ever prevented a FALSE POSITIVE -- an over-denial, never
+          # a bypass -- so trading four defects and seven live spellings for it
+          # was the wrong direction for a deny gate. Its measured value was also
+          # zero: across 3,883 unique commands in this project`s own history, the
+          # mid-token `$((` shape it protects appears TWICE, and both are this
+          # suite`s own fixtures. Deleting the arm is the simplification, not a
+          # regression to be repaired by a fifth grammar bet.
+          #
+          # CONSEQUENCE, pinned in test-cmd-detect.sh: `$((expr))` now deletes
+          # like any other `$(...)`, so a gated verb split by one renders as
+          # rejoined. That is an over-DENIAL, which this rendering documents as
+          # its safe direction.
           if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
-            depth++; state[depth] = 0; kind[depth] = "P"; i++
+            depth++; state[depth] = 0; kind[depth] = "P"; parens[depth] = 0; i++
             continue
           }
           if (c == BT) {
             if (s == 0 && d >= 1 && kind[d] == "B") depth--
-            else { depth++; state[depth] = 0; kind[depth] = "B" }
+            else { depth++; state[depth] = 0; kind[depth] = "B"; parens[depth] = 0 }
             continue
           }
-          if (c == ")" && s == 0 && d >= 1 && kind[d] == "P") { depth--; continue }
+          # BARE-PAREN DEPTH, per level, state 0 ONLY (2026-09-06) -- the mirror
+          # of the counter in cmd_extract_substitutions, applied in the SAME
+          # change because a detector widened without its sibling consumer is
+          # the documented recurring defect of this file. A bare `(` opens a SUBSHELL
+          # inside a substitution body; before this, the first `)` of `$( (:) )`
+          # closed the outer construct three characters early, leaving a stray
+          # `)` in the rendering so `eas` never re-formed and the guard ALLOWED a
+          # real OTA publish. NEITHER arm emits or suppresses anything: the
+          # counter changes only the CLOSE DECISION, so a paren at depth 0 is
+          # still written out exactly as before. Gated to state 0 for the same
+          # reason the close condition is -- a paren inside a quoted span is
+          # literal text, and counting it there would unbalance the level.
+          # pcount=0 never increments, so parens[d] stays 0 and the close below
+          # fires at the FIRST unquoted `)` -- byte-for-byte the original
+          # semantics. That pass is what the union restores; see the function
+          # header for why a second pass exists at all.
+          if (c == "(" && s == 0 && pcount) parens[d]++
+          if (c == ")" && s == 0) {
+            if (d >= 1 && kind[d] == "P" && parens[d] == 0) { depth--; continue }
+            if (parens[d] > 0) parens[d]--
+          }
         }
         if (s == 0) {
           if (c == "$" && i < n && (substr(buf, i+1, 1) == SQ || substr(buf, i+1, 1) == DQ)) {
             if (substr(buf, i+1, 1) == SQ) state[d] = 3; else state[d] = 2
-            if (d == 0) out = out c substr(buf, i+1, 1)
+            # The ANSI-C sigil is CONSUMED, not emitted -- see the state-3
+            # decoder below. The locale form $"..." keeps its old passthrough.
+            if (d == 0 && substr(buf, i+1, 1) == DQ) out = out c substr(buf, i+1, 1)
             i++
           }
           else if (c == SQ) { state[d] = 1; if (d == 0) out = out c }
@@ -786,13 +898,129 @@ cmd_words_vanished() {
         }
         else if (s == 1) { if (d == 0) out = out c; if (c == SQ) state[d] = 0 }
         else if (s == 3) {
-          if (c == BS) {
-            if (d == 0) out = out c
+          # ANSI-C RESPELLING IS DECODED HERE, not passed through (2026-09-06).
+          # $(sq)\x61(sq) is not empty, but it RESPELLS a character, which splits a
+          # token just as effectively as a vanishing expansion: e + $(sq)\x61(sq) + s
+          # is really the single word eas, and the guard could not see it.
+          # Previously this branch copied the span verbatim and cmd_words then
+          # rendered each escape as two placeholder letters, so \x61 became xx61
+          # and the verb never re-formed.
+          #
+          # DECODED HERE AND NOT IN cmd_words, deliberately. This rendering is
+          # DENY-SHAPED CONSUMERS ONLY, so a decoder here can never manufacture a
+          # flag that GRANTS a carve-out; cmd_words is read by the one
+          # grant-shaped check in this codebase (the --auto carve-out, via
+          # $WORDS). Blast radius is also one rendering here versus all seven
+          # fast-path hooks there.
+          #
+          # THE OUTPUT OF THIS FUNCTION IS RE-SCANNED BY cmd_words, so a decoded
+          # byte is not inert -- a decoded quote would open a span and corrupt
+          # everything after it. Only characters that are inert to BOTH cmd_words
+          # state and every consumer boundary class are emitted literally; every
+          # other decoded byte becomes the placeholder. That is a structural
+          # closure of the injection surface, not an enumeration of bad bytes.
+          if (c == BS && i < n) {
             i++
-            if (i <= n && d == 0) out = out substr(buf, i, 1)
+            esc = substr(buf, i, 1)
+            code = -1
+            if (esc == "x") {
+              hv = ""
+              while (length(hv) < 2 && i < n && index("0123456789abcdefABCDEF", substr(buf, i+1, 1)) > 0) {
+                i++; hv = hv substr(buf, i, 1)
+              }
+              if (hv != "") code = hexval(hv)
+            }
+            else if (esc == "u" || esc == "U") {
+              maxd = (esc == "u") ? 4 : 8
+              hv = ""
+              while (length(hv) < maxd && i < n && index("0123456789abcdefABCDEF", substr(buf, i+1, 1)) > 0) {
+                i++; hv = hv substr(buf, i, 1)
+              }
+              if (hv != "") code = hexval(hv)
+            }
+            else if (index("01234567", esc) > 0) {
+              ov = esc
+              while (length(ov) < 3 && i < n && index("01234567", substr(buf, i+1, 1)) > 0) {
+                i++; ov = ov substr(buf, i, 1)
+              }
+              code = octval(ov)
+            }
+            # \cX consumes the X. Emitting only one placeholder for the `c` and
+            # then letting X fall through as a literal rendered \cA as `xA`,
+            # two characters where real bash builds one control byte.
+            # \cX consumes its operand -- BUT NOT WHEN THE OPERAND IS THE CLOSING
+            # QUOTE. Consuming it unconditionally ate the `(sq)` that ends the span,
+            # so state 3 never exited and every later byte was placeholder-mangled:
+            # the `${...}`/`$(` deletion arms are gated on s == 0 || s == 2 and
+            # never ran again. A two-character decoy anywhere EARLIER in the string
+            # therefore disarmed both vanishing renderings for everything after it:
+            #     x=$(sq)\c(sq); e${UNSET}as update --branch preview
+            #     main DENY   this branch ALLOW   real argv: eas update ...
+            # A DENY->ALLOW regression introduced by this PR, bisected to the
+            # commit that added ANSI-C decoding, and live for 40/40 combinations
+            # of gated family x split mechanism. Real bash 3.2 renders $(sq)\c(sq) as a
+            # single backslash and zsh as `c`; NEITHER consumes the closing quote.
+            # The corruption is forward-only, which is what bounds it: a trailing
+            # $(sq)\c(sq) after the verb denies on every version.
+            #
+            # THE GUARD IS ON THE CLASS, NOT ON TWO BYTES. A first repair excluded
+            # only SQ and was defeated one round later by a BACKSLASH operand:
+            # consuming it shifted escape pairing by one, so the NEXT backslash
+            # paired with the closing quote and the span again never ended.
+            #     x=$(sq)\c\\(sq); e${UNSET}as update --branch preview
+            #     main DENY   that repair ALLOW   real argv: eas update ...
+            # Enumerating a second bad byte would have invited a third. The rule
+            # below is bash-s own lexer instead: inside $(sq)...(sq) a backslash escapes
+            # exactly ONE character and an unescaped quote terminates, so `\c` may
+            # never consume a character that is itself structurally significant.
+            else if (esc == "c") {
+              cop = (i < n) ? substr(buf, i+1, 1) : ""
+              if (cop != "" && cop != SQ && cop != BS) i++
+              # \c@, \c<space> and \c(backtick) all decode to NUL, which bash
+              # DROPS -- so the token REJOINS and the rendering must delete, not
+              # emit a placeholder. Exactly the rule fromcode() already applies to
+              # \0, verified the same way (od on the real argv): e$(sq)\c@(sq)as builds
+              # the three bytes `eas`. Missing this left `e$(sq)\c@(sq)as update` ALLOWED
+              # while the sibling \0 and \x00 spellings denied.
+              #
+              # THESE THREE ARE BASH SEMANTICS ONLY, and the sibling \0 comment
+              # above already carries its own zsh clause -- this one omitted it.
+              # zsh 5.9 does not implement \cX at all: it renders $(sq)\c@(sq) as the
+              # literal `c@`, so all three deletions are OVER-denials there. Safe
+              # direction, and worth stating so a later round does not re-derive
+              # it. RESIDUAL, deliberately not chased: bash masks the LEAD BYTE of
+              # a multibyte operand (U+0800..U+0FFF collapses to NUL) and consumes
+              # the whole character, while this scan is byte-oriented -- so
+              # `e$(sq)\c<3-byte char>(sq)as` rejoins in bash and renders split here.
+              # No deny is lost (main allows it identically) and it is reachable
+              # only through the documented `bash -c` residual, which already
+              # allows the completely unobfuscated spelling.
+              code = (cop == "@" || cop == " " || cop == BT) ? 0 : -3
+            }
+            # \a \b \e \E \f \n \r \t \v \\ \(sq) \" \? -- a control character, a
+            # quote, a backslash or punctuation, never a word character. The
+            # list must be COMPLETE: omitting `r` sent \r down the unknown-escape
+            # arm below, which emits TWO characters, and the byte-exact ground
+            # truth caught it as `xr` against a real one-byte argv.
+            else if (index("abeEfnrtv\\" SQ DQ "?", esc) > 0) { code = -3 }
+            # ANY OTHER escape is kept by BOTH shells as the backslash AND the
+            # character, two bytes (verified by od: bash 3.2 and zsh both build
+            # `e\qas` for e$(sq)\q(sq)as), so it must render as two, not one.
+            else { if (d == 0) out = out PH safech(esc); code = -4 }
+            # A HEX OR UNICODE ESCAPE WITH ZERO DIGITS IS AN UNKNOWN ESCAPE, not a
+            # control character. `$(sq)\x(sq)` is the literal two bytes backslash-x in real
+            # bash (verified by execution), but the branches above leave `code`
+            # at its -1 initialiser when the digit loop consumes nothing, and
+            # fromcode(-1) returns ONE placeholder -- indistinguishable from the
+            # -3 "known single-byte control escape" case. A sentinel collision:
+            # -1 meant "parsed nothing" and -3 meant "deliberately one char", and
+            # only -3 was handled. Re-route to the two-character arm so the
+            # rendering keeps bash-s own byte count.
+            if (code == -1) { if (d == 0) out = out PH safech(esc); code = -4 }
+            if (d == 0 && code != -4) out = out fromcode(code)
           }
-          else if (c == SQ) { state[d] = 0; if (d == 0) out = out c }
-          else { if (d == 0) out = out c }
+          else if (c == SQ) { state[d] = 0 }
+          else { if (d == 0) out = out safech(c) }
         }
         else {
           if (c == DQ) { state[d] = 0; if (d == 0) out = out c }
@@ -805,7 +1033,63 @@ cmd_words_vanished() {
       if (depth >= 1) exit
       sub(/\n$/, "", out)
       printf "%s", out
-    }' | cmd_words
+    }'
+}
+
+cmd_words_vanished() {
+  printf '%s' "$1" | _cmd_vanish_pass 1 | cmd_words
+}
+
+# cmd_words_vanished_blind <cmd>  -- the SECOND HALF of the vanishing rendering,
+# and a SEPARATE VARIABLE rather than an extra line inside cmd_words_vanished.
+#
+# WHY IT EXISTS. The bare-paren counter moved the close decision LATER, which is
+# right for a subshell and wrong for a construct the counter cannot read: a `(`
+# inside a shell COMMENT (`e$(: # (` newline `)as update`) is inert to bash but
+# counted here, so the level never closed, the rendering came back EMPTY, and a
+# real OTA publish that the OLD close semantics DENIED was ALLOWED. Confirmed
+# against a PATH-stubbed binary -- a DENY->ALLOW regression, not a missed
+# widening. This function reproduces those old semantics (first unquoted `)`
+# wins) while keeping every other deletion, so the two are UNIONED at the
+# consumers rather than one SUBSTITUTED for the other -- the rule
+# cmd_words_vanished`s own header states, applied to itself.
+#
+# Comment-tracking was considered and rejected: `#` opens a comment only at word
+# start, so a wrong guess there under-counts, closes early, and re-opens the
+# original bug -- a fifth grammar bet to repair the fourth.
+#
+# RETRACTED 2026-09-07, and the narrowing matters. This comment shipped the claim
+# "a union has no missed-deny direction at all". THAT IS FALSE, and review found
+# the counter-example by COMPOSING the two mechanisms the union is built from:
+#
+#     e$( (: # (        <- a bare-paren subshell whose body also holds a comment
+#     ) )as update --branch preview
+#
+# The counting pass counts BOTH the subshell `(` and the comment `(`, so the level
+# never closes and it emits nothing; the blind pass closes at the first unquoted
+# `)` -- the SUBSHELL closer -- so `eas` never re-forms. Both halves fail on the
+# same input, and it is a live invocation (PATH-stubbed ground truth). ALLOW on
+# `main` too, so this is a pre-existing class rather than something the union
+# opened -- but the sentence claiming coverage was written here by this change.
+#
+# THE TRUE STATEMENT IS NARROWER: a union of two close semantics covers each
+# mechanism IN ISOLATION; it does not cover their COMPOSITION, because neither
+# pass is correct for an input that defeats both. Whoever adds a third pass should
+# assume the same is true of it. Tracked at
+# todos/P1-2026-09-07-outward-cli-guard-threat-model-decision.md
+#
+# WHY NOT A SECOND LINE INSIDE cmd_words_vanished, which was tried first and
+# MEASURED WRONG: guard-outward-cli.sh`s `_out_max_count` COUNTS occurrences
+# across a rendering, so two lines carrying the same `gh api` turned ONE
+# occurrence into two and tripped the ">1 occurrence means ambiguous" branch.
+# Found in a false-positive harvest over real command history, on a genuine
+# `gh api` read that had denied nowhere before. Keeping the renderings in
+# separate variables lets each be counted on its own, which is what "the larger
+# of the per-rendering counts" always meant.
+#
+# DENY-SHAPED CONSUMERS ONLY, same contract as cmd_words_vanished.
+cmd_words_vanished_blind() {
+  printf '%s' "$1" | _cmd_vanish_pass 0 | cmd_words
 }
 
 # cmd_bare_deep <command>  → cmd_bare(command), joined by NEWLINE with
