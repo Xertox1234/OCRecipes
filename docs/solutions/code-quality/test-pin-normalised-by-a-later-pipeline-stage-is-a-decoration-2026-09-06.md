@@ -7,6 +7,7 @@ module: server
 applies_to: [".claude/hooks/**"]
 symptoms: ["A new assertion passes immediately and keeps passing when you delete the code it was written to cover", "Mutation testing reports a fix arm as NOT CAUGHT even though an assertion visibly names it", "A rendering function is tested through a wrapper that post-processes its output", "The expected value in a pin happens to be what BOTH the correct and the broken rendering collapse to"]
 created: 2026-09-06
+last_updated: 2026-09-07
 severity: medium
 ---
 
@@ -64,6 +65,45 @@ van 'a decoded quote cannot swallow the following command' \
 
 The replacement rows turned red under the same mutation, and the arm went from `NOT CAUGHT` to
 4 named assertions red.
+
+## A second route to the same outcome: the assertion that never RUNS (2026-09-07)
+
+The failure above is a row that runs and cannot discriminate. There is a sharper variant where
+the row does not run at all, and it is harder to see because the output is identical to success.
+
+In a bash suite, a helper called **before** its own definition is a plain
+`helper: command not found`. Under `set -uo pipefail` with no `set -e` that neither aborts the
+run nor increments `PASS` or `FAIL` — the row simply evaporates:
+
+```bash
+vanb 'and the blind pass still carries the verb' "$input" "$expected"   # line 1537
+...
+vanb() { ... }                                                          # line 1540
+```
+
+The suite printed `Results: 544 passed, 0 failed`. The only evidence was one line on **stderr**,
+which nothing was reading. Two review rounds looked at this file and missed it; a third found it
+by grepping the suite's stderr.
+
+**The countermeasure is an assertion-total pin**, which a sibling suite in the same directory had
+carried for exactly this reason while this one did not:
+
+```bash
+EXPECTED_TOTAL=556
+if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
+  echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
+  FAIL=$((FAIL + 1))
+fi
+```
+
+It caught a miscount on its very first use. Its limits are worth stating so it is not
+over-trusted: it detects a **deleted or skipped** assertion in a run that otherwise completed. It
+cannot detect an early `return`/`exit` or a truncated file, because those terminate before the
+pin executes.
+
+**Generalisable:** a test count is state, and unpinned state drifts silently. Any suite whose
+pass count is its only summary needs that count asserted, or "green" and "green with a row
+missing" are the same output.
 
 ## Prevention
 
