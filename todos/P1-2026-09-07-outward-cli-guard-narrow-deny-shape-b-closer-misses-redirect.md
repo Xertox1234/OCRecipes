@@ -32,10 +32,12 @@ position followed by a gated VERB — ends with a hand-written `([[:space:]]|$)`
 grep -Eq "${_OUT_POS_PREFIX}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)"
 ```
 
-`_OUT_POS_SUFFIX` is `([[:space:]]|[);&|`{}<>]|$)`. It gained `<`/`>`on 2026-09-05 as
-finding A's fix, and`{`/`}`and backtick before that. Shape (b)'s inline closer got none of
-them, so every boundary character finding A closed is open again at this one call site.
-Shapes (a) and (a-pr) are unaffected — they have no trailing closer at all, because`\_OUT_EXPANSION_TOKEN` self-terminates.
+`_OUT_POS_SUFFIX` is ``([[:space:]]|[);&|`{}<>]|$)`` — note it accepts a backtick, `{`, `}`,
+`<` and `>` as closers. It gained `<`/`>` on 2026-09-05 as finding A's fix, and the brace and
+backtick closers before that. Shape (b)'s inline closer got none of them, so every boundary
+character finding A closed is open again at this one call site. Shapes (a) and (a-pr) are
+unaffected — they have no trailing closer at all, because `_OUT_EXPANSION_TOKEN`
+self-terminates.
 
 This is the `occurrence-ambiguity-guard-applied-selectively-not-uniformly` shape once more:
 a class was widened, and one consumer spelled its own copy instead of referencing the
