@@ -43,7 +43,7 @@ and false of this narrow set.
    see `case x in a)` — an unmatched closer with no opener — and the obvious keyword tracker
    is a deny→ALLOW regression generator (`e$(echo case)as update` DENIES today and would
    render EMPTY under it). 17 rows stay visible gaps under
-   `todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md`.
+   `todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md`.
 3. **The degraded mirror (`_out_crude_vanish`) was NOT widened** — stated, not absorbed. The
    corpus's `ok` is the precise column only; tool-position rows remain degraded-dirty.
 
@@ -452,7 +452,7 @@ and unmarked ones to both.
 - `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — a
   separate, also-open critical gap in the same guard. Different mechanism (an interior
   redirect, not a substitution scanner); do not fold them.
-- `todos/P0-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md` — the
+- `todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md` — the
   round-4 sibling. Same review round and the same "a token is split and the guard cannot see
   it" symptom, but a brace range carries no `$` at all, so the fix is a **guard-side narrow
   deny**, not a lib scanner change. Deliberately not folded here. Both todos edit

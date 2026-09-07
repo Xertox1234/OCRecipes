@@ -2110,7 +2110,7 @@ assert_allow "R3 bound: command-position expansion with a NON-gated verb stays a
 # ALLOWED, and the cause is one level down in lib/cmd-detect.sh's scanner, which
 # desynchronises on a bare `(` (measured: cmd_words_vanished renders
 # `e$( (:) )as update` as `e )as update`). Filed as
-# todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md.
+# todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md.
 # Asserting the ALLOW here would encode the bypass as acceptable; the corpus
 # carries them with a DENY expectation so they report as gaps instead.
 # The second, independent trigger: a fixed 200-iteration cap was a decision

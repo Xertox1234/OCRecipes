@@ -1,6 +1,6 @@
 ---
 title: "DECISION: which adversary is guard-outward-cli.sh defending against? The answer determines whether the span layer is worth its defect rate"
-status: backlog
+status: done
 priority: high
 created: 2026-09-07
 updated: 2026-09-07
@@ -12,6 +12,43 @@ blocked_reason: "This is a threat-model ruling, not a spec. An unattended run wo
 ---
 
 # Which adversary is this guard defending against?
+
+## RULING — 2026-09-07, by the repository owner
+
+> **Model A.** The guard is accountable for an agent **misfiring**, not for defeating a
+> deliberate evader. And: **file the PATH-wrapper option** —
+> `todos/P1-2026-09-07-outward-cli-path-wrapper.md`.
+
+### What Model A settles, question by question
+
+**1. Which models is the guard accountable for?** A only. A text matcher cannot beat an
+adversary, and the guard's own header already concedes it ("guardrail, not a sandbox"). Holding
+it to model B was holding it to a standard it declares it cannot meet.
+
+**2. May a new model-B spelling be filed as P0?** **No.** A newly-found spelling that requires
+deliberate construction is a DOCUMENTED RESIDUAL with a corpus row, not a critical defect. It
+stays measured on every corpus run; it does not occupy the critical queue.
+
+**3. Is the wrapper worth prototyping?** Yes — filed. It attacks PATH **resolution** rather than
+command **text**, which is where the actual incident failed, and it is the only option that
+covers spellings nobody has found.
+
+### How the ruling sorts the open backlog
+
+| todo                      | model | disposition under the ruling                                                                                                                                                                                          |
+| ------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| interior redirect         | **C** | **stays P0.** `eas 2>&1 update` is ordinary shell with an INTACT binary name and verb — an agent types it without meaning to evade anything, which is a misfire. It is a plain-text-anchor gap, not a span-layer one. |
+| brace range               | **B** | **→ P2 documented residual.** `{e..e}as update` requires deliberate construction.                                                                                                                                     |
+| case arm                  | **B** | **→ P2 documented residual.** `e$(case x in a) : ;; esac)as update` likewise.                                                                                                                                         |
+| findings 8, 9, 10 (below) | **B** | stay recorded here; not filed. Compositions and a multibyte operand — all adversarial.                                                                                                                                |
+
+**The interpretation worth flagging, since it is mine and not the owner's words:** model C was
+read as falling INSIDE model A, because both are accidents — the distinguishing feature of B is
+_intent_, and a redirect between a binary and its verb carries none. If that reading is wrong,
+the interior-redirect P0 drops to a residual with the other two and nothing else changes.
+
+**No further model-B spelling should be filed as a P0 against this guard.** That is the ruling's
+main operational effect, and it is what stops the queue regenerating combinatorially.
 
 ## Why this exists
 
@@ -136,11 +173,11 @@ emptied. Listed only so the ruling does not have to rediscover why it is closed.
 
 - `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — model C,
   and the re-measurement that reclassified it.
-- `todos/P0-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md`,
-  `todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md` — model B.
+- `todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md`,
+  `todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md` — model B.
 - `todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md`
   — the change whose review produced findings 8 and 9.
-- `todos/P2-2026-08-16-outward-cli-pretooluse-deny-hook.md` — where option 3 was first raised
+- `todos/archive/P2-2026-08-16-outward-cli-pretooluse-deny-hook.md` — where option 3 was first raised
   and left awaiting a call.
 
 ## Finding 10 — a multibyte `\c` operand, recorded not fixed (2026-09-07)

@@ -567,7 +567,7 @@
 #         e$(case x in a) : ;; esac)as update --branch preview   -> ALLOW
 #     That `)` has no matching opener, so no depth arithmetic reaches it. Corpus
 #     rows toolvcasearm-*/verbvcasearm-*/flagvcasearm-* stay GAPs by design. Filed:
-#     todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#     todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #     The bare-paren todo is archived at
 #     todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
 #
@@ -681,7 +681,7 @@
 #     tracker is a deny→ALLOW regression generator, because `e$(echo case)as
 #     update` DENIES today and would leave the depth permanently open, emptying
 #     the rendering and silently losing that coverage. Tracked at
-#     todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#     todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #     and measured every run by this repo's corpus (`toolvcasearm-*`).
 #
 #   * UNHANDLED, PRE-EXISTING (round 4, same measurement session): BRACE RANGE

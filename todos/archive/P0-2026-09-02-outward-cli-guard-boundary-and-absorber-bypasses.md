@@ -401,7 +401,7 @@ match current behaviour would encode the bypass as acceptable. They are:
   the shared word-splitting renders it `-X xx50xx4fxx53xx54`, so C2's "not literal text"
   branch sees no surviving sigil and the literal branch sees no `POST`. Needs an escape
   decoder — a new parsing layer the Scope Contract forbids. Tracked as
-  `todos/P2-2026-09-06-outward-cli-guard-ansic-escape-method-value.md`.
+  `todos/archive/P2-2026-09-06-outward-cli-guard-ansic-escape-method-value.md`.
 
 Neither was patched into this branch: each needs its own false-positive review, and the
 interior-redirect one has the widest blast radius of any change yet made to this file.

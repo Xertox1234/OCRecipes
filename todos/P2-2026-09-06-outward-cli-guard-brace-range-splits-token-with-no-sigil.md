@@ -1,15 +1,36 @@
 ---
 title: "guard-outward-cli.sh: brace RANGE expansion splits a binary or verb with no $ or backtick anywhere, defeating every sigil-keyed check on all four paths"
 status: backlog
-priority: critical
+priority: medium
 created: 2026-09-06
 updated: 2026-09-06
 assignee:
-labels: [security, harness, outward-cli-guard]
+labels: [deferred, security, harness, outward-cli-guard]
 github_issue:
 ---
 
 # A brace RANGE splits a token with no sigil for any check to key on
+
+## RECLASSIFIED 2026-09-07 — model B, documented residual (was P0)
+
+The owner ruled that `guard-outward-cli.sh` is accountable for **Model A only**: an agent
+MISFIRING, not defeating a deliberate evader. See
+`todos/archive/P1-2026-09-07-outward-cli-guard-threat-model-decision.md`.
+
+This mechanism is **model B** — it requires deliberate construction, and no accident produces
+it. Under the ruling that makes it a documented residual rather than a critical defect:
+
+- **It stays measured.** Its corpus rows keep their DENY expectations and report as gaps on
+  every run, so the gap is never invisible.
+- **It is not in the critical queue.** A text-matching guard cannot enumerate shell grammar,
+  and the guard's own header concedes it ("guardrail, not a sandbox — a determined bypass is
+  always possible").
+- **The structural answer is filed separately**:
+  `todos/P1-2026-09-07-outward-cli-path-wrapper.md` attacks PATH resolution rather than command
+  text, so it covers this mechanism and every unfound sibling without reading the command at all.
+
+Everything below is the original filing and its measurements, which remain accurate. Nothing
+here is retracted — only its priority changed.
 
 ## Summary
 
@@ -100,7 +121,7 @@ itself.
       a different verdict. State the ruling either way.
 - [ ] Bounds are pinned by `assert_allow`, not only denies: ordinary brace use must not start
       denying. At minimum `echo {1..3}`, `mkdir -p /tmp/x/{a,b}`, `find . -name '*.ts' -exec
-    grep -l x {} +`, and a brace range in a NON-command position.
+  grep -l x {} +`, and a brace range in a NON-command position.
 - [ ] Two-sided, mutation-tested regression coverage: revert the fix, confirm the NAMED
       assertions fail, restore, confirm they pass. Per row, never in aggregate.
 - [ ] All four execution paths re-checked (precise / no-jq / no-lib / no-awk), each deny
