@@ -574,9 +574,16 @@ comment sweeps inside the guard files themselves.
 
 **A THIRD redirect position, found 2026-09-06 while closing the other two — the widest gap
 this document has recorded. CLOSED 2026-09-07 by `_OUT_SEP`, one interior absorber applied
-uniformly to all 30 separator slots (detectors *and* clause cuts) in a single change; 53
-corpus rows closed / 0 opened by per-ID diff, and 0 decision changes across 14,151
-redirect-bearing commands harvested from real history.** Findings A and B between them
+uniformly to all 30 separator slots (detectors *and* clause cuts) in a single change; 59
+corpus rows closed / 0 opened by per-ID diff, and 0 decision changes in either direction
+across all 31,382 distinct Bash commands harvested from local transcript history.**
+
+**And read the sibling entry before trusting that framing.** Landing this absorber opened a
+CRITICAL regression in a consumer nobody had examined — see
+[a union over renderings does not cover selection within one](union-over-renderings-does-not-cover-selection-within-one-2026-09-07.md).
+The corpus reported 0 opened and the suite was fully green while the branch was converting
+real denies into allows, because neither had a row for the shape involved. The numbers above
+are true and were not sufficient. Findings A and B between them
 cover a redirect that CLOSES the verb (`merge>log`) and one that PRECEDES the command
 (`2>/dev/null gh pr merge`). Neither reaches a redirect glued *where the anchors require
 whitespace between two words*.

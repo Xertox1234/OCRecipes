@@ -797,12 +797,12 @@ done
 # expected output of this file.
 #
 # SUPERSEDED 2026-09-07 by the interior-redirect absorber (_OUT_SEP). The CURRENT
-# correct output is `rows=377  precise-path gaps=31  all-path gaps=154`.
+# correct output is `rows=404  precise-path gaps=31  all-path gaps=155`.
 # Attributed BY ID against the pre-change tree, one corpus against two
 # implementations, never by subtracting totals:
 #
-#   precise-path dirty  84 -> 31   53 CLOSED, **0 OPENED**
-#   all-path dirty     171 -> 154  17 CLOSED, **0 newly dirty**
+#   precise-path dirty  90 -> 31   59 CLOSED, **0 OPENED**
+#   all-path dirty     178 -> 155  23 CLOSED, **0 newly dirty**
 #
 # The 53: the 51 NEW intrtool-*/intrns-* rows (which allowed on the pre-change
 # tree, hence the 84 denominator) plus the 2 pre-existing nssufx-* rows. The 33

@@ -384,8 +384,8 @@
 #     namespace->verb separator slots in one change, detectors AND clause cuts.
 #     At zero iterations it is byte-identical to the `[[:space:]]+` it replaces,
 #     so only redirect-bearing commands can change decision at all. Measured on
-#     the whole corpus: 53 rows closed, **0 opened**, per-ID, on the precise
-#     path; 17 closed / 0 opened all-path. The two clause CUTS had to move with
+#     the whole corpus: 59 rows closed, **0 opened**, per-ID, on the precise
+#     path; 23 closed / 0 opened all-path. The two clause CUTS had to move with
 #     the detectors — `gh_pr_clause_has_repo` and `_GH_API_CUT` both treat an
 #     EMPTY clause as "nothing to deny", so a widened detector with a narrow cut
 #     would have re-opened cross-repo PAT egress and the mutating-method check

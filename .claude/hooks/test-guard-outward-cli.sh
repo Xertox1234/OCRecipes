@@ -1469,8 +1469,8 @@ assert_deny "interior redirect GAIN: a second, interior-redirect merge is now CO
 # kills the deny rows (mutation 1), so it needs a mutation of its own.
 #
 # NOTE ON THE JUSTIFICATION, because the tempting short version is not sound: the
-# reason to trust this is the MEASUREMENT (0 DENY->ALLOW across 14,151
-# redirect-bearing commands from real history), not the tidy set argument that
+# reason to trust this is the MEASUREMENT (0 DENY->ALLOW across all 31,382
+# distinct Bash commands in local transcript history), not the tidy set argument that
 # "the newly matched set is exactly the set that allowed before". That argument
 # is FALSE in general, and this very change disproves it -- the GAIN row above
 # flips ALLOW->DENY by changing an occurrence COUNT, a path with nothing to do

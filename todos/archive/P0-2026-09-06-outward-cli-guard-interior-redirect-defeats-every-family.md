@@ -283,13 +283,23 @@ family since 2026-09-01 — see the correction below.
   discriminate between the two absorber forms (`_CMD_REDIR`'s target class greedily absorbs
   `update` as the filename), only `eas>/dev/nullupdate` does. Both comments were fixed.
 - **Corpus:** +51 GENERATED rows across 11 families × {glued, spaced-output, spaced-fd} at
-  both slots. Per-ID `comm` against the pre-change tree: **precise-path 84 → 31, 53 closed,
-  0 opened; all-path 171 → 154, 17 closed, 0 newly dirty.**
+  both slots. Per-ID `comm` against the pre-change tree: **precise-path 90 → 31, 59 closed,
+  0 opened; all-path 178 → 155, 23 closed, 0 newly dirty.**
 - **False positives measured by execution, both directions.** 31,382 distinct Bash commands
-  harvested from local transcripts; 14,151 are redirect-bearing. That filter is a **census,
-  not a sample** — a command with no `<`/`>` cannot flip, because `_OUT_SEP` at zero
-  iterations is byte-identical to what it replaced. Result: **0 ALLOW→DENY and 0 DENY→ALLOW**,
-  with the harness validated against a known flip first.
+  harvested from local transcript history, and **all 31,382 evaluated against both hooks** —
+  no filter, so no completeness argument is required at all. Result: **0 ALLOW→DENY and
+  0 DENY→ALLOW**, with the harness validated against a known flip before the zero was
+  trusted. An earlier run filtered to the 14,151 redirect-bearing commands and justified
+  itself as a census (a command with no `<`/`>` cannot flip, since `_OUT_SEP` at zero
+  iterations is byte-identical to what it replaced) — sound for the absorber, but the
+  argument stopped holding once a second change in the same PR touched a consumer that is
+  not redirect-gated. Running the whole population removes the argument rather than
+  repairing it.
+- **And none of that caught the CRITICAL.** A security review constructed
+  `echo gh >x pr merge && gh pr merge 42 --auto --repo o/r` — a real DENY on `main` that this
+  change turned into an ALLOW. Real history contains no decoys, so no harvest of it, at any
+  size, could have found this. Codified as
+  `docs/solutions/logic-errors/union-over-renderings-does-not-cover-selection-within-one-2026-09-07.md`.
 
 **A gain no single-invocation row could see:** `gh pr merge 42 --auto; gh pr 2>&1 merge 43`
 was ALLOWED. The second merge was invisible to the detector, so the count stayed 1 and the

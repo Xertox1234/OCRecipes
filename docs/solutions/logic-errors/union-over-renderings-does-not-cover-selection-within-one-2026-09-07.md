@@ -103,11 +103,13 @@ character by character and account for every difference. Here the whole defect i
 missing `${_OUT_POS_PREFIX}`.
 
 **A census of real history is not a census of constructible inputs.** The widening that
-enlarged this bypass was measured against 14,151 real redirect-bearing commands from
-transcripts: 0 regressions, correctly. Real history contains no decoys. History bounds
-*what has happened*; it says nothing about *what an input can be shaped into*, and a deny
-gate is threat-modelled against the second. Pair every historical harvest with constructed
-adversarial rows.
+enlarged this bypass was measured against every redirect-bearing command in local transcript
+history — 0 regressions, correctly, and the same result held on a later re-run over all
+31,382 distinct commands with no filter at all. Real history contains no decoys. **Enlarging
+the sample does not fix this**: history bounds *what has happened*, and says nothing about
+*what an input can be shaped into*. A deny gate is threat-modelled against the second. Pair
+every historical harvest with constructed adversarial rows, and treat a clean harvest as
+evidence about false positives only — never as evidence about reachability.
 
 **A completeness argument covers exactly the change it was derived for.** The argument here
 ("only redirect-bearing commands can change decision, because the absorber reduces to the
