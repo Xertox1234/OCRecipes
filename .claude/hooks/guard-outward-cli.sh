@@ -1531,8 +1531,22 @@ WORDS_VANISHED=$(cmd_words_vanished "$CMD")
 # carrying the same `gh api` turned ONE occurrence into two and tripped the
 # ">1 occurrence → ambiguous" deny on a genuine read-only call. Separate
 # variables keep "the larger of the per-rendering counts" meaning what it says.
-WORDS_VANISHED_BLIND=$(cmd_words_vanished_blind "$CMD")
-[ "$WORDS_VANISHED_BLIND" = "$WORDS_VANISHED" ] && WORDS_VANISHED_BLIND=""
+#
+# SKIPPED ENTIRELY WHEN $CMD HOLDS NO `(`, and that is provable rather than a
+# heuristic: the ONLY two branches the `pcount` flag gates are the arithmetic arm
+# (`substr(buf, i+1, 2) == "(("`) and `parens[d]++` (`c == "("`). Both require a
+# literal `(` byte, so with none present the two passes are byte-identical by
+# construction and the second awk fork buys nothing. This hook runs on EVERY Bash
+# tool call and most commands contain no `(` at all, so the common case now costs
+# one fork instead of two. The equality de-dup below still runs for the commands
+# that DO contain one — it is what keeps a consumer from scanning the same
+# rendering twice.
+if case "$CMD" in *'('*) true ;; *) false ;; esac; then
+  WORDS_VANISHED_BLIND=$(cmd_words_vanished_blind "$CMD")
+  [ "$WORDS_VANISHED_BLIND" = "$WORDS_VANISHED" ] && WORDS_VANISHED_BLIND=""
+else
+  WORDS_VANISHED_BLIND=""
+fi
 
 # Union, for BOOLEAN detection ONLY. Every consumer switched to this is of the
 # form `if grep -Eqi ... ; then deny`, so over-matching can only ever ADD a

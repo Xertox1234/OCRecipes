@@ -1552,7 +1552,7 @@ else
   echo "  extracted anchor:    $_ANCHOR_RE"
   echo "  _GH_API_CUT defs:    $_CUT_DEFS (expected 1)"
   echo "  _GH_API_CUT line:    $_CUT_DEF_LINE"
-  echo "  clause cuts found:   $_CLAUSE_CUTS (expected 2)"
+  echo "  clause cuts found:   $_CLAUSE_CUTS (expected 3)"
   echo "  cut not using const: $_BAD_CUT"
   FAIL=$((FAIL+1))
 fi
@@ -2276,6 +2276,18 @@ assert_deny "a ( inside a shell comment cannot hide a split binary name" \
 assert_deny "a comment whose ( mis-closes at a later ) cannot hide it either" \
   "$(jsonc "$(printf 'e$( : # (\n)as update --branch preview # )')")" \
   "eas update/publish/submit"
+# THE OTHER TWO CONSUMERS OF THE BLIND RENDERING HAD NO COVERAGE AT ALL, found by
+# mutation in review: removing `blind` from the GH_API_CLAUSE loop, or
+# $WORDS_VANISHED_BLIND from gh_pr_clause_has_repo's loop, left 489/489 GREEN
+# while turning a real invocation from DENY to ALLOW. Wiring a rendering into a
+# consumer is not coverage of that consumer — each arm needs its own row, and the
+# `eas` rows above only exercised the boolean verb matchers.
+assert_deny "a ( inside a comment cannot hide a mutating gh api method" \
+  "$(jsonc "$(printf 'g$(: # (\n)h api repos/o/r -X POST')")" \
+  "gh api"
+assert_deny "a ( inside a comment cannot hide a cross-repo gh pr comment" \
+  "$(jsonc "$(printf 'g$(: # (\n)h pr comment 5 --body hi --repo other/org')")" \
+  "--repo"
 # The union must cost latency, not verdicts: a single real occurrence must not be
 # double-counted into the ">1 occurrence -> ambiguous" deny. Folding the blind
 # rendering into $WORDS_VANISHED as a second LINE did exactly that to a genuine
@@ -2304,15 +2316,17 @@ assert_allow "union control: one gh api read stays ONE occurrence" \
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
 _PIN_RAN=1
-# 462 -> 489 on 2026-09-06/07: +27 across three rounds, itemised because the
+# 462 -> 491 on 2026-09-06/07: +27 across three rounds, itemised because the
 # breakdown was WRONG once (it said "+21" beside a total of 488 -- 462+21=483, so
 # the sentence and the number disagreed and only the number was ever checked):
 #   +21  the widened STAGE 3 decline set and the bare-paren scanner fix
 #         (8 denies attributed by reason, 13 controls/FP allows)
 #    +5  review round 1: the arithmetic-decoy and comment-mechanism denies, plus
 #         the union occurrence-count control
-#    +1  review round 2: the third scan_renderings seam control
-EXPECTED_TOTAL=489
+#    +3  review round 2: the third scan_renderings seam control, plus the two
+#         blind-arm consumer rows (GH_API method, gh pr --repo) that had NO
+#         coverage -- removing either arm left the whole suite green
+EXPECTED_TOTAL=491
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
