@@ -6,16 +6,21 @@ tags: [harness, testing, agents, code-review, probes, evidence, negative-control
 module: shared
 applies_to: [.claude/agents/*.md, .claude/hooks/*.sh, .claude/skills/*/SKILL.md]
 created: '2026-08-31'
-last_updated: '2026-09-01'
+last_updated: '2026-09-07'
 ---
 
 # A reviewer's own probe is a test and inherits every rule tests have
 
 ## Rule
 
-Four separate claims. All are about how a **review is conducted**, not about how the code
+Six separate claims. All are about how a **review is conducted**, not about how the code
 under review is written. Clauses 3 and 4 were added on 2026-09-01 after each was violated —
-in the same session, by the author of clauses 1 and 2.
+in the same session, by the author of clauses 1 and 2. Clauses 5 and 6 were added on
+2026-09-07 for the same reason, by a different author, in a session that had *already*
+codified "a claim that quantifies something is a dependency on it" — and then left this
+sentence reading "Four separate claims" while appending two. Corrected in the same pass, and
+kept as a note rather than silently renumbered, because the recurrence is the point: this
+count is the first thing that goes stale every time the list grows.
 
 1. **Verify a behavioural claim against the artifact — prefer execution wherever execution
    is possible.** For a guard, parser, or predicate, "this input is rejected" / "this form
@@ -40,6 +45,36 @@ in the same session, by the author of clauses 1 and 2.
    produced it — "9 regressions" reads as a property of the change when it is a property of
    the inputs.
 
+5. **When the INSTRUMENT is an edit — a mutation, a stub, a reverted line — prove the edit
+   landed before reading the result.** Added 2026-09-07. This is not clause 2 again: a
+   mutation harness has no room for a positive control, because the mutation *is* the
+   control. Its failure mode is silent and points the reassuring way — a mutation that never
+   applied produces the identical green a working guard produces, and a stub that never
+   shadowed produces the identical "not invoked" a blocked command produces. Both happened in
+   one session:
+
+   - `perl -pe "s/\Qgh\${_OUT_SEP}api\E/.../"` inside a double-quoted shell string: the shell
+     expanded `${_OUT_SEP}` to empty before perl saw it, the pattern matched nothing, and the
+     structural assertion under test reported **PASS**. Read as "the assertion has a hole."
+     `cmp -s original mutant` showed the files were identical.
+   - A PATH-shadowed argv-printing stub reporting on **stdout**, probing constructions that
+     redirect stdout to `/dev/null`. All 74 rows read "not invoked" — including a spaced
+     baseline that must invoke. The tell was the baseline, not the crafted rows.
+
+   So: `cmp` the mutant against the original and abort if identical; make the stub report to a
+   sentinel **file** no input can reach; and restore through an `EXIT` trap, so an interrupted
+   run cannot leave a security hook mutated on disk. State in the output which of these ran.
+
+6. **A clean harvest of real history is evidence about false positives, never about
+   reachability.** Added 2026-09-07. Diffing a change's decisions across every command in
+   local transcript history is the right way to bound over-denial, and it is worth doing at
+   full population so no filter needs defending. It cannot bound *under*-denial: history
+   contains only what someone happened to type, and a deny gate is threat-modelled against
+   what an input can be **shaped into**. A widening measured at 0 flips over 31,382 real
+   commands was, at that moment, converting real denies into allows for a constructed decoy
+   nobody had ever typed. Pair every harvest with adversarially constructed rows, and never
+   let the harvest's size stand in for the construction.
+
 ## When this applies
 
 At review time, for any finding whose truth is a runtime behaviour. It does **not** replace
@@ -55,6 +90,9 @@ not "never read."
 - A negative result from a harness that was never shown to produce a positive one.
 - "Still not fixed" from a scratch script built in the same session as the claim.
 - A restricted-PATH or stubbed-binary probe with no assertion that the stub actually resolved.
+- A mutation or stubbed edit whose result is read without `cmp` proving the edit landed.
+- A stub that reports on stdout while the inputs under test redirect stdout.
+- A harvest over real command history cited as evidence that no bypass was OPENED.
 
 ## Why
 
