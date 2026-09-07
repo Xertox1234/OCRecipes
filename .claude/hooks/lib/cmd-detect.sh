@@ -982,6 +982,19 @@ _cmd_vanish_pass() {
               # \0, verified the same way (od on the real argv): e$(sq)\c@(sq)as builds
               # the three bytes `eas`. Missing this left `e$(sq)\c@(sq)as update` ALLOWED
               # while the sibling \0 and \x00 spellings denied.
+              #
+              # THESE THREE ARE BASH SEMANTICS ONLY, and the sibling \0 comment
+              # above already carries its own zsh clause -- this one omitted it.
+              # zsh 5.9 does not implement \cX at all: it renders $(sq)\c@(sq) as the
+              # literal `c@`, so all three deletions are OVER-denials there. Safe
+              # direction, and worth stating so a later round does not re-derive
+              # it. RESIDUAL, deliberately not chased: bash masks the LEAD BYTE of
+              # a multibyte operand (U+0800..U+0FFF collapses to NUL) and consumes
+              # the whole character, while this scan is byte-oriented -- so
+              # `e$(sq)\c<3-byte char>(sq)as` rejoins in bash and renders split here.
+              # No deny is lost (main allows it identically) and it is reachable
+              # only through the documented `bash -c` residual, which already
+              # allows the completely unobfuscated spelling.
               code = (cop == "@" || cop == " " || cop == BT) ? 0 : -3
             }
             # \a \b \e \E \f \n \r \t \v \\ \(sq) \" \? -- a control character, a

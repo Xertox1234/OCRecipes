@@ -143,6 +143,32 @@ emptied. Listed only so the ruling does not have to rediscover why it is closed.
 - `todos/P2-2026-08-16-outward-cli-pretooluse-deny-hook.md` — where option 3 was first raised
   and left awaiting a call.
 
+## Finding 10 — a multibyte `\c` operand, recorded not fixed (2026-09-07)
+
+`e$'\c<3-byte char>'as update --branch preview` — any character in U+0800–U+0FFF —
+builds exactly `eas` under bash 3.2 and really invokes the CLI, while the rendering emits a
+split token and ALLOWs.
+
+**Mechanism, and it is not a missed enumeration.** bash masks the **lead byte** (`0xE0 & 0x1f`
+= 0 → NUL, dropped) and consumes the **whole character**; `lib/cmd-detect.sh`'s scan is
+byte-oriented and sees one byte. So the `code = 0` NUL rule alone cannot fix it — the fix shape
+is to treat a non-printable-ASCII operand as NUL _and_ swallow the continuation bytes.
+
+**Deliberately not fixed, on three independently measured grounds:**
+
+1. **No deny is lost** — `main`, the pre-fix branch and the current head all ALLOW it. Nothing
+   regressed; this is a pre-existing hole in the same family.
+2. **Inert on the surface being protected.** The Bash tool executes under **zsh 5.9** here, and
+   zsh does not implement `\cX` at all — it renders `$'\c@'` as the literal `c@`.
+3. **Reachable only inside an already-documented residual.** bash semantics require a `bash -c`
+   wrapper, which `guard-outward-cli.sh` records as an accepted residual — and that residual
+   already allows the completely unobfuscated `bash -c "<gated command>"`. A `\c`-operand gap
+   _inside_ a residual cannot be more severe than the residual containing it.
+
+That third point is the generalisable one: **a finding reachable only through a documented
+bypass is bounded by that bypass, not by its own cleverness.** Fixing it would narrow nothing
+while adding a fourth condition to an arm that has already produced two CRITICALs.
+
 ## Findings 8 and 9, recorded here rather than filed as P0s
 
 Both are pre-existing on `main` (verified: ALLOW on `main` and on the fix branch, with
