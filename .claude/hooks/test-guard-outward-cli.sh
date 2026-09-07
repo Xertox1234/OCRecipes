@@ -1454,6 +1454,23 @@ assert_deny "interior redirect GAIN: a second, interior-redirect merge is now CO
 # detection failure), so no command that DENIED before can flip to ALLOW -- the
 # corpus diff reports that direction empty. The awk --auto scan compares whole
 # fields ($i == "--auto"), so a redirect TARGET cannot masquerade as the flag.
+#
+# THE TWO ALLOW ROWS BELOW ARE THE PIN ON THAT DECISION, and it was verified with
+# a THIRD mutation aimed only at them: reverting the CLAUSE= line alone back to
+# `gh[[:space:]]+pr[[:space:]]+merge` while leaving every detector widened turns
+# EXACTLY these two rows RED and nothing else. Without them, a later
+# "make the grant-shaped read conservative again" refactor would land silently
+# under a green suite -- an allow row is invisible to the NARROWING mutation that
+# kills the deny rows (mutation 1), so it needs a mutation of its own.
+#
+# NOTE ON THE JUSTIFICATION, because the tempting short version is not sound: the
+# reason to trust this is the MEASUREMENT (0 DENY->ALLOW across 14,151
+# redirect-bearing commands from real history), not the tidy set argument that
+# "the newly matched set is exactly the set that allowed before". That argument
+# is FALSE in general, and this very change disproves it -- the GAIN row above
+# flips ALLOW->DENY by changing an occurrence COUNT, a path with nothing to do
+# with the clause cut. Widening a detector can move a decision through any
+# consumer that reads it, not only through the one you were thinking about.
 assert_allow "interior redirect x --auto carve-out: a sanctioned automerge with an interior redirect ALLOWS, matching the argv bash actually builds" \
   "$(json 'gh pr 2>&1 merge 42 --auto')"
 assert_allow "the same carve-out with the redirect GLUED to the namespace word" \
