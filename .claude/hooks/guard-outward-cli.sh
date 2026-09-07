@@ -1517,6 +1517,19 @@ _OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
 # `[ -n ]` assertion: every glued-form deny row in test-guard-outward-cli.sh goes
 # RED the moment this interpolation empties.
 #
+# COST, MEASURED rather than assumed (project_per_bash_hook_overhead). This is a
+# NESTED quantifier — `(...)*` followed by `+` — interpolated into ~28 patterns in
+# a hook that runs on EVERY Bash tool call, which is the shape that produces
+# catastrophic backtracking when it produces it at all. It does not here: macOS
+# grep -E runs these as a DFA. Before/after, 10 invocations each, several runs:
+# a command with no gated needle takes the fast-path exit at ~11 ms UNCHANGED
+# (the overwhelming majority of calls); gated paths track their own baseline
+# within run-to-run noise. Inputs shaped to punish a backtracking engine — 400
+# spaces after a gated tool word, 120 chained redirects before the verb, 300 bare
+# `>` glued to one — cost the SAME as an ordinary gated command, not more. If this
+# constant is ever rewritten, re-measure that third row: it is the one that would
+# expose a quadratic form.
+#
 # DELIBERATELY NOT APPLIED to crude_smells_outward's degraded mirror (search this
 # file for `[^a-zA-Z]+`). That function runs on the no-jq and no-lib paths, which
 # reach it BEFORE/WITHOUT the lib source, so `$_CMD_REDIR` there WOULD be the empty
