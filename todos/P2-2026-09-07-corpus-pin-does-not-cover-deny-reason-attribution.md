@@ -76,5 +76,5 @@ line gaining a reason field. Watch out for two things:
 Do not pin a digest of the attribution section: an opaque hash cannot be confirmed by a
 reviewer reading the diff, which is the property the pin convention exists for.
 
-Related: `todos/P2-2026-09-07-corpus-note6-allgaps-explanation-is-wrong.md` (same file,
+Related: `todos/archive/P3-2026-09-07-corpus-note6-allgaps-explanation-is-wrong.md` (same file,
 comment accuracy).
