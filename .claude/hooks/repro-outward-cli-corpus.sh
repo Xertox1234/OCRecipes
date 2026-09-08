@@ -781,10 +781,15 @@ IDS=(); EXPS=(); CMDS=(); PS=(); JS=(); LS=(); AS=()
 # invocations, so
 # pinning attribution makes the run CHEAPER, not more expensive.
 #
-# The pin at the end of this file compares all three lists. The counts beside them
-# are the DENOMINATOR assertion, not a cosmetic fast-fail -- `_pin_members` returns
-# SUCCESS when both sides are empty, so a degenerate run is caught by the counts
-# alone. See that block.
+# The pin at the end of this file compares all three lists. Be precise about what
+# the counts beside them add, because an earlier revision of this comment was not:
+# `_pin_members` returns SUCCESS when BOTH sides are empty, so a count is the only
+# defence against a degenerate run for a list whose PINNED side is also empty. That
+# is `EXPECTED_ROWS` and nothing else -- the other three carry non-empty manifests,
+# so an empty actual already reds them with every pinned line reported as removed.
+# The other counts earn their place by failing FIRST and legibly ("372, expected
+# 356" beats sixteen `+` lines), not by covering a case membership misses. See that
+# block.
 PRECISE_GAP_IDS=(); ALLPATH_DIRTY_IDS=(); DENY_ATTRIB=(); DENY_FP=(); DENY_FULL=()
 for row in "${ROWS[@]}"; do
   # Parameter expansion, NOT awk: awk is line-oriented, so a row whose COMMAND
@@ -910,9 +915,16 @@ fi
 #    going dirty appears as a `+` line.
 #
 # 4. ATTRIBUTION catches a row that keeps its verdict and changes WHICH CHECK
-#    produced it. The other three read only DENY/ALLOW, so a refactor that moves
-#    a row onto a different deny branch leaves every count, every membership set
-#    and every per-path tuple byte-identical. That is the `co-mask-c1` hazard
+#    produced it, ON THE PRECISE PATH. The other three read only DENY/ALLOW, so a
+#    refactor that moves a row onto a different deny branch leaves every count,
+#    every membership set and every per-path tuple byte-identical.
+#    The path qualifier is not a hole, and it is measured rather than assumed:
+#    each degraded path reaches exactly ONE reason, its own fail-closed fallback in
+#    crude_smells_outward (nojq "jq unavailable...", nolib "lib/cmd-detect.sh is
+#    unsourceable...", noawk "the quote-aware rendering came back empty..."), 25
+#    rows each, printed in the precise-clean/degraded-dirty section above. There is
+#    no second branch on those paths to reroute ONTO, so there is no degraded-path
+#    attribution to pin. Stated so a reader does not go hunting an empty hole. That is the `co-mask-c1` hazard
 #    this file documents at length below -- "read this row's ATTRIBUTION line,
 #    never its verdict alone" -- and until 2026-09-08 the pin encoded the
 #    assurance those notes tell you not to make.
@@ -942,6 +954,23 @@ fi
 #    and one that disagrees between a dev box and the runner. Both measurements, and
 #    the full mutation transcript, are at
 #    todos/archive/P2-2026-09-07-corpus-pin-does-not-cover-deny-reason-attribution.md.
+#
+#    AND THE ONE THAT IS STILL OPEN, named because a residual list that discloses
+#    only the residual it has already closed is worse than no list. A scope
+#    NARROWING INSIDE a check that still fires first for every corpus row: the
+#    check keeps producing the same verdict AND the same reason for all 448 rows
+#    while commands outside the corpus flip. Nothing in this block can see that --
+#    not attribution, not the per-path tuples, not `_pin_sites`, which asks whether
+#    a check is reached, never whether it is reached by everything it should be.
+#    That is a question about which ROWS EXIST, and the only answers are new axes
+#    and adversarial construction. It is the honest boundary of what a per-row pin
+#    asserts, and the reason NOTE6's "a corpus can only report on the axes it
+#    varies" is the first thing to read after this.
+#
+#    The residual this list USED to name second -- a deny site no row reaches, so
+#    deleting it is invisible -- was live when it was written and is closed now:
+#    see the DENY-SITE COVERAGE axis and `_pin_sites`. It was found by a reviewer
+#    deleting three real protections and watching this file exit 0.
 #
 # HOW TO BUMP: a bump is a deliberate, dated edit, and the DIFF is where a
 # reviewer confirms the movement was intended. Re-run this file, paste the sets
