@@ -75,7 +75,7 @@ jobs:
       - name: Hook self-tests (.claude/hooks/test-*.sh)
         run: bash scripts/run-hook-tests.sh
 
-  # The outward-CLI guard's executable ground truth: 427 constructions x 4 execution
+  # The outward-CLI guard's executable ground truth: 448 constructions x 4 execution
   # paths (precise / no-jq / no-lib / no-awk). Nothing ran this file until 2026-09-07 --
   # scripts/run-hook-tests.sh globs `.claude/hooks/test-*.sh` and the corpus's filename
   # does not match -- so its numbers drifted into prose about a program nobody executed.
@@ -123,7 +123,7 @@ jobs:
   # per-ID manifests. Running the corpus and ignoring its exit code would be worth
   # nothing -- that is precisely the bug this job closes.
   outward-cli-corpus:
-    name: Outward-CLI guard corpus (427 rows x 4 paths)
+    name: Outward-CLI guard corpus (448 rows x 4 paths)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
