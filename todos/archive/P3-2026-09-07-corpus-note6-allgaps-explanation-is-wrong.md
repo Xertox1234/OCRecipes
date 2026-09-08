@@ -1,9 +1,9 @@
 ---
 title: "NOTE6's explanation of the 167-vs-164 discrepancy is factually wrong about what ALLGAPS counts — the number is right, the reason is not"
-status: backlog
+status: done
 priority: low
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-08
 assignee:
 labels: [deferred, harness, testing]
 github_issue:
@@ -50,11 +50,11 @@ defect. Hence this file.
 
 ## Acceptance Criteria
 
-- [ ] NOTE6's causal sentence is corrected, or explicitly marked SUPERSEDED in place, so the
+- [x] NOTE6's causal sentence is corrected, or explicitly marked SUPERSEDED in place, so the
       file no longer asserts two contradictory things about `ALLGAPS`.
-- [ ] `ALLGAPS` itself is unchanged and still reports 164 — this is a comment fix, and the pin
+- [x] `ALLGAPS` itself is unchanged and still reports 164 — this is a comment fix, and the pin
       must stay green without a bump.
-- [ ] If the real origin of the hand-counted 167 can be recovered, it is recorded; if it cannot,
+- [x] If the real origin of the hand-counted 167 can be recovered, it is recorded; if it cannot,
       the note says so rather than inventing a second explanation.
 
 ## Implementation Notes
@@ -69,3 +69,28 @@ are ALLOW-expecting"). Reconcile NOTE6 to that rather than re-deriving it.
 Note the 167 figure is a _hand count from a two-tree comparison_, not something this file emits,
 so it may not be reproducible from the current tree at all. "Origin not recoverable" is an
 acceptable outcome and is better than a fresh guess.
+
+## Updates
+
+### 2026-09-08 — closed by marker, not by rewrite
+
+Resolved the way this file's own acceptance criteria allowed for ("corrected, **or** explicitly
+marked SUPERSEDED in place"), because the rewrite turned out to be the wrong remedy.
+
+- **The marker landed in `e0e6e886`** (PR #933) and names both false statements explicitly —
+  (a) "the four ALLOW-EXPECTING CONTROL ROWS" when there are 25 of 40, and (b) the claim that the
+  printed metric excludes over-denied ALLOW rows when `ALLGAPS` increments on any path mismatch.
+  It also tells the reader what they are most likely doing when they reach it (attributing a
+  manifest movement involving one of those 25) and not to use the paragraph for it.
+- **`ALLGAPS` was never touched.** Still 164, still what the pin asserts, pin green with no bump —
+  the user's instruction not to "fix" the 164/167 discrepancy is intact.
+- **The 167 is not recoverable, and that is now recorded in the file rather than left open.** It
+  is a hand count over a two-tree before/after comparison from PR #931 — not a number this file
+  emits on any tree — so there is nothing to re-derive and nothing to check a replacement against.
+  Saying so is the honest close; inventing a better-reading second explanation is precisely how
+  the wrong paragraph came to exist.
+
+**Why not delete or rewrite the paragraph.** Its surrounding block is retained deliberately for
+its arithmetic lesson, and the file's convention is to mark superseded blocks in place rather than
+excise them. A rewrite would have to assert something about the 167 that cannot be verified, which
+would re-create the defect one level down.
