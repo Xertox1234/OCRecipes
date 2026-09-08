@@ -8,7 +8,7 @@ tags: [bash, shell, glob, nullglob, ci, github-actions, hooks, set-e, fail-open,
 symptoms: [A CI or gate step that "runs everything matching a glob" goes green having executed zero items after a rename or relocation, Step log shows none of the per-item markers yet the step exits 0, An existence guard with continue silently converts an unmatched literal glob pattern into "nothing to do", A glob runner reports a healthy non-zero count while a specific fixture you believe it covers has never been in its namespace, A file that looks like part of a suite is never named by any runner and its numbers drift into prose nobody executes]
 applies_to: [.claude/hooks/**, scripts/**/*.sh, .github/workflows/*.yml, .husky/**]
 created: '2026-07-03'
-last_updated: '2026-09-07'
+last_updated: '2026-09-08'
 ---
 
 # A glob-driven runner loop passes green when the glob matches nothing — count runs and fail on zero
@@ -133,10 +133,58 @@ Verified by mutation: renaming one gapping row's ID left `rows=427 precise-path 
 all-path gaps=164` — every total identical to the pin — and only the per-ID `comm` diff went
 red. A count-only pin is **green** on that mutation.
 
-Locale and shell matter for a pinned ID list that must agree between a dev box and the runner:
-sort both sides with `LC_ALL=C` (glibc's UTF-8 collation ignores `-`, so `flagadjfd-*` and
-`flagadjfp-*` interleave differently), and guard empty-array expansion because macOS bash 3.2
-errors on `"${arr[@]}"` for an empty array under `set -u` while bash 5 does not.
+**Last step: an OUTCOME is not a CAUSE.** Everything above pins *what the run decided* — how
+many, which ones, on which paths. None of it records *why*. In a gate with several branches that
+produce the same outcome, a refactor can move a row from the branch meant to protect it onto an
+incidental one, and every count, every membership set and every per-path tuple stays
+byte-identical. The corpus above documents three rows that already deny for a reason unrelated to
+the mechanism their name implies, each with a note saying to read the attribution and never the
+verdict alone — so the file was carrying, in prose, the reason not to trust its own pin.
+
+If the gate can say *why*, pin the why:
+
+```bash
+# in the SAME branch that records the verdict, not a second pass:
+if [ "$p" = DENY ]; then DENY_ATTRIB+=("$id : $(reason precise "$cmd")"); fi
+```
+
+Verified by mutation, and the mutation is the one to reach for in this class: find two branches
+that both produce the same outcome and change which one wins. Deferring one deny to another deny
+three lines below it cannot move any verdict — so all four of `rows`, both gap totals, both
+manifests and the subset invariant stayed green, 0 of 427x4 verdict cells changed, and seven rows
+silently changed which check was protecting them. Only the attribution list went red.
+
+Two things made it nearly free, and both generalise:
+
+- **Collect in the loop that already has the data.** The attribution section had been re-walking
+  the rows and re-invoking the gate 427 times purely to re-derive a value the main loop already
+  held. Capturing there removed those invocations: the run got ~25% FASTER (127-138s -> 99-103s)
+  while gaining a pin. "Pinning more costs more" is worth measuring before believing.
+- **Print the manifest, then pin what you printed.** The gate's own output section IS the pinned
+  block now, so regenerating the pin is a copy rather than a transcription.
+
+**Locale and shell matter for anything pinned that must agree between a dev box and the runner** —
+and this is broader than it first looks. It is not only the ORDER of the lines:
+
+- **Sort both sides with `LC_ALL=C`** (glibc's UTF-8 collation ignores `-`, so `flagadjfd-*` and
+  `flagadjfp-*` interleave differently).
+- **Force the same collation on `comm`, not just on `sort`.** `comm` is a merge that assumes its
+  inputs are ordered the way *it* compares; GNU comm compares with the locale's collation. Feeding
+  it C-sorted input under a UTF-8 locale lets the merge desync and report lines as unique-to-each
+  that are present in both. Forcing the sort and not the comparison closes half the divergence.
+- **The CONTENT of a pinned line can be locale-dependent too.** `cut -c` counts *characters* under
+  a UTF-8 locale on BSD and *bytes* under `LC_ALL=C`, and GNU coreutils chooses again. A pinned
+  fingerprint truncated with `cut -c1-72` from a message containing an em-dash before column 72
+  came out 74 bytes on one locale and 72 on another — the *same tree, same gate, different pin*.
+  Harmless for as long as nothing compared those strings; a wedged required check the moment
+  something did. A pin must be a function of the thing under test, not of the environment reading
+  it: force byte semantics, and REGENERATE the manifest from a run rather than hand-editing the
+  lines that moved.
+- **Guard empty-array expansion**, because macOS bash 3.2 errors on `"${arr[@]}"` for an empty
+  array under `set -u` while bash 5 does not.
+- **Scope the locale forcing to your own text handling.** If the harness invokes the thing under
+  test as a subprocess, an exported `LC_ALL` reaches it and can change the very behaviour being
+  measured. Prefix the individual tools, do not export.
 
 ## Prevention
 
@@ -149,6 +197,15 @@ errors on `"${arr[@]}"` for an empty array under `set -u` while bash 5 does not.
 - When replacing hand-listed invocations with a glob (to kill membership drift), notice
   the invariant the hand-list gave for free: each named file's existence was asserted by
   the failing exit of a missing file. Re-establish it explicitly.
+- **If a check reduces N observations to one boolean, pin the N — and if it can report WHY it
+  decided, pin that too.** A pin over outcomes cannot see a reroute between two branches that
+  produce the same outcome. Mutate accordingly: the sharpest mutation in this class is one that
+  provably cannot change any outcome.
+- **A pin's value is a function of two things, and only one of them is under test.** Before
+  trusting a pinned string, ask what produced it — truncation width, sort order, collation, tool
+  version, padding. Anything the environment can move belongs nailed down before the pin becomes
+  a required check, because at that point a portability defect is not a red test, it is a blocked
+  repository.
 - Both callers now single-source the loop through `scripts/run-hook-tests.sh` (extraction
   landed 2026-07-03), so this guard is carried to `scripts/preflight.sh` full mode and CI
   alike — there is no longer a twin loop to drift.
@@ -168,4 +225,5 @@ errors on `"${arr[@]}"` for an empty array under `set -u` while bash 5 does not.
 - [pipefail grep condition fails open via SIGPIPE](pipefail-echo-grep-condition-fails-open-via-sigpipe-2026-06-27.md) — another silent shell fail-open in the same toolchain
 - [A verification that scans ZERO inputs is green and meaningless](../code-quality/verification-that-scans-zero-inputs-is-green-and-meaningless-2026-08-07.md) — later incident of the same rule (macOS /var symlink variant); assert the count, not just the exit code
 - [A summary count cannot express a row getting strictly worse](../code-quality/summary-count-cannot-express-a-row-getting-strictly-worse-2026-09-06.md) — the same count-vs-membership gap one level down: pin the per-ID set, diff with `comm`, never subtract totals
+- [bash counts parentheses THROUGH a quoted heredoc body inside $( )](../runtime-errors/heredoc-in-command-substitution-counts-parens-2026-09-08.md) — how a 356-line generated manifest kills the script at parse time, found building the attribution pin above
 - [A fixture stops guarding the moment you fix the defect it documents](../conventions/fixture-stops-guarding-when-its-defect-is-fixed-2026-08-05.md) — the other way a fixture quietly stops carrying signal
