@@ -51,7 +51,23 @@ reason() {  # $1=mode $2=command -> deny reason fingerprint (attribution
     noawk)   o=$(printf '%s' "$env_json" | env PATH="$NOAWK_BIN" "$NOAWK_BIN/bash" "$HOOK" 2>/dev/null) ;;
   esac
   grep -q permissionDecision <<< "$o" || { printf '%s' '(allowed)'; return; }
-  tr '\n' ' ' <<< "$o" | sed -E 's/.*guard-outward-cli: //; s/ Bypass:.*//' | cut -c1-72
+  # LC_ALL=C is load-bearing on the extraction, not decoration. `cut -c` counts
+  # CHARACTERS under a UTF-8 locale on BSD and BYTES under C, and GNU coreutils
+  # makes its own choice again -- so the truncation point of any reason string
+  # containing a multibyte character depends on the ambient locale of whoever runs
+  # this. Three of the 356 pinned reasons contain an em-dash before column 72
+  # ("... occurrence — ambiguous ..."), and measured on darwin the same string
+  # truncates to 74 bytes under C.UTF-8 and 72 under C. That was cosmetic while
+  # nothing compared these strings; it is a WEDGED REQUIRED CHECK now that the pin
+  # does, because a dev box and the ubuntu runner would pin different bytes for
+  # the same guard. Same failure mode, same remedy, and the same reasoning as the
+  # `LC_ALL=C sort` in `_pin_norm` below. Byte semantics can in principle split a
+  # future multibyte character mid-sequence; that is deterministic, which is the
+  # property a pin needs, and none of the current 17 fingerprints does it.
+  # NOTE the scope: this is the corpus's own text handling. The guard itself is
+  # invoked with the ambient locale untouched, because its verdicts are what this
+  # file measures and must not be perturbed by the harness.
+  tr '\n' ' ' <<< "$o" | LC_ALL=C sed -E 's/.*guard-outward-cli: //; s/ Bypass:.*//' | LC_ALL=C cut -c1-72
 }
 
 # ---- axes ------------------------------------------------------------------
@@ -852,11 +868,14 @@ fi
 #    `${x:----admin}` leaves THREE dashes and `_OUT_FLAG_LEAD` correctly refuses
 #    that as a flag boundary. The set was measured, not predicted -- a first guess
 #    at it named c1-threedash and missed four of the seven.
-#    What it still cannot see: the reason is `cut -c1-72`, so two checks whose
-#    messages agree for 72 characters would collapse. Measured 2026-09-08 by
-#    widening the cut to 400 and re-running -- 17 distinct fingerprints at 72
-#    chars and the SAME 17 at 400, over all 356 DENY rows. Re-measure that if a
-#    new deny message is added with a long shared prefix. Both measurements, and
+#    What it still cannot see: the reason is truncated, so two checks whose
+#    messages agree over the truncation would collapse into one fingerprint.
+#    Measured 2026-09-08 by widening the cut to 400 and re-running -- 17 distinct
+#    fingerprints at the pinned width and the SAME 17 at full length, over all 356
+#    DENY rows, so nothing is currently colliding. Re-measure if a new deny message
+#    is added with a long shared prefix. The width is 72 BYTES, not characters --
+#    see `reason()` for why that distinction is the difference between a stable pin
+#    and one that disagrees between a dev box and the runner. Both measurements, and
 #    the full mutation transcript, are at
 #    todos/archive/P2-2026-09-07-corpus-pin-does-not-cover-deny-reason-attribution.md.
 #
@@ -1476,14 +1495,14 @@ co-pref-sufx       : command-position 'eas update/publish/submit' publishes an O
 co-sigil-c1        : command-position 'eas build --auto-submit' submits the finished binary t
 co-mask-c1         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 co-redir-mask      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-co-pref-multi      : more than one command-position 'gh pr merge' occurrence — ambiguous, can
+co-pref-multi      : more than one command-position 'gh pr merge' occurrence — ambiguous, c
 co-pref-dollar     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-co-two-api         : more than one command-position 'gh api' occurrence — ambiguous, cannot v
+co-two-api         : more than one command-position 'gh api' occurrence — ambiguous, cannot
 co-ind-pref        : command-position 'eas build --auto-submit' submits the finished binary t
 co-pos-create      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 co-c2-predB        : command-position 'gh api' with a method flag (-X/--method) whose value i
 co-c2-predA        : command-position 'gh api' with a method flag (-X/--method) whose value i
-co-two-api-c2      : more than one command-position 'gh api' occurrence — ambiguous, cannot v
+co-two-api-c2      : more than one command-position 'gh api' occurrence — ambiguous, cannot
 co-c2-toolsplit    : command-position 'gh api' with a method flag (-X/--method) whose value i
 co-c2-toolsub      : command-position 'gh api' with a method flag (-X/--method) whose value i
 co-c2-halfA        : command-position 'gh api' with a method flag (-X/--method) whose value i
@@ -1498,6 +1517,16 @@ EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
 # runner for reasons that have nothing to do with the guard.
 _pin_norm() { printf '%s\n' "$1" | grep -v '^[[:space:]]*$' | LC_ALL=C sort; }
 
+# ...and every `comm` below reads that ordering with the SAME collation. `comm` is
+# a merge: it assumes its two inputs are sorted the way IT compares them, and GNU
+# comm compares with the locale's collation unless told otherwise. Feeding it
+# C-sorted input under a glibc UTF-8 locale -- where `-` is ignored in collation --
+# lets the merge desync and report lines as unique-to-each side that are present in
+# both. Forcing `LC_ALL=C` on the sort while leaving it off the comparison closes
+# only half of the divergence this pin was already written to avoid. Not
+# reproducible on darwin (BSD comm does not collate), which is exactly why it is
+# forced rather than tested: the runner is the platform that would show it.
+
 PIN_FAIL=0
 
 _pin_count() {  # $1=label $2=expected $3=actual
@@ -1508,8 +1537,8 @@ _pin_count() {  # $1=label $2=expected $3=actual
 
 _pin_members() {  # $1=label $2=expected-list $3=actual-list
   local added removed
-  added=$(comm -13 <(_pin_norm "$2") <(_pin_norm "$3"))
-  removed=$(comm -23 <(_pin_norm "$2") <(_pin_norm "$3"))
+  added=$(LC_ALL=C comm -13 <(_pin_norm "$2") <(_pin_norm "$3"))
+  removed=$(LC_ALL=C comm -23 <(_pin_norm "$2") <(_pin_norm "$3"))
   [ -z "$added" ] && [ -z "$removed" ] && return 0
   echo "FAIL: $1 MEMBERSHIP drifted from the pin -- a total can hold while rows swap, and this is the check that sees it"
   [ -n "$removed" ] && { echo "  in the pin, NOT produced by this run (closed, or the row was renamed/removed):"; sed 's/^/    -/' <<< "$removed"; }
@@ -1539,7 +1568,7 @@ _pin_members() {  # $1=label $2=expected-list $3=actual-list
 _pin_subset() {  # $1=precise ids  $2=all-path tuples (`id p=.. j=.. l=.. a=..`)
   local ids2 orphans
   ids2=$(printf '%s\n' "$2" | sed 's/ .*//')
-  orphans=$(comm -23 <(_pin_norm "$1") <(_pin_norm "$ids2"))
+  orphans=$(LC_ALL=C comm -23 <(_pin_norm "$1") <(_pin_norm "$ids2"))
   [ -z "$orphans" ] && return 0
   echo "FAIL: precise-path gaps are no longer a subset of all-path dirty -- these IDs are pinned as precise gaps but absent from the all-path manifest, so their direction is no longer recoverable:"
   sed 's/^/    /' <<< "$orphans"
