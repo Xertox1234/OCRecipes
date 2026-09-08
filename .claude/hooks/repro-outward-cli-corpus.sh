@@ -1089,6 +1089,25 @@ _pin_members() {  # $1=label $2=expected-list $3=actual-list
   PIN_FAIL=1
 }
 
+# The precise manifest is bare IDs while the all-path one carries tuples, and that
+# asymmetry is only safe while every precise gap is ALSO all-path dirty -- that is
+# what makes a precise row's direction recoverable from the all-path `p=` field.
+# The relation is an INVARIANT of the two collection branches above (a row failing
+# on precise necessarily fails the any-path test), not a coincidence, but a later
+# edit narrowing the ALLGAPS condition would break it and the precise manifest
+# would silently lose its direction information. So assert it rather than leave a
+# reviewer to remember why bare IDs were safe -- the same reason the rest of this
+# block exists.
+_pin_subset() {  # $1=precise ids  $2=all-path tuples (`id p=.. j=.. l=.. a=..`)
+  local ids2 orphans
+  ids2=$(printf '%s\n' "$2" | sed 's/ .*//')
+  orphans=$(comm -23 <(_pin_norm "$1") <(_pin_norm "$ids2"))
+  [ -z "$orphans" ] && return 0
+  echo "FAIL: precise-path gaps are no longer a subset of all-path dirty -- these IDs are pinned as precise gaps but absent from the all-path manifest, so their direction is no longer recoverable:"
+  sed 's/^/    /' <<< "$orphans"
+  PIN_FAIL=1
+}
+
 # bash 3.2 (the macOS system bash this file runs under locally) errors on
 # "${arr[@]}" for an EMPTY array under `set -u`, while bash 5 on the runner does
 # not. Guarded so that a future tree with zero gaps fails the pin honestly
@@ -1111,6 +1130,7 @@ _pin_count "precise-path gaps" "$EXPECTED_PRECISE_GAPS" "$GAPS"
 _pin_count "all-path gaps"     "$EXPECTED_ALLPATH_GAPS" "$ALLGAPS"
 _pin_members "precise-path gap" "$EXPECTED_PRECISE_GAP_IDS"   "$ACTUAL_PRECISE_GAP_IDS"
 _pin_members "all-path dirty"   "$EXPECTED_ALLPATH_DIRTY_IDS" "$ACTUAL_ALLPATH_DIRTY_IDS"
+_pin_subset "$ACTUAL_PRECISE_GAP_IDS" "$ACTUAL_ALLPATH_DIRTY_IDS"
 
 if [ "$PIN_FAIL" -ne 0 ]; then
   echo ""
