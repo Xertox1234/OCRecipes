@@ -393,7 +393,7 @@ match current behaviour would encode the bypass as acceptable. They are:
   >
   > **Do not read the corpus gap count as this gap's size**; the two rows cover two of ten
   > measured families. Now tracked as its own `critical` todo:
-  > `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, with
+  > `todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, with
   > the full matrix. Also written up in
   > `docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md`.
 

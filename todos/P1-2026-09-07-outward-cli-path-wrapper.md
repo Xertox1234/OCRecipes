@@ -120,5 +120,5 @@ none of them changes what `execve` resolves.
   this implements, with the measured evidence behind it.
 - `todos/archive/P2-2026-08-16-outward-cli-pretooluse-deny-hook.md` — where this option was
   first raised and left awaiting a call; that todo produced `guard-outward-cli.sh` itself.
-- `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — the one
+- `todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — the one
   open guard defect that survives the Model A ruling, because it is reachable by accident.

@@ -122,7 +122,7 @@ redirect lives here.
 the one that has been mis-filed. `eas 2>&1 update --branch preview` and
 `gh pr >/dev/null merge 42` are real invocations that ALLOW today, and they carry **no evasion
 intent at all** — a person or an agent types them without thinking. Measured 2026-09-07; see
-`todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`.
+`todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`.
 
 **This taxonomy explains the whole backlog.** One open P0 (interior redirect) is model C and is
 genuinely worth fixing. The other two, and five of the seven closed ones, are model B.
@@ -171,7 +171,7 @@ emptied. Listed only so the ruling does not have to rediscover why it is closed.
 
 ## Related
 
-- `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — model C,
+- `todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — model C,
   and the re-measurement that reclassified it.
 - `todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md`,
   `todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md` — model B.

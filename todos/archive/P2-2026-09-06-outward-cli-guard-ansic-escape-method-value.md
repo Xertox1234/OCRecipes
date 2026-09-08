@@ -116,7 +116,7 @@ bypass" — the guard's own header currently states the former.
 - **Land PR #926 first**, then rebase — it introduces the `c2-ansic-hex` fixture row and the
   C2 branch this todo modifies.
 - Independent of
-  `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, though
+  `todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, though
   both touch the same two files and should not run as concurrent unattended jobs.
 
 ## Risks

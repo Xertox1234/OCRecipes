@@ -121,7 +121,7 @@ itself.
       a different verdict. State the ruling either way.
 - [ ] Bounds are pinned by `assert_allow`, not only denies: ordinary brace use must not start
       denying. At minimum `echo {1..3}`, `mkdir -p /tmp/x/{a,b}`, `find . -name '*.ts' -exec
-  grep -l x {} +`, and a brace range in a NON-command position.
+grep -l x {} +`, and a brace range in a NON-command position.
 - [ ] Two-sided, mutation-tested regression coverage: revert the fix, confirm the NAMED
       assertions fail, restore, confirm they pass. Per row, never in aggregate.
 - [ ] All four execution paths re-checked (precise / no-jq / no-lib / no-awk), each deny
@@ -181,5 +181,5 @@ itself.
   scanner fix vs. a guard-side narrow deny), so they are deliberately not folded; but both touch
   `repro-outward-cli-corpus.sh` and its NOTE6 gap attribution, so **whichever lands second must
   re-run the corpus and re-attribute by ID rather than assuming the first one's totals**.
-- `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — a third
+- `todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — a third
   open critical in the same guard. Different mechanism again (an interior redirect); do not fold.

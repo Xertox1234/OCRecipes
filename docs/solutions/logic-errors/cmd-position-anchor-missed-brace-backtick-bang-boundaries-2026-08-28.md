@@ -572,8 +572,18 @@ regression tests. Retracted in place, not silently rewritten — per this repo's
 copy of this exact "still open" claim was independently found to have survived two later
 comment sweeps inside the guard files themselves.
 
-**A THIRD redirect position, found 2026-09-06 while closing the other two — still open, out
-of scope, and the widest gap this document has recorded.** Findings A and B between them
+**A THIRD redirect position, found 2026-09-06 while closing the other two — the widest gap
+this document has recorded. CLOSED 2026-09-07 by `_OUT_SEP`, one interior absorber applied
+uniformly to all 30 separator slots (detectors *and* clause cuts) in a single change; 59
+corpus rows closed / 0 opened by per-ID diff, and 0 decision changes in either direction
+across all 31,382 distinct Bash commands harvested from local transcript history.**
+
+**And read the sibling entry before trusting that framing.** Landing this absorber opened a
+CRITICAL regression in a consumer nobody had examined — see
+[a union over renderings does not cover selection within one](union-over-renderings-does-not-cover-selection-within-one-2026-09-07.md).
+The corpus reported 0 opened and the suite was fully green while the branch was converting
+real denies into allows, because neither had a row for the shape involved. The numbers above
+are true and were not sufficient. Findings A and B between them
 cover a redirect that CLOSES the verb (`merge>log`) and one that PRECEDES the command
 (`2>/dev/null gh pr merge`). Neither reaches a redirect glued *where the anchors require
 whitespace between two words*.
@@ -594,18 +604,42 @@ families via the tool→verb position: `eas>/dev/null update` (the 2026-08-16 OT
 own command class), `npm>/dev/null publish`, `railway>/dev/null up`,
 `gh>/dev/null api … -X POST`, plus `gh release`/`gh repo`/`railway variable`/`railway
 service`. Every spaced baseline denies, so each is a **total detection failure** — no check
-runs at all, which is why even the `--repo` cross-repo egress check is skipped. The
-output-redirect, fd-duplicating and input-redirect forms were each measured and each allows.
+runs at all, which is why even the `--repo` cross-repo egress check is skipped.
+
+**Corrected 2026-09-07 — and the correction is the same mistake one level down.** This
+paragraph used to end: *"The output-redirect, fd-duplicating and input-redirect forms were
+each measured and each allows."* That sentence **reports guard verdicts as bypasses**, and
+one of its three forms is not a bypass at all. In the *glued* fd spelling (`eas2>&1 update`)
+bash takes an fd number only when the characters before the operator are ALL digits, so
+`eas2` is the command word — a different, non-existent binary. Nothing gated runs, and the
+allow is CORRECT. The section two paragraphs up is careful about exactly this ("every spaced
+baseline denies, so each is a total detection failure") and then loses the distinction here.
+The fd form *is* a real vector, but only **space-separated** (`eas 2>&1 update`) — and that
+spelling is the likelier one of the pair, because unlike the glued form it is ordinary shell
+that nobody writes with evasion in mind. Note the shape of the error: a property proven of
+one *form* asserted of the whole *syntax class*, which is
+[its own documented defect](one-form-property-asserted-of-whole-syntax-class-2026-09-06.md)
+in this same file's chain.
 
 That correction is itself the recurring lesson of this document: **a scope claim written from
 the fixtures that happen to exist, rather than from a measurement across the axis, will
 understate the finding.** The two corpus rows were an artifact of which families the
 generator's `FAM_NS_*` list covered, not of where the defect lives.
 
-The lib does not cover it either — `_CMD_POS_PREFIX` absorbs `_CMD_REDIR` only in the prefix
-run *before* the command word, so this is not a case of the guard lagging the lib.
+The *anchor* does not cover it either — `_CMD_POS_PREFIX` absorbs `_CMD_REDIR` only in the
+prefix run *before* the command word, so this is not a case of the guard lagging the lib.
 
-A future fix should be **one interior absorber applied uniformly**, not a per-regex patch —
+**Corrected 2026-09-07:** that sentence read "The **lib** does not cover it either", which is
+false and mattered practically. `_CMD_GIT_GLOBALS` (`lib/cmd-detect.sh:151`) has carried
+`([[:space:]]*$_CMD_REDIR)` — an interior absorber, in the run between `git` and its
+subcommand — since 2026-09-01, deliberately with `[[:space:]]*` rather than `+` so a *glued*
+redirect has no hole. Written as "the lib does not cover it", the note read as *nothing in
+this repo models this position*, when the shape to generalise was already written, tested and
+shipped one file away. `_OUT_SEP` is that shape generalised, not a second redirect pattern
+invented next to it — which matters, because `_CMD_REDIR` already has one hand-copied twin
+under an explicit lockstep contract, and a third copy is how `GH_API_CLAUSE` was missed.
+
+The fix was **one interior absorber applied uniformly**, not a per-regex patch —
 the selectivity trap
 [occurrence-ambiguity-guard-applied-selectively-not-uniformly](occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md)
 already cost this file three separate repairs, twice inside a single chain.
@@ -613,7 +647,7 @@ already cost this file three separate repairs, twice inside a single chain.
 Deliberately NOT fixed by the folded repair (its Scope Contract allows widening existing
 boundary classes and reusing the lib's `_CMD_REDIR`, not a new anchor shape at a new
 position). Tracked in
-`todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, with an
+`todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, with an
 executable record in `repro-outward-cli-corpus.sh`'s `nssufx-ghmerge` / `nssufx-ghcomment`
 rows — whose expectations are deliberately left at `DENY` so they keep reporting as gaps, but
 which cover only two of the ten measured families, so the corpus gap count must not be read
