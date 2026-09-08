@@ -142,3 +142,52 @@ for matching `)'`` — no test reaches it. Same scanner-desync family as `dd45ef
 a faster error message", the exact phrasing the pin block below it says was disowned for
 inviting the edit that reopens the empty-run hole. It now states they are the denominator
 assertion.
+
+### 2026-09-08 (round 2) — review found the pin's honest boundary, and it is now closed
+
+Two reviewers executed the corpus rather than reading it. The security review found what a
+per-row attribution pin structurally cannot see, and demonstrated it: **a deny site that no row
+is attributed to has no row to move**, so it can be deleted with every check green. Neutering
+three such sites produced `exit 0` and ZERO diff lines in both the verdict table and the
+attribution list, while `eas update:delete`, `eas update:republish`, `eas channel:edit`,
+`eas branch:delete` and `gh pr create --fill && gh pr create --repo other/org` all flipped
+DENY → ALLOW. All five deny correctly today; nothing would have noticed if they stopped.
+
+**Closed both ways.** A generated DENY-SITE COVERAGE axis (+21 rows, 427 → 448) covers the three
+sites and the read-only carve-outs each deny message names. And `_pin_sites` reads the _guard's
+source_, applies the same extraction `reason()` applies to a live decision, and requires every
+emitted deny to be attributed or explicitly exempt — so the NEXT check added without a row fails
+the gate instead of passing silently. 25 sites: 20 attributed, 5 exempt with reasons recorded
+(three fail-closed fallbacks reachable only on degraded paths; two malformed-envelope handlers
+`envelope()` cannot produce).
+
+**Two more internal invariants**, both of the `_pin_subset` kind — they compare the run against
+itself, so no re-pin can restate them:
+
+- `_pin_denominator` — attributed rows vs the DENY count in `PS[@]`. The count was pinned only
+  against the literal, so dropping 16 rows _and_ 16 manifest lines passed count and membership.
+- `_pin_distinct` — distinct fingerprints vs distinct full reasons. The collision-freedom
+  measurement was a comment asking a future human to re-measure; it is asserted every run now,
+  free, because `reason()` returns the full string and `_fp` truncates it from one invocation.
+
+**A false claim of mine, found by code review.** The capture comment said trailing whitespace is
+stripped because "both sides of the comparison are produced by this one line". Only the run's
+side is; the pinned side is a hand-editable heredoc and `_pin_norm` did not rtrim, so an editor
+re-indent could red this required check with a diff identical on both sides. Fixed in
+`_pin_norm`.
+
+**Six mutation runs, one per check:**
+
+    clean    exit 0   rows=448 gaps 31/167, all seven assertions green
+    reorder  exit 1   attribution ONLY — the round-1 evidence holds at 448 rows
+    neuter   exit 1   the review's own runC, previously exit 0 with 0 diff lines
+    new site exit 1   sites 26 != 25, and _pin_sites names the uncovered check
+    collide  exit 1   _pin_distinct: "20 distinct reasons collapse to 19"
+    drop 16  exit 1   _pin_denominator: "the run says 372, but 356 were attributed"
+
+Bump fully attributed: +21 rows, +3 all-path dirty, +16 attributed, **zero removals**.
+
+**Still not covered, and now disclosed rather than implied:** a scope narrowing _inside_ a check
+that still fires first for every corpus row. Verdict and attribution both hold while
+out-of-corpus commands flip. That is the boundary of what any per-row pin can assert, and it is
+a corpus-coverage question, not a pin question.

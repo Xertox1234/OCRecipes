@@ -163,6 +163,27 @@ Two things made it nearly free, and both generalise:
 - **Print the manifest, then pin what you printed.** The gate's own output section IS the pinned
   block now, so regenerating the pin is a copy rather than a transcription.
 
+**Then notice what a pin over ROWS still cannot see: a BRANCH with no rows.** Attribution
+catches a row moving between checks. It has nothing to say about a check no row is attributed to
+— there is no row to move, so the branch can be deleted and every count, every membership set,
+every per-path tuple and every attribution string stays byte-identical. Measured, not supposed:
+neutering three such branches in the gate above produced `exit 0` with **zero** diff lines while
+five real commands flipped from denied to allowed.
+
+Adding rows closes today's hole and nothing else. The durable form asserts **coverage of the
+emitters**, read out of the source rather than out of a run:
+
+```bash
+# every message the gate can EMIT, extracted exactly the way a live decision is
+ACTUAL_EMIT_SITES=$(grep -oE 'deny "prefix: .*' "$GATE" | sed -E 's/^.*prefix: //; s/ suffix.*//' | ...)
+# must each be reached by a row, or named in an exempt list WITH ITS REASON
+```
+
+Validate the extractor by set-comparison before trusting it — every fingerprint the run reaches
+must match a source-derived site exactly, with no leftovers on either side. And keep the exempt
+list explicit: "unreachable" is a claim that needs a reason written next to it, and an exempt
+list is how someone will eventually try to make a red gate green.
+
 **Locale and shell matter for anything pinned that must agree between a dev box and the runner** —
 and this is broader than it first looks. It is not only the ORDER of the lines:
 
@@ -197,6 +218,9 @@ and this is broader than it first looks. It is not only the ORDER of the lines:
 - When replacing hand-listed invocations with a glob (to kill membership drift), notice
   the invariant the hand-list gave for free: each named file's existence was asserted by
   the failing exit of a missing file. Re-establish it explicitly.
+- **Ask what the pin is blind to, and write the answer down where the pin is defined.** Each
+  rung above was found by someone asking that about the rung below it. A residual list that
+  names one residual is worth checking: the one it omits is usually the live one.
 - **If a check reduces N observations to one boolean, pin the N — and if it can report WHY it
   decided, pin that too.** A pin over outcomes cannot see a reroute between two branches that
   produce the same outcome. Mutate accordingly: the sharpest mutation in this class is one that
