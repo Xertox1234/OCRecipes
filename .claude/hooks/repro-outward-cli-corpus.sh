@@ -700,12 +700,20 @@ printf '%s\n' '-------------------+--------+---------+--------+--------+--------
 GAPS=0
 ALLGAPS=0
 IDS=(); EXPS=(); CMDS=(); PS=(); JS=(); LS=(); AS=()
-# Membership, not just totals. These are appended in the SAME two branches that
-# increment GAPS and ALLGAPS below -- never recomputed afterwards from a second
-# reading of the same conditions -- so a count and its ID list cannot encode
-# different definitions of "dirty". The pin at the end of this file compares the
-# lists; the counts are only a faster error message. See that block for why.
-PRECISE_GAP_IDS=(); ALLPATH_DIRTY_IDS=()
+# Membership, not just totals. All three of these are appended in the SAME
+# branches that compute the verdicts below -- never recomputed afterwards from a
+# second reading of the same conditions -- so a count and its list cannot encode
+# different definitions of the thing they are counting. DENY_ATTRIB is collected
+# here for that reason and one more: the attribution section further down used to
+# re-walk ROWS and re-run `decide precise` 427 times purely to re-derive the `p`
+# this loop already has. Capturing here deletes those 427 guard invocations, so
+# pinning attribution makes the run CHEAPER, not more expensive.
+#
+# The pin at the end of this file compares all three lists. The counts beside them
+# are the DENOMINATOR assertion, not a cosmetic fast-fail -- `_pin_members` returns
+# SUCCESS when both sides are empty, so a degenerate run is caught by the counts
+# alone. See that block.
+PRECISE_GAP_IDS=(); ALLPATH_DIRTY_IDS=(); DENY_ATTRIB=()
 for row in "${ROWS[@]}"; do
   # Parameter expansion, NOT awk: awk is line-oriented, so a row whose COMMAND
   # contains a newline had only its first line extracted. That silently excluded
@@ -720,6 +728,22 @@ for row in "${ROWS[@]}"; do
   if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); PRECISE_GAP_IDS+=("$id"); fi
   if [ "$p" != "$exp" ] || [ "$j" != "$exp" ] || [ "$l" != "$exp" ] || [ "$a" != "$exp" ]; then
     ALLGAPS=$((ALLGAPS+1)); ALLPATH_DIRTY_IDS+=("$id p=$p j=$j l=$l a=$a")
+  fi
+  # WHY a DENY row's reason is captured at all: a DENY is not evidence the
+  # INTENDED check fired. `co-mask-c1`, `c1-threedash` and `flagvcasearm-ghadmin`
+  # all deny for a reason unrelated to the mechanism their family name names, and
+  # each of their notes below says in so many words to read the ATTRIBUTION line
+  # rather than the verdict. Pinning verdicts alone leaves a refactor free to move
+  # a row onto a different check with every column in the table unchanged.
+  #
+  # Trailing whitespace is stripped: `reason`'s `cut -c1-72` lands mid-sentence
+  # for 41 of these 356 and leaves a trailing space. A trailing space is invisible
+  # in a diff and is removed on save by most editors, which on a REQUIRED check
+  # means a red gate nobody can see the cause of. Both sides of the comparison are
+  # produced by this one line, so the pinned form carries none either.
+  if [ "$p" = DENY ]; then
+    _att=$(printf '%-18s : %s' "$id" "$(reason precise "$cmd")")
+    DENY_ATTRIB+=("${_att%"${_att##*[![:space:]]}"}")
   fi
   IDS+=("$id"); EXPS+=("$exp"); CMDS+=("$cmd"); PS+=("$p"); JS+=("$j"); LS+=("$l"); AS+=("$a")
   printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' "$id" "$exp" "$p" "$j" "$l" "$a" "$note"
@@ -745,11 +769,15 @@ done
 [ "$HIDDEN" -eq 0 ] && echo "(none)"
 echo ""
 echo "=== deny-reason attribution (which check actually fired) ==="
-for row in "${ROWS[@]}"; do
-  id=${row%% @@ *}; _rest=${row#* @@ }; cmd=${_rest#* @@ }
-  [ "$(decide precise "$cmd")" = "DENY" ] || continue
-  printf '%-18s : %s\n' "$id" "$(reason precise "$cmd")"
-done
+# Printed from what the main loop captured. Same lines, same order, 427 fewer
+# guard invocations than the second pass this replaces -- and the section is now
+# LITERALLY the pinned manifest, so regenerating the pin is a copy of this block
+# rather than a transcription of it.
+if [ "${#DENY_ATTRIB[@]}" -gt 0 ]; then
+  printf '%s\n' "${DENY_ATTRIB[@]}"
+else
+  echo "(none)"
+fi
 
 # ============================ THE PIN ========================================
 # Everything above PRINTS. This block is the only thing that FAILS, and it is the
@@ -776,7 +804,7 @@ done
 # always-on CI job; see
 # .github/workflows/ci.yml -> "Outward-CLI guard corpus (427 rows x 4 paths)".
 #
-# *** THE THREE CHECKS ARE NOT REDUNDANT. EACH CATCHES WHAT THE OTHERS CANNOT.
+# *** THE FOUR CHECKS ARE NOT REDUNDANT. EACH CATCHES WHAT THE OTHERS CANNOT.
 # DO NOT DELETE ANY OF THEM. ***
 #
 # 1. COUNTS catch a corpus that produced NOTHING. `_pin_members` compares "" to
@@ -803,14 +831,34 @@ done
 #    pin observes. The 263 all-clean rows stay covered by ABSENCE -- any of them
 #    going dirty appears as a `+` line.
 #
-# NOT PINNED, AND DELIBERATELY SO: the deny-REASON attribution. `reason()` prints
-# which check actually fired for every DENY, and nothing here compares those
-# strings, so a refactor that keeps every verdict identical while making a row
-# deny through a DIFFERENT check stays green. That is the `co-mask-c1` hazard
-# this file documents a few lines below ("read the ATTRIBUTION, never the verdict
-# alone"). Tracked at
-# todos/P2-2026-09-07-corpus-pin-does-not-cover-deny-reason-attribution.md --
-# do not read a green pin as evidence the intended check fired.
+# 4. ATTRIBUTION catches a row that keeps its verdict and changes WHICH CHECK
+#    produced it. The other three read only DENY/ALLOW, so a refactor that moves
+#    a row onto a different deny branch leaves every count, every membership set
+#    and every per-path tuple byte-identical. That is the `co-mask-c1` hazard
+#    this file documents at length below -- "read this row's ATTRIBUTION line,
+#    never its verdict alone" -- and until 2026-09-08 the pin encoded the
+#    assurance those notes tell you not to make.
+#    MUTATION-VERIFIED, not assumed. The mutation is the reordering the guard
+#    itself declined to make and recorded as needing "its own mutation evidence"
+#    (see guard-outward-cli.sh, above the `--admin` check): defer the "no REAL
+#    --auto flag" deny to the `--admin` deny three lines below it whenever the
+#    --admin scan matches. Both branches DENY, so no verdict on any of the four
+#    paths can move, and none did: all 427 rows x 4 verdict columns came back
+#    BYTE-IDENTICAL and every other check in this block stayed green, while SEVEN
+#    rows silently changed which check was protecting them -- co-mask-c1,
+#    co-redir-mask, and five of the flagv*-ghadmin family (arithsep, bareparen,
+#    comment, sub, var). This list was the only thing in the file that noticed.
+#    Note which rows did NOT move: c1-threedash keeps its old attribution, because
+#    `${x:----admin}` leaves THREE dashes and `_OUT_FLAG_LEAD` correctly refuses
+#    that as a flag boundary. The set was measured, not predicted -- a first guess
+#    at it named c1-threedash and missed four of the seven.
+#    What it still cannot see: the reason is `cut -c1-72`, so two checks whose
+#    messages agree for 72 characters would collapse. Measured 2026-09-08 by
+#    widening the cut to 400 and re-running -- 17 distinct fingerprints at 72
+#    chars and the SAME 17 at 400, over all 356 DENY rows. Re-measure that if a
+#    new deny message is added with a long shared prefix. Both measurements, and
+#    the full mutation transcript, are at
+#    todos/archive/P2-2026-09-07-corpus-pin-does-not-cover-deny-reason-attribution.md.
 #
 # HOW TO BUMP: a bump is a deliberate, dated edit, and the DIFF is where a
 # reviewer confirms the movement was intended. Re-run this file, paste the sets
@@ -819,6 +867,11 @@ done
 # failure mode this whole block exists to prevent.
 
 EXPECTED_ROWS=427
+
+# One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
+# 356 of the 427 rows deny on the precise path; the other 71 are ALLOW there
+# (the fp-*/c1g-* controls, plus the 31 precise-path gaps).
+EXPECTED_DENY_ATTRIB_ROWS=356
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1064,6 +1117,381 @@ verbvcasearm-railup p=ALLOW j=DENY l=DENY a=DENY
 PIN_ALLPATH_EOF
 )
 
+# Generated by running this file and copying its "deny-reason attribution"
+# section verbatim -- that section prints exactly these strings, in this order.
+# Read the RIGHT-hand side when a line moves: it names the check in prose, which
+# is the whole point of pinning attribution rather than a digest of it.
+#
+# A FUNCTION, not the `$(cat <<'EOF' ... )` form the two manifests above use, and
+# that is not a style choice. bash's command-substitution parser counts
+# parentheses THROUGH a quoted heredoc body, and `reason`'s `cut -c1-72` truncates
+# two of these 17 messages mid-parenthetical ("(and the yar", "(-X/--method
+# POST/"). Inside `$( ... )` those unmatched `(`s desync the scanner and the whole
+# file dies with "unexpected EOF while looking for matching `)'" -- at PARSE time,
+# so no amount of testing the logic reaches it. Same scanner-desync family as the
+# cmd-detect bare-paren fix in dd45ef3e. A heredoc in a plain function body is
+# never scanned that way. Do not "simplify" this back.
+_pin_expected_attrib() { cat <<'PIN_ATTRIB_EOF'
+lit-easupd         : command-position 'eas update/publish/submit' publishes an OTA update or
+sufx-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+pref-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+vsub-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+vvar-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+lit-easbld         : command-position 'eas build --auto-submit' submits the finished binary t
+sufx-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+pref-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+vsub-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+vvar-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+lit-npmpub         : command-position 'npm publish' pushes a package to the registry.
+sufx-npmpub        : command-position 'npm publish' pushes a package to the registry.
+pref-npmpub        : command-position 'npm publish' pushes a package to the registry.
+vsub-npmpub        : command-position 'npm publish' pushes a package to the registry.
+vvar-npmpub        : command-position 'npm publish' pushes a package to the registry.
+lit-railup         : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+sufx-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pref-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+vsub-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+vvar-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+lit-ghmerge        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+sufx-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pref-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vsub-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vvar-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+lit-ghcomment      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+sufx-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pref-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+vsub-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+vvar-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+lit-ghapi          : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+sufx-ghapi         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pref-ghapi         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+vsub-ghapi         : command-position 'gh api' with a method flag (-X/--method) whose value i
+vvar-ghapi         : command-position 'gh api' with a method flag (-X/--method) whose value i
+nssufx-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+nsvsub-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+nsvvar-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+nssufx-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+nsvsub-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+nsvvar-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrtoolglue-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+intrtoolsp-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+intrtoolfd-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+intrtoolglue-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+intrtoolsp-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+intrtoolfd-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+intrtoolglue-npmpub : command-position 'npm publish' pushes a package to the registry.
+intrtoolsp-npmpub  : command-position 'npm publish' pushes a package to the registry.
+intrtoolfd-npmpub  : command-position 'npm publish' pushes a package to the registry.
+intrtoolglue-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+intrtoolsp-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+intrtoolfd-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+intrtoolglue-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrnsglue-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrtoolsp-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrnssp-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrtoolfd-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrnsfd-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrtoolglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrnsglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrtoolsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrnssp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrtoolfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrnsfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrtoolglue-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+intrtoolsp-ghapi   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+intrtoolfd-ghapi   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+intrtoolglue-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsglue-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolsp-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnssp-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolfd-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsfd-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolglue-ghrepo : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsglue-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolsp-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnssp-ghrepo    : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolfd-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsfd-ghrepo    : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolglue-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrnsglue-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrtoolsp-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrnssp-railvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrtoolfd-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrnsfd-railvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrtoolglue-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrnsglue-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrtoolsp-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrnssp-railsvc   : command-position 'railway service/environment delete' deletes a live Rai
+intrtoolfd-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrnsfd-railsvc   : command-position 'railway service/environment delete' deletes a live Rai
+decoytoolplain-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynsplain-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolglue-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynsglue-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolsp-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynssp-ghmerge  : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolfd-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynsfd-ghmerge  : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolplain-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsplain-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynssp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolplain-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsplain-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolsp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynssp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjglue-npmlog : command-position 'npm run update:preview/update:production' (and the yar
+flagadjsp-npmlog   : command-position 'npm run update:preview/update:production' (and the yar
+flagadjfd-npmlog   : command-position 'npm run update:preview/update:production' (and the yar
+flagadjglue-yarncwd : command-position 'npm run update:preview/update:production' (and the yar
+flagadjsp-yarncwd  : command-position 'npm run update:preview/update:production' (and the yar
+flagadjfd-yarncwd  : command-position 'npm run update:preview/update:production' (and the yar
+flagadjglue-ghapix : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjsp-ghapix   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjfd-ghapix   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjglue-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjsp-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjfd-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjsp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjctrl-boolean : command-position 'npm run update:preview/update:production' (and the yar
+toolvsub-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvvar-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvbt-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvnest-easupd   : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvdqclose-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvsqclose-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvmixq-easupd   : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvbareparen-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvcomment-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvarithsep-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvsub-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+toolvvar-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+toolvbt-easbld     : command-position 'eas build --auto-submit' submits the finished binary t
+toolvnest-easbld   : command-position 'eas build --auto-submit' submits the finished binary t
+toolvdqclose-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvsqclose-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvmixq-easbld   : command-position 'eas build --auto-submit' submits the finished binary t
+toolvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvsub-npmpub    : command-position 'npm publish' pushes a package to the registry.
+toolvvar-npmpub    : command-position 'npm publish' pushes a package to the registry.
+toolvbt-npmpub     : command-position 'npm publish' pushes a package to the registry.
+toolvnest-npmpub   : command-position 'npm publish' pushes a package to the registry.
+toolvdqclose-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvsqclose-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvmixq-npmpub   : command-position 'npm publish' pushes a package to the registry.
+toolvbareparen-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvcomment-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvarithsep-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvsub-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvvar-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvbt-railup     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvnest-railup   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvdqclose-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvsqclose-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvmixq-railup   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvbareparen-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvcomment-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvarithsep-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvsub-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvvar-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvbt-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvnest-ghmerge  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvdqclose-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvsqclose-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvmixq-ghmerge  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvbareparen-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvcomment-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvarithsep-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvsub-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvvar-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvbt-ghcomment  : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvnest-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvdqclose-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvsqclose-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvmixq-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvsub-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvvar-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvbt-ghapi      : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvnest-ghapi    : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvdqclose-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvsqclose-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvmixq-ghapi    : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4spec-tool-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4spec-verb-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4dig-tool-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+r4dig-verb-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+r4ansic-tool-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4ansic-verb-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4spec-tool-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4spec-verb-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4dig-tool-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+r4dig-verb-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+r4ansic-tool-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4ansic-verb-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4spec-tool-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4spec-verb-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4dig-tool-npmpub  : command-position 'npm publish' pushes a package to the registry.
+r4dig-verb-npmpub  : command-position 'npm publish' pushes a package to the registry.
+r4ansic-tool-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4ansic-verb-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4spec-tool-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4spec-verb-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4dig-tool-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4dig-verb-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4ansic-tool-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4ansic-verb-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4spec-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4spec-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4dig-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4dig-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4ansic-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4ansic-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4spec-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4spec-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4dig-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4dig-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4ansic-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4ansic-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4spec-tool-ghapi  : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4spec-verb-ghapi  : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4dig-tool-ghapi   : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4dig-verb-ghapi   : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4ansic-tool-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4ansic-verb-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvbareparen-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvcomment-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvarithsep-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvbareparen-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvcomment-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvarithsep-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvbareparen-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvcomment-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvarithsep-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvbareparen-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvcomment-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvarithsep-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+cap-199-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+cap-200-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+cap-250-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+cap-250-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+trailclose-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+trailclose-ctl     : command-position 'eas update/publish/submit' publishes an OTA update or
+trailclose-ghmrg   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvsub-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+flagvvar-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+flagvbt-easbld     : command-position 'eas build --auto-submit' submits the finished binary t
+flagvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvsub-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvvar-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvbt-ghcomment  : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvsub-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvvar-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvbt-ghapi      : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvsub-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvvar-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvbt-ghadmin    : command-position 'gh pr merge --admin' uses administrator privileges to
+flagvbareparen-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcasearm-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcomment-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvarithsep-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c1-submit-lit      : command-position 'eas build --auto-submit' submits the finished binary t
+c1-submit-colon    : command-position 'eas build --auto-submit' submits the finished binary t
+c1-submit-bare     : command-position 'eas build --auto-submit' submits the finished binary t
+c1-submit-plus     : command-position 'eas build --auto-submit' submits the finished binary t
+c1-repo-lit        : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1-repo-colon      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1-repo-short      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1-create-colon    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1-threedash       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c1g-pos1-lit       : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-pos10-lit      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-ind-lit        : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-inddig-lit     : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-arrelem-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-arrat-lit      : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-arrstar-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-bangkeys-lit   : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-allargs-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-allargstar     : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-barebang-lit   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c2-lit             : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c2-expand          : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-dynamic         : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-glued           : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-tension         : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-backtick        : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-tension-bt      : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-ansic-hex       : command-position 'gh api' with a method flag (-X/--method) whose value i
+ghapi-redir-trail  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c2-empty-proof-expand : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-empty-proof-lit : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+mid-backtick       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mid-sub            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mid-var            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mid-eas            : command-position 'eas update/publish/submit' publishes an OTA update or
+syn-default        : an outward-facing CLI is named in command position but the verb is not l
+syn-nocolon        : an outward-facing CLI is named in command position but the verb is not l
+syn-indirect       : an outward-facing CLI is named in command position but the verb is not l
+syn-cmdsub         : an outward-facing CLI is named in command position but the verb is not l
+syn-binary         : an outward-facing CLI is named in command position but the verb is not l
+co-pref-sufx       : command-position 'eas update/publish/submit' publishes an OTA update or
+co-sigil-c1        : command-position 'eas build --auto-submit' submits the finished binary t
+co-mask-c1         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+co-redir-mask      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+co-pref-multi      : more than one command-position 'gh pr merge' occurrence — ambiguous, can
+co-pref-dollar     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+co-two-api         : more than one command-position 'gh api' occurrence — ambiguous, cannot v
+co-ind-pref        : command-position 'eas build --auto-submit' submits the finished binary t
+co-pos-create      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+co-c2-predB        : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-predA        : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-two-api-c2      : more than one command-position 'gh api' occurrence — ambiguous, cannot v
+co-c2-toolsplit    : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-toolsub      : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-halfA        : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-halfB        : command-position 'gh api' with a method flag (-X/--method) whose value i
+PIN_ATTRIB_EOF
+}
+EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
+
 # LC_ALL=C on BOTH sides. Under a UTF-8 locale glibc's collation ignores `-`, so
 # `flagadjfd-*` and `flagadjfp-*` interleave differently than they do under C --
 # which would make this pin disagree between a darwin dev box and the ubuntu
@@ -1132,6 +1560,11 @@ if [ "${#ALLPATH_DIRTY_IDS[@]}" -gt 0 ]; then
 else
   ACTUAL_ALLPATH_DIRTY_IDS=""
 fi
+if [ "${#DENY_ATTRIB[@]}" -gt 0 ]; then
+  ACTUAL_DENY_ATTRIB=$(printf '%s\n' "${DENY_ATTRIB[@]}")
+else
+  ACTUAL_DENY_ATTRIB=""
+fi
 
 echo ""
 echo "=== pin ==="
@@ -1140,6 +1573,8 @@ _pin_count "precise-path gaps" "$EXPECTED_PRECISE_GAPS" "$GAPS"
 _pin_count "all-path gaps"     "$EXPECTED_ALLPATH_GAPS" "$ALLGAPS"
 _pin_members "precise-path gap" "$EXPECTED_PRECISE_GAP_IDS"   "$ACTUAL_PRECISE_GAP_IDS"
 _pin_members "all-path dirty"   "$EXPECTED_ALLPATH_DIRTY_IDS" "$ACTUAL_ALLPATH_DIRTY_IDS"
+_pin_count   "deny-reason attribution rows" "$EXPECTED_DENY_ATTRIB_ROWS" "${#DENY_ATTRIB[@]}"
+_pin_members "deny-reason attribution" "$EXPECTED_DENY_ATTRIB" "$ACTUAL_DENY_ATTRIB"
 _pin_subset "$ACTUAL_PRECISE_GAP_IDS" "$ACTUAL_ALLPATH_DIRTY_IDS"
 
 if [ "$PIN_FAIL" -ne 0 ]; then
@@ -1150,10 +1585,14 @@ if [ "$PIN_FAIL" -ne 0 ]; then
   echo "  the SAME id in BOTH lists is NEITHER: it is ONE row whose per-path verdicts moved. Diff the"
   echo "  changed field (p=/j=/l=/a=). Nothing closed -- 'one closed, one opened' is the comfortable"
   echo "  misreading, and this is the exact class the per-path tuples were added to catch."
+  echo "  On the ATTRIBUTION list specifically, the same id in both lists means the row still denies"
+  echo "  and now denies from a DIFFERENT check. Its verdict did not move, so nothing else here can"
+  echo "  see it -- decide whether the new check is the one that should be protecting that row before"
+  echo "  bumping, because a verdict-preserving reroute is exactly what this list exists to surface."
   exit 1
 fi
 
-echo "✓ pin: rows=$EXPECTED_ROWS  precise-path gaps=$EXPECTED_PRECISE_GAPS  all-path gaps=$EXPECTED_ALLPATH_GAPS; precise manifest exact; all-path manifest exact INCLUDING per-path verdicts; precise-subset-of-all-path holds"
+echo "✓ pin: rows=$EXPECTED_ROWS  precise-path gaps=$EXPECTED_PRECISE_GAPS  all-path gaps=$EXPECTED_ALLPATH_GAPS; precise manifest exact; all-path manifest exact INCLUDING per-path verdicts; precise-subset-of-all-path holds; all $EXPECTED_DENY_ATTRIB_ROWS deny reasons attributed to the same checks as the pin"
 exit 0
 
 # NOTE on co-mask-c1: on the pre-fix tree this row DENIES, but for an unrelated
