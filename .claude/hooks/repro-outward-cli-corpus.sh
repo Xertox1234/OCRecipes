@@ -700,6 +700,12 @@ printf '%s\n' '-------------------+--------+---------+--------+--------+--------
 GAPS=0
 ALLGAPS=0
 IDS=(); EXPS=(); CMDS=(); PS=(); JS=(); LS=(); AS=()
+# Membership, not just totals. These are appended in the SAME two branches that
+# increment GAPS and ALLGAPS below -- never recomputed afterwards from a second
+# reading of the same conditions -- so a count and its ID list cannot encode
+# different definitions of "dirty". The pin at the end of this file compares the
+# lists; the counts are only a faster error message. See that block for why.
+PRECISE_GAP_IDS=(); ALLPATH_DIRTY_IDS=()
 for row in "${ROWS[@]}"; do
   # Parameter expansion, NOT awk: awk is line-oriented, so a row whose COMMAND
   # contains a newline had only its first line extracted. That silently excluded
@@ -711,9 +717,9 @@ for row in "${ROWS[@]}"; do
   exp=${_rest%% @@ *}; cmd=${_rest#* @@ }
   p=$(decide precise "$cmd"); j=$(decide nojq "$cmd")
   l=$(decide nolib "$cmd");   a=$(decide noawk "$cmd")
-  if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); fi
+  if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); PRECISE_GAP_IDS+=("$id"); fi
   if [ "$p" != "$exp" ] || [ "$j" != "$exp" ] || [ "$l" != "$exp" ] || [ "$a" != "$exp" ]; then
-    ALLGAPS=$((ALLGAPS+1))
+    ALLGAPS=$((ALLGAPS+1)); ALLPATH_DIRTY_IDS+=("$id p=$p j=$j l=$l a=$a")
   fi
   IDS+=("$id"); EXPS+=("$exp"); CMDS+=("$cmd"); PS+=("$p"); JS+=("$j"); LS+=("$l"); AS+=("$a")
   printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' "$id" "$exp" "$p" "$j" "$l" "$a" "$note"
@@ -744,6 +750,411 @@ for row in "${ROWS[@]}"; do
   [ "$(decide precise "$cmd")" = "DENY" ] || continue
   printf '%-18s : %s\n' "$id" "$(reason precise "$cmd")"
 done
+
+# ============================ THE PIN ========================================
+# Everything above PRINTS. This block is the only thing that FAILS, and it is the
+# reason running this file is now worth anything.
+#
+# Until 2026-09-07 nothing executed this corpus at all. scripts/run-hook-tests.sh
+# globs `.claude/hooks/test-*.sh`, which this filename does not match, so the
+# file ran neither in the local gate nor in CI -- and with no pin it printed its
+# three totals and exited 0 under ANY drift. That is how every number in the
+# notes below became a comment about a program nothing ran: three of PR #931's
+# twelve confirmed findings were stale figures in this file's own prose.
+# Tracked at todos/archive/P2-2026-09-07-repro-corpus-never-runs-in-ci-and-has-no-pin.md
+#
+# The filename is deliberately still NOT `test-*.sh`. Measured 2026-09-07 on
+# darwin/arm64 across four full runs: 1m56s / 1m59s / 2m02s warm, and 3m37s on the
+# first, cold-page-cache run -- against 2m18s for the entire 34-test hook suite.
+# Folding this into that glob would roughly DOUBLE the preflight:fast hook gate,
+# which fires on EVERY push touching .claude/hooks/, .husky/ or scripts/*.sh, for a
+# signal that does not need to be pre-push. MEASURED ON THE RUNNER: the job's first
+# real CI run took 2m10s (ubuntu-latest, PR #933) -- inside the warm darwin range,
+# NOT near the 3m37s cold figure. An earlier revision of this comment asserted "CI
+# is always cold, so budget ~3m30s"; that was reasoning from the darwin cold run
+# rather than from a measurement, and the runner disagreed. It runs as its own
+# always-on CI job; see
+# .github/workflows/ci.yml -> "Outward-CLI guard corpus (427 rows x 4 paths)".
+#
+# *** THE THREE CHECKS ARE NOT REDUNDANT. EACH CATCHES WHAT THE OTHERS CANNOT.
+# DO NOT DELETE ANY OF THEM. ***
+#
+# 1. COUNTS catch a corpus that produced NOTHING. `_pin_members` compares "" to
+#    "" and RETURNS SUCCESS -- a degenerate run (ROWS empty after a botched
+#    refactor of the generation loop) sails through both manifests and is caught
+#    ONLY by `_pin_count "rows"`. The counts are not a cosmetic fast-fail; they
+#    are the denominator assertion. An earlier revision of this comment called
+#    them "only a faster error message", which invited exactly the edit that
+#    would reopen this hole.
+#
+# 2. MEMBERSHIP catches a SWAP. A count of 31 stays green when one gap closes and
+#    a different one opens, so both manifests are diffed with `comm`, never by
+#    subtracting totals.
+#
+# 3. PER-PATH VERDICTS catch a row getting STRICTLY WORSE without changing
+#    membership. Every all-path entry is `id p=.. j=.. l=.. a=..`, not a bare id,
+#    because a bare id records one OR-collapsed bit ("dirty on some path") and
+#    NOTE6's round-3 correction below is precisely the movement that bit cannot
+#    see: those rows were ALREADY all-path-dirty on both sides and went from ONE
+#    failing degraded path to THREE. Measured on this tree, 10 rows sit at
+#    `p=ALLOW j=DENY l=DENY a=DENY` (verbvcasearm-* x7, flagvcasearm-* x3). A
+#    guard change flipping their three degraded DENYs to ALLOW would strip the
+#    fail-closed fallback from seven gated families and move NOTHING an id-only
+#    pin observes. The 263 all-clean rows stay covered by ABSENCE -- any of them
+#    going dirty appears as a `+` line.
+#
+# NOT PINNED, AND DELIBERATELY SO: the deny-REASON attribution. `reason()` prints
+# which check actually fired for every DENY, and nothing here compares those
+# strings, so a refactor that keeps every verdict identical while making a row
+# deny through a DIFFERENT check stays green. That is the `co-mask-c1` hazard
+# this file documents a few lines below ("read the ATTRIBUTION, never the verdict
+# alone"). Tracked at
+# todos/P2-2026-09-07-corpus-pin-does-not-cover-deny-reason-attribution.md --
+# do not read a green pin as evidence the intended check fired.
+#
+# HOW TO BUMP: a bump is a deliberate, dated edit, and the DIFF is where a
+# reviewer confirms the movement was intended. Re-run this file, paste the sets
+# it reports, and state in the commit message WHICH mechanism moved each ID.
+# Never bump a pin to turn a red gate green without that sentence -- that is the
+# failure mode this whole block exists to prevent.
+
+EXPECTED_ROWS=427
+
+# 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
+# remaining precise-path gaps" note further down, and the two must stay equal:
+#   14  r4brange-tool-* (7) + r4brange-verb-* (7) -- brace range, no sigil.
+#   17  toolvcasearm-* (7) + verbvcasearm-* (7) + flagvcasearm-* (3 of 4)
+#       -- `case` arm `)` with no matching opener.
+# Both buckets are DELIBERATE, documented residuals with open todos, not
+# failures. Pinning 0 here would make this gate permanently red, and a
+# permanently red gate gets disabled -- which is how the corpus ended up
+# unguarded in the first place.
+EXPECTED_PRECISE_GAPS=31
+
+# 31 + 133 = 164, and the 133 is independently printed above as the
+# "precise-clean, degraded-dirty" section's row count -- so this total has a
+# cross-check inside the same run rather than resting on this comment.
+#   31  every precise-path gap (a precise gap is all-path dirty by definition;
+#       verified as a strict subset, not assumed)
+#  133  precise-CLEAN rows dirty on at least one degraded path -- the
+#       crude_smells_outward mirror, deliberately NOT widened in PR #931.
+#       READ THAT CITATION NARROWLY. todos/P1-2026-09-07-crude-smells-degraded-mirror-lags-the-flag-adjacent-fix.md
+#       enumerates SIX rows (flagadjfd-* x3, flagadjsp-* x2, flagadjglue-npmlog),
+#       NOT this bucket. Measured split of the 133: 25 are over-denied
+#       ALLOW-expecting rows (safe direction) and 108 are DENY-expected rows that
+#       ALLOW on all three degraded paths -- intrtoolsp/intrtoolglue 11 each,
+#       toolv* and r4*-tool 7 each, intrnssp/intrnsglue 6 each, trailclose 3,
+#       nssufx 2, flagadj* 6. Only that last 6 is tracked anywhere by ID. The
+#       other 102 are ENUMERATED for the first time by the manifest below, which
+#       is a strict improvement -- before this pin nothing ran the corpus at all
+#       -- but enumerated is NOT tracked, and must not be read as such.
+# NOTE, and do not "fix" it: this metric counts any row whose expectation is
+# missed on ANY path, which includes ALLOW-expecting rows the degraded mirror
+# OVER-denies. MEASURED 2026-09-07, not enumerated by hand: **25** of the 164 are
+# ALLOW-expecting (out of 40 such rows in the corpus) -- decoyfp-auto,
+# flagadjfp-* (3), c1g-* (7), c2-fp-* (7), c2-readonly, c2-dynpath, fp-c2-noflag,
+# fp-easread, fp-mention, fp-quotedall, fp-automerge. An earlier revision of this
+# block named only "the four" (decoyfp-auto plus the three flagadjfp-*). That
+# list was WRITTEN RATHER THAN MEASURED, and the tell is that fp-automerge
+# carries the same command text as decoyfp-auto, yet one was named and one was
+# not. The 25 split the 133 below exactly: 25 over-denied ALLOW rows + 108
+# DENY-expected rows that ALLOW on the degraded paths = 133.
+EXPECTED_ALLPATH_GAPS=164
+
+EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
+flagvcasearm-easbld
+flagvcasearm-ghapi
+flagvcasearm-ghcomment
+r4brange-tool-easbld
+r4brange-tool-easupd
+r4brange-tool-ghapi
+r4brange-tool-ghcomment
+r4brange-tool-ghmerge
+r4brange-tool-npmpub
+r4brange-tool-railup
+r4brange-verb-easbld
+r4brange-verb-easupd
+r4brange-verb-ghapi
+r4brange-verb-ghcomment
+r4brange-verb-ghmerge
+r4brange-verb-npmpub
+r4brange-verb-railup
+toolvcasearm-easbld
+toolvcasearm-easupd
+toolvcasearm-ghapi
+toolvcasearm-ghcomment
+toolvcasearm-ghmerge
+toolvcasearm-npmpub
+toolvcasearm-railup
+verbvcasearm-easbld
+verbvcasearm-easupd
+verbvcasearm-ghapi
+verbvcasearm-ghcomment
+verbvcasearm-ghmerge
+verbvcasearm-npmpub
+verbvcasearm-railup
+PIN_PRECISE_EOF
+)
+
+EXPECTED_ALLPATH_DIRTY_IDS=$(cat <<'PIN_ALLPATH_EOF'
+c1g-allargs-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-arrelem-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-barebang-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-excl-length p=ALLOW j=DENY l=DENY a=DENY
+c1g-excl-status p=ALLOW j=DENY l=DENY a=DENY
+c1g-ind-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-pos1-3dash p=ALLOW j=DENY l=DENY a=DENY
+c2-dynpath p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-backtick p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-getf p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-header p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-jq p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-methodology p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-paginate p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-user p=ALLOW j=DENY l=DENY a=DENY
+c2-readonly p=ALLOW j=DENY l=DENY a=DENY
+decoyfp-auto p=ALLOW j=DENY l=DENY a=DENY
+flagadjfd-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjfd-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjfd-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjfp-andand p=ALLOW j=DENY l=DENY a=DENY
+flagadjfp-roredir p=ALLOW j=DENY l=DENY a=DENY
+flagadjfp-semi p=ALLOW j=DENY l=DENY a=DENY
+flagadjglue-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjsp-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjsp-yarncwd p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagvcasearm-easbld p=ALLOW j=DENY l=DENY a=DENY
+flagvcasearm-ghapi p=ALLOW j=DENY l=DENY a=DENY
+flagvcasearm-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+fp-automerge p=ALLOW j=DENY l=DENY a=DENY
+fp-c2-noflag p=ALLOW j=DENY l=DENY a=DENY
+fp-easread p=ALLOW j=DENY l=DENY a=DENY
+fp-mention p=ALLOW j=DENY l=DENY a=DENY
+fp-quotedall p=ALLOW j=DENY l=DENY a=DENY
+intrnsglue-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+nssufx-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+nssufx-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+trailclose-ctl p=DENY j=ALLOW l=ALLOW a=ALLOW
+trailclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+trailclose-ghmrg p=DENY j=ALLOW l=ALLOW a=ALLOW
+verbvcasearm-easbld p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-easupd p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-ghapi p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-npmpub p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-railup p=ALLOW j=DENY l=DENY a=DENY
+PIN_ALLPATH_EOF
+)
+
+# LC_ALL=C on BOTH sides. Under a UTF-8 locale glibc's collation ignores `-`, so
+# `flagadjfd-*` and `flagadjfp-*` interleave differently than they do under C --
+# which would make this pin disagree between a darwin dev box and the ubuntu
+# runner for reasons that have nothing to do with the guard.
+_pin_norm() { printf '%s\n' "$1" | grep -v '^[[:space:]]*$' | LC_ALL=C sort; }
+
+PIN_FAIL=0
+
+_pin_count() {  # $1=label $2=expected $3=actual
+  [ "$3" = "$2" ] && return 0
+  echo "FAIL: $1 is $3, expected $2 -- the guard's behaviour moved, or the pin was not updated with it"
+  PIN_FAIL=1
+}
+
+_pin_members() {  # $1=label $2=expected-list $3=actual-list
+  local added removed
+  added=$(comm -13 <(_pin_norm "$2") <(_pin_norm "$3"))
+  removed=$(comm -23 <(_pin_norm "$2") <(_pin_norm "$3"))
+  [ -z "$added" ] && [ -z "$removed" ] && return 0
+  echo "FAIL: $1 MEMBERSHIP drifted from the pin -- a total can hold while rows swap, and this is the check that sees it"
+  [ -n "$removed" ] && { echo "  in the pin, NOT produced by this run (closed, or the row was renamed/removed):"; sed 's/^/    -/' <<< "$removed"; }
+  [ -n "$added" ]   && { echo "  produced by this run, NOT in the pin (OPENED, or newly degraded):"; sed 's/^/    +/' <<< "$added"; }
+  PIN_FAIL=1
+}
+
+# The precise manifest is bare IDs while the all-path one carries tuples, and that
+# asymmetry is only safe while every precise gap is ALSO all-path dirty -- that is
+# what makes a precise row's direction recoverable from the all-path `p=` field.
+# The relation is an INVARIANT of the two collection branches above (a row failing
+# on precise necessarily fails the any-path test), not a coincidence, but a later
+# edit narrowing the ALLGAPS condition would break it and the precise manifest
+# would silently lose its direction information. So assert it rather than leave a
+# reviewer to remember why bare IDs were safe -- the same reason the rest of this
+# block exists.
+#
+# IT IS ALSO THE ONLY CHECK HERE THAT A CARELESS BUMP CANNOT SILENCE, and that is
+# the stronger reason to keep it. Measured by a reviewer 2026-09-07: narrow the
+# ALLGAPS condition, then "re-pin to whatever it emits now" (drop the totals to
+# match, delete the orphaned tuples from the expected manifest). `_pin_count` and
+# `_pin_members` both go GREEN -- actual now equals the freshly-pinned expected --
+# and `_pin_subset` STAYS RED, because it compares the run against ITSELF rather
+# than against the pin. Every other check in this block verifies conformance to a
+# number a human can edit; this one verifies an internal invariant no bump can
+# restate. That is precisely the failure mode HOW TO BUMP is written to prevent.
+_pin_subset() {  # $1=precise ids  $2=all-path tuples (`id p=.. j=.. l=.. a=..`)
+  local ids2 orphans
+  ids2=$(printf '%s\n' "$2" | sed 's/ .*//')
+  orphans=$(comm -23 <(_pin_norm "$1") <(_pin_norm "$ids2"))
+  [ -z "$orphans" ] && return 0
+  echo "FAIL: precise-path gaps are no longer a subset of all-path dirty -- these IDs are pinned as precise gaps but absent from the all-path manifest, so their direction is no longer recoverable:"
+  sed 's/^/    /' <<< "$orphans"
+  PIN_FAIL=1
+}
+
+# bash 3.2 (the macOS system bash this file runs under locally) errors on
+# "${arr[@]}" for an EMPTY array under `set -u`, while bash 5 on the runner does
+# not. Guarded so that a future tree with zero gaps fails the pin honestly
+# instead of crashing on one platform only.
+if [ "${#PRECISE_GAP_IDS[@]}" -gt 0 ]; then
+  ACTUAL_PRECISE_GAP_IDS=$(printf '%s\n' "${PRECISE_GAP_IDS[@]}")
+else
+  ACTUAL_PRECISE_GAP_IDS=""
+fi
+if [ "${#ALLPATH_DIRTY_IDS[@]}" -gt 0 ]; then
+  ACTUAL_ALLPATH_DIRTY_IDS=$(printf '%s\n' "${ALLPATH_DIRTY_IDS[@]}")
+else
+  ACTUAL_ALLPATH_DIRTY_IDS=""
+fi
+
+echo ""
+echo "=== pin ==="
+_pin_count "rows"              "$EXPECTED_ROWS"         "${#ROWS[@]}"
+_pin_count "precise-path gaps" "$EXPECTED_PRECISE_GAPS" "$GAPS"
+_pin_count "all-path gaps"     "$EXPECTED_ALLPATH_GAPS" "$ALLGAPS"
+_pin_members "precise-path gap" "$EXPECTED_PRECISE_GAP_IDS"   "$ACTUAL_PRECISE_GAP_IDS"
+_pin_members "all-path dirty"   "$EXPECTED_ALLPATH_DIRTY_IDS" "$ACTUAL_ALLPATH_DIRTY_IDS"
+_pin_subset "$ACTUAL_PRECISE_GAP_IDS" "$ACTUAL_ALLPATH_DIRTY_IDS"
+
+if [ "$PIN_FAIL" -ne 0 ]; then
+  echo ""
+  echo "The corpus drifted from its pin. Read the per-ID lists above, not just the totals:"
+  echo "  a '+' line is a bypass that OPENED or a path that newly degraded -- treat it as a regression until attributed;"
+  echo "  a '-' line is one that CLOSED -- welcome, but it still has to be named in the bump commit;"
+  echo "  the SAME id in BOTH lists is NEITHER: it is ONE row whose per-path verdicts moved. Diff the"
+  echo "  changed field (p=/j=/l=/a=). Nothing closed -- 'one closed, one opened' is the comfortable"
+  echo "  misreading, and this is the exact class the per-path tuples were added to catch."
+  exit 1
+fi
+
+echo "✓ pin: rows=$EXPECTED_ROWS  precise-path gaps=$EXPECTED_PRECISE_GAPS  all-path gaps=$EXPECTED_ALLPATH_GAPS; precise manifest exact; all-path manifest exact INCLUDING per-path verdicts; precise-subset-of-all-path holds"
+exit 0
 
 # NOTE on co-mask-c1: on the pre-fix tree this row DENIES, but for an unrelated
 # reason -- any `$` in the merge clause makes --auto unverifiable at :928, so
@@ -884,6 +1295,20 @@ done
 # than rounded up: the other 6 family x spelling combinations already denied on
 # main, so the axis contains 18 rows of which 12 were live bypasses. Reporting
 # "18 closed" would have been the easy sentence and a false one.
+#
+# *** SUPERSEDED 2026-09-07 -- MARKER ADDED. THE PARAGRAPH BELOW CONTAINS TWO
+# STATEMENTS THAT ARE FALSE ABOUT THE CODE. It is left in place and unrewritten on
+# purpose: the 164 it describes is CORRECT and is what the pin asserts, and the
+# rewrite belongs to
+# todos/P3-2026-09-07-corpus-note6-allgaps-explanation-is-wrong.md.
+#   (a) "THE FOUR ALLOW-EXPECTING CONTROL ROWS" -- measured, there are 25 of 40.
+#       The four named are a subset. Full enumeration is in the
+#       EXPECTED_ALLPATH_GAPS pin comment above.
+#   (b) "the printed metric ... does not count an ALLOW-expecting row that a
+#       degraded path denies" -- it DOES. ALLGAPS increments on ANY path mismatch,
+#       and all 25 are in the shipped all-path manifest.
+# You are most likely reading this while attributing a manifest movement involving
+# one of those 25. Do not attribute it using the paragraph below. ***
 #
 # THE FOUR ALLOW-EXPECTING CONTROL ROWS (decoyfp-auto, flagadjfp-andand,
 # flagadjfp-roredir, flagadjfp-semi) ARE PRECISE-CLEAN AND DEGRADED-DIRTY ON BOTH
