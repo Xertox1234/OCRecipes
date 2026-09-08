@@ -107,6 +107,28 @@ without checking it is impossible:
 
 And pin **membership, not just totals** — the manifests must be collected in the *same branch*
 that increments the counter, so a count and its ID list cannot encode different definitions.
+
+**Then go one step further, because membership is itself a summary.** A manifest of bare IDs
+records one OR-collapsed bit per row ("dirty on some path"), and that bit cannot express a row
+getting *worse inside its own category*. The corpus above evaluates each construction on four
+execution paths; a row already dirty on one path that degrades to three keeps identical
+membership *and* identical totals. That is not hypothetical — it is what the file's own
+round-3 correction records, and the first version of this pin cited that very incident as proof
+its mechanism worked while being unable to catch it. Pin the **components**, not the OR:
+
+```bash
+# not:  DIRTY_IDS+=("$id")
+DIRTY_IDS+=("$id p=$p j=$j l=$l a=$a")
+```
+
+Rule of thumb: if a check reduces N observations to one boolean, the pin should store the N.
+
+**And add at least one assertion the bump itself cannot silence.** Every pin above compares a
+run against numbers a human edits, so "re-pin to whatever it emits now" turns them all green —
+including a bump that is laundering a regression. An assertion over the run's *internal*
+consistency has no such knob. Here that is "the precise-gap set is a subset of the all-path
+dirty set": narrow the collection condition and re-pin the totals and manifests to match, and
+the count and membership checks go green while the subset check stays red.
 Verified by mutation: renaming one gapping row's ID left `rows=427 precise-path gaps=31
 all-path gaps=164` — every total identical to the pin — and only the per-ID `comm` diff went
 red. A count-only pin is **green** on that mutation.

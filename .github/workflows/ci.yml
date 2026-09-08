@@ -103,10 +103,15 @@ jobs:
   # for the opposite reason (it is flaky -- real Postgres, real bcrypt); this one is
   # deterministic and guards a security control, so the precedent does not transfer.
   #
-  # ALWAYS-ON, with no `paths:` filter, deliberately: a path-filtered job reports
-  # "skipped" rather than "success", which would sit permanently pending if this is
-  # ever added to main's required checks. Always running is a superset of "on every
-  # push that touches .claude/hooks/**".
+  # ALWAYS-ON, with no job-level `paths:` filter, deliberately: a path-filtered job
+  # reports "skipped" rather than "success", which would sit permanently pending if
+  # this is ever added to main's required checks.
+  #
+  # "Always-on" is exact for pull_request (that trigger carries no filter, which is
+  # where gating happens) and is the one caveat worth stating for push: the
+  # WORKFLOW-level `paths-ignore` above still applies, so a push to main touching
+  # only **/*.md, docs/** or todos/** skips the whole workflow, this job included.
+  # Pre-existing, not introduced here, and harmless while the job is advisory.
   #
   # No setup-node and no `npm ci`: neither guard-outward-cli.sh nor .claude/hooks/lib/*
   # invokes node, npx or git (verified 2026-09-07 -- every `git` occurrence in the guard is

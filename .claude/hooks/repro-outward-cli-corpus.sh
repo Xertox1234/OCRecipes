@@ -1098,6 +1098,16 @@ _pin_members() {  # $1=label $2=expected-list $3=actual-list
 # would silently lose its direction information. So assert it rather than leave a
 # reviewer to remember why bare IDs were safe -- the same reason the rest of this
 # block exists.
+#
+# IT IS ALSO THE ONLY CHECK HERE THAT A CARELESS BUMP CANNOT SILENCE, and that is
+# the stronger reason to keep it. Measured by a reviewer 2026-09-07: narrow the
+# ALLGAPS condition, then "re-pin to whatever it emits now" (drop the totals to
+# match, delete the orphaned tuples from the expected manifest). `_pin_count` and
+# `_pin_members` both go GREEN -- actual now equals the freshly-pinned expected --
+# and `_pin_subset` STAYS RED, because it compares the run against ITSELF rather
+# than against the pin. Every other check in this block verifies conformance to a
+# number a human can edit; this one verifies an internal invariant no bump can
+# restate. That is precisely the failure mode HOW TO BUMP is written to prevent.
 _pin_subset() {  # $1=precise ids  $2=all-path tuples (`id p=.. j=.. l=.. a=..`)
   local ids2 orphans
   ids2=$(printf '%s\n' "$2" | sed 's/ .*//')
@@ -1136,11 +1146,14 @@ if [ "$PIN_FAIL" -ne 0 ]; then
   echo ""
   echo "The corpus drifted from its pin. Read the per-ID lists above, not just the totals:"
   echo "  a '+' line is a bypass that OPENED or a path that newly degraded -- treat it as a regression until attributed;"
-  echo "  a '-' line is one that CLOSED -- welcome, but it still has to be named in the bump commit."
+  echo "  a '-' line is one that CLOSED -- welcome, but it still has to be named in the bump commit;"
+  echo "  the SAME id in BOTH lists is NEITHER: it is ONE row whose per-path verdicts moved. Diff the"
+  echo "  changed field (p=/j=/l=/a=). Nothing closed -- 'one closed, one opened' is the comfortable"
+  echo "  misreading, and this is the exact class the per-path tuples were added to catch."
   exit 1
 fi
 
-echo "✓ pin: rows=$EXPECTED_ROWS  precise-path gaps=$EXPECTED_PRECISE_GAPS  all-path gaps=$EXPECTED_ALLPATH_GAPS, both ID manifests exact"
+echo "✓ pin: rows=$EXPECTED_ROWS  precise-path gaps=$EXPECTED_PRECISE_GAPS  all-path gaps=$EXPECTED_ALLPATH_GAPS; precise manifest exact; all-path manifest exact INCLUDING per-path verdicts; precise-subset-of-all-path holds"
 exit 0
 
 # NOTE on co-mask-c1: on the pre-fix tree this row DENIES, but for an unrelated
@@ -1282,6 +1295,20 @@ exit 0
 # than rounded up: the other 6 family x spelling combinations already denied on
 # main, so the axis contains 18 rows of which 12 were live bypasses. Reporting
 # "18 closed" would have been the easy sentence and a false one.
+#
+# *** SUPERSEDED 2026-09-07 -- MARKER ADDED. THE PARAGRAPH BELOW CONTAINS TWO
+# STATEMENTS THAT ARE FALSE ABOUT THE CODE. It is left in place and unrewritten on
+# purpose: the 164 it describes is CORRECT and is what the pin asserts, and the
+# rewrite belongs to
+# todos/P3-2026-09-07-corpus-note6-allgaps-explanation-is-wrong.md.
+#   (a) "THE FOUR ALLOW-EXPECTING CONTROL ROWS" -- measured, there are 25 of 40.
+#       The four named are a subset. Full enumeration is in the
+#       EXPECTED_ALLPATH_GAPS pin comment above.
+#   (b) "the printed metric ... does not count an ALLOW-expecting row that a
+#       degraded path denies" -- it DOES. ALLGAPS increments on ANY path mismatch,
+#       and all 25 are in the shipped all-path manifest.
+# You are most likely reading this while attributing a manifest movement involving
+# one of those 25. Do not attribute it using the paragraph below. ***
 #
 # THE FOUR ALLOW-EXPECTING CONTROL ROWS (decoyfp-auto, flagadjfp-andand,
 # flagadjfp-roredir, flagadjfp-semi) ARE PRECISE-CLEAN AND DEGRADED-DIRTY ON BOTH
