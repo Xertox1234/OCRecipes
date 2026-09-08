@@ -949,15 +949,32 @@ gh_pr_clause_has_repo() {
   # `gh pr merge` masked the defect: it denies anyway when no --auto is present,
   # so only comment/create expose it.
   #
-  # `&[0-9-]` and not a bare `&`: bash takes an fd only when a digit or `-`
-  # follows, which `&&` and `& ` never do, so a --repo belonging to the NEXT
-  # command still cannot be pulled into this clause. Monotone -- both call sites
-  # deny on true, so a longer clause can only ADD a deny.
+  # WHICH `&`s ARE ADMITTED, and the honest version of why. The admitted set is
+  # the `&`-bearing REDIRECT operators: `&[0-9-]`, `&[<>]` and `[<>]&`. A bare
+  # `&` stays excluded, so `&&` and a backgrounding `& ` still end the clause.
+  #
+  # An earlier revision justified this as "bash takes an fd only when a digit or
+  # `-` follows, so a flag belonging to the NEXT command cannot be pulled in".
+  # BOTH HALVES WERE WRONG, and security review constructed each:
+  #   * the redirect-both operator is a redirect whose `&` is followed by
+  #     neither a digit nor `-` -- which is how that spelling stayed ALLOWED
+  #     after the first fix while its fd-duplicating twin denied.
+  #   * a backgrounding `&` DOES pull the next command in when that command's
+  #     NAME starts with a digit: bash backgrounds, the digit is the next
+  #     command name, and its arguments follow. It over-DENIES.
+  # So the true invariant is narrower: a following command can be absorbed only
+  # when its name begins with a digit, `-`, `<` or `>`. That is an over-denial,
+  # never a bypass, and this check is deny-shaped -- but the reason is recorded
+  # accurately now, because on this file the next editor builds on the stated
+  # invariant, not on the measurement.
+  #
+  # Monotone -- both call sites deny on true, so a longer clause can only ADD a
+  # deny.
   #
   # (`local clause` was dropped here at the same time: the multi-clause rewrite
   # moved to `clauses`, declared at its own use site, and left the singular name
   # declared but unread -- a name a future assignment could silently reuse.)
-  local rendering re="gh${_OUT_SEP}pr${_OUT_SEP}($1)([^;&|]|&[0-9-])*"
+  local rendering re="gh${_OUT_SEP}pr${_OUT_SEP}($1)([^;&|]|&[0-9-]|&[<>]|[<>]&)*"
   # ADDED 2026-09-05 (vanishing sigil): both occurrence counters that gate this
   # function now read a per-rendering MAXIMUM, so the count can be 1 because
   # the VANISHED rendering saw a NAMESPACE-glued sigil (`gh pr${UNSET} comment`)
@@ -2518,11 +2535,27 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # method check alone closed the `>/dev/null`, `>x` and `--method >x` spellings
   # but NOT these two, because the truncation happens earlier, here.
   #
-  # `&[0-9-]` is the precise admission: bash takes an fd only when a digit or `-`
-  # FOLLOWS the `&` (`>&1`, `>&-`), while `&&` and `& ` — the two separator forms
-  # — never do. So a mutating method sitting after a real `&&` still cannot be
-  # captured into this clause, which is the false positive this exclusion exists
-  # to prevent, and which is pinned with its own control.
+  # THE ADMITTED SET IS THE `&`-BEARING REDIRECT OPERATORS, enumerated from the
+  # grammar rather than from one operator family: `&[0-9-]`, `&[<>]` and `[<>]&`.
+  # A bare `&` stays excluded, so `&&` and a backgrounding `& ` still end the
+  # clause -- the false positive this exclusion exists to prevent, pinned with
+  # its own control.
+  #
+  # THE FIRST VERSION ADMITTED ONLY `&[0-9-]` AND CLAIMED THE CLASS WAS CLOSED.
+  # It was not. The redirect-both operators are redirects whose `&` is followed
+  # by neither a digit nor `-`, so a mutating method behind one stayed ALLOWED
+  # while the fd-duplicating spelling of the identical row denied. Deriving the
+  # admission from ONE operator family instead of the grammar is the same defect
+  # this file keeps paying for -- and note `_CMD_REDIR`, which `_OUT_SEP`
+  # already interpolates, matches all three spellings: the SEPARATOR understood
+  # them the whole time while the CLAUSE BODY did not. Exactly the detector/cut
+  # asymmetry the block above warns about, reintroduced one line later.
+  #
+  # NOT VERIFIED HERE: the appending redirect-both spelling. It is a syntax error
+  # on this machine's bash 3.2, so no argv could be produced for it; under
+  # bash >= 4 it is valid and may be a fourth spelling. Recorded as UNMEASURED
+  # rather than claimed closed -- claiming a class closed without running its
+  # members is what this entry exists to correct.
   #
   # Monotone -- but state the consumers exhaustively, because an UNNAMED consumer
   # of a widened value is the precise shape that produced this PR's CRITICAL.
@@ -2539,7 +2572,7 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # clauses differed before cannot become equal after -- unequal prefixes stay
   # unequal when both are extended by their own suffixes. A rendering that was
   # previously checked therefore cannot newly collapse into DEEP and vanish.
-  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-])*"
+  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-]|&[<>]|[<>]&)*"
   GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT" | head -1)
   # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is
   # now a MAXIMUM across all three renderings, so it can be 1 because the VANISHED

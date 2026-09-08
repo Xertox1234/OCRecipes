@@ -1596,6 +1596,53 @@ assert_allow "CLAUSE-BOUNDARY CONTROL: the same across a ;" \
 assert_allow "a read-only gh api carrying an fd-duplicating redirect of its own stays allowed" \
   "$(json 'gh api repos/o/r 2>&1')"
 
+# --- the REDIRECT-BOTH operators: the half the first `&` admission missed ------
+# `&[0-9-]` was derived from ONE operator family (fd duplication) instead of from
+# the grammar, and the comment claimed the class was closed. It was not: `&>` and
+# `>&` are redirects whose `&` is followed by neither a digit nor `-`, so these
+# stayed ALLOWED while the identical row spelled `2>&1` denied. Found by a
+# security review that generated an axis over EVERY `&`-bearing redirect operator
+# rather than probing the shapes already in mind. Pre-existing on main.
+assert_deny "redirect-both, glued target: the mutating method behind it is now read (argv: gh api repos/o/r -X DELETE)" \
+  "$(json 'gh api repos/o/r &>out -X DELETE')" "mutating HTTP method"
+assert_deny "redirect-both, spaced target" \
+  "$(json 'gh api repos/o/r &> out -X DELETE')" "mutating HTTP method"
+assert_deny "redirect-both spelled the other way round" \
+  "$(json 'gh api repos/o/r >&out -X DELETE')" "mutating HTTP method"
+assert_deny "redirect-both on the --repo clause, gh pr comment (argv carries --repo other/org)" \
+  "$(json 'gh pr comment 5 --body hi &>out --repo other/org')" \
+  "writes to a DIFFERENT GitHub repository"
+assert_deny "redirect-both on the --repo clause, gh pr create" \
+  "$(json 'gh pr create --title t &>out --repo other/org')" \
+  "writes to a DIFFERENT GitHub repository"
+assert_deny "redirect-both on the --repo clause, gh pr merge" \
+  "$(json 'gh pr merge 42 --auto &>out --repo other/org')" \
+  "targets a DIFFERENT GitHub repository"
+
+# --- TWO MEASURED OVER-DENIALS, pinned as DENY because that is what they DO ----
+# Admitting the `&`-bearing redirect operators widens the clause past a bare `&`
+# in one narrow case: when the NEXT command's name begins with a digit, `-`, `<`
+# or `>`. Then bash backgrounds at the `&` and that command's own arguments get
+# absorbed. Both rows below are real over-denials -- the argv is a bare read-only
+# invocation -- and they are recorded rather than hidden, because the comment at
+# the clause body used to assert this could not happen at all.
+#
+# They are pinned DENY, not ALLOW: a deny gate over-denying an odd shape is the
+# safe direction, and pinning current behaviour is what makes a future narrowing
+# a deliberate edit instead of a silent one.
+assert_deny "MEASURED OVER-DENIAL: backgrounding & followed by a digit-named command absorbs that command's -X (real argv is a bare read-only gh api)" \
+  "$(json 'gh api repos/o/r &2 -X DELETE')" "mutating HTTP method"
+assert_deny "MEASURED OVER-DENIAL: the flag-VALUE slot absorbs a redirect, after which any word satisfies the value (real argv runs npm's 'baz' command, not 'run', so it never publishes)" \
+  "$(json 'npm --foo >bar baz run update:preview')" \
+  "npm run update:preview/update:production"
+
+# The controls that bound both over-denials. If either of these ever denies, the
+# widening has stopped being narrow.
+assert_allow "BOUNDARY CONTROL: a normal && still ends the clause -- curl's -X DELETE is not gh api's" \
+  "$(json 'gh api repos/o/r && curl -X DELETE http://example.com')"
+assert_allow "BOUNDARY CONTROL: the flag group still rejects a non-flag word at ZERO flag iterations" \
+  "$(json 'npm >/dev/null build run update:preview')"
+
 # gh_pr_clause_has_repo's cut carried the IDENTICAL `[^;&|]*` body, and therefore
 # the identical truncation. Found by running the gh api row set against this
 # function too instead of assuming the two cuts differed -- the assumption would
@@ -1898,7 +1945,7 @@ done < <(grep 'GH_API_CLAUSE_[A-Z]*=\$(printf' "$HOOK")
 if [ -n "$_ANCHOR_RE" ] \
    && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh${_OUT_SEP}api' \
    && [ "$_CUT_DEFS" -eq 1 ] \
-   && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}([^;&|]|&[0-9-])*" \
+   && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}([^;&|]|&[0-9-]|&[<>]|[<>]&)*" \
    && [ "$_CLAUSE_CUTS" -eq 3 ] \
    && [ "$_CUTS_OK" -eq 1 ]; then
   echo "PASS: GH_API_RE and ALL $_CLAUSE_CUTS GH_API_CLAUSE cuts share one anchor via a single _GH_API_CUT constant (structural, not behavioural)"; PASS=$((PASS+1))
@@ -2839,7 +2886,7 @@ _PIN_RAN=1
 #         api's clause, plus a read-only gh api carrying its own `2>&1`. These are
 #         the rows that go RED if `&[0-9-]` ever becomes a bare `&`.
 #         3 + 4 + 4 = 11.
-EXPECTED_TOTAL=563
+EXPECTED_TOTAL=573
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
