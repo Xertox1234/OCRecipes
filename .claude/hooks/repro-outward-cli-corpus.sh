@@ -885,7 +885,11 @@ fi
 # is always cold, so budget ~3m30s"; that was reasoning from the darwin cold run
 # rather than from a measurement, and the runner disagreed. It runs as its own
 # always-on CI job; see
-# .github/workflows/ci.yml -> "Outward-CLI guard corpus (448 rows x 4 paths)".
+# .github/workflows/ci.yml -> the "Outward-CLI guard corpus" job. That name carries
+# no row count ON PURPOSE: it is a REQUIRED check, branch protection matches it as an
+# exact string, and a renamed job never satisfies the requirement rather than failing
+# it -- so the check sits permanently "expected" and nothing in the repo can merge.
+# Learned the direct way; see that job's comment.
 #
 # *** THE FOUR CHECKS ARE NOT REDUNDANT. EACH CATCHES WHAT THE OTHERS CANNOT.
 # DO NOT DELETE ANY OF THEM. ***
