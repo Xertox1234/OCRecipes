@@ -75,6 +75,49 @@ jobs:
       - name: Hook self-tests (.claude/hooks/test-*.sh)
         run: bash scripts/run-hook-tests.sh
 
+  # The outward-CLI guard's executable ground truth: 427 constructions x 4 execution
+  # paths (precise / no-jq / no-lib / no-awk). Nothing ran this file until 2026-09-07 --
+  # scripts/run-hook-tests.sh globs `.claude/hooks/test-*.sh` and the corpus's filename
+  # does not match -- so its numbers drifted into prose about a program nobody executed.
+  # See todos/P2-2026-09-07-repro-corpus-never-runs-in-ci-and-has-no-pin.md
+  #
+  # ITS OWN JOB, and the filename deliberately still NOT `test-*.sh`. Measured
+  # 2026-09-07 on darwin/arm64 across four full runs: 1m56s-2m02s warm, 3m37s cold
+  # (CI is always cold, so budget ~3m30s here). Against 2m18s for the entire 34-test
+  # hook suite, folding the corpus into that glob would roughly DOUBLE the
+  # preflight:fast hook gate, which fires on every push touching .claude/hooks/,
+  # .husky/ or scripts/*.sh -- a pre-push cost for a signal that does not need to be
+  # pre-push. As its own job it runs concurrently with the test shards, so it adds
+  # ~no CI wall-clock.
+  #
+  # NOT one of main's eight required checks as shipped, so a red corpus REPORTS on the
+  # PR but does not yet BLOCK a merge. Making it blocking is a one-line
+  # branch-protection change, deliberately left to a human; the always-on shape above
+  # is what makes it eligible (a path-filtered job could never be required).
+  #
+  # ALWAYS-ON, with no `paths:` filter, deliberately: a path-filtered job reports
+  # "skipped" rather than "success", which would sit permanently pending if this is
+  # ever added to main's required checks. Always running is a superset of "on every
+  # push that touches .claude/hooks/**".
+  #
+  # No setup-node and no `npm ci`: neither guard-outward-cli.sh nor .claude/hooks/lib/*
+  # invokes node or npx (verified 2026-09-07), and the corpus needs only bash, jq, grep,
+  # sed, tr, wc, head, env and dirname -- all present on ubuntu-latest.
+  #
+  # The script exits non-zero on drift from its own pin: rows, both gap totals, and both
+  # per-ID manifests. Running the corpus and ignoring its exit code would be worth
+  # nothing -- that is precisely the bug this job closes.
+  outward-cli-corpus:
+    name: Outward-CLI guard corpus (427 rows x 4 paths)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Guard corpus + pin (rows, gap totals, per-ID manifests)
+        run: bash .claude/hooks/repro-outward-cli-corpus.sh
+
   test:
     name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest

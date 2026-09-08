@@ -700,6 +700,12 @@ printf '%s\n' '-------------------+--------+---------+--------+--------+--------
 GAPS=0
 ALLGAPS=0
 IDS=(); EXPS=(); CMDS=(); PS=(); JS=(); LS=(); AS=()
+# Membership, not just totals. These are appended in the SAME two branches that
+# increment GAPS and ALLGAPS below -- never recomputed afterwards from a second
+# reading of the same conditions -- so a count and its ID list cannot encode
+# different definitions of "dirty". The pin at the end of this file compares the
+# lists; the counts are only a faster error message. See that block for why.
+PRECISE_GAP_IDS=(); ALLPATH_DIRTY_IDS=()
 for row in "${ROWS[@]}"; do
   # Parameter expansion, NOT awk: awk is line-oriented, so a row whose COMMAND
   # contains a newline had only its first line extracted. That silently excluded
@@ -711,9 +717,9 @@ for row in "${ROWS[@]}"; do
   exp=${_rest%% @@ *}; cmd=${_rest#* @@ }
   p=$(decide precise "$cmd"); j=$(decide nojq "$cmd")
   l=$(decide nolib "$cmd");   a=$(decide noawk "$cmd")
-  if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); fi
+  if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); PRECISE_GAP_IDS+=("$id"); fi
   if [ "$p" != "$exp" ] || [ "$j" != "$exp" ] || [ "$l" != "$exp" ] || [ "$a" != "$exp" ]; then
-    ALLGAPS=$((ALLGAPS+1))
+    ALLGAPS=$((ALLGAPS+1)); ALLPATH_DIRTY_IDS+=("$id")
   fi
   IDS+=("$id"); EXPS+=("$exp"); CMDS+=("$cmd"); PS+=("$p"); JS+=("$j"); LS+=("$l"); AS+=("$a")
   printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' "$id" "$exp" "$p" "$j" "$l" "$a" "$note"
@@ -744,6 +750,332 @@ for row in "${ROWS[@]}"; do
   [ "$(decide precise "$cmd")" = "DENY" ] || continue
   printf '%-18s : %s\n' "$id" "$(reason precise "$cmd")"
 done
+
+# ============================ THE PIN ========================================
+# Everything above PRINTS. This block is the only thing that FAILS, and it is the
+# reason running this file is now worth anything.
+#
+# Until 2026-09-07 nothing executed this corpus at all. scripts/run-hook-tests.sh
+# globs `.claude/hooks/test-*.sh`, which this filename does not match, so the
+# file ran neither in the local gate nor in CI -- and with no pin it printed its
+# three totals and exited 0 under ANY drift. That is how every number in the
+# notes below became a comment about a program nothing ran: three of PR #931's
+# twelve confirmed findings were stale figures in this file's own prose.
+# Tracked at todos/P2-2026-09-07-repro-corpus-never-runs-in-ci-and-has-no-pin.md
+#
+# The filename is deliberately still NOT `test-*.sh`. Measured 2026-09-07 on
+# darwin/arm64 across four full runs: 1m56s / 1m59s / 2m02s warm, and 3m37s on the
+# first, cold-page-cache run -- against 2m18s for the entire 34-test hook suite.
+# Folding this into that glob would roughly DOUBLE the preflight:fast hook gate,
+# which fires on EVERY push touching .claude/hooks/, .husky/ or scripts/*.sh, for a
+# signal that does not need to be pre-push. Quote the COLD number for CI: a fresh
+# runner never has a warm cache, so ~3m30s is the honest CI estimate and the ~2m
+# warm figure is not. It runs as its own always-on CI job; see
+# .github/workflows/ci.yml -> "Outward-CLI guard corpus (427 rows x 4 paths)".
+#
+# *** MEMBERSHIP IS THE PIN. THE COUNTS ARE ONLY A FASTER ERROR MESSAGE. ***
+# A count of 31 stays GREEN when one gap closes and a different one opens. That
+# is not a hypothetical in this file: NOTE6's round-3 correction below records
+# rows that got strictly worse while every printed total held, and says in as
+# many words that only a per-ID diff could find it. So both manifests are
+# compared with `comm`, never by subtracting totals. Deleting the ID lists and
+# keeping the three integers would retire the only part of this pin that can see
+# a swap.
+#
+# HOW TO BUMP: a bump is a deliberate, dated edit, and the DIFF is where a
+# reviewer confirms the movement was intended. Re-run this file, paste the sets
+# it reports, and state in the commit message WHICH mechanism moved each ID.
+# Never bump a pin to turn a red gate green without that sentence -- that is the
+# failure mode this whole block exists to prevent.
+
+EXPECTED_ROWS=427
+
+# 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
+# remaining precise-path gaps" note further down, and the two must stay equal:
+#   14  r4brange-tool-* (7) + r4brange-verb-* (7) -- brace range, no sigil.
+#   17  toolvcasearm-* (7) + verbvcasearm-* (7) + flagvcasearm-* (3 of 4)
+#       -- `case` arm `)` with no matching opener.
+# Both buckets are DELIBERATE, documented residuals with open todos, not
+# failures. Pinning 0 here would make this gate permanently red, and a
+# permanently red gate gets disabled -- which is how the corpus ended up
+# unguarded in the first place.
+EXPECTED_PRECISE_GAPS=31
+
+# 31 + 133 = 164, and the 133 is independently printed above as the
+# "precise-clean, degraded-dirty" section's row count -- so this total has a
+# cross-check inside the same run rather than resting on this comment.
+#   31  every precise-path gap (a precise gap is all-path dirty by definition;
+#       verified as a strict subset, not assumed)
+#  133  precise-CLEAN rows dirty on at least one degraded path -- chiefly the
+#       crude_smells_outward mirror, deliberately NOT widened in PR #931 and
+#       tracked at todos/P1-2026-09-07-crude-smells-degraded-mirror-lags-the-flag-adjacent-fix.md
+# NOTE, and do not "fix" it: this metric counts any row whose expectation is
+# missed on any path, which INCLUDES the four ALLOW-expecting controls
+# (decoyfp-auto, flagadjfp-andand, flagadjfp-roredir, flagadjfp-semi) that the
+# degraded mirror over-denies. They are in the 164 and in the manifest below.
+EXPECTED_ALLPATH_GAPS=164
+
+EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
+flagvcasearm-easbld
+flagvcasearm-ghapi
+flagvcasearm-ghcomment
+r4brange-tool-easbld
+r4brange-tool-easupd
+r4brange-tool-ghapi
+r4brange-tool-ghcomment
+r4brange-tool-ghmerge
+r4brange-tool-npmpub
+r4brange-tool-railup
+r4brange-verb-easbld
+r4brange-verb-easupd
+r4brange-verb-ghapi
+r4brange-verb-ghcomment
+r4brange-verb-ghmerge
+r4brange-verb-npmpub
+r4brange-verb-railup
+toolvcasearm-easbld
+toolvcasearm-easupd
+toolvcasearm-ghapi
+toolvcasearm-ghcomment
+toolvcasearm-ghmerge
+toolvcasearm-npmpub
+toolvcasearm-railup
+verbvcasearm-easbld
+verbvcasearm-easupd
+verbvcasearm-ghapi
+verbvcasearm-ghcomment
+verbvcasearm-ghmerge
+verbvcasearm-npmpub
+verbvcasearm-railup
+PIN_PRECISE_EOF
+)
+
+EXPECTED_ALLPATH_DIRTY_IDS=$(cat <<'PIN_ALLPATH_EOF'
+c1g-allargs-3dash
+c1g-arrelem-3dash
+c1g-barebang-3dash
+c1g-excl-length
+c1g-excl-status
+c1g-ind-3dash
+c1g-pos1-3dash
+c2-dynpath
+c2-fp-backtick
+c2-fp-getf
+c2-fp-header
+c2-fp-jq
+c2-fp-methodology
+c2-fp-paginate
+c2-fp-user
+c2-readonly
+decoyfp-auto
+flagadjfd-ghcomment
+flagadjfd-ghcreate
+flagadjfd-npmlog
+flagadjfp-andand
+flagadjfp-roredir
+flagadjfp-semi
+flagadjglue-npmlog
+flagadjsp-npmlog
+flagadjsp-yarncwd
+flagvcasearm-easbld
+flagvcasearm-ghapi
+flagvcasearm-ghcomment
+fp-automerge
+fp-c2-noflag
+fp-easread
+fp-mention
+fp-quotedall
+intrnsglue-ghcomment
+intrnsglue-ghmerge
+intrnsglue-ghrelease
+intrnsglue-ghrepo
+intrnsglue-railsvc
+intrnsglue-railvar
+intrnssp-ghcomment
+intrnssp-ghmerge
+intrnssp-ghrelease
+intrnssp-ghrepo
+intrnssp-railsvc
+intrnssp-railvar
+intrtoolglue-easbld
+intrtoolglue-easupd
+intrtoolglue-ghapi
+intrtoolglue-ghcomment
+intrtoolglue-ghmerge
+intrtoolglue-ghrelease
+intrtoolglue-ghrepo
+intrtoolglue-npmpub
+intrtoolglue-railsvc
+intrtoolglue-railup
+intrtoolglue-railvar
+intrtoolsp-easbld
+intrtoolsp-easupd
+intrtoolsp-ghapi
+intrtoolsp-ghcomment
+intrtoolsp-ghmerge
+intrtoolsp-ghrelease
+intrtoolsp-ghrepo
+intrtoolsp-npmpub
+intrtoolsp-railsvc
+intrtoolsp-railup
+intrtoolsp-railvar
+nssufx-ghcomment
+nssufx-ghmerge
+r4ansic-tool-easbld
+r4ansic-tool-easupd
+r4ansic-tool-ghapi
+r4ansic-tool-ghcomment
+r4ansic-tool-ghmerge
+r4ansic-tool-npmpub
+r4ansic-tool-railup
+r4brange-tool-easbld
+r4brange-tool-easupd
+r4brange-tool-ghapi
+r4brange-tool-ghcomment
+r4brange-tool-ghmerge
+r4brange-tool-npmpub
+r4brange-tool-railup
+r4brange-verb-easbld
+r4brange-verb-easupd
+r4brange-verb-ghapi
+r4brange-verb-ghcomment
+r4brange-verb-ghmerge
+r4brange-verb-npmpub
+r4brange-verb-railup
+r4dig-tool-easbld
+r4dig-tool-easupd
+r4dig-tool-ghapi
+r4dig-tool-ghcomment
+r4dig-tool-ghmerge
+r4dig-tool-npmpub
+r4dig-tool-railup
+r4spec-tool-easbld
+r4spec-tool-easupd
+r4spec-tool-ghapi
+r4spec-tool-ghcomment
+r4spec-tool-ghmerge
+r4spec-tool-npmpub
+r4spec-tool-railup
+toolvarithsep-easbld
+toolvarithsep-easupd
+toolvarithsep-ghapi
+toolvarithsep-ghcomment
+toolvarithsep-ghmerge
+toolvarithsep-npmpub
+toolvarithsep-railup
+toolvbareparen-easbld
+toolvbareparen-easupd
+toolvbareparen-ghapi
+toolvbareparen-ghcomment
+toolvbareparen-ghmerge
+toolvbareparen-npmpub
+toolvbareparen-railup
+toolvcasearm-easbld
+toolvcasearm-easupd
+toolvcasearm-ghapi
+toolvcasearm-ghcomment
+toolvcasearm-ghmerge
+toolvcasearm-npmpub
+toolvcasearm-railup
+toolvdqclose-easbld
+toolvdqclose-easupd
+toolvdqclose-ghapi
+toolvdqclose-ghcomment
+toolvdqclose-ghmerge
+toolvdqclose-npmpub
+toolvdqclose-railup
+toolvmixq-easbld
+toolvmixq-easupd
+toolvmixq-ghapi
+toolvmixq-ghcomment
+toolvmixq-ghmerge
+toolvmixq-npmpub
+toolvmixq-railup
+toolvnest-easbld
+toolvnest-easupd
+toolvnest-ghapi
+toolvnest-ghcomment
+toolvnest-ghmerge
+toolvnest-npmpub
+toolvnest-railup
+toolvsqclose-easbld
+toolvsqclose-easupd
+toolvsqclose-ghapi
+toolvsqclose-ghcomment
+toolvsqclose-ghmerge
+toolvsqclose-npmpub
+toolvsqclose-railup
+trailclose-ctl
+trailclose-easupd
+trailclose-ghmrg
+verbvcasearm-easbld
+verbvcasearm-easupd
+verbvcasearm-ghapi
+verbvcasearm-ghcomment
+verbvcasearm-ghmerge
+verbvcasearm-npmpub
+verbvcasearm-railup
+PIN_ALLPATH_EOF
+)
+
+# LC_ALL=C on BOTH sides. Under a UTF-8 locale glibc's collation ignores `-`, so
+# `flagadjfd-*` and `flagadjfp-*` interleave differently than they do under C --
+# which would make this pin disagree between a darwin dev box and the ubuntu
+# runner for reasons that have nothing to do with the guard.
+_pin_norm() { printf '%s\n' "$1" | grep -v '^[[:space:]]*$' | LC_ALL=C sort; }
+
+PIN_FAIL=0
+
+_pin_count() {  # $1=label $2=expected $3=actual
+  [ "$3" = "$2" ] && return 0
+  echo "FAIL: $1 is $3, expected $2 -- the guard's behaviour moved, or the pin was not updated with it"
+  PIN_FAIL=1
+}
+
+_pin_members() {  # $1=label $2=expected-list $3=actual-list
+  local added removed
+  added=$(comm -13 <(_pin_norm "$2") <(_pin_norm "$3"))
+  removed=$(comm -23 <(_pin_norm "$2") <(_pin_norm "$3"))
+  [ -z "$added" ] && [ -z "$removed" ] && return 0
+  echo "FAIL: $1 MEMBERSHIP drifted from the pin -- a total can hold while rows swap, and this is the check that sees it"
+  [ -n "$removed" ] && { echo "  in the pin, NOT produced by this run (closed, or the row was renamed/removed):"; sed 's/^/    -/' <<< "$removed"; }
+  [ -n "$added" ]   && { echo "  produced by this run, NOT in the pin (OPENED, or newly degraded):"; sed 's/^/    +/' <<< "$added"; }
+  PIN_FAIL=1
+}
+
+# bash 3.2 (the macOS system bash this file runs under locally) errors on
+# "${arr[@]}" for an EMPTY array under `set -u`, while bash 5 on the runner does
+# not. Guarded so that a future tree with zero gaps fails the pin honestly
+# instead of crashing on one platform only.
+if [ "${#PRECISE_GAP_IDS[@]}" -gt 0 ]; then
+  ACTUAL_PRECISE_GAP_IDS=$(printf '%s\n' "${PRECISE_GAP_IDS[@]}")
+else
+  ACTUAL_PRECISE_GAP_IDS=""
+fi
+if [ "${#ALLPATH_DIRTY_IDS[@]}" -gt 0 ]; then
+  ACTUAL_ALLPATH_DIRTY_IDS=$(printf '%s\n' "${ALLPATH_DIRTY_IDS[@]}")
+else
+  ACTUAL_ALLPATH_DIRTY_IDS=""
+fi
+
+echo ""
+echo "=== pin ==="
+_pin_count "rows"              "$EXPECTED_ROWS"         "${#ROWS[@]}"
+_pin_count "precise-path gaps" "$EXPECTED_PRECISE_GAPS" "$GAPS"
+_pin_count "all-path gaps"     "$EXPECTED_ALLPATH_GAPS" "$ALLGAPS"
+_pin_members "precise-path gap" "$EXPECTED_PRECISE_GAP_IDS"   "$ACTUAL_PRECISE_GAP_IDS"
+_pin_members "all-path dirty"   "$EXPECTED_ALLPATH_DIRTY_IDS" "$ACTUAL_ALLPATH_DIRTY_IDS"
+
+if [ "$PIN_FAIL" -ne 0 ]; then
+  echo ""
+  echo "The corpus drifted from its pin. Read the per-ID lists above, not just the totals:"
+  echo "  a '+' line is a bypass that OPENED or a path that newly degraded -- treat it as a regression until attributed;"
+  echo "  a '-' line is one that CLOSED -- welcome, but it still has to be named in the bump commit."
+  exit 1
+fi
+
+echo "✓ pin: rows=$EXPECTED_ROWS  precise-path gaps=$EXPECTED_PRECISE_GAPS  all-path gaps=$EXPECTED_ALLPATH_GAPS, both ID manifests exact"
+exit 0
 
 # NOTE on co-mask-c1: on the pre-fix tree this row DENIES, but for an unrelated
 # reason -- any `$` in the merge clause makes --auto unverifiable at :928, so
