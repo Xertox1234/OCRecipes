@@ -51,8 +51,38 @@ reason() {  # $1=mode $2=command -> deny reason fingerprint (attribution
     noawk)   o=$(printf '%s' "$env_json" | env PATH="$NOAWK_BIN" "$NOAWK_BIN/bash" "$HOOK" 2>/dev/null) ;;
   esac
   grep -q permissionDecision <<< "$o" || { printf '%s' '(allowed)'; return; }
-  tr '\n' ' ' <<< "$o" | sed -E 's/.*guard-outward-cli: //; s/ Bypass:.*//' | cut -c1-72
+  # LC_ALL=C is load-bearing on the extraction, not decoration. `cut -c` counts
+  # CHARACTERS under a UTF-8 locale on BSD and BYTES under C, and GNU coreutils
+  # makes its own choice again -- so the truncation point of any reason string
+  # containing a multibyte character depends on the ambient locale of whoever runs
+  # this. Three of the 372 pinned reasons contain an em-dash before column 72
+  # ("... occurrence — ambiguous ..."), and measured on darwin the same string
+  # truncates to 74 bytes under C.UTF-8 and 72 under C. That was cosmetic while
+  # nothing compared these strings; it is a WEDGED REQUIRED CHECK now that the pin
+  # does, because a dev box and the ubuntu runner would pin different bytes for
+  # the same guard. Same failure mode, same remedy, and the same reasoning as the
+  # `LC_ALL=C sort` in `_pin_norm` below. Byte semantics can in principle split a
+  # future multibyte character mid-sequence; that is deterministic, which is the
+  # property a pin needs, and none of the current 17 fingerprints does it.
+  # NOTE the scope: this is the corpus's own text handling. The guard itself is
+  # invoked with the ambient locale untouched, because its verdicts are what this
+  # file measures and must not be perturbed by the harness.
+  #
+  # Returns the WHOLE reason. The 72-byte truncation used to happen here; it moved
+  # to `_fp` so a caller can hold the full string and its fingerprint from ONE
+  # guard invocation. That is what makes the collision assertion in the pin free --
+  # without it, "are two checks distinguishable at 72 bytes" would need a second
+  # pass over every DENY row, and this file's whole argument for being affordable
+  # is that it does not take second passes.
+  tr '\n' ' ' <<< "$o" | LC_ALL=C sed -E 's/.*guard-outward-cli: //; s/ Bypass:.*//'
 }
+
+# The pinned fingerprint of a reason: first 72 BYTES, no trailing whitespace.
+# Byte semantics for the reason given above. The rtrim is here rather than at the
+# call sites because `cut` lands mid-sentence for 41 of the 372 and leaves a
+# trailing space -- invisible in a diff, stripped on save by most editors, and on
+# a REQUIRED check that is a red gate with no visible cause.
+_fp() { LC_ALL=C cut -c1-72 <<< "$1" | sed 's/[[:space:]]*$//'; }
 
 # ---- axes ------------------------------------------------------------------
 # A row is: ID @@ EXPECTED @@ COMMAND. EXPECTED is what the guard SHOULD say
@@ -687,6 +717,47 @@ add fp-ghread        ALLOW 'gh pr view 42'
 add fp-ghlist        ALLOW 'gh pr list --limit 5'
 add fp-easread       ALLOW 'eas update:list --branch preview'
 add fp-npmrun        ALLOW 'npm run build'
+# axis: DENY-SITE COVERAGE (added 2026-09-08, security review of this PR).
+#
+# The attribution pin can only notice a row moving between checks. It is blind to
+# a deny site that NO row is attributed to: there is no row to move, so the site
+# can be deleted and every one of the pin's checks stays green. That was not
+# hypothetical -- the review neutered three sites in a temp guard and the corpus
+# reported exit 0 with ZERO diff lines in both the verdict table and the
+# attribution list, while these flipped DENY -> ALLOW:
+#     eas update:delete 8f2a1c
+#     eas update:republish --branch production
+#     eas channel:edit production --branch hotfix
+#     eas branch:delete production
+#     gh pr create --fill && gh pr create --repo other/org --title x
+# The first four mutate what OTA update real users receive -- the 2026-08-16
+# incident class this guard exists for. The fifth is verbatim the second-clause
+# --repo egress guard-outward-cli.sh records as a found-and-fixed vulnerability.
+#
+# GENERATED from the guard's OWN alternations, not hand-picked: NOTE6 requires new
+# dimensions to be generated, and a hand-carved subset is how the tool position
+# came to be missing. Its own small list rather than an addition to FAM_IDS, for
+# the reason INTR_FAM_IDS states above -- these families do not belong on every
+# other axis, and adding them there would flood the per-ID diff with movement this
+# change did not cause.
+#
+# The ALLOW rows are the carve-out controls each deny message names as unaffected.
+# They are not decoration: the colon alternations are the only thing separating
+# `eas update:delete` from `eas update:list`, so a widening that swallowed the
+# read-only forms would be a false-positive deny on a routine command, and without
+# these rows nothing here would see it.
+SITE_UPD_VERBS=(delete edit republish revert-update-rollout roll-back-to-embedded rollback)
+for v in "${SITE_UPD_VERBS[@]}"; do add "siteupd-$v" DENY "eas update:$v 8f2a1c"; done
+SITE_CB_VERBS=(create edit delete rename)
+for n in channel branch; do
+  for v in "${SITE_CB_VERBS[@]}"; do add "site$n-$v" DENY "eas $n:$v production"; done
+done
+add sitedup-ghcreate  DENY 'gh pr create --fill && gh pr create --repo other/org --title x'
+add sitedup-ghcomment DENY 'gh pr comment 5 --body hi && gh pr comment 6 --repo other/org --body x'
+for r in update:list update:view update:insights channel:list branch:view; do
+  add "sitefp-${r//:/}" ALLOW "eas $r"
+done
+
 add fp-mention       ALLOW 'git commit -m "chore: mentions eas update and gh pr merge"'
 add fp-quotedall     ALLOW 'echo "gh pr merge 42"'
 add fp-automerge     ALLOW 'gh pr merge 42 --auto'
@@ -700,12 +771,26 @@ printf '%s\n' '-------------------+--------+---------+--------+--------+--------
 GAPS=0
 ALLGAPS=0
 IDS=(); EXPS=(); CMDS=(); PS=(); JS=(); LS=(); AS=()
-# Membership, not just totals. These are appended in the SAME two branches that
-# increment GAPS and ALLGAPS below -- never recomputed afterwards from a second
-# reading of the same conditions -- so a count and its ID list cannot encode
-# different definitions of "dirty". The pin at the end of this file compares the
-# lists; the counts are only a faster error message. See that block for why.
-PRECISE_GAP_IDS=(); ALLPATH_DIRTY_IDS=()
+# Membership, not just totals. All three of these are appended in the SAME
+# branches that compute the verdicts below -- never recomputed afterwards from a
+# second reading of the same conditions -- so a count and its list cannot encode
+# different definitions of the thing they are counting. DENY_ATTRIB is collected
+# here for that reason and one more: the attribution section further down used to
+# re-walk ROWS and re-run `decide precise` once per row purely to re-derive the
+# `p` this loop already has. Capturing here deletes all 448 of those guard
+# invocations, so
+# pinning attribution makes the run CHEAPER, not more expensive.
+#
+# The pin at the end of this file compares all three lists. Be precise about what
+# the counts beside them add, because an earlier revision of this comment was not:
+# `_pin_members` returns SUCCESS when BOTH sides are empty, so a count is the only
+# defence against a degenerate run for a list whose PINNED side is also empty. That
+# is `EXPECTED_ROWS` and nothing else -- the other three carry non-empty manifests,
+# so an empty actual already reds them with every pinned line reported as removed.
+# The other counts earn their place by failing FIRST and legibly ("372, expected
+# 356" beats sixteen `+` lines), not by covering a case membership misses. See that
+# block.
+PRECISE_GAP_IDS=(); ALLPATH_DIRTY_IDS=(); DENY_ATTRIB=(); DENY_FP=(); DENY_FULL=()
 for row in "${ROWS[@]}"; do
   # Parameter expansion, NOT awk: awk is line-oriented, so a row whose COMMAND
   # contains a newline had only its first line extracted. That silently excluded
@@ -720,6 +805,28 @@ for row in "${ROWS[@]}"; do
   if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); PRECISE_GAP_IDS+=("$id"); fi
   if [ "$p" != "$exp" ] || [ "$j" != "$exp" ] || [ "$l" != "$exp" ] || [ "$a" != "$exp" ]; then
     ALLGAPS=$((ALLGAPS+1)); ALLPATH_DIRTY_IDS+=("$id p=$p j=$j l=$l a=$a")
+  fi
+  # WHY a DENY row's reason is captured at all: a DENY is not evidence the
+  # INTENDED check fired. `co-mask-c1`, `c1-threedash` and `flagvcasearm-ghadmin`
+  # all deny for a reason unrelated to the mechanism their family name names, and
+  # each of their notes below says in so many words to read the ATTRIBUTION line
+  # rather than the verdict. Pinning verdicts alone leaves a refactor free to move
+  # a row onto a different check with every column in the table unchanged.
+  #
+  # Trailing whitespace is stripped by `_fp` -- see its definition for why. Note
+  # what that does and does not guarantee: it guarantees the RUN's side is clean.
+  # It cannot guarantee the PINNED side, which is a heredoc a human can edit, so
+  # `_pin_norm` rtrims as well. Both halves are needed and neither is redundant:
+  # without the one here the run emits trailing spaces that have to be pinned
+  # verbatim; without the one in `_pin_norm` a hand-edit to the heredoc that adds
+  # a trailing space (a typo fix, an editor re-indent) reds this REQUIRED check
+  # with a diff that looks identical on both sides. An earlier revision of this
+  # comment claimed "both sides of the comparison are produced by this one line",
+  # which was simply not true of the pinned side.
+  if [ "$p" = DENY ]; then
+    _rf=$(reason precise "$cmd"); _fpv=$(_fp "$_rf")
+    DENY_FULL+=("$_rf"); DENY_FP+=("$_fpv")
+    DENY_ATTRIB+=("$(printf '%-18s : %s' "$id" "$_fpv")")
   fi
   IDS+=("$id"); EXPS+=("$exp"); CMDS+=("$cmd"); PS+=("$p"); JS+=("$j"); LS+=("$l"); AS+=("$a")
   printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' "$id" "$exp" "$p" "$j" "$l" "$a" "$note"
@@ -745,11 +852,15 @@ done
 [ "$HIDDEN" -eq 0 ] && echo "(none)"
 echo ""
 echo "=== deny-reason attribution (which check actually fired) ==="
-for row in "${ROWS[@]}"; do
-  id=${row%% @@ *}; _rest=${row#* @@ }; cmd=${_rest#* @@ }
-  [ "$(decide precise "$cmd")" = "DENY" ] || continue
-  printf '%-18s : %s\n' "$id" "$(reason precise "$cmd")"
-done
+# Printed from what the main loop captured. Same lines, same order, 448 fewer
+# guard invocations than the second pass this replaces -- and the section is now
+# LITERALLY the pinned manifest, so regenerating the pin is a copy of this block
+# rather than a transcription of it.
+if [ "${#DENY_ATTRIB[@]}" -gt 0 ]; then
+  printf '%s\n' "${DENY_ATTRIB[@]}"
+else
+  echo "(none)"
+fi
 
 # ============================ THE PIN ========================================
 # Everything above PRINTS. This block is the only thing that FAILS, and it is the
@@ -774,9 +885,13 @@ done
 # is always cold, so budget ~3m30s"; that was reasoning from the darwin cold run
 # rather than from a measurement, and the runner disagreed. It runs as its own
 # always-on CI job; see
-# .github/workflows/ci.yml -> "Outward-CLI guard corpus (427 rows x 4 paths)".
+# .github/workflows/ci.yml -> the "Outward-CLI guard corpus" job. That name carries
+# no row count ON PURPOSE: it is a REQUIRED check, branch protection matches it as an
+# exact string, and a renamed job never satisfies the requirement rather than failing
+# it -- so the check sits permanently "expected" and nothing in the repo can merge.
+# Learned the direct way; see that job's comment.
 #
-# *** THE THREE CHECKS ARE NOT REDUNDANT. EACH CATCHES WHAT THE OTHERS CANNOT.
+# *** THE FOUR CHECKS ARE NOT REDUNDANT. EACH CATCHES WHAT THE OTHERS CANNOT.
 # DO NOT DELETE ANY OF THEM. ***
 #
 # 1. COUNTS catch a corpus that produced NOTHING. `_pin_members` compares "" to
@@ -800,17 +915,66 @@ done
 #    `p=ALLOW j=DENY l=DENY a=DENY` (verbvcasearm-* x7, flagvcasearm-* x3). A
 #    guard change flipping their three degraded DENYs to ALLOW would strip the
 #    fail-closed fallback from seven gated families and move NOTHING an id-only
-#    pin observes. The 263 all-clean rows stay covered by ABSENCE -- any of them
+#    pin observes. The 281 all-clean rows stay covered by ABSENCE -- any of them
 #    going dirty appears as a `+` line.
 #
-# NOT PINNED, AND DELIBERATELY SO: the deny-REASON attribution. `reason()` prints
-# which check actually fired for every DENY, and nothing here compares those
-# strings, so a refactor that keeps every verdict identical while making a row
-# deny through a DIFFERENT check stays green. That is the `co-mask-c1` hazard
-# this file documents a few lines below ("read the ATTRIBUTION, never the verdict
-# alone"). Tracked at
-# todos/P2-2026-09-07-corpus-pin-does-not-cover-deny-reason-attribution.md --
-# do not read a green pin as evidence the intended check fired.
+# 4. ATTRIBUTION catches a row that keeps its verdict and changes WHICH CHECK
+#    produced it, ON THE PRECISE PATH. The other three read only DENY/ALLOW, so a
+#    refactor that moves a row onto a different deny branch leaves every count,
+#    every membership set and every per-path tuple byte-identical.
+#    The path qualifier is not a hole, and it is measured rather than assumed:
+#    each degraded path reaches exactly ONE reason, its own fail-closed fallback in
+#    crude_smells_outward (nojq "jq unavailable...", nolib "lib/cmd-detect.sh is
+#    unsourceable...", noawk "the quote-aware rendering came back empty..."), 25
+#    rows each, printed in the precise-clean/degraded-dirty section above. There is
+#    no second branch on those paths to reroute ONTO, so there is no degraded-path
+#    attribution to pin. Stated so a reader does not go hunting an empty hole. That is the `co-mask-c1` hazard
+#    this file documents at length below -- "read this row's ATTRIBUTION line,
+#    never its verdict alone" -- and until 2026-09-08 the pin encoded the
+#    assurance those notes tell you not to make.
+#    MUTATION-VERIFIED, not assumed. The mutation is the reordering the guard
+#    itself declined to make and recorded as needing "its own mutation evidence"
+#    (see guard-outward-cli.sh, above the `--admin` check): defer the "no REAL
+#    --auto flag" deny to the `--admin` deny three lines below it whenever the
+#    --admin scan matches. Both branches DENY, so no verdict on any of the four
+#    paths can move, and none did: all 448 rows x 4 verdict columns came back
+#    BYTE-IDENTICAL and every other check in this block stayed green, while SEVEN
+#    rows silently changed which check was protecting them -- co-mask-c1,
+#    co-redir-mask, and five of the flagv*-ghadmin family (arithsep, bareparen,
+#    comment, sub, var). This list was the only thing in the file that noticed.
+#    Note which rows did NOT move: c1-threedash keeps its old attribution, because
+#    `${x:----admin}` leaves THREE dashes and `_OUT_FLAG_LEAD` correctly refuses
+#    that as a flag boundary. The set was measured, not predicted -- a first guess
+#    at it named c1-threedash and missed four of the seven.
+#    What it still cannot see: the reason is truncated, so two checks whose
+#    messages agree over the truncation would collapse into one fingerprint.
+#    Measured 2026-09-08 by widening the cut to 400 and re-running: the distinct
+#    fingerprint count equals the distinct full-reason count (20 of each over all
+#    372 DENY rows), so nothing is currently colliding. That is no longer a
+#    measurement you have to remember to repeat -- `_pin_distinct` asserts it every
+#    run, from the same guard invocation, because a measurement recorded in a
+#    comment is not a guard. The width is 72 BYTES, not characters --
+#    see `reason()` for why that distinction is the difference between a stable pin
+#    and one that disagrees between a dev box and the runner. Both measurements, and
+#    the full mutation transcript, are at
+#    todos/archive/P2-2026-09-07-corpus-pin-does-not-cover-deny-reason-attribution.md.
+#
+#    AND THE ONE THAT IS STILL OPEN, named because a residual list that discloses
+#    only the residual it has already closed is worse than no list. A scope
+#    NARROWING INSIDE a check that still fires first for every corpus row: the
+#    check keeps producing the same verdict AND the same reason for all 448 rows
+#    while commands outside the corpus flip. Nothing in this block can see that --
+#    not attribution, not the per-path tuples, not `_pin_sites`, which asks whether
+#    a check is reached, never whether it is reached by everything it should be.
+#    That is a question about which ROWS EXIST, and the only answers are new axes
+#    and adversarial construction. It is the honest boundary of what a per-row pin
+#    asserts, and the reason NOTE6's "a corpus can only report on the axes it
+#    varies" is the first thing to read after this.
+#
+#    The residual this list USED to name second -- a deny site no row reaches, so
+#    deleting it is invisible -- was live when it was written and is closed now:
+#    see the DENY-SITE COVERAGE axis and `_pin_sites`. It was found by a reviewer
+#    deleting three real protections and watching this file exit 0.
 #
 # HOW TO BUMP: a bump is a deliberate, dated edit, and the DIFF is where a
 # reviewer confirms the movement was intended. Re-run this file, paste the sets
@@ -818,7 +982,12 @@ done
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=427
+EXPECTED_ROWS=448
+
+# One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
+# 372 of the 448 rows deny on the precise path; the other 76 are ALLOW there
+# (the fp-*/c1g-*/sitefp-* controls, plus the 31 precise-path gaps).
+EXPECTED_DENY_ATTRIB_ROWS=372
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -859,7 +1028,7 @@ EXPECTED_PRECISE_GAPS=31
 # carries the same command text as decoyfp-auto, yet one was named and one was
 # not. The 25 split the 133 below exactly: 25 over-denied ALLOW rows + 108
 # DENY-expected rows that ALLOW on the degraded paths = 133.
-EXPECTED_ALLPATH_GAPS=164
+EXPECTED_ALLPATH_GAPS=167
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -897,178 +1066,623 @@ PIN_PRECISE_EOF
 )
 
 EXPECTED_ALLPATH_DIRTY_IDS=$(cat <<'PIN_ALLPATH_EOF'
-c1g-allargs-3dash p=ALLOW j=DENY l=DENY a=DENY
-c1g-arrelem-3dash p=ALLOW j=DENY l=DENY a=DENY
-c1g-barebang-3dash p=ALLOW j=DENY l=DENY a=DENY
-c1g-excl-length p=ALLOW j=DENY l=DENY a=DENY
-c1g-excl-status p=ALLOW j=DENY l=DENY a=DENY
-c1g-ind-3dash p=ALLOW j=DENY l=DENY a=DENY
-c1g-pos1-3dash p=ALLOW j=DENY l=DENY a=DENY
-c2-dynpath p=ALLOW j=DENY l=DENY a=DENY
-c2-fp-backtick p=ALLOW j=DENY l=DENY a=DENY
-c2-fp-getf p=ALLOW j=DENY l=DENY a=DENY
-c2-fp-header p=ALLOW j=DENY l=DENY a=DENY
-c2-fp-jq p=ALLOW j=DENY l=DENY a=DENY
-c2-fp-methodology p=ALLOW j=DENY l=DENY a=DENY
-c2-fp-paginate p=ALLOW j=DENY l=DENY a=DENY
-c2-fp-user p=ALLOW j=DENY l=DENY a=DENY
-c2-readonly p=ALLOW j=DENY l=DENY a=DENY
+nssufx-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+nssufx-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
 decoyfp-auto p=ALLOW j=DENY l=DENY a=DENY
-flagadjfd-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-flagadjfd-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
-flagadjfd-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
-flagadjfp-andand p=ALLOW j=DENY l=DENY a=DENY
-flagadjfp-roredir p=ALLOW j=DENY l=DENY a=DENY
-flagadjfp-semi p=ALLOW j=DENY l=DENY a=DENY
 flagadjglue-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagadjsp-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjfd-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagadjsp-yarncwd p=DENY j=ALLOW l=ALLOW a=ALLOW
-flagvcasearm-easbld p=ALLOW j=DENY l=DENY a=DENY
-flagvcasearm-ghapi p=ALLOW j=DENY l=DENY a=DENY
-flagvcasearm-ghcomment p=ALLOW j=DENY l=DENY a=DENY
-fp-automerge p=ALLOW j=DENY l=DENY a=DENY
-fp-c2-noflag p=ALLOW j=DENY l=DENY a=DENY
-fp-easread p=ALLOW j=DENY l=DENY a=DENY
-fp-mention p=ALLOW j=DENY l=DENY a=DENY
-fp-quotedall p=ALLOW j=DENY l=DENY a=DENY
-intrnsglue-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrnsglue-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrnsglue-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrnsglue-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrnsglue-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrnsglue-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrnssp-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrnssp-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrnssp-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrnssp-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrnssp-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrnssp-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolglue-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolglue-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolglue-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolglue-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolglue-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolglue-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolglue-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolglue-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolglue-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolglue-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolglue-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolsp-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolsp-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolsp-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolsp-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolsp-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolsp-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolsp-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolsp-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolsp-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolsp-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-intrtoolsp-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
-nssufx-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-nssufx-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4ansic-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4ansic-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4ansic-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4ansic-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4ansic-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4ansic-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4ansic-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4brange-tool-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-tool-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-tool-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-tool-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-tool-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-tool-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-tool-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4dig-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4dig-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4dig-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4dig-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4dig-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4dig-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4dig-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4spec-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4spec-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4spec-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4spec-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4spec-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4spec-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
-r4spec-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvarithsep-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvarithsep-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvarithsep-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvarithsep-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvarithsep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvarithsep-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvarithsep-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvbareparen-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvbareparen-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvbareparen-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvbareparen-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvbareparen-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvbareparen-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvbareparen-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-toolvdqclose-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvdqclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvdqclose-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvdqclose-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvdqclose-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvdqclose-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvdqclose-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvmixq-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvmixq-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvmixq-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvmixq-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvmixq-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvmixq-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvmixq-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvnest-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjfd-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjfd-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjfp-andand p=ALLOW j=DENY l=DENY a=DENY
+flagadjfp-semi p=ALLOW j=DENY l=DENY a=DENY
+flagadjfp-roredir p=ALLOW j=DENY l=DENY a=DENY
 toolvnest-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvnest-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvnest-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvnest-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvnest-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvnest-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvsqclose-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvsqclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvsqclose-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvsqclose-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvsqclose-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvsqclose-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvsqclose-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-trailclose-ctl p=DENY j=ALLOW l=ALLOW a=ALLOW
-trailclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-trailclose-ghmrg p=DENY j=ALLOW l=ALLOW a=ALLOW
-verbvcasearm-easbld p=ALLOW j=DENY l=DENY a=DENY
+toolvmixq-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 verbvcasearm-easupd p=ALLOW j=DENY l=DENY a=DENY
-verbvcasearm-ghapi p=ALLOW j=DENY l=DENY a=DENY
-verbvcasearm-ghcomment p=ALLOW j=DENY l=DENY a=DENY
-verbvcasearm-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-easbld p=ALLOW j=DENY l=DENY a=DENY
 verbvcasearm-npmpub p=ALLOW j=DENY l=DENY a=DENY
 verbvcasearm-railup p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-ghapi p=ALLOW j=DENY l=DENY a=DENY
+trailclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+trailclose-ctl p=DENY j=ALLOW l=ALLOW a=ALLOW
+trailclose-ghmrg p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagvcasearm-easbld p=ALLOW j=DENY l=DENY a=DENY
+flagvcasearm-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+flagvcasearm-ghapi p=ALLOW j=DENY l=DENY a=DENY
+c1g-pos1-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-ind-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-arrelem-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-allargs-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-barebang-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-excl-status p=ALLOW j=DENY l=DENY a=DENY
+c1g-excl-length p=ALLOW j=DENY l=DENY a=DENY
+c2-readonly p=ALLOW j=DENY l=DENY a=DENY
+c2-dynpath p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-user p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-paginate p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-jq p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-getf p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-header p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-methodology p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-backtick p=ALLOW j=DENY l=DENY a=DENY
+fp-c2-noflag p=ALLOW j=DENY l=DENY a=DENY
+fp-easread p=ALLOW j=DENY l=DENY a=DENY
+sitefp-updatelist p=ALLOW j=DENY l=DENY a=DENY
+sitefp-updateview p=ALLOW j=DENY l=DENY a=DENY
+sitefp-updateinsights p=ALLOW j=DENY l=DENY a=DENY
+fp-mention p=ALLOW j=DENY l=DENY a=DENY
+fp-quotedall p=ALLOW j=DENY l=DENY a=DENY
+fp-automerge p=ALLOW j=DENY l=DENY a=DENY
 PIN_ALLPATH_EOF
 )
+
+# Generated by running this file and copying its "deny-reason attribution"
+# section verbatim -- that section prints exactly these strings, in this order.
+# Read the RIGHT-hand side when a line moves: it names the check in prose, which
+# is the whole point of pinning attribution rather than a digest of it.
+#
+# A FUNCTION, not the `$(cat <<'EOF' ... )` form the two manifests above use, and
+# that is not a style choice. bash's command-substitution parser counts
+# parentheses THROUGH a quoted heredoc body, and `reason`'s `cut -c1-72` truncates
+# two of these 17 messages mid-parenthetical ("(and the yar", "(-X/--method
+# POST/"). Inside `$( ... )` those unmatched `(`s desync the scanner and the whole
+# file dies with "unexpected EOF while looking for matching `)'" -- at PARSE time,
+# so no amount of testing the logic reaches it. Same scanner-desync family as the
+# cmd-detect bare-paren fix in dd45ef3e. A heredoc in a plain function body is
+# never scanned that way. Do not "simplify" this back.
+_pin_expected_attrib() { cat <<'PIN_ATTRIB_EOF'
+lit-easupd         : command-position 'eas update/publish/submit' publishes an OTA update or
+sufx-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+pref-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+vsub-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+vvar-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+lit-easbld         : command-position 'eas build --auto-submit' submits the finished binary t
+sufx-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+pref-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+vsub-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+vvar-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+lit-npmpub         : command-position 'npm publish' pushes a package to the registry.
+sufx-npmpub        : command-position 'npm publish' pushes a package to the registry.
+pref-npmpub        : command-position 'npm publish' pushes a package to the registry.
+vsub-npmpub        : command-position 'npm publish' pushes a package to the registry.
+vvar-npmpub        : command-position 'npm publish' pushes a package to the registry.
+lit-railup         : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+sufx-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pref-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+vsub-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+vvar-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+lit-ghmerge        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+sufx-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pref-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vsub-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vvar-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+lit-ghcomment      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+sufx-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pref-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+vsub-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+vvar-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+lit-ghapi          : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+sufx-ghapi         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pref-ghapi         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+vsub-ghapi         : command-position 'gh api' with a method flag (-X/--method) whose value i
+vvar-ghapi         : command-position 'gh api' with a method flag (-X/--method) whose value i
+nssufx-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+nsvsub-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+nsvvar-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+nssufx-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+nsvsub-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+nsvvar-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrtoolglue-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+intrtoolsp-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+intrtoolfd-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+intrtoolglue-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+intrtoolsp-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+intrtoolfd-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+intrtoolglue-npmpub : command-position 'npm publish' pushes a package to the registry.
+intrtoolsp-npmpub  : command-position 'npm publish' pushes a package to the registry.
+intrtoolfd-npmpub  : command-position 'npm publish' pushes a package to the registry.
+intrtoolglue-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+intrtoolsp-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+intrtoolfd-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+intrtoolglue-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrnsglue-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrtoolsp-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrnssp-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrtoolfd-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrnsfd-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrtoolglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrnsglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrtoolsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrnssp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrtoolfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrnsfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrtoolglue-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+intrtoolsp-ghapi   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+intrtoolfd-ghapi   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+intrtoolglue-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsglue-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolsp-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnssp-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolfd-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsfd-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolglue-ghrepo : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsglue-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolsp-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnssp-ghrepo    : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolfd-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsfd-ghrepo    : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolglue-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrnsglue-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrtoolsp-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrnssp-railvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrtoolfd-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrnsfd-railvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrtoolglue-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrnsglue-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrtoolsp-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrnssp-railsvc   : command-position 'railway service/environment delete' deletes a live Rai
+intrtoolfd-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrnsfd-railsvc   : command-position 'railway service/environment delete' deletes a live Rai
+decoytoolplain-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynsplain-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolglue-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynsglue-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolsp-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynssp-ghmerge  : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolfd-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynsfd-ghmerge  : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolplain-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsplain-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynssp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolplain-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsplain-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolsp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynssp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjglue-npmlog : command-position 'npm run update:preview/update:production' (and the yar
+flagadjsp-npmlog   : command-position 'npm run update:preview/update:production' (and the yar
+flagadjfd-npmlog   : command-position 'npm run update:preview/update:production' (and the yar
+flagadjglue-yarncwd : command-position 'npm run update:preview/update:production' (and the yar
+flagadjsp-yarncwd  : command-position 'npm run update:preview/update:production' (and the yar
+flagadjfd-yarncwd  : command-position 'npm run update:preview/update:production' (and the yar
+flagadjglue-ghapix : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjsp-ghapix   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjfd-ghapix   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjglue-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjsp-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjfd-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjsp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjctrl-boolean : command-position 'npm run update:preview/update:production' (and the yar
+toolvsub-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvvar-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvbt-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvnest-easupd   : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvdqclose-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvsqclose-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvmixq-easupd   : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvbareparen-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvcomment-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvarithsep-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvsub-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+toolvvar-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+toolvbt-easbld     : command-position 'eas build --auto-submit' submits the finished binary t
+toolvnest-easbld   : command-position 'eas build --auto-submit' submits the finished binary t
+toolvdqclose-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvsqclose-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvmixq-easbld   : command-position 'eas build --auto-submit' submits the finished binary t
+toolvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvsub-npmpub    : command-position 'npm publish' pushes a package to the registry.
+toolvvar-npmpub    : command-position 'npm publish' pushes a package to the registry.
+toolvbt-npmpub     : command-position 'npm publish' pushes a package to the registry.
+toolvnest-npmpub   : command-position 'npm publish' pushes a package to the registry.
+toolvdqclose-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvsqclose-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvmixq-npmpub   : command-position 'npm publish' pushes a package to the registry.
+toolvbareparen-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvcomment-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvarithsep-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvsub-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvvar-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvbt-railup     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvnest-railup   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvdqclose-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvsqclose-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvmixq-railup   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvbareparen-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvcomment-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvarithsep-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvsub-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvvar-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvbt-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvnest-ghmerge  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvdqclose-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvsqclose-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvmixq-ghmerge  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvbareparen-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvcomment-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvarithsep-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvsub-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvvar-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvbt-ghcomment  : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvnest-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvdqclose-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvsqclose-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvmixq-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvsub-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvvar-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvbt-ghapi      : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvnest-ghapi    : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvdqclose-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvsqclose-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvmixq-ghapi    : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4spec-tool-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4spec-verb-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4dig-tool-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+r4dig-verb-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+r4ansic-tool-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4ansic-verb-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4spec-tool-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4spec-verb-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4dig-tool-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+r4dig-verb-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+r4ansic-tool-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4ansic-verb-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4spec-tool-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4spec-verb-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4dig-tool-npmpub  : command-position 'npm publish' pushes a package to the registry.
+r4dig-verb-npmpub  : command-position 'npm publish' pushes a package to the registry.
+r4ansic-tool-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4ansic-verb-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4spec-tool-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4spec-verb-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4dig-tool-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4dig-verb-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4ansic-tool-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4ansic-verb-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4spec-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4spec-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4dig-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4dig-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4ansic-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4ansic-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4spec-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4spec-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4dig-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4dig-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4ansic-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4ansic-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4spec-tool-ghapi  : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4spec-verb-ghapi  : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4dig-tool-ghapi   : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4dig-verb-ghapi   : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4ansic-tool-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4ansic-verb-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvbareparen-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvcomment-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvarithsep-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvbareparen-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvcomment-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvarithsep-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvbareparen-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvcomment-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvarithsep-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvbareparen-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvcomment-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvarithsep-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+cap-199-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+cap-200-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+cap-250-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+cap-250-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+trailclose-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+trailclose-ctl     : command-position 'eas update/publish/submit' publishes an OTA update or
+trailclose-ghmrg   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvsub-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+flagvvar-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+flagvbt-easbld     : command-position 'eas build --auto-submit' submits the finished binary t
+flagvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvsub-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvvar-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvbt-ghcomment  : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvsub-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvvar-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvbt-ghapi      : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvsub-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvvar-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvbt-ghadmin    : command-position 'gh pr merge --admin' uses administrator privileges to
+flagvbareparen-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcasearm-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcomment-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvarithsep-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c1-submit-lit      : command-position 'eas build --auto-submit' submits the finished binary t
+c1-submit-colon    : command-position 'eas build --auto-submit' submits the finished binary t
+c1-submit-bare     : command-position 'eas build --auto-submit' submits the finished binary t
+c1-submit-plus     : command-position 'eas build --auto-submit' submits the finished binary t
+c1-repo-lit        : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1-repo-colon      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1-repo-short      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1-create-colon    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1-threedash       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c1g-pos1-lit       : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-pos10-lit      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-ind-lit        : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-inddig-lit     : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-arrelem-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-arrat-lit      : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-arrstar-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-bangkeys-lit   : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-allargs-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-allargstar     : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-barebang-lit   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c2-lit             : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c2-expand          : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-dynamic         : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-glued           : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-tension         : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-backtick        : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-tension-bt      : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-ansic-hex       : command-position 'gh api' with a method flag (-X/--method) whose value i
+ghapi-redir-trail  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c2-empty-proof-expand : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-empty-proof-lit : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+mid-backtick       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mid-sub            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mid-var            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mid-eas            : command-position 'eas update/publish/submit' publishes an OTA update or
+syn-default        : an outward-facing CLI is named in command position but the verb is not l
+syn-nocolon        : an outward-facing CLI is named in command position but the verb is not l
+syn-indirect       : an outward-facing CLI is named in command position but the verb is not l
+syn-cmdsub         : an outward-facing CLI is named in command position but the verb is not l
+syn-binary         : an outward-facing CLI is named in command position but the verb is not l
+co-pref-sufx       : command-position 'eas update/publish/submit' publishes an OTA update or
+co-sigil-c1        : command-position 'eas build --auto-submit' submits the finished binary t
+co-mask-c1         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+co-redir-mask      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+co-pref-multi      : more than one command-position 'gh pr merge' occurrence — ambiguous, c
+co-pref-dollar     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+co-two-api         : more than one command-position 'gh api' occurrence — ambiguous, cannot
+co-ind-pref        : command-position 'eas build --auto-submit' submits the finished binary t
+co-pos-create      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+co-c2-predB        : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-predA        : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-two-api-c2      : more than one command-position 'gh api' occurrence — ambiguous, cannot
+co-c2-toolsplit    : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-toolsub      : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-halfA        : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-halfB        : command-position 'gh api' with a method flag (-X/--method) whose value i
+siteupd-delete     : command-position 'eas update:delete/edit/republish/revert-update-rollout
+siteupd-edit       : command-position 'eas update:delete/edit/republish/revert-update-rollout
+siteupd-republish  : command-position 'eas update:delete/edit/republish/revert-update-rollout
+siteupd-revert-update-rollout : command-position 'eas update:delete/edit/republish/revert-update-rollout
+siteupd-roll-back-to-embedded : command-position 'eas update:delete/edit/republish/revert-update-rollout
+siteupd-rollback   : command-position 'eas update:delete/edit/republish/revert-update-rollout
+sitechannel-create : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitechannel-edit   : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitechannel-delete : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitechannel-rename : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitebranch-create  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitebranch-edit    : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitebranch-delete  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitebranch-rename  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitedup-ghcreate   : more than one command-position 'gh pr create/comment' occurrence — amb
+sitedup-ghcomment  : more than one command-position 'gh pr create/comment' occurrence — amb
+PIN_ATTRIB_EOF
+}
+EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
 
 # LC_ALL=C on BOTH sides. Under a UTF-8 locale glibc's collation ignores `-`, so
 # `flagadjfd-*` and `flagadjfp-*` interleave differently than they do under C --
 # which would make this pin disagree between a darwin dev box and the ubuntu
 # runner for reasons that have nothing to do with the guard.
-_pin_norm() { printf '%s\n' "$1" | grep -v '^[[:space:]]*$' | LC_ALL=C sort; }
+# The rtrim is not cosmetic -- see the capture site's comment. The RUN's side is
+# already clean; this is what protects the hand-editable PINNED side from a
+# trailing space that no diff shows.
+_pin_norm() { printf '%s\n' "$1" | grep -v '^[[:space:]]*$' | sed 's/[[:space:]]*$//' | LC_ALL=C sort; }
+
+# ...and every `comm` below reads that ordering with the SAME collation. `comm` is
+# a merge: it assumes its two inputs are sorted the way IT compares them, and GNU
+# comm compares with the locale's collation unless told otherwise. Feeding it
+# C-sorted input under a glibc UTF-8 locale -- where `-` is ignored in collation --
+# lets the merge desync and report lines as unique-to-each side that are present in
+# both. Forcing `LC_ALL=C` on the sort while leaving it off the comparison closes
+# only half of the divergence this pin was already written to avoid. Not
+# reproducible on darwin (BSD comm does not collate), which is exactly why it is
+# forced rather than tested: the runner is the platform that would show it.
+
+# ---- coverage: every deny the guard can EMIT must be reachable by a row -----
+# Reads the GUARD'S SOURCE, not a run: zero extra invocations. The same
+# extraction reason() applies to a live decision, applied to the literal strings
+# instead -- verified equivalent, all 20 fingerprints the corpus reaches match a
+# site found this way exactly, with no leftovers on either side.
+#
+# WHY this exists at all: see the DENY-SITE COVERAGE axis above. Without it the
+# NEXT deny site added to the guard is silently uncovered again, and the only
+# thing standing between that and a dead protection is whether someone remembers.
+# A comment saying "add a row when you add a check" is not a guard; this is.
+ACTUAL_EMIT_SITES=$(grep -oE '(deny "|permissionDecisionReason":")guard-outward-cli: .*' "$HOOK" \
+  | LC_ALL=C sed -E 's/^[^g]*guard-outward-cli: //; s/ Bypass:.*//' \
+  | LC_ALL=C cut -c1-72 | sed 's/[[:space:]]*$//' | LC_ALL=C sort -u)
+
+# The 5 sites no command text can reach on the PRECISE path, and why each is
+# structurally unreachable rather than merely uncovered:
+#   - jq unavailable / lib unsourceable / quote-aware rendering empty
+#       fail-closed fallbacks reached only on the nojq, nolib and noawk paths.
+#       The corpus DOES exercise all three -- 25 rows each, printed in the
+#       precise-clean/degraded-dirty section -- just not through attribution,
+#       which is precise-path only.
+#   - .tool_name / .tool_input.command unreadable
+#       malformed-envelope handling. `envelope()` emits well-formed JSON by
+#       construction, so no ROW can reach these; test-guard-outward-cli.sh owns
+#       them.
+# Adding to this list is how you disable a coverage requirement, so it is a
+# deliberate, dated, reviewable edit like any other pin -- never the way to make
+# a red gate green.
+_pin_exempt_sites() { cat <<'PIN_EXEMPT_EOF'
+jq unavailable - failing closed for a command that looks like an outward
+lib/cmd-detect.sh is unsourceable (broken install) - failing closed via
+the hook envelope's .tool_input.command could not be read (malformed JSO
+the hook envelope's .tool_name could not be read (malformed JSON or a ch
+the quote-aware rendering came back empty for a non-empty command - eith
+PIN_EXEMPT_EOF
+}
+EXPECTED_EMIT_SITES=25
 
 PIN_FAIL=0
 
@@ -1080,8 +1694,8 @@ _pin_count() {  # $1=label $2=expected $3=actual
 
 _pin_members() {  # $1=label $2=expected-list $3=actual-list
   local added removed
-  added=$(comm -13 <(_pin_norm "$2") <(_pin_norm "$3"))
-  removed=$(comm -23 <(_pin_norm "$2") <(_pin_norm "$3"))
+  added=$(LC_ALL=C comm -13 <(_pin_norm "$2") <(_pin_norm "$3"))
+  removed=$(LC_ALL=C comm -23 <(_pin_norm "$2") <(_pin_norm "$3"))
   [ -z "$added" ] && [ -z "$removed" ] && return 0
   echo "FAIL: $1 MEMBERSHIP drifted from the pin -- a total can hold while rows swap, and this is the check that sees it"
   [ -n "$removed" ] && { echo "  in the pin, NOT produced by this run (closed, or the row was renamed/removed):"; sed 's/^/    -/' <<< "$removed"; }
@@ -1108,10 +1722,46 @@ _pin_members() {  # $1=label $2=expected-list $3=actual-list
 # than against the pin. Every other check in this block verifies conformance to a
 # number a human can edit; this one verifies an internal invariant no bump can
 # restate. That is precisely the failure mode HOW TO BUMP is written to prevent.
+# Three checks below verify the run against ITSELF rather than against a pinned
+# number, which is the only kind a "re-pin to whatever it emits now" bump cannot
+# silence. `_pin_subset` was the first; the review that added the attribution pin
+# asked for the same treatment of the two properties that pin quietly assumes.
+_pin_denominator() {  # $1=label $2=expected-count $3=actual-count $4=how-derived
+  [ "$3" = "$2" ] && return 0
+  echo "FAIL: $1 -- the run says $2, but $3 $4. These two are the SAME quantity computed two ways;"
+  echo "  they cannot be reconciled by editing a pin, because neither side is a pin."
+  PIN_FAIL=1
+}
+
+_pin_distinct() {  # $1=fingerprints  $2=full reasons
+  local nf nr
+  nf=$(_pin_norm "$1" | LC_ALL=C sort -u | grep -c .)
+  nr=$(_pin_norm "$2" | LC_ALL=C sort -u | grep -c .)
+  [ "$nf" = "$nr" ] && return 0
+  echo "FAIL: two DIFFERENT deny checks now share a 72-byte fingerprint -- $nr distinct reasons collapse to $nf."
+  echo "  The attribution pin cannot tell those checks apart, so a reroute BETWEEN them is invisible to it."
+  echo "  Colliding pairs:"
+  _pin_norm "$1" | LC_ALL=C sort | uniq -d | sed 's/^/    /'
+  echo "  Widen the cut in _fp and re-pin, or reword one of the messages so they diverge inside 72 bytes."
+  PIN_FAIL=1
+}
+
+_pin_sites() {  # $1=all emit sites  $2=fingerprints the run attributed  $3=exempt
+  local uncovered
+  uncovered=$(LC_ALL=C comm -23 <(_pin_norm "$1") \
+                <(LC_ALL=C sort -u <(_pin_norm "$2") <(_pin_norm "$3")))
+  [ -z "$uncovered" ] && return 0
+  echo "FAIL: the guard can emit a deny NO corpus row reaches, so deleting that check is invisible to every check in this pin:"
+  sed 's/^/    /' <<< "$uncovered"
+  echo "  Add a row that reaches it (see the DENY-SITE COVERAGE axis), or, if no command text CAN reach it,"
+  echo "  add it to _pin_exempt_sites with the reason written down. Do not just re-pin the count."
+  PIN_FAIL=1
+}
+
 _pin_subset() {  # $1=precise ids  $2=all-path tuples (`id p=.. j=.. l=.. a=..`)
   local ids2 orphans
   ids2=$(printf '%s\n' "$2" | sed 's/ .*//')
-  orphans=$(comm -23 <(_pin_norm "$1") <(_pin_norm "$ids2"))
+  orphans=$(LC_ALL=C comm -23 <(_pin_norm "$1") <(_pin_norm "$ids2"))
   [ -z "$orphans" ] && return 0
   echo "FAIL: precise-path gaps are no longer a subset of all-path dirty -- these IDs are pinned as precise gaps but absent from the all-path manifest, so their direction is no longer recoverable:"
   sed 's/^/    /' <<< "$orphans"
@@ -1132,6 +1782,17 @@ if [ "${#ALLPATH_DIRTY_IDS[@]}" -gt 0 ]; then
 else
   ACTUAL_ALLPATH_DIRTY_IDS=""
 fi
+if [ "${#DENY_ATTRIB[@]}" -gt 0 ]; then
+  ACTUAL_DENY_ATTRIB=$(printf '%s\n' "${DENY_ATTRIB[@]}")
+  ACTUAL_DENY_FP=$(printf '%s\n' "${DENY_FP[@]}")
+  ACTUAL_DENY_FULL=$(printf '%s\n' "${DENY_FULL[@]}")
+else
+  ACTUAL_DENY_ATTRIB=""; ACTUAL_DENY_FP=""; ACTUAL_DENY_FULL=""
+fi
+# How many rows the TABLE says deny on the precise path -- derived from PS[@],
+# which is appended unconditionally, not from the attribution branch. See
+# _pin_denominator.
+PRECISE_DENY_COUNT=$(printf '%s\n' "${PS[@]}" | grep -c '^DENY$')
 
 echo ""
 echo "=== pin ==="
@@ -1140,7 +1801,14 @@ _pin_count "precise-path gaps" "$EXPECTED_PRECISE_GAPS" "$GAPS"
 _pin_count "all-path gaps"     "$EXPECTED_ALLPATH_GAPS" "$ALLGAPS"
 _pin_members "precise-path gap" "$EXPECTED_PRECISE_GAP_IDS"   "$ACTUAL_PRECISE_GAP_IDS"
 _pin_members "all-path dirty"   "$EXPECTED_ALLPATH_DIRTY_IDS" "$ACTUAL_ALLPATH_DIRTY_IDS"
+_pin_count   "deny-reason attribution rows" "$EXPECTED_DENY_ATTRIB_ROWS" "${#DENY_ATTRIB[@]}"
+_pin_members "deny-reason attribution" "$EXPECTED_DENY_ATTRIB" "$ACTUAL_DENY_ATTRIB"
+_pin_count   "guard deny-emit sites" "$EXPECTED_EMIT_SITES" "$(grep -c . <<< "$ACTUAL_EMIT_SITES")"
 _pin_subset "$ACTUAL_PRECISE_GAP_IDS" "$ACTUAL_ALLPATH_DIRTY_IDS"
+_pin_denominator "attributed rows vs DENY verdicts" "$PRECISE_DENY_COUNT" "${#DENY_ATTRIB[@]}" \
+  "rows were attributed"
+_pin_distinct "$ACTUAL_DENY_FP" "$ACTUAL_DENY_FULL"
+_pin_sites "$ACTUAL_EMIT_SITES" "$ACTUAL_DENY_FP" "$(_pin_exempt_sites)"
 
 if [ "$PIN_FAIL" -ne 0 ]; then
   echo ""
@@ -1150,10 +1818,14 @@ if [ "$PIN_FAIL" -ne 0 ]; then
   echo "  the SAME id in BOTH lists is NEITHER: it is ONE row whose per-path verdicts moved. Diff the"
   echo "  changed field (p=/j=/l=/a=). Nothing closed -- 'one closed, one opened' is the comfortable"
   echo "  misreading, and this is the exact class the per-path tuples were added to catch."
+  echo "  On the ATTRIBUTION list specifically, the same id in both lists means the row still denies"
+  echo "  and now denies from a DIFFERENT check. Its verdict did not move, so nothing else here can"
+  echo "  see it -- decide whether the new check is the one that should be protecting that row before"
+  echo "  bumping, because a verdict-preserving reroute is exactly what this list exists to surface."
   exit 1
 fi
 
-echo "✓ pin: rows=$EXPECTED_ROWS  precise-path gaps=$EXPECTED_PRECISE_GAPS  all-path gaps=$EXPECTED_ALLPATH_GAPS; precise manifest exact; all-path manifest exact INCLUDING per-path verdicts; precise-subset-of-all-path holds"
+echo "✓ pin: rows=$EXPECTED_ROWS  precise-path gaps=$EXPECTED_PRECISE_GAPS  all-path gaps=$EXPECTED_ALLPATH_GAPS; precise manifest exact; all-path manifest exact INCLUDING per-path verdicts; precise-subset-of-all-path holds; all $EXPECTED_DENY_ATTRIB_ROWS deny reasons attributed to the same checks as the pin"
 exit 0
 
 # NOTE on co-mask-c1: on the pre-fix tree this row DENIES, but for an unrelated
@@ -1268,7 +1940,16 @@ exit 0
 #
 # SUPERSEDED 2026-09-07 by the interior-redirect absorber (_OUT_SEP) and, in the
 # same PR, the FLAG-ADJACENT fixes. The CURRENT correct output is
-# `rows=427  precise-path gaps=31  all-path gaps=164`.
+# `rows=448  precise-path gaps=31  all-path gaps=167`.
+#
+# *** THE 167 HERE AND THE 167 FORTY LINES BELOW ARE DIFFERENT QUANTITIES THAT
+# NOW COINCIDE. *** The one below is a HAND COUNT of an all-path union made during
+# PR #931 over a 427-row corpus; this one is what ALLGAPS prints on a 448-row
+# corpus after the DENY-SITE COVERAGE axis added three ALLOW-expecting rows the
+# degraded mirror over-denies. They were 164 vs 167 when that paragraph was
+# written and the difference was the point of it. Do not reconcile them, do not
+# read the coincidence as the discrepancy having been resolved, and do not use one
+# to check the other.
 #
 # THE BASELINE IS `origin/main` AT a9d77417 (PR #930). Naming it matters: the only
 # commit NOTE6 used to name in this area was b01fcff2, the PREVIOUS change's
@@ -1383,7 +2064,7 @@ exit 0
 # SUPERSEDED 2026-09-07 -- MARKER ADDED because this block reads as current and is
 # not. Every figure below describes the tree at b01fcff2 (the PREVIOUS change's
 # baseline, not this one's) and is two changes stale: `33` became 31 with the
-# interior absorber and the corpus is now 427 rows against `origin/main` at
+# interior absorber and the corpus is now 448 rows against `origin/main` at
 # a9d77417. See the 2026-09-07 block above for the live numbers. Kept, not
 # rewritten, for its arithmetic lesson -- but it sat in the PRESENT TENSE between
 # two blocks that contradict it, forty lines from a line that already reconciles

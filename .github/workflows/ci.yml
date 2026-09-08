@@ -75,7 +75,7 @@ jobs:
       - name: Hook self-tests (.claude/hooks/test-*.sh)
         run: bash scripts/run-hook-tests.sh
 
-  # The outward-CLI guard's executable ground truth: 427 constructions x 4 execution
+  # The outward-CLI guard's executable ground truth: 448 constructions x 4 execution
   # paths (precise / no-jq / no-lib / no-awk). Nothing ran this file until 2026-09-07 --
   # scripts/run-hook-tests.sh globs `.claude/hooks/test-*.sh` and the corpus's filename
   # does not match -- so its numbers drifted into prose about a program nobody executed.
@@ -91,17 +91,34 @@ jobs:
   # pre-push. As its own job it runs concurrently with the test shards, so it adds
   # ~no CI wall-clock.
   #
-  # NOT one of main's eight required checks as shipped, so a red corpus REPORTS on the
-  # PR but does not yet BLOCK a merge. Making it blocking is a one-line
-  # branch-protection change, deliberately left to a human; the always-on shape above
-  # is what makes it eligible (a path-filtered job could never be required).
+  # THIS IS ONE OF MAIN'S REQUIRED CHECKS (added 2026-09-08, the 9th). A red corpus now
+  # BLOCKS every merge, so a careless edit to .claude/hooks/** can wedge the repository.
+  # Mutation-verify before pushing. An earlier revision of this comment said the opposite
+  # ("NOT one of main's eight required checks ... does not yet BLOCK a merge"), which was
+  # true when written and false the same week.
   #
-  # Worth weighing when deciding that: the workflow sets concurrency.cancel-in-progress,
-  # so a superseded run leaves this job CANCELLED rather than red -- on a non-required
-  # check that is no signal at all, and a merge can land having never completed the
-  # corpus against the final SHA. The `integration-http` job below is also advisory, but
-  # for the opposite reason (it is flaky -- real Postgres, real bcrypt); this one is
-  # deterministic and guards a security control, so the precedent does not transfer.
+  # *** THE `name:` BELOW IS AN API CONTRACT. DO NOT PUT A CHANGING VALUE IN IT. ***
+  # Branch protection stores the required check as an exact STRING and matches on it. A
+  # renamed job does not fail the requirement -- it never satisfies it, so the check sits
+  # permanently "expected" and NOTHING can merge. That is not hypothetical: this name used
+  # to read "(427 rows x 4 paths)", the corpus grew to 448, the name was updated to match,
+  # and PR #935 was refused with `Required status check "Outward-CLI guard corpus (427
+  # rows x 4 paths)" is expected`. The row count now lives in the comment above, where it
+  # can be corrected without an admin touching branch protection.
+  #
+  # If this job's name ever MUST change, the order is: push the rename, PATCH
+  # /branches/main/protection/required_status_checks (the narrow sub-resource -- the
+  # top-level /protection endpoint REPLACES the whole config and would silently drop
+  # enforce_admins and the PR-review requirement), then merge. Every open PR is blocked
+  # in between, so do it when the queue is empty.
+  #
+  # One residual, now that it is required: the workflow sets concurrency.cancel-in-progress,
+  # so a superseded run leaves this job CANCELLED rather than red. A cancelled required
+  # check blocks rather than passing, which is the safe direction, but it means a stale
+  # cancellation looks like a wedge -- re-run it rather than hunting the corpus. The
+  # `integration-http` job below is advisory for the opposite reason (it is flaky -- real
+  # Postgres, real bcrypt); this one is deterministic and guards a security control, so
+  # the precedent does not transfer.
   #
   # ALWAYS-ON, with no job-level `paths:` filter, deliberately: a path-filtered job
   # reports "skipped" rather than "success", which would sit permanently pending if
@@ -123,7 +140,7 @@ jobs:
   # per-ID manifests. Running the corpus and ignoring its exit code would be worth
   # nothing -- that is precisely the bug this job closes.
   outward-cli-corpus:
-    name: Outward-CLI guard corpus (427 rows x 4 paths)
+    name: Outward-CLI guard corpus
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
