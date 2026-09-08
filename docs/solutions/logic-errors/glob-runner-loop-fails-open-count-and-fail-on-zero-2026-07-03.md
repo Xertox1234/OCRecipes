@@ -5,10 +5,10 @@ category: logic-errors
 module: shared
 severity: medium
 tags: [bash, shell, glob, nullglob, ci, github-actions, hooks, set-e, fail-open, arithmetic, harness]
-symptoms: [A CI or gate step that "runs everything matching a glob" goes green having executed zero items after a rename or relocation, Step log shows none of the per-item markers yet the step exits 0, An existence guard with continue silently converts an unmatched literal glob pattern into "nothing to do"]
+symptoms: [A CI or gate step that "runs everything matching a glob" goes green having executed zero items after a rename or relocation, Step log shows none of the per-item markers yet the step exits 0, An existence guard with continue silently converts an unmatched literal glob pattern into "nothing to do", A glob runner reports a healthy non-zero count while a specific fixture you believe it covers has never been in its namespace, A file that looks like part of a suite is never named by any runner and its numbers drift into prose nobody executes]
 applies_to: [.claude/hooks/**, scripts/**/*.sh, .github/workflows/*.yml, .husky/**]
 created: '2026-07-03'
-last_updated: '2026-08-16'
+last_updated: '2026-09-07'
 ---
 
 # A glob-driven runner loop passes green when the glob matches nothing — count runs and fail on zero
@@ -65,10 +65,65 @@ arithmetic expansion always exits 0. Verified on bash 3.2 (macOS) and 5.2.37 (th
 ubuntu-latest runner): happy path exit 0, empty glob exit 1 with the error line, mid-loop
 test failure fail-fasts before the guard.
 
+## The zero-count guard's blind spot: a non-zero count proves the RUNNER ran, not that YOUR file was in it (2026-09-07)
+
+The guard above answers "did the loop execute anything?" It cannot answer "did it execute
+the thing I care about?" — and those come apart the moment a file that *belongs* to a suite
+is not **named** by the glob.
+
+`.claude/hooks/repro-outward-cli-corpus.sh` is the executable ground truth for the
+outward-CLI security guard: 427 adversarial constructions x 4 execution paths. Its filename
+does not match `test-*.sh`, so it was never a candidate. `scripts/run-hook-tests.sh` ran, hit
+34 files, printed `✓ 34 hook self-tests passed`, and satisfied the zero-count guard on every
+push for months — while the corpus executed **nowhere**, in CI or locally. Worse, the corpus
+had no pin of its own: it printed three totals and exited `0` under any drift. Three of the
+twelve confirmed findings in one security review were stale numbers in that file's own prose,
+describing a program nothing ran.
+
+**The count guard was working perfectly and was never going to see this.** `34` is not `0`, and
+even a known-minimum floor of `30` would have passed. A membership question cannot be answered
+by a cardinality assertion — the same reason a pinned total of "31 gaps" stays green when one
+gap closes and a different one opens.
+
+Two distinct assertions, and a suite needs both:
+
+| Question | Assertion | Catches |
+| --- | --- | --- |
+| Did the runner run? | count > 0 (or ≥ floor) | rename, relocation, dropped directory |
+| Did it run *this*? | the file is named, or its own pin fails | a file that was never a candidate |
+
+**What to do instead.** For a fixture deliberately kept outside the suite's glob — here for a
+real reason, the corpus is ~2m10s and the whole 34-test suite is ~2m18s, so folding it into the
+per-push gate would roughly double it — the runner cannot be the thing that guarantees it runs.
+Give it (a) its own named invocation, and (b) its own self-contained pin, so that running it
+without checking it is impossible:
+
+```bash
+# .github/workflows/ci.yml — named, always-on, no path filter
+# (a path-filtered job reports "skipped", which is a permanently-pending required check)
+- name: Guard corpus + pin
+  run: bash .claude/hooks/repro-outward-cli-corpus.sh   # exits 1 on drift
+```
+
+And pin **membership, not just totals** — the manifests must be collected in the *same branch*
+that increments the counter, so a count and its ID list cannot encode different definitions.
+Verified by mutation: renaming one gapping row's ID left `rows=427 precise-path gaps=31
+all-path gaps=164` — every total identical to the pin — and only the per-ID `comm` diff went
+red. A count-only pin is **green** on that mutation.
+
+Locale and shell matter for a pinned ID list that must agree between a dev box and the runner:
+sort both sides with `LC_ALL=C` (glibc's UTF-8 collation ignores `-`, so `flagadjfd-*` and
+`flagadjfp-*` interleave differently), and guard empty-array expansion because macOS bash 3.2
+errors on `"${arr[@]}"` for an empty array under `set -u` while bash 5 does not.
+
 ## Prevention
 
 - Any gate loop of the shape "run everything matching `<glob>`" needs a floor assertion —
   fail on zero at minimum; a known-minimum count is stronger.
+- **A floor is still only a cardinality assertion.** Before trusting a glob runner to cover a
+  file, check that the file's NAME matches the glob — `ls <glob>` and look for it. A suite's
+  green count is not evidence of any particular member. If the file is deliberately outside the
+  glob, it needs its own named invocation and its own pin.
 - When replacing hand-listed invocations with a glob (to kill membership drift), notice
   the invariant the hand-list gave for free: each named file's existence was asserted by
   the failing exit of a missing file. Re-establish it explicitly.
@@ -81,9 +136,14 @@ test failure fail-fasts before the guard.
 - `scripts/run-hook-tests.sh` — single source for the loop, counter, and zero-count guard (both callers invoke it)
 - `.github/workflows/ci.yml` — "Hook self-tests" step calls `scripts/run-hook-tests.sh`
 - `scripts/preflight.sh` — full mode calls `scripts/run-hook-tests.sh` (now guarded too, no longer fails open)
+- `.claude/hooks/repro-outward-cli-corpus.sh` — the fixture the glob never named; now carries its own
+  pin (rows, two gap totals, and a per-ID manifest for each) and exits 1 on drift
+- `.github/workflows/ci.yml` — `outward-cli-corpus` job, the named always-on invocation for it
 
 ## See Also
 
 - [empty probe output needs exit-code check](empty-probe-output-needs-exit-code-check-2026-07-02.md) — same fail-open family: absence and failure sharing one channel
 - [pipefail grep condition fails open via SIGPIPE](pipefail-echo-grep-condition-fails-open-via-sigpipe-2026-06-27.md) — another silent shell fail-open in the same toolchain
 - [A verification that scans ZERO inputs is green and meaningless](../code-quality/verification-that-scans-zero-inputs-is-green-and-meaningless-2026-08-07.md) — later incident of the same rule (macOS /var symlink variant); assert the count, not just the exit code
+- [A summary count cannot express a row getting strictly worse](../code-quality/summary-count-cannot-express-a-row-getting-strictly-worse-2026-09-06.md) — the same count-vs-membership gap one level down: pin the per-ID set, diff with `comm`, never subtract totals
+- [A fixture stops guarding the moment you fix the defect it documents](../conventions/fixture-stops-guarding-when-its-defect-is-fixed-2026-08-05.md) — the other way a fixture quietly stops carrying signal
