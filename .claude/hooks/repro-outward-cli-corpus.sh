@@ -719,7 +719,7 @@ for row in "${ROWS[@]}"; do
   l=$(decide nolib "$cmd");   a=$(decide noawk "$cmd")
   if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); PRECISE_GAP_IDS+=("$id"); fi
   if [ "$p" != "$exp" ] || [ "$j" != "$exp" ] || [ "$l" != "$exp" ] || [ "$a" != "$exp" ]; then
-    ALLGAPS=$((ALLGAPS+1)); ALLPATH_DIRTY_IDS+=("$id")
+    ALLGAPS=$((ALLGAPS+1)); ALLPATH_DIRTY_IDS+=("$id p=$p j=$j l=$l a=$a")
   fi
   IDS+=("$id"); EXPS+=("$exp"); CMDS+=("$cmd"); PS+=("$p"); JS+=("$j"); LS+=("$l"); AS+=("$a")
   printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' "$id" "$exp" "$p" "$j" "$l" "$a" "$note"
@@ -761,26 +761,56 @@ done
 # three totals and exited 0 under ANY drift. That is how every number in the
 # notes below became a comment about a program nothing ran: three of PR #931's
 # twelve confirmed findings were stale figures in this file's own prose.
-# Tracked at todos/P2-2026-09-07-repro-corpus-never-runs-in-ci-and-has-no-pin.md
+# Tracked at todos/archive/P2-2026-09-07-repro-corpus-never-runs-in-ci-and-has-no-pin.md
 #
 # The filename is deliberately still NOT `test-*.sh`. Measured 2026-09-07 on
 # darwin/arm64 across four full runs: 1m56s / 1m59s / 2m02s warm, and 3m37s on the
 # first, cold-page-cache run -- against 2m18s for the entire 34-test hook suite.
 # Folding this into that glob would roughly DOUBLE the preflight:fast hook gate,
 # which fires on EVERY push touching .claude/hooks/, .husky/ or scripts/*.sh, for a
-# signal that does not need to be pre-push. Quote the COLD number for CI: a fresh
-# runner never has a warm cache, so ~3m30s is the honest CI estimate and the ~2m
-# warm figure is not. It runs as its own always-on CI job; see
+# signal that does not need to be pre-push. MEASURED ON THE RUNNER: the job's first
+# real CI run took 2m10s (ubuntu-latest, PR #933) -- inside the warm darwin range,
+# NOT near the 3m37s cold figure. An earlier revision of this comment asserted "CI
+# is always cold, so budget ~3m30s"; that was reasoning from the darwin cold run
+# rather than from a measurement, and the runner disagreed. It runs as its own
+# always-on CI job; see
 # .github/workflows/ci.yml -> "Outward-CLI guard corpus (427 rows x 4 paths)".
 #
-# *** MEMBERSHIP IS THE PIN. THE COUNTS ARE ONLY A FASTER ERROR MESSAGE. ***
-# A count of 31 stays GREEN when one gap closes and a different one opens. That
-# is not a hypothetical in this file: NOTE6's round-3 correction below records
-# rows that got strictly worse while every printed total held, and says in as
-# many words that only a per-ID diff could find it. So both manifests are
-# compared with `comm`, never by subtracting totals. Deleting the ID lists and
-# keeping the three integers would retire the only part of this pin that can see
-# a swap.
+# *** THE THREE CHECKS ARE NOT REDUNDANT. EACH CATCHES WHAT THE OTHERS CANNOT.
+# DO NOT DELETE ANY OF THEM. ***
+#
+# 1. COUNTS catch a corpus that produced NOTHING. `_pin_members` compares "" to
+#    "" and RETURNS SUCCESS -- a degenerate run (ROWS empty after a botched
+#    refactor of the generation loop) sails through both manifests and is caught
+#    ONLY by `_pin_count "rows"`. The counts are not a cosmetic fast-fail; they
+#    are the denominator assertion. An earlier revision of this comment called
+#    them "only a faster error message", which invited exactly the edit that
+#    would reopen this hole.
+#
+# 2. MEMBERSHIP catches a SWAP. A count of 31 stays green when one gap closes and
+#    a different one opens, so both manifests are diffed with `comm`, never by
+#    subtracting totals.
+#
+# 3. PER-PATH VERDICTS catch a row getting STRICTLY WORSE without changing
+#    membership. Every all-path entry is `id p=.. j=.. l=.. a=..`, not a bare id,
+#    because a bare id records one OR-collapsed bit ("dirty on some path") and
+#    NOTE6's round-3 correction below is precisely the movement that bit cannot
+#    see: those rows were ALREADY all-path-dirty on both sides and went from ONE
+#    failing degraded path to THREE. Measured on this tree, 10 rows sit at
+#    `p=ALLOW j=DENY l=DENY a=DENY` (verbvcasearm-* x7, flagvcasearm-* x3). A
+#    guard change flipping their three degraded DENYs to ALLOW would strip the
+#    fail-closed fallback from seven gated families and move NOTHING an id-only
+#    pin observes. The 263 all-clean rows stay covered by ABSENCE -- any of them
+#    going dirty appears as a `+` line.
+#
+# NOT PINNED, AND DELIBERATELY SO: the deny-REASON attribution. `reason()` prints
+# which check actually fired for every DENY, and nothing here compares those
+# strings, so a refactor that keeps every verdict identical while making a row
+# deny through a DIFFERENT check stays green. That is the `co-mask-c1` hazard
+# this file documents a few lines below ("read the ATTRIBUTION, never the verdict
+# alone"). Tracked at
+# todos/P2-2026-09-07-corpus-pin-does-not-cover-deny-reason-attribution.md --
+# do not read a green pin as evidence the intended check fired.
 #
 # HOW TO BUMP: a bump is a deliberate, dated edit, and the DIFF is where a
 # reviewer confirms the movement was intended. Re-run this file, paste the sets
@@ -806,13 +836,29 @@ EXPECTED_PRECISE_GAPS=31
 # cross-check inside the same run rather than resting on this comment.
 #   31  every precise-path gap (a precise gap is all-path dirty by definition;
 #       verified as a strict subset, not assumed)
-#  133  precise-CLEAN rows dirty on at least one degraded path -- chiefly the
-#       crude_smells_outward mirror, deliberately NOT widened in PR #931 and
-#       tracked at todos/P1-2026-09-07-crude-smells-degraded-mirror-lags-the-flag-adjacent-fix.md
+#  133  precise-CLEAN rows dirty on at least one degraded path -- the
+#       crude_smells_outward mirror, deliberately NOT widened in PR #931.
+#       READ THAT CITATION NARROWLY. todos/P1-2026-09-07-crude-smells-degraded-mirror-lags-the-flag-adjacent-fix.md
+#       enumerates SIX rows (flagadjfd-* x3, flagadjsp-* x2, flagadjglue-npmlog),
+#       NOT this bucket. Measured split of the 133: 25 are over-denied
+#       ALLOW-expecting rows (safe direction) and 108 are DENY-expected rows that
+#       ALLOW on all three degraded paths -- intrtoolsp/intrtoolglue 11 each,
+#       toolv* and r4*-tool 7 each, intrnssp/intrnsglue 6 each, trailclose 3,
+#       nssufx 2, flagadj* 6. Only that last 6 is tracked anywhere by ID. The
+#       other 102 are ENUMERATED for the first time by the manifest below, which
+#       is a strict improvement -- before this pin nothing ran the corpus at all
+#       -- but enumerated is NOT tracked, and must not be read as such.
 # NOTE, and do not "fix" it: this metric counts any row whose expectation is
-# missed on any path, which INCLUDES the four ALLOW-expecting controls
-# (decoyfp-auto, flagadjfp-andand, flagadjfp-roredir, flagadjfp-semi) that the
-# degraded mirror over-denies. They are in the 164 and in the manifest below.
+# missed on ANY path, which includes ALLOW-expecting rows the degraded mirror
+# OVER-denies. MEASURED 2026-09-07, not enumerated by hand: **25** of the 164 are
+# ALLOW-expecting (out of 40 such rows in the corpus) -- decoyfp-auto,
+# flagadjfp-* (3), c1g-* (7), c2-fp-* (7), c2-readonly, c2-dynpath, fp-c2-noflag,
+# fp-easread, fp-mention, fp-quotedall, fp-automerge. An earlier revision of this
+# block named only "the four" (decoyfp-auto plus the three flagadjfp-*). That
+# list was WRITTEN RATHER THAN MEASURED, and the tell is that fp-automerge
+# carries the same command text as decoyfp-auto, yet one was named and one was
+# not. The 25 split the 133 below exactly: 25 over-denied ALLOW rows + 108
+# DENY-expected rows that ALLOW on the degraded paths = 133.
 EXPECTED_ALLPATH_GAPS=164
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
@@ -851,170 +897,170 @@ PIN_PRECISE_EOF
 )
 
 EXPECTED_ALLPATH_DIRTY_IDS=$(cat <<'PIN_ALLPATH_EOF'
-c1g-allargs-3dash
-c1g-arrelem-3dash
-c1g-barebang-3dash
-c1g-excl-length
-c1g-excl-status
-c1g-ind-3dash
-c1g-pos1-3dash
-c2-dynpath
-c2-fp-backtick
-c2-fp-getf
-c2-fp-header
-c2-fp-jq
-c2-fp-methodology
-c2-fp-paginate
-c2-fp-user
-c2-readonly
-decoyfp-auto
-flagadjfd-ghcomment
-flagadjfd-ghcreate
-flagadjfd-npmlog
-flagadjfp-andand
-flagadjfp-roredir
-flagadjfp-semi
-flagadjglue-npmlog
-flagadjsp-npmlog
-flagadjsp-yarncwd
-flagvcasearm-easbld
-flagvcasearm-ghapi
-flagvcasearm-ghcomment
-fp-automerge
-fp-c2-noflag
-fp-easread
-fp-mention
-fp-quotedall
-intrnsglue-ghcomment
-intrnsglue-ghmerge
-intrnsglue-ghrelease
-intrnsglue-ghrepo
-intrnsglue-railsvc
-intrnsglue-railvar
-intrnssp-ghcomment
-intrnssp-ghmerge
-intrnssp-ghrelease
-intrnssp-ghrepo
-intrnssp-railsvc
-intrnssp-railvar
-intrtoolglue-easbld
-intrtoolglue-easupd
-intrtoolglue-ghapi
-intrtoolglue-ghcomment
-intrtoolglue-ghmerge
-intrtoolglue-ghrelease
-intrtoolglue-ghrepo
-intrtoolglue-npmpub
-intrtoolglue-railsvc
-intrtoolglue-railup
-intrtoolglue-railvar
-intrtoolsp-easbld
-intrtoolsp-easupd
-intrtoolsp-ghapi
-intrtoolsp-ghcomment
-intrtoolsp-ghmerge
-intrtoolsp-ghrelease
-intrtoolsp-ghrepo
-intrtoolsp-npmpub
-intrtoolsp-railsvc
-intrtoolsp-railup
-intrtoolsp-railvar
-nssufx-ghcomment
-nssufx-ghmerge
-r4ansic-tool-easbld
-r4ansic-tool-easupd
-r4ansic-tool-ghapi
-r4ansic-tool-ghcomment
-r4ansic-tool-ghmerge
-r4ansic-tool-npmpub
-r4ansic-tool-railup
-r4brange-tool-easbld
-r4brange-tool-easupd
-r4brange-tool-ghapi
-r4brange-tool-ghcomment
-r4brange-tool-ghmerge
-r4brange-tool-npmpub
-r4brange-tool-railup
-r4brange-verb-easbld
-r4brange-verb-easupd
-r4brange-verb-ghapi
-r4brange-verb-ghcomment
-r4brange-verb-ghmerge
-r4brange-verb-npmpub
-r4brange-verb-railup
-r4dig-tool-easbld
-r4dig-tool-easupd
-r4dig-tool-ghapi
-r4dig-tool-ghcomment
-r4dig-tool-ghmerge
-r4dig-tool-npmpub
-r4dig-tool-railup
-r4spec-tool-easbld
-r4spec-tool-easupd
-r4spec-tool-ghapi
-r4spec-tool-ghcomment
-r4spec-tool-ghmerge
-r4spec-tool-npmpub
-r4spec-tool-railup
-toolvarithsep-easbld
-toolvarithsep-easupd
-toolvarithsep-ghapi
-toolvarithsep-ghcomment
-toolvarithsep-ghmerge
-toolvarithsep-npmpub
-toolvarithsep-railup
-toolvbareparen-easbld
-toolvbareparen-easupd
-toolvbareparen-ghapi
-toolvbareparen-ghcomment
-toolvbareparen-ghmerge
-toolvbareparen-npmpub
-toolvbareparen-railup
-toolvcasearm-easbld
-toolvcasearm-easupd
-toolvcasearm-ghapi
-toolvcasearm-ghcomment
-toolvcasearm-ghmerge
-toolvcasearm-npmpub
-toolvcasearm-railup
-toolvdqclose-easbld
-toolvdqclose-easupd
-toolvdqclose-ghapi
-toolvdqclose-ghcomment
-toolvdqclose-ghmerge
-toolvdqclose-npmpub
-toolvdqclose-railup
-toolvmixq-easbld
-toolvmixq-easupd
-toolvmixq-ghapi
-toolvmixq-ghcomment
-toolvmixq-ghmerge
-toolvmixq-npmpub
-toolvmixq-railup
-toolvnest-easbld
-toolvnest-easupd
-toolvnest-ghapi
-toolvnest-ghcomment
-toolvnest-ghmerge
-toolvnest-npmpub
-toolvnest-railup
-toolvsqclose-easbld
-toolvsqclose-easupd
-toolvsqclose-ghapi
-toolvsqclose-ghcomment
-toolvsqclose-ghmerge
-toolvsqclose-npmpub
-toolvsqclose-railup
-trailclose-ctl
-trailclose-easupd
-trailclose-ghmrg
-verbvcasearm-easbld
-verbvcasearm-easupd
-verbvcasearm-ghapi
-verbvcasearm-ghcomment
-verbvcasearm-ghmerge
-verbvcasearm-npmpub
-verbvcasearm-railup
+c1g-allargs-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-arrelem-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-barebang-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-excl-length p=ALLOW j=DENY l=DENY a=DENY
+c1g-excl-status p=ALLOW j=DENY l=DENY a=DENY
+c1g-ind-3dash p=ALLOW j=DENY l=DENY a=DENY
+c1g-pos1-3dash p=ALLOW j=DENY l=DENY a=DENY
+c2-dynpath p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-backtick p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-getf p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-header p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-jq p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-methodology p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-paginate p=ALLOW j=DENY l=DENY a=DENY
+c2-fp-user p=ALLOW j=DENY l=DENY a=DENY
+c2-readonly p=ALLOW j=DENY l=DENY a=DENY
+decoyfp-auto p=ALLOW j=DENY l=DENY a=DENY
+flagadjfd-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjfd-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjfd-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjfp-andand p=ALLOW j=DENY l=DENY a=DENY
+flagadjfp-roredir p=ALLOW j=DENY l=DENY a=DENY
+flagadjfp-semi p=ALLOW j=DENY l=DENY a=DENY
+flagadjglue-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjsp-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagadjsp-yarncwd p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagvcasearm-easbld p=ALLOW j=DENY l=DENY a=DENY
+flagvcasearm-ghapi p=ALLOW j=DENY l=DENY a=DENY
+flagvcasearm-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+fp-automerge p=ALLOW j=DENY l=DENY a=DENY
+fp-c2-noflag p=ALLOW j=DENY l=DENY a=DENY
+fp-easread p=ALLOW j=DENY l=DENY a=DENY
+fp-mention p=ALLOW j=DENY l=DENY a=DENY
+fp-quotedall p=ALLOW j=DENY l=DENY a=DENY
+intrnsglue-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnsglue-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrnssp-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolglue-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghrelease p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-ghrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+intrtoolsp-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+nssufx-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+nssufx-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4ansic-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-tool-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brange-verb-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4dig-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+r4spec-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvarithsep-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvbareparen-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvdqclose-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvmixq-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvnest-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvsqclose-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+trailclose-ctl p=DENY j=ALLOW l=ALLOW a=ALLOW
+trailclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+trailclose-ghmrg p=DENY j=ALLOW l=ALLOW a=ALLOW
+verbvcasearm-easbld p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-easupd p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-ghapi p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-npmpub p=ALLOW j=DENY l=DENY a=DENY
+verbvcasearm-railup p=ALLOW j=DENY l=DENY a=DENY
 PIN_ALLPATH_EOF
 )
 

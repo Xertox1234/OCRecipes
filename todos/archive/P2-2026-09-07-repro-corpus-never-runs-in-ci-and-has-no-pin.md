@@ -138,3 +138,63 @@ _behavioural_ drift, which is a different and real thing; the filed rationale ov
   `flagadjfp-roredir`, `flagadjfp-semi`) **are** inside the 164 — they are in the shipped
   manifest. The note claims the printed metric "does not count" them. The 164 itself is
   correct and is what is pinned; only the explanation is wrong. Not fixed here.
+
+### 2026-09-07 — review round: the pin as first shipped had a blind spot of its own
+
+`code-reviewer` and `security-auditor` both ran the corpus themselves rather than reading it,
+and both landed on the same structural gap from different directions. No CRITICAL findings;
+three WARNINGs fixed in the same PR.
+
+**The finding that mattered.** The all-path manifest stored one OR-collapsed bit per row
+("dirty on some path"). That is blind to a row getting _strictly worse_ without changing
+membership — and that is precisely the movement NOTE6's own round-3 correction records, which
+the pin comment had been citing as proof of its mechanism. Measured on this tree: 10 rows sit
+at `p=ALLOW j=DENY l=DENY a=DENY` (`verbvcasearm-*` x7, `flagvcasearm-*` x3). A guard change
+flipping those three degraded DENYs to ALLOW strips the fail-closed fallback from seven gated
+families and moves **nothing** an id-only pin observes.
+
+Fixed by making every all-path entry a per-path tuple, `id p=.. j=.. l=.. a=..`.
+**Mutation C** proves it: flipping one row's no-jq verdict left
+`rows=427  precise-path gaps=31  all-path gaps=164` — every count identical, the precise
+manifest green — and only the tuple diff fired, naming `j=DENY` -> `j=ALLOW`. That mutation was
+completely invisible to the manifest shipped an hour earlier.
+
+**Also fixed, all comment-accuracy defects in a file whose governance makes comments
+load-bearing:**
+
+- "the four ALLOW-expecting controls" was **written rather than measured**. There are **25**
+  (of 40 ALLOW-expecting rows). The tell, which `security-auditor` found: `fp-automerge`
+  carries the same command text as `decoyfp-auto`, yet one was named and one was not. The 25
+  split the 133 exactly — 25 over-denied ALLOW rows + 108 DENY-expected degraded holes.
+- The 133 bucket cited the P1 crude-smells todo as though it tracked the bucket. That todo
+  enumerates **6 rows**; 102 of the remainder are tracked nowhere by ID. Citation narrowed,
+  and the distinction stated: the manifest _enumerates_ them for the first time, which is not
+  the same as tracking them.
+- "the counts are ONLY a faster error message" was wrong and dangerous. `_pin_members("","")`
+  **returns success**, so a degenerate run that produced no rows is caught by the count checks
+  alone. The framing invited deleting the very check that guards the empty case. Rewritten as
+  three non-redundant checks.
+- "CI is always cold, so budget ~3m30s" — the runner measured **2m10s**, inside the warm
+  darwin range. Corrected from measurement.
+- Stale `todos/` paths (the same commit archived this file), and an incomplete dependency list
+  (omitted `comm`, `sort`, `mktemp`, `ln`, `cp`).
+
+**Declined, with reasoning:** a `shasum` digest of all 427 rows, to catch clean-row rotation.
+An opaque hash cannot be confirmed by a reviewer reading the diff, which is the property
+acceptance criterion 3 exists for — and the failure it guards (deleting five clean rows and
+adding five others) is a _visible_ edit, unlike the degraded-path regression above, which
+produces no diff at all. Noted rather than adopted.
+
+**Filed, not fixed:**
+
+- `todos/P2-2026-09-07-corpus-pin-does-not-cover-deny-reason-attribution.md` — the pin compares
+  verdicts and per-path outcomes but never deny-_reason_ attribution, so a row can start denying
+  from the wrong check and stay green. Now disclosed in the file's `HOW TO BUMP` block.
+- `todos/P3-2026-09-07-corpus-note6-allgaps-explanation-is-wrong.md` — restores the tracking
+  pointer for NOTE6's wrong sentence that archiving this todo would otherwise have removed.
+  The metric is untouched and still 164, as instructed.
+
+**Platform question closed.** The job ran on ubuntu-latest in 2m10s and its own log shows
+`✓ pin: rows=427  precise-path gaps=31  all-path gaps=164, both ID manifests exact` — so the
+pass is attributed, not vacuous, and the manifests are identical across darwin/bash 3.2 and
+ubuntu/bash 5.
