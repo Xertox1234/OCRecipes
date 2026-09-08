@@ -25,9 +25,16 @@ identical while making a row deny through a **different check** leaves
 
 ## Background
 
-Filed 2026-09-07 from the code review of PR #933 (the PR that added the pin). Raised
-independently by `code-reviewer`; not a defect that PR introduced — the previous state pinned
-nothing at all — but a gap the new pin's own framing could hide.
+Filed 2026-09-07 from the code review of PR #933 (the PR that added the pin), **merged
+2026-09-08 as `e0e6e886`** — that commit is the baseline for this work. Raised independently by
+`code-reviewer`; not a defect that PR introduced — the previous state pinned nothing at all —
+but a gap the new pin's own framing could hide.
+
+**Still open, and confirmed so by a second review round.** PR #933's follow-up review re-examined
+this deliberately: the reviewer endorsed disclosure-plus-todo over fixing it in that PR, on the
+grounds that the two costs named under Implementation Notes below (`reason()` re-invocation, and
+the `cut -c1-72` collision risk) make a rushed fix either wrong or runtime-doubling for a gate
+whose whole value is being cheap enough that nobody disables it. Nothing here is superseded.
 
 This is the hazard the corpus file already documents in prose and has been bitten by before.
 Its `co-mask-c1` note says it outright: _"on the pre-fix tree this row DENIES, but for an
@@ -69,5 +76,5 @@ line gaining a reason field. Watch out for two things:
 Do not pin a digest of the attribution section: an opaque hash cannot be confirmed by a
 reviewer reading the diff, which is the property the pin convention exists for.
 
-Related: `todos/P2-2026-09-07-corpus-note6-allgaps-explanation-is-wrong.md` (same file,
+Related: `todos/archive/P3-2026-09-07-corpus-note6-allgaps-explanation-is-wrong.md` (same file,
 comment accuracy).

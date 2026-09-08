@@ -1298,9 +1298,16 @@ exit 0
 #
 # *** SUPERSEDED 2026-09-07 -- MARKER ADDED. THE PARAGRAPH BELOW CONTAINS TWO
 # STATEMENTS THAT ARE FALSE ABOUT THE CODE. It is left in place and unrewritten on
-# purpose: the 164 it describes is CORRECT and is what the pin asserts, and the
-# rewrite belongs to
-# todos/P3-2026-09-07-corpus-note6-allgaps-explanation-is-wrong.md.
+# purpose: the 164 it describes is CORRECT and is what the pin asserts.
+#
+# AND THE 167 IS NOT RECOVERABLE, which is why this is a marker and not a
+# rewrite. That figure is a HAND COUNT over a two-tree before/after comparison
+# made during PR #931; it is not a number this file emits, on this tree or any
+# other, so there is nothing to re-derive and nothing to check it against. The
+# honest resolution is to say so rather than invent a second explanation that
+# reads better -- inventing one is how the paragraph below got written. Tracked
+# and closed at
+# todos/archive/P3-2026-09-07-corpus-note6-allgaps-explanation-is-wrong.md.
 #   (a) "THE FOUR ALLOW-EXPECTING CONTROL ROWS" -- measured, there are 25 of 40.
 #       The four named are a subset. Full enumeration is in the
 #       EXPECTED_ALLPATH_GAPS pin comment above.

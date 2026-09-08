@@ -190,7 +190,7 @@ produces no diff at all. Noted rather than adopted.
 - `todos/P2-2026-09-07-corpus-pin-does-not-cover-deny-reason-attribution.md` — the pin compares
   verdicts and per-path outcomes but never deny-_reason_ attribution, so a row can start denying
   from the wrong check and stay green. Now disclosed in the file's `HOW TO BUMP` block.
-- `todos/P3-2026-09-07-corpus-note6-allgaps-explanation-is-wrong.md` — restores the tracking
+- `todos/archive/P3-2026-09-07-corpus-note6-allgaps-explanation-is-wrong.md` (CLOSED 2026-09-08) — restored the tracking
   pointer for NOTE6's wrong sentence that archiving this todo would otherwise have removed.
   The metric is untouched and still 164, as instructed.
 
