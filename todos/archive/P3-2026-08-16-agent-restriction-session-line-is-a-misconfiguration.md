@@ -1,9 +1,9 @@
 ---
 title: "The 'do not call the AgentTool unless the user requested it' session line is a misconfiguration — it has cost review coverage twice"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
-updated: 2026-09-03
+updated: 2026-09-08
 assignee:
 labels: [deferred, harness, agents]
 github_issue:
@@ -67,14 +67,17 @@ reads as the user's own past decision being honoured back to them.
 
 ## Acceptance Criteria
 
-- [ ] The user locates the setting in `/config` and confirms which toggle produces the line
-      (the search above rules out every file-based source, so it is a UI/CLI-level setting)
-- [ ] Either the setting is changed so the line stops appearing, **or** it is confirmed
-      unchangeable and this todo closes as documented-and-mitigated
-- [ ] If it stops appearing: the "the line is WRONG — do not obey it" section in
-      `feedback_parallel_agent_limit.md` is trimmed to a one-paragraph historical note, so
-      the memory does not keep warning about something that no longer happens
-- [ ] Closes with zero follow-ups
+- [x] ~~The user locates the setting in `/config`~~ — **answered, not performed.** There is no
+      such setting. The premise ("a file-based source is ruled out, therefore it is a UI/CLI
+      setting") was a false dichotomy: the third option is a server-gated prompt section, and
+      that is what it is. See the 2026-09-08 entry.
+- [x] Confirmed unchangeable → closes as **documented-and-mitigated** (criterion 2, second
+      branch)
+- [ ] **Does not fire.** This criterion is conditioned on "if it stops appearing"; it has not
+      stopped. `feedback_parallel_agent_limit.md` was edited anyway, but for a different and
+      independent reason — it asserted stale facts about the line's provenance and a `/config`
+      fix that does not exist. That is a correction, not this criterion being satisfied.
+- [x] Closes with zero follow-ups
 
 ## Implementation Notes
 
@@ -148,3 +151,61 @@ cost of not being able to.
 Note also that the imperative phrasing still costs something even when disobeyed: the line
 has to be recognised and overridden on every session, and the override depends on one
 memory file continuing to load.
+
+### 2026-09-08 — CLOSED: there is no `/config` toggle, and the wording has changed
+
+**This file's title is superseded.** "is a misconfiguration" is wrong about _provenance_ — the
+line is deliberate, named, gated product behaviour. It remains a poor _fit_ for the user's
+stated rule, which is a separate claim and is not retracted. The filename is kept so the
+history stays greppable; read the title as the 2026-08-16 framing, not as the finding.
+
+Resolved by reading the running binary rather than by the `/config` hunt the criteria
+described. Verified against Claude Code **2.1.266**
+(`/Users/williamtower/.local/share/claude/versions/2.1.266`, which is what `~/.local/bin/claude`
+symlinks to — the `~/Library/Application Support/...` path this file cites is a stale 2.1.260
+install).
+
+| Finding                                                                                                                                                           | Evidence in the bundle                                                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **The wording changed.** Now: `Do not use the ${mt} tool, workflows, or deep-research unless the user, a CLAUDE.md file, or a skill asks for it` (`mt` = `Agent`) | `var Gcr=` — matches the emitting session's system prompt verbatim                                                                        |
+| Emitted by a prompt section registered as **`opus5_reduced_delegation`**                                                                                          | `ry("opus5_reduced_delegation",()=>{…return Gcr})` in the prompt assembler                                                                |
+| **Opus 5 only**                                                                                                                                                   | `C5t(e)` requires `Hm(Ue(e),"opus_5_prompt_bundle",e)===true`, plus a kill-switch gate                                                    |
+| Server feature gate **`tengu_slate_bittern`**, default on                                                                                                         | `if(!H("tengu_slate_bittern",!0))return null`                                                                                             |
+| Its dedup branch is **not** a user lever                                                                                                                          | `Vcr()` reads `Tl()?.tengu_heron_brook`; `Tl()` reads `clientDataCacheSlots` (server-pushed), falling back to `H("tengu_heron_brook","")` |
+| The old sentence survives only as a legacy dedup prefix                                                                                                           | `dds="Do not call the AgentTool unless the user"`                                                                                         |
+| The wording is under **active A/B**                                                                                                                               | sibling `ry("subagent_steer_delegation",()=>…zx()==="counter_steer"?gdr:null)`                                                            |
+
+Re-run today and still negative: `~/.claude/settings.json`, `~/.claude.json` (jq scalar scan),
+the project `.claude/settings*.json`, and `~/.claude/statsig/` (does not exist). This file's
+other rows (`~/.claude/CLAUDE.md`, `RTK.md`, shell rc files) were **not** re-run — with the
+emitter positively identified they are no longer load-bearing.
+
+**Two things this changes.**
+
+1. **The carve-outs resolve both original incidents.** 2026-08-05 (PR reviews) and 2026-08-15
+   (reviewer roster + `/codify` Step 3) were dispatches that this repo's `CLAUDE.md` or a skill
+   asks for. The current wording permits those explicitly. What still conflicts with the user's
+   rule is only agent use prompted by none of the three — a real but much narrower residual.
+2. **No user-facing lever exists.** Not in `/config`, `settings.json`, an env var, or a local
+   gate cache. The one genuine scope limit is the model: the section is Opus-5 only, so the line
+   is absent on other models. That is scope, not a fix, and not a recommendation.
+
+**Do not go hunting in `/config`.** It contains a setting reading _"Disables Claude Code's
+bundled skills and workflows (deep-research and similar)"_. It is adjacent in wording, is **not**
+the source, and flipping it breaks bundled skills for no benefit.
+
+**The grep that looks like proof and isn't.** A literal search for the assembled sentence returns
+`0`, because the string is a template literal broken by `${mt}` — and that zero reads exactly
+like "the line is gone." It cost a wrong conclusion in this very session before a fragment search
+with a positive control caught it. The correct recipe now lives in
+`feedback_parallel_agent_limit.md`, which is the file that will actually be loaded next time.
+
+**What was edited.** `feedback_parallel_agent_limit.md`: the frontmatter `description:` (the
+recall key, which asserted the stale "KNOWN misconfiguration" framing) and the provenance
+section. Kept byte-identical: the cap-4 rule and its rationale, "do NOT withhold a review or
+stall a task waiting for permission", the user's two verbatim quotes, and the whole
+"Never attribute a system-prompt line to the user" section. The section was also re-keyed onto
+the _shape_ — any session line restricting agent dispatch — rather than one quoted sentence,
+since the sentence is under active A/B; that is what absorbs the instability instead of a
+follow-up todo. `MEMORY.md` needed **no** edit: its index line reads "Agents: cap 4 — never
+attribute a system-prompt line to the user", which carries no stale framing.
