@@ -41,5 +41,19 @@ if ( review_stamp_dir >/dev/null 2>&1 ); then
   echo "FAIL: missing SHA should error"; FAIL=$((FAIL+1))
 else echo "PASS: missing SHA errors"; PASS=$((PASS+1)); fi
 
+# 6. Normal environment MUST derive the key from git, not hardcode -global-.
+#    This assertion kills the mutant that deletes the derivation block.
+out=$(review_stamp_dir normalenv)
+if grep -qF -- "ocrecipes-review-stamps-global/" <<<"$out"; then
+  echo "FAIL: normal path should NOT use fallback key"; FAIL=$((FAIL+1))
+else echo "PASS: normal path does not use fallback key"; PASS=$((PASS+1)); fi
+
+# 7. Forcing the fallback by stripping PATH must produce the -global- form.
+#    Verifies the derivation block works and the fallback is reachable.
+out=$(( PATH=/nonexistent; . "$HOOKS_DIR/lib/review-stamp-path.sh"; review_stamp_dir feedface ) 2>/dev/null)
+if grep -qF -- "ocrecipes-review-stamps-global/feedface" <<<"$out"; then
+  echo "PASS: stripped PATH triggers fallback"; PASS=$((PASS+1))
+else echo "FAIL: stripped PATH should trigger fallback"; echo "  got: $out"; FAIL=$((FAIL+1)); fi
+
 echo "---"; echo "passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ]
