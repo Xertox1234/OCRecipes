@@ -99,13 +99,21 @@ DIGEST=$(printf '%s\n' "$FILES" | shasum 2>/dev/null | cut -c1-16)
 # (`file:line — issue — concrete fix`) and that no real path in this repo's naming
 # convention ever contains. Either signal alone keeps the line in play.
 #
+# A THIRD signal is needed alongside those two: a bare bracketed severity tag alone on
+# its own line (`[CRITICAL]` with nothing else on the line) has neither whitespace nor a
+# `:digit` citation, so it was being dropped even though it is unambiguous and safe to
+# admit — a bracket-only line can never be a REVIEWED-FILES path (paths don't contain
+# `[`/`]`) and can never be ordinary prose (prose doesn't consist of a lone bracket pair).
+# Widened narrowly to exactly that shape, not to "any bracket-containing line", so it
+# can't be tricked into swallowing something else.
+#
 # DIRECTION: when in doubt, over-detect. A false "findings" blocks a merge and a human
 # unblocks it; a false "clean" ships unreviewed code past the gate. This also fires on
 # prose that merely mentions the word CRITICAL (e.g. "No CRITICAL issues found.") — a
 # deliberate choice, pinned by this writer's own test suite, not an oversight.
 CRITICALS=$(printf '%s\n' "$MSG" \
   | grep -E '(^|[^A-Za-z0-9_])CRITICAL($|[^A-Za-z0-9_])' \
-  | grep -E '[[:space:]]|:[0-9]' || true)
+  | grep -E '[[:space:]]|:[0-9]|^\[CRITICAL\]$' || true)
 
 # `clean` must be a POSITIVE signal, never the absence of one. The earlier `else clean`
 # fallback made every non-review cause of a missing/mismatched CRITICAL tag — transcript
@@ -117,17 +125,35 @@ CRITICALS=$(printf '%s\n' "$MSG" \
 # line is not a contract-compliant review, so it gets NO stamp (fail-closed at the gate)
 # rather than a manufactured `clean`.
 #
-# Plain (non -q/-m) grep here reads its entire input before exiting — no early-exit
-# SIGPIPE risk under `pipefail` from a large message (contrast the `grep -oE | grep -Eq`
-# shape that IS unsafe: docs/solutions/logic-errors/
-# union-over-renderings-does-not-cover-selection-within-one-2026-09-07.md).
+# The literal match must be ANCHORED TO THE LAST NON-EMPTY LINE, not accepted anywhere in
+# the message. A round-1 version that searched the whole message was still fail-open with
+# a CORRECT digest: a reviewer quoting the contract mid-review (while reviewing this very
+# hook, or docs/AI_WORKFLOW.md) writes a stray standalone "No findings." line that is NOT
+# the review's actual conclusion, and that stray line alone flipped a real, unmatched
+# finding to verdict:clean. A genuine clean review's LAST line is that sentence; a review
+# that found something ends with its findings, not with a quotation of the contract typed
+# earlier. Computed via awk (not the last line of the file, the last NON-EMPTY line, so a
+# trailing blank after "No findings." can't defeat this).
+LAST_LINE=$(printf '%s\n' "$MSG" | awk 'NF{last=$0} END{print last}')
 if [ -n "$CRITICALS" ]; then
   VERDICT=findings
-elif printf '%s\n' "$MSG" | grep -E '^No findings\.?$' >/dev/null 2>&1; then
+elif [ "$LAST_LINE" = "No findings." ] || [ "$LAST_LINE" = "No findings" ]; then
   VERDICT=clean
 else
   exit 0   # no findings section -> not a contract-compliant review -> write nothing
 fi
+
+# RESIDUAL — named explicitly, not left implicit: after the above, a message whose LAST
+# non-empty line is exactly "No findings." (or "No findings") is trusted as clean
+# REGARDLESS OF WHAT PRECEDES IT. A reviewer that emits a real, unmatched finding earlier
+# and then, for any reason, ends its reply with that literal line still reads as clean.
+# This is now a narrow, structurally-specific forgery (the LAST line, not any line) rather
+# than a broad one, but it is not closed. Separately, CRITICAL-detection stays
+# case-SENSITIVE by design (see the comment above): "Critical"/"critical" never counts,
+# on purpose — this is a known, deliberate narrowing, not an oversight, and is NOT to be
+# "fixed" with `grep -Ei` (see docs/AI_WORKFLOW.md-derived reasoning in the round-1 report:
+# case-insensitivity trips on ordinary prose like "this is critical for correctness" and
+# makes `findings` near-universal).
 
 # --- write -------------------------------------------------------------------
 case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac

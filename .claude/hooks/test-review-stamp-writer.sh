@@ -44,7 +44,11 @@ f="$ROOT/$SHA/code-reviewer.json"
 [ "$(jq -r .written_by "$f" 2>/dev/null)" = "review-stamp-writer.sh" ] && ok "written_by recorded" || bad "written_by recorded"
 # Digest pin — computed INDEPENDENTLY of the hook's own pipeline, not by trusting a value
 # the hook itself produced: `printf '%s\n' "<sorted files>" | shasum | cut -c1-16` run
-# directly against CLEAN_MSG's exact two-file list, already in `sort -u` order. Task 5
+# directly against CLEAN_MSG's two files IN SORT ORDER — NOT the order CLEAN_MSG lists
+# them in (it lists useNutritionLookup.ts first; `sort -u` puts __tests__/... first,
+# since `_` 0x5F sorts before `u` 0x75). Re-deriving the pin from the fixture's literal
+# listed order gives 2d3b4017ead64439, which is NOT this value and does not mean the pin
+# is broken. Task 5
 # must recompute this identically, so THIS is the assertion that catches a later edit
 # silently dropping `sort -u` or swapping `shasum` for `shasum -a 256` — a verdict-only
 # check cannot see either mutation (both leave verdict:clean untouched).
@@ -212,6 +216,66 @@ l="$ROOT/$SHA/nosignal-control-clean.json"
 [ "$(jq -r .verdict "$l" 2>/dev/null)" = "clean" ] \
   && ok "control: literal 'No findings.' still produces verdict:clean" \
   || bad "control: literal 'No findings.' still produces verdict:clean"
+
+# --- Round 2: fail-open with a CORRECT digest, via a stray "No findings." not at the
+# end of the message. Both require the message to contain a genuine unmatched finding
+# PLUS a standalone "No findings." line somewhere that is NOT the message's true
+# conclusion (e.g. a reviewer quoting the contract while reviewing this hook or
+# docs/AI_WORKFLOW.md writes exactly that). Fix (a) anchors the clean signal to the LAST
+# non-empty line; fix (b) makes a bare bracketed severity tag alone on its own line count.
+
+# 10. Mis-cased finding after a bracketed [SUGGESTION] (which correctly terminates the
+#     FILES parse — digest is right) plus a stray mid-message "No findings." that is NOT
+#     the last line. Neither fix (a) nor (b) can make "Critical:" match (case-sensitive,
+#     by design) — this fixture is closed by (a) ALONE: the true last line is prose, not
+#     the literal, so it falls through to "no findings section -> write nothing".
+ROUND2_MISCASED_STRAY_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+server/routes/recipes.ts
+
+[SUGGESTION] server/routes/recipes.ts:10 — nit
+Critical: server/routes/recipes.ts:118 — missing check
+
+No findings.
+
+(quoting the contract'"'"'s exact wording above while explaining my format)'
+payload "round2-miscased-stray" "$ROUND2_MISCASED_STRAY_MSG" | run_hook
+[ ! -f "$ROOT/$SHA/round2-miscased-stray.json" ] \
+  && ok "mis-cased finding + stray mid-message 'No findings.' writes no stamp (fix a)" \
+  || bad "mis-cased finding + stray mid-message 'No findings.' writes no stamp (fix a)"
+
+# 11. A bare `[CRITICAL]` alone on its own line (no whitespace, no :digit — the shape
+#     stage-2 was dropping) with the finding text on the NEXT line carrying no CRITICAL
+#     token, plus the same stray mid-message "No findings.". This one is closed by fix
+#     (b), not (a): the bracket-only line now survives stage 2 and CRITICALS is non-empty,
+#     so VERDICT=findings is decided BEFORE the last-line check ever runs — a real,
+#     evidenced stamp is written, which is the correct and safer outcome (not merely an
+#     absent record). See the round-2 report for why this is asserted as verdict:findings
+#     rather than "no stamp" despite the review's summary phrasing.
+ROUND2_BARE_BRACKET_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+server/routes/recipes.ts
+
+[CRITICAL]
+server/routes/recipes.ts:118 — missing ownership check
+
+No findings.
+
+(quoting the contract'"'"'s exact wording above)'
+payload "round2-bare-bracket" "$ROUND2_BARE_BRACKET_MSG" | run_hook
+m="$ROOT/$SHA/round2-bare-bracket.json"
+[ "$(jq -r .verdict "$m" 2>/dev/null)" = "findings" ] \
+  && ok "bare [CRITICAL] alone on its line now counts as a finding (fix b)" \
+  || bad "bare [CRITICAL] alone on its line now counts as a finding (fix b)"
+[ "$(jq -r '.unresolved | length' "$m" 2>/dev/null)" = "1" ] \
+  && [ "$(jq -r '.unresolved[0]' "$m" 2>/dev/null)" = "[CRITICAL]" ] \
+  && ok "unresolved records the bare bracket line itself" \
+  || bad "unresolved records the bare bracket line itself"
+
+# (Both pre-round-2 controls — case 9e/9f, `$k`/`$l` above — already run against this same
+# hook file in this same suite execution, so they already prove the round-2 changes leave
+# both green; re-checking the identical, unchanged `$k`/`$l` files here would be a vacuous
+# duplicate assertion, not an independent one, so it's deliberately not repeated.)
 
 echo "---"; echo "passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ]
