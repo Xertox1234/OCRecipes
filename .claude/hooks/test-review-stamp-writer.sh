@@ -401,5 +401,33 @@ o="$ROOT/$SHA/round4-roster-multi.json"
   && ok "a patterns list is a no-op on a MULTI-file digest — identical to case 1 (round 4)" \
   || bad "a patterns list is a no-op on a MULTI-file digest — identical to case 1 (round 4)"
 
+# --- Round 5: the whitespace terminator added in round 4 fired on a WHITESPACE-ONLY line,
+# which the pre-existing NF test had always treated as a skippable blank. Every separator
+# in every fixture above is TRULY empty, so nothing in this file could see it.
+
+# 17. A stray space (and, separately, a tab) on the separator line BETWEEN two listed
+#     paths. The reviewer contract does not forbid blank lines inside the block and says
+#     nothing about their byte content, so this is a shape a compliant reviewer can emit.
+#     Round 4 truncated the block at the first path and digested a strict PREFIX of the
+#     reviewed files — verdict clean, 8f4842be754477ff, where the two files digest to
+#     cf5a596de517834a. Pinned with an EMPTY-separator control so a fixture that stopped
+#     discriminating (e.g. if the second path were ever dropped from both) shows up as
+#     both rows agreeing on the wrong value rather than silently passing.
+ws_sep_msg() {  # $1 = the separator line's exact content
+  printf 'REVIEWED-SHA: %s\nREVIEWED-FILES:\nclient/hooks/useNutritionLookup.ts\n%s\nclient/hooks/__tests__/useNutritionLookup.test.ts\n\nNo findings.\n' "$SHA" "$1"
+}
+payload "round5-sep-space" "$(ws_sep_msg ' ')"  | run_hook
+payload "round5-sep-tab"   "$(ws_sep_msg "$(printf '\t')")" | run_hook
+payload "round5-sep-empty" "$(ws_sep_msg '')"   | run_hook
+for sep in space tab empty; do
+  sf="$ROOT/$SHA/round5-sep-$sep.json"
+  [ "$(jq -r .verdict "$sf" 2>/dev/null)" = "clean" ] \
+    && ok "whitespace-separated file list ($sep) produces verdict:clean (round 5)" \
+    || bad "whitespace-separated file list ($sep) produces verdict:clean (round 5)"
+  [ "$(jq -r .reviewed_files_digest "$sf" 2>/dev/null)" = "cf5a596de517834a" ] \
+    && ok "a $sep separator does not truncate the digested file list (round 5)" \
+    || bad "a $sep separator does not truncate the digested file list (round 5)"
+done
+
 echo "---"; echo "passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ]

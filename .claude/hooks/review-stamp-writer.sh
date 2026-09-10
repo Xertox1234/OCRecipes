@@ -54,12 +54,17 @@ SHA=$(printf '%s\n' "$MSG" \
       | sed -n 's/^REVIEWED-SHA:[[:space:]]*\([0-9a-f]\{7,40\}\).*/\1/p' | head -1)
 [ -n "$SHA" ] || exit 0
 
-# Everything between REVIEWED-FILES: and the first line that is not a bare path. Blank
-# lines inside the block are SKIPPED, not a terminator (docs/AI_WORKFLOW.md's reviewer
-# contract deliberately does not require "no blank lines inside the block" — confirmed
-# non-load-bearing because this collector's NF test already tolerates them); the block
-# ends at a bracketed finding, at the literal "No findings.", or at ANY line containing
-# whitespace.
+# Everything between REVIEWED-FILES: and the first line that is not a bare path. A blank
+# line inside the block is SKIPPED, not a terminator, and "blank" here means EMPTY OR
+# WHITESPACE-ONLY — docs/AI_WORKFLOW.md's reviewer contract deliberately does not require
+# "no blank lines inside the block", so a separator line that happens to carry a stray
+# space or tab must stay as harmless as a truly empty one. That is what the `NF &&` guard
+# on the whitespace terminator below is for, and it is not decoration: without it, a
+# space-only separator between two listed paths TRUNCATED the block at the first path and
+# the digest silently described a strict prefix of the reviewed files
+# (8f4842be754477ff for a two-path review that must digest to cf5a596de517834a). The
+# block therefore ends at a bracketed finding, at the literal "No findings.", or at any
+# NON-BLANK line containing whitespace.
 #
 # That third terminator is load-bearing, not belt-and-braces. The roster contract
 # (docs/AI_WORKFLOW.md's dispatch prompt -> .claude/agents/code-reviewer.md "Report")
@@ -89,12 +94,14 @@ SHA=$(printf '%s\n' "$MSG" \
 # fail-closed, confusing, safe. Coupling CRITICAL detection to this parse (e.g. "scan
 # whatever isn't in $FILES") would instead let a swallowed line escape detection entirely
 # — fail-open, the one direction this mechanism must never take. What can still be
-# swallowed once whitespace terminates the block is named in RESIDUAL 5 below.
+# swallowed — a NON-BLANK line that contains no whitespace at all, which is the only
+# shape left that reaches the `print` — is enumerated with measured digests in RESIDUAL 5
+# below.
 FILES=$(printf '%s\n' "$MSG" | awk '
   /^REVIEWED-FILES:/ { collecting=1; next }
   collecting && /^\[(CRITICAL|WARNING|SUGGESTION)\]/ { collecting=0 }
   collecting && /^No findings\.?$/                   { collecting=0 }
-  collecting && /[[:space:]]/                        { collecting=0 }
+  collecting && NF && /[[:space:]]/                  { collecting=0 }
   collecting && NF                                    { print }
 ' | sort -u)
 [ -n "$FILES" ] || exit 0
@@ -215,7 +222,12 @@ fi
 #    deny (safe, fail-closed, but a real class, not a hypothetical one). This item covers
 #    ONLY deviations that produce NO stamp. A deviation that produces a stamp whose
 #    verdict passes while its digest is wrong is a different class with a different
-#    symptom — item 5.
+#    symptom — item 5. One shape MOVED into this item when the whitespace
+#    terminator landed: a trailing space on the FIRST listed path now terminates the block
+#    before anything is collected, so $FILES is empty and the hook exits writing nothing —
+#    where it previously wrote a stamp carrying a corrupt digest (measured: 1e2deb28ad55f723
+#    -> NO STAMP). The merge outcome is unchanged (both deny); only which residual class
+#    it lands in changed, and no-stamp is the more honest of the two.
 #
 # 3. Pre-existing gate-blindness: a review whose only findings are WARNING/SUGGESTION tags
 #    (no CRITICAL match, and the literal "No findings." is never written because real
@@ -235,15 +247,28 @@ fi
 #    reviewed files, because the $FILES collector admits any non-blank line up to its
 #    terminators. Round 4's CRITICAL was the live instance — the contract-MANDATED
 #    patterns list sat inside the block and every line of it was digested as a path. The
-#    whitespace terminator closes every shape carrying a space, tab or CR; what REMAINS in
-#    this class is a non-path line with no whitespace at all — a lone `Notes:` or
-#    `Findings:` header between the file list and the findings — still collected as a
-#    path. Task 5's gate then denies on SCOPE while this record reads `clean`, so a human
-#    sees a passing verdict and a scope denial that look like they contradict each other;
-#    the denial is right, and the verdict field is not the part that failed. The same
-#    class runs the other way too: a genuine changed-file path that CONTAINS whitespace
-#    truncates the list at itself, so the digest describes a strict prefix of the reviewed
-#    files. Same verdict-passes/scope-fails signature, same fail-closed direction. This is the
+#    whitespace terminator closes every NON-BLANK shape carrying a space, tab or CR; what
+#    REMAINS in this class is a non-blank line with NO whitespace at all, sitting between
+#    the file list and the findings — still collected as a path. It is wider than a lone
+#    `Notes:`; every one of these was constructed and run against this hook, digest shown
+#    against a correct 8f4842be754477ff for the single path each fixture lists:
+#        Notes:         fba83fc3c721dae5      Summary        8370d7186a8793d3
+#        Findings:      06ae22ddc247655e      **Patterns**   1d32394501c77a8e
+#        ---            3ce962d9ce280327      --             45b77a59993dc4e7
+#    Task 5's gate then denies on SCOPE while this record reads `clean`, so a human sees a
+#    passing verdict and a scope denial that look like they contradict each other; the
+#    denial is right, and the verdict field is not the part that failed.
+#
+#    The REACHABLE half is closed at the contract, not here: docs/AI_WORKFLOW.md's
+#    dispatch prompt now instructs that the first line below the file list must contain a
+#    space, so a reviewer following it cannot produce any shape in the table above. The
+#    parser is deliberately left permissive — tightening it to a positive bare-path shape
+#    would trade this for a false-deny on legitimate paths.
+#
+#    Do NOT restate the inverse ("a changed-file path that CONTAINS whitespace truncates
+#    the list") as a live residual: `git ls-files | grep -c ' '` is 0 in this repo, so
+#    that half is unreachable, and naming it instead of the shapes above is what made this
+#    item document the impossible case while missing the live one. This is the
 #    same boundary the reviewer contract states in prose (docs/AI_WORKFLOW.md dispatch
 #    prompt: the file list ends at your first line containing a space) — parser, contract
 #    and residual deliberately name one property, not three.
