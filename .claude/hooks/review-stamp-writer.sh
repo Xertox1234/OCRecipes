@@ -3,7 +3,12 @@
 #
 # Registered in .claude/settings.json with an agent_type matcher so it fires only for
 # roster reviewers. The orchestrating agent can neither invoke nor suppress this hook —
-# that is the entire point (spec §2.2): evidence the agent did not author.
+# but do NOT read that as "evidence the agent did not author". This record is an
+# unprotected JSON file at a path derivable in one command, and nothing guards the
+# directory, so an agent that DECIDES to fabricate one can, in one shell redirection
+# (spec §6.2, corrected 2026-09-10). What this hook actually buys: a review that was
+# silently OMITTED, or ran against an earlier commit or a different file set, cannot pass
+# as one that happened.
 #
 # THIS HOOK MUST NEVER RUN git. A dispatched reviewer does not inherit the orchestrator's
 # worktree cwd (docs/AI_WORKFLOW.md:40) and this hook fires in that same ambient context,
@@ -279,8 +284,14 @@ fi
 #    that half is unreachable, and naming it instead of the shapes above is what made this
 #    item document the impossible case while missing the live one. This is the
 #    same boundary the reviewer contract states in prose (docs/AI_WORKFLOW.md dispatch
-#    prompt: the file list ends at your first line containing a space) — parser, contract
-#    and residual deliberately name one property, not three.
+#    prompt and .claude/agents/code-reviewer.md) — parser, contract and residual
+#    deliberately name one property, not three. That property has to be stated with its
+#    blank-line clause or it is not the parser's property: the `NF &&` guard above makes a
+#    blank OR WHITESPACE-ONLY line a SKIPPED line rather than a terminator, so what must
+#    contain a space is the first line of CONTENT below the file list. "Your first line
+#    containing a space" on its own is the OLD, pre-round-5 boundary, and a reviewer who
+#    leaves a space-only separator and infers from that shorter wording that the block
+#    already ended reaches every row of the table above with a `clean` verdict.
 
 # --- write -------------------------------------------------------------------
 case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac

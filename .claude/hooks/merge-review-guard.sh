@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# PreToolUse — block merging a risk-classified PR unless a review record exists that this
-# agent did not write. Design: docs/superpowers/specs/2026-09-08-merge-review-gate-design.md
+# PreToolUse — block merging a risk-classified PR unless a review record exists for its
+# exact head sha and file scope. NOT "a record this agent did not write": the record is an
+# unprotected file at a derivable path (spec §6.2, corrected 2026-09-10), so what this gate
+# catches is a review OMITTED, stale or mis-scoped — not one deliberately fabricated.
+# Design: docs/superpowers/specs/2026-09-08-merge-review-gate-design.md
 #
 # Escape (emergencies): SKIP_MERGE_REVIEW=1 in the shell that launched Claude Code.
 # It is read from THIS PROCESS'S ENVIRONMENT ONLY and never parsed out of the command
