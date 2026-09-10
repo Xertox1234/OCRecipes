@@ -101,8 +101,15 @@ RC_FILE="$ROOT/.hook-rc"   # dot-prefixed: clear_stamps' [0-9a-f]* glob never ma
 # line 1. Measured: mutating the stage-2 allow to `exit 3` left the suite at 39/39.
 # `run` is on the right of a pipe and therefore runs in a subshell, so the code goes
 # through a FILE — a variable assignment would not survive back to the caller.
+#
+# `"$@"` comes LAST, after the defaults. In `env`, a later assignment wins
+# (`env FOO=first FOO=second sh -c 'echo $FOO'` -> `second`, measured), so this ordering is
+# what lets a caller override PATH — which the no-jq block needs. With `"$@"` first the
+# hardcoded PATH won, the no-jq block had to build its own raw pipeline to get around it,
+# and its two allow controls silently escaped the exit-code check this function exists to
+# provide. Do not move it back.
 run() {
-  env "$@" PATH="$BIN:$PATH" REVIEW_STAMP_ROOT="$ROOT" bash "$HOOK" 2>/dev/null
+  env PATH="$BIN:$PATH" REVIEW_STAMP_ROOT="$ROOT" "$@" bash "$HOOK" 2>/dev/null
   printf '%s' "$?" > "$RC_FILE"
 }
 
@@ -503,30 +510,31 @@ unset FAKE_PIN_PWD
 # MCP route wide open, which is worse than not fixing it at all.
 NOJQ_BIN=$(mktemp -d "${TMPDIR:-/tmp}/merge-guard-nojq-$$-XXXX")
 for b in bash cat grep; do ln -s "$(command -v "$b")" "$NOJQ_BIN/$b" 2>/dev/null; done
-nojq() { printf '%s' "$1" | env -i PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$HOOK" 2>/dev/null; }
-
+# Every check below goes through `run`, overriding PATH to the jq-free directory. An
+# earlier revision used its own raw `env -i …` pipeline here — which meant these
+# assertions never wrote RC_FILE, so the two ALLOW controls could not tell "allowed" from
+# "crashed", reintroducing the exact class the rc fix exists to close, in the same commit
+# that closed it. Measured then: mutating this fallback's own `exit 0` to `exit 3` left the
+# suite fully green.
 if [ -x "$NOJQ_BIN/bash" ] && ! PATH="$NOJQ_BIN" command -v jq >/dev/null 2>&1; then
   # 41. The MCP merge route.
-  out=$(nojq "$(mcp_payload 938)")
+  out=$(mcp_payload 938 | run PATH="$NOJQ_BIN")
   denied "$out" && ok "no jq: MCP merge route denies" || bad "no jq: MCP merge route denies" "$out"
 
   # 42. The Bash merge route.
-  out=$(nojq "$(bash_payload "gh pr merge 938 --auto --squash")")
+  out=$(bash_payload "gh pr merge 938 --auto --squash" | run PATH="$NOJQ_BIN")
   denied "$out" && ok "no jq: Bash merge route denies" || bad "no jq: Bash merge route denies" "$out"
 
   # 43. ALLOW CONTROL — without it, 41/42 only say "this hook denies everything once jq is
   #     gone", which would be its own restrictive failure. An unrelated Bash call must
-  #     still pass through silently.
-  out=$(nojq "$(bash_payload "npm run lint")")
-  [ -z "$out" ] && ok "no jq: unrelated Bash command is untouched" \
-                || bad "no jq: unrelated Bash command is untouched" "$out"
+  #     still pass through silently, AND exit 0 while doing so.
+  out=$(bash_payload "npm run lint" | run PATH="$NOJQ_BIN")
+  assert_allowed "no jq: unrelated Bash command is untouched" "$out"
 
   # 44. ALLOW CONTROL — the documented bypass still works with no jq (it is read before the
   #     jq probe), so 41/42 are evidence about the missing tool, not about a blanket deny.
-  out=$(printf '%s' "$(mcp_payload 938)" \
-        | env -i PATH="$NOJQ_BIN" SKIP_MERGE_REVIEW=1 "$NOJQ_BIN/bash" "$HOOK" 2>/dev/null)
-  [ -z "$out" ] && ok "no jq: SKIP_MERGE_REVIEW still bypasses" \
-                || bad "no jq: SKIP_MERGE_REVIEW still bypasses" "$out"
+  out=$(mcp_payload 938 | run PATH="$NOJQ_BIN" SKIP_MERGE_REVIEW=1)
+  assert_allowed "no jq: SKIP_MERGE_REVIEW still bypasses" "$out"
 else
   bad "no-jq fixture is usable" "could not build a jq-free PATH at $NOJQ_BIN"
 fi

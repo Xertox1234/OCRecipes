@@ -33,9 +33,17 @@ set -uo pipefail
 # wide open, and that is the CLAUDE.md-preferred merge path, so a half-fix is worse than
 # none. A payload matching neither shape is unaffected.
 #
-# Known over-deny on this degraded path, accepted deliberately: the Bash arm reuses the
-# fast path's ordered `gh` → `pr` → `merge` shape, so `git commit -m "fix highlight for pr
-# merge"` also denies when jq is missing. Every crude no-jq fallback in this repo makes the
+# The Bash arm is NOT the fast path repeated. `cmd_fastpath_has` matches the EXTRACTED
+# `.tool_input.command`; here there is no jq, so nothing can extract that field and the
+# grep runs against the WHOLE RAW ENVELOPE instead. That is a strictly WIDER match — it can
+# fire on `gh`/`pr`/`merge` appearing anywhere in the payload, including a `description`
+# field or another tool_input key, not just in the command being run. Deliberate: the wider
+# match is the fail-safe direction, and a narrower one is not available without the very
+# tool that is missing. Do not "align" it with the fast path.
+#
+# Known over-deny that follows, accepted: any Bash payload whose raw text carries `gh`,
+# then `pr`, then `merge` in that order denies while jq is gone — `git commit -m "fix
+# highlight for pr merge"` among them. Every crude no-jq fallback in this repo makes the
 # same trade; a denied commit in an already-broken environment carries its own bypass, an
 # unreviewed merge does not.
 if ! command -v jq >/dev/null 2>&1; then
