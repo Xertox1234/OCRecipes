@@ -18,7 +18,35 @@ set -uo pipefail
 
 [ -n "${SKIP_MERGE_REVIEW:-}" ] && exit 0
 
-command -v jq >/dev/null 2>&1 || exit 0
+# Without jq this gate cannot read the envelope, classify the PR, or read a review record
+# — and review-stamp-writer.sh dies on the same missing tool, so no record exists to read
+# either. `|| exit 0` here is the ADVISORY hook convention (drift-detect.sh:21,
+# eslint-fix.sh:15, session-recent-issues.sh:12) and in a BLOCKING guard it turns the gate
+# silently OFF: measured — sensitive PR, no record, jq off PATH, rc 0, empty output, merge
+# allowed. Every other blocking PreToolUse guard fails closed instead, each saying so in
+# its own comment (guard-worktree-isolation.sh:34, git-safety.sh:28,
+# guard-outward-cli.sh:1328). This mirrors them, with hand-built JSON because jq is
+# precisely what is missing.
+#
+# The crude pre-check MUST cover BOTH merge routes. Spelling only the Bash gh/pr/merge
+# shape — the guard-outward-cli spelling — would leave `mcp__github__merge_pull_request`
+# wide open, and that is the CLAUDE.md-preferred merge path, so a half-fix is worse than
+# none. A payload matching neither shape is unaffected.
+#
+# Known over-deny on this degraded path, accepted deliberately: the Bash arm reuses the
+# fast path's ordered `gh` → `pr` → `merge` shape, so `git commit -m "fix highlight for pr
+# merge"` also denies when jq is missing. Every crude no-jq fallback in this repo makes the
+# same trade; a denied commit in an already-broken environment carries its own bypass, an
+# unreviewed merge does not.
+if ! command -v jq >/dev/null 2>&1; then
+  RAW=$(cat)
+  if grep -Eq '"tool_name"[[:space:]]*:[[:space:]]*"mcp__github__merge_pull_request"' <<< "$RAW" \
+     || { grep -Eq '"tool_name"[[:space:]]*:[[:space:]]*"Bash"' <<< "$RAW" \
+          && grep -q 'gh.*pr.*merge' <<< "$RAW"; }; then
+    printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"merge-review-guard: jq unavailable - failing closed for what looks like a PR merge. Without jq no review record can be read, and review-stamp-writer.sh cannot write one either. Bypass: SKIP_MERGE_REVIEW=1 in the shell that launched Claude Code."}}'
+  fi
+  exit 0
+fi
 INPUT=$(cat)
 TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 
@@ -95,7 +123,13 @@ esac
 
 case "$PR" in
   ''|*[!0-9]*)
-    deny "Blocked: merge-review-guard could not resolve a PR number from this merge — the ref is missing, obfuscated by a shell substitution, or retargeted with --repo, and the shared extractor refuses to guess rather than resolve the wrong PR. Re-run as \`gh pr merge <number> …\` with a literal number in this repository. $BYPASS" ;;
+    # Cause order is deliberate. The overwhelmingly common one is NO PR NUMBER AT ALL:
+    # `gh pr merge --auto --squash --delete-branch` is legal, documented usage
+    # (todo-executor.md:564 minus the number) and guard-outward-cli.sh ALLOWS it — measured,
+    # it denies only the non---auto form — so it arrives here and is denied unconditionally,
+    # before any risk classification, even on a docs-only PR. A human who reads
+    # "obfuscated or --repo" first has to guess that "the ref is missing" is their case.
+    deny "Blocked: merge-review-guard could not resolve a PR number from this merge, so it cannot tell which PR to classify. The usual cause is that NO number was given — \`gh pr merge --auto --squash\` merges the current branch's PR, and this gate deliberately will not infer that: the Bash tool's cwd persists and can differ from the branch being merged, so inferring would risk classifying one PR while merging another. Re-run as \`gh pr merge <number> --auto --squash …\`. The other two causes are a ref obfuscated by a shell substitution and a \`--repo\` retarget, both of which the shared extractor refuses to guess at. $BYPASS" ;;
 esac
 
 GUARD="$ROOT/scripts/todo-automerge-guard.sh"

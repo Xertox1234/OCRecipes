@@ -90,8 +90,31 @@ export FAKE_TODO_MD=$'---\npriority: low\nlabels: [deferred, hooks]\n---\nbody\n
 ok()  { echo "PASS: $1"; PASS=$((PASS+1)); }
 bad() { echo "FAIL: $1"; [ $# -gt 1 ] && echo "       $2"; FAIL=$((FAIL+1)); }
 
-run() {  # stdin = hook payload
-  PATH="$BIN:$PATH" REVIEW_STAMP_ROOT="$ROOT" bash "$HOOK" 2>/dev/null
+RC_FILE="$ROOT/.hook-rc"   # dot-prefixed: clear_stamps' [0-9a-f]* glob never matches it
+
+# stdin = hook payload; any arguments are env assignments for this run.
+#
+# The exit code is recorded because `[ -z "$out" ]` ALONE CANNOT TELL "ALLOW" FROM "CRASH".
+# A PreToolUse hook allows by exiting 0 with no output — but a non-zero, non-2 exit is a
+# non-blocking ERROR and the tool proceeds anyway, silently, with no output either. So an
+# allow assertion that only tests emptiness passes just as happily on a gate that died on
+# line 1. Measured: mutating the stage-2 allow to `exit 3` left the suite at 39/39.
+# `run` is on the right of a pipe and therefore runs in a subshell, so the code goes
+# through a FILE — a variable assignment would not survive back to the caller.
+run() {
+  env "$@" PATH="$BIN:$PATH" REVIEW_STAMP_ROOT="$ROOT" bash "$HOOK" 2>/dev/null
+  printf '%s' "$?" > "$RC_FILE"
+}
+
+# Every ALLOW assertion goes through this: empty output AND a clean exit.
+assert_allowed() {  # assert_allowed <label> <captured-output>
+  local label="$1" out="${2:-}" rc
+  rc=$(cat "$RC_FILE" 2>/dev/null)
+  if [ -z "$out" ] && [ "$rc" = "0" ]; then
+    ok "$label"
+  else
+    bad "$label" "out=[$out] rc=[${rc:-<unrecorded>}]"
+  fi
 }
 mcp_payload()  { jq -n --arg n "$1" '{tool_name:"mcp__github__merge_pull_request", tool_input:{pullNumber:($n|tonumber)}}'; }
 bash_payload() { jq -n --arg c "$1" '{tool_name:"Bash", tool_input:{command:$c}}'; }
@@ -116,8 +139,7 @@ export FAKE_FILES="$FILES_ONE"
 
 # 1. ALLOW CONTROL. An unrelated Bash command is silent — it never reaches gh at all.
 out=$(bash_payload "npm run lint" | run)
-[ -z "$out" ] && ok "unrelated Bash command exits silently" \
-              || bad "unrelated Bash command exits silently" "$out"
+assert_allowed "unrelated Bash command exits silently" "$out"
 
 # 2. ALLOW CONTROL for the fast path's coarseness. `git commit -m "fix highlight for pr
 #    merge"` MATCHES the '*gh*pr*merge*' necessary-substring filter ("gh" inside
@@ -125,25 +147,23 @@ out=$(bash_payload "npm run lint" | run)
 #    fast-path hit rather than on the precise detector's verdict would block ordinary
 #    commits — the restrictive failure that gets a gate switched off.
 out=$(bash_payload 'git commit -m "fix highlight for pr merge"' | run)
-[ -z "$out" ] && ok "fast-path hit that is not a merge stays silent" \
-              || bad "fast-path hit that is not a merge stays silent" "$out"
+assert_allowed "fast-path hit that is not a merge stays silent" "$out"
 
 # 3. A non-merge gh pr subcommand is not this hook's business.
 out=$(bash_payload "gh pr create --title x --body y" | run)
-[ -z "$out" ] && ok "gh pr create is not gated" || bad "gh pr create is not gated" "$out"
+assert_allowed "gh pr create is not gated" "$out"
 
 # ── Stage 2: content risk ────────────────────────────────────────────────────
 
 # 4. ALLOW. Safe paths need no stamp.
 export FAKE_FILES="$FILES_SAFE"
 out=$(mcp_payload 938 | run)
-[ -z "$out" ] && ok "safe paths allow without a stamp" || bad "safe paths allow without a stamp" "$out"
+assert_allowed "safe paths allow without a stamp" "$out"
 
 # 5. ALLOW, Bash path. The `--auto` arming call is the form that survives
 #    guard-outward-cli.sh, so it must be able to reach stage 2 and be ALLOWED there.
 out=$(bash_payload "gh pr merge 938 --auto --squash --delete-branch" | run)
-[ -z "$out" ] && ok "Bash --auto arming with safe paths allows" \
-              || bad "Bash --auto arming with safe paths allows" "$out"
+assert_allowed "Bash --auto arming with safe paths allows" "$out"
 
 # 6. DENY. Sensitive paths, no record at all.
 export FAKE_FILES="$FILES_ONE"
@@ -165,8 +185,7 @@ fi
 # 8. ALLOW. A clean record whose digest is the ONE-file literal, against a one-file diff.
 stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
 out=$(mcp_payload 938 | run)
-[ -z "$out" ] && ok "clean record matching the 1-file digest literal allows" \
-              || bad "clean record matching the 1-file digest literal allows" "$out"
+assert_allowed "clean record matching the 1-file digest literal allows" "$out"
 
 # 9. ALLOW. Same, for the TWO-file literal against a two-file diff. Pins the formula at a
 #    second point — a digest computed over an unsorted, non-unique, or differently
@@ -175,8 +194,7 @@ clear_stamps
 export FAKE_FILES="$FILES_TWO"
 stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
 out=$(mcp_payload 938 | run)
-[ -z "$out" ] && ok "clean record matching the 2-file digest literal allows" \
-              || bad "clean record matching the 2-file digest literal allows" "$out"
+assert_allowed "clean record matching the 2-file digest literal allows" "$out"
 
 # 10. DENY. Mis-scoped review: the record describes ONE file, the PR changes TWO. Same
 #     SHA, same reviewer, clean verdict — only the scope is wrong.
@@ -308,7 +326,7 @@ fi
 export FAKE_VIEW_JSON="{\"headRefName\":\"todo/P3-2026-01-01-x\",\"headRefOid\":\"$SHA\"}"
 export FAKE_FILES="$FILES_TODO_SAFE"
 out=$(mcp_payload 938 | run)
-[ -z "$out" ] && ok "todo/* with safe paths is exempt" || bad "todo/* with safe paths is exempt" "$out"
+assert_allowed "todo/* with safe paths is exempt" "$out"
 
 # 24. STAGE 1 MECHANISM. The branch name — not the file list — selects whether the FULL
 #     guard runs. The full guard's TODO GATE reads the archived todo through `gh api`;
@@ -358,9 +376,8 @@ denied "$out" && ok "SKIP inside the command does not self-authorize" \
 
 # 29. ALLOW CONTROL for 28: the REAL env var does bypass, so 27's deny is evidence about
 #     WHERE the variable was read, not merely that the gate denies everything.
-out=$(bash_payload "gh pr merge 938 --auto --squash" \
-      | SKIP_MERGE_REVIEW=1 PATH="$BIN:$PATH" REVIEW_STAMP_ROOT="$ROOT" bash "$HOOK" 2>/dev/null)
-[ -z "$out" ] && ok "real SKIP_MERGE_REVIEW bypasses" || bad "real SKIP_MERGE_REVIEW bypasses" "$out"
+out=$(bash_payload "gh pr merge 938 --auto --squash" | run SKIP_MERGE_REVIEW=1)
+assert_allowed "real SKIP_MERGE_REVIEW bypasses" "$out"
 
 # ── Ref resolution (must go through lib/cmd-detect.sh) ───────────────────────
 
@@ -370,12 +387,34 @@ out=$(bash_payload "gh pr merge 938 --auto --squash" \
 out=$(bash_payload 'gh pr merge 4$(echo 9)2 --auto' | run)
 denied "$out" && ok "substitution-obfuscated ref fails closed" || bad "substitution-obfuscated ref fails closed" "$out"
 
-# 31. DENY. `--repo owner/repo` retargets a repository cmd_gh_pr_ref cannot convey, so it
+# 31. DENY, and the message must name the MISSING-NUMBER cause FIRST. `gh pr merge --auto
+#     --squash --delete-branch` is legal, documented usage (todo-executor.md:564 minus the
+#     number) and guard-outward-cli.sh ALLOWS it — measured, that guard denies only the
+#     non---auto form — so it arrives here and is denied unconditionally, before any risk
+#     classification, even on a docs-only PR. Recovery is SKIP_MERGE_REVIEW=1, the pressure
+#     point that gets a gate switched off, so the human must not have to guess which of
+#     three causes applies to them.
+out=$(bash_payload 'gh pr merge --auto --squash --delete-branch' | run)
+r=$(reason "$out")
+# Ordering, not mere presence: everything BEFORE the missing-number phrase must mention
+# neither of the other two causes. `${r%%phrase*}` is the text preceding the phrase, and a
+# strip that changes nothing proves the other cause is absent from it.
+head=${r%%NO number was given*}
+if denied "$out" \
+   && [ "$head" != "$r" ] \
+   && [ "${head#*obfuscated}" = "$head" ] \
+   && [ "${head#*--repo}" = "$head" ]; then
+  ok "bare-ref deny names the missing-number cause before the others"
+else
+  bad "bare-ref deny names the missing-number cause before the others" "$r"
+fi
+
+# 32. DENY. `--repo owner/repo` retargets a repository cmd_gh_pr_ref cannot convey, so it
 #     refuses the ref.
 out=$(bash_payload 'gh pr merge --repo other/repo 938 --squash' | run)
 denied "$out" && ok "--repo retarget fails closed" || bad "--repo retarget fails closed" "$out"
 
-# 32. DENY. A create/merge co-occurrence makes cmd_gh_pr_write_subcommand REFUSE (rc 1,
+# 33. DENY. A create/merge co-occurrence makes cmd_gh_pr_write_subcommand REFUSE (rc 1,
 #     empty output). Treating that empty answer as "not a merge" is a self-authorization
 #     bypass an agent can author: the merge really runs, the decoy never does.
 out=$(bash_payload 'echo "$(gh pr merge 938)" # gh pr create' | run)
@@ -383,13 +422,13 @@ denied "$out" && ok "ambiguous gh pr verb fails closed" || bad "ambiguous gh pr 
 
 # ── Fail-closed on tooling ───────────────────────────────────────────────────
 
-# 33. DENY. Stage 2 tooling error (exit 2) requires a stamp, not an allow. A gh whose
+# 34. DENY. Stage 2 tooling error (exit 2) requires a stamp, not an allow. A gh whose
 #     `pr diff` fails is what a rate-limit looks like to the guard.
 export FAKE_DIFF_FAIL=1
 out=$(mcp_payload 938 | run)
 denied "$out" && ok "stage-2 tooling error denies (fail-closed)" || bad "stage-2 tooling error denies (fail-closed)" "$out"
 
-# 34. …and it still denies when a VALID record exists but the changed-file list cannot be
+# 35. …and it still denies when a VALID record exists but the changed-file list cannot be
 #     re-read, because the scope comparison is exactly what cannot be performed.
 stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
 out=$(mcp_payload 938 | run)
@@ -398,7 +437,7 @@ denied "$out" && ok "unreadable diff denies even with a valid record" \
 clear_stamps
 export FAKE_DIFF_FAIL=""
 
-# 35. DENY. `gh pr view` failing (no such PR / auth) is not an allow.
+# 36. DENY. `gh pr view` failing (no such PR / auth) is not an allow.
 cat > "$BIN/gh" <<'GHDEAD'
 #!/usr/bin/env bash
 exit 1
@@ -408,7 +447,7 @@ out=$(mcp_payload 938 | run)
 denied "$out" && ok "unreadable PR denies (fail-closed)" || bad "unreadable PR denies (fail-closed)" "$out"
 write_gh
 
-# 36. DENY. lib/cmd-detect.sh unsourceable => deny, never a silent allow. Run the hook from
+# 37. DENY. lib/cmd-detect.sh unsourceable => deny, never a silent allow. Run the hook from
 #     a copy whose lib/ lacks it.
 BROKEN=$(mktemp -d "${TMPDIR:-/tmp}/merge-guard-broken-$$-XXXX")
 mkdir -p "$BROKEN/lib"
@@ -419,7 +458,7 @@ out=$(bash_payload "gh pr merge 938 --auto --squash" \
 denied "$out" && ok "missing cmd-detect.sh denies" || bad "missing cmd-detect.sh denies" "$out"
 rm -rf "$BROKEN"
 
-# 37. DENY. scripts/todo-automerge-guard.sh unreachable => deny. Same copy trick, with
+# 38. DENY. scripts/todo-automerge-guard.sh unreachable => deny. Same copy trick, with
 #     cmd-detect.sh present so the deny is attributable to the guard, not the lib.
 BROKEN=$(mktemp -d "${TMPDIR:-/tmp}/merge-guard-noguard-$$-XXXX")
 mkdir -p "$BROKEN/lib"
@@ -443,18 +482,55 @@ rm -rf "$BROKEN"
 
 export FAKE_PIN_PWD="$(cd "$HOOKS_DIR/../.." && pwd)"
 
-# 38. DENY from a foreign cwd.
+# 39. DENY from a foreign cwd.
 export FAKE_FILES="$FILES_ONE"
 out=$( cd / && bash_payload "gh pr merge 938 --auto" | run )
 denied "$out" && ok "denies identically from a foreign cwd" || bad "denies identically from a foreign cwd" "$out"
 
-# 39. ALLOW from a foreign cwd. This is the discriminating half: with the pinned gh, a hook
+# 40. ALLOW from a foreign cwd. This is the discriminating half: with the pinned gh, a hook
 #     that ran gh from the INHERITED cwd gets a gh failure here and denies, so 38's deny
 #     alone proves nothing. Only a hook that anchored itself to the project root allows.
 export FAKE_FILES="$FILES_SAFE"
 out=$( cd / && bash_payload "gh pr merge 938 --auto" | run )
-[ -z "$out" ] && ok "allows identically from a foreign cwd" || bad "allows identically from a foreign cwd" "$out"
+assert_allowed "allows identically from a foreign cwd" "$out"
 unset FAKE_PIN_PWD
+
+# ── Missing jq: a BLOCKING guard must fail CLOSED ────────────────────────────
+# `command -v jq || exit 0` is the ADVISORY hook convention (drift-detect.sh:21,
+# eslint-fix.sh:15). In a blocking guard it turns the gate silently OFF — and
+# review-stamp-writer.sh dies on the same missing tool, so no record exists either. Both
+# merge routes must be covered: spelling only the Bash shape leaves the CLAUDE.md-preferred
+# MCP route wide open, which is worse than not fixing it at all.
+NOJQ_BIN=$(mktemp -d "${TMPDIR:-/tmp}/merge-guard-nojq-$$-XXXX")
+for b in bash cat grep; do ln -s "$(command -v "$b")" "$NOJQ_BIN/$b" 2>/dev/null; done
+nojq() { printf '%s' "$1" | env -i PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$HOOK" 2>/dev/null; }
+
+if [ -x "$NOJQ_BIN/bash" ] && ! PATH="$NOJQ_BIN" command -v jq >/dev/null 2>&1; then
+  # 41. The MCP merge route.
+  out=$(nojq "$(mcp_payload 938)")
+  denied "$out" && ok "no jq: MCP merge route denies" || bad "no jq: MCP merge route denies" "$out"
+
+  # 42. The Bash merge route.
+  out=$(nojq "$(bash_payload "gh pr merge 938 --auto --squash")")
+  denied "$out" && ok "no jq: Bash merge route denies" || bad "no jq: Bash merge route denies" "$out"
+
+  # 43. ALLOW CONTROL — without it, 41/42 only say "this hook denies everything once jq is
+  #     gone", which would be its own restrictive failure. An unrelated Bash call must
+  #     still pass through silently.
+  out=$(nojq "$(bash_payload "npm run lint")")
+  [ -z "$out" ] && ok "no jq: unrelated Bash command is untouched" \
+                || bad "no jq: unrelated Bash command is untouched" "$out"
+
+  # 44. ALLOW CONTROL — the documented bypass still works with no jq (it is read before the
+  #     jq probe), so 41/42 are evidence about the missing tool, not about a blanket deny.
+  out=$(printf '%s' "$(mcp_payload 938)" \
+        | env -i PATH="$NOJQ_BIN" SKIP_MERGE_REVIEW=1 "$NOJQ_BIN/bash" "$HOOK" 2>/dev/null)
+  [ -z "$out" ] && ok "no jq: SKIP_MERGE_REVIEW still bypasses" \
+                || bad "no jq: SKIP_MERGE_REVIEW still bypasses" "$out"
+else
+  bad "no-jq fixture is usable" "could not build a jq-free PATH at $NOJQ_BIN"
+fi
+rm -rf "$NOJQ_BIN"
 
 echo "---"; echo "passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ]
