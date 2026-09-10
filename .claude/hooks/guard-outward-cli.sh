@@ -2551,11 +2551,24 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # them the whole time while the CLAUSE BODY did not. Exactly the detector/cut
   # asymmetry the block above warns about, reintroduced one line later.
   #
-  # NOT VERIFIED HERE: the appending redirect-both spelling. It is a syntax error
-  # on this machine's bash 3.2, so no argv could be produced for it; under
-  # bash >= 4 it is valid and may be a fourth spelling. Recorded as UNMEASURED
-  # rather than claimed closed -- claiming a class closed without running its
-  # members is what this entry exists to correct.
+  # MEASURED 2026-09-09 -- the appending redirect-both spelling IS covered, and
+  # the rationale that stood here was wrong. It claimed the spelling was a
+  # syntax error "on this machine's bash 3.2, so no argv could be produced for
+  # it". That premise does not hold: the shell that actually produces argv is
+  # zsh (5.9), where `&>>` parses fine, and a bash >= 4 is now installed
+  # alongside 3.2 as well. The spelling is REACHABLE -- it always was.
+  #
+  # It is nonetheless consumed by the tail class below: `&[<>]` takes the `&>`,
+  # then `[^;&|]` takes the trailing `>`, so the clause continues through it
+  # exactly as it does through `&>`. Verified against zsh 5.9, /bin/bash
+  # 3.2.57, and bash 5.3.15 -- all three agree.
+  #
+  # THE COVERAGE IS INCIDENTAL, AND THAT IS THE RESIDUAL: it falls out of
+  # `[^;&|]` being permissive, not out of any alternative naming this operator.
+  # Narrowing that tail class reopens the spelling silently, with no row to
+  # catch it. A measurement written in a comment is not a guard -- the durable
+  # fix is a corpus row pinning `&>>`, which moves rows 448 -> 449 and re-pins.
+  # NOT DONE HERE.
   #
   # Monotone -- but state the consumers exhaustively, because an UNNAMED consumer
   # of a widened value is the precise shape that produced this PR's CRITICAL.
