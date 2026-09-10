@@ -37,30 +37,64 @@ if [ -z "$MSG" ]; then
 fi
 [ -n "$MSG" ] || exit 0
 
+# Normalize CRLF once, at ingest, rather than per-consumer. A CR that survives here is
+# not one symptom but three, and only the first was ever handled: (1) the verdict's
+# last-line comparison sees "No findings.\r"; (2) the $FILES collector below sees the CR
+# as part of a path, so the digest describes files that do not exist; (3) `awk
+# 'NF{last=$0}'` treats a CR-ONLY line as NON-EMPTY, so a CRLF message ending in a blank
+# line makes "\r" the last non-empty line — the literal is never compared at all and a
+# genuinely clean review writes no stamp. Verified: printf 'No findings.\r\n\r\n' |
+# awk 'NF{last=$0} END{print last}' prints a bare CR. Stripping here fixes all three; the
+# per-consumer strip that used to sit in the verdict block fixed only (1), and was dead
+# code besides (the trailing-whitespace trim on the next line already covers CR).
+MSG=${MSG//$'\r'/}
+
 # --- parse the contract (docs/AI_WORKFLOW.md:49) -------------------------------
 SHA=$(printf '%s\n' "$MSG" \
       | sed -n 's/^REVIEWED-SHA:[[:space:]]*\([0-9a-f]\{7,40\}\).*/\1/p' | head -1)
 [ -n "$SHA" ] || exit 0
 
-# Everything between REVIEWED-FILES: and the first findings line / blank-line boundary.
-# Blank lines inside the block are SKIPPED, not a terminator (docs/AI_WORKFLOW.md's
-# reviewer contract deliberately does not require "no blank lines inside the block" —
-# confirmed non-load-bearing because this collector's NF test already tolerates them);
-# only a bracketed finding or the literal "No findings." ends the block.
+# Everything between REVIEWED-FILES: and the first line that is not a bare path. Blank
+# lines inside the block are SKIPPED, not a terminator (docs/AI_WORKFLOW.md's reviewer
+# contract deliberately does not require "no blank lines inside the block" — confirmed
+# non-load-bearing because this collector's NF test already tolerates them); the block
+# ends at a bracketed finding, at the literal "No findings.", or at ANY line containing
+# whitespace.
+#
+# That third terminator is load-bearing, not belt-and-braces. The roster contract
+# (docs/AI_WORKFLOW.md's dispatch prompt -> .claude/agents/code-reviewer.md "Report")
+# REQUIRES a clean review to put its correctly-implemented-patterns list ABOVE the final
+# "No findings." — i.e. exactly between the file list and the only two terminators this
+# collector used to have. Every line of that mandated list was therefore collected as a
+# PATH, so the always-dispatched baseline reviewer's own prescribed clean shape produced
+# verdict=clean with digest 55fda4e16ce87ade where its one real path digests to
+# 8f4842be754477ff: a record that PASSES on verdict and FAILS on scope, denying the merge
+# with a message that points at diff scope while the cause is a patterns list. The same
+# corruption hit the trailing-whitespace tolerance the verdict block deliberately grants
+# below — "No findings.   " misses the exact-match terminator on line 3 of this awk and
+# was collected as a path too.
+#
+# The test is WHITESPACE, not "does this look like a path", because that is the SAME
+# shape property the CRITICALS exclusion below already depends on (a REVIEWED-FILES line
+# is "no leading whitespace, no bullet markers, no numbering, no backticks, no trailing
+# commentary" — one invariant, enforced at both sites through the same [[:space:]] class
+# rather than two different spellings of "whitespace"). It is fail-closed in the only
+# direction available to it: it can only SHRINK $FILES, never admit a line the previous
+# collector rejected.
 #
 # NOTE: this parse feeds ONLY $FILES -> $DIGEST -> reviewed_files_digest. Verdict /
 # CRITICAL detection (further below) never derives from $FILES or from this block
-# boundary — deliberately: a reviewer who uses the unbracketed agent-definition findings
-# format (no bracket, no literal "No findings.") leaves `collecting` on, so a finding
-# line gets swallowed into $FILES here. That only corrupts the digest, which then
-# mismatches Task 5's independent recomputation and DENIES the merge — fail-closed,
-# confusing, safe. Coupling CRITICAL detection to this parse (e.g. "scan whatever isn't
-# in $FILES") would instead have let that same swallowed line escape detection entirely
-# — fail-open, the one direction this mechanism must never take.
+# boundary — deliberately: anything this collector still gets wrong can only corrupt the
+# digest, which then mismatches Task 5's independent recomputation and DENIES the merge —
+# fail-closed, confusing, safe. Coupling CRITICAL detection to this parse (e.g. "scan
+# whatever isn't in $FILES") would instead let a swallowed line escape detection entirely
+# — fail-open, the one direction this mechanism must never take. What can still be
+# swallowed once whitespace terminates the block is named in RESIDUAL 5 below.
 FILES=$(printf '%s\n' "$MSG" | awk '
   /^REVIEWED-FILES:/ { collecting=1; next }
   collecting && /^\[(CRITICAL|WARNING|SUGGESTION)\]/ { collecting=0 }
   collecting && /^No findings\.?$/                   { collecting=0 }
+  collecting && /[[:space:]]/                        { collecting=0 }
   collecting && NF                                    { print }
 ' | sort -u)
 [ -n "$FILES" ] || exit 0
@@ -138,19 +172,22 @@ CRITICALS=$(printf '%s\n' "$MSG" \
 # finding to verdict:clean. A genuine clean review's LAST line is that sentence; a review
 # that found something ends with its findings, not with a quotation of the contract typed
 # earlier. Computed via awk (not the last line of the file, the last NON-EMPTY line, so a
-# trailing blank after "No findings." can't defeat this).
+# trailing blank after "No findings." can't defeat this). "Non-empty" is awk's NF, which
+# counts a CR-ONLY line as non-empty — that is precisely why CRLF is normalized at ingest
+# above rather than here: without that, a CRLF message with a trailing blank line makes a
+# bare "\r" the last non-empty line and this comparison never sees the literal at all.
 #
 # The anchor is itself a NEW false-deny surface, and round 3 exists because of it: every
 # roster reviewer definition (`docs/AI_WORKFLOW.md` -> `.claude/agents/code-reviewer.md`
 # "Report" step) is required to place any patterns/notes list ABOVE "No findings.", never
 # below — but the literal comparison below is still exact apart from ONE stripped
-# dimension (this line's own trailing whitespace/CR), so a genuinely clean review can still
-# be denied by something as small as an editor-appended trailing space on the line itself.
+# dimension (this line's own trailing whitespace; CR is already gone, stripped
+# message-wide at ingest), so a genuinely clean review can still be denied by something as
+# small as an editor-appended trailing space on the line itself.
 # Strip that one dimension before comparing — it costs nothing in the fail-open direction,
 # since a message that fails this comparison still only denies (see the RESIDUAL comment
 # below for what is NOT stripped and still denies).
 LAST_LINE=$(printf '%s\n' "$MSG" | awk 'NF{last=$0} END{print last}')
-LAST_LINE=${LAST_LINE%$'\r'}
 LAST_LINE=${LAST_LINE%"${LAST_LINE##*[![:space:]]}"}
 if [ -n "$CRITICALS" ]; then
   VERDICT=findings
@@ -175,7 +212,10 @@ fi
 #    that one line's own trailing whitespace/CR is stripped, so any other deviation —
 #    leading indentation before the literal, a trailing closing fence, or any trailing
 #    prose after it — still makes an otherwise-genuinely-clean review write no stamp and
-#    deny (safe, fail-closed, but a real class, not a hypothetical one).
+#    deny (safe, fail-closed, but a real class, not a hypothetical one). This item covers
+#    ONLY deviations that produce NO stamp. A deviation that produces a stamp whose
+#    verdict passes while its digest is wrong is a different class with a different
+#    symptom — item 5.
 #
 # 3. Pre-existing gate-blindness: a review whose only findings are WARNING/SUGGESTION tags
 #    (no CRITICAL match, and the literal "No findings." is never written because real
@@ -188,6 +228,25 @@ fi
 #    on purpose — a known, deliberate narrowing, not an oversight, and is NOT to be "fixed"
 #    with `grep -Ei` (round-1 report: case-insensitivity trips on ordinary prose like "this
 #    is critical for correctness" and makes `findings` near-universal).
+#
+# 5. Verdict-PASSES / scope-FAILS class (fail-closed, but the two halves of one record
+#    disagree, and the symptom surfaces somewhere other than the cause): a stamp can be
+#    written with verdict `clean` and a `reviewed_files_digest` that does not describe the
+#    reviewed files, because the $FILES collector admits any non-blank line up to its
+#    terminators. Round 4's CRITICAL was the live instance — the contract-MANDATED
+#    patterns list sat inside the block and every line of it was digested as a path. The
+#    whitespace terminator closes every shape carrying a space, tab or CR; what REMAINS in
+#    this class is a non-path line with no whitespace at all — a lone `Notes:` or
+#    `Findings:` header between the file list and the findings — still collected as a
+#    path. Task 5's gate then denies on SCOPE while this record reads `clean`, so a human
+#    sees a passing verdict and a scope denial that look like they contradict each other;
+#    the denial is right, and the verdict field is not the part that failed. The same
+#    class runs the other way too: a genuine changed-file path that CONTAINS whitespace
+#    truncates the list at itself, so the digest describes a strict prefix of the reviewed
+#    files. Same verdict-passes/scope-fails signature, same fail-closed direction. This is the
+#    same boundary the reviewer contract states in prose (docs/AI_WORKFLOW.md dispatch
+#    prompt: the file list ends at your first line containing a space) — parser, contract
+#    and residual deliberately name one property, not three.
 
 # --- write -------------------------------------------------------------------
 case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac

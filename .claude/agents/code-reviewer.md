@@ -34,7 +34,7 @@ If you notice an obvious domain defect while reviewing (a missing ownership chec
 
 1. **Scope** — Review the files listed in your dispatch prompt. Focus exclusively on those files; don't review unchanged code.
 2. **Categorize** — apply the matching checklist sections below plus `docs/PATTERNS.md`.
-3. **Report** — a short list of correctly-implemented patterns and any context-specific notes (migration code may temporarily break patterns) FIRST, then findings in the contract format above LAST. `docs/AI_WORKFLOW.md`'s dispatch prompt requires "No findings." (or your final bracketed finding line) to be the LAST line of your reply — the merge review gate reads the reply's last non-empty line as the deciding clean signal, so a patterns/notes list after it is silently invisible to the gate.
+3. **Report** — a short list of correctly-implemented patterns and any context-specific notes (migration code may temporarily break patterns) FIRST, then findings in the contract format above LAST. Write that list BELOW your REVIEWED-FILES block, never among the paths: the gate reads that block as running from the `REVIEWED-FILES:` label to your first line containing a space, so a patterns line placed among the paths is digested as a changed-file path and the merge is denied for mis-scoped review. `docs/AI_WORKFLOW.md`'s dispatch prompt requires "No findings." (or your final bracketed finding line) to be the LAST line of your reply — the merge review gate reads the reply's last non-empty line as the deciding clean signal, so a patterns/notes list after it is silently invisible to the gate.
 
 ---
 

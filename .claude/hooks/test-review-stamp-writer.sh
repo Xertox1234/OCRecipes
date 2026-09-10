@@ -281,6 +281,22 @@ m="$ROOT/$SHA/round2-bare-bracket.json"
 # genuinely clean review. (a2) closes the same-line trailing-whitespace/CR sub-case; the
 # roster fixture (13) proves the CRITICAL regression itself — the always-dispatched
 # baseline reviewer's own mandated "patterns list, then No findings." shape — is fixed.
+#
+# --- Round 4: every fixture below asserts the DIGEST as well as the verdict. Round 3
+# shipped all three of them verdict-only, and that is exactly how its own CRITICAL fix
+# regressed the other axis: the mandated patterns list, the trailing spaces and the CR all
+# sat INSIDE the REVIEWED-FILES block as far as the $FILES collector was concerned, so
+# each fixture recorded verdict:clean while digesting text that is not a path — a record
+# that passes on verdict and is denied by Task 5's gate on scope. Measured on the round-3
+# hook: 14 -> 55fda4e16ce87ade, 12 -> a695238830846132, 13 -> c4a178fc2d2c517b, against a
+# correct 8f4842be754477ff for the single path all three list. A verdict-only assertion
+# cannot see any of that, which is the whole reason these pins exist.
+#
+# The pinned value is computed INDEPENDENTLY of the hook, by the same formula the task-5
+# gate uses on the real PR diff (task-5-brief.md:283 —
+# `... --name-only | sed '/^$/d' | sort -u | shasum | cut -c1-16`):
+#     $ printf '%s\n' 'client/hooks/useNutritionLookup.ts' | shasum | cut -c1-16
+#     8f4842be754477ff
 
 # 12. Trailing spaces on the SAME line as the literal (an editor/renderer artifact) must
 #     not defeat the exact-match comparison.
@@ -293,6 +309,9 @@ payload "round3-trailing-ws" "$TRAILING_WS_MSG" | run_hook
 [ "$(jq -r .verdict "$ROOT/$SHA/round3-trailing-ws.json" 2>/dev/null)" = "clean" ] \
   && ok "trailing whitespace after the literal does not defeat verdict:clean (fix a2)" \
   || bad "trailing whitespace after the literal does not defeat verdict:clean (fix a2)"
+[ "$(jq -r .reviewed_files_digest "$ROOT/$SHA/round3-trailing-ws.json" 2>/dev/null)" = "8f4842be754477ff" ] \
+  && ok "trailing whitespace after the literal does not corrupt the digest (round 4)" \
+  || bad "trailing whitespace after the literal does not corrupt the digest (round 4)"
 
 # 13. A trailing CR (CRLF line ending) on the literal's own line must not defeat it either.
 CRLF_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
@@ -304,6 +323,9 @@ payload "round3-crlf" "$CRLF_MSG" | run_hook
 [ "$(jq -r .verdict "$ROOT/$SHA/round3-crlf.json" 2>/dev/null)" = "clean" ] \
   && ok "a trailing CR on the literal's line does not defeat verdict:clean (fix a2)" \
   || bad "a trailing CR on the literal's line does not defeat verdict:clean (fix a2)"
+[ "$(jq -r .reviewed_files_digest "$ROOT/$SHA/round3-crlf.json" 2>/dev/null)" = "8f4842be754477ff" ] \
+  && ok "a trailing CR does not leave a CR inside the digested file list (round 4)" \
+  || bad "a trailing CR does not leave a CR inside the digested file list (round 4)"
 
 # 14. THE CRITICAL REGRESSION FIXTURE: a roster-shaped clean review whose "Report" step
 #     (docs/AI_WORKFLOW.md -> .claude/agents/code-reviewer.md, both amended this round)
@@ -327,6 +349,57 @@ payload "round3-roster-clean" "$ROSTER_CLEAN_MSG" | run_hook
 [ "$(jq -r .verdict "$ROOT/$SHA/round3-roster-clean.json" 2>/dev/null)" = "clean" ] \
   && ok "roster-shaped clean review (patterns list ABOVE the final literal) produces verdict:clean" \
   || bad "roster-shaped clean review (patterns list ABOVE the final literal) produces verdict:clean"
+# THE ROUND-4 CRITICAL, pinned: the same fixture that proves the verdict axis was, on the
+# round-3 hook, digesting "Correctly-implemented patterns:" and both bullet lines as
+# changed-file paths (55fda4e16ce87ade). Verdict green, scope denied.
+[ "$(jq -r .reviewed_files_digest "$ROOT/$SHA/round3-roster-clean.json" 2>/dev/null)" = "8f4842be754477ff" ] \
+  && ok "the mandated patterns list is NOT digested as changed-file paths (round 4 CRITICAL)" \
+  || bad "the mandated patterns list is NOT digested as changed-file paths (round 4 CRITICAL)"
+
+# 15. A message that is CRLF THROUGHOUT and ends with a blank line. Distinct from 13 (one
+#     trailing CR on the literal's line only): here the deciding failure is upstream of
+#     both the verdict comparison and the file block. `awk 'NF{last=$0}'` counts a CR-ONLY
+#     line as NON-EMPTY, so the last non-empty line is a bare "\r", the literal is never
+#     compared, and the round-3 hook wrote NO STAMP at all for a genuinely clean review
+#     (measured). Nothing in the suite exercised a CR anywhere but the final line, so the
+#     ingest-level normalization has no other test that can fail if it is removed.
+CRLF_FULL_MSG=$(printf 'REVIEWED-SHA: %s\r\nREVIEWED-FILES:\r\nclient/hooks/useNutritionLookup.ts\r\n\r\nNo findings.\r\n\r\n' "$SHA")
+payload "round4-crlf-full" "$CRLF_FULL_MSG" | run_hook
+n="$ROOT/$SHA/round4-crlf-full.json"
+[ -f "$n" ] && ok "an all-CRLF clean review with a trailing blank line writes a stamp at all (round 4)" \
+  || bad "an all-CRLF clean review with a trailing blank line writes a stamp at all (round 4)"
+[ "$(jq -r .verdict "$n" 2>/dev/null)" = "clean" ] \
+  && ok "an all-CRLF clean review produces verdict:clean (round 4)" \
+  || bad "an all-CRLF clean review produces verdict:clean (round 4)"
+[ "$(jq -r .reviewed_files_digest "$n" 2>/dev/null)" = "8f4842be754477ff" ] \
+  && ok "an all-CRLF clean review digests the path without its CR (round 4)" \
+  || bad "an all-CRLF clean review digests the path without its CR (round 4)"
+
+# 16. The shape a real roster review actually produces: MORE THAN ONE reviewed file AND
+#     the mandated patterns list. 14 has the list but a single path, so nothing yet
+#     exercises `sort -u` together with the new block terminator — a terminator that fired
+#     one line too early would silently drop the second path and still look like a
+#     plausible digest. Pinned to case 1's value ON PURPOSE: same two files, same sort
+#     order, so adding a patterns list must be a no-op on the digest. (cf5a596de517834a is
+#     computed in case 1's comment from the SORTED pair, not the listed order.)
+ROSTER_MULTI_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+client/hooks/useNutritionLookup.ts
+client/hooks/__tests__/useNutritionLookup.test.ts
+
+Correctly-implemented patterns:
+- Test file co-located under __tests__/ per the project convention
+- Zod-validated input at the boundary
+
+No findings.'
+payload "round4-roster-multi" "$ROSTER_MULTI_MSG" | run_hook
+o="$ROOT/$SHA/round4-roster-multi.json"
+[ "$(jq -r .verdict "$o" 2>/dev/null)" = "clean" ] \
+  && ok "multi-file roster-shaped clean review produces verdict:clean (round 4)" \
+  || bad "multi-file roster-shaped clean review produces verdict:clean (round 4)"
+[ "$(jq -r .reviewed_files_digest "$o" 2>/dev/null)" = "cf5a596de517834a" ] \
+  && ok "a patterns list is a no-op on a MULTI-file digest — identical to case 1 (round 4)" \
+  || bad "a patterns list is a no-op on a MULTI-file digest — identical to case 1 (round 4)"
 
 echo "---"; echo "passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ]
