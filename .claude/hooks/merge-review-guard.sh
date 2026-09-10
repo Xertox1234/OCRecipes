@@ -125,6 +125,43 @@ case "$TOOL" in
     ;;
   mcp__github__merge_pull_request)
     PR=$(printf '%s' "$INPUT" | jq -r '.tool_input.pullNumber // empty' 2>/dev/null)
+    # OWNER/REPO ARE NOT DECORATIVE. Everything below resolves the PR from $ROOT — `cd
+    # "$ROOT"` then `gh pr view <n>`, which takes the repository FROM CWD — so reading
+    # only pullNumber classified a call naming ANOTHER repository against THIS repo's PR
+    # of the same number, and a review record earned here authorised it. Measured:
+    # {"owner":"x","repo":"y","pullNumber":42} -> ALLOW.
+    #
+    # This mirrors the Bash arm, which refuses a repository RETARGET: cmd_gh_pr_ref
+    # (lib/cmd-detect.sh:2085) returns 1 on `--repo`/`-R`, and the ref-less deny below
+    # fires. Mirrored in BOTH directions, the ABSENT case included — a bare
+    # `gh pr merge 42` carries no `--repo` and is allowed to mean the ambient repo, so a
+    # payload asserting NO owner/repo is likewise treated as ambient, not denied. Only an
+    # ASSERTED-AND-DIFFERENT target is refused. Denying the absent case instead would
+    # block every payload the field is optional on — the restrictive failure this hook's
+    # header names, which costs the same coverage more slowly.
+    #
+    # Do NOT "fix" this by plumbing --repo/-R into the gh calls below: that makes the gate
+    # classify a foreign repo, which is the same cross-repo confusion moved one step later.
+    M_OWNER=$(printf '%s' "$INPUT" | jq -r '.tool_input.owner // empty' 2>/dev/null)
+    M_REPO=$(printf '%s' "$INPUT" | jq -r '.tool_input.repo // empty' 2>/dev/null)
+    if [ -n "$M_OWNER" ] || [ -n "$M_REPO" ]; then
+      # `${var,,}` is bash 4 (docs/rules/harness.md: target is stock macOS bash 3.2), so
+      # case-folding goes through tr. GitHub owner/repo names are case-insensitive.
+      SELF=$(git -C "$ROOT" config --get remote.origin.url 2>/dev/null)
+      SELF=${SELF%.git}; SELF=${SELF%/}
+      SELF_REPO=${SELF##*/}
+      SELF_OWNER=${SELF%/*}; SELF_OWNER=${SELF_OWNER##*/}; SELF_OWNER=${SELF_OWNER##*:}
+      # A remote with no `/` leaves owner and repo as the SAME whole string; test the
+      # separator rather than `owner = repo`, which would false-deny a genuine `foo/foo`.
+      case "$SELF" in */*) ;; *) SELF_OWNER="" ;; esac
+      if [ -z "$SELF_OWNER" ] || [ -z "$SELF_REPO" ]; then
+        deny "Blocked: this merge names repository \`$M_OWNER/$M_REPO\`, and merge-review-guard could not determine which repository this checkout is (no readable \`remote.origin.url\`), so it cannot confirm the two are the same. It classifies PRs from this checkout only. Fail-closed. $BYPASS"
+      fi
+      if [ "$(printf '%s' "$M_OWNER" | tr '[:upper:]' '[:lower:]')" != "$(printf '%s' "$SELF_OWNER" | tr '[:upper:]' '[:lower:]')" ] \
+         || [ "$(printf '%s' "$M_REPO" | tr '[:upper:]' '[:lower:]')" != "$(printf '%s' "$SELF_REPO" | tr '[:upper:]' '[:lower:]')" ]; then
+        deny "Blocked: this merge targets \`$M_OWNER/$M_REPO\`, but merge-review-guard classifies PRs against \`$SELF_OWNER/$SELF_REPO\` (this checkout) — so any review record it found would describe a DIFFERENT repository's PR #$PR. The Bash route refuses a \`--repo\` retarget for the same reason. Run the merge from a checkout of \`$M_OWNER/$M_REPO\`. $BYPASS"
+      fi
+    fi
     ;;
   *) exit 0 ;;
 esac

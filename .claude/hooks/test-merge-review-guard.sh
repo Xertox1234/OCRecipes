@@ -124,6 +124,16 @@ assert_allowed() {  # assert_allowed <label> <captured-output>
   fi
 }
 mcp_payload()  { jq -n --arg n "$1" '{tool_name:"mcp__github__merge_pull_request", tool_input:{pullNumber:($n|tonumber)}}'; }
+# The same tool call WITH its owner/repo. Kept separate from mcp_payload on purpose: every
+# other MCP assertion in this file omits owner/repo, and those payloads are the evidence
+# that an UNASSERTED target still means "the ambient repo" rather than a deny — the Bash
+# arm's treatment of a bare `gh pr merge 42`. Folding the fields into mcp_payload would
+# delete that evidence and silently re-scope forty assertions.
+mcp_payload_repo() {  # $1=pr $2=owner $3=repo
+  jq -n --arg n "$1" --arg o "$2" --arg r "$3" \
+    '{tool_name:"mcp__github__merge_pull_request",
+      tool_input:{owner:$o, repo:$r, pullNumber:($n|tonumber)}}'
+}
 bash_payload() { jq -n --arg c "$1" '{tool_name:"Bash", tool_input:{command:$c}}'; }
 denied()  { grep -q '"permissionDecision":[[:space:]]*"deny"' <<<"${1:-}"; }
 reason()  { printf '%s' "${1:-}" | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null; }
@@ -426,6 +436,39 @@ denied "$out" && ok "--repo retarget fails closed" || bad "--repo retarget fails
 #     bypass an agent can author: the merge really runs, the decoy never does.
 out=$(bash_payload 'echo "$(gh pr merge 938)" # gh pr create' | run)
 denied "$out" && ok "ambiguous gh pr verb fails closed" || bad "ambiguous gh pr verb fails closed" "$out"
+
+# ── The MCP arm's mirror of 32: a repository retarget ────────────────────────
+# 32b. DENY. The MCP tool takes owner/repo, but the gate resolves the PR from $ROOT
+#      (`cd "$ROOT"` then `gh pr view <n>`, which reads the repository from cwd). Reading
+#      only pullNumber therefore classified a call naming ANOTHER repository against THIS
+#      repo's PR of the same number — measured: owner=x repo=y pullNumber=42 -> ALLOW,
+#      authorised by a record earned here. FILES_SAFE is deliberate: stage 2 ALLOWs that
+#      path set outright, so the repo check is the ONLY thing in the hook that can produce
+#      a deny on this payload.
+export FAKE_FILES="$FILES_SAFE"
+out=$(mcp_payload_repo 938 not-the-owner not-the-repo | run)
+denied "$out" && ok "MCP merge naming another repository fails closed" \
+              || bad "MCP merge naming another repository fails closed" "$out"
+
+# 32c. ALLOW CONTROL. Same payload SHAPE, this checkout's real owner/repo, upper-cased.
+#      Without it 32b only says "the MCP arm denies whenever owner/repo are present",
+#      which is a restrictive failure wearing a green tick. The upper-casing additionally
+#      pins the case-insensitive comparison GitHub's own naming requires. The expected
+#      value is parsed here from remote.origin.url by a DIFFERENT mechanism than the hook
+#      uses (sed regex vs bash parameter expansion), so a broken parse on one side does
+#      not silently agree with the other.
+SELF_URL=$(git -C "$HOOKS_DIR/../.." config --get remote.origin.url 2>/dev/null)
+SELF_NWO=$(printf '%s' "$SELF_URL" | sed -e 's/\.git$//' -e 's#^.*[:/]\([^/]*/[^/]*\)$#\1#')
+case "$SELF_NWO" in
+  */*/* | *:* | *" "* | "") bad "MCP owner/repo control fixture is usable" "unparseable remote.origin.url [$SELF_URL]" ;;
+  ?*/?*)
+    out=$(mcp_payload_repo 938 \
+            "$(printf '%s' "${SELF_NWO%%/*}" | tr '[:lower:]' '[:upper:]')" \
+            "$(printf '%s' "${SELF_NWO##*/}" | tr '[:lower:]' '[:upper:]')" | run)
+    assert_allowed "MCP merge naming THIS repository (case-folded) is unaffected" "$out" ;;
+  *) bad "MCP owner/repo control fixture is usable" "unparseable remote.origin.url [$SELF_URL]" ;;
+esac
+export FAKE_FILES="$FILES_ONE"
 
 # ── Fail-closed on tooling ───────────────────────────────────────────────────
 
