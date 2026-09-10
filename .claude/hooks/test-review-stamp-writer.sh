@@ -40,18 +40,31 @@ f="$ROOT/$SHA/code-reviewer.json"
 [ -f "$f" ] && ok "clean review writes a stamp" || bad "clean review writes a stamp"
 [ "$(jq -r .verdict "$f" 2>/dev/null)" = "clean" ] && ok "verdict clean" || bad "verdict clean"
 [ "$(jq -r .head_sha "$f" 2>/dev/null)" = "$SHA" ] && ok "head_sha recorded" || bad "head_sha recorded"
+[ "$(jq -r .agent_type "$f" 2>/dev/null)" = "code-reviewer" ] && ok "agent_type recorded" || bad "agent_type recorded"
+[ "$(jq -r .written_by "$f" 2>/dev/null)" = "review-stamp-writer.sh" ] && ok "written_by recorded" || bad "written_by recorded"
+# Digest pin — computed INDEPENDENTLY of the hook's own pipeline, not by trusting a value
+# the hook itself produced: `printf '%s\n' "<sorted files>" | shasum | cut -c1-16` run
+# directly against CLEAN_MSG's exact two-file list, already in `sort -u` order. Task 5
+# must recompute this identically, so THIS is the assertion that catches a later edit
+# silently dropping `sort -u` or swapping `shasum` for `shasum -a 256` — a verdict-only
+# check cannot see either mutation (both leave verdict:clean untouched).
+[ "$(jq -r .reviewed_files_digest "$f" 2>/dev/null)" = "cf5a596de517834a" ] \
+  && ok "reviewed_files_digest matches the independently-computed formula (drift pin)" \
+  || bad "reviewed_files_digest matches the independently-computed formula (drift pin)"
 
 # 2. Parallel roster dispatch: a second reviewer coexists, never clobbers.
 payload "server-reviewer" "$CLEAN_MSG" | run_hook
 [ -f "$ROOT/$SHA/server-reviewer.json" ] && [ -f "$f" ] \
   && ok "two reviewers coexist under one SHA" || bad "two reviewers coexist under one SHA"
 
-# 3. CRITICAL findings are recorded as unresolved; SUGGESTION is not.
+# 3. A bracketed CRITICAL finding is recorded in unresolved; a bracketed SUGGESTION is
+#    not. (unresolved's full contents are wider than "CRITICAL findings only" — see the
+#    hook's own comment above the jq block, and case 8 below for the widened shape.)
 payload "mobile-reviewer" "$FINDINGS_MSG" | run_hook
 g="$ROOT/$SHA/mobile-reviewer.json"
 [ "$(jq -r .verdict "$g" 2>/dev/null)" = "findings" ] && ok "verdict findings" || bad "verdict findings"
 [ "$(jq -r '.unresolved | length' "$g" 2>/dev/null)" = "1" ] \
-  && ok "only CRITICAL counts as unresolved" || bad "only CRITICAL counts as unresolved"
+  && ok "unresolved excludes the SUGGESTION-tagged line (bracketed-findings fixture; unresolved is not limited to CRITICAL-tagged lines in general — see case 8)" || bad "unresolved excludes the SUGGESTION-tagged line (bracketed-findings fixture; unresolved is not limited to CRITICAL-tagged lines in general — see case 8)"
 
 # 4. Refusals — a stamp must certify executed work.
 before=$(find "$ROOT" -name '*.json' | wc -l | tr -d ' ')
@@ -128,6 +141,77 @@ j="$ROOT/$SHA/code-reviewer.json"
   && [ "$(jq -r '.unresolved[0]' "$j" 2>/dev/null)" = "No findings. No CRITICAL issues were found in this diff." ] \
   && ok "unresolved holds the triggering prose line verbatim (widened semantics, pinned)" \
   || bad "unresolved holds the triggering prose line verbatim (widened semantics, pinned)"
+
+# --- CRITICAL fix: verdict:clean must be a POSITIVE signal, never the absence of one ---
+# docs/AI_WORKFLOW.md's contract: "If there are no issues, write exactly: No findings."
+# A message with neither a matched CRITICAL nor that literal line is not a
+# contract-compliant review and must write NO STAMP (gate denies), never a manufactured
+# `clean`. Four ways a message can lack any matched signal without being a genuine clean
+# review — none of these may find their way to the "else VERDICT=clean" branch anymore
+# because that branch no longer exists; each must produce no stamp at all.
+
+# 9a. Transcript truncation lands exactly at the header, since the contract puts
+#     REVIEWED-SHA/REVIEWED-FILES FIRST — the findings section is simply absent.
+NO_SIGNAL_TRUNCATED='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+client/hooks/useNutritionLookup.ts'
+
+# 9b. A markdown heading instead of a severity tag — untagged finding line underneath.
+NO_SIGNAL_HEADING='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+server/routes/recipes.ts
+
+### Critical
+server/routes/recipes.ts:118 — missing ownership check'
+
+# 9c. Bold markdown instead of a bracketed/uppercase severity tag.
+NO_SIGNAL_BOLD='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+server/routes/recipes.ts
+
+**Critical** server/routes/recipes.ts:118 — missing check'
+
+# 9d. The dangerous row: a bracketed [WARNING] correctly terminates the FILES parse (the
+#     digest is right), but the real finding is mis-cased ("Critical:") and unmatched —
+#     nothing downstream (a digest check) can catch this one.
+NO_SIGNAL_WARNING_THEN_MISCASED='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+server/routes/recipes.ts
+
+[WARNING] server/routes/recipes.ts:10 — nit
+Critical: server/routes/recipes.ts:118 — missing check'
+
+payload "nosignal-a" "$NO_SIGNAL_TRUNCATED" | run_hook
+payload "nosignal-b" "$NO_SIGNAL_HEADING" | run_hook
+payload "nosignal-c" "$NO_SIGNAL_BOLD" | run_hook
+payload "nosignal-d" "$NO_SIGNAL_WARNING_THEN_MISCASED" | run_hook
+[ ! -f "$ROOT/$SHA/nosignal-a.json" ] && ok "truncated-at-header writes no stamp" || bad "truncated-at-header writes no stamp"
+[ ! -f "$ROOT/$SHA/nosignal-b.json" ] && ok "markdown-heading (untagged) writes no stamp" || bad "markdown-heading (untagged) writes no stamp"
+[ ! -f "$ROOT/$SHA/nosignal-c.json" ] && ok "bold-markdown (untagged) writes no stamp" || bad "bold-markdown (untagged) writes no stamp"
+[ ! -f "$ROOT/$SHA/nosignal-d.json" ] && ok "[WARNING]-then-miscased-CRITICAL writes no stamp (digest was correct; verdict was not)" || bad "[WARNING]-then-miscased-CRITICAL writes no stamp (digest was correct; verdict was not)"
+
+# 9e/9f. Both controls, re-asserted in this section's own context so the fix is proven
+# against fresh fixtures, not just inherited from cases 1/3/6 above.
+CONTROL_CRITICAL_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+server/routes/recipes.ts
+
+[CRITICAL] server/routes/recipes.ts:118 — missing check'
+CONTROL_CLEAN_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+server/routes/recipes.ts
+
+No findings.'
+payload "nosignal-control-critical" "$CONTROL_CRITICAL_MSG" | run_hook
+payload "nosignal-control-clean" "$CONTROL_CLEAN_MSG" | run_hook
+k="$ROOT/$SHA/nosignal-control-critical.json"
+l="$ROOT/$SHA/nosignal-control-clean.json"
+[ "$(jq -r .verdict "$k" 2>/dev/null)" = "findings" ] \
+  && ok "control: a real [CRITICAL] still produces verdict:findings" \
+  || bad "control: a real [CRITICAL] still produces verdict:findings"
+[ "$(jq -r .verdict "$l" 2>/dev/null)" = "clean" ] \
+  && ok "control: literal 'No findings.' still produces verdict:clean" \
+  || bad "control: literal 'No findings.' still produces verdict:clean"
 
 echo "---"; echo "passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ]

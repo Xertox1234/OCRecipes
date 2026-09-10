@@ -106,7 +106,28 @@ DIGEST=$(printf '%s\n' "$FILES" | shasum 2>/dev/null | cut -c1-16)
 CRITICALS=$(printf '%s\n' "$MSG" \
   | grep -E '(^|[^A-Za-z0-9_])CRITICAL($|[^A-Za-z0-9_])' \
   | grep -E '[[:space:]]|:[0-9]' || true)
-if [ -n "$CRITICALS" ]; then VERDICT=findings; else VERDICT=clean; fi
+
+# `clean` must be a POSITIVE signal, never the absence of one. The earlier `else clean`
+# fallback made every non-review cause of a missing/mismatched CRITICAL tag — transcript
+# truncation landing exactly at the header (the contract puts REVIEWED-SHA/FILES FIRST),
+# an untagged or wrongly-cased severity marker, a bracketed WARNING that correctly
+# terminates the FILES parse while the real finding goes unmatched — read as a permissive
+# `clean` record. docs/AI_WORKFLOW.md's contract is explicit: "If there are no issues,
+# write exactly: No findings." A message with neither a matched CRITICAL nor that literal
+# line is not a contract-compliant review, so it gets NO stamp (fail-closed at the gate)
+# rather than a manufactured `clean`.
+#
+# Plain (non -q/-m) grep here reads its entire input before exiting — no early-exit
+# SIGPIPE risk under `pipefail` from a large message (contrast the `grep -oE | grep -Eq`
+# shape that IS unsafe: docs/solutions/logic-errors/
+# union-over-renderings-does-not-cover-selection-within-one-2026-09-07.md).
+if [ -n "$CRITICALS" ]; then
+  VERDICT=findings
+elif printf '%s\n' "$MSG" | grep -E '^No findings\.?$' >/dev/null 2>&1; then
+  VERDICT=clean
+else
+  exit 0   # no findings section -> not a contract-compliant review -> write nothing
+fi
 
 # --- write -------------------------------------------------------------------
 case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
@@ -116,6 +137,16 @@ declare -F review_stamp_dir >/dev/null || exit 0
 DIR=$(review_stamp_dir "$SHA") || exit 0
 mkdir -p "$DIR" 2>/dev/null || exit 0
 
+# `unresolved` is kept as the field name the brief's Task 4/5 interface already documents
+# (Task 5 recomputes/consumes it under this name) — but its CONTENTS are wider than the
+# name suggests: every line that survived the union-CRITICAL detection above, i.e. every
+# line that caused VERDICT=findings. That can be a bracketed `[CRITICAL] ...` finding, an
+# unbracketed agent-definition finding, or — by the over-detect direction this writer
+# deliberately takes — a bare sentence of prose that merely mentions the word CRITICAL.
+# Do not read a non-empty `unresolved` as "the list of CRITICAL findings" and do not
+# filter/render it assuming every entry is a `file:line — issue — fix` shape; a consumer
+# that does (e.g. `select(startswith("[CRITICAL]"))`) will silently see it as empty on a
+# genuine agent-definition or prose trigger and treat a findings verdict as clean.
 jq -n \
   --arg sha "$SHA" --arg digest "$DIGEST" --arg type "$AGENT_TYPE" \
   --arg verdict "$VERDICT" --arg criticals "$CRITICALS" \
