@@ -44,10 +44,10 @@
 # instead of silently auto-merging.
 #
 # Usage:  scripts/todo-automerge-guard.sh [--paths-only] <pr-number>
-# Exit 0 = eligible (MERGE_ELIGIBLE: yes) — NOT a merge command; the executor arms native
-#          GitHub auto-merge (gh pr merge --auto) for eligible PRs after PR creation.
-#          In --paths-only mode: every changed file is allowlist-safe; says nothing
-#          about todo eligibility
+# Exit 0 (default invocation) = eligible (MERGE_ELIGIBLE: yes) — NOT a merge command; the
+#          executor arms native GitHub auto-merge (gh pr merge --auto) for eligible PRs
+#          after PR creation. Exit 0 (--paths-only) = every changed file is allowlist-safe;
+#          says nothing about todo eligibility
 # Exit 1 = HOLD: needs individual review — a changed file is sensitive / not on the
 #          allowlist, or the TODO gate failed (no archived todo in the diff, an archive
 #          file absent from the PR head, priority not low, 'security' in its
