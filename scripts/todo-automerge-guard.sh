@@ -4,7 +4,7 @@
 # MODEL (2026-07-06 restored — see docs/todo-automation-runbook.md): a guard-OK PR gets
 # GitHub's native `gh pr merge --auto` armed by the /todo executor immediately, so it
 # lands on its own once CI is green. This script only CLASSIFIES eligibility — it never
-# merges anything itself. A /todo PR is eligible ONLY if BOTH gates pass:
+# merges anything itself. By default, a /todo PR is eligible ONLY if BOTH gates pass:
 #   1. TODO GATE — the archived todo riding the PR (todos/archive/<slug>.md) has
 #      priority low, no `security` mention, and no sensitive-intent keyword
 #      (auth/session/admin/etc. — see SENSITIVE_INTENT_KEYWORDS) in its frontmatter.
@@ -43,9 +43,11 @@
 # health-PII field declarations) as a CI-enforced check, so the next instance fails a test
 # instead of silently auto-merging.
 #
-# Usage:  scripts/todo-automerge-guard.sh <pr-number>
+# Usage:  scripts/todo-automerge-guard.sh [--paths-only] <pr-number>
 # Exit 0 = eligible (MERGE_ELIGIBLE: yes) — NOT a merge command; the executor arms native
-#          GitHub auto-merge (gh pr merge --auto) for eligible PRs after PR creation
+#          GitHub auto-merge (gh pr merge --auto) for eligible PRs after PR creation.
+#          In --paths-only mode: every changed file is allowlist-safe; says nothing
+#          about todo eligibility
 # Exit 1 = HOLD: needs individual review — a changed file is sensitive / not on the
 #          allowlist, or the TODO gate failed (no archived todo in the diff, an archive
 #          file absent from the PR head, priority not low, 'security' in its
