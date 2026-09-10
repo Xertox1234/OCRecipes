@@ -23,6 +23,15 @@ AGENT_TYPE=$(printf '%s' "$INPUT" | jq -r '.agent_type // empty' 2>/dev/null) ||
 [ -n "$AGENT_TYPE" ] || exit 0
 # Defend the path segment: agent_type becomes a filename.
 case "$AGENT_TYPE" in *[!a-zA-Z0-9_-]*) exit 0 ;; esac
+# ROSTER ALLOW-LIST — spec §9 requires "a non-reviewer agent_type produces no stamp", and
+# the shape check above only proves the value is a safe FILENAME, not that it names a
+# reviewer. Measured: `agent_type: general-purpose` with a contract-shaped message wrote
+# {"verdict":"clean"} carrying a correct digest — and the orchestrator can hand that
+# message to any subagent it dispatches. .claude/settings.json's SubagentStop matcher
+# already names these same five, but a matcher is CONFIGURATION: widening it, or invoking
+# this hook directly, re-opens the hole silently. Enforced here as well so the two must
+# BOTH be changed. Source of the roster: docs/AI_WORKFLOW.md's Review Policy.
+case "$AGENT_TYPE" in code-reviewer|server-reviewer|mobile-reviewer|ai-reviewer|security-auditor) ;; *) exit 0 ;; esac
 
 # last_assistant_message is the documented shortcut — its own describe string says it
 # "Avoids the need to read and parse the transcript file". Fall back to the transcript

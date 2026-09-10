@@ -8,7 +8,19 @@ PASS=0; FAIL=0
 ROOT=$(mktemp -d "/tmp/review-stamp-writer-test-$$-XXXX")
 trap 'rm -rf "$ROOT"' EXIT
 
-run_hook() { REVIEW_STAMP_ROOT="$ROOT" bash "$HOOK" >/dev/null 2>&1; }
+# An optional $1 names a PRIVATE stamp root under $ROOT. The hook now enforces the
+# roster allow-list, so a fixture can no longer get its own stamp FILENAME by inventing
+# an agent_type — it gets its own root instead and reuses a roster type. Callers that
+# pass nothing share $ROOT, which is what case 2 ("two reviewers coexist under one SHA")
+# and case 8 (deliberately overwriting case 1's file) depend on.
+run_hook() {
+  local root="$ROOT"
+  [ $# -gt 0 ] && root="$ROOT/case-$1"
+  REVIEW_STAMP_ROOT="$root" bash "$HOOK" >/dev/null 2>&1
+}
+case_stamp() {  # $1 = case name (its private root), $2 = agent type (default code-reviewer)
+  printf '%s/case-%s/%s/%s.json' "$ROOT" "$1" "$SHA" "${2:-code-reviewer}"
+}
 
 ok()   { echo "PASS: $1"; PASS=$((PASS+1)); }
 bad()  { echo "FAIL: $1"; FAIL=$((FAIL+1)); }
@@ -78,6 +90,25 @@ payload "" "$CLEAN_MSG" | run_hook                                       # no ag
 printf '%s' '{"hook_event_name":"SubagentStop"}' | run_hook              # empty payload
 after=$(find "$ROOT" -name '*.json' | wc -l | tr -d ' ')
 [ "$before" = "$after" ] && ok "malformed payloads write nothing" || bad "malformed payloads write nothing"
+
+# 4b. ROSTER ALLOW-LIST — two-sided, from ONE fixture. Case 4 above covers only the EMPTY
+#     agent_type, which the `[ -n "$AGENT_TYPE" ]` guard already rejected; it says nothing
+#     about a well-formed, safely-named, NON-REVIEWER type. Measured before the fix:
+#     `general-purpose` carrying this very message wrote {"verdict":"clean"} with a correct
+#     digest, and the orchestrator chooses which subagent receives that message — spec §9
+#     requires "a non-reviewer agent_type produces no stamp". Both sides use $CLEAN_MSG so
+#     the agent type is the ONLY variable: a one-sided negative would pass just as happily
+#     on a hook that had stopped writing stamps altogether.
+payload "code-reviewer"   "$CLEAN_MSG" | run_hook roster-allow
+payload "general-purpose" "$CLEAN_MSG" | run_hook roster-deny
+[ -f "$(case_stamp roster-allow)" ] \
+  && ok "roster agent_type still writes a stamp (allow-list control)" \
+  || bad "roster agent_type still writes a stamp (allow-list control)"
+# Checked by FIND, not by the one filename the hook would have chosen, so the assertion
+# holds for any name a widened allow-list might produce.
+[ -z "$(find "$ROOT/case-roster-deny" -name '*.json' 2>/dev/null)" ] \
+  && ok "non-roster agent_type writes no stamp at all (spec §9)" \
+  || bad "non-roster agent_type writes no stamp at all (spec §9)"
 
 # 5. The hook must not shell out to git (it has no trustworthy cwd — AI_WORKFLOW.md:40).
 #    Strip comment lines FIRST: the hook's own header explains why `git rev-parse HEAD`
@@ -185,14 +216,14 @@ server/routes/recipes.ts
 [WARNING] server/routes/recipes.ts:10 — nit
 Critical: server/routes/recipes.ts:118 — missing check'
 
-payload "nosignal-a" "$NO_SIGNAL_TRUNCATED" | run_hook
-payload "nosignal-b" "$NO_SIGNAL_HEADING" | run_hook
-payload "nosignal-c" "$NO_SIGNAL_BOLD" | run_hook
-payload "nosignal-d" "$NO_SIGNAL_WARNING_THEN_MISCASED" | run_hook
-[ ! -f "$ROOT/$SHA/nosignal-a.json" ] && ok "truncated-at-header writes no stamp" || bad "truncated-at-header writes no stamp"
-[ ! -f "$ROOT/$SHA/nosignal-b.json" ] && ok "markdown-heading (untagged) writes no stamp" || bad "markdown-heading (untagged) writes no stamp"
-[ ! -f "$ROOT/$SHA/nosignal-c.json" ] && ok "bold-markdown (untagged) writes no stamp" || bad "bold-markdown (untagged) writes no stamp"
-[ ! -f "$ROOT/$SHA/nosignal-d.json" ] && ok "[WARNING]-then-miscased-CRITICAL writes no stamp (digest was correct; verdict was not)" || bad "[WARNING]-then-miscased-CRITICAL writes no stamp (digest was correct; verdict was not)"
+payload "code-reviewer" "$NO_SIGNAL_TRUNCATED" | run_hook nosignal-a
+payload "code-reviewer" "$NO_SIGNAL_HEADING" | run_hook nosignal-b
+payload "code-reviewer" "$NO_SIGNAL_BOLD" | run_hook nosignal-c
+payload "code-reviewer" "$NO_SIGNAL_WARNING_THEN_MISCASED" | run_hook nosignal-d
+[ ! -f "$(case_stamp nosignal-a)" ] && ok "truncated-at-header writes no stamp" || bad "truncated-at-header writes no stamp"
+[ ! -f "$(case_stamp nosignal-b)" ] && ok "markdown-heading (untagged) writes no stamp" || bad "markdown-heading (untagged) writes no stamp"
+[ ! -f "$(case_stamp nosignal-c)" ] && ok "bold-markdown (untagged) writes no stamp" || bad "bold-markdown (untagged) writes no stamp"
+[ ! -f "$(case_stamp nosignal-d)" ] && ok "[WARNING]-then-miscased-CRITICAL writes no stamp (digest was correct; verdict was not)" || bad "[WARNING]-then-miscased-CRITICAL writes no stamp (digest was correct; verdict was not)"
 
 # 9e/9f. Both controls, re-asserted in this section's own context so the fix is proven
 # against fresh fixtures, not just inherited from cases 1/3/6 above.
@@ -206,10 +237,10 @@ REVIEWED-FILES:
 server/routes/recipes.ts
 
 No findings.'
-payload "nosignal-control-critical" "$CONTROL_CRITICAL_MSG" | run_hook
-payload "nosignal-control-clean" "$CONTROL_CLEAN_MSG" | run_hook
-k="$ROOT/$SHA/nosignal-control-critical.json"
-l="$ROOT/$SHA/nosignal-control-clean.json"
+payload "code-reviewer" "$CONTROL_CRITICAL_MSG" | run_hook nosignal-control-critical
+payload "code-reviewer" "$CONTROL_CLEAN_MSG" | run_hook nosignal-control-clean
+k="$(case_stamp nosignal-control-critical)"
+l="$(case_stamp nosignal-control-clean)"
 [ "$(jq -r .verdict "$k" 2>/dev/null)" = "findings" ] \
   && ok "control: a real [CRITICAL] still produces verdict:findings" \
   || bad "control: a real [CRITICAL] still produces verdict:findings"
@@ -239,8 +270,8 @@ Critical: server/routes/recipes.ts:118 — missing check
 No findings.
 
 (quoting the contract'"'"'s exact wording above while explaining my format)'
-payload "round2-miscased-stray" "$ROUND2_MISCASED_STRAY_MSG" | run_hook
-[ ! -f "$ROOT/$SHA/round2-miscased-stray.json" ] \
+payload "code-reviewer" "$ROUND2_MISCASED_STRAY_MSG" | run_hook round2-miscased-stray
+[ ! -f "$(case_stamp round2-miscased-stray)" ] \
   && ok "mis-cased finding + stray mid-message 'No findings.' writes no stamp (fix a)" \
   || bad "mis-cased finding + stray mid-message 'No findings.' writes no stamp (fix a)"
 
@@ -262,8 +293,8 @@ server/routes/recipes.ts:118 — missing ownership check
 No findings.
 
 (quoting the contract'"'"'s exact wording above)'
-payload "round2-bare-bracket" "$ROUND2_BARE_BRACKET_MSG" | run_hook
-m="$ROOT/$SHA/round2-bare-bracket.json"
+payload "code-reviewer" "$ROUND2_BARE_BRACKET_MSG" | run_hook round2-bare-bracket
+m="$(case_stamp round2-bare-bracket)"
 [ "$(jq -r .verdict "$m" 2>/dev/null)" = "findings" ] \
   && ok "bare [CRITICAL] alone on its line now counts as a finding (fix b)" \
   || bad "bare [CRITICAL] alone on its line now counts as a finding (fix b)"
@@ -305,11 +336,11 @@ REVIEWED-FILES:
 client/hooks/useNutritionLookup.ts
 
 No findings.   '
-payload "round3-trailing-ws" "$TRAILING_WS_MSG" | run_hook
-[ "$(jq -r .verdict "$ROOT/$SHA/round3-trailing-ws.json" 2>/dev/null)" = "clean" ] \
+payload "code-reviewer" "$TRAILING_WS_MSG" | run_hook round3-trailing-ws
+[ "$(jq -r .verdict "$(case_stamp round3-trailing-ws)" 2>/dev/null)" = "clean" ] \
   && ok "trailing whitespace after the literal does not defeat verdict:clean (fix a2)" \
   || bad "trailing whitespace after the literal does not defeat verdict:clean (fix a2)"
-[ "$(jq -r .reviewed_files_digest "$ROOT/$SHA/round3-trailing-ws.json" 2>/dev/null)" = "8f4842be754477ff" ] \
+[ "$(jq -r .reviewed_files_digest "$(case_stamp round3-trailing-ws)" 2>/dev/null)" = "8f4842be754477ff" ] \
   && ok "trailing whitespace after the literal does not corrupt the digest (round 4)" \
   || bad "trailing whitespace after the literal does not corrupt the digest (round 4)"
 
@@ -319,11 +350,11 @@ REVIEWED-FILES:
 client/hooks/useNutritionLookup.ts
 
 No findings.'$'\r'
-payload "round3-crlf" "$CRLF_MSG" | run_hook
-[ "$(jq -r .verdict "$ROOT/$SHA/round3-crlf.json" 2>/dev/null)" = "clean" ] \
+payload "code-reviewer" "$CRLF_MSG" | run_hook round3-crlf
+[ "$(jq -r .verdict "$(case_stamp round3-crlf)" 2>/dev/null)" = "clean" ] \
   && ok "a trailing CR on the literal's line does not defeat verdict:clean (fix a2)" \
   || bad "a trailing CR on the literal's line does not defeat verdict:clean (fix a2)"
-[ "$(jq -r .reviewed_files_digest "$ROOT/$SHA/round3-crlf.json" 2>/dev/null)" = "8f4842be754477ff" ] \
+[ "$(jq -r .reviewed_files_digest "$(case_stamp round3-crlf)" 2>/dev/null)" = "8f4842be754477ff" ] \
   && ok "a trailing CR does not leave a CR inside the digested file list (round 4)" \
   || bad "a trailing CR does not leave a CR inside the digested file list (round 4)"
 
@@ -345,14 +376,14 @@ Correctly-implemented patterns:
 - Validates input with the existing Zod schema before use
 
 No findings.'
-payload "round3-roster-clean" "$ROSTER_CLEAN_MSG" | run_hook
-[ "$(jq -r .verdict "$ROOT/$SHA/round3-roster-clean.json" 2>/dev/null)" = "clean" ] \
+payload "code-reviewer" "$ROSTER_CLEAN_MSG" | run_hook round3-roster-clean
+[ "$(jq -r .verdict "$(case_stamp round3-roster-clean)" 2>/dev/null)" = "clean" ] \
   && ok "roster-shaped clean review (patterns list ABOVE the final literal) produces verdict:clean" \
   || bad "roster-shaped clean review (patterns list ABOVE the final literal) produces verdict:clean"
 # THE ROUND-4 CRITICAL, pinned: the same fixture that proves the verdict axis was, on the
 # round-3 hook, digesting "Correctly-implemented patterns:" and both bullet lines as
 # changed-file paths (55fda4e16ce87ade). Verdict green, scope denied.
-[ "$(jq -r .reviewed_files_digest "$ROOT/$SHA/round3-roster-clean.json" 2>/dev/null)" = "8f4842be754477ff" ] \
+[ "$(jq -r .reviewed_files_digest "$(case_stamp round3-roster-clean)" 2>/dev/null)" = "8f4842be754477ff" ] \
   && ok "the mandated patterns list is NOT digested as changed-file paths (round 4 CRITICAL)" \
   || bad "the mandated patterns list is NOT digested as changed-file paths (round 4 CRITICAL)"
 
@@ -364,8 +395,8 @@ payload "round3-roster-clean" "$ROSTER_CLEAN_MSG" | run_hook
 #     (measured). Nothing in the suite exercised a CR anywhere but the final line, so the
 #     ingest-level normalization has no other test that can fail if it is removed.
 CRLF_FULL_MSG=$(printf 'REVIEWED-SHA: %s\r\nREVIEWED-FILES:\r\nclient/hooks/useNutritionLookup.ts\r\n\r\nNo findings.\r\n\r\n' "$SHA")
-payload "round4-crlf-full" "$CRLF_FULL_MSG" | run_hook
-n="$ROOT/$SHA/round4-crlf-full.json"
+payload "code-reviewer" "$CRLF_FULL_MSG" | run_hook round4-crlf-full
+n="$(case_stamp round4-crlf-full)"
 [ -f "$n" ] && ok "an all-CRLF clean review with a trailing blank line writes a stamp at all (round 4)" \
   || bad "an all-CRLF clean review with a trailing blank line writes a stamp at all (round 4)"
 [ "$(jq -r .verdict "$n" 2>/dev/null)" = "clean" ] \
@@ -392,8 +423,8 @@ Correctly-implemented patterns:
 - Zod-validated input at the boundary
 
 No findings.'
-payload "round4-roster-multi" "$ROSTER_MULTI_MSG" | run_hook
-o="$ROOT/$SHA/round4-roster-multi.json"
+payload "code-reviewer" "$ROSTER_MULTI_MSG" | run_hook round4-roster-multi
+o="$(case_stamp round4-roster-multi)"
 [ "$(jq -r .verdict "$o" 2>/dev/null)" = "clean" ] \
   && ok "multi-file roster-shaped clean review produces verdict:clean (round 4)" \
   || bad "multi-file roster-shaped clean review produces verdict:clean (round 4)"
@@ -416,11 +447,11 @@ o="$ROOT/$SHA/round4-roster-multi.json"
 ws_sep_msg() {  # $1 = the separator line's exact content
   printf 'REVIEWED-SHA: %s\nREVIEWED-FILES:\nclient/hooks/useNutritionLookup.ts\n%s\nclient/hooks/__tests__/useNutritionLookup.test.ts\n\nNo findings.\n' "$SHA" "$1"
 }
-payload "round5-sep-space" "$(ws_sep_msg ' ')"  | run_hook
-payload "round5-sep-tab"   "$(ws_sep_msg "$(printf '\t')")" | run_hook
-payload "round5-sep-empty" "$(ws_sep_msg '')"   | run_hook
+payload "code-reviewer" "$(ws_sep_msg ' ')"  | run_hook round5-sep-space
+payload "code-reviewer"   "$(ws_sep_msg "$(printf '\t')")" | run_hook round5-sep-tab
+payload "code-reviewer" "$(ws_sep_msg '')"   | run_hook round5-sep-empty
 for sep in space tab empty; do
-  sf="$ROOT/$SHA/round5-sep-$sep.json"
+  sf="$(case_stamp "round5-sep-$sep")"
   [ "$(jq -r .verdict "$sf" 2>/dev/null)" = "clean" ] \
     && ok "whitespace-separated file list ($sep) produces verdict:clean (round 5)" \
     || bad "whitespace-separated file list ($sep) produces verdict:clean (round 5)"
