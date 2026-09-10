@@ -277,5 +277,56 @@ m="$ROOT/$SHA/round2-bare-bracket.json"
 # both green; re-checking the identical, unchanged `$k`/`$l` files here would be a vacuous
 # duplicate assertion, not an independent one, so it's deliberately not repeated.)
 
+# --- Round 3: fix (a) (the last-line anchor) introduced a NEW false-deny surface for a
+# genuinely clean review. (a2) closes the same-line trailing-whitespace/CR sub-case; the
+# roster fixture (13) proves the CRITICAL regression itself — the always-dispatched
+# baseline reviewer's own mandated "patterns list, then No findings." shape — is fixed.
+
+# 12. Trailing spaces on the SAME line as the literal (an editor/renderer artifact) must
+#     not defeat the exact-match comparison.
+TRAILING_WS_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+client/hooks/useNutritionLookup.ts
+
+No findings.   '
+payload "round3-trailing-ws" "$TRAILING_WS_MSG" | run_hook
+[ "$(jq -r .verdict "$ROOT/$SHA/round3-trailing-ws.json" 2>/dev/null)" = "clean" ] \
+  && ok "trailing whitespace after the literal does not defeat verdict:clean (fix a2)" \
+  || bad "trailing whitespace after the literal does not defeat verdict:clean (fix a2)"
+
+# 13. A trailing CR (CRLF line ending) on the literal's own line must not defeat it either.
+CRLF_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+client/hooks/useNutritionLookup.ts
+
+No findings.'$'\r'
+payload "round3-crlf" "$CRLF_MSG" | run_hook
+[ "$(jq -r .verdict "$ROOT/$SHA/round3-crlf.json" 2>/dev/null)" = "clean" ] \
+  && ok "a trailing CR on the literal's line does not defeat verdict:clean (fix a2)" \
+  || bad "a trailing CR on the literal's line does not defeat verdict:clean (fix a2)"
+
+# 14. THE CRITICAL REGRESSION FIXTURE: a roster-shaped clean review whose "Report" step
+#     (docs/AI_WORKFLOW.md -> .claude/agents/code-reviewer.md, both amended this round)
+#     places the correctly-implemented-patterns list ABOVE "No findings.", not below it.
+#     Every pre-round-3 clean fixture (CLEAN_MSG, FILES_NAME_MSG, CONTROL_CLEAN_MSG) goes
+#     straight from the files block to "No findings." with nothing in between — none of
+#     them exercised a message where real content precedes the final literal. This is
+#     exactly the shape the always-dispatched baseline reviewer produces on every clean
+#     review; before this round it was measured to write NO STAMP (gate denies every
+#     clean merge).
+ROSTER_CLEAN_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+client/hooks/useNutritionLookup.ts
+
+Correctly-implemented patterns:
+- Uses the shared cache-first pattern via fireAndForget for non-critical writes
+- Validates input with the existing Zod schema before use
+
+No findings.'
+payload "round3-roster-clean" "$ROSTER_CLEAN_MSG" | run_hook
+[ "$(jq -r .verdict "$ROOT/$SHA/round3-roster-clean.json" 2>/dev/null)" = "clean" ] \
+  && ok "roster-shaped clean review (patterns list ABOVE the final literal) produces verdict:clean" \
+  || bad "roster-shaped clean review (patterns list ABOVE the final literal) produces verdict:clean"
+
 echo "---"; echo "passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ]

@@ -102,10 +102,15 @@ DIGEST=$(printf '%s\n' "$FILES" | shasum 2>/dev/null | cut -c1-16)
 # A THIRD signal is needed alongside those two: a bare bracketed severity tag alone on
 # its own line (`[CRITICAL]` with nothing else on the line) has neither whitespace nor a
 # `:digit` citation, so it was being dropped even though it is unambiguous and safe to
-# admit — a bracket-only line can never be a REVIEWED-FILES path (paths don't contain
-# `[`/`]`) and can never be ordinary prose (prose doesn't consist of a lone bracket pair).
-# Widened narrowly to exactly that shape, not to "any bracket-containing line", so it
-# can't be tricked into swallowing something else.
+# admit. It can never be a REVIEWED-FILES path — not because paths don't contain `[`/`]`,
+# but because the $FILES awk above terminates collection the moment it sees a line
+# matching `^\[(CRITICAL|WARNING|SUGGESTION)\]`, so a bracket-only line is never collected
+# as a file in the first place. It CAN be ordinary prose — a reviewer quoting the three
+# severity tags as a bare list produces exactly this shape, and that flips a genuinely
+# clean review to `findings`; that is the over-detect DIRECTION below working as intended,
+# not a false premise this widening depends on. Widened narrowly to exactly this shape,
+# not to "any bracket-containing line", so it can't be tricked into swallowing something
+# else.
 #
 # DIRECTION: when in doubt, over-detect. A false "findings" blocks a merge and a human
 # unblocks it; a false "clean" ships unreviewed code past the gate. This also fires on
@@ -134,7 +139,19 @@ CRITICALS=$(printf '%s\n' "$MSG" \
 # that found something ends with its findings, not with a quotation of the contract typed
 # earlier. Computed via awk (not the last line of the file, the last NON-EMPTY line, so a
 # trailing blank after "No findings." can't defeat this).
+#
+# The anchor is itself a NEW false-deny surface, and round 3 exists because of it: every
+# roster reviewer definition (`docs/AI_WORKFLOW.md` -> `.claude/agents/code-reviewer.md`
+# "Report" step) is required to place any patterns/notes list ABOVE "No findings.", never
+# below — but the literal comparison below is still exact apart from ONE stripped
+# dimension (this line's own trailing whitespace/CR), so a genuinely clean review can still
+# be denied by something as small as an editor-appended trailing space on the line itself.
+# Strip that one dimension before comparing — it costs nothing in the fail-open direction,
+# since a message that fails this comparison still only denies (see the RESIDUAL comment
+# below for what is NOT stripped and still denies).
 LAST_LINE=$(printf '%s\n' "$MSG" | awk 'NF{last=$0} END{print last}')
+LAST_LINE=${LAST_LINE%$'\r'}
+LAST_LINE=${LAST_LINE%"${LAST_LINE##*[![:space:]]}"}
 if [ -n "$CRITICALS" ]; then
   VERDICT=findings
 elif [ "$LAST_LINE" = "No findings." ] || [ "$LAST_LINE" = "No findings" ]; then
@@ -143,17 +160,34 @@ else
   exit 0   # no findings section -> not a contract-compliant review -> write nothing
 fi
 
-# RESIDUAL — named explicitly, not left implicit: after the above, a message whose LAST
-# non-empty line is exactly "No findings." (or "No findings") is trusted as clean
-# REGARDLESS OF WHAT PRECEDES IT. A reviewer that emits a real, unmatched finding earlier
-# and then, for any reason, ends its reply with that literal line still reads as clean.
-# This is now a narrow, structurally-specific forgery (the LAST line, not any line) rather
-# than a broad one, but it is not closed. Separately, CRITICAL-detection stays
-# case-SENSITIVE by design (see the comment above): "Critical"/"critical" never counts,
-# on purpose — this is a known, deliberate narrowing, not an oversight, and is NOT to be
-# "fixed" with `grep -Ei` (see docs/AI_WORKFLOW.md-derived reasoning in the round-1 report:
-# case-insensitivity trips on ordinary prose like "this is critical for correctness" and
-# makes `findings` near-universal).
+# RESIDUALS — named explicitly, by CLASS, not by instance:
+#
+# 1. Last-line FORGERY (fail-open, narrow): a message whose LAST non-empty line is exactly
+#    "No findings." (or "No findings") is trusted as clean regardless of what precedes it —
+#    a reviewer that emits a real, unmatched finding earlier and then, for any reason, ends
+#    its reply with that literal line still reads as clean. Narrowed from "any line" to
+#    "the last line" by round 2, not closed.
+#
+# 2. False-DENY class (fail-closed, the class round 3 exists to name — its first instance
+#    was this round's own CRITICAL finding, the always-dispatched baseline reviewer's own
+#    mandated output shape denying every clean merge): the clean path requires "No
+#    findings." (or "No findings") to be the message's final non-empty line, verbatim once
+#    that one line's own trailing whitespace/CR is stripped, so any other deviation —
+#    leading indentation before the literal, a trailing closing fence, or any trailing
+#    prose after it — still makes an otherwise-genuinely-clean review write no stamp and
+#    deny (safe, fail-closed, but a real class, not a hypothetical one).
+#
+# 3. Pre-existing gate-blindness: a review whose only findings are WARNING/SUGGESTION tags
+#    (no CRITICAL match, and the literal "No findings." is never written because real
+#    issues WERE found) writes no stamp either — nothing in this file distinguishes "the
+#    reviewer found only minor issues" from "the reviewer never ran." Both deny; that is
+#    the same fail-closed direction as everything else here, but worth naming since a human
+#    reading a denied merge has no way to tell the two apart from this stamp alone.
+#
+# 4. CRITICAL-detection stays case-SENSITIVE by design: "Critical"/"critical" never counts,
+#    on purpose — a known, deliberate narrowing, not an oversight, and is NOT to be "fixed"
+#    with `grep -Ei` (round-1 report: case-insensitivity trips on ordinary prose like "this
+#    is critical for correctness" and makes `findings` near-universal).
 
 # --- write -------------------------------------------------------------------
 case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
