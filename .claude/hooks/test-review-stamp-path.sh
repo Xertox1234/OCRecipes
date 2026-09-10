@@ -50,7 +50,7 @@ else echo "PASS: normal path does not use fallback key"; PASS=$((PASS+1)); fi
 
 # 7. Forcing the fallback by stripping PATH must produce the -global- form.
 #    Verifies the derivation block works and the fallback is reachable.
-out=$(( PATH=/nonexistent; . "$HOOKS_DIR/lib/review-stamp-path.sh"; review_stamp_dir feedface ) 2>/dev/null)
+out=$( ( PATH=/nonexistent; . "$HOOKS_DIR/lib/review-stamp-path.sh"; review_stamp_dir feedface ) 2>/dev/null )
 if grep -qF -- "ocrecipes-review-stamps-global/feedface" <<<"$out"; then
   echo "PASS: stripped PATH triggers fallback"; PASS=$((PASS+1))
 else echo "FAIL: stripped PATH should trigger fallback"; echo "  got: $out"; FAIL=$((FAIL+1)); fi
