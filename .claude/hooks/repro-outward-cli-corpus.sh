@@ -671,9 +671,11 @@ add c2-empty-proof-lit    DENY 'gh api{,x} -X POST'
 #
 # THE `!` ROWS ARE REGRESSION PINS, NOT FIXES. `>!` is zsh's exact synonym for
 # `>|` and it denied BEFORE this change too -- but only incidentally, because
-# `[^;&|]` accepts `!` as an ordinary character. Closing `|` by borrowing
-# `_CMD_REDIR`'s grammar (trailing class `[&|]?`, no `!`) would have reopened
-# `!` in the same edit. These rows make that trade visible.
+# `[^;&|]` accepts `!` as an ordinary character -- and it still does, so these
+# rows are a WEAKER pin than an earlier draft of this comment claimed. Swapping
+# the new alternative for `_CMD_REDIR`'s grammar leaves them GREEN (measured);
+# `_CMD_REDIR`'s target class accepts `!` too. They red only when BOTH branches
+# are narrowed together -- `[|!]`->`[|]` and `[^;&|]`->`[^;&|!]`.
 #
 # AND NOTE WHAT WAS MISSING: before today this corpus had ZERO rows containing
 # `&>` or `>|` at all -- the 2026-09-07 admission of the `&`-bearing family was
@@ -694,6 +696,30 @@ add c9-bang-comment    DENY 'gh pr comment 5 --body hi >!out --repo other/org'
 add c9-both-api        DENY 'gh api repos/o/r &>out -X DELETE'
 add c9-bothapp-api     DENY 'gh api repos/o/r &>>out -X DELETE'
 add c9-both-comment    DENY 'gh pr comment 5 --body hi &>out --repo other/org'
+
+# axis: the `&`-AFTER half of the clobber family, and zsh NAMED file descriptors
+# (2026-09-11, security review of the c9 fix above). See test-guard-outward-cli.sh
+# for the full derivation. Two grammars had to move together: the tail class
+# (`&` may now follow the operator, not only precede it) and `_CMD_REDIR`, whose
+# trailing class `[&|]?` could not express `>&|` and whose fd prefix `([0-9]*|&)`
+# could not express `{name}`. Widening either alone leaves these ALLOWED --
+# measured, in a rig, before the fix was written.
+add c9-after-api        DENY 'gh api repos/o/r -X >&|out DELETE'
+add c9-afterapp-api     DENY 'gh api repos/o/r -X >>&|out DELETE'
+add c9-afterfd-api      DENY 'gh api repos/o/r -X 2>&|out DELETE'
+add c9-afterfd1-api     DENY 'gh api repos/o/r -X 1>&|out DELETE'
+add c9-afterfdapp-api   DENY 'gh api repos/o/r -X 2>>&|out DELETE'
+add c9-after-comment    DENY 'gh pr comment 5 --body hi >&|out --repo other/org'
+add c9-after-create     DENY 'gh pr create --title t >&|out --repo other/org'
+add c9-after-merge      DENY 'gh pr merge 42 --auto >&|out --repo other/org'
+add c9-nfd-api          DENY 'gh api repos/o/r -X {n}>out DELETE'
+add c9-nfdapp-api       DENY 'gh api repos/o/r -X {n}>>out DELETE'
+add c9-nfdclob-api      DENY 'gh api repos/o/r -X {n}>|out DELETE'
+add c9-nfdboth-api      DENY 'gh api repos/o/r -X {fd}&>out DELETE'
+# CONTROL, and it must stay ALLOW: with no redirect operator, `-X` genuinely
+# binds `{n}`, so DELETE is a positional arg and not the method. If the named-fd
+# admission is ever written too greedily this row flips and says so.
+add c9-nfd-bind         ALLOW 'gh api repos/o/r -X {n} DELETE'
 
 # axis: mid-token sigil (no boundary exists; only the vanished rendering reaches these)
 add mid-backtick     DENY  'gh pr me``rge 42'
@@ -1018,12 +1044,12 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=462
+EXPECTED_ROWS=475
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 372 of the 448 rows deny on the precise path; the other 76 are ALLOW there
 # (the fp-*/c1g-*/sitefp-* controls, plus the 31 precise-path gaps).
-EXPECTED_DENY_ATTRIB_ROWS=386
+EXPECTED_DENY_ATTRIB_ROWS=398
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1064,7 +1090,7 @@ EXPECTED_PRECISE_GAPS=31
 # carries the same command text as decoyfp-auto, yet one was named and one was
 # not. The 25 split the 133 below exactly: 25 over-denied ALLOW rows + 108
 # DENY-expected rows that ALLOW on the degraded paths = 133.
-EXPECTED_ALLPATH_GAPS=165
+EXPECTED_ALLPATH_GAPS=166
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1267,6 +1293,7 @@ sitefp-updateinsights p=ALLOW j=DENY l=DENY a=DENY
 fp-mention p=ALLOW j=DENY l=DENY a=DENY
 fp-quotedall p=ALLOW j=DENY l=DENY a=DENY
 fp-automerge p=ALLOW j=DENY l=DENY a=DENY
+c9-nfd-bind p=ALLOW j=DENY l=DENY a=DENY
 PIN_ALLPATH_EOF
 )
 
@@ -1671,6 +1698,18 @@ c9-clobapp-api     : command-position 'gh api' with a mutating HTTP method (-X/-
 c9-clobboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-clobbothapp-api : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-clobfd-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-after-api       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-after-comment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-after-create    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-after-merge     : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+c9-afterapp-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfd-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfd1-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfdapp-api  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfd-api         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfdapp-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfdboth-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfdclob-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)

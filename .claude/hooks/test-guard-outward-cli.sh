@@ -1639,7 +1639,11 @@ assert_deny "redirect-both on the --repo clause, gh pr merge" \
 # because `[^;&|]` happens to accept it as an ordinary character. Any future
 # edit that swaps the permissive class for a redirect grammar borrowed from
 # `_CMD_REDIR` (lib/cmd-detect.sh, trailing class `[&|]?`, which has no `!`)
-# would close `|` and reopen `!` in the same stroke. These rows fail if it does.
+# would close `|` and reopen `!` in the same stroke -- EXCEPT that it would not,
+# and saying so was an overclaim caught in review. `[^;&|]` still accepts `!`
+# independently, and `_CMD_REDIR`'s target class accepts it too, so that swap
+# leaves these rows GREEN (measured). They red only under a SIMULTANEOUS
+# narrowing of both branches. Pinned at that strength deliberately.
 assert_deny "clobber-override, glued target (argv: gh api repos/o/r -X DELETE)" \
   "$(json 'gh api repos/o/r -X >|out DELETE')" "mutating HTTP method"
 assert_deny "clobber-override, appending spelling" \
@@ -1666,6 +1670,48 @@ assert_deny "clobber-override ! synonym, redirect-both (regression pin)" \
 assert_deny "clobber-override ! synonym on the --repo clause (regression pin)" \
   "$(json 'gh pr comment 5 --body hi >!out --repo other/org')" \
   "writes to a DIFFERENT GitHub repository"
+
+# --- FOURTH INSTANCE, found by the security review OF THE THIRD ---------------
+# `&?[<>]+&?[|!]` put the optional `&` BEFORE the operator, so it expressed only
+# half of zsh's clobber-override family. The `&`-AFTER spellings -- `>&|`,
+# `>>&|`, `N>&|`, `N>>&|` -- stayed ALLOWED, argv-identical to the denying
+# control. The block above literally claims "the alternation is written to end
+# it"; it was written while missing half the family. FIFTH time this file has
+# been extended one family at a time.
+#
+# AND THE TAIL CLASS WAS NOT THE ONLY HOME. `_CMD_REDIR` (lib/cmd-detect.sh)
+# backs the -X/--method redirect-skip, and its trailing class was `[&|]?` --
+# exactly ONE of `&` or `|`, so it could not express `>&|` at all. Widening only
+# the three tail-class sites left these ALLOWED; both had to move together.
+# Its fd prefix was `([0-9]*|&)`, which likewise cannot express zsh's NAMED file
+# descriptors, so `{n}>out` and `{fd}&>out` were unmodeled entirely.
+assert_deny "clobber-override, & AFTER the operator" \
+  "$(json 'gh api repos/o/r -X >&|out DELETE')" "mutating HTTP method"
+assert_deny "clobber-override, & after, appending" \
+  "$(json 'gh api repos/o/r -X >>&|out DELETE')" "mutating HTTP method"
+assert_deny "clobber-override, & after, explicit fd" \
+  "$(json 'gh api repos/o/r -X 2>&|out DELETE')" "mutating HTTP method"
+assert_deny "clobber-override, & after, stdout fd" \
+  "$(json 'gh api repos/o/r -X 1>&|out DELETE')" "mutating HTTP method"
+assert_deny "clobber-override, & after, fd + appending" \
+  "$(json 'gh api repos/o/r -X 2>>&|out DELETE')" "mutating HTTP method"
+assert_deny "clobber-override & after, --repo clause, gh pr comment" \
+  "$(json 'gh pr comment 5 --body hi >&|out --repo other/org')" \
+  "writes to a DIFFERENT GitHub repository"
+assert_deny "clobber-override & after, --repo clause, gh pr create" \
+  "$(json 'gh pr create --title t >&|out --repo other/org')" \
+  "writes to a DIFFERENT GitHub repository"
+assert_deny "clobber-override & after, --repo clause, gh pr merge" \
+  "$(json 'gh pr merge 42 --auto >&|out --repo other/org')" \
+  "targets a DIFFERENT GitHub repository"
+assert_deny "named file descriptor redirect" \
+  "$(json 'gh api repos/o/r -X {n}>out DELETE')" "mutating HTTP method"
+assert_deny "named file descriptor, appending" \
+  "$(json 'gh api repos/o/r -X {n}>>out DELETE')" "mutating HTTP method"
+assert_deny "named file descriptor, clobber-override" \
+  "$(json 'gh api repos/o/r -X {n}>|out DELETE')" "mutating HTTP method"
+assert_deny "named file descriptor, redirect-both" \
+  "$(json 'gh api repos/o/r -X {fd}&>out DELETE')" "mutating HTTP method"
 
 # --- TWO MEASURED OVER-DENIALS, pinned as DENY because that is what they DO ----
 # Admitting the `&`-bearing redirect operators widens the clause past a bare `&`
@@ -1981,7 +2027,7 @@ assert_deny "same brace-glued construction with a LITERAL mutating method attrib
 # not just an anchor divergence.
 #
 # BODY LITERAL UPDATED 2026-09-10: `([^;&|]|&[0-9-]|&[<>]|[<>]&)*` ->
-# `([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+[|!])*`. Same invariant, same reason as
+# `([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*`. Same invariant, same reason as
 # the 2026-09-07 bump: only the clause BODY moved, to admit zsh's
 # clobber-override redirect modifiers. Note what the shape of these three
 # successive bumps is telling you -- 2026-09-06 admitted `&` + digit/dash,
@@ -2006,7 +2052,7 @@ done < <(grep 'GH_API_CLAUSE_[A-Z]*=\$(printf' "$HOOK")
 if [ -n "$_ANCHOR_RE" ] \
    && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh${_OUT_SEP}api' \
    && [ "$_CUT_DEFS" -eq 1 ] \
-   && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+[|!])*" \
+   && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*" \
    && [ "$_CLAUSE_CUTS" -eq 3 ] \
    && [ "$_CUTS_OK" -eq 1 ]; then
   echo "PASS: GH_API_RE and ALL $_CLAUSE_CUTS GH_API_CLAUSE cuts share one anchor via a single _GH_API_CUT constant (structural, not behavioural)"; PASS=$((PASS+1))
@@ -2947,7 +2993,7 @@ _PIN_RAN=1
 #         api's clause, plus a read-only gh api carrying its own `2>&1`. These are
 #         the rows that go RED if `&[0-9-]` ever becomes a bare `&`.
 #         3 + 4 + 4 = 11.
-EXPECTED_TOTAL=584
+EXPECTED_TOTAL=596
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
