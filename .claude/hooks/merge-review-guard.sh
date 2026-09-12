@@ -120,7 +120,43 @@ case "$TOOL" in
       if [ "$SUB_RC" -ne 0 ]; then
         deny "Blocked: this command mentions more than one \`gh pr\` write subcommand, so merge-review-guard cannot tell which one executes or which PR it targets. Split it into one \`gh pr\` call per command and re-run. $BYPASS"
       fi
-      [ "$SUB" = "merge" ] || exit 0
+      # A MISS AND A NON-MERGE ARE NOT THE SAME ANSWER, and `$SUB` spells both "".
+      # cmd_gh_pr_write_subcommand signals REFUSE with rc 1 (handled above) but signals
+      # "I could not see it" with the SAME empty-string/rc-0 it uses for "there is no
+      # merge here" — so `[ "$SUB" = "merge" ] || exit 0` turned every rendering the
+      # extractor cannot parse into a SILENT ALLOW. Measured 2026-09-12, no bypass token
+      # of any kind, on a risk-classified PR with no review record:
+      #   /opt/homebrew/bin/gh pr merge 42 --squash   -> allowed (path-qualified `gh`
+      #     never matches the extractor's `(^|[[:space:]])gh[[:space:]]+pr` needle, and
+      #     `which gh` is exactly this on a Homebrew box — a copy-paste, not an attack)
+      #   \gh pr merge 42 --squash                    -> allowed
+      #   g"h" pr merge 42 --squash                   -> allowed
+      # so re-ask the question ourselves before conceding. The fast path has already
+      # established that this text contains gh, then pr, then merge in order.
+      #
+      # BUILD THE NEEDLE FROM THE RAW COMMAND, NEVER FROM cmd_bare_deep. Measured, that
+      # rendering turns `\gh pr merge 42 --squash` into `  h pr merge 42 --squash` — the
+      # backslash consumes the FOLLOWING CHARACTER, so the `g` is gone and the needle it
+      # would be matched against no longer exists. A fix written against that rendering
+      # closes the path-qualified case, passes its own test, and leaves `\gh` wide open.
+      if [ "$SUB" != "merge" ]; then
+        if [[ "$CMD" =~ (^|[[:space:]])([^[:space:]]+)[[:space:]]+pr[[:space:]]+merge([[:space:]]|$) ]]; then
+          _tok=${BASH_REMATCH[2]}
+          # Quote and backslash characters are spelling, not identity: `g"h"`, `\gh` and
+          # `gh` are one binary to the kernel. Delete them and ask what is left.
+          _bare=$_tok; _bare=${_bare//\"/}; _bare=${_bare//\'/}; _bare=${_bare//\\/}
+          shopt -s nocasematch
+          if [[ "$_bare" =~ gh$ ]] || [[ "$_tok" == *'$('* ]] || [[ "$_tok" == *'`'* ]] || [[ "$_bare" == *')' ]]; then
+            shopt -u nocasematch
+            deny "Blocked: this command runs a \`pr merge\` whose binary is spelled in a way merge-review-guard's shared extractor cannot resolve (\`$_tok\`), so it cannot confirm which PR is being merged or whether it was reviewed. An unreadable merge is treated as a merge, not as 'not a merge'. Re-run it as a plain \`gh pr merge <number> …\` so the gate can classify it. $BYPASS"
+          fi
+          shopt -u nocasematch
+        fi
+        # Genuinely not a merge — e.g. `git commit -m "fix highlight for pr merge"`, which
+        # trips the fast path ("gh" inside "highlight") and whose token before `pr merge`
+        # is `for`. Pinned as an ALLOW row so this branch cannot grow into a prose gate.
+        exit 0
+      fi
       PR=$(cmd_gh_pr_ref "$CMD") || PR=""
     else
       deny "Blocked: merge-review-guard could not load .claude/hooks/lib/cmd-detect.sh, so it cannot tell which PR this merges. Fail-closed. $BYPASS"

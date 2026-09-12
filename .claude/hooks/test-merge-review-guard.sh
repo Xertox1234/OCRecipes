@@ -437,6 +437,50 @@ denied "$out" && ok "--repo retarget fails closed" || bad "--repo retarget fails
 out=$(bash_payload 'echo "$(gh pr merge 938)" # gh pr create' | run)
 denied "$out" && ok "ambiguous gh pr verb fails closed" || bad "ambiguous gh pr verb fails closed" "$out"
 
+# ── 34-38. An EXTRACTOR MISS is not "no merge here" ──────────────────────────
+# Security review 2026-09-12 measured these as ALLOW on a risk-classified PR with NO
+# review record and NO bypass token of any kind: the shared extractor returns ""/rc 0 for
+# a spelling it cannot parse, identically to how it reports "this is not a merge", and the
+# old `[ "$SUB" = "merge" ] || exit 0` read both as the latter. FILES_SAFE is deliberate —
+# stage 2 ALLOWs that path set outright, so the ONLY thing in the hook that can produce a
+# deny on these payloads is the miss-detection branch under test.
+#
+# The renderings are NOT one family. 34 defeats the extractor's `gh`-must-start-a-word
+# needle; 35 and 36 survive the fast path but are destroyed by cmd_bare_deep's own
+# rewriting (measured: `\gh pr merge 42` -> `  h pr merge 42`, the backslash eating the
+# `g`), which is exactly why the branch reads the RAW command; 37 is an unresolvable
+# substitution. A fix derived from any ONE of them leaves the others open.
+export FAKE_FILES="$FILES_SAFE"
+
+# 34. DENY. Path-qualified binary — `which gh` on a Homebrew box IS this string.
+out=$(bash_payload '/opt/homebrew/bin/gh pr merge 42 --squash' | run)
+denied "$out" && ok "path-qualified gh pr merge fails closed" \
+              || bad "path-qualified gh pr merge fails closed" "$out"
+
+# 35. DENY. Backslash-escaped binary (shell-level alias suppression).
+out=$(bash_payload '\gh pr merge 42 --squash' | run)
+denied "$out" && ok "backslash-escaped gh pr merge fails closed" \
+              || bad "backslash-escaped gh pr merge fails closed" "$out"
+
+# 36. DENY. Quote-split binary.
+out=$(bash_payload 'g"h" pr merge 42 --squash' | run)
+denied "$out" && ok "quote-split gh pr merge fails closed" \
+              || bad "quote-split gh pr merge fails closed" "$out"
+
+# 37. DENY. Binary produced by a command substitution the extractor refuses to guess at.
+out=$(bash_payload '$(which gh) pr merge 42 --squash' | run)
+denied "$out" && ok "substituted gh pr merge fails closed" \
+              || bad "substituted gh pr merge fails closed" "$out"
+
+# 38. ALLOW CONTROL — the one that keeps 34-37 from being a prose gate. This trips the
+#     fast path ("gh" inside "highlight", then "pr", then "merge") and the hook's own
+#     header names it as the input that must stay silent. Without this row, 34-37 would
+#     pass just as happily on a branch that denied every command mentioning `pr merge`,
+#     which would break ordinary commits repo-wide.
+out=$(bash_payload 'git commit -m "fix highlight for pr merge"' | run)
+assert_allowed "prose mentioning pr merge is still not a merge" "$out"
+unset FAKE_FILES
+
 # ── The MCP arm's mirror of 32: a repository retarget ────────────────────────
 # 32b. DENY. The MCP tool takes owner/repo, but the gate resolves the PR from $ROOT
 #      (`cd "$ROOT"` then `gh pr view <n>`, which reads the repository from cwd). Reading
