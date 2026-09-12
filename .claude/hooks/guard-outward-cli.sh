@@ -2625,7 +2625,9 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # "closed" claims also were. Do not upgrade it to closure.
   #
   # The honest next step, if a fifth extension is ever needed here, is a
-  # tokenizer over zsh redirect syntax rather than a sixth alternative. The whole
+  # tokenizer over zsh redirect syntax rather than yet another alternative.
+  # (Do not put an ordinal here: this comment has already said "fourth" and
+  # "fifth" while the real count was moving underneath it.) The whole
   # family is pinned in repro-outward-cli-corpus.sh (axis c9) -- the REQUIRED
   # check -- so a silent revert trips CI rather than a local test.
   #

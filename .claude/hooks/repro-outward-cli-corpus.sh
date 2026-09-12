@@ -751,6 +751,33 @@ add c9-ws-method        DENY 'gh api repos/o/r -X {n} >out DELETE'
 # `{name}` alternative.
 add c9-numfd-bind       ALLOW 'gh api repos/o/r -X 3 >zz DELETE'
 
+# axis: ALL-DIGIT BRACE fd bodies (2026-09-12, round-4 security review). The
+# `{name}` class admitted above was `[A-Za-z_][A-Za-z0-9_]*` -- zsh ALSO accepts
+# a pure-digit body (`{9}`, `{99}`, `{0}`) as an fd binding, so every shape the
+# rows above pin ALLOWED again with one character changed, and this time on the
+# PRECISE path too, not only the degraded mirror. Strictly worse than the
+# adjacency bug it was fixing. SIXTH consecutive half-closed family; the third
+# introduced by this PR's own commits.
+#
+# WITHOUT THESE ROWS THE REQUIRED CHECK CANNOT SEE THE DIFFERENCE: every brace
+# row above uses an alphabetic body, so the corpus passed byte-identical both
+# before and after the fix. A clean zero over a population of zero.
+add c9-dig-eas          DENY 'eas {1} >/dev/null update --branch production --message ship'
+add c9-dig-easamp       DENY 'eas {2} &>/tmp/l update --branch production --message ship'
+add c9-dig-easclob      DENY 'eas {3} >|/tmp/l update --branch production --message ship'
+add c9-dig-npm          DENY 'npm {4} >/dev/null publish'
+add c9-dig-railway      DENY 'railway {5} >/dev/null up'
+add c9-dig-railwayvar   DENY 'railway {6} >/dev/null variables set FOO=bar'
+add c9-dig-ghadmin      DENY 'gh {7} >/dev/null pr merge 42 --admin'
+add c9-dig-ghcomment    DENY 'gh pr {8} >/dev/null comment 5 --body hi --repo other/org'
+add c9-dig-ghapi        DENY 'gh {9} >/dev/null api repos/o/r -X DELETE'
+add c9-dig-method       DENY 'gh api repos/o/r -X {10} >out DELETE'
+# The DEGRADED family, pinned for the first time. NO BRACE IS INVOLVED -- these
+# are the plainest possible spelling, and they degrade for a reason that has
+# nothing to do with fd prefixes (see the corrected note at the all-path pin).
+add c9-crude-eas        DENY 'eas 2>/dev/null update --branch production --message ship'
+add c9-crude-ghadmin    DENY 'gh 2>/dev/null pr merge 42 --admin'
+
 # axis: mid-token sigil (no boundary exists; only the vanished rendering reaches these)
 add mid-backtick     DENY  'gh pr me``rge 42'
 add mid-sub          DENY  'gh pr me$()rge 42'
@@ -1074,12 +1101,15 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=486
+EXPECTED_ROWS=498
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 372 of the 448 rows deny on the precise path; the other 76 are ALLOW there
-# (the fp-*/c1g-*/sitefp-* controls, plus the 31 precise-path gaps).
-EXPECTED_DENY_ATTRIB_ROWS=408
+# 420 of the 498 rows deny on the precise path; the other 78 are ALLOW there
+# (the fp-*/c1g-*/sitefp-* controls, plus the 31 precise-path gaps). These two
+# numbers are bumped with EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review
+# found them two revisions stale, sitting directly above the constant they
+# describe.
+EXPECTED_DENY_ATTRIB_ROWS=420
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1120,14 +1150,23 @@ EXPECTED_PRECISE_GAPS=31
 # carries the same command text as decoyfp-auto, yet one was named and one was
 # not. The 25 split the 133 below exactly: 25 over-denied ALLOW rows + 108
 # DENY-expected rows that ALLOW on the degraded paths = 133.
-# THE +10 ALL-PATH GAPS BELOW ARE NAMED, NOT ABSORBED. Nine c9-ws-* rows are
-# `p=DENY j=ALLOW l=ALLOW a=ALLOW`: the `{name}`-across-whitespace family closes
-# on the PRECISE path only. The crude/degraded mirror (crude_smells_outward,
-# guard-outward-cli.sh:1248/:1310/:1313) does not model a `{name}` fd prefix at
-# all, so on a no-jq / no-lib / no-awk fallback these still ALLOW. That is a
-# REAL residual, not a rounding error, and it is written here rather than in a
-# commit message because this is the file the next reader will grep.
-EXPECTED_ALLPATH_GAPS=176
+# THE ALL-PATH GAPS BELOW ARE NAMED, NOT ABSORBED -- AND THE FIRST VERSION OF
+# THIS NOTE NAMED THE WRONG CAUSE. It said the c9-ws-* rows degrade because the
+# crude mirror "does not model a `{name}` fd prefix at all". Measured, that is
+# false: the same command degrades identically with NO BRACE ANYWHERE (rows
+# c9-crude-*). The real cause is `crude_smells_outward`'s binary->verb separator
+# `[^a-zA-Z]+` (guard-outward-cli.sh:1313), which cannot cross ANY redirect
+# whose target contains letters -- `/dev/null`, `/tmp/l`. The family is
+# therefore much broader than a brace prefix, and was entirely unpinned.
+#
+# The contrast that makes it non-obvious: row co-pref-sufx DENYs on all four
+# paths, because there the mirror still sees the binary and verb contiguous.
+# Position, not presence.
+#
+# Attributing a gap to the narrowest mechanism you just touched is how this file
+# keeps producing residual lists that read as complete. Measure the sibling
+# shape before you name the cause.
+EXPECTED_ALLPATH_GAPS=187
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1341,6 +1380,17 @@ c9-ws-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 c9-ws-npm p=DENY j=ALLOW l=ALLOW a=ALLOW
 c9-ws-railway p=DENY j=ALLOW l=ALLOW a=ALLOW
 c9-ws-railwayvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-crude-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-crude-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-easamp p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-easclob p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-npm p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-railway p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-railwayvar p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -1767,6 +1817,18 @@ c9-ws-method       : command-position 'gh api' with a mutating HTTP method (-X/-
 c9-ws-npm          : command-position 'npm publish' pushes a package to the registry.
 c9-ws-railway      : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 c9-ws-railwayvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
+c9-crude-eas       : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-crude-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c9-dig-eas         : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-easamp      : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-easclob     : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-ghadmin     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c9-dig-ghapi       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-dig-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-dig-method      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-dig-npm         : command-position 'npm publish' pushes a package to the registry.
+c9-dig-railway     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+c9-dig-railwayvar  : command-position 'railway variable/vars/var set/delete' mutates a live s
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
