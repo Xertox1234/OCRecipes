@@ -481,6 +481,45 @@ out=$(bash_payload 'git commit -m "fix highlight for pr merge"' | run)
 assert_allowed "prose mentioning pr merge is still not a merge" "$out"
 unset FAKE_FILES
 
+# ── 39-45. The two defects the FIRST version of 34-38 shipped ────────────────
+# Re-review 2026-09-12 found both, and both were introduced by the fix for 34-37 — the
+# reason each row below exists as its own assertion rather than as a widened 34.
+#
+# FAKE_FILES is RISK-CLASSIFIED here, not safe: these rows must prove the verdict comes
+# from the miss-detection branch on a PR that genuinely needs a record, so an ALLOW row
+# failing means the branch let a real merge through, and a DENY row failing means it is
+# denying prose. FILES_SENSITIVE is what stage 2 HOLDs.
+export FAKE_FILES="client/hooks/useNutritionLookup.ts"
+
+# 39. DENY. `[[ =~ ]]` is leftmost-match-only. A benign earlier clause containing
+#     `<word> pr merge <word>` used to consume the only inspection and hand control to the
+#     unconditional exit, masking the real merge that followed — a TOTAL allow, reached
+#     before stage 1/2/3 and so not even earned on safe files. Measured ALLOW before the
+#     loop; the same command without the leading clause denied.
+out=$(bash_payload 'git commit -m "docs: describe the pr merge gate" && /opt/homebrew/bin/gh pr merge 42 --squash' | run)
+denied "$out" && ok "a decoy pr-merge clause does not mask a later real merge" \
+              || bad "a decoy pr-merge clause does not mask a later real merge" "$out"
+
+# 40-43. ALLOW. The other half: `=~ gh$` fires on any token ENDING in gh, and a bare
+#     `*')'` test fires on any token ending in a paren. Between them the branch denied
+#     ordinary English — measured, it blocked a reviewer's own file write on `through`.
+#     Row 38 alone did not catch this because `for` happens not to end in gh.
+for tok in through enough '(tweak)' 'v2)'; do
+  out=$(bash_payload "git commit -m \"highlight: $tok pr merge notes\"" | run)
+  assert_allowed "prose token [$tok] before pr merge is not a merge" "$out"
+done
+
+# 44-45. DENY. Parameter expansion, not just command substitution. `${gh_bin}` reaches
+#     this branch at all because the lowercase `gh` inside the VARIABLE NAME satisfies the
+#     fast path, and `$GH_BIN` would not have been saved by an `=~ gh$` test either.
+out=$(bash_payload 'gh_bin=/opt/homebrew/bin/gh; ${gh_bin} pr merge 42 --squash' | run)
+denied "$out" && ok "braced parameter expansion as the binary fails closed" \
+              || bad "braced parameter expansion as the binary fails closed" "$out"
+out=$(bash_payload '$gh_bin pr merge 42 --squash' | run)
+denied "$out" && ok "bare parameter expansion as the binary fails closed" \
+              || bad "bare parameter expansion as the binary fails closed" "$out"
+unset FAKE_FILES
+
 # ── The MCP arm's mirror of 32: a repository retarget ────────────────────────
 # 32b. DENY. The MCP tool takes owner/repo, but the gate resolves the PR from $ROOT
 #      (`cd "$ROOT"` then `gh pr view <n>`, which reads the repository from cwd). Reading

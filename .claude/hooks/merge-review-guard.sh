@@ -140,21 +140,51 @@ case "$TOOL" in
       # would be matched against no longer exists. A fix written against that rendering
       # closes the path-qualified case, passes its own test, and leaves `\gh` wide open.
       if [ "$SUB" != "merge" ]; then
-        if [[ "$CMD" =~ (^|[[:space:]])([^[:space:]]+)[[:space:]]+pr[[:space:]]+merge([[:space:]]|$) ]]; then
+        # EVERY OCCURRENCE, NOT THE FIRST. `[[ =~ ]]` is leftmost-match-only, so reading
+        # BASH_REMATCH once let a benign EARLIER clause mask a later real merge outright.
+        # Measured 2026-09-12 on risk-classified files with no record:
+        #   git commit -m "docs: describe the pr merge gate" && /opt/homebrew/bin/gh pr merge 42 --squash
+        # was ALLOWED, while the same command minus the leading clause denied. The decoy
+        # is ordinary prose in a repo whose commit messages discuss pr merges constantly,
+        # so it is authorable by accident, not only on purpose.
+        _rest=$CMD
+        while [[ "$_rest" =~ (^|[[:space:]])([^[:space:]]+)[[:space:]]+pr[[:space:]]+merge([[:space:]]|$) ]]; do
+          _whole=${BASH_REMATCH[0]}
           _tok=${BASH_REMATCH[2]}
           # Quote and backslash characters are spelling, not identity: `g"h"`, `\gh` and
           # `gh` are one binary to the kernel. Delete them and ask what is left.
           _bare=$_tok; _bare=${_bare//\"/}; _bare=${_bare//\'/}; _bare=${_bare//\\/}
+          _why=""
+          # THE TOKEN MUST *BE* gh, NOT MERELY END IN IT. An unanchored `=~ gh$` matched
+          # `through` and `enough`, so this branch denied ordinary English — measured, it
+          # blocked a reviewer's own file write on the word `through`. A merge gate that
+          # denies prose is a gate someone switches off, which costs more than it saves.
           shopt -s nocasematch
-          if [[ "$_bare" =~ gh$ ]] || [[ "$_tok" == *'$('* ]] || [[ "$_tok" == *'`'* ]] || [[ "$_bare" == *')' ]]; then
-            shopt -u nocasematch
-            deny "Blocked: this command runs a \`pr merge\` whose binary is spelled in a way merge-review-guard's shared extractor cannot resolve (\`$_tok\`), so it cannot confirm which PR is being merged or whether it was reviewed. An unreadable merge is treated as a merge, not as 'not a merge'. Re-run it as a plain \`gh pr merge <number> …\` so the gate can classify it. $BYPASS"
-          fi
+          case "$_bare" in
+            gh|*/gh) _why="spelled \`$_tok\`" ;;
+          esac
           shopt -u nocasematch
-        fi
+          if [ -z "$_why" ]; then
+            # Unresolvable binary. `$` covers BOTH `$(…)` and the `${var}` / `$var`
+            # parameter forms — a `$(`-only test allowed `${gh_bin} pr merge 42`, whose
+            # lowercase `gh` inside the variable name satisfies the fast path.
+            # A token merely ENDING in `)` is substitution-shaped only if the command
+            # opens one at all; without that second test this denied `(tweak)` and `v2)`.
+            case "$_tok" in
+              *'$'*|*'`'*) _why="produced by the expansion \`$_tok\`" ;;
+              *')') case "$CMD" in
+                      *'$('*|*'`'*) _why="produced by a substitution ending \`$_tok\`" ;;
+                    esac ;;
+            esac
+          fi
+          if [ -n "$_why" ]; then
+            deny "Blocked: this command runs a \`pr merge\` whose binary is $_why, which merge-review-guard's shared extractor cannot resolve — so it cannot confirm which PR is being merged, or whether that PR was reviewed. An unreadable merge is treated as a merge, not as 'not a merge'. Re-run it as a plain \`gh pr merge <number> …\` so the gate can classify it. $BYPASS"
+          fi
+          _rest=${_rest#*"$_whole"}
+        done
         # Genuinely not a merge — e.g. `git commit -m "fix highlight for pr merge"`, which
         # trips the fast path ("gh" inside "highlight") and whose token before `pr merge`
-        # is `for`. Pinned as an ALLOW row so this branch cannot grow into a prose gate.
+        # is `for`. Pinned as ALLOW rows so this branch cannot grow into a prose gate.
         exit 0
       fi
       PR=$(cmd_gh_pr_ref "$CMD") || PR=""
