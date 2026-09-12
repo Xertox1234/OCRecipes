@@ -199,6 +199,11 @@ negative result that is not written down gets re-derived:**
    fixed by the same pass. But the wider sibling sweep found **no other whitespace-field
    splitter in the guard at all**: `:2342` is the only non-comment `awk`, and the file
    contains no `tr ' '`, `read -ra`, `IFS=`, or `for x in $VAR`. The family is one site.
+   **Scope of that claim, tightened after a reviewer read it more broadly than it was
+   meant:** it says there is no OTHER splitter in this file to fix. It says nothing about
+   how many failure MODES the one splitter has — and round 2 then found a second mode in it
+   (the fd-prefix erosion, below). "One site" and "one failure mode" are different counts,
+   and the first does not bound the second.
    (`git-safety.sh:552` has the same blindness in a never-blocking advisor branch, and
    `git-safety.sh:425` has the separate `MUTATING_GIT_SEG_RE` gap — neither shares this
    code path; both stay out of scope.)
@@ -219,9 +224,103 @@ Disclosed in the guard's DOCUMENTED RESIDUALS; deliberately NOT filed as a todo,
 todo saying "make the clause read past a redirect" is an invitation to reintroduce a
 CRITICAL.
 
-**Evidence.** Test suite 596 → 626 assertions, 0 failed. Corpus 498 → 547 rows, 420 → 464
-attributions, 187 → 205 all-path gaps; precise-path gaps unchanged at 31, and **no existing
-row moved** — every drift line the pin reported was a new `fauto*`/`mauto*` id. Three
-mutations run: deleting the `gsub` reddens 14 assertions; removing spaced-target support
-reddens exactly the 8 SPACED rows while the glued ones stay green; the `" "`→`""` mutant is
-equivalent (above).
+### Review round 2 — the fix reintroduced the bug it closes, in the granting direction
+
+Security review caught it, and the baseline reviewer independently caught its mirror image.
+Both are one cause. `_CMD_REDIR` opens with an **optional fd prefix** (`[0-9]*` or `{name}`),
+and a plain `gsub` let a match **open on a mid-word digit run**, eating characters off a real
+argv word. Measured under bash 5.3.15, shadowing function reporting on a preserved fd (a
+stdout stub reads "not invoked" — every one of these rows redirects fd 1):
+
+| construction                  | real argv                      |
+| ----------------------------- | ------------------------------ |
+| `gh pr merge 42 --auto>x`     | `[pr][merge][42][--auto]`      |
+| `gh pr merge 42 --auto2>x`    | `[pr][merge][42][--auto2]`     |
+| `gh pr merge 42 --auto{fd}>x` | `[pr][merge][42][--auto{fd}]`  |
+| `gh pr merge 42 -b2>x --auto` | `[pr][merge][42][-b2][--auto]` |
+
+- **Under-denial (v1 introduced it):** `--auto2>x` has **no `--auto` in argv**, and v1
+  normalised it to `--auto` and **GRANTED**. That is precisely the forgery this todo exists
+  to close, recreated by its own fix, in the file's one read where a mistake becomes an
+  ALLOW. v1 also _pinned it as correct_ — an `assert_allow` reading "is a real armed
+  automerge" plus a corpus `ALLOW` row — so the false claim was about to become a required
+  check.
+- **Over-denial (the same erosion, other direction):** `-b2>x` is one word `-b2` (`-b` with
+  the attached value `2`), so the later `--auto` reaches gh unmasked. v1 eroded it to `-b`,
+  matched `GH_MERGE_VALUE_FLAGS`, and denied a real armed automerge.
+
+Fixed by `strip_redirs()`: `_CMD_REDIR` still says **what** a redirect is; the function adds
+only **where a match may open**, re-anchoring at the operator when the match began on a
+mid-word fd prefix. That is a positional rule, deliberately not a second grammar.
+
+**The lesson is the one this file keeps relearning, one level up.** The v1 safety argument
+had two ends — a deletion can forge a flag by JOINING two words or by EATING characters off
+one — and it argued only the join end, at length, with measurements. The defect was at the
+unargued end. Writing the careful half is what made the missing half invisible.
+
+**Also corrected:** the generated operator axis claimed to be "taken from `_CMD_REDIR`'s own
+alternations" and listed six of ten. Widened to all ten (`<`, `>&`, `>!`, all-digit brace
+body added) rather than softening the claim — this file's standing lesson is that a
+completeness claim has been wrong every time it was made.
+
+**Residual found in round 2, PRE-EXISTING and disclosed rather than fixed:**
+`gh pr merge 42 --auto{fd}>x` ALLOWs on **both** trees. Branch 1 of
+`_OUT_POS_SUFFIX_MERGE_CLAUSE` excludes `{`/`}`, so the clause truncates to
+`gh pr merge 42 --auto` and the scan sees a clean `--auto`, while real argv is `--auto{fd}`.
+A forged grant via the CUT, not the scan. Pinned as `fautobrace-pre` at what both trees do —
+flipping it would claim a fix this change does not make.
+
+**Evidence.** Test suite 596 → 636 assertions, 0 failed; full hook suite 34/34. Corpus
+498 → 573 rows, 420 → 483 attributions, 187 → 220 all-path gaps; **precise-path gaps
+unchanged at 31**, and **no pre-existing row moved** — every drift line the pin reported was
+a new `fauto*`/`mauto*` id. Four mutations, each with a named expected outcome:
+
+| mutation                                   | result                                           |
+| ------------------------------------------ | ------------------------------------------------ |
+| re-anchoring discarded (cut at `RSTART`)   | **7 red** — the digit rows, BOTH directions      |
+| normalisation removed (`norm = $0`)        | **13 red** — forged + masked rows                |
+| spaced-target support removed from `redir` | **8 red** — exactly the SPACED rows, glued green |
+| `" "` → `""` replacement                   | **green — EQUIVALENT**, recorded, not chased     |
+
+### False-positive population, measured by execution (AC item 6)
+
+Flagged by the baseline reviewer as the one acceptance criterion the first Resolution
+silently dropped — correctly, so it is recorded here in full rather than asserted.
+
+Every distinct Bash command in local transcript history (**143,328**) was harvested and
+filtered to **10,381**; each was replayed through the guard on `origin/main` and on this
+branch and the decisions diffed per command. **Three known flips were injected into the
+population** and the run fails if they do not flip — a harness that never ran prints the
+same clean zero (`feedback_a_clean_zero_needs_its_denominator`).
+
+**Population filter, stated because a filter is a completeness argument:** the only
+non-comment edit is inside the `elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]` branch, in
+the `else` arm of the `$`-sigil mask, so a command can only change decision if
+`GH_PR_MERGE_RE` matches — which needs the literal verb `merge` in the clause. `$CLAUSE` is
+cut from plain `$WORDS`, so a verb split by a substitution never reaches the scan (empty
+clause, unchanged decision either way); `$WORDS` deletes quote characters but not letters,
+hence the quote-tolerant `m['"]*e['"]*r['"]*g['"]*e` spelling. Unioned with a plain `gh`
+filter anyway, because a filter derived for one change is exactly what goes stale.
+
+**Result — 4 differences in 10,384 rows:**
+
+| direction  | command                                              | what it is         |
+| ---------- | ---------------------------------------------------- | ------------------ |
+| ALLOW→DENY | `gh pr merge 42 > --auto`                            | injected control ✓ |
+| ALLOW→DENY | `gh pr merge 42 -b>x --auto`                         | injected control ✓ |
+| DENY→ALLOW | `gh pr merge 42 --auto>/dev/null`                    | injected control ✓ |
+| ALLOW→DENY | `  gh > --auto pr merge 42   and   gh pr > --auto …` | see below          |
+
+All three controls flipped, so the zero is a measured zero. **Zero unexpected flips in
+either direction over real command history.**
+
+The fourth is not a user command: it is a line of this project's own PROSE about the forge,
+harvested because it once appeared inside a Bash argument. It now denies — a new, minor
+false positive on documentation text that names the construction, and the same class as
+`todos/P2-2026-09-10-outward-cli-guard-denies-prose-naming-two-pr-verbs.md`. Recorded rather
+than counted as a real-command regression, and it is the reason this todo's own
+Implementation Notes say to build such text with file tools rather than a Bash argument.
+
+**Honest bound:** a history harvest sizes FALSE POSITIVES only. Nobody types the decoy, so
+no harvest contains it — reachability is bounded by the constructed adversarial rows above,
+never by this number (`feedback_history_harvest_is_not_reachability_evidence`).

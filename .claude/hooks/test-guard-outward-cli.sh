@@ -1375,10 +1375,48 @@ assert_deny "join control: named-fd spelling cannot fuse either" \
 # armed automerge, so the former DENY was an over-denial (the ACCEPTED OVER-DENIAL
 # residual, now retired). These are the ONLY decisions this change makes more
 # permissive; every one has a genuine --auto in argv.
-assert_allow "newly granted: --auto with a glued fd-numbered redirect is a real armed automerge" \
-  "$(json 'gh pr merge 42 --auto2>x')"
 assert_allow "newly granted: --auto with a glued &> redirect" \
   "$(json 'gh pr merge 42 --auto&>log')"
+
+# DIGIT-PREFIX CONTROLS — the defect the FIRST version of this fix introduced,
+# found in security review. `_CMD_REDIR` opens with an optional fd prefix, and a
+# plain `gsub` let it open on a MID-WORD digit run, deleting characters that
+# belong to a real argv word. Measured under bash 5.3.15 with a shadowing
+# function reporting on a preserved fd:
+#   gh pr merge 42 --auto>x    argv: [pr][merge][42][--auto]    <- grant correct
+#   gh pr merge 42 --auto2>x   argv: [pr][merge][42][--auto2]   <- NO --auto
+# v1 granted the second one: the exact forgery this change exists to close,
+# reintroduced by the change. strip_redirs() re-anchors such a match at the
+# operator, so the digits stay with the word. These rows go red if that
+# re-anchoring is removed — and, unlike the join controls above, this mutation
+# is NOT equivalent: it flips a deny to a grant.
+assert_deny "digit-prefix control: --auto2>x is the word --auto2 plus a redirect, not --auto plus fd 2" \
+  "$(json 'gh pr merge 42 --auto2>x')" "without a REAL --auto flag"
+assert_deny "digit-prefix control: multi-digit spelling" \
+  "$(json 'gh pr merge 42 --auto12>>x')" "without a REAL --auto flag"
+assert_deny "digit-prefix control: leading-zero spelling (not a plausible fd number, still a word)" \
+  "$(json 'gh pr merge 42 --auto007>x')" "without a REAL --auto flag"
+# ...and the paired positives that keep the re-anchoring from over-denying: a
+# digit run that genuinely DOES begin a word is a real fd and must still strip.
+assert_allow "digit-prefix pair: a SPACED fd number is a real redirect, so the --auto after it is real" \
+  "$(json 'gh pr merge 42 2>x --auto')"
+assert_allow "digit-prefix pair: --auto followed by a spaced fd redirect still allows" \
+  "$(json 'gh pr merge 42 --auto 2>x')"
+assert_allow "digit-prefix pair: -b1>x gives -b the value 1, so the later --auto is its own real flag" \
+  "$(json 'gh pr merge 42 -b1>x --auto')"
+# The OVER-DENIAL face of the same erosion, surfaced by review round 2 against
+# the committed v1. `-b2>x` is ONE word `-b2` (`-b` with the attached value 2),
+# so the later --auto reaches gh unmasked; v1 eroded it to `-b`, matched
+# GH_MERGE_VALUE_FLAGS, and denied a real armed automerge. One erosion, two
+# directions — the grant in the rows above and the false deny in these.
+assert_allow "digit-prefix over-denial: -b2>x is the word -b2, not -b, so the --auto is real" \
+  "$(json 'gh pr merge 42 -b2>x --auto')"
+assert_allow "digit-prefix over-denial: long-form spelling" \
+  "$(json 'gh pr merge 42 --body-file2>x --auto')"
+assert_allow "digit-prefix over-denial: -t2>x spelling" \
+  "$(json 'gh pr merge 42 -t2>x --auto')"
+assert_allow "control: a NON-digit trailing char behaves the same (-bb is -b with value b), isolating the erosion rule from 'a char near a redirect'" \
+  "$(json 'gh pr merge 42 -bb>x --auto')"
 
 # RESIDUAL, measured 2026-09-12 — NOT closed by this fix, and deliberately so.
 # An operator carrying `&` or `|` AFTER the `>` truncates the CLAUSE before the
@@ -1403,6 +1441,16 @@ assert_allow "attribution pair: the SPACED fd-duplicating form allows — --auto
   "$(json 'gh pr merge 42 --auto >&2')"
 assert_allow "attribution pair: the SPACED clobber-override form allows for the same reason" \
   "$(json 'gh pr merge 42 --auto >|log')"
+# PRE-EXISTING, measured identical on origin/main and here, so NOT a regression
+# of this change — and the same clause-cut family, in the opposite direction.
+# `_OUT_POS_SUFFIX_MERGE_CLAUSE` branch 1 excludes `{`/`}`, so the clause
+# truncates to `gh pr merge 42 --auto` and the scan sees a clean --auto — while
+# real argv is `[--auto{fd}]` (measured; a `{name}` fd is only an fd at a word
+# start, exactly as with digits). A forged grant, unreachable in practice only
+# because gh rejects the unknown flag. Pinned as an ALLOW because that is what
+# BOTH trees do: flipping it here would claim a fix this change does not make.
+assert_allow "pre-existing clause-cut forge: --auto{fd}>x truncates at the brace and grants (unchanged on both trees; argv is --auto{fd})" \
+  "$(json 'gh pr merge 42 --auto{fd}>x')"
 
 # OVER-GRANTING CONTROLS. For each newly-granted shape, the INDEPENDENT gates
 # must still fire. A new grant is only safe if it cannot carry anything past the
@@ -3130,7 +3178,7 @@ _PIN_RAN=1
 #         api's clause, plus a read-only gh api carrying its own `2>&1`. These are
 #         the rows that go RED if `&[0-9-]` ever becomes a bare `&`.
 #         3 + 4 + 4 = 11.
-# 596 -> 626 on 2026-09-12: +30, the --auto field scan becomes REDIRECT-AWARE
+# 596 -> 636 on 2026-09-12: +40, the --auto field scan becomes REDIRECT-AWARE
 # (P0-2026-09-07-...-space-separated-redirect-target-forges-auto). One existing
 # assertion also FLIPPED deny->allow in place (the `--auto>/dev/null` accepted
 # over-denial, now correct), which is why the delta is +30 and not +31.
@@ -3159,9 +3207,32 @@ _PIN_RAN=1
 #         always eats through to a boundary that blocks the join. An EQUIVALENT
 #         mutant, measured, not an unreached one. The rows pin the property
 #         against a future `_CMD_REDIR` whose target became optional.
-#    +2  newly granted: a genuine --auto carrying a glued redirect is a real armed
-#         automerge (`--auto2>x`, `--auto&>log`). With the in-place flip above,
-#         three decisions in total became more permissive -- all of them here.
+#    +1  newly granted: a genuine --auto carrying a glued redirect is a real armed
+#         automerge (`--auto&>log`). With the in-place flip above, two decisions
+#         in total became more permissive -- both of them here.
+#   +11  DIGIT-PREFIX rows, added in review round 2 after the SECURITY REVIEW
+#         found the first version of this fix had introduced its own forgery.
+#         `_CMD_REDIR` opens with an optional fd prefix, and a plain
+#         `gsub(redir, " ", norm)` let a match OPEN on a mid-word digit run:
+#         `--auto2>x` (argv `[--auto2]`, measured) was normalised to `--auto` and
+#         GRANTED. That is the exact bug this change exists to close, recreated
+#         by the change, in the one read where a mistake becomes an ALLOW.
+#         ONE erosion, TWO directions, and each needed its own rows:
+#          3 denies -- the forged grant (`--auto2>x`, `--auto12>>x`,
+#            `--auto007>x`).
+#          3 positives keeping the re-anchoring from over-denying a digit run
+#            that really DOES begin a word (`2>x --auto`, `--auto 2>x`,
+#            `-b1>x --auto`).
+#          4 the OVER-DENIAL face, surfaced by the baseline reviewer against the
+#            committed v1: a digit fused into the VALUE FLAG's own word
+#            (`-b2>x`, `--body-file2>x`, `-t2>x` all eroded to a bare flag and
+#            falsely denied a real automerge) plus the non-digit control `-bb>x`.
+#            The MAUTO_GLUE axis could not see these: it varies the redirect's
+#            spacing and always leaves the flag word itself digit-free.
+#          1 PRE-EXISTING clause-cut forge (`--auto{fd}>x`, ALLOW on both trees,
+#            pinned as an allow because flipping it would claim a fix not made).
+#         Unlike the join controls, removing the re-anchoring is NOT an
+#         equivalent mutant: it turns a deny into a grant.
 #    +4  the clause-cut RESIDUAL and its attribution pair: `--auto>&2` /
 #         `--auto>|log` still deny because branch 1 of
 #         _OUT_POS_SUFFIX_MERGE_CLAUSE truncates at `&`/`|` BEFORE the scan runs
@@ -3172,8 +3243,8 @@ _PIN_RAN=1
 #    +4  over-granting controls: each new grant must still be stopped by the
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
-#         6 + 4 + 1 + 4 + 5 + 2 + 4 + 4 = 30.
-EXPECTED_TOTAL=626
+#         6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 40.
+EXPECTED_TOTAL=636
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

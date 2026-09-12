@@ -534,6 +534,16 @@
 #         2026-09-05 CRITICAL — see the ACCEPTED OVER-DENIAL entry above. The
 #         SPACED spellings allow, and the pair is pinned so the cause stays
 #         attributed to the CUT.
+#       - The CLAUSE CUT forges in the GRANTING direction too, and this one is
+#         PRE-EXISTING (measured identical on `origin/main` and here, so not a
+#         regression of this change and deliberately pinned at what both trees
+#         do). Branch 1 excludes `{`/`}`, so `gh pr merge 42 --auto{fd}>x`
+#         truncates to `gh pr merge 42 --auto` and the scan sees a clean
+#         `--auto` — while real argv is `[--auto{fd}]`, because a `{name}` fd is
+#         only an fd at a word START, exactly as a digit run is. A forged grant.
+#         Unreachable in practice only because gh rejects the unknown flag,
+#         which is an external fact about gh, NOT a property of this guard —
+#         do not treat it as a reason to leave it. Corpus `fautobrace-pre`.
 #       - Flag SYNTHESIS (see its own entry below) is untouched: a substitution
 #         that COMPLETES a flag name is invisible in every rendering, so no
 #         amount of redirect awareness reaches it.
@@ -2397,10 +2407,18 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # constant already models -- fd digits, `{name}` fds, `&` on either side of the
   # operator, and the `|`/`!` clobber overrides -- with no enumeration here.
   #
-  # CANNOT FORGE AN --auto, and the reason is NOT the space. This is the paired
-  # over-granting control the residual demanded -- the safety argument for
-  # touching the file's ONE grant-shaped read -- so it is stated as measured,
-  # not as it first reads.
+  # CANNOT FORGE AN --auto. This is the paired over-granting control the
+  # residual demanded -- the safety argument for touching the file's ONE
+  # grant-shaped read -- so it is stated as measured, not as it first reads, and
+  # it has TWO ends. A deletion can forge a flag by JOINING two words, or by
+  # EATING characters off one; the first draft of this comment argued only the
+  # join end, and the defect was at the other. Both are stated below.
+  #
+  # END 1 -- EATING. Covered by strip_redirs()'s re-anchoring, not by the
+  # pattern: `_CMD_REDIR`'s optional fd prefix would otherwise open a match on a
+  # mid-word digit run and turn `--auto2` into `--auto`. See the function.
+  #
+  # END 2 -- JOINING, and here the reason is NOT the space.
   #   The property: deleting a redirect can never JOIN two halves of a word into
   #   an `--auto` the user never wrote.
   #   The cause: `_CMD_REDIR`'s target is MANDATORY and GREEDY
@@ -2441,8 +2459,37 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
     HAS_REAL_AUTO=no
   else
     HAS_REAL_AUTO=$(awk -v flags="$GH_MERGE_VALUE_FLAGS" -v redir="$_CMD_REDIR" '
-      { norm = $0
-        gsub(redir, " ", norm)
+      # Delete every redirect from a COPY of the clause, replacing each with a
+      # space. `_CMD_REDIR` supplies WHAT a redirect looks like; this function
+      # adds only WHERE a match may legally begin, which is a positional rule
+      # the shared pattern cannot express -- deliberately NOT a second grammar.
+      function strip_redirs(s,   out, st) {
+        out = ""
+        while (match(s, redir)) {
+          st = RSTART
+          # `_CMD_REDIR` opens with an OPTIONAL fd prefix (digits, or `{name}`).
+          # Both shells honour that prefix ONLY when it begins a word:
+          # `--auto2>x` is the word `--auto2` plus `>x`, NOT `--auto` plus fd 2.
+          # Measured under bash 5.3.15 with a shadowing function reporting on a
+          # preserved fd (a stdout stub reads "not invoked" -- these rows
+          # redirect fd 1):
+          #     gh pr merge 42 --auto>x      argv: [pr][merge][42][--auto]
+          #     gh pr merge 42 --auto2>x     argv: [pr][merge][42][--auto2]
+          #     gh pr merge 42 --auto{fd}>x  argv: [pr][merge][42][--auto{fd}]
+          # Letting a match OPEN on a mid-word digit run would delete characters
+          # belonging to a real argv word and hand this GRANT-shaped scan an
+          # `--auto` the user never typed -- the very forgery this whole change
+          # exists to close, reintroduced by the fix. (It did: caught in security
+          # review, after the first version shipped `gsub(redir, " ", norm)` and
+          # pinned `--auto2>x` as an allow.) So give those characters back to the
+          # word and re-open the cut at the operator.
+          while (st > 1 && substr(s, st, 1) !~ /[&<>]/ && substr(s, st - 1, 1) !~ /[[:space:]]/) st++
+          out = out substr(s, 1, st - 1) " "
+          s = substr(s, RSTART + RLENGTH)
+        }
+        return out s
+      }
+      { norm = strip_redirs($0)
         n = split(norm, f, " ")
         prev = ""
         for (i = 1; i <= n; i++) {

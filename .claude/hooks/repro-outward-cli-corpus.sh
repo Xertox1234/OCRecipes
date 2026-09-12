@@ -334,8 +334,16 @@ add "flagadjfp-roredir" ALLOW 'gh api repos/o/r 2>&1'
 # _OUT_POS_PREFIX's absorber (the redirect lands INSIDE the CLAUSE capture --
 # measured [> --auto gh pr merge 42]), the interior slots through _OUT_SEP, and
 # the trailing slot through the clause body. Four different routes to one scan.
-FAUTO_SPELL_IDS=(gt fd app amp clob nfd)
-FAUTO_SPELL=('>' '2>' '>>' '&>' '>|' '{fd}>')
+# The operator list enumerates `_CMD_REDIR`'s OWN alternations rather than a
+# representative sample: input (`<`), plain/append output, the fd-numbered form,
+# `&` on either side of the operator, both clobber overrides (`>|`, `>!`), and
+# both brace-fd bodies (identifier and all-digit — the family #939's round 4
+# added). A review round 2 note pointed out the earlier six-element list claimed
+# to be derived from those alternations and was not; widened rather than softened,
+# because this file's standing lesson is that a completeness claim has been wrong
+# every time it was made.
+FAUTO_SPELL_IDS=(gt fd app amp ampl clob bang nfd nfddig in)
+FAUTO_SPELL=('>' '2>' '>>' '&>' '>&' '>|' '>!' '{fd}>' '{9}>' '<')
 for j in "${!FAUTO_SPELL_IDS[@]}"; do
   sp=${FAUTO_SPELL_IDS[$j]}; op=${FAUTO_SPELL[$j]}
   add "fauto$sp-trail" DENY "gh pr merge 42 $op --auto"
@@ -384,8 +392,46 @@ add "fautojoin-off"  DENY 'gh pr merge 42 --a>x uto'
 # ACCEPTED OVER-DENIAL residual, now retired). These are the only decisions this
 # change makes more permissive.
 add "fautogrant-glue" ALLOW 'gh pr merge 42 --auto>/dev/null'
-add "fautogrant-fd"   ALLOW 'gh pr merge 42 --auto2>x'
 add "fautogrant-amp"  ALLOW 'gh pr merge 42 --auto&>log'
+# DIGIT-PREFIX axis, added in review round 2: the forgery the FIRST version of
+# this fix introduced. `_CMD_REDIR` opens with an OPTIONAL fd prefix, and a plain
+# gsub let a match open on a MID-WORD digit run, eating characters off a real
+# argv word. Measured under bash 5.3.15 via a shadowing function on a preserved
+# fd: `--auto>x` is argv [--auto] (grant correct) but `--auto2>x` is argv
+# [--auto2] — no --auto at all. v1 granted the second. strip_redirs() re-anchors
+# such a match at the operator. Removing that is NOT an equivalent mutant: it
+# converts these denies into grants, in the file's one grant-shaped read.
+add "fautodig-one"   DENY  'gh pr merge 42 --auto2>x'
+add "fautodig-multi" DENY  'gh pr merge 42 --auto12>>x'
+add "fautodig-zero"  DENY  'gh pr merge 42 --auto007>x'
+# ...paired positives, so the re-anchoring cannot be "fixed" into over-denying a
+# digit run that genuinely DOES begin a word (a real fd) or a flag value.
+add "fautodigfp-lead" ALLOW 'gh pr merge 42 2>x --auto'
+add "fautodigfp-sp"   ALLOW 'gh pr merge 42 --auto 2>x'
+add "fautodigfp-val"  ALLOW 'gh pr merge 42 -b1>x --auto'
+# The OVER-DENIAL face of the same erosion, surfaced by review round 2: a digit
+# fused into the VALUE FLAG's own word. `-b2>x` is one word `-b2` — `-b` with the
+# attached value `2` — so the later `--auto` reaches gh unmasked and the correct
+# verdict is ALLOW. v1 eroded `-b2` to `-b`, matched GH_MERGE_VALUE_FLAGS, and
+# denied. The MAUTO_GLUE axis could not see this: it varies the redirect's
+# spacing but always leaves the flag word itself digit-free.
+add "fautodigfp-b2"   ALLOW 'gh pr merge 42 -b2>x --auto'
+add "fautodigfp-bf2"  ALLOW 'gh pr merge 42 --body-file2>x --auto'
+add "fautodigfp-t2"   ALLOW 'gh pr merge 42 -t2>x --auto'
+# Control: a NON-digit trailing character in the same position. `-bb` is `-b`
+# with the attached value `b`, so the --auto is real here too and this ALLOWs on
+# both trees — it is the row that shows the three above are about the erosion
+# rule, not about "a trailing character near a redirect". The row that pins the
+# bare flag still masking its --auto is `mautoglue-b` (`-b>x --auto`, DENY).
+add "fautodigctrl-bb" ALLOW 'gh pr merge 42 -bb>x --auto'
+# PRE-EXISTING, identical on origin/main and here, so not a regression of this
+# change and deliberately pinned at what BOTH trees do. Same clause-cut family
+# as fautocut-* but in the granting direction: branch 1 of
+# _OUT_POS_SUFFIX_MERGE_CLAUSE excludes `{`/`}`, so the clause truncates to
+# `gh pr merge 42 --auto` and the scan sees a clean --auto, while real argv is
+# [--auto{fd}] (a {name} fd is only an fd at a word start, exactly as digits
+# are). Flipping this row would claim a fix this change does not make.
+add "fautobrace-pre" ALLOW 'gh pr merge 42 --auto{fd}>x'
 # RESIDUAL, and NOT a scan gap: an operator carrying `&`/`|` after the `>`
 # truncates the CLAUSE before the scan runs (branch 1 of
 # _OUT_POS_SUFFIX_MERGE_CLAUSE stops at a command separator), leaving a bare `>`
@@ -1165,7 +1211,7 @@ fi
 #    AND THE ONE THAT IS STILL OPEN, named because a residual list that discloses
 #    only the residual it has already closed is worse than no list. A scope
 #    NARROWING INSIDE a check that still fires first for every corpus row: the
-#    check keeps producing the same verdict AND the same reason for all 547 rows
+#    check keeps producing the same verdict AND the same reason for all 573 rows
 #    while commands outside the corpus flip. Nothing in this block can see that --
 #    not attribution, not the per-path tuples, not `_pin_sites`, which asks whether
 #    a check is reached, never whether it is reached by everything it should be.
@@ -1185,15 +1231,15 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=547
+EXPECTED_ROWS=573
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 464 of the 547 rows deny on the precise path; the other 83 are ALLOW there
+# 483 of the 573 rows deny on the precise path; the other 90 are ALLOW there
 # (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-* controls, plus the 31
 # precise-path gaps). These two numbers are bumped with
 # EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
 # stale, sitting directly above the constant they describe.
-EXPECTED_DENY_ATTRIB_ROWS=464
+EXPECTED_DENY_ATTRIB_ROWS=483
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1250,7 +1296,7 @@ EXPECTED_PRECISE_GAPS=31
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=205
+EXPECTED_ALLPATH_GAPS=220
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1487,12 +1533,27 @@ fautocutsp-fddup p=ALLOW j=DENY l=DENY a=DENY
 fautofd-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautofd-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautogrant-amp p=ALLOW j=DENY l=DENY a=DENY
-fautogrant-fd p=ALLOW j=DENY l=DENY a=DENY
 fautogrant-glue p=ALLOW j=DENY l=DENY a=DENY
 fautogt-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautogt-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautonfd-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautonfd-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoampl-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoampl-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautobang-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautobang-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautobrace-pre p=ALLOW j=DENY l=DENY a=DENY
+fautodigctrl-bb p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-b2 p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-bf2 p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-lead p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-sp p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-t2 p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-val p=ALLOW j=DENY l=DENY a=DENY
+fautoin-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoin-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautonfddig-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautonfddig-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -1662,14 +1723,30 @@ fautoamp-trail     : command-position 'gh pr merge' without a REAL --auto flag m
 fautoamp-lead      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoamp-tool      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoamp-ns        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoampl-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoampl-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoampl-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoampl-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoclob-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoclob-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoclob-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoclob-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautobang-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautobang-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautobang-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautobang-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautonfd-trail     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautonfd-lead      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautonfd-tool      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautonfd-ns        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfddig-trail  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfddig-lead   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfddig-tool   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfddig-ns     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoin-trail      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoin-lead       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoin-tool       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoin-ns         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fauto-cooccur      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoctrl-glued    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 mautoglue-b        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
@@ -1684,6 +1761,9 @@ mautofd-t          : command-position 'gh pr merge' without a REAL --auto flag m
 fautojoin-sp       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautojoin-glue     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautojoin-off      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautodig-one       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautodig-multi     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautodig-zero      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautocut-fddup     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautocut-clob      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoog-admin      : command-position 'gh pr merge --admin' uses administrator privileges to
