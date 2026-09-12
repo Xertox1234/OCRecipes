@@ -319,6 +319,90 @@ add "flagadjfp-semi"    ALLOW 'gh api repos/o/r ; curl -X DELETE http://example.
 add "flagadjfp-repo"    ALLOW 'gh pr list && curl --repo o/r'
 add "flagadjfp-roredir" ALLOW 'gh api repos/o/r 2>&1'
 
+# axis: FORGED --auto -- a redirect TARGET spelled `--auto` read as a flag.
+# (P0-2026-09-07-...-space-separated-redirect-target-forges-auto, fixed 2026-09-12.)
+#
+# The `--auto` field scan split on WHITESPACE, so `> --auto` was two fields and
+# the target compared equal to the flag, GRANTING the carve-out on an --auto that
+# never reaches gh: an immediate, unarmed merge. GENERATED as operator x position
+# rather than hand-listed, because the original finding enumerated ONE operator's
+# positions and missed the rest -- the exact shape NOTE6 exists to prevent. The
+# operator list is taken from `_CMD_REDIR`'s own alternations, so the #939 zsh
+# families (`>|`, named fds) are covered without re-deriving the grammar here.
+#
+# The POSITION axis is not decoration: the leading slot reaches the scan through
+# _OUT_POS_PREFIX's absorber (the redirect lands INSIDE the CLAUSE capture --
+# measured [> --auto gh pr merge 42]), the interior slots through _OUT_SEP, and
+# the trailing slot through the clause body. Four different routes to one scan.
+FAUTO_SPELL_IDS=(gt fd app amp clob nfd)
+FAUTO_SPELL=('>' '2>' '>>' '&>' '>|' '{fd}>')
+for j in "${!FAUTO_SPELL_IDS[@]}"; do
+  sp=${FAUTO_SPELL_IDS[$j]}; op=${FAUTO_SPELL[$j]}
+  add "fauto$sp-trail" DENY "gh pr merge 42 $op --auto"
+  add "fauto$sp-lead"  DENY "$op --auto gh pr merge 42"
+  add "fauto$sp-tool"  DENY "gh $op --auto pr merge 42"
+  add "fauto$sp-ns"    DENY "gh pr $op --auto merge 42"
+done
+# CO-OCCURRENCE: two forged targets in ONE command. A cross product picks one
+# value per axis and can never emit this, which is how a repeat of the same
+# construct goes untested while every single-value row passes for its own reason.
+add "fauto-cooccur" DENY 'gh > --auto pr > --auto merge 42'
+# ATTRIBUTION CONTROL: the GLUED spelling denied before the fix too, but only
+# incidentally -- `>--auto` was one awk field that did not compare equal. It must
+# still deny, now because the target is RECOGNISED. Paired with fautogt-trail,
+# the SPACE is the only variable between the two.
+add "fautoctrl-glued" DENY 'gh pr merge 42 >--auto'
+
+# axis: MASKED --auto -- the same cause, opposite direction. The `--auto` is REAL
+# and reaches gh, but bash hands it to a value-taking flag as that flag's VALUE,
+# so no auto-merge flag survives. GH_MERGE_VALUE_FLAGS exists to catch exactly
+# this and missed, because `prev` read the single field `-b>x`, not `-b`.
+MAUTO_FLAG_IDS=(b bodyfile t)
+MAUTO_FLAG=('-b' '--body-file' '-t')
+MAUTO_GLUE_IDS=(glue sp fd)
+MAUTO_GLUE=('>x' ' >x' ' 2>x')
+for i in "${!MAUTO_FLAG_IDS[@]}"; do
+  for j in "${!MAUTO_GLUE_IDS[@]}"; do
+    add "mauto${MAUTO_GLUE_IDS[$j]}-${MAUTO_FLAG_IDS[$i]}" DENY \
+      "gh pr merge 42 ${MAUTO_FLAG[$i]}${MAUTO_GLUE[$j]} --auto"
+  done
+done
+
+# JOIN CONTROLS. Deleting a redirect must never FUSE two halves of a word into an
+# `--auto` nobody wrote -- the paired over-granting control this change owes for
+# touching the file's ONE grant-shaped read. READ THE ATTRIBUTION: these do NOT
+# pin the space in `gsub(redir, " ", ...)`. Mutating it to "" leaves the whole
+# suite green, measured -- fusion is impossible either way, because _CMD_REDIR's
+# target is mandatory and greedy and always eats through to a boundary that
+# blocks the join. An EQUIVALENT mutant, written down so nobody chases it.
+add "fautojoin-sp"   DENY 'gh pr merge 42 --au>x to'
+add "fautojoin-glue" DENY 'gh pr merge 42 --au>xto'
+add "fautojoin-off"  DENY 'gh pr merge 42 --a>x uto'
+
+# NEWLY GRANTED. A genuine --auto carrying a glued redirect IS an armed
+# automerge in real bash argv, so the former deny was an over-denial (the
+# ACCEPTED OVER-DENIAL residual, now retired). These are the only decisions this
+# change makes more permissive.
+add "fautogrant-glue" ALLOW 'gh pr merge 42 --auto>/dev/null'
+add "fautogrant-fd"   ALLOW 'gh pr merge 42 --auto2>x'
+add "fautogrant-amp"  ALLOW 'gh pr merge 42 --auto&>log'
+# RESIDUAL, and NOT a scan gap: an operator carrying `&`/`|` after the `>`
+# truncates the CLAUSE before the scan runs (branch 1 of
+# _OUT_POS_SUFFIX_MERGE_CLAUSE stops at a command separator), leaving a bare `>`
+# that _CMD_REDIR cannot match for want of a target. Measured CLAUSE:
+# [gh pr merge 42 --auto>]. Widening that cut is the reverted 2026-09-05
+# CRITICAL, so the over-denial stays. The SPACED pair attributes it to the CUT.
+add "fautocut-fddup"   DENY  'gh pr merge 42 --auto>&2'
+add "fautocut-clob"    DENY  'gh pr merge 42 --auto>|log'
+add "fautocutsp-fddup" ALLOW 'gh pr merge 42 --auto >&2'
+add "fautocutsp-clob"  ALLOW 'gh pr merge 42 --auto >|log'
+# OVER-GRANTING CONTROLS. Each new grant must still be stopped by the gates that
+# never depended on --auto. These are what make granting the family above safe.
+add "fautoog-admin" DENY 'gh pr merge 42 --auto>log --admin'
+add "fautoog-repo"  DENY 'gh pr merge 42 --auto>log --repo other/org'
+add "fautoog-sigil" DENY 'gh pr merge 42 --auto>anyfile ${x:---admin}'
+add "fautoog-multi" DENY 'gh pr merge 42 --auto>log ; gh pr merge 7'
+
 # axis: TOOL position -- the binary NAME itself split by a vanishing construct.
 # ADDED 2026-09-06 (security review of PR #926). THIS AXIS'S ABSENCE IS WHY THE
 # REVIEW FOUND FOUR CRITICALS AND THIS FILE FOUND NONE. Every glue axis above
@@ -1081,7 +1165,7 @@ fi
 #    AND THE ONE THAT IS STILL OPEN, named because a residual list that discloses
 #    only the residual it has already closed is worse than no list. A scope
 #    NARROWING INSIDE a check that still fires first for every corpus row: the
-#    check keeps producing the same verdict AND the same reason for all 448 rows
+#    check keeps producing the same verdict AND the same reason for all 547 rows
 #    while commands outside the corpus flip. Nothing in this block can see that --
 #    not attribution, not the per-path tuples, not `_pin_sites`, which asks whether
 #    a check is reached, never whether it is reached by everything it should be.
@@ -1101,15 +1185,15 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=498
+EXPECTED_ROWS=547
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 420 of the 498 rows deny on the precise path; the other 78 are ALLOW there
-# (the fp-*/c1g-*/sitefp-* controls, plus the 31 precise-path gaps). These two
-# numbers are bumped with EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review
-# found them two revisions stale, sitting directly above the constant they
-# describe.
-EXPECTED_DENY_ATTRIB_ROWS=420
+# 464 of the 547 rows deny on the precise path; the other 83 are ALLOW there
+# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-* controls, plus the 31
+# precise-path gaps). These two numbers are bumped with
+# EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
+# stale, sitting directly above the constant they describe.
+EXPECTED_DENY_ATTRIB_ROWS=464
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1166,7 +1250,7 @@ EXPECTED_PRECISE_GAPS=31
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=187
+EXPECTED_ALLPATH_GAPS=205
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1391,6 +1475,24 @@ c9-dig-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 c9-dig-npm p=DENY j=ALLOW l=ALLOW a=ALLOW
 c9-dig-railway p=DENY j=ALLOW l=ALLOW a=ALLOW
 c9-dig-railwayvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+fauto-cooccur p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoamp-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoamp-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoapp-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoapp-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoclob-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoclob-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautocutsp-clob p=ALLOW j=DENY l=DENY a=DENY
+fautocutsp-fddup p=ALLOW j=DENY l=DENY a=DENY
+fautofd-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautofd-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautogrant-amp p=ALLOW j=DENY l=DENY a=DENY
+fautogrant-fd p=ALLOW j=DENY l=DENY a=DENY
+fautogrant-glue p=ALLOW j=DENY l=DENY a=DENY
+fautogt-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautogt-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautonfd-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautonfd-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -1544,6 +1646,50 @@ flagadjglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERE
 flagadjsp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 flagadjfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 flagadjctrl-boolean : command-position 'npm run update:preview/update:production' (and the yar
+fautogt-trail      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautogt-lead       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautogt-tool       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautogt-ns         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautofd-trail      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautofd-lead       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautofd-tool       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautofd-ns         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoapp-trail     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoapp-lead      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoapp-tool      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoapp-ns        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoamp-trail     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoamp-lead      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoamp-tool      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoamp-ns        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoclob-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoclob-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoclob-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoclob-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfd-trail     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfd-lead      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfd-tool      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfd-ns        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fauto-cooccur      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoctrl-glued    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautoglue-b        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautosp-b          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautofd-b          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautoglue-bodyfile : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautosp-bodyfile   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautofd-bodyfile   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautoglue-t        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautosp-t          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautofd-t          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautojoin-sp       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautojoin-glue     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautojoin-off      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautocut-fddup     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautocut-clob      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoog-admin      : command-position 'gh pr merge --admin' uses administrator privileges to
+fautoog-repo       : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+fautoog-sigil      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoog-multi      : more than one command-position 'gh pr merge' occurrence — ambiguous, c
 toolvsub-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
 toolvvar-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
 toolvbt-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
@@ -1740,6 +1886,54 @@ c2-ansic-hex       : command-position 'gh api' with a method flag (-X/--method) 
 ghapi-redir-trail  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c2-empty-proof-expand : command-position 'gh api' with a method flag (-X/--method) whose value i
 c2-empty-proof-lit : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clob-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clobapp-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clobboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clobbothapp-api : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clobfd-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clob-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-clob-create     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-clob-merge      : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+c9-bang-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-bangboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-bang-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-both-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-bothapp-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-both-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-after-api       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterapp-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfd-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfd1-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfdapp-api  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-after-comment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-after-create    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-after-merge     : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+c9-nfd-api         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfdapp-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfdclob-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfdboth-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-ws-eas          : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-ws-easamp       : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-ws-easclob      : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-ws-npm          : command-position 'npm publish' pushes a package to the registry.
+c9-ws-railway      : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+c9-ws-railwayvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
+c9-ws-ghadmin      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c9-ws-ghcomment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-ws-ghapi        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-ws-method       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-dig-eas         : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-easamp      : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-easclob     : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-npm         : command-position 'npm publish' pushes a package to the registry.
+c9-dig-railway     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+c9-dig-railwayvar  : command-position 'railway variable/vars/var set/delete' mutates a live s
+c9-dig-ghadmin     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c9-dig-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-dig-ghapi       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-dig-method      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-crude-eas       : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-crude-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 mid-backtick       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 mid-sub            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 mid-var            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
@@ -1781,54 +1975,6 @@ sitebranch-delete  : command-position 'eas channel:/branch: create/edit/delete/r
 sitebranch-rename  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
 sitedup-ghcreate   : more than one command-position 'gh pr create/comment' occurrence — amb
 sitedup-ghcomment  : more than one command-position 'gh pr create/comment' occurrence — amb
-c9-bang-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-bang-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-bangboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-both-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-both-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-bothapp-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-clob-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-clob-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-clob-create     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-clob-merge      : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-c9-clobapp-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-clobboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-clobbothapp-api : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-clobfd-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-after-api       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-after-comment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-after-create    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-after-merge     : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-c9-afterapp-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-afterfd-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-afterfd1-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-afterfdapp-api  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-nfd-api         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-nfdapp-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-nfdboth-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-nfdclob-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-ws-eas          : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-ws-easamp       : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-ws-easclob      : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-ws-ghadmin      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-c9-ws-ghapi        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-ws-ghcomment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-ws-method       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-ws-npm          : command-position 'npm publish' pushes a package to the registry.
-c9-ws-railway      : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-c9-ws-railwayvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
-c9-crude-eas       : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-crude-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-c9-dig-eas         : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-dig-easamp      : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-dig-easclob     : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-dig-ghadmin     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-c9-dig-ghapi       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-dig-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-dig-method      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-dig-npm         : command-position 'npm publish' pushes a package to the registry.
-c9-dig-railway     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-c9-dig-railwayvar  : command-position 'railway variable/vars/var set/delete' mutates a live s
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)

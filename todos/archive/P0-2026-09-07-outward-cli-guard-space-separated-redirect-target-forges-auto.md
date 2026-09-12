@@ -1,9 +1,9 @@
 ---
 title: "guard-outward-cli.sh: a SPACE-separated redirect target named --auto forges the merge carve-out, allowing an immediate merge"
-status: backlog
+status: done
 priority: critical
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-12
 assignee:
 labels: [security, harness]
 github_issue:
@@ -168,3 +168,60 @@ critical for effect, not for likelihood.
   `.claude/hooks/test-guard-outward-cli.sh`, `.claude/hooks/repro-outward-cli-corpus.sh`,
   and the disclosure sites for any residual this closes or opens.
 - No new parsing layer, no expansion evaluation, no new dependency.
+
+## Resolution — 2026-09-12
+
+**Fixed.** The `--auto` scan normalises its INPUT with the shared `_CMD_REDIR` before
+splitting: `gsub(redir, " ", norm)` inside the existing awk. `$CLAUSE` is untouched, so the
+`$`-sigil mask still reads the whole clause — "fix the SCAN, not the cut", per the
+acceptance criteria. No new parsing layer, no new tool (the block already required awk).
+
+Both faces closed, because both were the same cause. Reusing `_CMD_REDIR` rather than
+re-deriving the grammar also picked up the five zsh families PR #939 added (`>|`, `>!`,
+`{name}>`, `&` on either side) with no enumeration.
+
+Scope decision: the user chose to fix the over-denial as well, not only the under-denial —
+so the newly-granted set was enumerated by construction and each member paired with a
+control proving the independent gates (`--admin`, `--repo`, the `$`-mask,
+multi-occurrence) still deny.
+
+**Count correction, again.** This file said "at least seven live positions". Measured: the
+position axis (leading / tool→namespace / namespace→verb / trailing) crossed with six
+operator spellings gives **24**, plus a co-occurrence row, plus 9 masked value-flag rows.
+The seven came from listing one operator's positions — the same enumeration error this
+todo already flagged once, repeated one level up. The corpus axis is now GENERATED, so the
+cross product cannot be under-listed by hand again.
+
+**Two things the acceptance criteria asked for that came back negative, recorded because a
+negative result that is not written down gets re-derived:**
+
+1. _"Check whether the sibling value-flag logic has the same blindness"_ — it did, and it is
+   fixed by the same pass. But the wider sibling sweep found **no other whitespace-field
+   splitter in the guard at all**: `:2342` is the only non-comment `awk`, and the file
+   contains no `tr ' '`, `read -ra`, `IFS=`, or `for x in $VAR`. The family is one site.
+   (`git-safety.sh:552` has the same blindness in a never-blocking advisor branch, and
+   `git-safety.sh:425` has the separate `MUTATING_GIT_SEG_RE` gap — neither shares this
+   code path; both stay out of scope.)
+2. The join controls do **not** pin the space in `gsub(redir, " ", ...)`. Mutating it to
+   `""` leaves the whole suite green. Fusion is impossible under either replacement because
+   `_CMD_REDIR`'s target is mandatory and greedy, so a match always eats through to a
+   boundary that blocks the join — measured over 18 deliberate fusion attempts. That is an
+   EQUIVALENT mutant, and the first version of the guard comment asserted the opposite as
+   if it were a proof. Corrected in place.
+
+**Residual opened (not closed by this, and deliberately not pursued):** an `--auto` glued to
+an operator carrying `&`/`|` (`--auto>&2`, `--auto>|log`) still over-denies — but the cause
+is the CLAUSE CUT, not the scan. Branch 1 of `_OUT_POS_SUFFIX_MERGE_CLAUSE` stops at a
+command separator, so the scan receives `gh pr merge 42 --auto>` and the bare `>` has no
+target to match. Widening that cut is exactly the reverted 2026-09-05 CRITICAL. The SPACED
+spellings allow, and the pair is pinned so the residual stays attributed to the cut.
+Disclosed in the guard's DOCUMENTED RESIDUALS; deliberately NOT filed as a todo, because a
+todo saying "make the clause read past a redirect" is an invitation to reintroduce a
+CRITICAL.
+
+**Evidence.** Test suite 596 → 626 assertions, 0 failed. Corpus 498 → 547 rows, 420 → 464
+attributions, 187 → 205 all-path gaps; precise-path gaps unchanged at 31, and **no existing
+row moved** — every drift line the pin reported was a new `fauto*`/`mauto*` id. Three
+mutations run: deleting the `gsub` reddens 14 assertions; removing spaced-target support
+reddens exactly the 8 SPACED rows while the glued ones stay green; the `" "`→`""` mutant is
+equivalent (above).

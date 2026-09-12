@@ -1265,19 +1265,156 @@ assert_allow "the automerge carve-out survives the widened merge clause" \
 # SPACED form a real user actually writes still ALLOWS, because narrow
 # branch 1 captures the whole clause and --auto remains its own
 # space-bounded field regardless of what follows it.
-# CANDIDATE IMPROVEMENT, explicitly NOT taken here (out of this task's
-# scope, which is the closer class, not the grant-shaped --auto field
-# scan): keep branch 1 narrow AND teach the --auto field scan itself to
-# treat `<`/`>` as token boundaries, which would allow the glued form too
-# while keeping `$` inside the clause. Noted, not implemented.
-assert_deny "a real --auto glued directly to a trailing redirect denies (accepted over-denial — DOCUMENTED RESIDUAL, not a bypass; reverted from ROUND 1's assert_allow after the CRITICAL finding)" \
-  "$(json 'gh pr merge 42 --auto>/dev/null')" "without a REAL --auto flag"
+# CANDIDATE IMPROVEMENT — TAKEN 2026-09-12, and it is the reason the row
+# below is now an allow. The improvement this block described ("keep branch 1
+# narrow AND teach the --auto field scan itself to treat `<`/`>` as token
+# boundaries, which would allow the glued form too while keeping `$` inside
+# the clause") is implemented at the guard's HAS_REAL_AUTO assignment: the
+# scan's INPUT is normalised with the shared `_CMD_REDIR` before splitting.
+# Branch 1 is still narrow and $CLAUSE is still uncut, so the CRITICAL
+# recorded above stays closed — the `>anyfile ${x:---admin}` row below is its
+# regression pin and must stay DENY. What changed is only what the SCAN reads.
+assert_allow "a real --auto glued directly to a trailing redirect now ALLOWS (2026-09-12: redirect-normalised scan; real bash argv IS an armed automerge, so the former over-denial was wrong)" \
+  "$(json 'gh pr merge 42 --auto>/dev/null')"
 assert_allow "a real --auto followed by a spaced trailing redirect allows (the realistic ordering a real user writes; unaffected by the branch-1 revert)" \
   "$(json 'gh pr merge 42 --auto >/dev/null')"
 assert_allow "a redirect landing between the verb and a later real --auto allows (ROUND 1's over-denial no longer exists after the branch-1 revert)" \
   "$(json 'gh pr merge >/dev/null 42 --auto')"
 assert_deny "CRITICAL: a redirect between --auto and a later \$-bearing admin-override sigil denies (the administrator-override bypass this revert closes)" \
   "$(json 'gh pr merge 42 --auto >anyfile ${x:---admin}')" "without a REAL --auto flag"
+
+# ---------- 2026-09-12: the --auto field scan is redirect-aware
+# (P0-2026-09-07-outward-cli-guard-space-separated-redirect-target-forges-auto)
+#
+# awk's default FS is whitespace, so the scan read `> --auto` as two fields and
+# compared the redirect's TARGET equal to "--auto", GRANTING the carve-out on a
+# flag that never reaches gh. Fixed by normalising the scan's INPUT with the
+# shared `_CMD_REDIR` (see the guard's HAS_REAL_AUTO comment). $CLAUSE itself is
+# untouched, so the `$`-mask row above keeps its CRITICAL pin.
+#
+# Two mechanisms, both from the same cause, so both are pinned here:
+#   (A) the redirect TARGET forged the flag        -> must DENY
+#   (B) a value flag carrying a GLUED redirect made `prev` unrecognisable, so a
+#       real `--auto` that bash hands to `-b` as a VALUE was counted -> must DENY
+# Plus the newly-granted family (a genuine --auto carrying a glued redirect) and
+# the over-granting controls that make granting it safe.
+
+# (A) forged target — operator spellings. All must DENY: real argv has no --auto.
+assert_deny "forged --auto: a SPACE-separated redirect target named --auto is not a flag" \
+  "$(json 'gh pr merge 42 > --auto')" "without a REAL --auto flag"
+assert_deny "forged --auto: fd-numbered redirect target" \
+  "$(json 'gh pr merge 42 2> --auto')" "without a REAL --auto flag"
+assert_deny "forged --auto: append redirect target" \
+  "$(json 'gh pr merge 42 >> --auto')" "without a REAL --auto flag"
+assert_deny "forged --auto: &> redirect target" \
+  "$(json 'gh pr merge 42 &> --auto')" "without a REAL --auto flag"
+assert_deny "forged --auto: clobber-override >| target (a #939 grammar family, inherited free)" \
+  "$(json 'gh pr merge 42 >| --auto')" "without a REAL --auto flag"
+assert_deny "forged --auto: named-fd {n}> target (a #939 grammar family, inherited free)" \
+  "$(json 'gh pr merge 42 {fd}> --auto')" "without a REAL --auto flag"
+
+# (A) forged target — POSITION axis. The leading row travels a different code
+# path (the _OUT_POS_PREFIX absorber puts the redirect INSIDE the CLAUSE capture);
+# the interior rows arrive via _OUT_SEP. Enumerating one operator's positions is
+# what hid these originally, so position is varied independently of operator.
+assert_deny "forged --auto at the LEADING position (via the _OUT_POS_PREFIX absorber, not the trailing clause)" \
+  "$(json '> --auto gh pr merge 42')" "without a REAL --auto flag"
+assert_deny "forged --auto at the INTERIOR tool->namespace slot" \
+  "$(json 'gh > --auto pr merge 42')" "without a REAL --auto flag"
+assert_deny "forged --auto at the INTERIOR namespace->verb slot" \
+  "$(json 'gh pr > --auto merge 42')" "without a REAL --auto flag"
+assert_deny "forged --auto at BOTH interior slots at once (co-occurrence, not one-axis-at-a-time)" \
+  "$(json 'gh > --auto pr > --auto merge 42')" "without a REAL --auto flag"
+
+# (A) ATTRIBUTION CONTROL. The glued spelling denied before this fix too, but
+# only incidentally — `>--auto` was one awk field that did not compare equal.
+# It must still deny, now because the normalisation RECOGNISES it as a redirect
+# target. Same verdict, different reason; kept so the pair isolates the SPACE as
+# the only variable between it and the first row of (A).
+assert_deny "attribution control: the GLUED redirect target still denies (now because it is recognised, not because the string differed)" \
+  "$(json 'gh pr merge 42 >--auto')" "without a REAL --auto flag"
+
+# (B) value flag carrying a glued redirect. Real argv IS `-b --auto`, i.e. bash
+# gives --auto to -b as its VALUE and no auto-merge flag survives.
+assert_deny "masked --auto: -b with a glued redirect — prev read '-b>x', so GH_MERGE_VALUE_FLAGS missed it" \
+  "$(json 'gh pr merge 42 -b>x --auto')" "without a REAL --auto flag"
+assert_deny "masked --auto: --body-file with a glued redirect" \
+  "$(json 'gh pr merge 42 --body-file>x --auto')" "without a REAL --auto flag"
+assert_deny "masked --auto: -t with a glued redirect" \
+  "$(json 'gh pr merge 42 -t>x --auto')" "without a REAL --auto flag"
+assert_deny "masked --auto: the redirect SPACED between the value flag and --auto" \
+  "$(json 'gh pr merge 42 -b> x --auto')" "without a REAL --auto flag"
+
+# JOIN CONTROLS — the paired over-granting control for touching the file's ONE
+# grant-shaped read: deleting a redirect must never FUSE two halves of a word
+# into an `--auto` nobody wrote. Each row denies because no --auto exists at all.
+#
+# READ THE ATTRIBUTION, not the verdict. These rows do NOT pin the fact that the
+# replacement is a space. Mutating `gsub(redir, " ", ...)` to `gsub(redir, "", ...)`
+# leaves this entire suite GREEN — measured 2026-09-12 — because fusion is
+# impossible under EITHER replacement: `_CMD_REDIR`'s target is mandatory and
+# greedy, so a match always consumes through to a boundary that itself blocks the
+# join (see the guard's own comment for the worked argument). That mutant is
+# EQUIVALENT, not unreached, and it is written down here so the next reader does
+# not "strengthen" these rows to chase a green mutation that cannot go red.
+# What they DO pin is the property itself, against a future widening of
+# `_CMD_REDIR` that made its target optional — which is exactly when fusion
+# would become reachable and these rows would start failing.
+assert_deny "join control: removing a redirect must not fuse '--au' and 'to' into --auto" \
+  "$(json 'gh pr merge 42 --au>x to')" "without a REAL --auto flag"
+assert_deny "join control: same, with an empty-ish target" \
+  "$(json 'gh pr merge 42 --au> to')" "without a REAL --auto flag"
+assert_deny "join control: same, target glued to the operator" \
+  "$(json 'gh pr merge 42 --au>xto')" "without a REAL --auto flag"
+assert_deny "join control: split at a different offset" \
+  "$(json 'gh pr merge 42 --a>x uto')" "without a REAL --auto flag"
+assert_deny "join control: named-fd spelling cannot fuse either" \
+  "$(json 'gh pr merge 42 --au{fd}> to')" "without a REAL --auto flag"
+
+# NEWLY GRANTED. A genuine --auto carrying a glued redirect: real bash argv is an
+# armed automerge, so the former DENY was an over-denial (the ACCEPTED OVER-DENIAL
+# residual, now retired). These are the ONLY decisions this change makes more
+# permissive; every one has a genuine --auto in argv.
+assert_allow "newly granted: --auto with a glued fd-numbered redirect is a real armed automerge" \
+  "$(json 'gh pr merge 42 --auto2>x')"
+assert_allow "newly granted: --auto with a glued &> redirect" \
+  "$(json 'gh pr merge 42 --auto&>log')"
+
+# RESIDUAL, measured 2026-09-12 — NOT closed by this fix, and deliberately so.
+# An operator carrying `&` or `|` AFTER the `>` truncates the CLAUSE before the
+# scan ever runs, so normalising the scan cannot reach it. Branch 1 of
+# _OUT_POS_SUFFIX_MERGE_CLAUSE is `[[:space:]][^;&|)`{}]*`, which stops at `&`
+# and `|` because those really are command separators. Measured clause:
+#   gh pr merge 42 --auto>&2    -> CLAUSE [gh pr merge 42 --auto>]
+#   gh pr merge 42 --auto>|log  -> CLAUSE [gh pr merge 42 --auto>]
+# The bare `>` left behind has no target, so `_CMD_REDIR` (which requires one)
+# does not match and the field stays `--auto>`. Widening branch 1 to keep
+# reading past `&`/`|` is EXACTLY the 2026-09-05 ROUND-1 change that was
+# reverted for a CRITICAL (it hid a later `${x:---admin}` from the `$` mask),
+# so this stays an over-denial on purpose. Safe direction: it costs the escape
+# hatch, never grants one. The SPACED spellings allow, because `--auto` is
+# already a space-bounded field before the truncation point — pinned below as
+# the attribution pair that isolates the glue as the only variable.
+assert_deny "clause-cut residual: --auto glued to an operator carrying & is truncated before the scan (NOT a scan gap; widening the cut is the reverted CRITICAL)" \
+  "$(json 'gh pr merge 42 --auto>&2')" "without a REAL --auto flag"
+assert_deny "clause-cut residual: same for the clobber-override spelling, truncated at the |" \
+  "$(json 'gh pr merge 42 --auto>|log')" "without a REAL --auto flag"
+assert_allow "attribution pair: the SPACED fd-duplicating form allows — --auto is bounded before the truncation point" \
+  "$(json 'gh pr merge 42 --auto >&2')"
+assert_allow "attribution pair: the SPACED clobber-override form allows for the same reason" \
+  "$(json 'gh pr merge 42 --auto >|log')"
+
+# OVER-GRANTING CONTROLS. For each newly-granted shape, the INDEPENDENT gates
+# must still fire. A new grant is only safe if it cannot carry anything past the
+# checks that never depended on --auto in the first place.
+assert_deny "over-granting control: the new grant does not bypass --admin" \
+  "$(json 'gh pr merge 42 --auto>log --admin')" "uses administrator privileges"
+assert_deny "over-granting control: the new grant does not bypass --repo/-R" \
+  "$(json 'gh pr merge 42 --auto>log --repo other/org')" "targets a DIFFERENT GitHub repository"
+assert_deny "over-granting control: the new grant does not bypass the \$-sigil unverifiability mask" \
+  "$(json 'gh pr merge 42 --auto>anyfile ${x:---admin}')" "without a REAL --auto flag"
+assert_deny "over-granting control: the new grant does not bypass the multi-occurrence refusal" \
+  "$(json 'gh pr merge 42 --auto>log ; gh pr merge 7')" "ambiguous, cannot verify"
 
 # ---------- 2026-09-05: finding B — _OUT_POS_PREFIX absorbs a leading redirect
 # Bash permits a redirect ANYWHERE in a simple command, including before the
@@ -2993,7 +3130,50 @@ _PIN_RAN=1
 #         api's clause, plus a read-only gh api carrying its own `2>&1`. These are
 #         the rows that go RED if `&[0-9-]` ever becomes a bare `&`.
 #         3 + 4 + 4 = 11.
-EXPECTED_TOTAL=596
+# 596 -> 626 on 2026-09-12: +30, the --auto field scan becomes REDIRECT-AWARE
+# (P0-2026-09-07-...-space-separated-redirect-target-forges-auto). One existing
+# assertion also FLIPPED deny->allow in place (the `--auto>/dev/null` accepted
+# over-denial, now correct), which is why the delta is +30 and not +31.
+#    +6  forged target, OPERATOR axis: `>`, `2>`, `>>`, `&>`, `>|`, `{fd}>` each
+#         with a SPACE before a target spelled `--auto`. Real argv carries no
+#         --auto at all, so every one was an immediate unarmed merge.
+#    +4  forged target, POSITION axis, held separate from the operator axis
+#         because enumerating one operator's positions is exactly what hid these:
+#         LEADING (a different code path -- the _OUT_POS_PREFIX absorber puts the
+#         redirect inside the CLAUSE, measured [> --auto gh pr merge 42]), both
+#         INTERIOR slots via _OUT_SEP, and both interior slots AT ONCE
+#         (co-occurrence, which a one-value-per-axis cross product cannot emit).
+#    +1  the GLUED attribution control. It denied before too, but incidentally --
+#         `>--auto` was one awk field that did not compare equal. It now denies
+#         because the target is RECOGNISED. Paired with the first `>` row, the
+#         SPACE is the only variable between them.
+#    +4  the second mechanism: a value flag carrying a glued redirect, so `prev`
+#         read `-b>x` and GH_MERGE_VALUE_FLAGS missed it while bash handed the
+#         real --auto to `-b` as its VALUE.
+#    +5  JOIN controls -- the paired over-granting control this change owes for
+#         touching the file's ONE grant-shaped read: deleting a redirect must
+#         never FUSE two halves of a word into an --auto nobody wrote. NOTE the
+#         attribution: these do NOT pin the space in `gsub(redir, " ", ...)`.
+#         Mutating it to "" leaves the suite green, because fusion is impossible
+#         either way -- `_CMD_REDIR`'s target is mandatory and greedy, so a match
+#         always eats through to a boundary that blocks the join. An EQUIVALENT
+#         mutant, measured, not an unreached one. The rows pin the property
+#         against a future `_CMD_REDIR` whose target became optional.
+#    +2  newly granted: a genuine --auto carrying a glued redirect is a real armed
+#         automerge (`--auto2>x`, `--auto&>log`). With the in-place flip above,
+#         three decisions in total became more permissive -- all of them here.
+#    +4  the clause-cut RESIDUAL and its attribution pair: `--auto>&2` /
+#         `--auto>|log` still deny because branch 1 of
+#         _OUT_POS_SUFFIX_MERGE_CLAUSE truncates at `&`/`|` BEFORE the scan runs
+#         (measured CLAUSE [gh pr merge 42 --auto>]), and the two SPACED
+#         spellings that allow. Widening that cut is the reverted 2026-09-05
+#         CRITICAL, so the over-denial is deliberate -- the pair is what keeps
+#         the cause attributed to the CUT rather than to the scan.
+#    +4  over-granting controls: each new grant must still be stopped by the
+#         gates that never depended on --auto -- `--admin`, `--repo`, the
+#         `$`-sigil mask, and the multi-occurrence refusal.
+#         6 + 4 + 1 + 4 + 5 + 2 + 4 + 4 = 30.
+EXPECTED_TOTAL=626
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
