@@ -196,6 +196,8 @@ if [ -z "$files" ]; then
   exit 2
 fi
 
+# Body intentionally left un-indented: wrapping ~55 existing lines in this conditional
+# would reindent all of them and bury the one-line behavioural change in whitespace.
 if [ -z "$PATHS_ONLY" ]; then
 # ── TODO GATE ─────────────────────────────────────────────────────────────────
 # The todo's priority and labels ride the PR as todos/archive/<slug>.md frontmatter —

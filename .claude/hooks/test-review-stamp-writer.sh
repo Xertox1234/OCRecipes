@@ -500,5 +500,16 @@ else
   bad "anchoring fixture is usable (expected=[$ANCHOR_EXPECT])"
 fi
 
+# Pin the assertion TOTAL, mirroring test-cmd-detect.sh:1709. Without it a row that is
+# skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
+# a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
+# Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
+# never ran because the process died before reaching it.
+EXPECTED_TOTAL=45
+if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
+  echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
+  FAIL=$((FAIL + 1))
+fi
+
 echo "---"; echo "passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ]

@@ -34,10 +34,21 @@ an incomplete edge, not a hole someone opened.
 
 ### The three mechanisms (each measured, none needing a bypass token)
 
-Corpus: 13 binary renderings x 10 leading separators x 4 inter-token separators = 537 rows,
-each ground-truthed by executing it under a PATH containing only stubs, so "really invokes
-the binary" is measured rather than assumed. Controls in the same run: a plain
-`gh pr merge 42 --squash` denied, `ls -la` allowed, every row run under `env -u SKIP_MERGE_REVIEW`.
+Corpus: 13 binary renderings x 10 leading separators x 4 inter-token separators = **520
+binary rows**, plus **17 prose rows** = 537 total. (The product alone is 520; an earlier
+draft of this todo wrote `= 537` against the three dimensions, which does not multiply out
+— the prose rows are the missing term.) Each binary row was ground-truthed by executing it
+under a PATH containing only stubs, so "really invokes the binary" is measured rather than
+assumed. Controls in the same run: a plain `gh pr merge 42 --squash` denied, `ls -la`
+allowed, every row run under `env -u SKIP_MERGE_REVIEW`.
+
+**The per-mechanism counts below OVERLAP and are not a partition** — 192 + 110 already
+exceeds 248, because the corpus is a product and a single row can exhibit two mechanisms at
+once (a glued `;` separator _and_ a redirect between binary and verb). Read each count as
+"rows in which this mechanism is sufficient to cause the miss", not as a disjoint share of
+the 248. Mechanism (c) was reported qualitatively — it allows on all four inter-token
+separators for the quoted-substitution rendering — and no separate row count was recorded
+for it; re-derive it from the corpus rather than inventing one.
 
 - **(a) Glued shell metacharacter — 192 of the 248.** The token adjacent to the verb
   swallows the separator, so it is `echo x;gh`, `true&&gh`, `false||gh`, `echo x|gh`, `(gh`

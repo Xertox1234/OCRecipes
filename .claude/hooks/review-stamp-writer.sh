@@ -69,7 +69,14 @@ MSG=${MSG//$'\r'/}
 
 # --- parse the contract (docs/AI_WORKFLOW.md:49) -------------------------------
 SHA=$(printf '%s\n' "$MSG" \
-      | sed -n 's/^REVIEWED-SHA:[[:space:]]*\([0-9a-f]\{7,40\}\).*/\1/p' | head -1)
+      | sed -n 's/^REVIEWED-SHA:[[:space:]]*\([0-9a-f]\{40\}\).*/\1/p' | head -1)
+# EXACTLY 40, not 7-40. The reader always passes the full `headRefOid`
+# (merge-review-guard.sh:268 is the only other production caller of review_stamp_dir),
+# so an abbreviated sha could never produce a record the reader finds — it could only
+# file one in a directory nobody opens. Measured: a message carrying a 7-char sha and a
+# CRITICAL finding wrote <root>/1234567/security-auditor.json while the full-sha clean
+# review wrote <root>/<40-char>/code-reviewer.json, so the objection was invisible to
+# the gate. Refusing to write is the honest failure: the gate then says "no record".
 [ -n "$SHA" ] || exit 0
 
 # Everything between REVIEWED-FILES: and the first line that is not a bare path. A blank

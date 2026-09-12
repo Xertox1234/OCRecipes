@@ -221,6 +221,40 @@ out=$(mcp_payload 938 | run)
 denied "$out" && ok "digest mismatch denies even with a clean verdict" \
               || bad "digest mismatch denies even with a clean verdict" "$out"
 
+# 10b. DENY. A SIBLING record must not rescue a merge a reviewer objected to. The digest
+#      test used to run ABOVE the verdict block, so a findings record whose digest did not
+#      match was skipped entirely, and a clean record beside it ended the loop MATCHED.
+#      Nothing covered this: the suite was green both before and after the reorder.
+#
+#      Three rows on one fixture, because the middle one alone proves nothing — the ALLOW
+#      has to be attributable to the SIBLING rather than to the mismatch itself.
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" findings security-auditor "[CRITICAL] client/hooks/useNutritionLookup.ts:42 — fabricates a basis"
+stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
+out=$(mcp_payload 938 | run)
+denied "$out" && ok "control A: findings + CORRECT digest beside a clean record denies" \
+              || bad "control A: findings + CORRECT digest beside a clean record denies" "$out"
+
+# The row under test: same pair, but the findings record's scope is wrong. Before the
+# reorder this ALLOWED — the objection was filtered out and the clean sibling matched.
+clear_stamps
+stamp "$SHA" "$DIGEST_ONE" findings security-auditor "[CRITICAL] client/hooks/useNutritionLookup.ts:42 — fabricates a basis"
+stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
+out=$(mcp_payload 938 | run)
+denied "$out" && ok "a MIS-SCOPED findings record still blocks, sibling clean record or not" \
+              || bad "a MIS-SCOPED findings record still blocks, sibling clean record or not" "$out"
+
+# Control B: that same mis-scoped findings record ALONE. Without this the row above could
+# be passing on the scope deny rather than on the verdict.
+clear_stamps
+stamp "$SHA" "$DIGEST_ONE" findings security-auditor "[CRITICAL] client/hooks/useNutritionLookup.ts:42 — fabricates a basis"
+out=$(mcp_payload 938 | run)
+denied "$out" && ok "control B: the mis-scoped findings record denies on its own too" \
+              || bad "control B: the mis-scoped findings record denies on its own too" "$out"
+clear_stamps
+stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
+out=$(mcp_payload 938 | run)
+
 # 11. That deny must be attributable to SCOPE, not misreported as "no review".
 r=$(reason "$out")
 if grep -qi 'scope\|changed files\|file set' <<<"$r" && ! grep -qi 'no review record' <<<"$r"; then
@@ -437,7 +471,9 @@ denied "$out" && ok "--repo retarget fails closed" || bad "--repo retarget fails
 out=$(bash_payload 'echo "$(gh pr merge 938)" # gh pr create' | run)
 denied "$out" && ok "ambiguous gh pr verb fails closed" || bad "ambiguous gh pr verb fails closed" "$out"
 
-# ── THE EXTRACTOR-MISS GAP, PINNED AS A TRIPWIRE (unnumbered: rows 34-40 are already
+# ── THE EXTRACTOR-MISS GAP, PINNED AS A TRIPWIRE — one row per mechanism the P1 todo
+#    names: path-qualified binary, redirect between binary and verb, glued metacharacter,
+#    and quoted command substitution. (unnumbered: rows 34-40 are already
 #    used by the fail-closed and cwd-independence sections further down) ─────────────────────
 # These rows assert the CURRENT, KNOWN-INCOMPLETE behaviour so the gap is visible in the
 # suite instead of invisible. It is filed as
@@ -457,7 +493,8 @@ export FAKE_FILES="client/hooks/useNutritionLookup.ts"
 for spelling in \
   '/opt/homebrew/bin/gh pr merge 42 --squash' \
   'gh 2>/dev/null pr merge 42 --squash' \
-  'echo x;gh pr merge 42 --squash' ; do
+  'echo x;gh pr merge 42 --squash' \
+  '"$(which gh)" pr merge 42 --squash' ; do
   out=$(bash_payload "$spelling" | run)
   assert_allowed "KNOWN GAP (see P1 todo): [$spelling]" "$out"
 done
@@ -605,6 +642,17 @@ for b in bash cat grep; do ln -s "$(command -v "$b")" "$NOJQ_BIN/$b" 2>/dev/null
 # "crashed", reintroducing the exact class the rc fix exists to close, in the same commit
 # that closed it. Measured then: mutating this fallback's own `exit 0` to `exit 3` left the
 # suite fully green.
+# `hash -r` BEFORE the probe, or this fixture silently never runs on stock macOS bash.
+# This script has already invoked jq many times by now, so bash has cached its location in
+# the command hash table — and `command -v jq` consults that table before searching PATH.
+# Under bash 3.2.57 (/bin/bash on macOS, the version this suite's siblings target) the
+# probe therefore still reports the ambient /usr/bin/jq even with PATH restricted, the
+# guard falls to its else branch, and the four no-jq fail-closed assertions below are
+# replaced by a single "fixture is usable" failure. Reproduced 3/3; with `hash -r` the
+# four assertions pass. CI runs GNU bash on ubuntu-latest and never saw it, and the hook
+# itself is unaffected (it forks a fresh, unhashed bash), so the exposure was exactly this
+# suite's own coverage of the jq-missing path.
+hash -r 2>/dev/null || true
 if [ -x "$NOJQ_BIN/bash" ] && ! PATH="$NOJQ_BIN" command -v jq >/dev/null 2>&1; then
   # 41. The MCP merge route.
   out=$(mcp_payload 938 | run PATH="$NOJQ_BIN")
@@ -628,6 +676,17 @@ else
   bad "no-jq fixture is usable" "could not build a jq-free PATH at $NOJQ_BIN"
 fi
 rm -rf "$NOJQ_BIN"
+
+# Pin the assertion TOTAL, mirroring test-cmd-detect.sh:1709. Without it a row that is
+# skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
+# a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
+# Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
+# never ran because the process died before reaching it.
+EXPECTED_TOTAL=58
+if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
+  echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
+  FAIL=$((FAIL + 1))
+fi
 
 echo "---"; echo "passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ]

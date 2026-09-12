@@ -74,7 +74,7 @@ Concretely:
 
 ## Related Files
 
-- `.claude/hooks/test-merge-review-guard.sh` — the `KNOWN GAP` / `prose must never be denied` block, written as a product rather than a list
+- `.claude/hooks/test-merge-review-guard.sh` — the `KNOWN GAP` / `prose must never be denied` block. It is a hand-listed TRIPWIRE, **not** the generated product this doc prescribes: it pins today's known-incomplete behaviour so the eventual fix must come back and convert it. Generating it from the dimensions is acceptance criterion 4 of the linked P1 todo. (An earlier draft of this line claimed it was written as a product — it is not, and the correction is itself an instance of the rule: a claim about test quality needs checking against the test.)
 - `todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md` — carries the 537-row corpus and the table of what each withdrawn version broke
 
 ## See Also

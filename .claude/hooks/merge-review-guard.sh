@@ -268,7 +268,7 @@ declare -F review_stamp_dir >/dev/null \
 DIR=$(review_stamp_dir "$HEAD_SHA")
 RECORDS=$(find "$DIR" -maxdepth 1 -name '*.json' 2>/dev/null | sort)
 [ -n "$RECORDS" ] \
-  || deny "Blocked: PR #$PR changes risk-classified files and no review record exists for head ${HEAD_SHA:0:7}. This is NOT proof that no review ran — a reviewer whose findings were all WARNING or SUGGESTION writes no record at all, and a review that reported an abbreviated or different SHA files its record under that SHA instead. Dispatch the reviewer roster (docs/AI_WORKFLOW.md) against this exact commit; its report must carry a full 40-character REVIEWED-SHA and a REVIEWED-FILES block covering the PR's changed files. $BYPASS"
+  || deny "Blocked: PR #$PR changes risk-classified files and no review record exists for head ${HEAD_SHA:0:7}. This is NOT proof that no review ran — a reviewer whose findings were all WARNING or SUGGESTION writes no record at all, and a review that reported a DIFFERENT SHA files its record under that SHA instead (an abbreviated one is refused outright by the writer, so it writes nothing). Dispatch the reviewer roster (docs/AI_WORKFLOW.md) against this exact commit; its report must carry a full 40-character REVIEWED-SHA and a REVIEWED-FILES block covering the PR's changed files. $BYPASS"
 
 # WANT_DIGEST must use the SAME formula review-stamp-writer.sh uses — sorted, de-duplicated
 # file list, one per line, `shasum`, first 16 hex characters — or every record mismatches
@@ -287,8 +287,30 @@ MATCHED=""
 while IFS= read -r rec; do
   [ -z "$rec" ] && continue
   [ "$(jq -r '.head_sha // empty' "$rec" 2>/dev/null)" = "$HEAD_SHA" ] || continue
-  [ "$(jq -r '.reviewed_files_digest // empty' "$rec" 2>/dev/null)" = "$WANT_DIGEST" ] || continue
-  MATCHED=1
+
+  # ORDER IS LOAD-BEARING: OBJECT FIRST, THEN SCOPE. The digest test used to sit here,
+  # above the verdict block, so a `verdict: findings` record whose digest did NOT match was
+  # `continue`d away before anything read its verdict — and if a sibling record passed both
+  # tests with `clean`, the loop ended MATCHED and the gate allowed a commit a reviewer had
+  # objected to. One filter was doing two jobs. Digest match decides whether a record can
+  # SATISFY the requirement; it must not decide whether a record can BLOCK.
+  #
+  # Measured 2026-09-12 on one fixture, three rows: a findings record with the CORRECT
+  # digest beside a clean one denied; the same findings record carrying a MISMATCHED digest
+  # beside that clean one ALLOWED; and that mismatched findings record ALONE denied on
+  # scope — which is what makes the middle row attributable to the sibling rather than to
+  # the mismatch.
+  #
+  # Reachable with no adversary and no bypass token: review-stamp-writer.sh's own residual
+  # 5 enumerates the digests produced when a reviewer writes a bare-token line (`Findings:`,
+  # `Notes:`, `---`) between the file list and its findings, and a header reading
+  # `Findings:` is likelier from the reviewer that HAS findings than from a clean baseline.
+  # The record preferentially corrupted is therefore the one carrying the objection.
+  #
+  # A findings record for THIS head whose scope differs still blocks. That is deliberate:
+  # a reviewer objected to this commit, and a corrupted or differently-scoped digest is not
+  # evidence the objection was withdrawn. Fail-closed is the direction that costs a re-review,
+  # not a merged defect.
 
   # `unresolved` is NOT "the list of bracketed CRITICAL findings". review-stamp-writer.sh
   # records EVERY line that triggered the findings verdict: a bracketed `[CRITICAL] …`
@@ -311,6 +333,11 @@ while IFS= read -r rec; do
     NOUN="unresolved entries"; [ "$NLEFT" = 1 ] && NOUN="unresolved entry"
     deny "Blocked: the review record ${WHO} wrote for head ${HEAD_SHA:0:7} reports verdict '${VERDICT:-<missing>}' with ${NLEFT} ${NOUN}, the first being: ${FIRST} — Resolve it, push, and re-review against the NEW head sha (a record is bound to one commit). Entries are whatever triggered the findings verdict, so this may be an unbracketed finding or prose rather than a bracketed CRITICAL. $BYPASS"
   fi
+
+  # Scope decides only whether this record SATISFIES the requirement — reached only after
+  # the objection test above, so a mismatch can never skip a findings record.
+  [ "$(jq -r '.reviewed_files_digest // empty' "$rec" 2>/dev/null)" = "$WANT_DIGEST" ] || continue
+  MATCHED=1
 done <<< "$RECORDS"
 
 [ -n "$MATCHED" ] \
