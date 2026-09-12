@@ -333,14 +333,26 @@
 #     a redirect landing BETWEEN the verb and a later real `--auto`
 #     (`gh pr merge >/dev/null 42 --auto`) now correctly ALLOWS too (ROUND
 #     1's over-denial on that shape no longer exists after this revert).
-#     CANDIDATE IMPROVEMENT, explicitly NOT taken here (out of finding A's
-#     scope, which is the closer class, not the grant-shaped `--auto` field
-#     scan): keep branch 1 narrow AND teach the `--auto` field scan itself
-#     to treat `<`/`>` as token boundaries, which would allow the glued
-#     form too while keeping the CLAUSE intact for the `$`-guard. All four
-#     constructions pinned in test-guard-outward-cli.sh's "2026-09-05:
-#     finding A follow-up, ROUND 2" block, plus a corpus row
-#     (`co-redir-mask`); full evidence in task-2-report.md.
+#     CANDIDATE IMPROVEMENT — TAKEN 2026-09-12, and this entry is now HISTORY
+#     for the canonical shape. The improvement described here (keep branch 1
+#     narrow AND teach the `--auto` field scan itself to treat `<`/`>` as
+#     token boundaries, allowing the glued form while keeping the CLAUSE
+#     intact for the `$`-guard) is implemented at the HAS_REAL_AUTO
+#     assignment, so `gh pr merge 42 --auto>/dev/null` now correctly ALLOWS.
+#     Branch 1 is STILL NARROW and the CLAUSE is still uncut — everything
+#     above about the ROUND-1 CRITICAL remains true and remains the reason
+#     nobody may widen the cut. Read this entry as "why the cut stays
+#     narrow", not as "why the glued form denies".
+#     WHAT SURVIVES of the over-denial, and it is now attributable to the CUT
+#     rather than to the scan: an operator carrying `&` or `|` AFTER the `>`
+#     (`--auto>&2`, `--auto>|log`) truncates the clause at that separator, so
+#     the scan receives `gh pr merge 42 --auto>` — a bare `>` with no target
+#     for `_CMD_REDIR` to match — and still denies. The SPACED spellings
+#     allow. That pair is pinned precisely so the residual stays attributed.
+#     All constructions pinned in test-guard-outward-cli.sh's "2026-09-05:
+#     finding A follow-up, ROUND 2" and "2026-09-12" blocks, plus corpus rows
+#     (`co-redir-mask`, `fautogrant-*`, `fautocut*-*`); earlier evidence in
+#     task-2-report.md.
 #   * UNHANDLED GAP, CONFIRMED LIVE (labeled a gap, not an accepted cost —
 #     this is a limitation, not a deliberate tradeoff), found and verified by
 #     construction while documenting this residual, 2026-09-05: the `gh api`
@@ -472,20 +484,20 @@
 #     Corpus rows `nssufx-ghmerge`/`nssufx-ghcomment` cover only two of the
 #     ten families above — do not read the corpus gap count as this gap's size.
 #
-#   * OPEN (2026-09-07) — A REDIRECT ADJACENT TO A FLAG, in the ONE reader of
-#     that shape which is GRANT-shaped. The other three readers were fixed in
-#     this same PR (the `_OUT_FLAG_RUN` value sub-group, the `gh api` method
+#   * CLOSED 2026-09-12 — A REDIRECT ADJACENT TO A FLAG, in the ONE reader of
+#     that shape which is GRANT-shaped. The other three readers were fixed on
+#     2026-09-07 (the `_OUT_FLAG_RUN` value sub-group, the `gh api` method
 #     separator, and both clause bodies' `&` exclusion), because all three are
 #     deny-shaped and widening them is monotone. `HAS_REAL_AUTO`'s awk scan is
 #     not: it GRANTS the `--auto` carve-out, so a change there can convert a
-#     DENY into an ALLOW, which is precisely how this PR introduced its own
-#     CRITICAL. It needs paired over-granting controls and its own review round.
+#     DENY into an ALLOW, which is precisely how that PR introduced its own
+#     CRITICAL. It was therefore split out to get the paired over-granting
+#     controls and the separate review round it needed, and this is it.
 #
-#     The scan splits on WHITESPACE and has no notion that `<`/`>` are token
-#     boundaries in bash, so it is wrong in BOTH directions — it reads a
-#     redirect TARGET as a real flag, and it fails to recognise a real flag
-#     carrying a glued redirect. Seven positions measured live, all ALLOW on
-#     `origin/main` and on this branch (so none is a regression):
+#     The scan split on WHITESPACE and had no notion that `<`/`>` are token
+#     boundaries in bash, so it was wrong in BOTH directions — it read a
+#     redirect TARGET as a real flag, and it failed to recognise a real flag
+#     carrying a glued redirect. All of these ALLOWED before the fix:
 #
 #       gh pr merge 42 > --auto        argv: gh pr merge 42        (merges NOW)
 #       gh pr merge 42 2> --auto       argv: gh pr merge 42
@@ -499,11 +511,44 @@
 #     In the last three the `--auto` is REAL and reaches gh — but bash gives it
 #     to `-b`/`-t`/`--body-file` as that flag's VALUE, so no auto-merge flag
 #     survives and the PR merges immediately. `GH_MERGE_VALUE_FLAGS` exists to
-#     catch exactly this and fails because `prev` reads `-b>x`, which does not
+#     catch exactly this and failed because `prev` read `-b>x`, which does not
 #     match `^-b$`. The glued `>--auto` (one awk field, not equal to `--auto`)
-#     correctly denies and is the attribution control. Tracked, with the full
-#     measured table:
-#     todos/P0-2026-09-07-outward-cli-guard-space-separated-redirect-target-forges-auto.md
+#     denied even then and is the attribution control — it still denies, now
+#     because the target is RECOGNISED rather than because the string differed.
+#
+#     Fixed by normalising the SCAN'S INPUT with the shared `_CMD_REDIR` (see
+#     the HAS_REAL_AUTO assignment). The seven rows above are pinned, and the
+#     axis was re-generated as operator x position rather than re-listed: the
+#     original enumeration varied ONE operator's positions, which is why the
+#     interior slots and the zsh families were missing from it. `_CMD_REDIR`
+#     reuse means the #939 spellings (`>|`, `>!`, `{name}>`, `&` on either side)
+#     came free. Corpus: the `fauto*`/`mauto*` axes.
+#
+#     WHAT REMAINS, named because a residual list that discloses only what it
+#     closed is worse than no list:
+#       - The CLAUSE CUT, not the scan, still over-denies an `--auto` glued to
+#         an operator carrying `&`/`|` (`--auto>&2`, `--auto>|log`). Branch 1 of
+#         `_OUT_POS_SUFFIX_MERGE_CLAUSE` stops at a command separator, so the
+#         clause arrives as `gh pr merge 42 --auto>` and the bare `>` has no
+#         target for `_CMD_REDIR` to match. Widening that cut is the reverted
+#         2026-09-05 CRITICAL — see the ACCEPTED OVER-DENIAL entry above. The
+#         SPACED spellings allow, and the pair is pinned so the cause stays
+#         attributed to the CUT.
+#       - The CLAUSE CUT forges in the GRANTING direction too, and this one is
+#         PRE-EXISTING (measured identical on `origin/main` and here, so not a
+#         regression of this change and deliberately pinned at what both trees
+#         do). Branch 1 excludes `{`/`}`, so `gh pr merge 42 --auto{fd}>x`
+#         truncates to `gh pr merge 42 --auto` and the scan sees a clean
+#         `--auto` — while real argv is `[--auto{fd}]`, because a `{name}` fd is
+#         only an fd at a word START, exactly as a digit run is. A forged grant.
+#         Unreachable in practice only because gh rejects the unknown flag,
+#         which is an external fact about gh, NOT a property of this guard —
+#         do not treat it as a reason to leave it. Corpus `fautobrace-pre`.
+#       - Flag SYNTHESIS (see its own entry below) is untouched: a substitution
+#         that COMPLETES a flag name is invisible in every rendering, so no
+#         amount of redirect awareness reaches it.
+#       - The `$`-sigil mask still denies any `$`-bearing merge clause, so the
+#         conservative "cannot verify -> deny" default is unchanged.
 #
 #   * NEVER LIVE, not a gap — recorded so it is not "fixed" into a
 #     regression: `${#x}`-glued forms (`gh pr ${#x}merge`). `${#x}` always
@@ -2260,6 +2305,13 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   #   in the COMMAND-POSITION ANCHORS header above for the full account;
   #   branch 1 is narrow again as of ROUND 2 and this bare-shape fix
   #   (which never depended on branch 1) is unaffected.
+  #   2026-09-12: branch 1 is STILL narrow and the CLAUSE is still uncut —
+  #   that is unchanged and must stay so. The shape ROUND 2 gave up on
+  #   (`--auto>/dev/null`) is now allowed a different way, by normalising
+  #   the `--auto` SCAN'S INPUT instead of the cut; see the HAS_REAL_AUTO
+  #   assignment below. If you are here because you want the clause to keep
+  #   reading past a redirect: that is the reverted CRITICAL, and the scan
+  #   is where the fix belongs.
   #   The `_OUT_POS_PREFIX` leading-redirect gap noted in the
   #   COMMAND-POSITION ANCHORS header above was a SEPARATE mechanism (this fix
   #   only closed the trailing/suffix side) — FIXED SEPARATELY 2026-09-05
@@ -2336,14 +2388,113 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # real, uncorrupted --auto with a co-occurring unrelated $VAR mention
   # elsewhere in the same clause now also denies, in exchange for closing the
   # forged-token bypass. Pinned in test-guard-outward-cli.sh.
+  # REDIRECT NORMALISATION (2026-09-12, closes the P0 this block's DOCUMENTED
+  # RESIDUAL tracked as "A REDIRECT ADJACENT TO A FLAG"). awk's default FS is
+  # WHITESPACE and has no notion that `<`/`>` are token boundaries in bash, so
+  # the raw scan was wrong in BOTH directions:
+  #   under-denial  `gh pr merge 42 > --auto`   -> argv `gh pr merge 42`, i.e.
+  #                 NO --auto reaches gh, yet the redirect's TARGET compared
+  #                 equal to "--auto" and GRANTED the carve-out: an immediate,
+  #                 unarmed merge, the one outcome this carve-out exists to stop.
+  #   over-denial   `gh pr merge 42 -b>x --auto` -> argv `gh pr merge 42 -b
+  #                 --auto`; the --auto is real but bash hands it to `-b` as a
+  #                 VALUE. GH_MERGE_VALUE_FLAGS exists to catch that and missed,
+  #                 because `prev` read the single field `-b>x`, not `-b`.
+  # Both faces are the SAME cause, so one pass fixes both: delete each redirect
+  # before splitting, using the shared `_CMD_REDIR` rather than a locally
+  # re-derived redirect grammar (re-deriving the grammar a change is fixing is
+  # this file's most repeated defect). It therefore inherits every spelling that
+  # constant already models -- fd digits, `{name}` fds, `&` on either side of the
+  # operator, and the `|`/`!` clobber overrides -- with no enumeration here.
+  #
+  # CANNOT FORGE AN --auto. This is the paired over-granting control the
+  # residual demanded -- the safety argument for touching the file's ONE
+  # grant-shaped read -- so it is stated as measured, not as it first reads, and
+  # it has TWO ends. A deletion can forge a flag by JOINING two words, or by
+  # EATING characters off one; the first draft of this comment argued only the
+  # join end, and the defect was at the other. Both are stated below.
+  #
+  # END 1 -- EATING. Covered by strip_redirs()'s re-anchoring, not by the
+  # pattern: `_CMD_REDIR`'s optional fd prefix would otherwise open a match on a
+  # mid-word digit run and turn `--auto2` into `--auto`. See the function.
+  #
+  # END 2 -- JOINING, and here the reason is NOT the space.
+  #   The property: deleting a redirect can never JOIN two halves of a word into
+  #   an `--auto` the user never wrote.
+  #   The cause: `_CMD_REDIR`'s target is MANDATORY and GREEDY
+  #   (`[^[:space:];&|)`]+`), so a match always consumes through to a boundary --
+  #   either whitespace, which survives as a separator, or one of `;&|)` /
+  #   backtick, which survive in the text and cannot occur inside `--auto`. The
+  #   removed span can therefore never sit strictly BETWEEN two halves without
+  #   also eating the second one.
+  #   The space is DEFENSIVE, not load-bearing: an earlier revision of this
+  #   comment claimed it "must be a space, never ''", which reads like a proof
+  #   and is false. Measured over 18 deliberate fusion attempts (`--au>x to`,
+  #   `--au>xto`, `--a>x uto`, `--au>x)to`, `--au>x&to`, the `{fd}`/`&>`/`>|`/`<>`
+  #   spellings, ...): NEITHER replacement fuses, and mutating `" "` to `""`
+  #   leaves the whole suite green -- an EQUIVALENT mutant, recorded here so the
+  #   join-control rows are not mistaken for a pin on the space. Keep the space
+  #   anyway: it costs nothing and it is the form that stays correct if
+  #   `_CMD_REDIR` ever admits an optional target.
+  #
+  # Safe because every `<`/`>` that reaches $CLAUSE is a REAL, unquoted operator:
+  # $CLAUSE is cut from $WORDS (cmd_words), whose `neutral()` rewrites a quoted
+  # separator to the letter `x` (`echo a '>' b` -> `echo a x b`). So a quoted
+  # operator can never trick this into deleting a genuine --auto.
+  #
+  # Deliberately normalises the SCAN'S INPUT ONLY -- $CLAUSE itself is untouched,
+  # so the `$`-sigil mask above still reads the whole clause. Truncating the
+  # CLAUSE at a redirect instead is what produced the 2026-09-05 CRITICAL (it
+  # hid a later `${x:---admin}` from that mask); see the ACCEPTED OVER-DENIAL
+  # residual. Fix the scan, not the cut.
   if printf '%s' "$CLAUSE" | grep -qF '$'; then
     HAS_REAL_AUTO=no
+  elif [ -z "${_CMD_REDIR:-}" ]; then
+    # Unreachable with a healthy lib (a broken one is already caught at the
+    # source above, and _OUT_SEP/_OUT_POS_PREFIX interpolate this same constant
+    # long before here). Stated explicitly because the degenerate case is not
+    # safe by accident: gsub("", " ", s) inserts a space between EVERY
+    # character, so no field could ever equal "--auto" and every merge -- the
+    # sanctioned automerge included -- would deny with a misleading reason.
+    HAS_REAL_AUTO=no
   else
-    HAS_REAL_AUTO=$(awk -v flags="$GH_MERGE_VALUE_FLAGS" '
-      { prev = ""
-        for (i = 1; i <= NF; i++) {
-          if ($i == "--auto" && prev !~ flags) { print "yes"; exit }
-          prev = $i
+    HAS_REAL_AUTO=$(awk -v flags="$GH_MERGE_VALUE_FLAGS" -v redir="$_CMD_REDIR" '
+      # Delete every redirect from a COPY of the clause, replacing each with a
+      # space. `_CMD_REDIR` supplies WHAT a redirect looks like; this function
+      # adds only WHERE a match may legally begin, which is a positional rule
+      # the shared pattern cannot express -- deliberately NOT a second grammar.
+      function strip_redirs(s,   out, st) {
+        out = ""
+        while (match(s, redir)) {
+          st = RSTART
+          # `_CMD_REDIR` opens with an OPTIONAL fd prefix (digits, or `{name}`).
+          # Both shells honour that prefix ONLY when it begins a word:
+          # `--auto2>x` is the word `--auto2` plus `>x`, NOT `--auto` plus fd 2.
+          # Measured under bash 5.3.15 with a shadowing function reporting on a
+          # preserved fd (a stdout stub reads "not invoked" -- these rows
+          # redirect fd 1):
+          #     gh pr merge 42 --auto>x      argv: [pr][merge][42][--auto]
+          #     gh pr merge 42 --auto2>x     argv: [pr][merge][42][--auto2]
+          #     gh pr merge 42 --auto{fd}>x  argv: [pr][merge][42][--auto{fd}]
+          # Letting a match OPEN on a mid-word digit run would delete characters
+          # belonging to a real argv word and hand this GRANT-shaped scan an
+          # `--auto` the user never typed -- the very forgery this whole change
+          # exists to close, reintroduced by the fix. (It did: caught in security
+          # review, after the first version shipped `gsub(redir, " ", norm)` and
+          # pinned `--auto2>x` as an allow.) So give those characters back to the
+          # word and re-open the cut at the operator.
+          while (st > 1 && substr(s, st, 1) !~ /[&<>]/ && substr(s, st - 1, 1) !~ /[[:space:]]/) st++
+          out = out substr(s, 1, st - 1) " "
+          s = substr(s, RSTART + RLENGTH)
+        }
+        return out s
+      }
+      { norm = strip_redirs($0)
+        n = split(norm, f, " ")
+        prev = ""
+        for (i = 1; i <= n; i++) {
+          if (f[i] == "--auto" && prev !~ flags) { print "yes"; exit }
+          prev = f[i]
         }
       }' <<< "$CLAUSE")
   fi
