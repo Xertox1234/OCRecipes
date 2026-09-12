@@ -10,10 +10,14 @@
 # silently OMITTED, or ran against an earlier commit or a different file set, cannot pass
 # as one that happened.
 #
-# THIS HOOK MUST NEVER RUN git. A dispatched reviewer does not inherit the orchestrator's
+# THIS HOOK MUST NEVER RUN git AGAINST THE AMBIENT CWD, and must never run it at all to
+# obtain a REVIEWED VALUE. A dispatched reviewer does not inherit the orchestrator's
 # worktree cwd (docs/AI_WORKFLOW.md:40) and this hook fires in that same ambient context,
 # so `git rev-parse HEAD` here would read the MAIN CHECKOUT — plausible-looking and
-# silently wrong. Every field below is ASSERTED by the reviewer and BOUND by the merge
+# silently wrong. (One git call does happen, at the write step: review_stamp_dir derives
+# the repo KEY, not a reviewed value, and it is explicitly anchored to this script's own
+# directory there rather than to the ambient cwd. See the comment at that call.)
+# Every field below is ASSERTED by the reviewer and BOUND by the merge
 # gate's comparison against the real PR head. That makes a stale or mis-scoped review
 # detectable; it does not make a fabricated one detectable.
 #
@@ -298,7 +302,20 @@ case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esa
 . "$HERE/lib/review-stamp-path.sh" 2>/dev/null || exit 0
 declare -F review_stamp_dir >/dev/null || exit 0
 
-DIR=$(review_stamp_dir "$SHA") || exit 0
+# ANCHOR THE LOOKUP TO THIS SCRIPT'S OWN REPO, NOT TO THE AMBIENT CWD. review_stamp_dir
+# runs `git rev-parse --git-common-dir` to derive its repo key, and this hook fires in the
+# reviewer's uninherited cwd (see the header) — so an unanchored call keys the record by
+# WHEREVER THE REVIEWER HAPPENED TO BE. Measured 2026-09-12 with SHA=deadbeef:
+#   from the repo root -> /tmp/ocrecipes-review-stamps-07d4e12e42b1/deadbeef
+#   from /tmp or $HOME -> /tmp/ocrecipes-review-stamps-global/deadbeef
+# merge-review-guard.sh cds to $ROOT before its own call, so a record filed under the
+# `-global-` key is one the reader never looks at: a genuinely clean review then denies as
+# "no record", which is the restrictive failure this file's header warns gets gates
+# switched off. `-global-` is also the one key two different repos can collide on.
+# The cd is confined to this subshell, so the header's "never run git against the ambient
+# cwd" invariant still holds for everything below.
+DIR=$(cd "$HERE/../.." 2>/dev/null && review_stamp_dir "$SHA") || exit 0
+[ -n "$DIR" ] || exit 0
 mkdir -p "$DIR" 2>/dev/null || exit 0
 
 # `unresolved` is kept as the field name the brief's Task 4/5 interface already documents
