@@ -120,92 +120,32 @@ case "$TOOL" in
       if [ "$SUB_RC" -ne 0 ]; then
         deny "Blocked: this command mentions more than one \`gh pr\` write subcommand, so merge-review-guard cannot tell which one executes or which PR it targets. Split it into one \`gh pr\` call per command and re-run. $BYPASS"
       fi
-      # A MISS AND A NON-MERGE ARE NOT THE SAME ANSWER, and `$SUB` spells both "".
+      # AN EXTRACTOR MISS IS INDISTINGUISHABLE FROM "NOT A MERGE" HERE, AND THAT IS A
+      # KNOWN, MEASURED GAP - see todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
       # cmd_gh_pr_write_subcommand signals REFUSE with rc 1 (handled above) but signals
-      # "I could not see it" with the SAME empty-string/rc-0 it uses for "there is no
-      # merge here" — so `[ "$SUB" = "merge" ] || exit 0` turned every rendering the
-      # extractor cannot parse into a SILENT ALLOW. Measured 2026-09-12, no bypass token
-      # of any kind, on a risk-classified PR with no review record:
-      #   /opt/homebrew/bin/gh pr merge 42 --squash   -> allowed (path-qualified `gh`
-      #     never matches the extractor's `(^|[[:space:]])gh[[:space:]]+pr` needle, and
-      #     `which gh` is exactly this on a Homebrew box — a copy-paste, not an attack)
-      #   \gh pr merge 42 --squash                    -> allowed
-      #   g"h" pr merge 42 --squash                   -> allowed
-      # so re-ask the question ourselves before conceding. The fast path has already
-      # established that this text contains gh, then pr, then merge in order.
+      # "I could not see it" with the SAME empty string and rc 0 it uses for "there is no
+      # merge here", so every rendering it cannot parse arrives at this line as "".
+      # Measured 2026-09-12 - no bypass token, risk-classified PR, no review record, ALL
+      # ALLOWED: a path-qualified binary (what `which gh` prints on a Homebrew box), a
+      # redirect sitting between the binary and the verb, a glued metacharacter before the
+      # binary, and a quoted command substitution supplying it. 248 of a 537-row
+      # combinatorial corpus. The todo carries the corpus and the measurements.
       #
-      # BUILD THE NEEDLE FROM THE RAW COMMAND, NEVER FROM cmd_bare_deep. Measured, that
-      # rendering turns `\gh pr merge 42 --squash` into `  h pr merge 42 --squash` — the
-      # backslash consumes the FOLLOWING CHARACTER, so the `g` is gone and the needle it
-      # would be matched against no longer exists. A fix written against that rendering
-      # closes the path-qualified case, passes its own test, and leaves `\gh` wide open.
-      if [ "$SUB" != "merge" ]; then
-        # EVERY OCCURRENCE, NOT THE FIRST. `[[ =~ ]]` is leftmost-match-only, so reading
-        # BASH_REMATCH once let a benign EARLIER clause mask a later real merge outright.
-        # Measured 2026-09-12 on risk-classified files with no record:
-        #   git commit -m "docs: describe the pr merge gate" && /opt/homebrew/bin/gh pr merge 42 --squash
-        # was ALLOWED, while the same command minus the leading clause denied. The decoy
-        # is ordinary prose in a repo whose commit messages discuss pr merges constantly,
-        # so it is authorable by accident, not only on purpose.
-        _rest=$CMD
-        while [[ "$_rest" =~ (^|[[:space:]])([^[:space:]]+)[[:space:]]+pr[[:space:]]+merge([[:space:]]|$) ]]; do
-          _whole=${BASH_REMATCH[0]}
-          _tok=${BASH_REMATCH[2]}
-          # Quote and backslash characters are spelling, not identity: `g"h"`, `\gh` and
-          # `gh` are one binary to the kernel. Delete them and ask what is left.
-          _bare=$_tok; _bare=${_bare//\"/}; _bare=${_bare//\'/}; _bare=${_bare//\\/}
-          _why=""
-          # THE TOKEN MUST *BE* gh, NOT MERELY END IN IT. An unanchored `=~ gh$` matched
-          # `through` and `enough`, so this branch denied ordinary English — measured, it
-          # blocked a reviewer's own file write on the word `through`. A merge gate that
-          # denies prose is a gate someone switches off, which costs more than it saves.
-          shopt -s nocasematch
-          case "$_bare" in
-            gh|*/gh) _why="spelled \`$_tok\`" ;;
-          esac
-          shopt -u nocasematch
-          if [ -z "$_why" ]; then
-            # Unresolvable binary — an expansion or substitution standing where the binary
-            # goes. BEING an expansion is not enough. A bare `*'$'*` test denied
-            # `git commit -m "highlight: cost $var pr merge plan"` and the same with `$5`
-            # — prose with no relation to gh at all, 8 of a generated corpus of 10. So
-            # strip the expansion punctuation too and require what REMAINS to name gh.
-            #
-            # `gh*` — STARTS WITH — not `*gh*`. "Contains" re-opens the prose gate via
-            # `$highlight` and `$though`, which is the previous defect one layer up.
-            #
-            # RESIDUAL, written down rather than silently accepted: an opaquely-named
-            # variable holding the path (`$binary_path pr merge 42`) names nothing this
-            # can key on, and falls through to the ordinary not-a-merge exit. Closing it
-            # means denying every expansion — the prose gate this paragraph exists to
-            # avoid. The tradeoff is deliberate, not an oversight.
-            _exp=$_bare
-            _exp=${_exp//\$/}; _exp=${_exp//\{/}; _exp=${_exp//\}/}
-            _exp=${_exp//(/};  _exp=${_exp//)/}
-            shopt -s nocasematch
-            case "$_tok" in
-              *'$'*|*'`'*)
-                case "$_exp" in gh*) _why="produced by the expansion \`$_tok\`" ;; esac ;;
-              # A token merely ENDING in `)` is substitution-shaped only if the command
-              # opens one at all; without that test this denied `(tweak)` and `v2)`.
-              *')')
-                case "$CMD" in
-                  *'$('*|*'`'*)
-                    case "$_exp" in gh*) _why="produced by a substitution ending \`$_tok\`" ;; esac ;;
-                esac ;;
-            esac
-            shopt -u nocasematch
-          fi
-          if [ -n "$_why" ]; then
-            deny "Blocked: this command runs a \`pr merge\` whose binary is $_why, which merge-review-guard's shared extractor cannot resolve — so it cannot confirm which PR is being merged, or whether that PR was reviewed. An unreadable merge is treated as a merge, not as 'not a merge'. Re-run it as a plain \`gh pr merge <number> …\` so the gate can classify it. $BYPASS"
-          fi
-          _rest=${_rest#*"$_whole"}
-        done
-        # Genuinely not a merge — e.g. `git commit -m "fix highlight for pr merge"`, which
-        # trips the fast path ("gh" inside "highlight") and whose token before `pr merge`
-        # is `for`. Pinned as ALLOW rows so this branch cannot grow into a prose gate.
-        exit 0
-      fi
+      # A raw-token predicate was tried here across three review rounds and WITHDRAWN. It
+      # closed each family it was aimed at and re-opened the OPPOSITE failure one layer up
+      # every time: first `through` and `enough` were denied, then `$var` and `$5`, then
+      # an ordinary `git commit -m` whose message merely described this gate. A merge gate
+      # that denies ordinary commit messages has no per-command escape - SKIP_MERGE_REVIEW
+      # must be set in the shell that launched the session - so it gets switched off,
+      # which costs more than the gap it closes.
+      #
+      # The gap is NOT a regression introduced by this gate. guard-outward-cli.sh already
+      # allows a path-qualified merge on main, and the redirect family defeats the SHARED
+      # extractor in lib/cmd-detect.sh as well, so both layers miss the same row. The real
+      # fix widens that shared library and re-pins the required `Outward-CLI guard corpus`
+      # check - a change of its own, exactly like the gh-api merge route
+      # (todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md).
+      [ "$SUB" = "merge" ] || exit 0
       PR=$(cmd_gh_pr_ref "$CMD") || PR=""
     else
       deny "Blocked: merge-review-guard could not load .claude/hooks/lib/cmd-detect.sh, so it cannot tell which PR this merges. Fail-closed. $BYPASS"

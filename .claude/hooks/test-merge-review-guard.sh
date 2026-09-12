@@ -437,104 +437,49 @@ denied "$out" && ok "--repo retarget fails closed" || bad "--repo retarget fails
 out=$(bash_payload 'echo "$(gh pr merge 938)" # gh pr create' | run)
 denied "$out" && ok "ambiguous gh pr verb fails closed" || bad "ambiguous gh pr verb fails closed" "$out"
 
-# ── 34-38. An EXTRACTOR MISS is not "no merge here" ──────────────────────────
-# Security review 2026-09-12 measured these as ALLOW on a risk-classified PR with NO
-# review record and NO bypass token of any kind: the shared extractor returns ""/rc 0 for
-# a spelling it cannot parse, identically to how it reports "this is not a merge", and the
-# old `[ "$SUB" = "merge" ] || exit 0` read both as the latter. FILES_SAFE is deliberate —
-# stage 2 ALLOWs that path set outright, so the ONLY thing in the hook that can produce a
-# deny on these payloads is the miss-detection branch under test.
+# ── 34-40. THE EXTRACTOR-MISS GAP, PINNED AS A TRIPWIRE ─────────────────────
+# These rows assert the CURRENT, KNOWN-INCOMPLETE behaviour so the gap is visible in the
+# suite instead of invisible. It is filed as
+# todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md with its
+# 537-row corpus. WHEN THAT TODO IS IMPLEMENTED THESE ROWS WILL FAIL, which is the point:
+# the fix must come here and convert them to deny rows rather than land silently.
 #
-# The renderings are NOT one family. 34 defeats the extractor's `gh`-must-start-a-word
-# needle; 35 and 36 survive the fast path but are destroyed by cmd_bare_deep's own
-# rewriting (measured: `\gh pr merge 42` -> `  h pr merge 42`, the backslash eating the
-# `g`), which is exactly why the branch reads the RAW command; 37 is an unresolvable
-# substitution. A fix derived from any ONE of them leaves the others open.
-export FAKE_FILES="$FILES_SAFE"
-
-# 34. DENY. Path-qualified binary — `which gh` on a Homebrew box IS this string.
-out=$(bash_payload '/opt/homebrew/bin/gh pr merge 42 --squash' | run)
-denied "$out" && ok "path-qualified gh pr merge fails closed" \
-              || bad "path-qualified gh pr merge fails closed" "$out"
-
-# 35. DENY. Backslash-escaped binary (shell-level alias suppression).
-out=$(bash_payload '\gh pr merge 42 --squash' | run)
-denied "$out" && ok "backslash-escaped gh pr merge fails closed" \
-              || bad "backslash-escaped gh pr merge fails closed" "$out"
-
-# 36. DENY. Quote-split binary.
-out=$(bash_payload 'g"h" pr merge 42 --squash' | run)
-denied "$out" && ok "quote-split gh pr merge fails closed" \
-              || bad "quote-split gh pr merge fails closed" "$out"
-
-# 37. DENY. Binary produced by a command substitution the extractor refuses to guess at.
-out=$(bash_payload '$(which gh) pr merge 42 --squash' | run)
-denied "$out" && ok "substituted gh pr merge fails closed" \
-              || bad "substituted gh pr merge fails closed" "$out"
-
-# 38. ALLOW CONTROL — the one that keeps 34-37 from being a prose gate. This trips the
-#     fast path ("gh" inside "highlight", then "pr", then "merge") and the hook's own
-#     header names it as the input that must stay silent. Without this row, 34-37 would
-#     pass just as happily on a branch that denied every command mentioning `pr merge`,
-#     which would break ordinary commits repo-wide.
-out=$(bash_payload 'git commit -m "fix highlight for pr merge"' | run)
-assert_allowed "prose mentioning pr merge is still not a merge" "$out"
-unset FAKE_FILES
-
-# ── 39-45. The two defects the FIRST version of 34-38 shipped ────────────────
-# Re-review 2026-09-12 found both, and both were introduced by the fix for 34-37 — the
-# reason each row below exists as its own assertion rather than as a widened 34.
+# Why they are ALLOW today: cmd_gh_pr_write_subcommand returns ""/rc 0 both for "not a
+# merge" and for "I cannot parse this", and the gate cannot tell them apart. A raw-token
+# predicate was tried across three review rounds and withdrawn - each version closed the
+# family it was aimed at and denied ordinary prose one layer up. The real fix belongs in
+# the shared lib/cmd-detect.sh extractor, which feeds the required corpus check.
 #
-# FAKE_FILES is RISK-CLASSIFIED here, not safe: these rows must prove the verdict comes
-# from the miss-detection branch on a PR that genuinely needs a record, so an ALLOW row
-# failing means the branch let a real merge through, and a DENY row failing means it is
-# denying prose. FILES_SENSITIVE is what stage 2 HOLDs.
+# FILES risk-classified on purpose: stage 2 would HOLD these, so an ALLOW here proves the
+# command exited at the miss, not that it earned an exemption.
 export FAKE_FILES="client/hooks/useNutritionLookup.ts"
-
-# 39. DENY. `[[ =~ ]]` is leftmost-match-only. A benign earlier clause containing
-#     `<word> pr merge <word>` used to consume the only inspection and hand control to the
-#     unconditional exit, masking the real merge that followed — a TOTAL allow, reached
-#     before stage 1/2/3 and so not even earned on safe files. Measured ALLOW before the
-#     loop; the same command without the leading clause denied.
-out=$(bash_payload 'git commit -m "docs: describe the pr merge gate" && /opt/homebrew/bin/gh pr merge 42 --squash' | run)
-denied "$out" && ok "a decoy pr-merge clause does not mask a later real merge" \
-              || bad "a decoy pr-merge clause does not mask a later real merge" "$out"
-
-# 40-43. ALLOW. The other half: `=~ gh$` fires on any token ENDING in gh, and a bare
-#     `*')'` test fires on any token ending in a paren. Between them the branch denied
-#     ordinary English — measured, it blocked a reviewer's own file write on `through`.
-#     Row 38 alone did not catch this because `for` happens not to end in gh.
-for tok in through enough '(tweak)' 'v2)'; do
-  out=$(bash_payload "git commit -m \"highlight: $tok pr merge notes\"" | run)
-  assert_allowed "prose token [$tok] before pr merge is not a merge" "$out"
+for spelling in \
+  '/opt/homebrew/bin/gh pr merge 42 --squash' \
+  'gh 2>/dev/null pr merge 42 --squash' \
+  'echo x;gh pr merge 42 --squash' ; do
+  out=$(bash_payload "$spelling" | run)
+  assert_allowed "KNOWN GAP (see P1 todo): [$spelling]" "$out"
 done
 
-# 44-45. DENY. Parameter expansion, not just command substitution. `${gh_bin}` reaches
-#     this branch at all because the lowercase `gh` inside the VARIABLE NAME satisfies the
-#     fast path, and `$GH_BIN` would not have been saved by an `=~ gh$` test either.
-out=$(bash_payload 'gh_bin=/opt/homebrew/bin/gh; ${gh_bin} pr merge 42 --squash' | run)
-denied "$out" && ok "braced parameter expansion as the binary fails closed" \
-              || bad "braced parameter expansion as the binary fails closed" "$out"
-out=$(bash_payload '$gh_bin pr merge 42 --squash' | run)
-denied "$out" && ok "bare parameter expansion as the binary fails closed" \
-              || bad "bare parameter expansion as the binary fails closed" "$out"
-
-# 46-49. BEING an expansion is not the same as NAMING gh — the third defect this branch
-#     shipped, found because rows 44-45 above cannot tell the two predicates apart: both
-#     of their tokens happen to contain "gh" in the VARIABLE NAME, so a bare `*'$'*` test
-#     and a gh-narrowed one agree on them. That is the same shape of blind control as the
-#     `for`-only row that missed `through`. These four discriminate.
-#     Measured before the narrowing: 8 of a generated corpus of 10 denied.
-for tok in '$var' '$5' '$PATH'; do
-  out=$(bash_payload "git commit -m \"highlight: cost $tok pr merge plan\"" | run)
-  assert_allowed "prose expansion [$tok] before pr merge is not a merge" "$out"
+# 37-40. THE PROSE DIRECTION, which is the regression this suite most needs to prevent.
+# Every one of these was DENIED by one of the three withdrawn predicates, on a command
+# that invokes nothing. A future miss-detection fix must keep them allowed; that is the
+# constraint that made the naive versions unshippable.
+for prose in \
+  'git commit -m "docs: describe the gh pr merge gate"' \
+  'git commit -m "highlight: through pr merge notes"' \
+  'git commit -m "highlight: cost $var pr merge plan"' \
+  'git commit -m "fix highlight for pr merge"' ; do
+  out=$(bash_payload "$prose" | run)
+  assert_allowed "prose must never be denied: [$prose]" "$out"
 done
-# The positive half of the same predicate: an expansion that DOES name gh, case-folded.
-# The carrier supplies the fast path's lowercase "gh" via "highlight" — `$GH` alone does
-# not, which is the documented fast-path case-sensitivity residual, not this branch's.
-out=$(bash_payload 'git commit -m "highlight" && $GH pr merge 42 --squash' | run)
-denied "$out" && ok "case-folded expansion naming gh fails closed" \
-              || bad "case-folded expansion naming gh fails closed" "$out"
+
+# 41. CONTROL. The plainest spelling the extractor CAN read still reaches stage 3 and
+#     denies without a record - without this, the rows above would pass on a gate that
+#     had stopped working entirely.
+out=$(bash_payload 'gh pr merge 42 --squash' | run)
+denied "$out" && ok "control: a readable gh pr merge still denies with no record" \
+              || bad "control: a readable gh pr merge still denies with no record" "$out"
 unset FAKE_FILES
 
 # ── The MCP arm's mirror of 32: a repository retarget ────────────────────────
