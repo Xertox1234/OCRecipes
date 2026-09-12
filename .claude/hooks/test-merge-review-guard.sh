@@ -437,7 +437,8 @@ denied "$out" && ok "--repo retarget fails closed" || bad "--repo retarget fails
 out=$(bash_payload 'echo "$(gh pr merge 938)" # gh pr create' | run)
 denied "$out" && ok "ambiguous gh pr verb fails closed" || bad "ambiguous gh pr verb fails closed" "$out"
 
-# ── 34-40. THE EXTRACTOR-MISS GAP, PINNED AS A TRIPWIRE ─────────────────────
+# ── THE EXTRACTOR-MISS GAP, PINNED AS A TRIPWIRE (unnumbered: rows 34-40 are already
+#    used by the fail-closed and cwd-independence sections further down) ─────────────────────
 # These rows assert the CURRENT, KNOWN-INCOMPLETE behaviour so the gap is visible in the
 # suite instead of invisible. It is filed as
 # todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md with its
@@ -461,7 +462,7 @@ for spelling in \
   assert_allowed "KNOWN GAP (see P1 todo): [$spelling]" "$out"
 done
 
-# 37-40. THE PROSE DIRECTION, which is the regression this suite most needs to prevent.
+# THE PROSE DIRECTION, which is the regression this suite most needs to prevent.
 # Every one of these was DENIED by one of the three withdrawn predicates, on a command
 # that invokes nothing. A future miss-detection fix must keep them allowed; that is the
 # constraint that made the naive versions unshippable.
@@ -474,7 +475,7 @@ for prose in \
   assert_allowed "prose must never be denied: [$prose]" "$out"
 done
 
-# 41. CONTROL. The plainest spelling the extractor CAN read still reaches stage 3 and
+# CONTROL. The plainest spelling the extractor CAN read still reaches stage 3 and
 #     denies without a record - without this, the rows above would pass on a gate that
 #     had stopped working entirely.
 out=$(bash_payload 'gh pr merge 42 --squash' | run)

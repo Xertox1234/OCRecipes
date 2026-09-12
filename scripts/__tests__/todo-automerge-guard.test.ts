@@ -700,12 +700,19 @@ function runGuardDefault(files: string[]): {
   return { status: result.status, stdout: result.stdout ?? "" };
 }
 
+// Every case asserts `PR #123` in the output, not only the verdict. Without it none of
+// these rows can see whether `--paths-only` was actually SHIFTED off argv: with the shift
+// removed, `PR` binds to the literal string `--paths-only`, the fake gh stubs ignore their
+// PR argument entirely, and all four produce the same exit code and the same verdict
+// substring — `guard: OK PR #--paths-only — …`. Mutation-verified: the assertions below
+// are what make the flag-consumption observable.
 describe("todo-automerge-guard.sh --paths-only", () => {
   it("passes a safe diff that contains NO todos/archive file", () => {
-    const { status } = runGuardPathsOnly([
+    const { status, stdout } = runGuardPathsOnly([
       "client/screens/GroceryListScreen.tsx",
     ]);
     expect(status).toBe(0);
+    expect(stdout).toContain("PR #123");
   });
 
   it("still HOLDs a sensitive path", () => {
@@ -714,11 +721,13 @@ describe("todo-automerge-guard.sh --paths-only", () => {
     ]);
     expect(status).toBe(1);
     expect(stdout).toContain("not on the batch-merge allowlist");
+    expect(stdout).toContain("PR #123");
   });
 
   it("still HOLDs a non-allowlisted path", () => {
-    const { status } = runGuardPathsOnly(["infra/deploy.yml"]);
+    const { status, stdout } = runGuardPathsOnly(["infra/deploy.yml"]);
     expect(status).toBe(1);
+    expect(stdout).toContain("PR #123");
   });
 
   it("DEFAULT mode is unchanged: the same safe diff still HOLDs on the TODO GATE", () => {
@@ -727,5 +736,6 @@ describe("todo-automerge-guard.sh --paths-only", () => {
     ]);
     expect(status).toBe(1);
     expect(stdout).toContain("no todos/archive/*.md in the diff");
+    expect(stdout).toContain("PR #123");
   });
 });
