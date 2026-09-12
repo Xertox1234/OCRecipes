@@ -659,6 +659,42 @@ add ghapi-redir-trail DENY 'gh api repos/o/r -X POST>/dev/null'
 add c2-empty-proof-expand DENY 'gh api{,x} -X ${x:-POST}'
 add c2-empty-proof-lit    DENY 'gh api{,x} -X POST'
 
+# axis: zsh CLOBBER-OVERRIDE redirect modifiers (2026-09-10, security review of
+# PR #939). The clause tail class enumerated the `&`-bearing redirect operators
+# and stopped. zsh's clobber-override spellings (`>|`, `>>|`, `&>|`, `&>>|`,
+# `N>|`) END with `|`, which `[^;&|]` excludes and which no alternative
+# admitted -- so the clause was cut AT the `|`, the method / `--repo` flag was
+# never reached, and both checks fell through to allow-by-default. Measured
+# SILENT ALLOW on all of these before the fix, against a `&>`-spelled control
+# that denied; zsh executes each with argv byte-identical to that control, so
+# this reached arbitrary REST mutation and cross-repo PAT egress.
+#
+# THE `!` ROWS ARE REGRESSION PINS, NOT FIXES. `>!` is zsh's exact synonym for
+# `>|` and it denied BEFORE this change too -- but only incidentally, because
+# `[^;&|]` accepts `!` as an ordinary character. Closing `|` by borrowing
+# `_CMD_REDIR`'s grammar (trailing class `[&|]?`, no `!`) would have reopened
+# `!` in the same edit. These rows make that trade visible.
+#
+# AND NOTE WHAT WAS MISSING: before today this corpus had ZERO rows containing
+# `&>` or `>|` at all -- the 2026-09-07 admission of the `&`-bearing family was
+# pinned only in test-guard-outward-cli.sh, never here, in the REQUIRED check.
+# The `-both-` rows below close that gap in the same pass, so a revert of
+# either admission now trips the required check rather than a local test.
+add c9-clob-api        DENY 'gh api repos/o/r -X >|out DELETE'
+add c9-clobapp-api     DENY 'gh api repos/o/r -X >>|out DELETE'
+add c9-clobboth-api    DENY 'gh api repos/o/r -X &>|out DELETE'
+add c9-clobbothapp-api DENY 'gh api repos/o/r -X &>>|out DELETE'
+add c9-clobfd-api      DENY 'gh api repos/o/r -X 2>|out DELETE'
+add c9-clob-comment    DENY 'gh pr comment 5 --body hi >|out --repo other/org'
+add c9-clob-create     DENY 'gh pr create --title t >|out --repo other/org'
+add c9-clob-merge      DENY 'gh pr merge 42 --auto >|out --repo other/org'
+add c9-bang-api        DENY 'gh api repos/o/r -X >!out DELETE'
+add c9-bangboth-api    DENY 'gh api repos/o/r -X &>!out DELETE'
+add c9-bang-comment    DENY 'gh pr comment 5 --body hi >!out --repo other/org'
+add c9-both-api        DENY 'gh api repos/o/r &>out -X DELETE'
+add c9-bothapp-api     DENY 'gh api repos/o/r &>>out -X DELETE'
+add c9-both-comment    DENY 'gh pr comment 5 --body hi &>out --repo other/org'
+
 # axis: mid-token sigil (no boundary exists; only the vanished rendering reaches these)
 add mid-backtick     DENY  'gh pr me``rge 42'
 add mid-sub          DENY  'gh pr me$()rge 42'
@@ -982,12 +1018,12 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=448
+EXPECTED_ROWS=462
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 372 of the 448 rows deny on the precise path; the other 76 are ALLOW there
 # (the fp-*/c1g-*/sitefp-* controls, plus the 31 precise-path gaps).
-EXPECTED_DENY_ATTRIB_ROWS=372
+EXPECTED_DENY_ATTRIB_ROWS=386
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1028,7 +1064,7 @@ EXPECTED_PRECISE_GAPS=31
 # carries the same command text as decoyfp-auto, yet one was named and one was
 # not. The 25 split the 133 below exactly: 25 over-denied ALLOW rows + 108
 # DENY-expected rows that ALLOW on the degraded paths = 133.
-EXPECTED_ALLPATH_GAPS=167
+EXPECTED_ALLPATH_GAPS=165
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1107,8 +1143,6 @@ flagadjglue-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagadjsp-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagadjfd-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagadjsp-yarncwd p=DENY j=ALLOW l=ALLOW a=ALLOW
-flagadjfd-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-flagadjfd-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagadjfp-andand p=ALLOW j=DENY l=DENY a=DENY
 flagadjfp-semi p=ALLOW j=DENY l=DENY a=DENY
 flagadjfp-roredir p=ALLOW j=DENY l=DENY a=DENY
@@ -1623,6 +1657,20 @@ sitebranch-delete  : command-position 'eas channel:/branch: create/edit/delete/r
 sitebranch-rename  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
 sitedup-ghcreate   : more than one command-position 'gh pr create/comment' occurrence — amb
 sitedup-ghcomment  : more than one command-position 'gh pr create/comment' occurrence — amb
+c9-bang-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-bang-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-bangboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-both-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-both-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-bothapp-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clob-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clob-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-clob-create     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-clob-merge      : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+c9-clobapp-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clobboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clobbothapp-api : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clobfd-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
@@ -1939,17 +1987,22 @@ exit 0
 # expected output of this file.
 #
 # SUPERSEDED 2026-09-07 by the interior-redirect absorber (_OUT_SEP) and, in the
-# same PR, the FLAG-ADJACENT fixes. The CURRENT correct output is
-# `rows=448  precise-path gaps=31  all-path gaps=167`.
+# same PR, the FLAG-ADJACENT fixes. SUPERSEDED AGAIN 2026-09-10 by PR #939 (the
+# clobber-override axis). The CURRENT correct output is
+# `rows=462  precise-path gaps=31  all-path gaps=165`.
 #
-# *** THE 167 HERE AND THE 167 FORTY LINES BELOW ARE DIFFERENT QUANTITIES THAT
-# NOW COINCIDE. *** The one below is a HAND COUNT of an all-path union made during
-# PR #931 over a 427-row corpus; this one is what ALLGAPS prints on a 448-row
-# corpus after the DENY-SITE COVERAGE axis added three ALLOW-expecting rows the
-# degraded mirror over-denies. They were 164 vs 167 when that paragraph was
-# written and the difference was the point of it. Do not reconcile them, do not
-# read the coincidence as the discrepancy having been resolved, and do not use one
-# to check the other.
+# *** THE 165 HERE AND THE 167 FORTY LINES BELOW ARE DIFFERENT QUANTITIES. ***
+# The one below is a HAND COUNT of an all-path union made during PR #931 over a
+# 427-row corpus; this one is what ALLGAPS prints on the current corpus. Their
+# history is the whole point: 164 vs 167 when that paragraph was written, then
+# 167 vs 167 for one release window, and now 165 vs 167 again -- PR #939 widened
+# the crude `--repo` mirror to match the precise path, which closed
+# flagadjfd-ghcomment and flagadjfd-ghcreate.
+#
+# THE COINCIDENCE WAS THE ACCIDENT, NOT THE SEPARATION. Anyone who had "tidied"
+# the mismatch during the window when both read 167 would have welded together
+# two quantities that have since moved apart again. Do not reconcile them, do
+# not read either as a check on the other.
 #
 # THE BASELINE IS `origin/main` AT a9d77417 (PR #930). Naming it matters: the only
 # commit NOTE6 used to name in this area was b01fcff2, the PREVIOUS change's

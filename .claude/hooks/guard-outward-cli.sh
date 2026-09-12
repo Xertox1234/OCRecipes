@@ -974,7 +974,7 @@ gh_pr_clause_has_repo() {
   # (`local clause` was dropped here at the same time: the multi-clause rewrite
   # moved to `clauses`, declared at its own use site, and left the singular name
   # declared but unread -- a name a future assignment could silently reuse.)
-  local rendering re="gh${_OUT_SEP}pr${_OUT_SEP}($1)([^;&|]|&[0-9-]|&[<>]|[<>]&)*"
+  local rendering re="gh${_OUT_SEP}pr${_OUT_SEP}($1)([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+[|!])*"
   # ADDED 2026-09-05 (vanishing sigil): both occurrence counters that gate this
   # function now read a per-rendering MAXIMUM, so the count can be 1 because
   # the VANISHED rendering saw a NAMESPACE-glued sigil (`gh pr${UNSET} comment`)
@@ -1310,7 +1310,7 @@ $_OUT_CRUDE_VANISHED"
   grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run-script|run)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
   # Flag-correlated patterns — case-SENSITIVE (a case-insensitive `-R` would
   # false-match the `-r` inside `--remove-reviewer`).
-  grep -Eq 'gh[^a-zA-Z]+pr[^a-zA-Z]+(create|comment)[^;&|]*(--repo|-R)' <<< "$t" && return 0
+  grep -Eq 'gh[^a-zA-Z]+pr[^a-zA-Z]+(create|comment)([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+[|!])*(--repo|-R)' <<< "$t" && return 0
   return 1
 }
 
@@ -2551,24 +2551,49 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # them the whole time while the CLAUSE BODY did not. Exactly the detector/cut
   # asymmetry the block above warns about, reintroduced one line later.
   #
-  # MEASURED 2026-09-09 -- the appending redirect-both spelling IS covered, and
-  # the rationale that stood here was wrong. It claimed the spelling was a
-  # syntax error "on this machine's bash 3.2, so no argv could be produced for
-  # it". That premise does not hold: the shell that actually produces argv is
-  # zsh (5.9), where `&>>` parses fine, and a bash >= 4 is now installed
-  # alongside 3.2 as well. The spelling is REACHABLE -- it always was.
+  # MEASURED 2026-09-10 (PR #939). What stood here claimed the appending
+  # redirect-both spelling was UNMEASURED because it "is a syntax error on this
+  # machine's bash 3.2, so no argv could be produced for it". THAT PREMISE WAS
+  # NEVER TRUE OF THE THING IT GOVERNED. This hook is always launched as
+  # `bash <this file>` to do TEXT ANALYSIS; it never executes the candidate. The
+  # shell that executes the candidate -- and so decides whether an operator can
+  # produce argv at all -- is the interactive shell, which here is zsh 5.9.
+  # Reasoning about reachability from the hook's OWN interpreter was a category
+  # error, and it is the reason the `|` family below went unnoticed for months.
   #
-  # It is nonetheless consumed by the tail class below: `&[<>]` takes the `&>`,
-  # then `[^;&|]` takes the trailing `>`, so the clause continues through it
-  # exactly as it does through `&>`. Verified against zsh 5.9, /bin/bash
-  # 3.2.57, and bash 5.3.15 -- all three agree.
+  # DO NOT restate this as "all three shells agree". They do not. On
+  # REACHABILITY they disagree -- zsh 5.9 and bash 5.3.15 parse `&>>` and yield
+  # the mutating argv; /bin/bash 3.2.57 syntax-errors on it and yields none. The
+  # thing that IS invariant is EXTRACTION: the cut is `grep -oiE`, an external
+  # binary, so which shell runs the hook cannot change what the regex matches.
+  # Two different predicates; only the second is shell-independent.
   #
-  # THE COVERAGE IS INCIDENTAL, AND THAT IS THE RESIDUAL: it falls out of
-  # `[^;&|]` being permissive, not out of any alternative naming this operator.
-  # Narrowing that tail class reopens the spelling silently, with no row to
-  # catch it. A measurement written in a comment is not a guard -- the durable
-  # fix is a corpus row pinning `&>>`, which moves rows 448 -> 449 and re-pins.
-  # NOT DONE HERE.
+  # WHAT THE TAIL CLASS ADMITS, AND WHY IT IS KEYED ON THE GRAMMAR. A redirect
+  # operator may carry an fd-duplicating `&`, and zsh gives it one of two
+  # trailing modifiers -- `|` (clobber-override) and `!` (its exact synonym).
+  # `&?[<>]+[|!]` names that shape directly. It replaced an enumeration that had
+  # been extended twice before (2026-09-06 `&`+digit/dash, 2026-09-07 the
+  # `&`-bearing operators) and read as closed each time. It was not: `>|`, `>>|`,
+  # `&>|`, `&>>|` and `N>|` all END with `|`, which `[^;&|]` excludes, so the
+  # clause was cut AT the operator, the method / `--repo` flag was never reached,
+  # and BOTH checks fell through to allow-by-default. Measured as a SILENT ALLOW
+  # against a `&>`-spelled control that denied, and zsh executes every one of
+  # them with argv byte-identical to that control -- a live path to arbitrary
+  # REST mutation and cross-repo PAT egress, not a spelling nobody could type.
+  #
+  # `!` WAS ALREADY DENYING, INCIDENTALLY, via `[^;&|]` accepting it as an
+  # ordinary character. It is named explicitly anyway, because the obvious way to
+  # close `|` -- borrowing lib/cmd-detect.sh's `_CMD_REDIR` grammar, whose
+  # trailing class is `[&|]?` -- has no `!` and would have reopened it in the
+  # same edit. Corpus rows c9-bang-* fail if that trade is ever made; verified by
+  # mutation, not asserted.
+  #
+  # RESIDUAL, and it is a real one: this is still an ENUMERATION of operator
+  # shapes, not a parse. It now matches the two modifiers zsh actually has, so a
+  # fourth extension of this class should be read as evidence the axis is being
+  # walked family-by-family again -- derive it from the shell grammar instead.
+  # The whole family is pinned in repro-outward-cli-corpus.sh (axis c9), which is
+  # the required check, so a silent revert trips CI rather than a local test.
   #
   # Monotone -- but state the consumers exhaustively, because an UNNAMED consumer
   # of a widened value is the precise shape that produced this PR's CRITICAL.
@@ -2585,7 +2610,7 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # clauses differed before cannot become equal after -- unequal prefixes stay
   # unequal when both are extended by their own suffixes. A rendering that was
   # previously checked therefore cannot newly collapse into DEEP and vanish.
-  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-]|&[<>]|[<>]&)*"
+  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+[|!])*"
   GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT" | head -1)
   # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is
   # now a MAXIMUM across all three renderings, so it can be 1 because the VANISHED
