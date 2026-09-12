@@ -110,13 +110,20 @@ payload "general-purpose" "$CLEAN_MSG" | run_hook roster-deny
   && ok "non-roster agent_type writes no stamp at all (spec §9)" \
   || bad "non-roster agent_type writes no stamp at all (spec §9)"
 
-# 5. The hook must not shell out to git (it has no trustworthy cwd — AI_WORKFLOW.md:40).
+# 5. The hook itself must not invoke git DIRECTLY (it has no trustworthy cwd —
+#    AI_WORKFLOW.md:40). It is not "no git anywhere in the write path": the sourced
+#    review_stamp_dir runs `git rev-parse --git-common-dir` to derive the repo KEY, and is
+#    explicitly anchored to this script's own directory where it is called. The grep below
+#    only ever scanned $HOOK's own lines, so the check was always this narrower claim —
+#    the LABEL was the stale part, and a reader taking it at face value would conclude no
+#    git dependency exists in the write path at all. The anchored call is covered by the
+#    REVIEW_STAMP_ROOT-unset assertions at the end of this file.
 #    Strip comment lines FIRST: the hook's own header explains why `git rev-parse HEAD`
 #    would be wrong here, and a naive grep matches that prose and fails on the explanation.
 if grep -vE '^[[:space:]]*#' "$HOOK" | grep -qE '(^|[^a-z_])git '; then
-  bad "hook must not invoke git"
+  bad "hook must not invoke git directly (the one indirect call is anchored)"
 else
-  ok "hook does not invoke git"
+  ok "hook does not invoke git directly (the one indirect call is anchored)"
 fi
 
 # --- Required widening: the five roster reviewer agent definitions each mandate their
@@ -459,6 +466,39 @@ for sep in space tab empty; do
     && ok "a $sep separator does not truncate the digested file list (round 5)" \
     || bad "a $sep separator does not truncate the digested file list (round 5)"
 done
+
+# --- the ANCHORED path, which every assertion above skips -------------------------------
+# Every case above sets REVIEW_STAMP_ROOT, and review_stamp_dir returns on that before it
+# ever reaches `git rev-parse --git-common-dir` (lib/review-stamp-path.sh:26-29). So the
+# git-dependent branch — the one the anchoring fix is about — had NO coverage: reverting
+# the `cd "$HERE/../.."` subshell passed the whole suite, and the only symptom would have
+# been records filed under a `-global-` key that merge-review-guard.sh never reads, i.e. a
+# clean review denying as "no record".
+#
+# Runs with REVIEW_STAMP_ROOT UNSET and cwd deliberately outside the repo, which is the
+# dispatched reviewer's real situation. A unique SHA keeps it out of any real stamp dir.
+ANCHOR_SHA=$(printf 'a%039d' $$ | cut -c1-40)
+ANCHOR_MSG="REVIEWED-SHA: $ANCHOR_SHA
+REVIEWED-FILES:
+client/hooks/useNutritionLookup.ts
+
+No findings."
+ANCHOR_EXPECT=$(cd "$HOOKS_DIR/../.." && . "$HOOKS_DIR/lib/review-stamp-path.sh" && review_stamp_dir "$ANCHOR_SHA" 2>/dev/null)
+ANCHOR_GLOBAL="/tmp/ocrecipes-review-stamps-global/$ANCHOR_SHA"
+if [ -n "$ANCHOR_EXPECT" ] && [ "$ANCHOR_EXPECT" != "$ANCHOR_GLOBAL" ]; then
+  ( cd /tmp && payload "code-reviewer" "$ANCHOR_MSG" | env -u REVIEW_STAMP_ROOT bash "$HOOK" >/dev/null 2>&1 )
+  [ -f "$ANCHOR_EXPECT/code-reviewer.json" ] \
+    && ok "unset REVIEW_STAMP_ROOT from a foreign cwd still keys by THIS repo" \
+    || bad "unset REVIEW_STAMP_ROOT from a foreign cwd still keys by THIS repo"
+  # The negative half: the pre-fix behaviour filed here, so its absence is the signal.
+  [ ! -f "$ANCHOR_GLOBAL/code-reviewer.json" ] \
+    && ok "no stamp lands under the shared -global- key" \
+    || bad "no stamp lands under the shared -global- key"
+  rm -rf "$ANCHOR_EXPECT" "$ANCHOR_GLOBAL" 2>/dev/null
+else
+  # Not a silent skip: if the control cannot be built, say so and fail.
+  bad "anchoring fixture is usable (expected=[$ANCHOR_EXPECT])"
+fi
 
 echo "---"; echo "passed: $PASS  failed: $FAIL"
 [ "$FAIL" -eq 0 ]

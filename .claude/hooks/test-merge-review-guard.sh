@@ -518,6 +518,23 @@ denied "$out" && ok "braced parameter expansion as the binary fails closed" \
 out=$(bash_payload '$gh_bin pr merge 42 --squash' | run)
 denied "$out" && ok "bare parameter expansion as the binary fails closed" \
               || bad "bare parameter expansion as the binary fails closed" "$out"
+
+# 46-49. BEING an expansion is not the same as NAMING gh — the third defect this branch
+#     shipped, found because rows 44-45 above cannot tell the two predicates apart: both
+#     of their tokens happen to contain "gh" in the VARIABLE NAME, so a bare `*'$'*` test
+#     and a gh-narrowed one agree on them. That is the same shape of blind control as the
+#     `for`-only row that missed `through`. These four discriminate.
+#     Measured before the narrowing: 8 of a generated corpus of 10 denied.
+for tok in '$var' '$5' '$PATH'; do
+  out=$(bash_payload "git commit -m \"highlight: cost $tok pr merge plan\"" | run)
+  assert_allowed "prose expansion [$tok] before pr merge is not a merge" "$out"
+done
+# The positive half of the same predicate: an expansion that DOES name gh, case-folded.
+# The carrier supplies the fast path's lowercase "gh" via "highlight" — `$GH` alone does
+# not, which is the documented fast-path case-sensitivity residual, not this branch's.
+out=$(bash_payload 'git commit -m "highlight" && $GH pr merge 42 --squash' | run)
+denied "$out" && ok "case-folded expansion naming gh fails closed" \
+              || bad "case-folded expansion naming gh fails closed" "$out"
 unset FAKE_FILES
 
 # ── The MCP arm's mirror of 32: a repository retarget ────────────────────────

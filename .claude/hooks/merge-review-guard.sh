@@ -165,17 +165,36 @@ case "$TOOL" in
           esac
           shopt -u nocasematch
           if [ -z "$_why" ]; then
-            # Unresolvable binary. `$` covers BOTH `$(…)` and the `${var}` / `$var`
-            # parameter forms — a `$(`-only test allowed `${gh_bin} pr merge 42`, whose
-            # lowercase `gh` inside the variable name satisfies the fast path.
-            # A token merely ENDING in `)` is substitution-shaped only if the command
-            # opens one at all; without that second test this denied `(tweak)` and `v2)`.
+            # Unresolvable binary — an expansion or substitution standing where the binary
+            # goes. BEING an expansion is not enough. A bare `*'$'*` test denied
+            # `git commit -m "highlight: cost $var pr merge plan"` and the same with `$5`
+            # — prose with no relation to gh at all, 8 of a generated corpus of 10. So
+            # strip the expansion punctuation too and require what REMAINS to name gh.
+            #
+            # `gh*` — STARTS WITH — not `*gh*`. "Contains" re-opens the prose gate via
+            # `$highlight` and `$though`, which is the previous defect one layer up.
+            #
+            # RESIDUAL, written down rather than silently accepted: an opaquely-named
+            # variable holding the path (`$binary_path pr merge 42`) names nothing this
+            # can key on, and falls through to the ordinary not-a-merge exit. Closing it
+            # means denying every expansion — the prose gate this paragraph exists to
+            # avoid. The tradeoff is deliberate, not an oversight.
+            _exp=$_bare
+            _exp=${_exp//\$/}; _exp=${_exp//\{/}; _exp=${_exp//\}/}
+            _exp=${_exp//(/};  _exp=${_exp//)/}
+            shopt -s nocasematch
             case "$_tok" in
-              *'$'*|*'`'*) _why="produced by the expansion \`$_tok\`" ;;
-              *')') case "$CMD" in
-                      *'$('*|*'`'*) _why="produced by a substitution ending \`$_tok\`" ;;
-                    esac ;;
+              *'$'*|*'`'*)
+                case "$_exp" in gh*) _why="produced by the expansion \`$_tok\`" ;; esac ;;
+              # A token merely ENDING in `)` is substitution-shaped only if the command
+              # opens one at all; without that test this denied `(tweak)` and `v2)`.
+              *')')
+                case "$CMD" in
+                  *'$('*|*'`'*)
+                    case "$_exp" in gh*) _why="produced by a substitution ending \`$_tok\`" ;; esac ;;
+                esac ;;
             esac
+            shopt -u nocasematch
           fi
           if [ -n "$_why" ]; then
             deny "Blocked: this command runs a \`pr merge\` whose binary is $_why, which merge-review-guard's shared extractor cannot resolve — so it cannot confirm which PR is being merged, or whether that PR was reviewed. An unreadable merge is treated as a merge, not as 'not a merge'. Re-run it as a plain \`gh pr merge <number> …\` so the gate can classify it. $BYPASS"
