@@ -114,7 +114,7 @@
 # text cmd_git_branch_create_segment deletes with, because `&>` and `>|` were each a
 # separate CRITICAL there and a second, subtly-different redirect pattern in this file is
 # a fresh instance of the same bug surface.
-_CMD_REDIR='([0-9]*|[{][A-Za-z_][A-Za-z0-9_]*[}])?&?[<>]+&?[|!]?[[:space:]]*[^[:space:];&|)`]+'
+_CMD_REDIR='([0-9]*|[{][A-Za-z_][A-Za-z0-9_]*[}][[:space:]]*)?&?[<>]+&?[|!]?[[:space:]]*[^[:space:];&|)`]+'
 _CMD_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|'"$_CMD_REDIR"')[[:space:]]+)*'
 # `<` and `>` joined the closer set on 2026-09-01: a verb GLUED to a redirect
 # (`git checkout>&2 -b foo`, `git commit>log`) is a real invocation — bash always splits at
@@ -1731,8 +1731,9 @@ cmd_git_branch_create_segment() {
     esac
   done <<EOF
 $(printf '%s' "$1" | cmd_words \
-  | sed -E -e 's/(^|[[:space:]])[0-9]+[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]+/\1/g' \
-           -e 's/&?[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]+//g' \
+  | sed -E -e 's/(^|[[:space:]])[{][A-Za-z_][A-Za-z0-9_]*[}][[:space:]]*&?[<>]+&?[|!]?[[:space:]]*[^[:space:];&|)`]+/\1/g' \
+           -e 's/(^|[[:space:]])[0-9]+&?[<>]+&?[|!]?[[:space:]]*[^[:space:];&|)`]+/\1/g' \
+           -e 's/&?[<>]+&?[|!]?[[:space:]]*[^[:space:];&|)`]+//g' \
            -e 's/(^|[[:space:]])#.*$/\1;/' \
   | grep -oE '(^|[[:blank:]]|[;&|()`])(checkout|switch)[[:space:]]+[^;&|)`]*' \
   | sed -E 's/^[^A-Za-z]//')

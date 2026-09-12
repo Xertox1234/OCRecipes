@@ -721,6 +721,36 @@ add c9-nfdboth-api      DENY 'gh api repos/o/r -X {fd}&>out DELETE'
 # admission is ever written too greedily this row flips and says so.
 add c9-nfd-bind         ALLOW 'gh api repos/o/r -X {n} DELETE'
 
+# axis: NAMED-FD PREFIX ACROSS WHITESPACE (2026-09-11, round-3 security review).
+# The `{name}` admission added hours earlier required the brace to be GLUED to
+# the operator. zsh does not: unlike a NUMERIC fd, a `{name}` prefix binds
+# across spaces and tabs, so one space defeated the whole admission -- on ALL
+# FOUR paths, for EVERY gated binary, because `_CMD_REDIR` is shared by
+# `_OUT_SEP`, `_OUT_POS_PREFIX` and `_CMD_POS_PREFIX`. `eas {n} >/dev/null
+# update --branch production` executes the OTA publish this guard exists to
+# prevent, with argv byte-identical to the denying control.
+#
+# FIFTH CONSECUTIVE HALF-CLOSED FAMILY, and this one was half-closed by the
+# commit that introduced it. The `[[:space:]]*` belongs INSIDE the `{name}`
+# alternative ONLY -- hoisting it so a numeric prefix also crosses whitespace
+# makes `-X 3 >zz DELETE` deny, where `-X` genuinely binds `3`. Row
+# c9-numfd-bind pins that boundary.
+add c9-ws-eas           DENY 'eas {n} >/dev/null update --branch production --message ship'
+add c9-ws-easamp        DENY 'eas {x} &>/tmp/l update --branch production --message ship'
+add c9-ws-easclob       DENY 'eas {q} >|/tmp/l update --branch production --message ship'
+add c9-ws-npm           DENY 'npm {n} >/dev/null publish'
+add c9-ws-railway       DENY 'railway {n} >/dev/null up'
+add c9-ws-railwayvar    DENY 'railway {n} >/dev/null variables set FOO=bar'
+add c9-ws-ghadmin       DENY 'gh {a} >/dev/null pr merge 42 --admin'
+add c9-ws-ghcomment     DENY 'gh pr {n} >/dev/null comment 5 --body hi --repo other/org'
+add c9-ws-ghapi         DENY 'gh {n} >/dev/null api repos/o/r -X DELETE'
+add c9-ws-method        DENY 'gh api repos/o/r -X {n} >out DELETE'
+# CONTROL: a NUMERIC fd prefix does NOT bind across whitespace in zsh, so here
+# `-X` really does bind `3` and DELETE is positional. Must stay ALLOW -- this is
+# the row that fails if the whitespace tolerance is ever hoisted out of the
+# `{name}` alternative.
+add c9-numfd-bind       ALLOW 'gh api repos/o/r -X 3 >zz DELETE'
+
 # axis: mid-token sigil (no boundary exists; only the vanished rendering reaches these)
 add mid-backtick     DENY  'gh pr me``rge 42'
 add mid-sub          DENY  'gh pr me$()rge 42'
@@ -1044,12 +1074,12 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=475
+EXPECTED_ROWS=486
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 372 of the 448 rows deny on the precise path; the other 76 are ALLOW there
 # (the fp-*/c1g-*/sitefp-* controls, plus the 31 precise-path gaps).
-EXPECTED_DENY_ATTRIB_ROWS=398
+EXPECTED_DENY_ATTRIB_ROWS=408
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1090,7 +1120,14 @@ EXPECTED_PRECISE_GAPS=31
 # carries the same command text as decoyfp-auto, yet one was named and one was
 # not. The 25 split the 133 below exactly: 25 over-denied ALLOW rows + 108
 # DENY-expected rows that ALLOW on the degraded paths = 133.
-EXPECTED_ALLPATH_GAPS=166
+# THE +10 ALL-PATH GAPS BELOW ARE NAMED, NOT ABSORBED. Nine c9-ws-* rows are
+# `p=DENY j=ALLOW l=ALLOW a=ALLOW`: the `{name}`-across-whitespace family closes
+# on the PRECISE path only. The crude/degraded mirror (crude_smells_outward,
+# guard-outward-cli.sh:1248/:1310/:1313) does not model a `{name}` fd prefix at
+# all, so on a no-jq / no-lib / no-awk fallback these still ALLOW. That is a
+# REAL residual, not a rounding error, and it is written here rather than in a
+# commit message because this is the file the next reader will grep.
+EXPECTED_ALLPATH_GAPS=176
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1294,6 +1331,16 @@ fp-mention p=ALLOW j=DENY l=DENY a=DENY
 fp-quotedall p=ALLOW j=DENY l=DENY a=DENY
 fp-automerge p=ALLOW j=DENY l=DENY a=DENY
 c9-nfd-bind p=ALLOW j=DENY l=DENY a=DENY
+c9-numfd-bind p=ALLOW j=DENY l=DENY a=DENY
+c9-ws-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-easamp p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-easclob p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-npm p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-railway p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-railwayvar p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -1710,6 +1757,16 @@ c9-nfd-api         : command-position 'gh api' with a mutating HTTP method (-X/-
 c9-nfdapp-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-nfdboth-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-nfdclob-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-ws-eas          : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-ws-easamp       : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-ws-easclob      : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-ws-ghadmin      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c9-ws-ghapi        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-ws-ghcomment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-ws-method       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-ws-npm          : command-position 'npm publish' pushes a package to the registry.
+c9-ws-railway      : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+c9-ws-railwayvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)

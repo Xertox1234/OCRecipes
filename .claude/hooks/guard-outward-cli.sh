@@ -2602,13 +2602,21 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # `[^[:space:];&|)`]+` also accepts `!` -- leaves c9-bang-* GREEN. MEASURED:
   # that exact mutation was constructed and the corpus passed unchanged.
   # What those rows DO catch is the SIMULTANEOUS narrowing of both branches
-  # (`[|!]`->`[|]` together with `[^;&|]`->`[^;&|!]`), which reopens exactly
-  # c9-bang-api / c9-bang-comment / c9-bangboth-api. State the guarantee at that
-  # strength and no higher.
+  # (`[|!]`->`[|]` together with `[^;&|]`->`[^;&|!]`), which reopens FIVE rows,
+  # not the three an earlier draft said "exactly": c9-bang-api, c9-bang-comment,
+  # c9-bangboth-api, and also c1g-barebang-lit and c1g-ind-lit, whose `!` is an
+  # INDIRECT-EXPANSION sigil consumed by the same `[^;&|]` branch. The word
+  # "exactly" was wrong in a sentence whose whole purpose was correcting an
+  # overclaim about these rows. State the guarantee at its real strength.
   #
   # RESIDUAL, STATED AS A BOUND AND NOT AS A PROOF. This is still an ENUMERATION
-  # of operator shapes, not a parse of zsh's redirect grammar. What was actually
-  # measured after the fix: `<>`, `>&-`, `2>&-`, `{n}>&-`, `<<<`, `2>&1-`,
+  # of operator shapes, not a parse of zsh's redirect grammar -- and round 3
+  # proved that costs more than tidiness. The `{name}` fd prefix admitted here
+  # was written GLUED to the operator; zsh binds a `{name}` prefix ACROSS
+  # whitespace (a numeric one does not), so one space defeated the entire
+  # admission on every path, for every gated binary. Whitespace tolerance now
+  # lives INSIDE the `{name}` alternative; row c9-numfd-bind pins the boundary
+  # that stops it being hoisted. What was actually measured after the fix: `<>`, `>&-`, `2>&-`, `{n}>&-`, `<<<`, `2>&1-`,
   # `{n}<>` and `&>>|` all DENY, and process substitution DENIES in every
   # placement that leaves `-X DELETE` intact (`>(cat)` binding to `-X` itself
   # correctly ALLOWS -- there the method really is the /dev/fd path, not DELETE,
