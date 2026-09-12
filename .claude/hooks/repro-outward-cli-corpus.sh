@@ -659,6 +659,125 @@ add ghapi-redir-trail DENY 'gh api repos/o/r -X POST>/dev/null'
 add c2-empty-proof-expand DENY 'gh api{,x} -X ${x:-POST}'
 add c2-empty-proof-lit    DENY 'gh api{,x} -X POST'
 
+# axis: zsh CLOBBER-OVERRIDE redirect modifiers (2026-09-10, security review of
+# PR #939). The clause tail class enumerated the `&`-bearing redirect operators
+# and stopped. zsh's clobber-override spellings (`>|`, `>>|`, `&>|`, `&>>|`,
+# `N>|`) END with `|`, which `[^;&|]` excludes and which no alternative
+# admitted -- so the clause was cut AT the `|`, the method / `--repo` flag was
+# never reached, and both checks fell through to allow-by-default. Measured
+# SILENT ALLOW on all of these before the fix, against a `&>`-spelled control
+# that denied; zsh executes each with argv byte-identical to that control, so
+# this reached arbitrary REST mutation and cross-repo PAT egress.
+#
+# THE `!` ROWS ARE REGRESSION PINS, NOT FIXES. `>!` is zsh's exact synonym for
+# `>|` and it denied BEFORE this change too -- but only incidentally, because
+# `[^;&|]` accepts `!` as an ordinary character -- and it still does, so these
+# rows are a WEAKER pin than an earlier draft of this comment claimed. Swapping
+# the new alternative for `_CMD_REDIR`'s grammar leaves them GREEN (measured);
+# `_CMD_REDIR`'s target class accepts `!` too. They red only when BOTH branches
+# are narrowed together -- `[|!]`->`[|]` and `[^;&|]`->`[^;&|!]`.
+#
+# AND NOTE WHAT WAS MISSING: before today this corpus had ZERO rows containing
+# `&>` or `>|` at all -- the 2026-09-07 admission of the `&`-bearing family was
+# pinned only in test-guard-outward-cli.sh, never here, in the REQUIRED check.
+# The `-both-` rows below close that gap in the same pass, so a revert of
+# either admission now trips the required check rather than a local test.
+add c9-clob-api        DENY 'gh api repos/o/r -X >|out DELETE'
+add c9-clobapp-api     DENY 'gh api repos/o/r -X >>|out DELETE'
+add c9-clobboth-api    DENY 'gh api repos/o/r -X &>|out DELETE'
+add c9-clobbothapp-api DENY 'gh api repos/o/r -X &>>|out DELETE'
+add c9-clobfd-api      DENY 'gh api repos/o/r -X 2>|out DELETE'
+add c9-clob-comment    DENY 'gh pr comment 5 --body hi >|out --repo other/org'
+add c9-clob-create     DENY 'gh pr create --title t >|out --repo other/org'
+add c9-clob-merge      DENY 'gh pr merge 42 --auto >|out --repo other/org'
+add c9-bang-api        DENY 'gh api repos/o/r -X >!out DELETE'
+add c9-bangboth-api    DENY 'gh api repos/o/r -X &>!out DELETE'
+add c9-bang-comment    DENY 'gh pr comment 5 --body hi >!out --repo other/org'
+add c9-both-api        DENY 'gh api repos/o/r &>out -X DELETE'
+add c9-bothapp-api     DENY 'gh api repos/o/r &>>out -X DELETE'
+add c9-both-comment    DENY 'gh pr comment 5 --body hi &>out --repo other/org'
+
+# axis: the `&`-AFTER half of the clobber family, and zsh NAMED file descriptors
+# (2026-09-11, security review of the c9 fix above). See test-guard-outward-cli.sh
+# for the full derivation. Two grammars had to move together: the tail class
+# (`&` may now follow the operator, not only precede it) and `_CMD_REDIR`, whose
+# trailing class `[&|]?` could not express `>&|` and whose fd prefix `([0-9]*|&)`
+# could not express `{name}`. Widening either alone leaves these ALLOWED --
+# measured, in a rig, before the fix was written.
+add c9-after-api        DENY 'gh api repos/o/r -X >&|out DELETE'
+add c9-afterapp-api     DENY 'gh api repos/o/r -X >>&|out DELETE'
+add c9-afterfd-api      DENY 'gh api repos/o/r -X 2>&|out DELETE'
+add c9-afterfd1-api     DENY 'gh api repos/o/r -X 1>&|out DELETE'
+add c9-afterfdapp-api   DENY 'gh api repos/o/r -X 2>>&|out DELETE'
+add c9-after-comment    DENY 'gh pr comment 5 --body hi >&|out --repo other/org'
+add c9-after-create     DENY 'gh pr create --title t >&|out --repo other/org'
+add c9-after-merge      DENY 'gh pr merge 42 --auto >&|out --repo other/org'
+add c9-nfd-api          DENY 'gh api repos/o/r -X {n}>out DELETE'
+add c9-nfdapp-api       DENY 'gh api repos/o/r -X {n}>>out DELETE'
+add c9-nfdclob-api      DENY 'gh api repos/o/r -X {n}>|out DELETE'
+add c9-nfdboth-api      DENY 'gh api repos/o/r -X {fd}&>out DELETE'
+# CONTROL, and it must stay ALLOW: with no redirect operator, `-X` genuinely
+# binds `{n}`, so DELETE is a positional arg and not the method. If the named-fd
+# admission is ever written too greedily this row flips and says so.
+add c9-nfd-bind         ALLOW 'gh api repos/o/r -X {n} DELETE'
+
+# axis: NAMED-FD PREFIX ACROSS WHITESPACE (2026-09-11, round-3 security review).
+# The `{name}` admission added hours earlier required the brace to be GLUED to
+# the operator. zsh does not: unlike a NUMERIC fd, a `{name}` prefix binds
+# across spaces and tabs, so one space defeated the whole admission -- on ALL
+# FOUR paths, for EVERY gated binary, because `_CMD_REDIR` is shared by
+# `_OUT_SEP`, `_OUT_POS_PREFIX` and `_CMD_POS_PREFIX`. `eas {n} >/dev/null
+# update --branch production` executes the OTA publish this guard exists to
+# prevent, with argv byte-identical to the denying control.
+#
+# FIFTH CONSECUTIVE HALF-CLOSED FAMILY, and this one was half-closed by the
+# commit that introduced it. The `[[:space:]]*` belongs INSIDE the `{name}`
+# alternative ONLY -- hoisting it so a numeric prefix also crosses whitespace
+# makes `-X 3 >zz DELETE` deny, where `-X` genuinely binds `3`. Row
+# c9-numfd-bind pins that boundary.
+add c9-ws-eas           DENY 'eas {n} >/dev/null update --branch production --message ship'
+add c9-ws-easamp        DENY 'eas {x} &>/tmp/l update --branch production --message ship'
+add c9-ws-easclob       DENY 'eas {q} >|/tmp/l update --branch production --message ship'
+add c9-ws-npm           DENY 'npm {n} >/dev/null publish'
+add c9-ws-railway       DENY 'railway {n} >/dev/null up'
+add c9-ws-railwayvar    DENY 'railway {n} >/dev/null variables set FOO=bar'
+add c9-ws-ghadmin       DENY 'gh {a} >/dev/null pr merge 42 --admin'
+add c9-ws-ghcomment     DENY 'gh pr {n} >/dev/null comment 5 --body hi --repo other/org'
+add c9-ws-ghapi         DENY 'gh {n} >/dev/null api repos/o/r -X DELETE'
+add c9-ws-method        DENY 'gh api repos/o/r -X {n} >out DELETE'
+# CONTROL: a NUMERIC fd prefix does NOT bind across whitespace in zsh, so here
+# `-X` really does bind `3` and DELETE is positional. Must stay ALLOW -- this is
+# the row that fails if the whitespace tolerance is ever hoisted out of the
+# `{name}` alternative.
+add c9-numfd-bind       ALLOW 'gh api repos/o/r -X 3 >zz DELETE'
+
+# axis: ALL-DIGIT BRACE fd bodies (2026-09-12, round-4 security review). The
+# `{name}` class admitted above was `[A-Za-z_][A-Za-z0-9_]*` -- zsh ALSO accepts
+# a pure-digit body (`{9}`, `{99}`, `{0}`) as an fd binding, so every shape the
+# rows above pin ALLOWED again with one character changed, and this time on the
+# PRECISE path too, not only the degraded mirror. Strictly worse than the
+# adjacency bug it was fixing. SIXTH consecutive half-closed family; the third
+# introduced by this PR's own commits.
+#
+# WITHOUT THESE ROWS THE REQUIRED CHECK CANNOT SEE THE DIFFERENCE: every brace
+# row above uses an alphabetic body, so the corpus passed byte-identical both
+# before and after the fix. A clean zero over a population of zero.
+add c9-dig-eas          DENY 'eas {1} >/dev/null update --branch production --message ship'
+add c9-dig-easamp       DENY 'eas {2} &>/tmp/l update --branch production --message ship'
+add c9-dig-easclob      DENY 'eas {3} >|/tmp/l update --branch production --message ship'
+add c9-dig-npm          DENY 'npm {4} >/dev/null publish'
+add c9-dig-railway      DENY 'railway {5} >/dev/null up'
+add c9-dig-railwayvar   DENY 'railway {6} >/dev/null variables set FOO=bar'
+add c9-dig-ghadmin      DENY 'gh {7} >/dev/null pr merge 42 --admin'
+add c9-dig-ghcomment    DENY 'gh pr {8} >/dev/null comment 5 --body hi --repo other/org'
+add c9-dig-ghapi        DENY 'gh {9} >/dev/null api repos/o/r -X DELETE'
+add c9-dig-method       DENY 'gh api repos/o/r -X {10} >out DELETE'
+# The DEGRADED family, pinned for the first time. NO BRACE IS INVOLVED -- these
+# are the plainest possible spelling, and they degrade for a reason that has
+# nothing to do with fd prefixes (see the corrected note at the all-path pin).
+add c9-crude-eas        DENY 'eas 2>/dev/null update --branch production --message ship'
+add c9-crude-ghadmin    DENY 'gh 2>/dev/null pr merge 42 --admin'
+
 # axis: mid-token sigil (no boundary exists; only the vanished rendering reaches these)
 add mid-backtick     DENY  'gh pr me``rge 42'
 add mid-sub          DENY  'gh pr me$()rge 42'
@@ -982,12 +1101,15 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=448
+EXPECTED_ROWS=498
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 372 of the 448 rows deny on the precise path; the other 76 are ALLOW there
-# (the fp-*/c1g-*/sitefp-* controls, plus the 31 precise-path gaps).
-EXPECTED_DENY_ATTRIB_ROWS=372
+# 420 of the 498 rows deny on the precise path; the other 78 are ALLOW there
+# (the fp-*/c1g-*/sitefp-* controls, plus the 31 precise-path gaps). These two
+# numbers are bumped with EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review
+# found them two revisions stale, sitting directly above the constant they
+# describe.
+EXPECTED_DENY_ATTRIB_ROWS=420
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1028,7 +1150,23 @@ EXPECTED_PRECISE_GAPS=31
 # carries the same command text as decoyfp-auto, yet one was named and one was
 # not. The 25 split the 133 below exactly: 25 over-denied ALLOW rows + 108
 # DENY-expected rows that ALLOW on the degraded paths = 133.
-EXPECTED_ALLPATH_GAPS=167
+# THE ALL-PATH GAPS BELOW ARE NAMED, NOT ABSORBED -- AND THE FIRST VERSION OF
+# THIS NOTE NAMED THE WRONG CAUSE. It said the c9-ws-* rows degrade because the
+# crude mirror "does not model a `{name}` fd prefix at all". Measured, that is
+# false: the same command degrades identically with NO BRACE ANYWHERE (rows
+# c9-crude-*). The real cause is `crude_smells_outward`'s binary->verb separator
+# `[^a-zA-Z]+` (guard-outward-cli.sh:1313), which cannot cross ANY redirect
+# whose target contains letters -- `/dev/null`, `/tmp/l`. The family is
+# therefore much broader than a brace prefix, and was entirely unpinned.
+#
+# The contrast that makes it non-obvious: row co-pref-sufx DENYs on all four
+# paths, because there the mirror still sees the binary and verb contiguous.
+# Position, not presence.
+#
+# Attributing a gap to the narrowest mechanism you just touched is how this file
+# keeps producing residual lists that read as complete. Measure the sibling
+# shape before you name the cause.
+EXPECTED_ALLPATH_GAPS=187
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1107,8 +1245,6 @@ flagadjglue-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagadjsp-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagadjfd-npmlog p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagadjsp-yarncwd p=DENY j=ALLOW l=ALLOW a=ALLOW
-flagadjfd-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-flagadjfd-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagadjfp-andand p=ALLOW j=DENY l=DENY a=DENY
 flagadjfp-semi p=ALLOW j=DENY l=DENY a=DENY
 flagadjfp-roredir p=ALLOW j=DENY l=DENY a=DENY
@@ -1233,6 +1369,28 @@ sitefp-updateinsights p=ALLOW j=DENY l=DENY a=DENY
 fp-mention p=ALLOW j=DENY l=DENY a=DENY
 fp-quotedall p=ALLOW j=DENY l=DENY a=DENY
 fp-automerge p=ALLOW j=DENY l=DENY a=DENY
+c9-nfd-bind p=ALLOW j=DENY l=DENY a=DENY
+c9-numfd-bind p=ALLOW j=DENY l=DENY a=DENY
+c9-ws-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-easamp p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-easclob p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-npm p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-railway p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-railwayvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-crude-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-crude-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-easamp p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-easclob p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-npm p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-railway p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-railwayvar p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -1623,6 +1781,54 @@ sitebranch-delete  : command-position 'eas channel:/branch: create/edit/delete/r
 sitebranch-rename  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
 sitedup-ghcreate   : more than one command-position 'gh pr create/comment' occurrence — amb
 sitedup-ghcomment  : more than one command-position 'gh pr create/comment' occurrence — amb
+c9-bang-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-bang-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-bangboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-both-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-both-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-bothapp-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clob-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clob-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-clob-create     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-clob-merge      : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+c9-clobapp-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clobboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clobbothapp-api : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-clobfd-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-after-api       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-after-comment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-after-create    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-after-merge     : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+c9-afterapp-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfd-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfd1-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfdapp-api  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfd-api         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfdapp-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfdboth-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfdclob-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-ws-eas          : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-ws-easamp       : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-ws-easclob      : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-ws-ghadmin      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c9-ws-ghapi        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-ws-ghcomment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-ws-method       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-ws-npm          : command-position 'npm publish' pushes a package to the registry.
+c9-ws-railway      : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+c9-ws-railwayvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
+c9-crude-eas       : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-crude-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c9-dig-eas         : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-easamp      : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-easclob     : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-ghadmin     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c9-dig-ghapi       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-dig-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-dig-method      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-dig-npm         : command-position 'npm publish' pushes a package to the registry.
+c9-dig-railway     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+c9-dig-railwayvar  : command-position 'railway variable/vars/var set/delete' mutates a live s
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
@@ -1939,17 +2145,22 @@ exit 0
 # expected output of this file.
 #
 # SUPERSEDED 2026-09-07 by the interior-redirect absorber (_OUT_SEP) and, in the
-# same PR, the FLAG-ADJACENT fixes. The CURRENT correct output is
-# `rows=448  precise-path gaps=31  all-path gaps=167`.
+# same PR, the FLAG-ADJACENT fixes. SUPERSEDED AGAIN 2026-09-10 by PR #939 (the
+# clobber-override axis). The CURRENT correct output is
+# `rows=462  precise-path gaps=31  all-path gaps=165`.
 #
-# *** THE 167 HERE AND THE 167 FORTY LINES BELOW ARE DIFFERENT QUANTITIES THAT
-# NOW COINCIDE. *** The one below is a HAND COUNT of an all-path union made during
-# PR #931 over a 427-row corpus; this one is what ALLGAPS prints on a 448-row
-# corpus after the DENY-SITE COVERAGE axis added three ALLOW-expecting rows the
-# degraded mirror over-denies. They were 164 vs 167 when that paragraph was
-# written and the difference was the point of it. Do not reconcile them, do not
-# read the coincidence as the discrepancy having been resolved, and do not use one
-# to check the other.
+# *** THE 165 HERE AND THE 167 FORTY LINES BELOW ARE DIFFERENT QUANTITIES. ***
+# The one below is a HAND COUNT of an all-path union made during PR #931 over a
+# 427-row corpus; this one is what ALLGAPS prints on the current corpus. Their
+# history is the whole point: 164 vs 167 when that paragraph was written, then
+# 167 vs 167 for one release window, and now 165 vs 167 again -- PR #939 widened
+# the crude `--repo` mirror to match the precise path, which closed
+# flagadjfd-ghcomment and flagadjfd-ghcreate.
+#
+# THE COINCIDENCE WAS THE ACCIDENT, NOT THE SEPARATION. Anyone who had "tidied"
+# the mismatch during the window when both read 167 would have welded together
+# two quantities that have since moved apart again. Do not reconcile them, do
+# not read either as a check on the other.
 #
 # THE BASELINE IS `origin/main` AT a9d77417 (PR #930). Naming it matters: the only
 # commit NOTE6 used to name in this area was b01fcff2, the PREVIOUS change's
