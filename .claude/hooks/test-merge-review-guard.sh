@@ -294,6 +294,41 @@ if grep -qi 'could not be read\|not parseable' <<<"$r"; then
 else
   bad "unreadable-record deny names corruption, not scope" "$r"
 fi
+# 10d. ALLOW. A STALE record must still be skipped, not denied on — the opposite direction
+#      from 10b/10c, and the only fixture that separates the shipped predicate from an
+#      over-denying one. 10c made an UNREADABLE record deny (`[ -z "$REC_SHA" ]`); the
+#      plausible future "simplification" is to widen that to `[ "$REC_SHA" != "$HEAD_SHA" ]`,
+#      which would also block a merge whenever a record for some OTHER commit happened to
+#      sit in this head's directory beside a perfectly valid one. Measured: that mutant
+#      passes every other assertion in this file, so without this row nothing catches it.
+#
+#      The sibling is what makes it discriminating. A stale record ALONE denies under BOTH
+#      implementations (via the unmatched-at-the-end deny), so pairing it with a valid,
+#      correctly-scoped, clean record for the real head is the only shape on which the two
+#      disagree. The hook's own comment at the head_sha test states this invariant:
+#      "A parseable record naming a DIFFERENT head still `continue`s."
+clear_stamps
+stamp "$OTHER_SHA" "$DIGEST_ONE" clean security-auditor   # filed under the wrong sha dir…
+mkdir -p "$ROOT/$SHA"
+mv "$ROOT/$OTHER_SHA/security-auditor.json" "$ROOT/$SHA/security-auditor.json"
+stamp "$SHA" "$DIGEST_TWO" clean code-reviewer            # …beside a valid, clean, in-scope one
+# DIGEST_TWO, not ONE: the ambient FAKE_FILES here is the two-file list (test 10 depends on
+# that), so ONE would mismatch and this row would deny on SCOPE rather than exercise the
+# stale-record path at all.
+out=$(mcp_payload 938 | run)
+assert_allowed "a stale record beside a valid one is skipped, not denied on" "$out"
+
+# Control: the same stale record ALONE must still deny — it is not a licence to merge.
+# This is NOT the discriminating half (both implementations deny here); it is here so the
+# row above cannot pass on a gate that has stopped denying anything at all.
+clear_stamps
+stamp "$OTHER_SHA" "$DIGEST_ONE" clean security-auditor
+mkdir -p "$ROOT/$SHA"
+mv "$ROOT/$OTHER_SHA/security-auditor.json" "$ROOT/$SHA/security-auditor.json"
+out=$(mcp_payload 938 | run)
+denied "$out" && ok "control: a stale record alone still denies" \
+              || bad "control: a stale record alone still denies" "$out"
+
 clear_stamps
 stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
 out=$(mcp_payload 938 | run)
@@ -725,7 +760,7 @@ rm -rf "$NOJQ_BIN"
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=65
+EXPECTED_TOTAL=67
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
