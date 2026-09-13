@@ -219,7 +219,7 @@ carries values outside the population the check governs; quote the APPLICABLE de
   | flips, and IS a real invocation | `<` `>`             | 2   | **the fix working, not a residual** — bash splits at the operator, so `git commit>log` really does run `git commit` (verified: the stub wrote its argv to `log`). Do NOT suppress these |
   | flips, NOT a real invocation    | `)` `` ` `` `{` `}` | 4   | the over-denial disclosed below                                                                                                                                                         |
 
-  3 + 2 + 4 = 9, the whole class. The four over-denials, one shape each:
+  3 + 2 + 4 = 9, the whole class. The four over-denials, one example shape each:
 
   | segment           | shipped | with the suffix | what bash actually produces                     |
   | ----------------- | ------- | --------------- | ----------------------------------------------- |
