@@ -255,6 +255,49 @@ clear_stamps
 stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
 out=$(mcp_payload 938 | run)
 
+# 10c. DENY. An UNREADABLE record must not be skipped past either. Same defect class as
+#      10b one line up in the hook: a bare `continue` on the head_sha test let a corrupt
+#      record be filtered out while a clean sibling ended the loop MATCHED. Measured before
+#      the fix: truncated JSON, a zero-byte file, a JSON array, two concatenated objects and
+#      a well-formed record with no head_sha key ALL allowed with a clean sibling present.
+#      Reachable because the writer's redirect truncates at open, so an interrupted write
+#      leaves exactly this shape.
+for shape in 'truncated' 'empty' 'array' 'concatenated' 'no-head-sha'; do
+  clear_stamps
+  mkdir -p "$ROOT/$SHA"
+  case "$shape" in
+    truncated)    printf '{'                                    > "$ROOT/$SHA/security-auditor.json" ;;
+    empty)        : ;;
+    array)        printf '[]'                                   > "$ROOT/$SHA/security-auditor.json" ;;
+    concatenated) printf '{"a":1}{"b":2}'                       > "$ROOT/$SHA/security-auditor.json" ;;
+    no-head-sha)  printf '{"verdict":"findings","unresolved":["x"]}' > "$ROOT/$SHA/security-auditor.json" ;;
+  esac
+  [ "$shape" = empty ] && : > "$ROOT/$SHA/security-auditor.json"
+  stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
+  out=$(mcp_payload 938 | run)
+  denied "$out" && ok "unreadable record [$shape] is not rescued by a clean sibling" \
+                || bad "unreadable record [$shape] is not rescued by a clean sibling" "$out"
+done
+
+# Control: the unreadable record ALONE. Without it the rows above could be passing on the
+# no-record deny rather than on the unreadable-record branch.
+clear_stamps
+mkdir -p "$ROOT/$SHA"
+printf '{' > "$ROOT/$SHA/security-auditor.json"
+out=$(mcp_payload 938 | run)
+denied "$out" && ok "control: an unreadable record denies on its own too" \
+              || bad "control: an unreadable record denies on its own too" "$out"
+# ...and it must be attributable to the CORRUPTION, not misreported as a scope problem.
+r=$(reason "$out")
+if grep -qi 'could not be read\|not parseable' <<<"$r"; then
+  ok "unreadable-record deny names corruption, not scope"
+else
+  bad "unreadable-record deny names corruption, not scope" "$r"
+fi
+clear_stamps
+stamp "$SHA" "$DIGEST_ONE" clean code-reviewer
+out=$(mcp_payload 938 | run)
+
 # 11. That deny must be attributable to SCOPE, not misreported as "no review".
 r=$(reason "$out")
 if grep -qi 'scope\|changed files\|file set' <<<"$r" && ! grep -qi 'no review record' <<<"$r"; then
@@ -682,7 +725,7 @@ rm -rf "$NOJQ_BIN"
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=58
+EXPECTED_TOTAL=65
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

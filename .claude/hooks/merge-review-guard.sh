@@ -286,7 +286,27 @@ WANT_DIGEST=$(printf '%s\n' "$CHANGED" | shasum 2>/dev/null | cut -c1-16)
 MATCHED=""
 while IFS= read -r rec; do
   [ -z "$rec" ] && continue
-  [ "$(jq -r '.head_sha // empty' "$rec" 2>/dev/null)" = "$HEAD_SHA" ] || continue
+  # AN UNREADABLE RECORD IS NOT AN ABSENT ONE. This test used to be a bare `continue`, which
+  # made it a third filter deciding whether a record could BLOCK — the same defect the
+  # reorder below fixes for the digest, one line up. A record whose JSON jq cannot read
+  # yields "" here, mismatches, and was skipped before its verdict was ever consulted.
+  # Measured against the live hook with a clean code-reviewer.json sitting beside it: a
+  # truncated `{`, a zero-byte file, a JSON array, two concatenated objects, and a
+  # well-formed findings record with no head_sha key ALL ALLOWED the merge; each one ALONE
+  # denied, which is what attributes the allow to the sibling rather than to the corruption.
+  #
+  # Reachable narrowly but really: the writer's `> "$DIR/<agent>.json"` is not atomic and
+  # truncates at open, so an interrupted write (ENOSPC, or the 10s SubagentStop timeout
+  # landing inside jq) leaves exactly this shape — and the record most likely to be
+  # half-written is whichever reviewer was still running, not a chosen one.
+  #
+  # A parseable record naming a DIFFERENT head still `continue`s: that is the ordinary
+  # stale-review case, and the unmatched-at-the-end deny already covers it.
+  REC_SHA=$(jq -r '.head_sha // empty' "$rec" 2>/dev/null)
+  if [ -z "$REC_SHA" ]; then
+    deny "Blocked: a review record in head ${HEAD_SHA:0:7}'s stamp directory could not be read — $(basename "$rec") is not parseable JSON, or carries no head_sha. This is NOT the same as no review: a record that exists but cannot be read is not evidence that an objection was withdrawn, and the most likely cause is a write interrupted partway (the writer truncates the file at open). Delete the unreadable record and re-dispatch the reviewer against this exact commit. $BYPASS"
+  fi
+  [ "$REC_SHA" = "$HEAD_SHA" ] || continue
 
   # ORDER IS LOAD-BEARING: OBJECT FIRST, THEN SCOPE. The digest test used to sit here,
   # above the verdict block, so a `verdict: findings` record whose digest did NOT match was

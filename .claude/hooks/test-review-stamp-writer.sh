@@ -467,6 +467,27 @@ for sep in space tab empty; do
     || bad "a $sep separator does not truncate the digested file list (round 5)"
 done
 
+# --- the REVIEWED-SHA length bound -----------------------------------------------------
+# Every fixture above uses the same full 40-character literal and no assertion names a
+# length, so restoring the old `\{7,40\}` bound was invisible to this suite — measured
+# byte-identical output on the unmutated and reverted copies. Two-sided: the abbreviated
+# form must write NOTHING (it would otherwise file under a directory the reader never
+# opens, making an objection invisible), and the full form must still write, so the row
+# cannot pass on a writer that has stopped writing altogether.
+SHORT_MSG='REVIEWED-SHA: 1234567
+REVIEWED-FILES:
+client/hooks/useNutritionLookup.ts
+
+[CRITICAL] client/hooks/useNutritionLookup.ts:42 — fabricates a basis'
+payload "security-auditor" "$SHORT_MSG" | run_hook sha-short
+[ -z "$(find "$ROOT/case-sha-short" -name '*.json' 2>/dev/null)" ] \
+  && ok "an abbreviated REVIEWED-SHA writes no record at all" \
+  || bad "an abbreviated REVIEWED-SHA writes no record at all"
+payload "security-auditor" "$FINDINGS_MSG" | run_hook sha-full
+[ -n "$(find "$ROOT/case-sha-full" -name '*.json' 2>/dev/null)" ] \
+  && ok "control: a full 40-char REVIEWED-SHA still writes one" \
+  || bad "control: a full 40-char REVIEWED-SHA still writes one"
+
 # --- the ANCHORED path, which every assertion above skips -------------------------------
 # Every case above sets REVIEW_STAMP_ROOT, and review_stamp_dir returns on that before it
 # ever reaches `git rev-parse --git-common-dir` (lib/review-stamp-path.sh:26-29). So the
@@ -505,7 +526,7 @@ fi
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=45
+EXPECTED_TOTAL=47
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
