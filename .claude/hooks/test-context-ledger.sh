@@ -400,15 +400,57 @@ AFTER=$(wc -c < "$CUR" 2>/dev/null | tr -d ' ')
 
 # No session id -> fail, do not guess a key. Cover BOTH empty and UNSET: they take different
 # code paths through `${CLAUDE_CODE_SESSION_ID:-}`, and only one of them is the real case.
+# Both must ALSO leave the file untouched — checking only the exit code would pass a mutant
+# that writes the row and then exits 1 in this branch, the same gap the tier case above
+# guards against.
+BEFORE=$(wc -c < "$CUR" 2>/dev/null | tr -d ' ')
 if CLAUDE_CODE_SESSION_ID="" bash "$NOTE" VERIFIED "x" "y" >/dev/null 2>&1; then
   no "ledger-note wrote with an empty session id"
 else
-  ok "ledger-note refuses an empty session id"
+  AFTER=$(wc -c < "$CUR" 2>/dev/null | tr -d ' ')
+  if [ "$BEFORE" = "$AFTER" ]; then
+    ok "ledger-note refuses an empty session id AND nothing written"
+  else
+    no "empty session id rejected but the file grew: $BEFORE -> $AFTER"
+  fi
 fi
+BEFORE=$(wc -c < "$CUR" 2>/dev/null | tr -d ' ')
 if env -u CLAUDE_CODE_SESSION_ID bash "$NOTE" VERIFIED "x" "y" >/dev/null 2>&1; then
   no "ledger-note wrote with session id UNSET"
 else
-  ok "ledger-note refuses an unset session id"
+  AFTER=$(wc -c < "$CUR" 2>/dev/null | tr -d ' ')
+  if [ "$BEFORE" = "$AFTER" ]; then
+    ok "ledger-note refuses an unset session id AND nothing written"
+  else
+    no "unset session id rejected but the file grew: $BEFORE -> $AFTER"
+  fi
+fi
+
+# Embedded newlines in claim or evidence must be rejected, not flattened or silently
+# split into a fragment: precompact-ledger.sh's byte-cut recovery and trim loop both
+# assume one row is one physical line.
+BEFORE=$(wc -c < "$CUR" 2>/dev/null | tr -d ' ')
+if CLAUDE_CODE_SESSION_ID="$SIDN" bash "$NOTE" VERIFIED "$(printf 'line one\nline two')" "y" >/dev/null 2>&1; then
+  no "ledger-note accepted a multi-line claim"
+else
+  AFTER=$(wc -c < "$CUR" 2>/dev/null | tr -d ' ')
+  if [ "$BEFORE" = "$AFTER" ]; then
+    ok "multi-line claim rejected AND nothing written"
+  else
+    no "multi-line claim rejected but the file grew: $BEFORE -> $AFTER"
+  fi
+fi
+
+# Missing lib must fail LOUD (non-zero, stderr message), not silently, unlike the two
+# fail-open hooks. Copy the script to a tmpdir with no lib/ subdirectory at all.
+NOLIB_DIR=$(mktemp -d)
+cp "$NOTE" "$NOLIB_DIR/ledger-note.sh"
+err=$(CLAUDE_CODE_SESSION_ID="$SIDN" bash "$NOLIB_DIR/ledger-note.sh" VERIFIED "x" "y" 2>&1 >/dev/null); rc=$?
+rm -rf "$NOLIB_DIR"
+if [ $rc -ne 0 ] && [ -n "$err" ]; then
+  ok "missing lib fails loud: non-zero exit with a stderr message"
+else
+  no "missing lib did not fail loud: rc=$rc err=[$err]"
 fi
 
 echo ""

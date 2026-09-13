@@ -26,6 +26,13 @@ if [ -z "$CLAIM" ] || [ -z "$EVIDENCE" ]; then
   exit 1
 fi
 
+# The row format is a contract: one row is one line, and precompact-ledger.sh's byte-cut
+# recovery and trim loop both assume that. A newline inside claim or evidence would turn
+# one logical row into several physical lines, silently corrupting that assumption.
+case "$CLAIM$EVIDENCE" in
+  *$'\n'*) echo "ledger-note: claim and evidence must be single-line" >&2; exit 1 ;;
+esac
+
 SID="${CLAUDE_CODE_SESSION_ID:-}"
 LEDGER_DIR=$(context_ledger_dir "$SID") || {
   echo "ledger-note: no usable CLAUDE_CODE_SESSION_ID; refusing to guess a ledger key" >&2
