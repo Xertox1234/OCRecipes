@@ -134,6 +134,15 @@ else
   ok "curated tier bounded: oldest entries dropped"
 fi
 
+# MINOR 1 (fix round 1): `tail -c 2048` is a byte cut and can land mid-line, so a curated
+# row can survive as a fragment (e.g. "FIED | filler claim number 262 | ..."). Any surviving
+# "filler claim number" row must start the line with the intact "VERIFIED |" prefix.
+if grep -E '[|] filler claim number [0-9]+ [|]' "$L10/resume.md" 2>/dev/null | grep -vE '^VERIFIED [|]' 2>/dev/null | grep -q .; then
+  no "curated tier line was truncated mid-line (byte-cut fragment present)"
+else
+  ok "curated tier lines are intact (no mid-line byte-cut fragment)"
+fi
+
 # Test 7: malformed stdin -> silent, exit 0.
 out=$(printf 'not json at all' | bash "$PRECOMPACT" 2>&1); rc=$?
 if [ $rc -eq 0 ] && [ -z "$out" ]; then
@@ -149,6 +158,112 @@ if [ $rc -eq 0 ] && [ ! -s "$CONTEXT_LEDGER_ROOT/$SID9/resume.md" ]; then
   ok "both tiers absent -> empty digest, exit 0"
 else
   no "both-tiers-absent case wrote a digest or failed (rc=$rc)"
+fi
+
+# --- Task 2 fix round 1: IMPORTANT 1 — caveat lines are load-bearing ---
+# Deleting either banner line kept the suite at 17/17 before this case existed. $LDIR's
+# resume.md still holds Test 2's output (curated + floor both present), so both caveats
+# must appear in it without any further hook invocation.
+if grep -q "MEASURED vs ASSUMED" "$LDIR/resume.md" 2>/dev/null; then
+  ok "digest carries the MEASURED vs ASSUMED caveat"
+else
+  no "digest missing the MEASURED vs ASSUMED caveat"
+fi
+if grep -q "Not a verification tier" "$LDIR/resume.md" 2>/dev/null; then
+  ok "digest carries the mechanical-floor 'not a verification tier' caveat"
+else
+  no "digest missing the mechanical-floor 'not a verification tier' caveat"
+fi
+
+# --- Task 2 fix round 1: IMPORTANT 2 — a malformed transcript line must not abort
+# extraction of the records that follow it. ---
+SID12="sess-task2-badline"; L12="$CONTEXT_LEDGER_ROOT/$SID12"; mkdir -p "$L12"
+FAKE_TX3="$TMPROOT/fake-badline.jsonl"
+cat > "$FAKE_TX3" <<'EOF'
+not valid json at all
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"echo survives-the-bad-line","description":"Survives a malformed sibling line"}}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID12" "$FAKE_TX3" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "Survives a malformed sibling line" "$L12/resume.md" 2>/dev/null; then
+  ok "a malformed transcript line does not abort extraction of a later Bash record"
+else
+  no "malformed transcript line aborted extraction of the later Bash record"
+fi
+
+# A Bash record missing "command" entirely must degrade to an empty command, not the
+# literal text "null" (found while fixing IMPORTANT 2: `"" | split("\n")` is `[]` in jq,
+# so indexing [0] on it is an out-of-bounds null unless guarded a second time).
+SID12B="sess-task2-nocommand"; L12B="$CONTEXT_LEDGER_ROOT/$SID12B"; mkdir -p "$L12B"
+FAKE_TX3B="$TMPROOT/fake-nocommand.jsonl"
+cat > "$FAKE_TX3B" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"description":"No command field on this record"}}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID12B" "$FAKE_TX3B" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "No command field on this record" "$L12B/resume.md" 2>/dev/null \
+   && ! grep -q "No command field on this record ← null" "$L12B/resume.md" 2>/dev/null; then
+  ok "a Bash record missing 'command' degrades to empty, not the literal text 'null'"
+else
+  no "a Bash record missing 'command' errored out or rendered the literal text 'null'"
+fi
+
+# --- Task 2 fix round 1: MINOR 2 — the glob picks the most recently modified candidate,
+# not the lexicographically first one. ---
+FAKEHOME2="$TMPROOT/home2"
+SID13="sess-task2-glob-multi"
+mkdir -p "$FAKEHOME2/.claude/projects/aaa-old-project" "$FAKEHOME2/.claude/projects/zzz-new-project"
+OLD_TX="$FAKEHOME2/.claude/projects/aaa-old-project/$SID13.jsonl"
+NEW_TX="$FAKEHOME2/.claude/projects/zzz-new-project/$SID13.jsonl"
+cat > "$OLD_TX" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"echo stale-candidate","description":"Stale project dir candidate"}}]}}
+EOF
+cat > "$NEW_TX" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"echo fresh-candidate","description":"Fresh project dir candidate"}}]}}
+EOF
+# "aaa-old-project" sorts FIRST lexicographically but must NOT win — it is the OLDER file.
+touch -t 202001010000 "$OLD_TX"
+touch -t 203001010000 "$NEW_TX"
+printf '{"session_id":"%s"}' "$SID13" \
+  | HOME="$FAKEHOME2" bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "Fresh project dir candidate" "$CONTEXT_LEDGER_ROOT/$SID13/resume.md" 2>/dev/null \
+   && ! grep -q "Stale project dir candidate" "$CONTEXT_LEDGER_ROOT/$SID13/resume.md" 2>/dev/null; then
+  ok "glob picks the most recently modified transcript, not the lexicographically first"
+else
+  no "glob picked a stale/lexicographically-first transcript over the newer one"
+fi
+
+# --- Task 2 fix round 1: CRITICAL — the 4KB cap must hold against a REALISTIC fixture,
+# not just the synthetic Test 10 one. The input-side bounds (tail -c 2048, tail -n 12,
+# per-field clamps) are only as good as the arithmetic behind them, and this exact shape —
+# a curated.md over 2048 bytes plus 12 DISTINCT Bash calls with long-but-legal descriptions
+# — is what broke that arithmetic in review (4329 bytes against the 4096 cap). Distinct
+# descriptions/commands so awk dedup cannot collapse the 12 rows into fewer.
+SID14="sess-task2-cap-realistic"; L14="$CONTEXT_LEDGER_ROOT/$SID14"; mkdir -p "$L14"
+: > "$L14/curated.md"
+i=0
+while [ $i -lt 40 ]; do
+  printf 'VERIFIED | claim about subsystem behavior number %03d confirmed by direct measurement | inspect-subsystem-%03d.sh --check\n' "$i" "$i" >> "$L14/curated.md"
+  i=$((i+1))
+done
+curated_size=$(wc -c < "$L14/curated.md")
+
+FAKE_TX4="$TMPROOT/fake-realistic.jsonl"
+: > "$FAKE_TX4"
+i=1
+while [ $i -le 12 ]; do
+  printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"npm run test:run -- --grep integration-scenario-%02d --reporter verbose --bail --timeout=30000","description":"Investigate integration scenario %02d flaky failure root cause"}}]}}\n' "$i" "$i" >> "$FAKE_TX4"
+  i=$((i+1))
+done
+
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID14" "$FAKE_TX4" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+size14=$(wc -c < "$L14/resume.md" 2>/dev/null || echo 999999)
+echo "INFO: cap proof fixture — curated.md=${curated_size} bytes, resume.md=${size14} bytes"
+if [ "$size14" -le 4096 ]; then
+  ok "cap holds against realistic input: 12 distinct floor rows + oversized curated ($size14 bytes)"
+else
+  no "cap VIOLATED against realistic input ($size14 bytes)"
 fi
 
 echo ""

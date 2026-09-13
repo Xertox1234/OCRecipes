@@ -20,34 +20,65 @@ SID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null) || exit 0
 LEDGER_DIR=$(context_ledger_dir "$SID") || exit 0
 
 # --- Transcript resolution chain (spec §4.2) --------------------------------
-# 1) stdin  2) cwd-INDEPENDENT glob  3) none.
+# 1) stdin  2) cwd-INDEPENDENT glob, newest-mtime candidate wins  3) none.
 # The glob is required rather than a computed path: the project dir is cwd-derived and
 # moves on worktree entry, so a computed path misses exactly the worktree-heavy sessions
-# this project runs.
+# this project runs. A session can leave stale transcripts under more than one project dir
+# (main checkout plus worktrees); picking the lexicographically-first match can pick a
+# stale one, defeating the point of the glob, so every candidate is compared and the most
+# recently modified one wins.
 TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
 if [ -z "$TRANSCRIPT" ] || [ ! -r "$TRANSCRIPT" ]; then
   TRANSCRIPT=""
+  BEST_MTIME=-1
   for cand in "$HOME"/.claude/projects/*/"$SID".jsonl; do
-    if [ -r "$cand" ]; then TRANSCRIPT="$cand"; break; fi
+    [ -r "$cand" ] || continue
+    CAND_MTIME=$(stat -f %m "$cand" 2>/dev/null) || CAND_MTIME=$(stat -c %Y "$cand" 2>/dev/null) || CAND_MTIME=0
+    case "$CAND_MTIME" in ''|*[!0-9]*) CAND_MTIME=0 ;; esac
+    if [ "$CAND_MTIME" -gt "$BEST_MTIME" ]; then
+      BEST_MTIME=$CAND_MTIME
+      TRANSCRIPT="$cand"
+    fi
   done
 fi
 
 CURATED=""
 # Bounded at 2048 bytes, keeping the MOST RECENT entries. The curated tier grows one line
-# per ledger-note.sh call and is otherwise unbounded, so without this the digest can exceed
-# spec §5.2's 4KB hard cap. The floor below is already at its minimum (12 lines, commands
-# clipped to 100 chars), so when the total still overruns, this is the tier that must yield.
-[ -r "$LEDGER_DIR/curated.md" ] && CURATED=$(tail -c 2048 "$LEDGER_DIR/curated.md" 2>/dev/null)
+# per ledger-note.sh call and is otherwise unbounded. `tail -c 2048` is a byte cut, so when
+# it actually truncates the file it can land mid-line; `tail -n +2` then drops that partial
+# first line. Only applied when the file is actually larger than the window — otherwise a
+# small curated.md would lose its genuine first line for no reason.
+if [ -r "$LEDGER_DIR/curated.md" ]; then
+  # `wc -c` pads its number with leading spaces (BSD and GNU both), which the digit-only
+  # guard below would otherwise treat as "not a number" and zero out — silently disabling
+  # this whole check. Strip whitespace before validating.
+  CSIZE=$(wc -c < "$LEDGER_DIR/curated.md" 2>/dev/null | tr -d '[:space:]') || CSIZE=0
+  case "$CSIZE" in ''|*[!0-9]*) CSIZE=0 ;; esac
+  if [ "$CSIZE" -gt 2048 ]; then
+    CURATED=$(tail -c 2048 "$LEDGER_DIR/curated.md" 2>/dev/null | tail -n +2)
+  else
+    CURATED=$(cat "$LEDGER_DIR/curated.md" 2>/dev/null)
+  fi
+fi
 
 FLOOR=""
 if [ -n "$TRANSCRIPT" ]; then
-  # One line per Bash call: description ← first line of command, truncated.
+  # One line per Bash call: description and command, both clamped. Read as raw lines (`-R`)
+  # and parse each with `fromjson?` so one malformed line degrades instead of aborting
+  # extraction of every record after it — feeding the whole file to a plain `jq -r` parses
+  # it as one JSON stream, and a parse error partway through silently drops every record
+  # that follows. `// ""` on .input.command mirrors the guard .input.description already
+  # had, so a Bash record missing a command degrades instead of erroring. The second
+  # `// ""` after the index matters too: `"" | split("\n")` is `[]` in jq, so indexing `[0]`
+  # on a missing command is an out-of-bounds `null` — without this guard the floor line
+  # would show the literal text "null" instead of degrading cleanly to empty.
   # `tail -n 12` mirrors session-recent-issues.sh's cap; dedup via awk keeps repeats out.
-  FLOOR=$(jq -r '
-      select(.type=="assistant")
+  FLOOR=$(jq -R -r '
+      fromjson?
+      | select(.type=="assistant")
       | .message.content[]?
       | select(.type=="tool_use" and .name=="Bash")
-      | "  \(.input.description // "(no description)") ← \(.input.command | split("\n")[0] | .[0:100])"
+      | "  \((.input.description // "(no description)") | .[0:60]) ← \((.input.command // "") | split("\n")[0] // "" | .[0:100])"
     ' "$TRANSCRIPT" 2>/dev/null | awk '!seen[$0]++' | tail -n 12)
 fi
 
@@ -57,9 +88,16 @@ if [ -z "$CURATED" ] && [ -z "$FLOOR" ]; then
   exit 0
 fi
 
-mkdir -p "$LEDGER_DIR" 2>/dev/null || exit 0
-
-{
+# --- Assemble, then measure (spec §5.2's 4KB hard cap) -----------------------
+# A cap enforced only on the INPUTS (tail -c 2048, tail -n 12, per-field clamps) is only as
+# good as the arithmetic behind it — that arithmetic assumed the floor stays ~1.8KB, and a
+# realistic fixture (long-but-legal descriptions, 12 distinct Bash calls) broke it: 4329
+# bytes against the 4096 cap. The bound that can't be defeated by an input the arithmetic
+# failed to anticipate is one measured on the assembled OUTPUT: build the digest, measure
+# it, and while it's still over cap drop the oldest FLOOR row first (mechanical, disposable
+# scaffolding) — only once the floor is exhausted does the oldest CURATED row (verified
+# fact) start giving way. Re-measure after every drop; write only once it fits.
+assemble_digest() {
   echo "[CONTEXT LEDGER — verification state carried across compaction]"
   echo "Native compaction preserves the narrative. This carries what it cannot: which"
   echo "facts were MEASURED vs ASSUMED. Re-verify before relying on an ASSUMED line."
@@ -76,6 +114,32 @@ mkdir -p "$LEDGER_DIR" 2>/dev/null || exit 0
   echo ""
   echo "Full history: session ${SID} — glob ~/.claude/projects/*/${SID}.jsonl"
   echo "(the recorded path may not resolve if this session entered a worktree)"
-} > "$LEDGER_DIR/resume.md" 2>/dev/null || exit 0
+}
+
+digest_size() {
+  # Same leading-space padding from `wc -c` applies here; strip it before the caller's
+  # digit-only guard runs, or the measured-trim loop below never sees a size over the cap.
+  printf '%s\n' "$1" | wc -c | tr -d '[:space:]'
+}
+
+DIGEST=$(assemble_digest)
+DSIZE=$(digest_size "$DIGEST") || DSIZE=0
+case "$DSIZE" in ''|*[!0-9]*) DSIZE=0 ;; esac
+
+while [ "$DSIZE" -gt 4096 ]; do
+  if [ -n "$FLOOR" ]; then
+    FLOOR=$(printf '%s\n' "$FLOOR" | tail -n +2)
+  elif [ -n "$CURATED" ]; then
+    CURATED=$(printf '%s\n' "$CURATED" | tail -n +2)
+  else
+    break
+  fi
+  DIGEST=$(assemble_digest)
+  DSIZE=$(digest_size "$DIGEST") || DSIZE=0
+  case "$DSIZE" in ''|*[!0-9]*) DSIZE=0 ;; esac
+done
+
+mkdir -p "$LEDGER_DIR" 2>/dev/null || exit 0
+printf '%s\n' "$DIGEST" > "$LEDGER_DIR/resume.md" 2>/dev/null || exit 0
 
 exit 0
