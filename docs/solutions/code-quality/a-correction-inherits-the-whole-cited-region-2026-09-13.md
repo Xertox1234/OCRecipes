@@ -4,7 +4,7 @@ track: bug
 category: code-quality
 tags: [harness, docs, verification, code-review, guards]
 module: shared
-applies_to: ["todos/**/*.md", ".claude/hooks/**", "docs/solutions/**/*.md"]
+applies_to: [".claude/hooks/**", "docs/solutions/**/*.md"]
 symptoms: ["A disclosure block tells an implementer to expect N flips and the measured number is larger", "A claim about what a cited file 'does not document' was formed by reading only part of that file", "A correction lands on a sentence adjacent to a genuine error and is itself wrong", "A count is taken over a set, filtered on a semantic criterion, then reported with the unfiltered set's predicate", "An empirical corpus is cited for a claim whose shape the corpus structurally cannot contain"]
 created: 2026-09-13
 severity: medium
@@ -65,8 +65,12 @@ consumer). **The sentence I "corrected" was closer to true than my correction.**
 ## Root Cause
 
 **Both rounds stated a claim about a body of evidence without traversing the whole body.**
-Round 1's body was the nine-character closer class; it enumerated four. Round 2's body was a
-50-line header region; it read the last 27 lines.
+Round 1's body was the nine-character closer class; it enumerated four. Round 2's body was the
+50-line header at `:67-116`; it read `:100-126` — 27 lines, of which only the last **17** fall
+inside that header, and the 33 above it were never opened. (The first draft of this sentence
+said "read the last 27 lines" of a 50-line region: 27 is the span read, 17 is the overlap. A
+figure that does not reconcile against the ranges printed beside it — in the document whose
+subject is exactly that — caught in review.)
 
 Three things made round 2 specifically easy to get wrong:
 
@@ -84,9 +88,12 @@ Three things made round 2 specifically easy to get wrong:
 
 A fourth defect, caught in the same review, is the corpus-scope error: the block cited a
 1344-row sweep for "SEEN → MISSED shows zero of those." That corpus is 14 **redirect**
-operators × 4 targets × 6 verbs × 4 positions — none of `)`, backtick, `{`, `}` is a redirect
-operator, so it contains **zero rows of the relevant shape**. Its zero was structural absence
-masquerading as evidence.
+operators × 4 targets × 6 verbs × 4 positions, so it contains **zero rows of the relevant
+shape** — bare unmatched punctuation with no operator at all. Its zero was structural absence
+masquerading as evidence. (Scope that claim to the corpus that was run, not to the grammar:
+`_CMD_REDIR` does model an `{fd}` prefix, so a `{3}>` spelling can put a literal brace in the
+closer position — and the todo never enumerates the 14 operators tested, which is itself the
+reason the claim cannot be checked. An enumeration you do not print is one nobody can audit.)
 
 ## Solution
 
