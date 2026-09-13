@@ -82,7 +82,7 @@ EMPTY stamp root, so "the gate engaged" and "the gate denied" are the same event
 ## Acceptance Criteria
 
 - [ ] A merge carrying a repo-retarget flag in root position is DENIED by
-      `guard-outward-cli.sh`, for every spelling matched by `_OUT_REPO_FLAG_RE` (`.claude/hooks/guard-outward-cli.sh:899`)
+      `guard-outward-cli.sh`, for every spelling matched by `_OUT_REPO_FLAG_RE` (`.claude/hooks/guard-outward-cli.sh:944` — the todo originally cited `:899`, which is inside a comment block)
       — `-R`, `--repo`,
       `--repo=x`, `-Rx`).
 - [ ] The same spellings are SEEN by `merge-review-guard.sh` — i.e. they reach the
@@ -166,3 +166,51 @@ todo is worth re-reading — a `gh api` merge is also "the binary, then somethin
 - Filed at the user's explicit request after both halves were measured during the #940
   review. Raised from "disclosed in a PR body" to P0 because the outward-CLI guard and the
   merge review gate were confirmed to miss the _same_ string, against _this_ repository.
+
+### 2026-09-13 (later) — FIXED on `fix/gh-root-position-repo-flag`
+
+Closed by `_CMD_GH_GLOBALS` (`lib/cmd-detect.sh`) and `_OUT_GH_GLOBALS`
+(`guard-outward-cli.sh`), each modelling the slot between the binary and its namespace.
+Both guards now DENY all four spellings; read-only root-position usage stays ALLOWED.
+
+**Four corrections to this todo, established by reading the files:**
+
+1. `_OUT_REPO_FLAG_RE` is at `:944`, not `:899` (corrected in AC 1 above).
+2. _"Both guards read through that library"_ is **false**. `merge-review-guard.sh` does;
+   `guard-outward-cli.sh` is a deliberate **fork** with its own `_OUT_*` vocabulary
+   (`:25`, `:61`), so it inherits nothing. Both files had to be widened separately. The
+   Scope Contract's "both guards then inherit it" is wrong; its _Files in scope_ list,
+   which already named both, is right.
+3. The Implementation Notes imply five needles in `guard-outward-cli.sh`. There are
+   **seven**, and the two the todo does not mention are the load-bearing ones:
+   `gh_pr_clause_has_repo`'s own clause regex at `:1022` — the site the repo-retarget deny
+   actually depends on — and `_GH_API_CUT` at `:2863`, the consumer paired with
+   `GH_API_RE`. Verified by deny REASON, not merely by "it denied": every root-position
+   spelling is caught by the retarget check, which wins over `--auto`.
+4. **AC 2 is unreachable as literally worded.** It asks that the spellings "reach the
+   review-record requirement". A retarget makes the PR number unresolvable _by design_, so
+   the path ends at the unresolvable-PR deny (`merge-review-guard.sh:197-206`) instead.
+   Satisfied on intent — no longer a silent allow — and a redirect row with a resolvable
+   number was added to demonstrate the stage-3 path as well.
+
+**Three things closed that this todo did not record:**
+
+- `cmd_is_gh_pr_create` feeds `pr-preflight-guard.sh`, so the same spelling skipped the
+  **PR-preflight stamp gate** outright.
+- `gh -R owner/repo pr close 42` was likewise allowed. Measured against the merge-base
+  guard (`e50a5d08`): `close` and `merge` both ALLOW -> DENY.
+- P1 mechanism (b) (a redirect in the same slot) is closed **inside `cmd-detect.sh`**; its
+  tripwire row in `test-merge-review-guard.sh` is converted to a deny row. P1's other three
+  mechanisms were re-measured and are **still open**, still pinned ALLOW.
+
+**One defect found in the regex this todo asked to change, fixed here on the user's
+instruction** (it is a different mechanism, so it is named separately for attribution):
+`cmd_gh_pr_ref`'s retarget refusal scanned `$full_match`, whose greedy tail backtracks off
+a **trailing** flag to end on the ref. `gh pr merge 42 --repo other/org` therefore resolved
+ref 42 and the gate classified the **local** PR #42 — its deny text byte-identical to a bare
+merge's. The sibling ordering refused correctly, which is why it survived. The refusal now
+scans the clause. `merge-review-guard.sh:162-165` asserted this refusal was unconditional;
+that comment is corrected.
+
+Follow-up filed:
+`todos/P3-2026-09-13-git-safety-re-derives-the-gh-pr-close-needle-instead-of-using-the-shared-library.md`.
