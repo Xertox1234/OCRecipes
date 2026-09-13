@@ -1832,14 +1832,38 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 #      wording implied it covered: REORDERING the alternation so the generic arm comes first
 #      and is widened, and widening only PART of the class (`-[^[:space:];]+`). A count is
 #      spelling-independent and catches removing the class from any single arm in any order.
-#      The behavioural glue rows catch both mutants too (they redden 7 and 4 assertions
-#      respectively) — this operand is defence in depth, and now actually has the depth its
-#      comment claims;
+#      The behavioural glue rows catch both mutants as well, so this operand is redundant
+#      coverage — which is why it could be made behavioural without losing anything. NO ROW
+#      COUNT IS GIVEN HERE ON PURPOSE. Three different pairs of numbers have been written
+#      into this comment; the first was retyped from an earlier draft, the second from a
+#      review, and an attempt to measure the third produced a contaminated figure because the
+#      probe's neutralisation of this very assertion silently failed, so every glue row
+#      reddened on the wrong reason and the run looked plausible. A count here would be the
+#      fourth guess. If you need one, isolate the rows FIRST and prove the isolation with an
+#      unmutated control that reddens zero;
 #   4. $_CMD_REDIR is non-empty — which costs the REDIRECT arm, not "every needle".
+# Operand 3b asks the grammar a BEHAVIOURAL question instead of counting a literal: fed a
+# span that crosses a separator, does the grant form match it WHOLE? The wide form does; a
+# correct grant form cannot. One probe per arm per separator, so it is per-arm by
+# construction rather than by a total count.
+#
+# THE COUNTING VERSION SHIPPED TWICE AND WAS WRONG BOTH TIMES, which is why this is
+# behavioural. First as `grep -c`, which counts matching LINES — the constant is one line, so
+# it returned 1 for every healthy value, fired on every command, and blocked the shell needed
+# to fix it. Then as `grep -o | wc -l` on the exact 11-byte class, which fires on a healthy
+# but STRICTLY NARROWER definition: adding `(` and a backtick to the class — the documented
+# next fix for this very file — scores 0, as does writing the same class as
+# `[^;&|[:space:]]`. Measured, with the wide form and the shipped form as controls. A total
+# count is also gameable: padding one arm with extra classes reaches the threshold while the
+# other arms stay wide.
+_OUT_GRANT_SPANS=no
+for _out_gp in ' -x;y' ' -R a;y' ' --repo a;y' ' -x&y' ' -x|y' ' -R a&y' ' --repo a|y'; do
+  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_SPANS=yes; break; fi
+done
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
    || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
    || printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '|-[^[:space:]]+)' \
-   || [ "$(printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -oF -- '[^[:space:];&|]' | wc -l | tr -d '[:space:]')" -lt 3 ] \
+   || [ "$_OUT_GRANT_SPANS" = yes ] \
    || [ -z "${_CMD_REDIR:-}" ]; then
   deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has had its generic arm widened back to it, or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi

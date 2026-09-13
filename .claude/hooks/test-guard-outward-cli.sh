@@ -3579,7 +3579,7 @@ _PIN_RAN=1
 #   the glued-separator donation across ; && || | and the spaced control, + 6 allow for every
 #   sanctioned shape, since narrowing a GRANT is what breaks real usage); +8 process-
 #   substitution rows (5 deny for >( <( 2>( >>( and a backtick, + 3 negative controls each
-#   removing one ingredient); +4 mutation-row assertions (shapeless wide form, grant form
+#   removing one ingredient); +5 mutation-row assertions (shapeless wide form, grant form
 #   replaced by the wide form, grant form's GENERIC arm alone widened, and the narrowed
 #   hardcoded-separator pattern still catching an injected regression, and the single-arm
 #   removal of the separator-safe class).

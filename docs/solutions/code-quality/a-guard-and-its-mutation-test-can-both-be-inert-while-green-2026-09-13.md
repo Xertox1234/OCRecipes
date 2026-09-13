@@ -63,9 +63,16 @@ nothing in the run distinguishes "passed" from "never ran".**
 **Assert the shape, and prove the probe arrives.**
 
 ```bash
+# ask the grammar a BEHAVIOURAL question: fed a span that crosses a separator,
+# does the narrow form match it WHOLE? The wide form does; a correct one cannot.
+_OUT_GRANT_SPANS=no
+for _p in ' -x;y' ' -R a;y' ' --repo a;y' ' -x&y' ' -x|y' ' -R a&y' ' --repo a|y'; do
+  printf '%s' "$_p" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$" && { _OUT_GRANT_SPANS=yes; break; }
+done
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
    || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
    || printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '|-[^[:space:]]+)' \
+   || [ "$_OUT_GRANT_SPANS" = yes ] \
    || [ -z "${_CMD_REDIR:-}" ]; then
   deny "…lost its shape…"
 fi
@@ -73,8 +80,8 @@ fi
 
 Each operand names a property that a real degradation removes: the wide form still carries its
 `--repo` arm; the narrow form is **not** the wide form; the narrow form does **not** contain the
-wide generic arm; and `$_CMD_REDIR` is non-empty (which costs the redirect arm — say that, not
-"every needle").
+wide generic arm; the narrow form **cannot span a separator**; and `$_CMD_REDIR` is non-empty
+(which costs the redirect arm — say that, not "every needle").
 
 **THE OBVIOUS SPELLING OF OPERAND 2 AND 3 IS THE ONE THAT DOES NOT WORK**, and it is worth
 writing down because it survived a review round before being caught. Requiring the narrow class
@@ -88,9 +95,20 @@ to appear *somewhere* in the grant form —
 one that carried the defect, can be reverted to the wide class with the assertion silent. Worse,
 those two named arms are unreachable at the site being protected, because an earlier deny-shaped
 check rejects any `-R`/`--repo` command before the grant cut runs — so the assertion was keying
-on arms that can never be exercised there. Assert the **absence of the bad shape**, not the
-presence of a good substring: absence stays true under any further narrowing, whereas pinning an
-exact class breaks against its own next fix.
+on arms that can never be exercised there.
+
+**COUNTING THE CLASS INSTEAD IS ALSO WRONG, IN THE OPPOSITE DIRECTION.** The next attempt
+required the separator-safe class to appear once per arm. It shipped twice and failed twice:
+first as `grep -c`, which counts matching *lines* — the constant is one line, so it returned 1
+for every healthy value, fired on every command, and blocked the shell needed to repair it; then
+as an occurrence count on the exact 11-byte class, which scores **zero** on a healthy but
+*strictly narrower* definition — adding `(` and a backtick to the class, which is that file's own
+documented next fix. A total count is gameable besides: pad one arm and the others can stay wide.
+
+The shape that survives is **behavioural**. Do not describe the grammar; feed it an input that
+must not match and check that it does not. That question stays correct under any narrowing,
+reordering, or respelling of the class, because it asks about the property rather than the
+spelling.
 
 For the mutation row:
 
@@ -115,7 +133,7 @@ For the mutation row:
 ## Related Files
 
 - `.claude/hooks/guard-outward-cli.sh` — the shape assertion beside the two root-position constants
-- `.claude/hooks/test-guard-outward-cli.sh` — `_mut_goc_says_deny` and its three rows
+- `.claude/hooks/test-guard-outward-cli.sh` — `_mut_goc_says_deny` and its four rows, plus the separately-mechanised `_SEP_MUT` check for the sibling structural assertion
 
 ## See Also
 

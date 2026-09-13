@@ -2158,17 +2158,32 @@ cmd_gh_pr_ref() {
   # the gate), and stated together so the list is a partition rather than a sample:
   #   1. cmd_bare does not strip `#` comments, so a trailing
   #      `gh pr merge 42  # remember --repo` refuses.
-  #   2. This clause has no trailing-token requirement where $full_match does, so it can
-  #      anchor EARLIER than the span that resolved the ref and import a `-R` from a
-  #      neighbour: `gh pr mergeX -R a/b;gh pr merge 42` refuses where $full_match
-  #      resolves 42. The occurrence counter does not catch it because its
-  #      `([[:space:]]|$)` suffix rejects `mergeX` while this one accepts it.
-  # Neither has a plausible real-world shape — a panel of the commands this repo actually
+  #   2. (CLOSED 2026-09-13 by anchoring — see the note below. It used to read: this clause
+  #      can anchor EARLIER than the span that resolved the ref. That was not merely an
+  #      over-refusal; in the other direction it MISSED a retarget the resolved clause
+  #      carried, which review measured as an end-to-end ALLOW of a cross-repository merge
+  #      authorised by a local review record. Kept as a numbered entry rather than deleted so
+  #      the next reader can tell a closed residual from one that was never listed.)
+  # Residual 1 has no plausible real-world shape — a panel of the commands this repo actually
   # runs resolves identically before and after — but a refusal costs a re-run, and the merge
-  # gate has no per-command escape, so they are written down rather than discovered twice.
-  repo_clause=$(printf '%s' "$bare" \
-    | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)[^;&|]*" \
-    | head -1)
+  # gate has no per-command escape, so it is written down rather than discovered twice.
+  # ANCHORED AT $full_match, not re-matched independently. An earlier revision cut the clause
+  # with its own grep and claimed to be "a strict SUPERSET of $full_match". That was false:
+  # this clause has no trailing-token requirement where $full_match does, so its own grep
+  # could anchor at a DIFFERENT, EARLIER `gh` and stop at the separator, never reaching the
+  # retarget the resolved clause carries. Measured: `gh pr mergeX ; gh pr merge 42 --repo
+  # other/org` resolved ref 42, and end-to-end with a clean review record present for the
+  # local PR the gate ALLOWED it — a local record authorising a merge into another
+  # repository, which is the gap the trailing-ordering fix was written to close. The decoy
+  # escapes the occurrence counter because its `([[:space:]]|$)` suffix rejects `mergeX`
+  # while an independent `[^;&|]*` cut accepts it.
+  #
+  # Taking the text FROM $full_match's own position removes the second anchor entirely, so
+  # there is nothing left to disagree about: the scan sees exactly the clause that produced
+  # the ref, extended to the next command separator. $full_match cannot itself contain
+  # `;`/`&`/`|` (its classes exclude them), so the truncation only ever bites in the tail.
+  repo_clause="$full_match${bare#*"$full_match"}"
+  repo_clause=${repo_clause%%[;&|]*}
   if printf '%s' "$repo_clause" | grep -qE '(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'; then
     return 1
   fi

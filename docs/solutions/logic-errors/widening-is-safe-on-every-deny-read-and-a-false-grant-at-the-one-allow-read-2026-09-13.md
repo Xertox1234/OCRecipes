@@ -144,5 +144,6 @@ Pin both directions, and pin the split itself:
 ## See Also
 
 - [widening a permissive text gate reopens the restrictive failure](widening-a-permissive-text-gate-reopens-the-restrictive-failure-2026-09-12.md) — the same matcher's other axis
+- [a guard and its mutation test can both be inert while green](../code-quality/a-guard-and-its-mutation-test-can-both-be-inert-while-green-2026-09-13.md) — the fail-closed assertion added alongside this same fix
 - [union over renderings does not cover selection within one](union-over-renderings-does-not-cover-selection-within-one-2026-09-07.md)
 - [a special case that only prevents a false positive](../code-quality/a-special-case-that-only-prevents-a-false-positive-2026-09-07.md)
