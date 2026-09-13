@@ -86,7 +86,9 @@ you weigh the isolation guarantee higher.
       differential.
 - [ ] Corpus generated from a product of dimensions (operator × target × verb × position),
       not hand-listed, with every count quoted together with the corpus that produced it AND
-      with the applicable denominator (see the note below about `push`).
+      with the applicable denominator (see the note below about `push`). **The position axis
+      MUST include a glued, zero-space spelling (`git>out …`)** — the first candidate for this
+      todo passed a 630-row corpus that held spacing fixed and missed every glued row.
 - [ ] Mutation-verified: revert the new alternative and confirm only the redirect rows redden.
 - [ ] `.claude/hooks/test-git-safety.sh` gains the rows; full hook suite green.
 
@@ -98,40 +100,54 @@ clobber overrides. Re-deriving a redirect grammar in the consumer is this repo's
 most-repeated defect — PR #940 fixed the sibling instance in `guard-outward-cli.sh` by
 reusing this same constant.
 
-**`git-safety.sh` does not source `lib/cmd-detect.sh` today** (verified). The fix therefore
-needs that source line as well as the regex change, so weigh whether the hook wants the whole
-library or just the one constant.
-
-Candidate — one alternative added to the globals group:
+**And reuse the shared GROUP, not just the shared constant.** `lib/cmd-detect.sh:151` already
+defines `_CMD_GIT_GLOBALS` — the whole "what may sit between `git` and its verb" group,
+including a redirect branch built correctly. Replace the hand-written group outright:
 
 ```bash
-MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+|--git-dir[[:space:]]+[^[:space:]]+|--work-tree[[:space:]]+[^[:space:]]+|${_CMD_REDIR}|-[^[:space:]]+))*[[:space:]]+(${MUTATING_GIT_VERBS})([[:space:]]|\$)"
+MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git${_CMD_GIT_GLOBALS}[[:space:]]+(${MUTATING_GIT_VERBS})([[:space:]]|\$)"
 ```
 
-**Measured, corpus generated from its dimensions** — 14 operators × 3 targets × 5 verbs × 3
-positions = **630 rows**:
+`git-safety.sh` does **not** source `lib/cmd-detect.sh` today (verified — the file has no
+`source` statement at all), so the fix needs that line too.
 
-|                           | shipped | candidate |
-| ------------------------- | ------- | --------- |
-| rows SEEN                 | 0       | 504       |
-| SEEN → MISSED regressions | —       | **0**     |
+**Measured, corpus generated from its dimensions** — 14 operators × 4 targets × 6 verbs × 4
+positions (spaced / **glued** / between-globals / pre-verb) = **1344 rows**:
 
-All nine controls classify identically under both regexes, and read-only verbs with the same
-interposed redirect (`git 2>/dev/null status`, `… log`) stay MISSED under the candidate.
+|                           | shipped | `_CMD_GIT_GLOBALS` wholesale |
+| ------------------------- | ------- | ---------------------------- |
+| rows SEEN                 | 0       | **1344**                     |
+| SEEN → MISSED regressions | —       | **0**                        |
 
-**Read the denominator carefully: 504, not 630, is the applicable population.** The remaining
-126 rows are every combination using `push`, which is **not in `MUTATING_GIT_VERBS`** — the
-constant is `commit|mv|rm|restore|checkout|switch|pull|revert|stash|reset|rebase|merge|cherry-pick|apply|am|clean`.
-Those rows are correctly MISSED and are an artifact of the corpus, not a gap in the fix. This
-is recorded because the first reading of that 504/630 figure was "the candidate still misses
-126", which is wrong: generating from a product of dimensions does not help if one axis
-carries values outside the population the check governs.
+Controls hold in both directions: `git status`, `git 2>/dev/null status`, `echo hello` and
+`npm run build` all stay MISSED; the three shipped-SEEN spellings stay SEEN.
+
+### Two corrections to an earlier revision of this section, recorded rather than overwritten
+
+**(1) A hand-spliced `${_CMD_REDIR}` into the local group is WRONG, and misses every glued
+spelling.** That version put the redirect behind the group's shared mandatory `[[:space:]]+`,
+so `git>out commit -m x` — a real bash invocation, since bash splits at an operator with no
+surrounding space — still failed to match. `_CMD_GIT_GLOBALS` separates its redirect branch
+with `[[:space:]]*` (zero-or-more) precisely for this, and `guard-outward-cli.sh` uses the
+same idiom. **Citing the precedent is not following it**: the constant was reused and the
+structure around it was re-derived, which is the same defect one level down.
+
+**(2) The corpus that "verified" the spliced version held the spacing axis FIXED.** Its three
+positions were all space-separated, so the glued spelling could not appear and the result read
+504/504. Re-run with a glued position included, that candidate sees 336 of 504. An axis you do
+not vary is an axis where a defect is invisible.
+
+A third note kept from that revision because it is still true: an earlier reading of "504 of
+630" as "the candidate still misses 126" was wrong — those 126 all used `push`, which is not
+in `MUTATING_GIT_VERBS` (`commit|mv|rm|restore|checkout|switch|pull|revert|stash|reset|rebase|merge|cherry-pick|apply|am|clean`).
+They were correctly missed. Generating from a product of dimensions does not help if one axis
+carries values outside the population the check governs; quote the APPLICABLE denominator.
 
 ## Scope Contract
 
-- **Mechanisms to use:** add `_CMD_REDIR` as one alternative inside the existing globals
-  group, sourcing `lib/cmd-detect.sh`. No new constant, no locally re-derived redirect
-  grammar, no second predicate.
+- **Mechanisms to use:** replace the hand-written globals group with `_CMD_GIT_GLOBALS` from
+  `lib/cmd-detect.sh`, sourcing that library. No new constant, no locally re-derived redirect
+  grammar, no hand-spliced alternative, no second predicate.
 - **Files in scope:** `.claude/hooks/git-safety.sh`, `.claude/hooks/test-git-safety.sh`.
 - No new mechanisms, files, or abstractions beyond those listed.
 
@@ -150,9 +166,19 @@ carries values outside the population the check governs.
   does honour an inline `SKIP_WORKTREE_CONTRACT=1 ` prefix, so recovery is cheaper here than
   in the merge gate — but a guard that denies ordinary read-only git still gets switched off.
   Pair every new deny row with a read-only-stays-allowed row in the same run.
-- `_CMD_REDIR`'s target is mandatory and greedy. Check it cannot swallow the verb itself on
-  some spelling — the candidate above shows 0 SEEN → MISSED transitions over 630 rows, but
-  that corpus fixes the target at three values; vary it.
+- `_CMD_REDIR`'s target is mandatory and greedy. The 1344-row sweep varies the target across
+  four values and shows 0 SEEN → MISSED transitions, so it does not swallow the verb on any
+  spelling tested — but that is a bound from the tested set, not a proof.
+- **DISCLOSED RESIDUAL, out of scope and NOT closed by this fix: a redirect BEFORE the `git`
+  token.** `2>/dev/null git commit -m x` is a real, equally valid bash invocation and is
+  MISSED by the shipped regex, by the spliced candidate, and by the `_CMD_GIT_GLOBALS`
+  version alike — the segment anchor `^[[:space:]]*(ENV=val )*git…` never reaches `git` when
+  a redirect precedes it, and this fix only touches the group BETWEEN `git` and the verb.
+  Measured. It is the same defect class in a different position, so an implementer closing
+  this todo must not report the redirect bypass as closed. `lib/cmd-detect.sh:118`'s
+  `_CMD_POS_PREFIX` already carries `_CMD_REDIR` as a leading-prefix alternative, so the
+  library models this shape — extending the anchor is a separate, larger change and wants
+  its own todo rather than being smuggled in here.
 
 ## Updates
 
