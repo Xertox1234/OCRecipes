@@ -2486,6 +2486,20 @@ else
 fi
 # The grant form losing its separator-safe class is the CRITICAL this pair exists for: it
 # re-opens the false-ALLOW where a glued dash-token donates a previous command's --auto.
+# THE SURGICAL MUTATION, and the one the first version of the assertion missed. Reverting
+# ONLY the GENERIC arm to the wide class — leaving the -R and --repo arms narrow — is the
+# exact regression that re-opens the glued-separator donation. The original assertion was
+# satisfied by the two named arms and stayed silent; both reviewers found that independently.
+# Those two arms are also effectively unreachable at the grant cut, since any -R/--repo
+# command is denied earlier by gh_pr_clause_has_repo — so the assertion was keying on arms
+# that can never be exercised there. `;&|]+))` occurs exactly once in the constant: the
+# generic arm, followed by its closing parens.
+if _mut_goc_says_deny 's/;&|]+))/]+))/'; then
+  echo "PASS: widening ONLY the grant form's generic arm fails closed"; PASS=$((PASS+1))
+else
+  echo "FAIL: the grant form's generic arm can be widened back to the unsafe class with the shape assertion silent — the glued-separator donation returns and no self-check goes red"
+  FAIL=$((FAIL+1))
+fi
 if _mut_goc_says_deny "s|^_OUT_GH_GLOBALS_GRANT=.*|_OUT_GH_GLOBALS_GRANT=\"\$_OUT_GH_GLOBALS\"|"; then
   echo "PASS: a grant form widened back to the deny form's class fails closed"; PASS=$((PASS+1))
 else
@@ -3355,6 +3369,59 @@ assert_allow "a redirect in the root slot does not break the carve-out" \
   "$(json 'gh 2>/dev/null pr merge 42 --auto')"
 assert_allow "a preceding unrelated gh command does not break the carve-out" \
   "$(json 'gh --version;gh pr merge 42 --auto')"
+# The generic single-token arm exists so a NON-retarget root flag still reaches the verb.
+# Nothing pinned that until now, so "simplifying" the arm to only -R/--repo would silently
+# start over-denying this shape with no row going red.
+assert_allow "a non-retarget flag in the root slot does not break the carve-out" \
+  "$(json 'gh --no-color pr merge 42 --auto')"
+
+# ---------- gh: PROCESS SUBSTITUTION cannot donate a previous --auto either ----------
+# Round-2 review, CRITICAL. Narrowing the grant form's FLAG arms closed the glued-separator
+# crossing; the clause could still begin in a previous command through the REDIRECT arm,
+# because _OUT_SEP interpolates the shared _CMD_REDIR whose target class admits `(`. A
+# process substitution therefore reads as "a redirect to a file named `(gh`":
+#
+#     gh --auto >(gh pr merge 42)  ->  CLAUSE [gh --auto >(gh pr merge 42]
+#
+# Measured against main: ALLOW on the branch, DENY on main, for all four spellings. The
+# inner command really runs — probed with a stub named `ghx` (never `gh`) and an inert outer
+# command so only the INNER call marks: `>(`, `<(`, `2>(` execute under BOTH bash and zsh,
+# `>>(` under zsh, which is the Bash tool's actual shell. Closed by widening the clause's
+# sigil mask to `[$(`]` rather than by cutting the clause — truncating at the offending byte
+# is the reverted 2026-09-05 CRITICAL.
+assert_deny "process substitution >( cannot donate a previous --auto" \
+  "$(json 'gh --auto >(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+assert_deny "process substitution <( cannot donate a previous --auto" \
+  "$(json 'gh --auto <(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+assert_deny "process substitution 2>( cannot donate a previous --auto" \
+  "$(json 'gh --auto 2>(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+assert_deny "process substitution >>( cannot donate a previous --auto" \
+  "$(json 'gh --auto >>(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+# A backtick in the clause is masked by the same class, for the same reason.
+# The backtick form denies EARLIER and more strongly: the substitution is extracted, so
+# the occurrence counter sees two command-position merges and refuses the ambiguity
+# outright. Asserting the --auto reason here would have asserted the wrong mechanism.
+assert_deny "a backtick substitution in the root slot refuses as ambiguous" \
+  "$(json 'gh --auto `gh pr merge 42`')" \
+  "more than one command-position"
+# NEGATIVE CONTROLS for the four rows above: each removes exactly one ingredient, so a guard
+# that simply denied everything containing a paren would not satisfy them.
+assert_deny "no --auto to donate, so the deny is not evidence of the mask" \
+  "$(json 'gh -x >(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+assert_deny "a non-dash token stops the globals run before the paren" \
+  "$(json 'gh --auto y >(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+# --admin inside the substitution denies via the CARVE-OUT, not the --admin check: the
+# carve-out runs first in the block. The row still discriminates (it needs the mask to
+# fire), it just names the mechanism that actually decides it.
+assert_deny "a merge carrying --admin inside a process substitution still denies" \
+  "$(json 'gh --auto >(gh pr merge 42 --admin)')" \
+  "without a REAL --auto flag"
 
 # ---------- gh: a repo-retarget flag in ROOT POSITION (2026-09-13) ----------
 # `gh -R owner/repo pr merge 42` is a FUNCTIONAL invocation — cobra strips flags while
@@ -3593,7 +3660,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=679
+EXPECTED_TOTAL=689
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

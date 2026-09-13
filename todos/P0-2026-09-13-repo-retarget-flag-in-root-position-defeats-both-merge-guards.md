@@ -184,8 +184,8 @@ Both guards now DENY all four spellings; read-only root-position usage stays ALL
 3. The Implementation Notes imply five needles in `guard-outward-cli.sh`. There are
    **seven**, and the two the todo does not mention are the load-bearing ones:
    `gh_pr_clause_has_repo`'s own clause regex at `:1022` — the site the repo-retarget deny
-   actually depends on — and `_GH_API_CUT` at `:2863`, the consumer paired with
-   `GH_API_RE`. Verified by deny REASON, not merely by "it denied": every root-position
+   actually depends on — and `_GH_API_CUT` (the consumer paired with
+   `GH_API_RE`; re-derive its line — later commits on the branch moved it). Verified by deny REASON, not merely by "it denied": every root-position
    spelling is caught by the retarget check, which wins over `--auto`.
 4. **AC 2 is unreachable as literally worded.** It asks that the spellings "reach the
    review-record requirement". A retarget makes the PR number unresolvable _by design_, so

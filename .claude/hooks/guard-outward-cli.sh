@@ -1791,6 +1791,18 @@ _OUT_GH_GLOBALS="$_CMD_GH_GLOBALS"
 # had closed this same false-ALLOW on the TRAILING side; the wide globals form re-opened it
 # on the LEADING side. Narrowing is the safe direction HERE and only here: no clause means
 # `HAS_REAL_AUTO=no`, which denies.
+#
+# NARROWING THE FLAG ARMS IS NOT THE WHOLE STORY, and the sentence above must not be read as
+# a completeness claim. The clause can also begin in a previous command through the REDIRECT
+# arm, which interpolates the shared `_CMD_REDIR` whose target class admits `(` — a process
+# substitution reads as "a redirect to a file named `(gh`". That family is closed at the
+# clause's sigil mask further down (widened to `[$(`]`), not here, because narrowing
+# `_CMD_REDIR` itself would change every consumer of the lib.
+#
+# POLARITY, because it inverts between consumers: `lib/cmd-detect.sh` records EARLIER
+# ANCHORING as an accepted residual and argues it fails CLOSED. That is true of its own
+# deny-shaped consumer. At THIS cut the same earlier anchor is a false ALLOW. A residual's
+# direction is a property of the consumer, not of the pattern.
 _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:space:]]+[^[:space:];&|]+|-[^[:space:];&|]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
 
 # Fail closed if either form lost its shape. NOT an emptiness test: both are single-quoted
@@ -1799,10 +1811,28 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # measured by re-running the assignment with _CMD_REDIR=''). What an empty _CMD_REDIR
 # actually costs is the REDIRECT arm alone, not "every needle": the flag arms still match.
 # So assert the shape each form must have, and assert that the grant form is the NARROW one.
+# ASSERT THE PROPERTY, NOT A SPELLING (rewritten 2026-09-13 after both reviewers found the
+# first version weaker than its own comment). Requiring the narrow class to appear SOMEWHERE
+# in the grant form was satisfied by its `-R` and `--repo` arms alone — so the GENERIC arm,
+# the one that carried the round-1 defect, could be reverted to the wide class with the
+# assertion silent. Worse, those two named arms are effectively unreachable at the grant cut:
+# gh_pr_clause_has_repo denies any `-R`/`--repo` command earlier in the same block, so the
+# assertion was keying on arms that can never be exercised there.
+#
+# The operands below are spelling-INDEPENDENT in the narrowing direction, which matters
+# because the first version also broke against its own fix: pinning an exact literal class
+# meant tightening that class (as the process-substitution repair does) tripped the
+# assertion and denied every gated command until the assertion itself was edited.
+#   1. the wide form still carries its --repo arm;
+#   2. the grant form is NOT the wide form (catches a wholesale swap);
+#   3. the grant form does NOT contain the WIDE generic arm (catches reverting that one arm,
+#      and stays true under any FURTHER narrowing);
+#   4. $_CMD_REDIR is non-empty — which costs the REDIRECT arm, not "every needle".
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
-   || ! printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '[^[:space:];&|]+' \
+   || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
+   || printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '|-[^[:space:]]+)' \
    || [ -z "${_CMD_REDIR:-}" ]; then
-  deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is missing its separator-safe class, or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has had its generic arm widened back to it, or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 BARE=$(printf '%s' "$CMD" | cmd_bare)
@@ -2536,7 +2566,30 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # CLAUSE at a redirect instead is what produced the 2026-09-05 CRITICAL (it
   # hid a later `${x:---admin}` from that mask); see the ACCEPTED OVER-DENIAL
   # residual. Fix the scan, not the cut.
-  if printf '%s' "$CLAUSE" | grep -qF '$'; then
+  # THE MASK COVERS `(` AND A BACKTICK, NOT JUST `$` (2026-09-13, second review round).
+  # Narrowing _OUT_GH_GLOBALS_GRANT's FLAG arms closed the glued-separator crossing, but the
+  # clause can still begin in a previous command through the REDIRECT arm: `_OUT_SEP`
+  # interpolates the shared `_CMD_REDIR`, whose target class admits `(`, so a PROCESS
+  # SUBSTITUTION reads as "a redirect to a file named `(gh`" and the cut anchors at the outer
+  # binary:
+  #
+  #     gh --auto >(gh pr merge 42)   ->  CLAUSE [gh --auto >(gh pr merge 42]
+  #
+  # donating the outer `--auto` to the inner merge. Measured against main: ALLOW here, DENY
+  # there, for `>(`, `<(`, `2>(` and `>>(`. The inner command really runs — probed with a
+  # stub named `ghx` (never `gh`), outer command inert so only the INNER call marks:
+  # `>(`, `<(`, `2>(` execute under BOTH bash and zsh, and `>>(` under zsh, which is the
+  # Bash tool's actual shell. Controls in the same run: a quoted spelling and a
+  # backslash-escaped `\>(` both inert, a plain `;` both live.
+  #
+  # Masked rather than cut, for the reason the paragraph above gives: truncating the CLAUSE
+  # at the offending byte is the reverted 2026-09-05 CRITICAL. Masking only ever sets
+  # HAS_REAL_AUTO=no, which DENIES — the safe direction at the one grant-shaped read — and
+  # no sanctioned shape carries these bytes (`gh pr merge <n> --auto --squash
+  # --delete-branch` and the redirect form are pinned ALLOW in the suite). A QUOTED paren
+  # cannot reach here: $CLAUSE is cut from $WORDS, whose neutral() rewrites a quoted
+  # separator to the letter `x`.
+  if printf '%s' "$CLAUSE" | grep -qE '[$(`]'; then
     HAS_REAL_AUTO=no
   elif [ -z "${_CMD_REDIR:-}" ]; then
     # Unreachable with a healthy lib (a broken one is already caught at the
