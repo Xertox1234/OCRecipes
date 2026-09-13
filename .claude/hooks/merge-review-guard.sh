@@ -142,6 +142,15 @@ case "$TOOL" in
       # path-qualified binary, the glued metacharacter, and the quoted substitution. Those
       # three defeat the detector before the slot is ever reached - they are about how the
       # BINARY is rendered, not about what sits after it - so P1 remains open for them.
+      # A FOURTH family is open in the slot this change DOES model, named here so the list
+      # above is not read as exhaustive: a QUOTED root flag carrying a SEPARATE unquoted
+      # value. cmd_bare blanks the quoted span, so `gh "-R" o/r pr merge 42` renders as
+      # `gh      o/r pr merge 42` and the VALUE lands where the namespace belongs - SUB
+      # comes back empty and this line allows. Isolating control measured the same day:
+      # `gh "--no-color" pr merge 42` still resolves, so the cause is the separate value,
+      # not quoting as such. Not a regression (main behaves identically), and
+      # guard-outward-cli.sh still denies it because that hook reads cmd_words, which
+      # DELETES quote characters, rather than cmd_bare, which blanks the span.
       #
       # A raw-token predicate was tried here across three review rounds and WITHDRAWN. It
       # closed each family it was aimed at and re-opened the OPPOSITE failure one layer up
@@ -182,7 +191,9 @@ case "$TOOL" in
     # byte-identical to a bare one's. The sibling ordering `--repo other/org 42` refused
     # correctly, which is exactly why the gap survived a reader who checked one spelling.
     # The refusal now scans the whole clause, so both orderings refuse; test-cmd-detect.sh
-    # pins all four spellings in both positions. Mirrored in BOTH directions, the ABSENT case included — a bare
+    # pins all four spellings in both positions.
+    #
+    # Mirrored in BOTH directions, the ABSENT case included — a bare
     # `gh pr merge 42` carries no `--repo` and is allowed to mean the ambient repo, so a
     # payload asserting NO owner/repo is likewise treated as ambient, not denied. Only an
     # ASSERTED-AND-DIFFERENT target is refused. Denying the absent case instead would

@@ -175,7 +175,21 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 #
 # INHERITED RESIDUAL, same as the git side: an unmodeled SEPARATE-arg root global would have
 # its argument mis-read as the namespace, losing the match — a false NEGATIVE, never a false
-# positive. Naming `-R`/`--repo` explicitly is what keeps the retarget flags out of it.
+# positive. Naming `-R`/`--repo` explicitly is what keeps the retarget flags out of it —
+# BUT ONLY IN THE UNQUOTED RENDERING, and the scope of that sentence is load-bearing.
+# `cmd_bare` BLANKS a quoted span, so a QUOTED flag carrying a SEPARATE unquoted value
+# loses the flag and leaves the value sitting where the namespace belongs:
+#
+#     gh "-R" o/r pr merge 42   ->  cmd_bare_deep  [gh      o/r pr merge 42]  ->  no match
+#
+# so this function returns "" and merge-review-guard.sh reads that as "not a merge".
+# Measured 2026-09-13 with an isolating control: `gh "--no-color" pr merge 42` still
+# resolves, so the cause is the SEPARATE VALUE being mis-read as the namespace, not quoting
+# as such. NOT a regression — main's lib returns "" for these rows too — and
+# guard-outward-cli.sh still denies them, because it reads `cmd_words` (which DELETES quote
+# characters) rather than `cmd_bare` (which blanks the span). Tracked with P1's other
+# binary-rendering families; do not read the list here or in merge-review-guard.sh as
+# closed just because the unquoted slot is.
 _CMD_GH_GLOBALS='(([[:space:]]+(-R[[:space:]]+[^[:space:]]+|--repo[[:space:]]+[^[:space:]]+|-[^[:space:]]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
 
 # Verb alternations, named ONCE. cmd_git_repo_dir (below) must be called with the SAME verb
@@ -2140,9 +2154,18 @@ cmd_gh_pr_ref() {
   # command separator, so it is a strict SUPERSET of $full_match — this can only add
   # refusals, never remove one.
   #
-  # ACCEPTED RESIDUAL: cmd_bare does not strip `#` comments, so a trailing
-  # `gh pr merge 42  # remember --repo` refuses. Contrived, and it fails CLOSED — the safe
-  # direction for both consumers (an honest "could not verify" here, a deny at the gate).
+  # ACCEPTED RESIDUALS, both failing CLOSED (an honest "could not verify" here, a deny at
+  # the gate), and stated together so the list is a partition rather than a sample:
+  #   1. cmd_bare does not strip `#` comments, so a trailing
+  #      `gh pr merge 42  # remember --repo` refuses.
+  #   2. This clause has no trailing-token requirement where $full_match does, so it can
+  #      anchor EARLIER than the span that resolved the ref and import a `-R` from a
+  #      neighbour: `gh pr mergeX -R a/b;gh pr merge 42` refuses where $full_match
+  #      resolves 42. The occurrence counter does not catch it because its
+  #      `([[:space:]]|$)` suffix rejects `mergeX` while this one accepts it.
+  # Neither has a plausible real-world shape — a panel of the commands this repo actually
+  # runs resolves identically before and after — but a refusal costs a re-run, and the merge
+  # gate has no per-command escape, so they are written down rather than discovered twice.
   repo_clause=$(printf '%s' "$bare" \
     | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)[^;&|]*" \
     | head -1)

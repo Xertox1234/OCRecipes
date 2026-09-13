@@ -780,6 +780,16 @@ det cmd_is_git_commit 'git commit>log'        yes "a verb glued to a redirect is
 # decision on the record rather than a side effect nobody wrote down.
 det cmd_is_gh_pr_create '2>/dev/null gh pr create --fill' yes "a redirect before the command word no longer hides gh pr create"
 det cmd_is_gh_pr_create 'echo "2>/dev/null gh pr create"' no  "...and a quoted mention of that form still does not match"
+# A ROOT-POSITION flag in this predicate is security-relevant in its own right, separately
+# from the merge guards: cmd_is_gh_pr_create is the SOLE gate on pr-preflight-guard.sh's
+# stamp requirement (`cmd_is_gh_pr_create "$CMD" || exit 0`), so a miss here does not merely
+# lose a warning - it skips the PR-preflight gate outright, which is a fail-OPEN. That
+# bypass was live until 2026-09-13 and is pinned here so it cannot return silently.
+det cmd_is_gh_pr_create 'gh -R other/org pr create --title x'      yes "root-position -R <v> does not hide gh pr create"
+det cmd_is_gh_pr_create 'gh --repo other/org pr create --title x'  yes "root-position --repo <v> does not hide gh pr create"
+det cmd_is_gh_pr_create 'gh --repo=other/org pr create --title x'  yes "root-position --repo=v does not hide gh pr create"
+det cmd_is_gh_pr_create 'gh -Rother/org pr create --title x'       yes "root-position -Rv (glued) does not hide gh pr create"
+det cmd_is_gh_pr_create 'echo "gh -R other/org pr create"'         no  "...and a quoted mention of the root-position form still does not match"
 
 # NEGATIVE side. Widening a matcher can only ADD matches, so these are the pins that keep
 # the widening from becoming a mention-matcher.
@@ -1765,6 +1775,15 @@ ghref 'gh pr merge --repo other/org 42' - \
 ghsub 'cp -R src dst && gh pr create --title t' create \
   "a cp -R decoy in an earlier clause does not become the verb"
 
+# NOTE ON WHAT EACH ROW BELOW PROVES. The `ghsub ... "subcommand is SEEN"` rows are the
+# discriminating ones: emptying _CMD_GH_GLOBALS reddens them. The `ghref ... "retarget
+# REFUSED"` rows do NOT discriminate on their own - cmd_gh_pr_ref bails at
+# `[ -n "$full_match" ] || return 1` BEFORE reaching the repo check when the subcommand
+# cannot resolve at all, so a totally broken widening produces the same empty/rc-1 outcome
+# a correct refusal does. Verified by mutation, 2026-09-13. They are kept because the PAIR
+# is the assertion - "seen, and then refused" - and because the end-to-end deny REASON is
+# asserted in test-merge-review-guard.sh, which can tell the two apart. Do not read a green
+# `ghref` row on its own as evidence that the retarget check ran.
 echo "--- cmd_gh_pr_*: a ROOT-POSITION repo flag must not hide the namespace (A) ---"
 ghsub 'gh -R other/org pr merge 42'       merge "-R <v> in root position: subcommand is SEEN"
 ghsub 'gh --repo other/org pr merge 42'   merge "--repo <v> in root position: subcommand is SEEN"
@@ -1810,7 +1829,7 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
 # assertion in a run that otherwise completed. It cannot catch an early
 # `return`/`exit` or a truncated file, because those terminate before this line.
-EXPECTED_TOTAL=594
+EXPECTED_TOTAL=599
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

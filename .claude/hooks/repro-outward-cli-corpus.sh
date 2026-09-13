@@ -2282,7 +2282,7 @@ lib/cmd-detect.sh is unsourceable (broken install) - failing closed via
 the hook envelope's .tool_input.command could not be read (malformed JSO
 the hook envelope's .tool_name could not be read (malformed JSON or a ch
 the quote-aware rendering came back empty for a non-empty command - eith
-the root-position flag grammar (_OUT_GH_GLOBALS) came back EMPTY, which
+the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is mis
 PIN_EXEMPT_EOF
 }
 EXPECTED_EMIT_SITES=26
