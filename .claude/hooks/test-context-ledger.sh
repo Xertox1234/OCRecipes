@@ -266,6 +266,75 @@ else
   no "cap VIOLATED against realistic input ($size14 bytes)"
 fi
 
+# --- Task 3: SessionStart injector ---
+
+RESUME_HOOK="$HOOKS_DIR/session-resume-ledger.sh"
+SIDR="sess-task3"; LR="$CONTEXT_LEDGER_ROOT/$SIDR"; mkdir -p "$LR"
+# The sentinel is UNIQUE to this fixture. Asserting the generic "[CONTEXT LEDGER]" banner
+# instead would pass against a hook that emits a hardcoded digest and never reads resume.md.
+printf '[CONTEXT LEDGER]\nVERIFIED | sentinel-t3-unique | cmd\n' > "$LR/resume.md"
+
+# Test 4: source=compact -> valid JSON carrying the ACTUAL file content.
+out=$(printf '{"session_id":"%s","source":"compact"}' "$SIDR" | bash "$RESUME_HOOK" 2>/dev/null)
+if printf '%s' "$out" | jq -e '.hookSpecificOutput.hookEventName == "SessionStart"' >/dev/null 2>&1 \
+   && printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null | grep -q "sentinel-t3-unique"; then
+  ok "source=compact emits valid JSON carrying resume.md's actual content"
+else
+  no "source=compact output malformed or not sourced from resume.md: [$out]"
+fi
+
+# Test 4b: a digest containing JSON metacharacters survives encoding INTACT.
+# `jq -n --arg` handles this; a printf-based implementation would emit invalid JSON or
+# silently corrupt the digest. Nothing else in the suite would notice.
+SIDQ="sess-task3-quotes"; LQ="$CONTEXT_LEDGER_ROOT/$SIDQ"; mkdir -p "$LQ"
+printf '%s\n' 'VERIFIED | he said "hi" | grep -E "^a\\|b" path\with\back' > "$LQ/resume.md"
+out=$(printf '{"session_id":"%s","source":"compact"}' "$SIDQ" | bash "$RESUME_HOOK" 2>/dev/null)
+got=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)
+if printf '%s' "$got" | grep -q 'he said "hi"' && printf '%s' "$got" | grep -q 'path\\with\\back'; then
+  ok "digest with quotes and backslashes survives JSON encoding intact"
+else
+  no "digest corrupted by JSON encoding: [$got]"
+fi
+
+# Test 5b: EMPTY (zero-byte) resume.md -> silent. Pins `[ -s ]` rather than `[ -f ]`;
+# swapping them would keep every other case green while emitting an empty digest.
+SIDE="sess-task3-empty"; LE="$CONTEXT_LEDGER_ROOT/$SIDE"; mkdir -p "$LE"
+: > "$LE/resume.md"
+out=$(printf '{"session_id":"%s","source":"compact"}' "$SIDE" | bash "$RESUME_HOOK" 2>&1); rc=$?
+if [ $rc -eq 0 ] && [ -z "$out" ]; then
+  ok "empty resume.md exits 0 silently"
+else
+  no "empty resume.md rc=$rc out=[$out]"
+fi
+
+# Test 7b: malformed stdin and a rejected session id -> silent, exit 0 (fail open).
+for bad_input in 'not json at all' '{"session_id":"../etc","source":"compact"}' '{}'; do
+  out=$(printf '%s' "$bad_input" | bash "$RESUME_HOOK" 2>&1); rc=$?
+  if [ $rc -eq 0 ] && [ -z "$out" ]; then
+    ok "fail-open on bad input: ${bad_input:0:28}"
+  else
+    no "bad input leaked rc=$rc out=[$out] for: $bad_input"
+  fi
+done
+
+# Test 3: source=startup -> NOTHING. The most likely regression.
+for src in startup resume clear; do
+  out=$(printf '{"session_id":"%s","source":"%s"}' "$SIDR" "$src" | bash "$RESUME_HOOK" 2>&1); rc=$?
+  if [ $rc -eq 0 ] && [ -z "$out" ]; then
+    ok "source=$src emits nothing"
+  else
+    no "source=$src leaked output rc=$rc out=[$out]"
+  fi
+done
+
+# Test 5: no resume.md -> exit 0, no output.
+out=$(printf '{"session_id":"sess-task3-none","source":"compact"}' | bash "$RESUME_HOOK" 2>&1); rc=$?
+if [ $rc -eq 0 ] && [ -z "$out" ]; then
+  ok "missing resume.md exits 0 silently"
+else
+  no "missing resume.md rc=$rc out=[$out]"
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]
