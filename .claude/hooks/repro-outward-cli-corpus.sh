@@ -1288,7 +1288,7 @@ fi
 #    AND THE ONE THAT IS STILL OPEN, named because a residual list that discloses
 #    only the residual it has already closed is worse than no list. A scope
 #    NARROWING INSIDE a check that still fires first for every corpus row: the
-#    check keeps producing the same verdict AND the same reason for all 573 rows
+#    check keeps producing the same verdict AND the same reason for all 581 rows
 #    while commands outside the corpus flip. Nothing in this block can see that --
 #    not attribution, not the per-path tuples, not `_pin_sites`, which asks whether
 #    a check is reached, never whether it is reached by everything it should be.

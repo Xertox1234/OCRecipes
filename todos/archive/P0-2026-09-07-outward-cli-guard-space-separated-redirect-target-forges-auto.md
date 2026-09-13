@@ -287,7 +287,7 @@ with a named expected outcome:
 | mutation                                   | result                                           |
 | ------------------------------------------ | ------------------------------------------------ |
 | re-anchoring discarded (cut at `RSTART`)   | **7 red** — the digit rows, BOTH directions      |
-| normalisation removed (`norm = $0`)        | **21 red** — forged + masked rows                |
+| normalisation removed (`norm = $0`)        | **22 red** — forged + masked rows                |
 | spaced-target support removed from `redir` | **8 red** — exactly the SPACED rows, glued green |
 | `" "` → `""` replacement                   | **green — EQUIVALENT**, recorded, not chased     |
 
@@ -301,11 +301,30 @@ same way the other three rows of this table were. (A review pass reported 11 her
 count came from a hand-built 15-row reconstruction rather than from the suite, and did not
 reproduce — recorded so the discrepancy is not rediscovered as a defect.)
 
-Then **16 → 21** on 2026-09-13, precisely +5: round 2 added five VALUE-FLAG-TARGET ALLOW
-rows, and all five die under this same mutation. Re-measured against the suite at that
-tree — `626 passed, 21 failed` — and independently reproduced by both reviewers. The two
-`vft` rows that are NOT among the five stay green under it, which is what exposed them as
-pins on the clause cut rather than the controls they were labelled.
+Then **16 → 22** on 2026-09-13, precisely +6: round 2 added five VALUE-FLAG-TARGET ALLOW
+rows and round 3 added `vft-vmask`, and all six die under this same mutation. Measured
+against the suite at the tree that contains all six — `626 passed, 22 failed`.
+
+**This cell said 21 for one revision, and that is worth recording rather than quietly
+correcting.** 21 was measured — at `b24144b8`, before `vft-vmask` existed. Round 3 added
+that row and carried the old figure forward into a commit message that claimed it was
+"measured at this tree". It was not; it was measured at the previous one. The figure fails
+its own arithmetic without re-running anything: 626 + 21 = 647, which is `b24144b8`'s
+assertion total, while this tree's is 648. **Measure, then change, then report is not the
+same as measure after changing** — and a suite total is the cheapest possible check on
+whether a carried-forward number belongs to the tree it is printed next to.
+
+Which rows die matters more than the count. `vft-vmask` dies because under `norm = $0` its
+own `> -x` is never stripped, so the raw whitespace split leaves `prev="-x"` immediately
+before `--auto`; `-x` is not in `GH_MERGE_VALUE_FLAGS`, so the mutant grants and the
+`assert_deny` fails. That is the row earning its keep, exactly as intended.
+
+`vft-amp` and `vft-clob` are the only `vft` rows that stay GREEN under this mutation, and
+that is what exposed them as pins on the clause cut rather than the controls they were
+labelled. An earlier revision of this paragraph said "the two `vft` rows that are NOT among
+the five stay green" — there are three such rows now, and saying so wrongly would tell a
+maintainer that a red `vft-vmask` is a regression to chase back into the guard. It is not:
+it is the row doing its job.
 
 ### False-positive population, measured by execution (AC item 6)
 
