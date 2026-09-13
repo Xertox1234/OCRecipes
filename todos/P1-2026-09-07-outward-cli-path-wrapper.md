@@ -73,8 +73,27 @@ the bare name through the inherited `PATH`**.
 > shell-metacharacter class that contains no path-separator branch, which is the absolute-path
 > half.
 >
-> **These are GUARD-TEXT rules, not shim rules — no shim can close them**, so they belong to a
-> companion todo and must be closed before ruling 4's scope-out is treated as safe.
+> 🛑 **CORRECTION 2026-09-13 — "no shim can close them" was FALSE, and this list was
+> under-named. Ruling 4 is consequently UNDER RE-DECISION by the owner; do not implement it yet.**
+>
+> - **Only residual 2 (absolute path) is genuinely shim-immune.** `npx` and `npm` are ordinary
+>   PATH-resolved binaries (verified: both `/opt/homebrew/bin/`), so a shim named `npx` or `npm`
+>   intercepts them **before** the launcher's own cache-bin logic runs. The launcher family is
+>   out of scope **by choice**, not by impossibility — and that choice is reversible.
+> - **A live, unguarded OTA path is missing from the four spellings named above.**
+>   `npm exec eas update --branch preview` is **ALLOW** at the guard — re-measured directly, with
+>   both controls holding (`eas update --branch preview` → DENY; `ls -la` → ALLOW; bash 5.3.15).
+>   Of the four named launcher spellings, three (`bunx`, `bun x`, and `pnpm`/`yarn` variants) are
+>   **not even installed** on the reference machine, while the live one was omitted. A generated
+>   grid found ten ALLOW forms, including `npm exec`, `npx -y`, `bun run`, `pnpm dlx`, `yarn dlx`.
+> - **The "3 launcher forms × 3 binaries = 9 rows" figure does not reconcile** with its own five
+>   quoted examples (which span four binary spellings and include the absolute-path row, which is
+>   residual 2, not a launcher form). Treat the figure as withdrawn.
+> - **The corpus cites the wrong proposition.** A guard-verdict corpus is evidence that _the guard
+>   allows this text_ — not that _the spelling bypasses PATH resolution_. Those are two claims.
+>
+> This block replaced an "any future spelling" overclaim with a differently-shaped completeness
+> claim. Recorded rather than quietly rewritten, because that is the repeat defect.
 
 > **The count "three currently-open bypass classes" was true on 2026-09-07 and is NOT re-verified
 > here (2026-09-13).** At least one of that era's classes has since closed. Treat the number as a
@@ -165,7 +184,16 @@ documentation — do NOT run `gh --help` to find out.** Executing an outward-fac
 `--help`/`--version` included, is forbidden by this todo's own Implementation Notes and by
 `docs/solutions/conventions/never-execute-an-outward-facing-cli-fragment-in-review-2026-08-16.md`.
 
-### 4. Scope is `eas`, `railway`, `gh` — `npm`/`pnpm`/`yarn` are OUT
+### 4. Scope is `eas`, `railway`, `gh` — `npm`/`pnpm`/`yarn` are OUT — 🛑 UNDER RE-DECISION
+
+> **This ruling's stated premise has been contradicted by measurement and is back with the
+> owner (2026-09-13). Do not implement it until it is re-ruled.** The premise below is "no added
+> coverage of this class". Measured: `npm exec eas update --branch preview` is **ALLOW** at the
+> guard (controls held) and is **not** closed by the `eas` shim, while an `npm` shim would
+> intercept it — `npm` is PATH-resolved. So an `npm` shim demonstrably **does** add coverage of
+> exactly this class. The honest trade is not "no added coverage" but "the added coverage was
+> judged not worth putting a refusal in front of husky, lint-staged and `preflight:fast`" — which
+> is a real argument, but a different one, and the owner ruled on the first.
 
 **This REVISES the six-binary list in the first Acceptance Criterion below.**
 `npm run update:preview` ends in `exec eas update --branch preview --platform all "$@"`
@@ -243,13 +271,27 @@ Consequences, both binding:
 - [ ] **FIRST, and blocking (ruling 5):** proven by execution that a directory prepended to
       `PATH` via `.claude/settings.json`'s `env` key is observed at **all three levels**, using
       the argv-printing sentinel-file stub the Implementation Notes mandate:
-      **(a)** a Bash tool call; **(b)** a **grandchild** of one — specifically the `eas`
-      resolution point inside `npm run update:preview`; **(c)** a **subagent's** Bash tool call.
+      **(a)** a Bash tool call; **(b)** a **grandchild** of one, via a **scratch script that
+      reproduces `package.json:50`'s shape** (`sh -c '… exec ocr-path-probe …'`) and execs a
+      harmless sentinel binary; **(c)** a **subagent's** Bash tool call.
+
+      > 🛑 **`update:preview` / `update:production` must NEVER be the probe vehicle.** An earlier
+      > revision of this criterion named the `eas` resolution point inside `npm run update:preview`
+      > as level (b). That is the `fake-eas` construction this todo was filed about, written into
+      > its own acceptance criteria. Reaching that resolution point means running the real publish:
+      > `package.json:50` requires `--message` and then `exec eas update --branch preview
+      > --platform all` with `CI=1` and the production domain baked in; it is DENY at the guard, so
+      > the tester must first add `ALLOW_OUTWARD_CLI=1` to run it at all — at which point **the only
+      > barrier between the probe and a live OTA to real `preview` users is the stub resolution the
+      > probe exists to test.** `/opt/homebrew/bin/eas` is the real CLI on this machine (verified
+      > 2026-09-13). A sentinel stub does not save it, because the failure mode under test IS stub
+      > non-resolution.
       Level (b) is not optional padding: ruling 4 REMOVES `npm`/`pnpm`/`yarn` from scope on the
       strength of grandchild inheritance, so a criterion proving only (a) can pass green while
       the premise a coverage-removal rests on stays unmeasured — and ruling 4's own escape clause
       would then never fire. If any level fails, stop and re-decide the wiring — every criterion
       below is inert without this.
+
 - [ ] A wrapper directory is prepended to the agent's `PATH` containing one shim per gated
       binary (`eas`, `railway`, `gh` — **three, per ruling 4**; `npm`/`pnpm`/`yarn` are out of
       scope). Each shim refuses with a non-zero exit and a clear message unless
