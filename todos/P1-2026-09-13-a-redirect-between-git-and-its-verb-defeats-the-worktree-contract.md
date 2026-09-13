@@ -207,6 +207,68 @@ carries values outside the population the check governs; quote the APPLICABLE de
 - `_CMD_REDIR`'s target is mandatory and greedy. The 1344-row sweep varies the target across
   four values and shows 0 SEEN → MISSED transitions, so it does not swallow the verb on any
   spelling tested — but that is a bound from the tested set, not a proof.
+- **INHERITED RESIDUAL, accepted: adopting `_CMD_POS_SUFFIX` brings its wider closer class
+  with it.** That class is ``[);&|`{}<>]`` — **nine** characters: `)`, `;`, `&`, `|`,
+  backtick, `{`, `}`, `<`, `>`. Adopting it flips **six of those nine**, of which only
+  **four** are over-denials. Measured through the real pipeline (`split_segments`, then the
+  regex), stub `git` shell function so nothing ran:
+
+  | leg                             | closers             | n   | what happens                                                                                                                                                                            |
+  | ------------------------------- | ------------------- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | consumed before the regex       | `;` `&` `\|`        | 3   | `split_segments` cuts at these, so the segment already ends and the SHIPPED boundary matches at `$` — SEEN both ways, **no flip**                                                       |
+  | flips, and IS a real invocation | `<` `>`             | 2   | **the fix working, not a residual** — bash splits at the operator, so `git commit>log` really does run `git commit` (verified: the stub wrote its argv to `log`). Do NOT suppress these |
+  | flips, NOT a real invocation    | `)` `` ` `` `{` `}` | 4   | the over-denial disclosed below                                                                                                                                                         |
+
+  3 + 2 + 4 = 9, the whole class. The four over-denials, one example shape each:
+
+  | segment           | shipped | with the suffix | what bash actually produces                     |
+  | ----------------- | ------- | --------------- | ----------------------------------------------- |
+  | `git commit{foo}` | MISSED  | SEEN            | `argv[1]: commit{foo}` — one word, not `commit` |
+  | `git commit}`     | MISSED  | SEEN            | `argv[1]: commit}` — same                       |
+  | `git commit)`     | MISSED  | SEEN            | syntax error; nothing runs                      |
+  | `` git commit` `` | MISSED  | SEEN            | syntax error; nothing runs                      |
+
+  That table ILLUSTRATES the over-denial; it does not exhaust it. Each of the four
+  characters admits more shapes than the row shown — `git commit{` flips too (argv
+  `commit{`) — so an implementer should match on the CHARACTER, not on these four strings.
+
+  None of them is a real invocation of the verb: a brace span with no comma is not brace
+  expansion, so the token stays one word, and the other two never parse. **The direction is
+  safe** — a SEEN verdict only sends the segment to the repo-resolution check, which
+  resolves to cwd and passes or denies; it can never produce a wrong ALLOW.
+
+  **SEEN → MISSED is impossible here by construction, not merely unobserved.** The suffix
+  alternation is a strict SUPERSET of the shipped `([[:space:]]|$)` — the same two
+  branches plus one more — and `grep -qE` tests existence of a match, so every segment the
+  shipped regex matched still matches. Do **not** cite the 1344-row sweep for this sentence:
+  that corpus is 14 _redirect_ operators × 4 targets × 6 verbs × 4 positions, so it contains
+  zero rows shaped like the four above and its zero is a structural absence, not evidence.
+  (The superset argument covers the boundary swap only. The `_CMD_GIT_GLOBALS` half of the
+  fix is a separate edit and still needs its own rows.)
+
+  Worth restating here because the CONSUMER differs — **not** because upstream is silent; it
+  is not. `lib/cmd-detect.sh:67-116` already names every one of these closers ("a subshell
+  `)`", "one of the same `;` `&` `|` backtick operators", and `{`/`}` as deliberate
+  defense-in-depth) and then carries a "KNOWN RESIDUAL (harmless)" analysis reaching this
+  block's conclusion independently: safe for deny-shaped consumers, with the same named
+  exception (`drift-detect-update.sh`'s suppressive one). The narrower note at `:119-125`
+  covers only the `<`/`>` addition — reading that one alone is exactly how an earlier draft
+  of this block came to claim the residual was undocumented.
+
+  What does **not** carry over is the **anchor pairing.** Upstream, `)` and backtick are
+  sanctioned closers because `_CMD_POS_PREFIX` (`lib/cmd-detect.sh:118`) carries `(` and
+  backtick as command-position OPENERS, so `` `git commit` `` and `(git commit)` are real
+  invocations the pair legitimately catches. `git-safety.sh`'s hand-rolled prefix
+  (`^[[:space:]]*(ENV=val )*git…`) has no such opener, so for THIS consumer `)` and backtick
+  can only ever close an unbalanced, syntax-error segment — over-denial with no matching
+  real catch. That asymmetry, not an absence of upstream documentation, is the reason to
+  write it down here. Kept anyway, because the alternative — hand-writing a narrower
+  boundary class here — is exactly the re-derivation this todo exists to avoid.
+
+  **An implementer should expect flips on six of the nine closer characters, not four:**
+  read `<`/`>` as the fix working, and leave the other four alone. Narrowing the class to
+  silence them would delete the deliberate 2026-09-01 `<`/`>` catch.
+
 - **DISCLOSED RESIDUAL — the one position this fix does NOT close: a redirect BEFORE the
   `git` token.** (The two positions INSIDE the regex — interposed and verb-glued — are both
   closed above; this is the third.) `2>/dev/null git commit -m x` is a real, equally valid bash invocation and is
