@@ -207,6 +207,29 @@ carries values outside the population the check governs; quote the APPLICABLE de
 - `_CMD_REDIR`'s target is mandatory and greedy. The 1344-row sweep varies the target across
   four values and shows 0 SEEN → MISSED transitions, so it does not swallow the verb on any
   spelling tested — but that is a bound from the tested set, not a proof.
+- **INHERITED OVER-DENIAL, accepted: adopting `_CMD_POS_SUFFIX` brings its documented
+  residual with it.** Its closer class admits `)`, `;`, `&`, backtick, `{`, `}`, `<`, `>`,
+  so four shapes newly match that the shipped regex missed — measured with a stub `git`
+  shell function so nothing ran:
+
+  | segment           | shipped | with the suffix | what bash actually produces                     |
+  | ----------------- | ------- | --------------- | ----------------------------------------------- |
+  | `git commit{foo}` | MISSED  | SEEN            | `argv[1]: commit{foo}` — one word, not `commit` |
+  | `git commit}`     | MISSED  | SEEN            | `argv[1]: commit}` — same                       |
+  | `git commit)`     | MISSED  | SEEN            | syntax error; nothing runs                      |
+  | `` git commit` `` | MISSED  | SEEN            | syntax error; nothing runs                      |
+
+  None is a real invocation of the verb: a brace span with no comma is not brace expansion,
+  so the token stays one word, and the other two never parse. **The direction is safe** — a
+  SEEN verdict only sends the segment to the repo-resolution check, which resolves to cwd
+  and passes or denies; it can never produce a wrong ALLOW. The dangerous direction is
+  SEEN → MISSED, and the 1344-row sweep shows zero of those.
+
+  Recorded rather than treated as a defect because `_CMD_POS_SUFFIX`'s own header already
+  documents and accepts this for its other consumers, and because the alternative —
+  hand-writing a narrower boundary class here — is the re-derivation this todo exists to
+  avoid. An implementer should expect these four to flip and not chase them.
+
 - **DISCLOSED RESIDUAL — the one position this fix does NOT close: a redirect BEFORE the
   `git` token.** (The two positions INSIDE the regex — interposed and verb-glued — are both
   closed above; this is the third.) `2>/dev/null git commit -m x` is a real, equally valid bash invocation and is
