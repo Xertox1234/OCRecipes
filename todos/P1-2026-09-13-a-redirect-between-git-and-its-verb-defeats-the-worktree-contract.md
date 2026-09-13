@@ -207,10 +207,19 @@ carries values outside the population the check governs; quote the APPLICABLE de
 - `_CMD_REDIR`'s target is mandatory and greedy. The 1344-row sweep varies the target across
   four values and shows 0 SEEN → MISSED transitions, so it does not swallow the verb on any
   spelling tested — but that is a bound from the tested set, not a proof.
-- **INHERITED OVER-DENIAL, accepted: adopting `_CMD_POS_SUFFIX` brings its documented
-  residual with it.** Its closer class admits `)`, `;`, `&`, backtick, `{`, `}`, `<`, `>`,
-  so four shapes newly match that the shipped regex missed — measured with a stub `git`
-  shell function so nothing ran:
+- **INHERITED RESIDUAL, accepted: adopting `_CMD_POS_SUFFIX` brings its wider closer class
+  with it.** That class is ``[);&|`{}<>]`` — **nine** characters: `)`, `;`, `&`, `|`,
+  backtick, `{`, `}`, `<`, `>`. Adopting it flips **six** shapes the shipped regex missed,
+  of which only **four** are over-denials. Measured through the real pipeline
+  (`split_segments`, then the regex), stub `git` shell function so nothing ran:
+
+  | leg                             | closers             | n   | what happens                                                                                                                                                                            |
+  | ------------------------------- | ------------------- | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | consumed before the regex       | `;` `&` `\|`        | 3   | `split_segments` cuts at these, so the segment already ends and the SHIPPED boundary matches at `$` — SEEN both ways, **no flip**                                                       |
+  | flips, and IS a real invocation | `<` `>`             | 2   | **the fix working, not a residual** — bash splits at the operator, so `git commit>log` really does run `git commit` (verified: the stub wrote its argv to `log`). Do NOT suppress these |
+  | flips, NOT a real invocation    | `)` `` ` `` `{` `}` | 4   | the over-denial disclosed below                                                                                                                                                         |
+
+  3 + 2 + 4 = 9, the whole class. The four over-denials:
 
   | segment           | shipped | with the suffix | what bash actually produces                     |
   | ----------------- | ------- | --------------- | ----------------------------------------------- |
@@ -225,10 +234,17 @@ carries values outside the population the check governs; quote the APPLICABLE de
   and passes or denies; it can never produce a wrong ALLOW. The dangerous direction is
   SEEN → MISSED, and the 1344-row sweep shows zero of those.
 
-  Recorded rather than treated as a defect because `_CMD_POS_SUFFIX`'s own header already
-  documents and accepts this for its other consumers, and because the alternative —
-  hand-writing a narrower boundary class here — is the re-derivation this todo exists to
-  avoid. An implementer should expect these four to flip and not chase them.
+  Recorded here because **no header covers it.** `_CMD_POS_SUFFIX`'s own header
+  (`lib/cmd-detect.sh:119-125`) documents only the `<`/`>` addition and concludes it "can
+  only add REAL matches" — correct for `<`/`>`, which is leg 2 above, but it never addresses
+  `)`, backtick, `{`, `}`. So this residual is undocumented upstream rather than sanctioned
+  there, which is the reason to write it down rather than a reason to dismiss it. Kept
+  anyway, because the alternative — hand-writing a narrower boundary class here — is exactly
+  the re-derivation this todo exists to avoid.
+
+  **An implementer should expect six flips, not four:** read `<`/`>` as the fix working, and
+  leave the remaining four alone. Narrowing the class to silence them would delete the
+  deliberate 2026-09-01 `<`/`>` catch.
 
 - **DISCLOSED RESIDUAL — the one position this fix does NOT close: a redirect BEFORE the
   `git` token.** (The two positions INSIDE the regex — interposed and verb-glued — are both
