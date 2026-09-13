@@ -51,8 +51,14 @@ without a token.
 Measured 2026-09-07 over this project's own history (3,883 unique Bash commands): the guard's
 span layer — the source of every P0 filed against it — has synthesised a gated needle **zero**
 times in 1,555 opportunities. The plain-text layer is exercised on 25.5% of commands. A wrapper
-covers **both**, plus the three currently-open bypass classes and any future spelling, because
-none of them changes what `execve` resolves.
+covers **both**, plus the then-open bypass classes and any future spelling, because none of them
+changes what `execve` resolves.
+
+> **The count "three currently-open bypass classes" was true on 2026-09-07 and is NOT re-verified
+> here (2026-09-13).** At least one of that era's classes has since closed. Treat the number as a
+> dated measurement, not a present-tense fact — and do not cite it as evidence without re-deriving
+> it from the guard's current DOCUMENTED RESIDUALS. The wrapper's justification does not rest on
+> the count: it rests on `execve` resolution being independent of spelling.
 
 ## Ruling — 2026-09-13
 
@@ -91,15 +97,26 @@ read the guard's interface. Measured in `.claude/hooks/guard-outward-cli.sh`:
 
 A delegating shim would therefore re-serialize argv into a command string, wrap it in a
 synthetic envelope, and parse JSON back — re-introducing text matching into the one component
-whose entire value is that it never reads command text. **It would also inherit every open
-guard bypass**: `eas 2>/dev/null update` defeats the text matcher today, so a delegating
-wrapper would wave it through. The backstop would fail exactly where the layer it backs up
-fails.
+whose entire value is that it never reads command text. **Delegation would couple the backstop
+to the text matcher's blind spots, present and future**: whatever spelling the text layer fails
+to recognise, a delegating wrapper waves through too. The backstop would fail exactly where the
+layer it backs up fails — the one property a backstop may not have.
 
-Argv is strictly stronger, because the shell completes expansion before `execve`. The guard
-documents a live residual where `gh api repos/o/r -X $'\x50\x4f\x53\x54'` hides `POST` from the
-text matcher (`:358-372`); a shim receives that argument as the literal string `POST`. The
-obfuscation is gone by construction rather than by pattern.
+**Correction, recorded rather than overwritten (2026-09-13).** An earlier draft of this ruling
+argued that point with two CONCRETE examples — `eas 2>/dev/null update` and
+`gh api repos/o/r -X $'\x50\x4f\x53\x54'` — and called both live bypasses. **Both are CLOSED.**
+The interior-redirect class was fixed 2026-09-07
+(`todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`,
+`status: done`), and the ANSI-C method residual is retracted **inside the very comment block
+that was cited**: `:358-372` quotes its "UNHANDLED GAP, CONFIRMED LIVE" half and stops nine
+lines short of `:381`'s "CLOSED — and this entry said otherwise for a day." Do not re-open
+either as an argument here. **The ruling does not depend on them** — it rests on the exit-0
+interface and the absent shared table, neither of which requires any bypass to be live.
+
+Argv is also stronger as a matter of **mechanism**, independent of any gap: the shell completes
+expansion before `execve`, so a shim receives `-X $'\x50\x4f\x53\x54'` as the literal string
+`POST`. A text matcher must model that rendering; a shim never sees it. That is a claim about
+where each layer sits, not about what either currently misses.
 
 There is no shared table to borrow: `_OUT_GATED_VERB` (`:2152`) is a coarse union across all
 six binaries — it includes `run` and `api` — with `GH_MUTATING_RE` (`:2597`) and the eas
@@ -130,6 +147,13 @@ the OTA incident class through the npm path**. Shimming `npm`/`pnpm`/`yarn` woul
 in front of husky, lint-staged and `preflight:fast` for no added coverage of this class, and the
 Risks section already names breaking the operator's workflow as the primary risk. The guard
 continues to cover `npm run update:*` at its text layer — union, not substitution.
+
+**Provisional on ruling 5, exactly as ruling 1 is — and more consequentially.** This scope-out
+REMOVES coverage rather than describing it, so it is the costlier of the two to get wrong. It
+holds only if the prepended `PATH` is inherited by npm's child processes. **If ruling 5's first
+task disproves that, re-decide this ruling before implementing** — `npm`/`pnpm`/`yarn` come back
+into scope. (Checked 2026-09-13: no `eas-cli` dependency in `package.json` and no
+`node_modules/.bin/eas`, so no local-bin shadow independently defeats the premise.)
 
 ### 5. Committed to the repo, not the operator's environment
 
@@ -253,5 +277,7 @@ convention.
   this implements, with the measured evidence behind it.
 - `todos/archive/P2-2026-08-16-outward-cli-pretooluse-deny-hook.md` — where this option was
   first raised and left awaiting a call; that todo produced `guard-outward-cli.sh` itself.
-- `todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — the one
-  open guard defect that survives the Model A ruling, because it is reachable by accident.
+- `todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` —
+  **CLOSED 2026-09-07** (`status: done`). This bullet previously called it "the one open guard
+  defect that survives the Model A ruling"; that was stale and is corrected here 2026-09-13.
+  Nothing in this todo should be read as depending on it being open.
