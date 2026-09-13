@@ -5,10 +5,10 @@ category: logic-errors
 module: shared
 severity: medium
 tags: [harness, git, ls-remote, shell, probes, fail-open, exit-codes, gh, renames, find, destructive-ops]
-symptoms: [A collision/existence pre-check "passes" during a network or auth outage and duplicate work is only caught later (or never), An instruction reads "no output → does not exist" and a transport failure takes the same branch as genuine absence, git ls-remote prints nothing on rc=0 (absent) AND rc=128 (failure) — only stdout was inspected, A backgrounded command is reported as "exit code 0" while its log ends in BUILD FAILED because a trailing echo supplied the status]
+symptoms: [A collision/existence pre-check "passes" during a network or auth outage and duplicate work is only caught later (or never), An instruction reads "no output → does not exist" and a transport failure takes the same branch as genuine absence, git ls-remote prints nothing on rc=0 (absent) AND rc=128 (failure) — only stdout was inspected, A backgrounded command is reported as "exit code 0" while its log ends in BUILD FAILED because a trailing echo supplied the status, Every row of a verdict table comes back identical including the control row that must differ, A hook/guard probe reports the permissive verdict for all inputs because the hook never executed]
 applies_to: [.claude/agents/**/*.md, scripts/*.sh, .husky/**]
 created: '2026-07-02'
-last_updated: '2026-08-08'
+last_updated: '2026-09-13'
 ---
 
 # Probes that signal absence by empty output must also check the exit code
@@ -26,6 +26,34 @@ outage reads as a green light and the collision pre-check silently fails open.
   duplicate implementation is only caught at push time by the backstop triage.
 - A literal reader of the instruction treats rc=128 identically to rc=0 because the
   decision rule only mentions stdout.
+- **Every row of a verdict table agrees**, including the control row that must disagree.
+  A uniform table is the tell: a probe that never ran produces the same output shape as a
+  probe that ran and found nothing.
+
+## A second mechanism, measured 2026-09-13: the probe never ran at all
+
+The same failure reaches a *verdict* probe, not just an absence probe. A guard hook was
+exercised with:
+
+```bash
+env REVIEW_STAMP_ROOT="$STAMPS" -u SKIP_MERGE_REVIEW bash "$HOOK"
+```
+
+**macOS `env` is BSD: options must precede assignments.** `-u` after an assignment is
+parsed as the *command name*, so this exits **127** with `env: -u: No such file or
+directory`, the hook never executes, stdout is empty — and the probe, which classified a
+verdict by grepping that stdout for `"permissionDecision":"deny"`, reported **ALLOW for
+every row**, including the control row that must DENY. Write `env -u NAME VAR=x cmd`.
+
+Two sibling mechanisms produce the identical signature — the probe runs, but not against
+what you think:
+
+- **`git archive HEAD` is the COMMITTED tree.** Mutation-testing rows that exist only in
+  the working tree finds none of them and reports every one "not discriminating".
+- **Editing a shell script while a run of it is in flight.** Bash reads scripts by byte
+  offset, so an insertion shifts the file under the running interpreter and yields a
+  syntax error *hundreds of lines from the edit* — which reads as a real failure of the
+  code under test. Copy to scratch, then edit the copy.
 
 ## Root Cause
 
@@ -43,6 +71,14 @@ with a note and rely on the authoritative downstream check as the backstop."
 ## Prevention
 
 - Any probe whose negative result is "no output" needs an explicit exit-code clause.
+- **Give every probe a control that MUST produce the bad verdict**, and read that row
+  first. All three mechanisms above were caught by a control failing, and none was
+  visible in the finding rows themselves. An uncontrolled probe's negative is not
+  evidence — and a table where every row agrees has usually measured nothing at all.
+- Classify verdicts from the structured field (`jq -r '.hookSpecificOutput.permissionDecision'`),
+  not by grepping the serialised text: `jq`'s pretty-printer inserts a space after the
+  key, so `grep '"permissionDecision":"deny"'` silently reads every DENY as ALLOW. That
+  one cost a retracted finding in review.
   Fail toward "inconclusive", never toward "safe to proceed".
 - **Destructive-classification variant (2026-07-20, PR #672):** when the empty-output
   probe gates a DESTRUCTIVE action, the stakes invert but the rule is the same.
