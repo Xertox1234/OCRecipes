@@ -66,9 +66,9 @@ consumer). **The sentence I "corrected" was closer to true than my correction.**
 
 **Both rounds stated a claim about a body of evidence without traversing the whole body.**
 Round 1's body was the nine-character closer class; it enumerated four. Round 2's body was the
-50-line header at `:67-116`; it read `:100-126` — 27 lines, of which only the last **17** fall
+50-line header at `:67-116`; it read `:100-127` — 28 lines, of which only the last **17** fall
 inside that header, and the 33 above it were never opened. (The first draft of this sentence
-said "read the last 27 lines" of a 50-line region: 27 is the span read, 17 is the overlap. A
+said "read the last 27 lines" of a 50-line region: 28 is the span read, 17 is the overlap. A
 figure that does not reconcile against the ranges printed beside it — in the document whose
 subject is exactly that — caught in review.)
 
