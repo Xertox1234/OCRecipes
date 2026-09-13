@@ -296,8 +296,11 @@ else
   no "digest corrupted by JSON encoding: [$got]"
 fi
 
-# Test 5b: EMPTY (zero-byte) resume.md -> silent. Pins `[ -s ]` rather than `[ -f ]`;
-# swapping them would keep every other case green while emitting an empty digest.
+# Test 5b: EMPTY (zero-byte) resume.md -> silent. Proves only that an empty resume.md
+# produces NO output — not which guard causes it. Swapping `[ -s ]` for `[ -f ]` keeps
+# this case green too: the file still exists, DIGEST still comes back empty, and the
+# later `[ -n "$DIGEST" ]` guard independently catches the zero-byte case. The two
+# guards are redundant on this input, so this case cannot discriminate between them.
 SIDE="sess-task3-empty"; LE="$CONTEXT_LEDGER_ROOT/$SIDE"; mkdir -p "$LE"
 : > "$LE/resume.md"
 out=$(printf '{"session_id":"%s","source":"compact"}' "$SIDE" | bash "$RESUME_HOOK" 2>&1); rc=$?
@@ -307,7 +310,12 @@ else
   no "empty resume.md rc=$rc out=[$out]"
 fi
 
-# Test 7b: malformed stdin and a rejected session id -> silent, exit 0 (fail open).
+# Test 7b: malformed stdin and hostile input -> silent, exit 0 (fail open). The
+# `session_id:"../etc"` case only asserts fail-open on hostile input, not that the
+# sanitiser rejected it: no resume.md exists at the resolved path whether the
+# sanitiser rejects "../etc" or wrongly accepts it, so this loop cannot distinguish
+# the two. The sanitiser itself is asserted directly, both halves (rc and output), in
+# the Task 1 block above.
 for bad_input in 'not json at all' '{"session_id":"../etc","source":"compact"}' '{}'; do
   out=$(printf '%s' "$bad_input" | bash "$RESUME_HOOK" 2>&1); rc=$?
   if [ $rc -eq 0 ] && [ -z "$out" ]; then
@@ -333,6 +341,74 @@ if [ $rc -eq 0 ] && [ -z "$out" ]; then
   ok "missing resume.md exits 0 silently"
 else
   no "missing resume.md rc=$rc out=[$out]"
+fi
+
+# --- Task 4: curated-tier writer ---
+
+NOTE="$HOOKS_DIR/ledger-note.sh"
+SIDN="sess-task4"
+
+CLAUDE_CODE_SESSION_ID="$SIDN" bash "$NOTE" VERIFIED "config diff identical" "diff a b" >/dev/null 2>&1
+CLAUDE_CODE_SESSION_ID="$SIDN" bash "$NOTE" ASSUMED "latency 40-80ms" "never measured" >/dev/null 2>&1
+CUR="$CONTEXT_LEDGER_ROOT/$SIDN/curated.md"
+if grep -q "VERIFIED | config diff identical | diff a b" "$CUR" 2>/dev/null \
+   && grep -q "ASSUMED | latency 40-80ms | never measured" "$CUR" 2>/dev/null; then
+  ok "ledger-note appends both VERIFIED and ASSUMED rows"
+else
+  no "ledger-note did not append expected rows"
+fi
+
+# Appending must PRESERVE prior rows, not truncate. Checked explicitly: both earlier rows
+# are still present after a third write, and the file has exactly 3 lines.
+CLAUDE_CODE_SESSION_ID="$SIDN" bash "$NOTE" VERIFIED "third row" "cmd3" >/dev/null 2>&1
+if [ "$(wc -l < "$CUR" 2>/dev/null | tr -d ' ')" = "3" ] \
+   && grep -q "config diff identical" "$CUR" 2>/dev/null; then
+  ok "ledger-note appends without truncating prior rows"
+else
+  no "ledger-note truncated or miscounted: $(wc -l < "$CUR" 2>/dev/null) lines"
+fi
+
+# Rejection must be BOTH non-zero exit AND no write. Checking only the exit code would pass
+# a script that writes the row and then fails — the same "rc checked, side effect unchecked"
+# gap review found in Task 1's sanitiser loop.
+BEFORE=$(wc -c < "$CUR" 2>/dev/null | tr -d ' ')
+if CLAUDE_CODE_SESSION_ID="$SIDN" bash "$NOTE" MAYBE "x" "y" >/dev/null 2>&1; then
+  no "ledger-note accepted an invalid tier"
+else
+  AFTER=$(wc -c < "$CUR" 2>/dev/null | tr -d ' ')
+  if [ "$BEFORE" = "$AFTER" ]; then
+    ok "invalid tier rejected AND nothing written"
+  else
+    no "invalid tier rejected but the file grew: $BEFORE -> $AFTER"
+  fi
+fi
+
+# Missing arguments must also reject without writing.
+BEFORE=$(wc -c < "$CUR" 2>/dev/null | tr -d ' ')
+for args in "VERIFIED" "VERIFIED claim-only"; do
+  # shellcheck disable=SC2086
+  if CLAUDE_CODE_SESSION_ID="$SIDN" bash "$NOTE" $args >/dev/null 2>&1; then
+    no "ledger-note accepted incomplete args: [$args]"
+  else
+    ok "ledger-note rejected incomplete args: [$args]"
+  fi
+done
+AFTER=$(wc -c < "$CUR" 2>/dev/null | tr -d ' ')
+[ "$BEFORE" = "$AFTER" ] \
+  && ok "incomplete args wrote nothing" \
+  || no "incomplete args grew the file: $BEFORE -> $AFTER"
+
+# No session id -> fail, do not guess a key. Cover BOTH empty and UNSET: they take different
+# code paths through `${CLAUDE_CODE_SESSION_ID:-}`, and only one of them is the real case.
+if CLAUDE_CODE_SESSION_ID="" bash "$NOTE" VERIFIED "x" "y" >/dev/null 2>&1; then
+  no "ledger-note wrote with an empty session id"
+else
+  ok "ledger-note refuses an empty session id"
+fi
+if env -u CLAUDE_CODE_SESSION_ID bash "$NOTE" VERIFIED "x" "y" >/dev/null 2>&1; then
+  no "ledger-note wrote with session id UNSET"
+else
+  ok "ledger-note refuses an unset session id"
 fi
 
 echo ""
