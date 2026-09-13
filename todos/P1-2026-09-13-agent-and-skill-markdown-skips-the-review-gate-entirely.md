@@ -210,13 +210,33 @@ keyword-bearing regex exactly where it is for code:
 #    that regex carries free-text keywords for classifying CODE by filename, and
 #    running them over prose HOLDs any doc whose slug says "premium" or "login".
 STRUCTURAL_SENSITIVE='(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW\.md$|(^|/)docs/PATTERNS\.md$'
-printf '%s' "$f" | grep -qE "$STRUCTURAL_SENSITIVE" && { unsafe="${unsafe}  ${f}"$'\n'; continue; }
+# rc CAPTURED, not a bare `&&` chain — mirroring this script's own step-3 idiom.
+# Only a clean no-match (rc 1) may skip the HOLD; rc 0 (sensitive) and rc >= 2
+# (broken regex) both HOLD. See the measured note below for why this matters.
+rc_struct=0; printf '%s' "$f" | grep -qE "$STRUCTURAL_SENSITIVE" || rc_struct=$?
+if [ "$rc_struct" -ne 1 ]; then unsafe="${unsafe}  ${f}"$'\n'; continue; fi
 
 # 3) the volume exemption, unchanged in effect
 printf '%s' "$f" | grep -qE '^(docs|todos)/|\.md$' && continue
 
 # 4) today's step 3, untouched: the full override for code paths
 ```
+
+**The rc capture is not stylistic — a bare `&&` chain is fail-OPEN here, measured.**
+A revision of this todo wrote `grep -qE "$STRUCTURAL_SENSITIVE" && { ...; continue; }`, which
+contradicts this file's own acceptance criterion three sections down. With a malformed
+`STRUCTURAL_SENSITIVE` (grep rc 2), the bare form does not raise and does not HOLD: it falls
+through to the markdown exemption on the next line and classifies
+`.claude/agents/code-reviewer.md` as **PASS** — the exact file class this todo exists to
+protect. Constructed and run, with a healthy-regex control that agrees on both forms:
+
+| regex state           | bare `&&` | rc-captured |
+| --------------------- | --------- | ----------- |
+| healthy (control)     | HOLD      | HOLD        |
+| malformed (grep rc 2) | **PASS**  | HOLD        |
+
+Writing the criterion down did not prevent writing the violating snippet. Pair any new
+`grep -qE` in this script with its rc capture at the point of use.
 
 The `docs/rules/` special case then becomes redundant and should be deleted — it is covered by
 the structural subset. The four enforcement-governing paths (`.claude/agents/`,
