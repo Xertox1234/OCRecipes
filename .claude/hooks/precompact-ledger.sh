@@ -137,23 +137,46 @@ if [ -n "$TRANSCRIPT" ]; then
   # but before format_floor's display clamp (so a token isn't sliced in half first, see
   # above). `#` as the sed delimiter throughout, since several patterns contain `/`.
   #
-  # PROTECT_SENTINEL (0x1F, "unit separator" — not a character any real command/output is
-  # ever expected to contain, and outside every pattern's own character class below) marks
-  # text the LATER generic net must not reach, without deleting or renaming it. A canonical
-  # UUID (session/task ids throughout this project: `8-4-4-4-12` lowercase hex) is
-  # confirmed, against a real transcript, to be swept up by the generic net purely because
-  # it is 36 unbroken alnum/dash characters — it is not a secret, it is an identifier, and
-  # redacting it made the digest noisy without protecting anything. Splitting it into its
-  # five hyphen-delimited hex groups (max 12 chars each, all under the net's 32-char floor)
-  # by swapping its hyphens for the sentinel is enough to make the net skip straight over
-  # it; restore_protected (after the net has run) swaps the sentinel back to `-`, since a
-  # 1-for-1 character swap can't shift anything else's position. This ONLY protects the
-  # UUID shape itself — it does not need to protect a NAME=value or Bearer match, since
-  # those run on identifiers occurring OUTSIDE it.
+  # PROTECT_SENTINEL (0x1F, "unit separator") and SHA_SENTINEL (0x1E, "record separator") —
+  # neither is a character any real command/output is ever expected to contain, and both are
+  # outside every pattern's own character class below — mark text the LATER generic net must
+  # not reach, without deleting or renaming it. A canonical UUID (session/task ids
+  # throughout this project: `8-4-4-4-12` lowercase hex) is confirmed, against a real
+  # transcript, to be swept up by the generic net purely because it is 36 unbroken
+  # alnum/dash characters — it is not a secret, it is an identifier, and redacting it made
+  # the digest noisy without protecting anything. Splitting it into its five
+  # hyphen-delimited hex groups (max 12 chars each, all under the net's 32-char floor) by
+  # swapping its hyphens for PROTECT_SENTINEL is enough to make the net skip straight over
+  # it; restore_protected (after the net has run) swaps PROTECT_SENTINEL back to `-`, since a
+  # 1-for-1 character swap can't shift anything else's position.
+  #
+  # A git commit SHA is the same problem one exemption away, confirmed against a real PR
+  # review comment: `f80a9a1d847ed098f292b96d77eefa3a745a3c06` (bare 40-char SHA-1) rendered
+  # as `[redacted]`, indistinguishable from an actual scrubbed secret — for a floor whose
+  # whole point is carrying measured facts across a compaction, a commit hash is one of the
+  # single most common such facts. Unlike a UUID, a SHA has no hyphens to swap out, so
+  # SHA_SENTINEL is INSERTED (not swapped) at fixed offsets to fragment it, then DELETED
+  # (not converted to `-`) by restore_protected — a different sentinel from PROTECT_SENTINEL
+  # specifically so the two restore rules can't collide (deleting one would silently eat any
+  # real `-` the other rule left behind, and vice versa). Matched only at the two canonical
+  # git hash lengths, 40 (SHA-1) and 64 (SHA-256), and only when bounded on both sides by a
+  # non-hex character or start/end of string — the boundary requirement is what stops the
+  # 40-char rule from partially matching inside a longer run (a 64-char SHA-256, or an
+  # actual 41+-char secret that happens to start with 40 hex characters): the character
+  # immediately after position 40 would itself be hex, failing the "non-hex or end" half of
+  # the boundary, so the rule simply does not fire there. Short SHAs (7-12 chars, the common
+  # `git log --oneline` form) need no exemption at all — already under the net's 32-char
+  # floor, confirmed by test. Deliberately NOT extended to MD5 (32 hex) or other hash
+  # formats: 32 sits exactly at the net's own threshold, and every additional exemption
+  # shape is one more place a genuine secret of that exact shape would be let through — the
+  # task is to carry git's own two canonical lengths, not to build a general hash allowlist.
   PROTECT_SENTINEL=$'\x1f'
+  SHA_SENTINEL=$'\x1e'
   redact_secrets() {
     sed -E \
       -e "s/([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{12})/\\1${PROTECT_SENTINEL}\\2${PROTECT_SENTINEL}\\3${PROTECT_SENTINEL}\\4${PROTECT_SENTINEL}\\5/g" \
+      -e "s/([^0-9a-fA-F]|^)([0-9a-fA-F]{16})([0-9a-fA-F]{16})([0-9a-fA-F]{16})([0-9a-fA-F]{16})([^0-9a-fA-F]|\$)/\\1\\2${SHA_SENTINEL}\\3${SHA_SENTINEL}\\4${SHA_SENTINEL}\\5${SHA_SENTINEL}\\6/g" \
+      -e "s/([^0-9a-fA-F]|^)([0-9a-fA-F]{10})([0-9a-fA-F]{10})([0-9a-fA-F]{10})([0-9a-fA-F]{10})([^0-9a-fA-F]|\$)/\\1\\2${SHA_SENTINEL}\\3${SHA_SENTINEL}\\4${SHA_SENTINEL}\\5${SHA_SENTINEL}\\6/g" \
       -e 's#sk-[A-Za-z0-9_-]{10,}#[redacted]#g' \
       -e 's#ghp_[A-Za-z0-9]{20,}#[redacted]#g' \
       -e 's#github_pat_[A-Za-z0-9_]{20,}#[redacted]#g' \
@@ -177,8 +200,9 @@ if [ -n "$TRANSCRIPT" ]; then
   # `RLENGTH` are POSIX awk, no gawk extension), and only replace a run that itself matches
   # `[0-9]`. This runs AFTER redact_secrets (so it never re-matches text already turned into
   # "[redacted]") and BEFORE restore_protected (so a protected UUID's hex groups — all ≤12
-  # chars — never re-assemble into one matchable run here; scanning after restoring them
-  # would rebuild the full 36-char, digit-bearing UUID and this net would redact it anyway).
+  # chars — and a protected SHA's fragments — all ≤16 chars — never re-assemble into one
+  # matchable run here; scanning after restoring them would rebuild the full digit-bearing
+  # original and this net would redact it anyway).
   entropy_net() {
     awk '
       {
@@ -194,7 +218,12 @@ if [ -n "$TRANSCRIPT" ]; then
     '
   }
 
-  restore_protected() { tr "$PROTECT_SENTINEL" '-'; }
+  # Two independent restores, deliberately in this order and via two separate `tr` passes
+  # (one substitution, one deletion — a single `tr` mapping cannot do both): PROTECT_SENTINEL
+  # (UUID) becomes `-` again; SHA_SENTINEL (SHA) is simply deleted, since it was INSERTED
+  # rather than swapped for an existing character and restoring it must shrink the string
+  # back to the original, not leave a stray character in the middle of a hex digest.
+  restore_protected() { tr "$PROTECT_SENTINEL" '-' | tr -d "$SHA_SENTINEL"; }
 
   # The Bash tool appends its own trailing notice about shell state after the real output —
   # "Session cwd remains …" (a backgrounded run whose cd did not survive) and "Shell cwd was

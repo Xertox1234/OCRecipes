@@ -794,6 +794,86 @@ else
   no "an all-wrapper result did not degrade to the (empty) placeholder"
 fi
 
+# --- Follow-up: the entropy net was also redacting bare git commit SHAs ---
+
+# Test: a bare 40-char SHA-1 in a result line SURVIVES the entropy net, while a real secret
+# on the SAME line is still redacted — both directions, same rule as every prior secret
+# test: a filter that exempted everything (not just the SHA shape) would pass a naive
+# "SHA survives" check while quietly letting real secrets through too.
+SID26="sess-floor-sha1-survives"; L26="$CONTEXT_LEDGER_ROOT/$SID26"; mkdir -p "$L26"
+FAKE_TX16="$TMPROOT/fake-sha1.jsonl"
+cat > "$FAKE_TX16" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_SHA1","name":"Bash","input":{"command":"git log --format=%H -1; printenv API_KEY","description":"Show the full commit SHA and a token"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_SHA1","content":"commit f80a9a1d847ed098f292b96d77eefa3a745a3c06 confirmed API_KEY=abcdefghij0123456789ABCDEFGHIJ01"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID26" "$FAKE_TX16" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "f80a9a1d847ed098f292b96d77eefa3a745a3c06" "$L26/resume.md" 2>/dev/null \
+   && ! grep -q "abcdefghij0123456789ABCDEFGHIJ01" "$L26/resume.md" 2>/dev/null; then
+  ok "a bare 40-char SHA-1 survives the entropy net while a real secret on the same line is still redacted"
+else
+  no "the SHA-1 was wrongly redacted, or the real secret next to it survived unredacted"
+fi
+
+# Test: a bare 64-char SHA-256 also survives, independent of the SHA-1 exemption above.
+# The SHA is placed at the very START of the result content (no leading prefix) because
+# format_floor's own 60-char display clamp (unrelated to redaction) would otherwise cut a
+# full 64-char value regardless of whether it was redacted — asserting on the clamped
+# 60-char PREFIX of the SHA, plus the absence of "[redacted]" anywhere in the row, is what
+# actually isolates "was it redacted" from "was it merely display-truncated".
+SID27="sess-floor-sha256-survives"; L27="$CONTEXT_LEDGER_ROOT/$SID27"; mkdir -p "$L27"
+FAKE_TX17="$TMPROOT/fake-sha256.jsonl"
+cat > "$FAKE_TX17" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_SHA256","name":"Bash","input":{"command":"docker inspect --format='{{.Id}}' myimage","description":"Show the image digest"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_SHA256","content":"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2 (sha256 digest)"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID27" "$FAKE_TX17" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6" "$L27/resume.md" 2>/dev/null \
+   && ! grep -q "redacted" "$L27/resume.md" 2>/dev/null; then
+  ok "a bare 64-char SHA-256 survives the entropy net (checked via its clamped prefix, plus no redaction marker anywhere in the row)"
+else
+  no "the SHA-256 was wrongly redacted"
+fi
+
+# Test: a short SHA (12 chars, the common `git log --oneline` form) needs no exemption at
+# all — confirm it survives because it is already under the net's 32-char floor, rather
+# than assume it.
+SID28="sess-floor-short-sha-survives"; L28="$CONTEXT_LEDGER_ROOT/$SID28"; mkdir -p "$L28"
+FAKE_TX18="$TMPROOT/fake-shortsha.jsonl"
+cat > "$FAKE_TX18" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_SHORTSHA","name":"Bash","input":{"command":"git log --oneline -1","description":"Show the short commit SHA"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_SHORTSHA","content":"f80a9a1d847e docs: fix the thing"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID28" "$FAKE_TX18" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "f80a9a1d847e docs: fix the thing" "$L28/resume.md" 2>/dev/null; then
+  ok "a short (12-char) SHA survives untouched — already under the net's 32-char floor"
+else
+  no "a short SHA was unexpectedly altered"
+fi
+
+# Regression check: the UUID-survives and slug-survives cases from the prior round are
+# re-run here explicitly (not just relied on from earlier in this file) so a change to the
+# shared PROTECT_SENTINEL/entropy_net machinery that broke one of them while fixing SHAs
+# cannot slip through unnoticed. Kept short (well under format_floor's own 60-char display
+# clamp, unrelated to redaction) so a truncated-display false failure can't be confused with
+# an actual regression — the earlier SHA-256 test tripped on exactly that distinction.
+SID29="sess-floor-uuid-and-slug-still-survive"; L29="$CONTEXT_LEDGER_ROOT/$SID29"; mkdir -p "$L29"
+FAKE_TX19="$TMPROOT/fake-uuid-slug-regress.jsonl"
+cat > "$FAKE_TX19" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_REG1","name":"Bash","input":{"command":"echo $SESS $PWD","description":"Show session id and project path"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_REG1","content":"-Users-jdoe-widget dd1c98d8-4002-4a4e-b59a-375d2144d9fa"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID29" "$FAKE_TX19" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "dd1c98d8-4002-4a4e-b59a-375d2144d9fa" "$L29/resume.md" 2>/dev/null \
+   && grep -q -- "-Users-jdoe-widget" "$L29/resume.md" 2>/dev/null; then
+  ok "UUID and kebab-case slug both still survive after the SHA exemption was added"
+else
+  no "adding the SHA exemption regressed the UUID or slug exemption"
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]
