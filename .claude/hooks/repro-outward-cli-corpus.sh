@@ -1357,8 +1357,8 @@ fi
 EXPECTED_ROWS=602
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 486 of the 581 rows deny on the precise path; the other 95 are ALLOW there
-# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-* controls, plus the 31
+# 504 of the 602 rows deny on the precise path; the other 98 are ALLOW there
+# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-* controls, plus the 31
 # precise-path gaps). Corrected 2026-09-13: this was the FIFTH stale copy of a
 # count in this file, found by review after four others were repaired -- and it
 # sits five lines above its own warning about exactly that. These numbers are

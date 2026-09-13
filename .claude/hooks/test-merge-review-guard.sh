@@ -570,15 +570,31 @@ denied "$out" && ok "ambiguous gh pr verb fails closed" || bad "ambiguous gh pr 
 export FAKE_FILES="client/hooks/useNutritionLookup.ts"
 
 # CLOSED 2026-09-13 — converted from tripwire to deny rows. lib/cmd-detect.sh's new
-# _CMD_GH_GLOBALS models the slot BETWEEN the binary and its namespace, so a redirect
-# sitting there no longer hides the verb. This is P1 mechanism (b), the shared-library
-# half of that todo; the three rows below it are mechanisms (a) and (c) and are UNCHANGED.
+# _CMD_GH_GLOBALS models the slot between the binary and its NAMESPACE, so a redirect
+# sitting THERE no longer hides the verb.
+#
+# THIS IS HALF OF P1 MECHANISM (b), NOT ALL OF IT. That mechanism is "a word between the
+# binary and the VERB", which is two slots; the namespace->verb slot is untouched and is
+# pinned as still-open immediately below. The rows after that are mechanisms (a) and (c).
 for spelling in \
   'gh 2>/dev/null pr merge 42 --squash' \
   'gh 2> /dev/null pr merge 42 --squash' ; do
   out=$(bash_payload "$spelling" | run)
   denied "$out" && ok "CLOSED, P1 mech (b) redirect: [$spelling]" \
                 || bad "CLOSED, P1 mech (b) redirect: [$spelling]" "$out"
+done
+
+# STILL OPEN, the OTHER HALF of mechanism (b): a redirect in the NAMESPACE->VERB slot.
+# _CMD_GH_GLOBALS models the binary->namespace slot only; `pr[[:space:]]+(verb)` still has no
+# absorber, so these reach the gate with SUB empty. Not a regression — main allows them too —
+# and guard-outward-cli.sh denies all of them, because its _OUT_SEP absorbs a redirect in
+# BOTH slots. Pinned as a tripwire so closing the second slot has to come back and convert it.
+for spelling in \
+  'gh pr 2>/dev/null merge 42 --squash' \
+  'gh pr>log merge 42 --squash' \
+  'gh pr 2>&1 merge 42 --squash' ; do
+  out=$(bash_payload "$spelling" | run)
+  assert_allowed "KNOWN GAP, namespace->verb slot (see P1 todo): [$spelling]" "$out"
 done
 
 # STILL OPEN, and deliberately still pinned as ALLOW. The 2026-09-13 change closed the
@@ -822,7 +838,7 @@ rm -rf "$NOJQ_BIN"
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=77
+EXPECTED_TOTAL=80
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

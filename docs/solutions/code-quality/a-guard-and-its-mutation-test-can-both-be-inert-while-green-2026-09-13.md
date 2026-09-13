@@ -64,15 +64,33 @@ nothing in the run distinguishes "passed" from "never ran".**
 
 ```bash
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
-   || ! printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '[^[:space:];&|]+' \
+   || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
+   || printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '|-[^[:space:]]+)' \
    || [ -z "${_CMD_REDIR:-}" ]; then
   deny "…lost its shape…"
 fi
 ```
 
-Each operand names a property that a real degradation removes: the wide form must still carry
-its `--repo` arm, the narrow form must still carry its separator-safe class, and
-`$_CMD_REDIR` must be non-empty (which costs the redirect arm — say that, not "every needle").
+Each operand names a property that a real degradation removes: the wide form still carries its
+`--repo` arm; the narrow form is **not** the wide form; the narrow form does **not** contain the
+wide generic arm; and `$_CMD_REDIR` is non-empty (which costs the redirect arm — say that, not
+"every needle").
+
+**THE OBVIOUS SPELLING OF OPERAND 2 AND 3 IS THE ONE THAT DOES NOT WORK**, and it is worth
+writing down because it survived a review round before being caught. Requiring the narrow class
+to appear *somewhere* in the grant form —
+
+```bash
+   || ! printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '[^[:space:];&|]+'   # INERT
+```
+
+— is satisfied by the constant's `-R` and `--repo` arms on their own, so the **generic** arm, the
+one that carried the defect, can be reverted to the wide class with the assertion silent. Worse,
+those two named arms are unreachable at the site being protected, because an earlier deny-shaped
+check rejects any `-R`/`--repo` command before the grant cut runs — so the assertion was keying
+on arms that can never be exercised there. Assert the **absence of the bad shape**, not the
+presence of a good substring: absence stays true under any further narrowing, whereas pinning an
+exact class breaks against its own next fix.
 
 For the mutation row:
 
@@ -97,7 +115,7 @@ For the mutation row:
 ## Related Files
 
 - `.claude/hooks/guard-outward-cli.sh` — the shape assertion beside the two root-position constants
-- `.claude/hooks/test-guard-outward-cli.sh` — `_mut_goc_says_deny` and its two rows
+- `.claude/hooks/test-guard-outward-cli.sh` — `_mut_goc_says_deny` and its three rows
 
 ## See Also
 

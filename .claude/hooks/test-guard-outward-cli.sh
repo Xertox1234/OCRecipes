@@ -2435,22 +2435,6 @@ _MUT_HOOK=$(mktemp)
 { cat "$HOOK"; printf '%s\n' 'GH_FAKE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}"'; } > "$_MUT_HOOK"
 _SEP_MUT=$(grep -v '^[[:space:]]*#' "$_MUT_HOOK" | grep -oE -- "$_SEP_LEFT_RE" | wc -l | tr -d '[:space:]')
 rm -f "$_MUT_HOOK"
-# MUTATION ROW for the _OUT_GH_GLOBALS emptiness assertion (2026-09-13). That assertion is
-# registered in the corpus's _pin_exempt_sites — no command TEXT can reach it, only a broken
-# install can — so _pin_sites deliberately does not cover it and this row is the ONLY thing
-# standing between it and silent deletion. It matters more than its obscurity suggests: an
-# empty expansion collapses every widened gh needle back to its pre-2026-09-13 form, which
-# re-opens the repo-retarget bypass while leaving the entire suite GREEN.
-#
-# THE PROBE COMMAND MUST REACH THE CONSTANT. `echo hello` does NOT — it exits at the
-# fast-path needle filter, which runs long before the _OUT_* block — so probing with it
-# returns a silent allow and "proves" nothing. This is not hypothetical: the first run of
-# this exact check used `echo hello`, produced empty output, and would have been read as a
-# pass. Use a command carrying a gated needle.
-#
-# The copy lives NEXT TO the original, not in /tmp: the hook derives its lib path from its
-# own location, so a copy elsewhere fails closed for the unrelated "lib unsourceable" reason
-# and the row would pass for the wrong one.
 # MUTATION ROWS for the shape assertion on the two root-position constants (2026-09-13,
 # rewritten after review). That assertion is registered in the corpus's _pin_exempt_sites —
 # no command TEXT can reach it, only a broken definition can — so _pin_sites deliberately
@@ -2494,6 +2478,22 @@ fi
 # command is denied earlier by gh_pr_clause_has_repo — so the assertion was keying on arms
 # that can never be exercised there. `;&|]+))` occurs exactly once in the constant: the
 # generic arm, followed by its closing parens.
+# Operand 3b counts the separator-safe class ONCE PER `-`-ARM. Removing it from a SINGLE arm
+# is the degradation the fixed-string operand 3 is silent about (review measured operand 3
+# silent under both a reordered alternation and a partially-widened class). This row removes
+# it from the `-R` arm only, dropping the count from 3 to 2.
+#
+# The count MUST be computed with `grep -o | wc -l`, never `grep -c`: `-c` counts matching
+# LINES, and the constant is one line, so it returns 1 for any healthy value and the
+# assertion fires on every command. That is not hypothetical — it shipped for one run here
+# and denied the whole suite plus the shell being used to fix it, because a fail-closed
+# assertion that is itself wrong blocks its own repair.
+if _mut_goc_says_deny 's/;&|]+|--repo/]+|--repo/'; then
+  echo "PASS: removing the separator-safe class from a SINGLE arm fails closed"; PASS=$((PASS+1))
+else
+  echo "FAIL: the separator-safe class can be removed from one arm with the shape assertion silent — operand 3b is not counting what it claims to"
+  FAIL=$((FAIL+1))
+fi
 if _mut_goc_says_deny 's/;&|]+))/]+))/'; then
   echo "PASS: widening ONLY the grant form's generic arm fails closed"; PASS=$((PASS+1))
 else
@@ -3469,9 +3469,12 @@ assert_deny "root-position -R on gh pr create denies" \
 assert_deny "root-position -R on a mutating gh pr verb denies" \
   "$(json 'gh -R other/org pr close 42')" \
   "command-position mutating 'gh pr/release/repo' subcommand"
+# The expected substring names the SPECIFIC check: bare "gh api" is shared by the
+# mutating-method, non-literal-method and multi-occurrence denies, so it could not tell a
+# misrouted verdict from the right one.
 assert_deny "root-position flag on gh api still reaches the api gate" \
   "$(json 'gh --repo other/org api repos/o/r -X POST')" \
-  "gh api"
+  "with a mutating HTTP method"
 
 # THE OTHER DIRECTION, in the same section. Widening the binary-to-namespace slot must not
 # turn read-only usage into a gated call, and must not disturb this repo's own sanctioned
@@ -3570,6 +3573,16 @@ _PIN_RAN=1
 #         the rows that go RED if `&[0-9-]` ever becomes a bare `&`.
 #         3 + 4 + 4 = 11.
 # 596 -> 648 on 2026-09-13: +52, the --auto field scan becomes REDIRECT-AWARE
+# 648 -> 690 on 2026-09-13: +42, the ROOT-POSITION flag slot between `gh` and its
+#   namespace. +16 root-position rows (9 deny across the gh namespaces + 7 allow controls,
+#   incl. the read-only and cp -R/grep -R decoy shapes); +13 grant-clause rows (7 deny for
+#   the glued-separator donation across ; && || | and the spaced control, + 6 allow for every
+#   sanctioned shape, since narrowing a GRANT is what breaks real usage); +8 process-
+#   substitution rows (5 deny for >( <( 2>( >>( and a backtick, + 3 negative controls each
+#   removing one ingredient); +4 mutation-row assertions (shapeless wide form, grant form
+#   replaced by the wide form, grant form's GENERIC arm alone widened, and the narrowed
+#   hardcoded-separator pattern still catching an injected regression, and the single-arm
+#   removal of the separator-safe class).
 # (P0-2026-09-07-...-space-separated-redirect-target-forges-auto). One existing
 # assertion also FLIPPED deny->allow IN PLACE (the `--auto>/dev/null` accepted
 # over-denial, now correct); a flip changes no total, which is why the itemised
@@ -3660,7 +3673,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=689
+EXPECTED_TOTAL=690
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

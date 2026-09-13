@@ -1827,10 +1827,19 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 #   2. the grant form is NOT the wide form (catches a wholesale swap);
 #   3. the grant form does NOT contain the WIDE generic arm (catches reverting that one arm,
 #      and stays true under any FURTHER narrowing);
+#   3b. the separator-safe class occurs at least ONCE PER `-`-ARM (three of them). Operand 3
+#      is a fixed-string test, so review measured it silent under two degradations its
+#      wording implied it covered: REORDERING the alternation so the generic arm comes first
+#      and is widened, and widening only PART of the class (`-[^[:space:];]+`). A count is
+#      spelling-independent and catches removing the class from any single arm in any order.
+#      The behavioural glue rows catch both mutants too (they redden 7 and 4 assertions
+#      respectively) — this operand is defence in depth, and now actually has the depth its
+#      comment claims;
 #   4. $_CMD_REDIR is non-empty — which costs the REDIRECT arm, not "every needle".
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
    || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
    || printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '|-[^[:space:]]+)' \
+   || [ "$(printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -oF -- '[^[:space:];&|]' | wc -l | tr -d '[:space:]')" -lt 3 ] \
    || [ -z "${_CMD_REDIR:-}" ]; then
   deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has had its generic arm widened back to it, or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
@@ -2584,11 +2593,24 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   #
   # Masked rather than cut, for the reason the paragraph above gives: truncating the CLAUSE
   # at the offending byte is the reverted 2026-09-05 CRITICAL. Masking only ever sets
-  # HAS_REAL_AUTO=no, which DENIES — the safe direction at the one grant-shaped read — and
-  # no sanctioned shape carries these bytes (`gh pr merge <n> --auto --squash
-  # --delete-branch` and the redirect form are pinned ALLOW in the suite). A QUOTED paren
-  # cannot reach here: $CLAUSE is cut from $WORDS, whose neutral() rewrites a quoted
-  # separator to the letter `x`.
+  # HAS_REAL_AUTO=no, which DENIES — the safe direction at the one grant-shaped read. A
+  # QUOTED paren cannot reach here: $CLAUSE is cut from $WORDS, whose neutral() rewrites a
+  # quoted separator to the letter `x`, so `--subject "fix(hooks): …"` and
+  # `--body "closes (#41)"` keep their ALLOW (both measured).
+  #
+  # ACCEPTED OVER-DENIAL, stated rather than claimed away. An earlier draft of this comment
+  # asserted that "no sanctioned shape carries these bytes"; that is a NEGATIVE claim and it
+  # was not traversed. A generated corpus of {7 wrapper prefixes} x {5 trailing suffixes}
+  # around this repo's own automerge command flips 14 of 35 rows ALLOW->DENY, including
+  # `(gh pr merge <n> --auto --squash --delete-branch)` wrapped in a subshell and the same
+  # command followed by a trailing comment that contains a parenthesis. The shapes the suite
+  # pins — the bare automerge command and the redirect form — do stay ALLOW. The direction is
+  # safe and this hook has a per-command escape (ALLOW_OUTWARD_CLI=1), so this is an accuracy
+  # cost, not a bypass; it is recorded because a restrictive failure is what gets a gate
+  # switched off. If it is ever worth closing, the direction is to exempt a `(`/backtick that
+  # IS the match's own leading _OUT_POS_PREFIX boundary byte — a clause starting at the
+  # boundary cannot contain a previous command's --auto, whereas the process-substitution `(`
+  # sits mid-clause and would still mask. That is reasoned, not measured; measure it first.
   if printf '%s' "$CLAUSE" | grep -qE '[$(`]'; then
     HAS_REAL_AUTO=no
   elif [ -z "${_CMD_REDIR:-}" ]; then

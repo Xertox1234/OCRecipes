@@ -132,9 +132,19 @@ case "$TOOL" in
       # combinatorial corpus. The todo carries the corpus and the measurements.
       #
       # PARTIALLY CLOSED 2026-09-13. lib/cmd-detect.sh gained _CMD_GH_GLOBALS, which models
-      # the slot BETWEEN the binary and its namespace, so the REDIRECT family above (P1
-      # mechanism (b)) now resolves and is denied - its tripwire rows in
-      # test-merge-review-guard.sh are converted to deny rows. The same change closed a
+      # the slot between the binary and its NAMESPACE, so a redirect sitting THERE
+      # (`gh 2>/dev/null pr merge 42`) now resolves and is denied - those tripwire rows in
+      # test-merge-review-guard.sh are converted to deny rows.
+      #
+      # SCOPE, because an earlier version of this paragraph over-claimed it: P1 defines
+      # mechanism (b) as a word between the binary and the VERB, which is TWO slots. Only the
+      # first is closed. The namespace->verb slot is still spelled `pr[[:space:]]+(verb)` with
+      # no absorber, so `gh pr 2>/dev/null merge 42`, `gh pr>log merge 42`,
+      # `gh pr 2>&1 merge 42` and `gh -R o/r pr 2>/dev/null merge 42` all still reach
+      # this line with SUB empty and are allowed here. Measured 2026-09-13 against the widened
+      # lib, with `gh pr merge 42` denying as a control. Not a regression - main allows them
+      # too - and guard-outward-cli.sh denies all four, because its `_OUT_SEP` absorbs a
+      # redirect in BOTH slots. The same change closed a
       # separate P0: a repo-retarget flag in ROOT position (`gh -R owner/repo pr <verb> 42`)
       # sat in that same slot and reached this line as "not a merge", including with the
       # retarget pointed at THIS repository.
@@ -142,6 +152,8 @@ case "$TOOL" in
       # path-qualified binary, the glued metacharacter, and the quoted substitution. Those
       # three defeat the detector before the slot is ever reached - they are about how the
       # BINARY is rendered, not about what sits after it - so P1 remains open for them.
+      # A FIFTH family, and the other half of mechanism (b): a redirect in the NAMESPACE->VERB
+      # slot, enumerated in the scope note above.
       # A FOURTH family is open in the slot this change DOES model, named here so the list
       # above is not read as exhaustive: a QUOTED root flag carrying a SEPARATE unquoted
       # value. cmd_bare blanks the quoted span, so `gh "-R" o/r pr merge 42` renders as
