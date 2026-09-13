@@ -815,13 +815,13 @@ else
   no "the SHA-1 was wrongly redacted, or the real secret next to it survived unredacted"
 fi
 
-# Test: a bare 64-char SHA-256 also survives, independent of the SHA-1 exemption above.
-# The SHA is placed at the very START of the result content (no leading prefix) because
-# format_floor's own 60-char display clamp (unrelated to redaction) would otherwise cut a
-# full 64-char value regardless of whether it was redacted — asserting on the clamped
-# 60-char PREFIX of the SHA, plus the absence of "[redacted]" anywhere in the row, is what
-# actually isolates "was it redacted" from "was it merely display-truncated".
-SID27="sess-floor-sha256-survives"; L27="$CONTEXT_LEDGER_ROOT/$SID27"; mkdir -p "$L27"
+# Test: a bare 64-char run is now REDACTED — the 64-hex (SHA-256) exemption was
+# deliberately REMOVED (user decision): 64 hex chars is exactly the shape
+# `openssl rand -hex 32` produces (a webhook-signing secret / JWT_SECRET-style value), and
+# this repo's own commit hashes are all 40 chars (SHA-1), so exempting 64 bought nothing
+# here while carrying real risk. Asserting the change (not just "still exempt") matters:
+# a stale test left over from when 64 WAS exempt would silently mask exactly this removal.
+SID27="sess-floor-sha256-now-redacted"; L27="$CONTEXT_LEDGER_ROOT/$SID27"; mkdir -p "$L27"
 FAKE_TX17="$TMPROOT/fake-sha256.jsonl"
 cat > "$FAKE_TX17" <<'EOF'
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_SHA256","name":"Bash","input":{"command":"docker inspect --format='{{.Id}}' myimage","description":"Show the image digest"}}]}}
@@ -829,11 +829,11 @@ cat > "$FAKE_TX17" <<'EOF'
 EOF
 printf '{"session_id":"%s","transcript_path":"%s"}' "$SID27" "$FAKE_TX17" \
   | bash "$PRECOMPACT" >/dev/null 2>&1
-if grep -q "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6" "$L27/resume.md" 2>/dev/null \
-   && ! grep -q "redacted" "$L27/resume.md" 2>/dev/null; then
-  ok "a bare 64-char SHA-256 survives the entropy net (checked via its clamped prefix, plus no redaction marker anywhere in the row)"
+if ! grep -q "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2" "$L27/resume.md" 2>/dev/null \
+   && grep -q "redacted" "$L27/resume.md" 2>/dev/null; then
+  ok "a bare 64-char run is now redacted — the 64-hex exemption was intentionally removed"
 else
-  no "the SHA-256 was wrongly redacted"
+  no "a bare 64-char run unexpectedly survived — the 64-hex exemption removal regressed"
 fi
 
 # Test: a short SHA (12 chars, the common `git log --oneline` form) needs no exemption at
@@ -872,6 +872,84 @@ if grep -q "dd1c98d8-4002-4a4e-b59a-375d2144d9fa" "$L29/resume.md" 2>/dev/null \
   ok "UUID and kebab-case slug both still survive after the SHA exemption was added"
 else
   no "adding the SHA exemption regressed the UUID or slug exemption"
+fi
+
+# --- CRITICAL regression (round 4): sentinel-protection ran BEFORE the named-secret-prefix
+# rules, so a real secret that IS or CONTAINS an exempted 40-hex shape got fragmented before
+# its prefix rule ever saw it — the prefix rule then matched only a truncated remainder (or
+# nothing), leaving a "[redacted]" marker sitting next to the LEAKED rest of the real
+# secret. Worse than no filter: the marker reads as "handled". These are the cross-product
+# cases the earlier per-dimension tests never covered (every "redacted" fixture used a
+# value with non-hex characters; every "canonical shape survives" fixture used a bare hex
+# run with no secret prefix) — exactly the input class that broke.
+#
+# Checking only "the full 40-char string is absent" is ITSELF a decorative assertion here —
+# caught while writing this: under the exact regression being guarded against, only the
+# FIRST 10 of 40 chars get consumed into "[redacted]", leaving a 30-char SUFFIX of the
+# secret intact. That 30-char suffix is never equal to the full 40-char string, so a
+# "full string absent" check passes against it just as easily as against a real fix —
+# manually confirmed by re-running the exact leak from the CRITICAL report through this
+# stage in isolation before fixing the test. assert_fully_redacted instead checks each of
+# the four disjoint 10-char chunks of the secret individually (so no partial-consumption
+# boundary can hide a surviving piece) AND that exactly one "[redacted]" marker appears —
+# "a marker appeared somewhere" alone is what made the original leak look safe.
+assert_fully_redacted() {
+  row="$1"
+  for chunk in "a1b2c3d4e5" "f6a1b2c3d4" "e5f6a1b2c3" "d4e5f678ab"; do
+    if printf '%s' "$row" | grep -q -- "$chunk"; then
+      return 1
+    fi
+  done
+  [ "$(printf '%s' "$row" | grep -o '\[redacted\]' | wc -l | tr -d ' ')" = "1" ]
+}
+
+# Test: sk- prefix immediately followed by exactly 40 hex chars -> the WHOLE token
+# (prefix + hex) must be gone, and exactly one [redacted] marker must appear on the row.
+SID30="sess-crossproduct-sk-40hex"; L30="$CONTEXT_LEDGER_ROOT/$SID30"; mkdir -p "$L30"
+FAKE_TX20="$TMPROOT/fake-crossproduct-sk.jsonl"
+cat > "$FAKE_TX20" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_XP1","name":"Bash","input":{"command":"curl -sH \"X-Api-Key: $KEY\" https://api.example.com","description":"Cross-product: sk- plus exactly 40 hex"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_XP1","content":"X-Api-Key: sk-a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f678ab"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID30" "$FAKE_TX20" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+ROW30=$(grep "Cross-product: sk-" "$L30/resume.md" 2>/dev/null)
+if assert_fully_redacted "$ROW30"; then
+  ok "sk- + exactly 40 hex: the full token is gone (all four chunks) and exactly one [redacted] marker appears"
+else
+  no "sk- + exactly 40 hex leaked part of the token, or did not produce exactly one marker: [$ROW30]"
+fi
+
+# Test: ghp_ prefix immediately followed by exactly 40 hex chars -> fully redacted.
+SID31="sess-crossproduct-ghp-40hex"; L31="$CONTEXT_LEDGER_ROOT/$SID31"; mkdir -p "$L31"
+FAKE_TX21="$TMPROOT/fake-crossproduct-ghp.jsonl"
+cat > "$FAKE_TX21" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_XP2","name":"Bash","input":{"command":"printenv GH_TOKEN","description":"Cross-product: ghp_ plus exactly 40 hex"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_XP2","content":"ghp_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f678ab"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID31" "$FAKE_TX21" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+ROW31=$(grep "Cross-product: ghp_" "$L31/resume.md" 2>/dev/null)
+if assert_fully_redacted "$ROW31"; then
+  ok "ghp_ + exactly 40 hex: the full token is gone (all four chunks) and exactly one [redacted] marker appears"
+else
+  no "ghp_ + exactly 40 hex leaked part of the token, or did not produce exactly one marker: [$ROW31]"
+fi
+
+# Test: "Bearer " immediately followed by exactly 40 hex chars -> fully redacted.
+SID32="sess-crossproduct-bearer-40hex"; L32="$CONTEXT_LEDGER_ROOT/$SID32"; mkdir -p "$L32"
+FAKE_TX22="$TMPROOT/fake-crossproduct-bearer.jsonl"
+cat > "$FAKE_TX22" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_XP3","name":"Bash","input":{"command":"curl -sI https://api.example.com/health","description":"Cross-product: Bearer plus exactly 40 hex"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_XP3","content":"Authorization: Bearer a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f678ab"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID32" "$FAKE_TX22" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+ROW32=$(grep "Cross-product: Bearer" "$L32/resume.md" 2>/dev/null)
+if assert_fully_redacted "$ROW32"; then
+  ok "Bearer + exactly 40 hex: the full token is gone (all four chunks) and exactly one [redacted] marker appears"
+else
+  no "Bearer + exactly 40 hex leaked part of the token, or did not produce exactly one marker: [$ROW32]"
 fi
 
 echo ""

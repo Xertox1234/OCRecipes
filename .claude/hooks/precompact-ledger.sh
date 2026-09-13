@@ -137,9 +137,24 @@ if [ -n "$TRANSCRIPT" ]; then
   # but before format_floor's display clamp (so a token isn't sliced in half first, see
   # above). `#` as the sed delimiter throughout, since several patterns contain `/`.
   #
+  # CRITICAL ORDERING RULE, learned the hard way (round 4 of this feature): the
+  # UUID/SHA sentinel-protection rules below MUST run LAST in this sed chain, after every
+  # named-secret-prefix rule (sk-/ghp_/github_pat_/AKIA/eyJ/Bearer/NAME=value). An earlier
+  # version ran them FIRST and shipped a real regression, reproduced end-to-end through this
+  # hook: a secret that IS or CONTAINS an exempted shape — e.g. `sk-<40 hex chars>`, or
+  # `ghp_<40 hex chars>` — got its hex portion sentinel-fragmented before the sk-/ghp_ rule
+  # ever saw it, so that rule matched only a truncated remainder (or nothing), and the
+  # digest showed a `[redacted]` marker sitting next to the LEAKED rest of the real secret —
+  # worse than no filter at all, because the marker reads as "handled". Running the
+  # prefix rules first means they always see the intact original token and either consume
+  # the whole thing (sk-/ghp_/Bearer's own char classes already include hex, so a greedy
+  # match swallows the entire secret, sentinel-shape and all) or don't match at all; the
+  # protect rules only ever see what's left AFTER that, so a genuine bare identifier (no
+  # recognized secret prefix around it) is the only thing they can find to protect.
+  #
   # PROTECT_SENTINEL (0x1F, "unit separator") and SHA_SENTINEL (0x1E, "record separator") —
   # neither is a character any real command/output is ever expected to contain, and both are
-  # outside every pattern's own character class below — mark text the LATER generic net must
+  # outside every pattern's own character class above — mark text the LATER generic net must
   # not reach, without deleting or renaming it. A canonical UUID (session/task ids
   # throughout this project: `8-4-4-4-12` lowercase hex) is confirmed, against a real
   # transcript, to be swept up by the generic net purely because it is 36 unbroken
@@ -158,32 +173,40 @@ if [ -n "$TRANSCRIPT" ]; then
   # SHA_SENTINEL is INSERTED (not swapped) at fixed offsets to fragment it, then DELETED
   # (not converted to `-`) by restore_protected — a different sentinel from PROTECT_SENTINEL
   # specifically so the two restore rules can't collide (deleting one would silently eat any
-  # real `-` the other rule left behind, and vice versa). Matched only at the two canonical
-  # git hash lengths, 40 (SHA-1) and 64 (SHA-256), and only when bounded on both sides by a
-  # non-hex character or start/end of string — the boundary requirement is what stops the
-  # 40-char rule from partially matching inside a longer run (a 64-char SHA-256, or an
-  # actual 41+-char secret that happens to start with 40 hex characters): the character
-  # immediately after position 40 would itself be hex, failing the "non-hex or end" half of
-  # the boundary, so the rule simply does not fire there. Short SHAs (7-12 chars, the common
-  # `git log --oneline` form) need no exemption at all — already under the net's 32-char
-  # floor, confirmed by test. Deliberately NOT extended to MD5 (32 hex) or other hash
-  # formats: 32 sits exactly at the net's own threshold, and every additional exemption
-  # shape is one more place a genuine secret of that exact shape would be let through — the
-  # task is to carry git's own two canonical lengths, not to build a general hash allowlist.
+  # real `-` the other rule left behind, and vice versa). Matched only at exactly 40 hex
+  # characters (git's SHA-1 length — this repo's actual commit-hash length), and only when
+  # bounded on both sides by a non-hex character or start/end of string — the boundary
+  # requirement is what stops the rule from partially matching inside a longer run (a
+  # 64+-char value, or an actual 41+-char secret that happens to start with 40 hex
+  # characters): the character immediately after position 40 would itself be hex, failing
+  # the "non-hex or end" half of the boundary, so the rule simply does not fire there. Short
+  # SHAs (7-12 chars, the common `git log --oneline` form) need no exemption at all —
+  # already under the net's 32-char floor, confirmed by test.
+  #
+  # Deliberately 40 ONLY, not 64: an earlier version of this exemption also covered 64 hex
+  # characters (SHA-256). Dropped on explicit user decision, not an oversight — do not
+  # "helpfully" restore it. This repo's git history uses SHA-1, so every real commit hash
+  # here is 40 characters; exempting 64 bought nothing in practice while 64 hex characters
+  # is exactly the shape `openssl rand -hex 32` produces — the canonical form of a
+  # webhook-signing secret or a `JWT_SECRET`-style value. Keeping only the length this repo
+  # actually needs removes a higher-risk exemption shape for no real loss. Also NOT extended
+  # to MD5 (32 hex): 32 sits exactly at the net's own threshold, and every additional
+  # exemption shape is one more place a genuine secret of that exact shape would be let
+  # through — this stays scoped to the one git hash length this project's commits use, not a
+  # general hash allowlist.
   PROTECT_SENTINEL=$'\x1f'
   SHA_SENTINEL=$'\x1e'
   redact_secrets() {
     sed -E \
-      -e "s/([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{12})/\\1${PROTECT_SENTINEL}\\2${PROTECT_SENTINEL}\\3${PROTECT_SENTINEL}\\4${PROTECT_SENTINEL}\\5/g" \
-      -e "s/([^0-9a-fA-F]|^)([0-9a-fA-F]{16})([0-9a-fA-F]{16})([0-9a-fA-F]{16})([0-9a-fA-F]{16})([^0-9a-fA-F]|\$)/\\1\\2${SHA_SENTINEL}\\3${SHA_SENTINEL}\\4${SHA_SENTINEL}\\5${SHA_SENTINEL}\\6/g" \
-      -e "s/([^0-9a-fA-F]|^)([0-9a-fA-F]{10})([0-9a-fA-F]{10})([0-9a-fA-F]{10})([0-9a-fA-F]{10})([^0-9a-fA-F]|\$)/\\1\\2${SHA_SENTINEL}\\3${SHA_SENTINEL}\\4${SHA_SENTINEL}\\5${SHA_SENTINEL}\\6/g" \
       -e 's#sk-[A-Za-z0-9_-]{10,}#[redacted]#g' \
       -e 's#ghp_[A-Za-z0-9]{20,}#[redacted]#g' \
       -e 's#github_pat_[A-Za-z0-9_]{20,}#[redacted]#g' \
       -e 's#AKIA[A-Z0-9]{16}#[redacted]#g' \
       -e 's#eyJ[A-Za-z0-9_.=-]{15,}#[redacted]#g' \
       -e 's#([Bb]earer)[[:space:]]+[A-Za-z0-9._~+/=-]{8,}#\1 [redacted]#g' \
-      -e 's#([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|CREDENTIAL|PRIVATE_KEY)[A-Za-z0-9_]*)=[^[:space:]]+#\1=[redacted]#g'
+      -e 's#([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|CREDENTIAL|PRIVATE_KEY)[A-Za-z0-9_]*)=[^[:space:]]+#\1=[redacted]#g' \
+      -e "s/([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{12})/\\1${PROTECT_SENTINEL}\\2${PROTECT_SENTINEL}\\3${PROTECT_SENTINEL}\\4${PROTECT_SENTINEL}\\5/g" \
+      -e "s/([^0-9a-fA-F]|^)([0-9a-fA-F]{10})([0-9a-fA-F]{10})([0-9a-fA-F]{10})([0-9a-fA-F]{10})([^0-9a-fA-F]|\$)/\\1\\2${SHA_SENTINEL}\\3${SHA_SENTINEL}\\4${SHA_SENTINEL}\\5${SHA_SENTINEL}\\6/g"
   }
 
   # Generic high-entropy net: 32+ unbroken alnum/+/-/_ chars, but ONLY when the run also
@@ -200,7 +223,7 @@ if [ -n "$TRANSCRIPT" ]; then
   # `RLENGTH` are POSIX awk, no gawk extension), and only replace a run that itself matches
   # `[0-9]`. This runs AFTER redact_secrets (so it never re-matches text already turned into
   # "[redacted]") and BEFORE restore_protected (so a protected UUID's hex groups — all ≤12
-  # chars — and a protected SHA's fragments — all ≤16 chars — never re-assemble into one
+  # chars — and a protected SHA's fragments — all ≤10 chars — never re-assemble into one
   # matchable run here; scanning after restoring them would rebuild the full digit-bearing
   # original and this net would redact it anyway).
   entropy_net() {
