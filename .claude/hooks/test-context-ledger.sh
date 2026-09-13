@@ -9,7 +9,7 @@ PASS=0; FAIL=0
 
 TMPROOT=$(mktemp -d) || exit 1
 export CONTEXT_LEDGER_ROOT="$TMPROOT/ledger"
-trap 'rm -rf "$TMPROOT"' EXIT
+trap 'rm -rf "$TMPROOT" "${REAL_DIR:-}"' EXIT
 
 . "$HOOKS_DIR/lib/context-ledger-path.sh" || { echo "FAIL: cannot source lib"; exit 1; }
 
@@ -457,13 +457,20 @@ fi
 # Drives the REAL hook with a real /tmp path (not CONTEXT_LEDGER_ROOT), because the
 # cleanup line necessarily hardcodes the production path the same way the existing
 # worktree-contract line does.
+#
+# SESSION_COORD_CLAUDE_PID is REQUIRED here: `deregister` falls through to
+# scripts/pg-lab/session-coord.sh's do_deregister(), which removes a PID-keyed bridge
+# file unscoped by session id — without a stub pid it resolves to and deletes the
+# LIVE Claude Code session's own bridge file. test-session-coord.sh stubs this on all
+# 7 of its register/deregister calls; match that precedent here.
 
 COORD="$HOOKS_DIR/session-coord-hook.sh"
 SIDC="sess-cleanup-$$"
+FAKE_PID=$((91000000 + $$))
 REAL_DIR="/tmp/ocrecipes-context-ledger-${SIDC}"
 mkdir -p "$REAL_DIR"; printf 'x\n' > "$REAL_DIR/resume.md"
 
-printf '{"session_id":"%s"}' "$SIDC" | bash "$COORD" deregister >/dev/null 2>&1
+printf '{"session_id":"%s"}' "$SIDC" | SESSION_COORD_CLAUDE_PID="$FAKE_PID" bash "$COORD" deregister >/dev/null 2>&1
 
 if [ ! -d "$REAL_DIR" ]; then
   ok "SessionEnd removes the session's ledger directory"
@@ -471,6 +478,31 @@ else
   no "ledger directory leaked after deregister: $REAL_DIR"
   rm -rf "$REAL_DIR"
 fi
+
+# --- Task 5 fix round 1, Minor 2: cleanup must precede the pg-lab existence gate ---
+# The hook's own comment states cleanup must not depend on pg-lab being installed.
+# Copy the hook two directories deep into an empty tmp root so its own path math
+# (ROOT="$(cd "$(dirname BASH_SOURCE)/../.." && pwd)") resolves SCRIPT to a path with
+# no scripts/pg-lab/session-coord.sh — [ -f "$SCRIPT" ] is false — and assert the
+# ledger directory is still removed regardless.
+ORD_ROOT=$(mktemp -d) || exit 1
+mkdir -p "$ORD_ROOT/a/b"
+cp "$COORD" "$ORD_ROOT/a/b/session-coord-hook.sh"
+SIDO="sess-cleanup-ord-$$"
+FAKE_PID_ORD=$((92000000 + $$))
+ORD_DIR="/tmp/ocrecipes-context-ledger-${SIDO}"
+mkdir -p "$ORD_DIR"; printf 'x\n' > "$ORD_DIR/resume.md"
+
+printf '{"session_id":"%s"}' "$SIDO" \
+  | SESSION_COORD_CLAUDE_PID="$FAKE_PID_ORD" bash "$ORD_ROOT/a/b/session-coord-hook.sh" deregister >/dev/null 2>&1
+
+if [ ! -d "$ORD_DIR" ]; then
+  ok "cleanup runs before the pg-lab existence gate (still fires when pg-lab is absent)"
+else
+  no "cleanup did not fire with pg-lab script unreachable: $ORD_DIR"
+  rm -rf "$ORD_DIR"
+fi
+rm -rf "$ORD_ROOT"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
