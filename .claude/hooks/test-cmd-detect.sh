@@ -967,6 +967,9 @@ fp_probe "guard-outward-cli: unrelated command stays out"      'git status'     
 fp_probe "pr-preflight-guard: quoted gh-pr-create (ordered)"   'g"h" pr create --fill' yes '*gh*pr*create*'
 fp_probe "pr-preflight-guard: gh present, not pr-create"       'gh issue create'       no  '*gh*pr*create*'
 fp_probe "pr-preflight-guard: unrelated command stays out"     'ls -la'                no  '*gh*pr*create*'
+fp_probe "merge-review-guard: quoted gh-pr-merge (ordered)"    'g"h" pr merge 938'     yes '*gh*pr*merge*'
+fp_probe "merge-review-guard: gh present, not pr-merge"        'gh pr create --fill'   no  '*gh*pr*merge*'
+fp_probe "merge-review-guard: unrelated command stays out"     'ls -la'                no  '*gh*pr*merge*'
 
 echo "--- mutation check: stage 2 is load-bearing, not passing for free ---"
 # A reimplementation kept INSIDE a subshell — never sourced into this process — so the
@@ -1027,15 +1030,16 @@ assert_wired drift-detect.sh        "'*git*'"
 assert_wired drift-detect-update.sh "'*git*'"
 assert_wired guard-outward-cli.sh   "'*eas*' '*railway*' '*npm*' '*yarn*' '*gh*'"
 assert_wired pr-preflight-guard.sh  "'*gh*pr*create*'"
+assert_wired merge-review-guard.sh  "'*gh*pr*merge*'"
 
-# Non-vacuity control: exactly the 7 target hooks must call cmd_fastpath_has — neither fewer
+# Non-vacuity control: exactly the 8 target hooks must call cmd_fastpath_has — neither fewer
 # (a hook silently reverted to an inline copy) nor more (a wiring assertion above is now
 # missing for a new caller).
 WIRED_COUNT=$(grep -l 'cmd_fastpath_has "\$CMD"' "$HOOKDIR"/*.sh 2>/dev/null | grep -vc '/test-')
-if [ "${WIRED_COUNT:-0}" -eq 7 ]; then
-  echo "PASS: control — exactly 7 hooks call cmd_fastpath_has"; PASS=$((PASS+1))
+if [ "${WIRED_COUNT:-0}" -eq 8 ]; then
+  echo "PASS: control — exactly 8 hooks call cmd_fastpath_has"; PASS=$((PASS+1))
 else
-  echo "FAIL: control — $WIRED_COUNT hook(s) call cmd_fastpath_has, expected 7"
+  echo "FAIL: control — $WIRED_COUNT hook(s) call cmd_fastpath_has, expected 8"
   FAIL=$((FAIL+1))
 fi
 
@@ -1066,7 +1070,7 @@ assert_bare_here() {
   # spurious FAIL from this check, unrelated to any real defect (security review, 2026-09-02) —
   # matching the hermeticity the sibling test-branch-preflight.sh/test-pr-preflight-guard.sh
   # suites already advertise for themselves.
-  trace=$(cd "$HOOKDIR" && printf '%s' "$payload" | env -u SKIP_BRANCH_PREFLIGHT -u SKIP_PR_PREFLIGHT -u ALLOW_OUTWARD_CLI bash -x "$hook" 2>&1 >/dev/null)
+  trace=$(cd "$HOOKDIR" && printf '%s' "$payload" | env -u SKIP_BRANCH_PREFLIGHT -u SKIP_PR_PREFLIGHT -u ALLOW_OUTWARD_CLI -u SKIP_MERGE_REVIEW bash -x "$hook" 2>&1 >/dev/null)
   # <<< (here-string), not `printf | grep -q` — grep -q is an early-exiting reader (it stops
   # at the first match) and $trace here is a full multi-line -x trace; piped through printf,
   # grep's early exit can SIGPIPE the still-writing printf, and pipefail then reports the
@@ -1090,6 +1094,10 @@ assert_bare_here drift-detect.sh        '{"tool_name":"Bash","tool_input":{"comm
 assert_bare_here drift-detect-update.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"session_id":"'"$TEST_SESSION"'"}'
 assert_bare_here guard-outward-cli.sh   '{"tool_name":"Bash","tool_input":{"command":"eas update"}}'
 assert_bare_here pr-preflight-guard.sh  '{"tool_name":"Bash","tool_input":{"command":"gh pr create --fill"}}'
+# merge-review-guard.sh assigns HERE before its tool dispatch, so a command that misses its
+# fast path still traces the assignment — and, unlike `gh pr merge …`, exits immediately
+# instead of making real `gh pr view`/`gh pr diff` calls against the live repository.
+assert_bare_here merge-review-guard.sh  '{"tool_name":"Bash","tool_input":{"command":"npm run lint"}}'
 
 echo "--- generic scan: no hook may hand-roll a raw single-stage fast path when its matcher reads cmd_words ---"
 # The property the pre-extraction version of this file's final block carried for free ("a NEW
@@ -1698,7 +1706,7 @@ van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
 # LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
 # assertion in a run that otherwise completed. It cannot catch an early
 # `return`/`exit` or a truncated file, because those terminate before this line.
-EXPECTED_TOTAL=564
+EXPECTED_TOTAL=569
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

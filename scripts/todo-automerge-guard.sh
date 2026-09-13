@@ -4,7 +4,7 @@
 # MODEL (2026-07-06 restored — see docs/todo-automation-runbook.md): a guard-OK PR gets
 # GitHub's native `gh pr merge --auto` armed by the /todo executor immediately, so it
 # lands on its own once CI is green. This script only CLASSIFIES eligibility — it never
-# merges anything itself. A /todo PR is eligible ONLY if BOTH gates pass:
+# merges anything itself. By default, a /todo PR is eligible ONLY if BOTH gates pass:
 #   1. TODO GATE — the archived todo riding the PR (todos/archive/<slug>.md) has
 #      priority low, no `security` mention, and no sensitive-intent keyword
 #      (auth/session/admin/etc. — see SENSITIVE_INTENT_KEYWORDS) in its frontmatter.
@@ -43,9 +43,11 @@
 # health-PII field declarations) as a CI-enforced check, so the next instance fails a test
 # instead of silently auto-merging.
 #
-# Usage:  scripts/todo-automerge-guard.sh <pr-number>
-# Exit 0 = eligible (MERGE_ELIGIBLE: yes) — NOT a merge command; the executor arms native
-#          GitHub auto-merge (gh pr merge --auto) for eligible PRs after PR creation
+# Usage:  scripts/todo-automerge-guard.sh [--paths-only] <pr-number>
+# Exit 0 (default invocation) = eligible (MERGE_ELIGIBLE: yes) — NOT a merge command; the
+#          executor arms native GitHub auto-merge (gh pr merge --auto) for eligible PRs
+#          after PR creation. Exit 0 (--paths-only) = every changed file is allowlist-safe;
+#          says nothing about todo eligibility
 # Exit 1 = HOLD: needs individual review — a changed file is sensitive / not on the
 #          allowlist, or the TODO gate failed (no archived todo in the diff, an archive
 #          file absent from the PR head, priority not low, 'security' in its
@@ -57,7 +59,13 @@
 # (todo-executor.md Step 10) and held PRs wait for individual human review.
 set -euo pipefail
 
-PR="${1:?usage: todo-automerge-guard.sh <pr-number>}"
+# --paths-only runs the PATH GATE alone. The TODO GATE answers "is this a low-priority
+# todo eligible for unattended batch-merge?" — a different question from "is this content
+# risky?", and it HOLDs any PR with no todos/archive file (line ~199), which would make
+# the merge gate demand evidence for nearly every ordinary code PR.
+PATHS_ONLY=""
+if [ "${1:-}" = "--paths-only" ]; then PATHS_ONLY=1; shift; fi
+PR="${1:?usage: todo-automerge-guard.sh [--paths-only] <pr-number>}"
 
 # Known-safe surfaces. A file is batch-merge-eligible only if it matches one of these:
 # all of client/ (UI, hooks, context, lib, screens, navigation, constants, ...) and all of
@@ -188,6 +196,9 @@ if [ -z "$files" ]; then
   exit 2
 fi
 
+# Body intentionally left un-indented: wrapping ~55 existing lines in this conditional
+# would reindent all of them and bury the one-line behavioural change in whitespace.
+if [ -z "$PATHS_ONLY" ]; then
 # ── TODO GATE ─────────────────────────────────────────────────────────────────
 # The todo's priority and labels ride the PR as todos/archive/<slug>.md frontmatter —
 # the PR itself carries no GitHub label. Parse it from the PR head. Fail-closed at
@@ -244,6 +255,7 @@ while IFS= read -r tf; do
     exit 1
   fi
 done <<< "$todo_files"
+fi
 
 # ── PATH GATE ─────────────────────────────────────────────────────────────────
 

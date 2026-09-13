@@ -659,3 +659,83 @@ describe("todo-automerge-guard.sh (xhigh review: research-delegation skip-gate c
     ).toBe(false);
   });
 });
+
+function runGuardPathsOnly(files: string[]): {
+  status: number | null;
+  stdout: string;
+} {
+  const dir = mkdtempSync(join(tmpdir(), "guard-gh-"));
+  tempDirs.push(dir);
+  writeFileSync(join(dir, "gh"), FAKE_GH_SCRIPT);
+  chmodSync(join(dir, "gh"), 0o755);
+  const result = spawnSync("bash", [GUARD_SCRIPT, "--paths-only", "123"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${dir}:${process.env.PATH ?? ""}`,
+      FAKE_GH_DIFF_FILES: files.join("\n"),
+    },
+  });
+  return { status: result.status, stdout: result.stdout ?? "" };
+}
+
+function runGuardDefault(files: string[]): {
+  status: number | null;
+  stdout: string;
+} {
+  const dir = mkdtempSync(join(tmpdir(), "guard-gh-"));
+  tempDirs.push(dir);
+  writeFileSync(join(dir, "gh"), FAKE_GH_SCRIPT);
+  chmodSync(join(dir, "gh"), 0o755);
+  const result = spawnSync("bash", [GUARD_SCRIPT, "123"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${dir}:${process.env.PATH ?? ""}`,
+      FAKE_GH_DIFF_FILES: files.join("\n"),
+    },
+  });
+  return { status: result.status, stdout: result.stdout ?? "" };
+}
+
+// Every case asserts `PR #123` in the output, not only the verdict. Without it none of
+// these rows can see whether `--paths-only` was actually SHIFTED off argv: with the shift
+// removed, `PR` binds to the literal string `--paths-only`, the fake gh stubs ignore their
+// PR argument entirely, and all four produce the same exit code and the same verdict
+// substring — `guard: OK PR #--paths-only — …`. Mutation-verified: the assertions below
+// are what make the flag-consumption observable.
+describe("todo-automerge-guard.sh --paths-only", () => {
+  it("passes a safe diff that contains NO todos/archive file", () => {
+    const { status, stdout } = runGuardPathsOnly([
+      "client/screens/GroceryListScreen.tsx",
+    ]);
+    expect(status).toBe(0);
+    expect(stdout).toContain("PR #123");
+  });
+
+  it("still HOLDs a sensitive path", () => {
+    const { status, stdout } = runGuardPathsOnly([
+      "client/hooks/useNutritionLookup.ts",
+    ]);
+    expect(status).toBe(1);
+    expect(stdout).toContain("not on the batch-merge allowlist");
+    expect(stdout).toContain("PR #123");
+  });
+
+  it("still HOLDs a non-allowlisted path", () => {
+    const { status, stdout } = runGuardPathsOnly(["infra/deploy.yml"]);
+    expect(status).toBe(1);
+    expect(stdout).toContain("PR #123");
+  });
+
+  it("DEFAULT mode is unchanged: the same safe diff still HOLDs on the TODO GATE", () => {
+    const { status, stdout } = runGuardDefault([
+      "client/screens/GroceryListScreen.tsx",
+    ]);
+    expect(status).toBe(1);
+    expect(stdout).toContain("no todos/archive/*.md in the diff");
+    expect(stdout).toContain("PR #123");
+  });
+});
