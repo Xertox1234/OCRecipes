@@ -131,6 +131,18 @@ case "$TOOL" in
       # binary, and a quoted command substitution supplying it. 248 of a 537-row
       # combinatorial corpus. The todo carries the corpus and the measurements.
       #
+      # PARTIALLY CLOSED 2026-09-13. lib/cmd-detect.sh gained _CMD_GH_GLOBALS, which models
+      # the slot BETWEEN the binary and its namespace, so the REDIRECT family above (P1
+      # mechanism (b)) now resolves and is denied - its tripwire rows in
+      # test-merge-review-guard.sh are converted to deny rows. The same change closed a
+      # separate P0: a repo-retarget flag in ROOT position (`gh -R owner/repo pr <verb> 42`)
+      # sat in that same slot and reached this line as "not a merge", including with the
+      # retarget pointed at THIS repository.
+      # STILL OPEN, re-measured against the widened extractor and still pinned ALLOW: the
+      # path-qualified binary, the glued metacharacter, and the quoted substitution. Those
+      # three defeat the detector before the slot is ever reached - they are about how the
+      # BINARY is rendered, not about what sits after it - so P1 remains open for them.
+      #
       # A raw-token predicate was tried here across three review rounds and WITHDRAWN. It
       # closed each family it was aimed at and re-opened the OPPOSITE failure one layer up
       # every time: first `through` and `enough` were denied, then `$var` and `$5`, then
@@ -160,8 +172,17 @@ case "$TOOL" in
     # {"owner":"x","repo":"y","pullNumber":42} -> ALLOW.
     #
     # This mirrors the Bash arm, which refuses a repository RETARGET: cmd_gh_pr_ref
-    # (lib/cmd-detect.sh:2085) returns 1 on `--repo`/`-R`, and the ref-less deny below
-    # fires. Mirrored in BOTH directions, the ABSENT case included — a bare
+    # returns 1 on `--repo`/`-R`, and the ref-less deny below fires.
+    #
+    # THAT SENTENCE HELD FOR ONLY ONE FLAG ORDERING UNTIL 2026-09-13, and the correction is
+    # worth keeping. cmd_gh_pr_ref scanned for the flag inside $full_match, whose greedy
+    # tail must end on a NON-dash token, so a TRAILING `--repo` was backtracked out of the
+    # span before the scan ever ran. Measured: `gh pr merge 42 --repo other/org` resolved
+    # ref 42, and this gate went on to classify the LOCAL PR #42 - its deny text was
+    # byte-identical to a bare one's. The sibling ordering `--repo other/org 42` refused
+    # correctly, which is exactly why the gap survived a reader who checked one spelling.
+    # The refusal now scans the whole clause, so both orderings refuse; test-cmd-detect.sh
+    # pins all four spellings in both positions. Mirrored in BOTH directions, the ABSENT case included — a bare
     # `gh pr merge 42` carries no `--repo` and is allowed to mean the ambient repo, so a
     # payload asserting NO owner/repo is likewise treated as ambient, not denied. Only an
     # ASSERTED-AND-DIFFERENT target is refused. Denying the absent case instead would

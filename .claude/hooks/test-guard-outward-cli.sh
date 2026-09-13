@@ -2435,6 +2435,35 @@ _MUT_HOOK=$(mktemp)
 { cat "$HOOK"; printf '%s\n' 'GH_FAKE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}"'; } > "$_MUT_HOOK"
 _SEP_MUT=$(grep -v '^[[:space:]]*#' "$_MUT_HOOK" | grep -oE -- "$_SEP_LEFT_RE" | wc -l | tr -d '[:space:]')
 rm -f "$_MUT_HOOK"
+# MUTATION ROW for the _OUT_GH_GLOBALS emptiness assertion (2026-09-13). That assertion is
+# registered in the corpus's _pin_exempt_sites — no command TEXT can reach it, only a broken
+# install can — so _pin_sites deliberately does not cover it and this row is the ONLY thing
+# standing between it and silent deletion. It matters more than its obscurity suggests: an
+# empty expansion collapses every widened gh needle back to its pre-2026-09-13 form, which
+# re-opens the repo-retarget bypass while leaving the entire suite GREEN.
+#
+# THE PROBE COMMAND MUST REACH THE CONSTANT. `echo hello` does NOT — it exits at the
+# fast-path needle filter, which runs long before the _OUT_* block — so probing with it
+# returns a silent allow and "proves" nothing. This is not hypothetical: the first run of
+# this exact check used `echo hello`, produced empty output, and would have been read as a
+# pass. Use a command carrying a gated needle.
+#
+# The copy lives NEXT TO the original, not in /tmp: the hook derives its lib path from its
+# own location, so a copy elsewhere fails closed for the unrelated "lib unsourceable" reason
+# and the row would pass for the wrong one.
+_MUT_GOC="$(dirname "$HOOK")/.mut-out-gh-globals-$$.sh"
+sed "s|^_OUT_GH_GLOBALS='(.*|_OUT_GH_GLOBALS=''|" "$HOOK" > "$_MUT_GOC"
+_MUT_OUT=$(jq -cn '{tool_name:"Bash",tool_input:{command:"gh pr list"}}' \
+  | env -u ALLOW_OUTWARD_CLI bash "$_MUT_GOC" 2>/dev/null)
+rm -f "$_MUT_GOC"
+if printf '%s' "$_MUT_OUT" | grep -q '"permissionDecision": "deny"' \
+   && printf '%s' "$_MUT_OUT" | grep -qF -- '_OUT_GH_GLOBALS) came back EMPTY'; then
+  echo "PASS: an EMPTY _OUT_GH_GLOBALS fails closed instead of silently collapsing every gh needle"; PASS=$((PASS+1))
+else
+  echo "FAIL: an empty _OUT_GH_GLOBALS did NOT fail closed — the widened gh needles would quietly revert to their pre-fix form and the whole suite would stay green"
+  echo "  got: $(printf '%s' "$_MUT_OUT" | head -c 160)"
+  FAIL=$((FAIL+1))
+fi
 if [ "${_SEP_MUT:-0}" -ge 1 ]; then
   echo "PASS: the hardcoded-separator pattern still CATCHES an injected gh[[:space:]]+api regression (the 0 above is a real zero)"; PASS=$((PASS+1))
 else
@@ -3482,7 +3511,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=665
+EXPECTED_TOTAL=666
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
