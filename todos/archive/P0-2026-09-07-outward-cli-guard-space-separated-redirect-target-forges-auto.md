@@ -181,9 +181,15 @@ re-deriving the grammar also picked up the five zsh families PR #939 added (`>|`
 `{name}>`, `&` on either side) with no enumeration.
 
 Scope decision: the user chose to fix the over-denial as well, not only the under-denial —
-so the newly-granted set was enumerated by construction and each member paired with a
+so the newly-granted set was sampled by construction and each member paired with a
 control proving the independent gates (`--admin`, `--repo`, the `$`-mask,
 multi-occurrence) still deny.
+
+**Corrected 2026-09-13 (see `b24144b8` and its follow-up).** That paragraph said
+"enumerated", and the enumeration was wrong — twice. A VALUE-FLAG-TARGET family (the
+redirect's target IS the value flag, so the redirect eats it and the `--auto` after it is
+real) flips further operators from deny to allow and had no row anywhere; and the family is
+wider than the rows since added. Treat the newly-granted set as SAMPLED, never enumerated.
 
 **Count correction, again.** This file said "at least seven live positions". Measured: the
 position axis (leading / tool→namespace / namespace→verb / trailing) crossed with six
@@ -270,15 +276,18 @@ completeness claim has been wrong every time it was made.
 A forged grant via the CUT, not the scan. Pinned as `fautobrace-pre` at what both trees do —
 flipping it would claim a fix this change does not make.
 
-**Evidence.** Test suite 596 → 639 assertions, 0 failed; full hook suite 34/34. Corpus
-498 → 573 rows, 420 → 483 attributions, 187 → 220 all-path gaps; **precise-path gaps
+**Evidence.** Test suite 596 → 648 assertions, 0 failed; full hook suite 34/34. Corpus
+498 → 581 rows, 420 → 486 attributions, 187 → 225 all-path gaps; **precise-path gaps
 unchanged at 31**, and **no pre-existing row moved** — every drift line the pin reported was
-a new `fauto*`/`mauto*` id. Four mutations, each with a named expected outcome:
+a new `fauto*`/`mauto*`/`vft-*` id. (These figures were 639 / 573 / 483 / 220 until
+2026-09-13; review rounds 2 and 3 added the VALUE-FLAG-TARGET rows. A pin number in this
+file carries the tree it was measured on, so it is updated, not left.) Four mutations, each
+with a named expected outcome:
 
 | mutation                                   | result                                           |
 | ------------------------------------------ | ------------------------------------------------ |
 | re-anchoring discarded (cut at `RSTART`)   | **7 red** — the digit rows, BOTH directions      |
-| normalisation removed (`norm = $0`)        | **16 red** — forged + masked rows                |
+| normalisation removed (`norm = $0`)        | **21 red** — forged + masked rows                |
 | spaced-target support removed from `redir` | **8 red** — exactly the SPACED rows, glued green |
 | `" "` → `""` replacement                   | **green — EQUIVALENT**, recorded, not chased     |
 
@@ -291,6 +300,12 @@ what makes them worth having: 13 → **16**, precisely +3. Measured against the 
 same way the other three rows of this table were. (A review pass reported 11 here; that
 count came from a hand-built 15-row reconstruction rather than from the suite, and did not
 reproduce — recorded so the discrepancy is not rediscovered as a defect.)
+
+Then **16 → 21** on 2026-09-13, precisely +5: round 2 added five VALUE-FLAG-TARGET ALLOW
+rows, and all five die under this same mutation. Re-measured against the suite at that
+tree — `626 passed, 21 failed` — and independently reproduced by both reviewers. The two
+`vft` rows that are NOT among the five stay green under it, which is what exposed them as
+pins on the clause cut rather than the controls they were labelled.
 
 ### False-positive population, measured by execution (AC item 6)
 

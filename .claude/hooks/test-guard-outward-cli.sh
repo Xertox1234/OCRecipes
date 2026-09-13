@@ -1428,8 +1428,19 @@ assert_allow "grant, but NOT a new one -- main allows it too: --auto with a glue
 #
 # THE MAUTO_GLUE AXIS CANNOT REACH THIS. That axis varies the redirect's SPACING
 # (`-b>x`, `-b >x`, `-b 2>x`) but always leaves an inert target word, so the
-# redirect never eats the flag. Five operators flip deny -> allow in this shape
-# and not one of them is the row above.
+# redirect never eats the flag.
+#
+# FIVE OPERATORS CARRY ROWS HERE; THE FAMILY IS LARGER THAN FIVE. An earlier
+# revision said "five operators flip deny -> allow in this shape", which is the
+# count of rows written, not the size of the family. Measured 2026-09-13, all
+# armed under BOTH shells, all main-deny/branch-allow, none of them rowed
+# anywhere: `<>`, `<<<`, `3>`, `0<`, `2>>`. `<>` and `<<<` are structurally
+# distinct alternations of `_CMD_REDIR`'s `[<>]+`, not spacing variants of the
+# five. The family is EVERY `_CMD_REDIR` spelling the clause cut does not
+# swallow; these five are a SAMPLE, deliberately not an enumeration.
+#
+# THREE enumerations in this file have now been measured wrong. Scope the claim;
+# do not attempt a fourth.
 #
 # argv measured under zsh -- the Bash tool's actual shell -- with a stub shell
 # FUNCTION, so PATH was never consulted: all five give `pr merge 42 --auto`.
@@ -1437,6 +1448,10 @@ assert_allow "grant, but NOT a new one -- main allows it too: --auto with a glue
 # --auto`, where -b eats the flag and this allow would be a FORGERY. Pinned at
 # the zsh reading because that is the shell that runs; see the `>!` entry under
 # "WHAT THIS BLOCK DOES NOT SETTLE" in guard-outward-cli.sh.
+# IF THE `>!` ROW GOES RED after someone makes the guard bash-correct, that is
+# the INTENDED outcome: move the pin to DENY, do not chase the guard back. This
+# instruction also lives in the corpus, but the suite is the file whose red line
+# a maintainer reads first, so it is stated in both.
 assert_allow "value-flag target: > consumes -b, so the --auto that survives is real" \
   "$(json 'gh pr merge 42 > -b --auto')"
 assert_allow "value-flag target: 2> consumes -b" \
@@ -1447,14 +1462,39 @@ assert_allow "value-flag target: < consumes -b" \
   "$(json 'gh pr merge 42 < -b --auto')"
 assert_allow "value-flag target: >! consumes -b under zsh (SHELL-DIVERGENT -- forged under bash; see the guard's residual)" \
   "$(json 'gh pr merge 42 >! -b --auto')"
-# CONTROLS, opposite direction. The two operators the clause cut swallows must
-# NOT grant in this shape either -- and they do not, on both trees. Without
-# these, the five rows above would pass a mutant that granted every redirect
-# whose target starts with `-`.
-assert_deny "value-flag target control: &> is cut before the scan, so it still denies" \
+# THE NEXT TWO ROWS ARE NOT CONTROLS, AND AN EARLIER REVISION SAID THEY WERE.
+# Two things were wrong with that label, both measured 2026-09-13 and both found
+# independently by the baseline and the security reviewer:
+#
+#   (a) NO CONTROL VALUE. `$CLAUSE` for these two is `[gh pr merge 42 ]` and
+#       `[gh pr merge 42 >]` -- the cut excludes `&` and `|`, so neither the
+#       redirect nor `-b --auto` ever reaches the scan. Both reviewers built
+#       mutants deleting the value-flag check outright; these rows stayed GREEN
+#       under them. They pin the CLAUSE CUT, not the scan.
+#   (b) WORSE, THE DENY IS NOT CORRECT. argv is `pr merge 42 --auto` under BOTH
+#       zsh 5.9 and bash 5.3.15 -- genuinely armed. This is an OVER-DENIAL in
+#       the already-disclosed `--auto>&2` / `--auto>|log` clause-cut family, and
+#       calling it a control asserted the opposite of what was measured.
+#
+# Kept as pins on that over-denial, relabelled. IF EITHER GOES RED after someone
+# widens the clause cut correctly, that is the INTENDED outcome: move the pin to
+# ALLOW, do not chase the guard back -- the same standard `vft-bang` gets above,
+# which is exactly the standard this pair failed to get when it was written.
+assert_deny "clause-cut OVER-DENIAL pin (argv IS armed, so this deny is wrong-but-pinned): &> -b --auto never reaches the scan" \
   "$(json 'gh pr merge 42 &> -b --auto')" "without a REAL --auto flag"
-assert_deny "value-flag target control: >| is cut before the scan, so it still denies" \
+assert_deny "clause-cut OVER-DENIAL pin (argv IS armed, so this deny is wrong-but-pinned): >| -b --auto never reaches the scan" \
   "$(json 'gh pr merge 42 >| -b --auto')" "without a REAL --auto flag"
+
+# THE ROW THAT ACTUALLY PINS THE VALUE-FLAG CHECK, which the two above were
+# mislabelled as doing. Here the redirect's target is dash-prefixed but is NOT
+# the value flag: `-b > -x --auto` strips the redirect and `-x` from argv,
+# leaving `-b` ADJACENT to `--auto`, so --auto is consumed as -b's VALUE and the
+# merge is NOT armed. Measured argv under zsh: `pr merge 42 -b --auto`.
+# The real guard denies; a mutant with the `prev !~ flags` value-flag check
+# deleted ALLOWS it. That is discrimination -- which is what the pair above only
+# claimed to provide.
+assert_deny "value-flag masking: a dash-target redirect leaves -b adjacent to --auto, which is then its VALUE" \
+  "$(json 'gh pr merge 42 -b > -x --auto')" "without a REAL --auto flag"
 
 # DIGIT-PREFIX CONTROLS — the defect the FIRST version of this fix introduced,
 # found in security review. `_CMD_REDIR` opens with an optional fd prefix, and a
@@ -3256,7 +3296,7 @@ _PIN_RAN=1
 #         api's clause, plus a read-only gh api carrying its own `2>&1`. These are
 #         the rows that go RED if `&[0-9-]` ever becomes a bare `&`.
 #         3 + 4 + 4 = 11.
-# 596 -> 647 on 2026-09-13: +51, the --auto field scan becomes REDIRECT-AWARE
+# 596 -> 648 on 2026-09-13: +52, the --auto field scan becomes REDIRECT-AWARE
 # (P0-2026-09-07-...-space-separated-redirect-target-forges-auto). One existing
 # assertion also FLIPPED deny->allow IN PLACE (the `--auto>/dev/null` accepted
 # over-denial, now correct); a flip changes no total, which is why the itemised
@@ -3272,12 +3312,15 @@ _PIN_RAN=1
 #         operators actually earn their coverage. The fourth is the companion
 #         ALLOW: three denies alone would pass a mutant that denied every
 #         interior redirect, which is a one-sided control, not a scan test.
-#    +7  VALUE-FLAG-TARGET family, added 2026-09-13 in security review, after
+#    +8  VALUE-FLAG-TARGET family, added 2026-09-13 in security review, after
 #         the claim that this change made exactly two decisions more permissive
 #         was measured false. When the redirect's TARGET is the value flag, the
-#         redirect CONSUMES it and the --auto after it is real: five operators
-#         flip deny -> allow, plus two controls for the operators the clause cut
-#         swallows. The MAUTO_GLUE axis could not see this -- it varies the
+#         redirect CONSUMES it and the --auto after it is real. Five operators
+#         carry ALLOW rows -- the FAMILY IS WIDER than those five, see the block
+#         comment. Two more are pins on a clause-cut OVER-DENIAL, relabelled in
+#         round 3 from the "controls" they were wrongly called. The eighth is
+#         the row that actually pins the value-flag check (`-b > -x --auto`).
+#         The MAUTO_GLUE axis could not see any of this -- it varies the
 #         redirect's spacing but always leaves an inert target word.
 #    +6  forged target, OPERATOR axis: `>`, `2>`, `>>`, `&>`, `>|`, `{fd}>` each
 #         with a SPACE before a target spelled `--auto`. Real argv carries no
@@ -3343,8 +3386,8 @@ _PIN_RAN=1
 #    +4  over-granting controls: each new grant must still be stopped by the
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
-#         4 + 7 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 51.
-EXPECTED_TOTAL=647
+#         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
+EXPECTED_TOTAL=648
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

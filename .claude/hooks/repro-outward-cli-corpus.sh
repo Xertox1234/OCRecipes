@@ -414,8 +414,9 @@ add "fautojoin-off"  DENY 'gh pr merge 42 --a>x uto'
 #
 # `fautogrant-glue` is the only NEWLY permissive decision AMONG THESE TWO ROWS --
 # scoped deliberately, because the unscoped version of this sentence was measured
-# false a second time on 2026-09-13: the VALUE-FLAG-TARGET axis below flips five
-# more operators from deny to allow. Do not restore a global claim here.
+# false a second time on 2026-09-13: the VALUE-FLAG-TARGET axis below flips more
+# operators from deny to allow -- five of them carry rows, and the FAMILY IS
+# WIDER THAN THE ROWS. Do not restore a global claim here.
 add "fautogrant-glue" ALLOW 'gh pr merge 42 --auto>/dev/null'
 add "fautogrant-amp"  ALLOW 'gh pr merge 42 --auto&>log'
 
@@ -428,10 +429,25 @@ add "fautogrant-amp"  ALLOW 'gh pr merge 42 --auto&>log'
 # axis was missing entirely until the claim that this change made exactly two
 # decisions more permissive was measured and found false.
 #
-# `&>` and `>|` are in the list as the OPPOSITE-DIRECTION controls: the clause
-# cut swallows them before the scan, so they must still DENY here. Without them
-# the five ALLOW rows would agree with a guard that granted any redirect whose
-# target begins with `-`.
+# THE FAMILY IS WIDER THAN THE FIVE ALLOW ROWS. Measured 2026-09-13, armed under
+# both shells, main-deny/branch-allow, and unrowed: `<>`, `<<<`, `3>`, `0<`,
+# `2>>`. `<>` and `<<<` are distinct alternations of `_CMD_REDIR`'s `[<>]+`, not
+# spacing variants. These rows are a SAMPLE. Three enumerations in this change
+# have been measured wrong; the claim is scoped rather than re-attempted.
+#
+# `vft-amp` AND `vft-clob` ARE NOT CONTROLS, though an earlier revision said so.
+# Measured: (a) no control value -- the clause cut excludes `&` and `|`, so the
+# scan never sees `-b --auto` and both rows stay GREEN under a mutant that
+# deletes the value-flag check outright; (b) the deny is an OVER-DENIAL, because
+# argv is `pr merge 42 --auto` under both shells -- genuinely armed. They are
+# pins on the disclosed `--auto>&2` / `--auto>|log` clause-cut over-denial.
+# IF EITHER GOES RED after someone widens the cut correctly, that is the INTENDED
+# outcome: move the pin to ALLOW, do not chase the guard back.
+#
+# `vft-vmask` is the row that actually pins the value-flag check: `-b > -x --auto`
+# strips the redirect and its dash-target, leaving `-b` ADJACENT to `--auto`, so
+# --auto becomes -b's VALUE and the merge is NOT armed. The real guard denies; a
+# mutant with the value-flag check deleted ALLOWS it.
 #
 # `vft-bang` (the `>!` operator) IS SHELL-DIVERGENT, AND THIS ROW PINS THE zsh
 # READING DELIBERATELY. Measured both ways with a stub shell function: under zsh
@@ -451,6 +467,9 @@ VFT_WANT=(ALLOW ALLOW ALLOW ALLOW ALLOW DENY DENY)
 for k in "${!VFT_IDS[@]}"; do
   add "vft-${VFT_IDS[$k]}" "${VFT_WANT[$k]}" "gh pr merge 42 ${VFT_OPS[$k]} -b --auto"
 done
+# Not in the loop: its target is a dash-prefixed NON-flag, which is the whole
+# point -- it is the only row here that reaches the value-flag check.
+add "vft-vmask" DENY 'gh pr merge 42 -b > -x --auto'
 # DIGIT-PREFIX axis, added in review round 2: the forgery the FIRST version of
 # this fix introduced. `_CMD_REDIR` opens with an OPTIONAL fd prefix, and a plain
 # gsub let a match open on a MID-WORD digit run, eating characters off a real
@@ -1289,15 +1308,18 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=580
+EXPECTED_ROWS=581
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 483 of the 573 rows deny on the precise path; the other 90 are ALLOW there
-# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-* controls, plus the 31
-# precise-path gaps). These two numbers are bumped with
+# 486 of the 581 rows deny on the precise path; the other 95 are ALLOW there
+# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-* controls, plus the 31
+# precise-path gaps). Corrected 2026-09-13: this was the FIFTH stale copy of a
+# count in this file, found by review after four others were repaired -- and it
+# sits five lines above its own warning about exactly that. These numbers are
+# bumped with
 # EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
 # stale, sitting directly above the constant they describe.
-EXPECTED_DENY_ATTRIB_ROWS=485
+EXPECTED_DENY_ATTRIB_ROWS=486
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1793,6 +1815,7 @@ fautoampl-ns       : command-position 'gh pr merge' without a REAL --auto flag m
 fautoclob-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 vft-amp            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 vft-clob           : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vft-vmask          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoclob-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoclob-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoclob-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
