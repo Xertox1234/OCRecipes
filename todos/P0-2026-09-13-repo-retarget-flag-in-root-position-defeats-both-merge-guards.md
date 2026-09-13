@@ -82,7 +82,8 @@ EMPTY stamp root, so "the gate engaged" and "the gate denied" are the same event
 ## Acceptance Criteria
 
 - [ ] A merge carrying a repo-retarget flag in root position is DENIED by
-      `guard-outward-cli.sh`, for every spelling in `_OUT_REPO_FLAGS` (`-R`, `--repo`,
+      `guard-outward-cli.sh`, for every spelling matched by `_OUT_REPO_FLAG_RE` (`.claude/hooks/guard-outward-cli.sh:899`)
+      — `-R`, `--repo`,
       `--repo=x`, `-Rx`).
 - [ ] The same spellings are SEEN by `merge-review-guard.sh` — i.e. they reach the
       review-record requirement rather than exiting early at the `!= merge` check.
@@ -148,9 +149,9 @@ todo is worth re-reading — a `gh api` merge is also "the binary, then somethin
 
 ## Risks
 
-- **`.claude/hooks/**`feeds the required`Outward-CLI guard corpus` check\*\*, which is main's
-  9th required check. A careless edit wedges every open PR. Run it against branch ⊕ main,
-  never the bare tip.
+- **Hook edits feed a required check.** The `Outward-CLI guard corpus` job covers
+  `.claude/hooks/` and is main's 9th required check, so a careless edit there wedges every
+  open PR. Run it against branch ⊕ main, never the bare tip.
 - **Widening a shared extractor changes every consumer at once.** `pr-verify.sh` also calls
   `cmd_gh_pr_write_subcommand` / `cmd_gh_pr_ref`; check it before assuming the blast radius
   is the two guards.
