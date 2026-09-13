@@ -143,8 +143,9 @@ carries values outside the population the check governs.
 
 ## Risks
 
-- **`.claude/hooks/**`feeds the required`Outward-CLI guard corpus` check.\*\* Run it against
-  branch ⊕ main, never the bare tip.
+- **Hook edits feed a required check.** The `Outward-CLI guard corpus` job covers
+  `.claude/hooks/` and is main's 9th required check. Run it against branch ⊕ main, never the
+  bare tip.
 - **The false-DENY direction has no per-command escape worth relying on.** `git-safety.sh`
   does honour an inline `SKIP_WORKTREE_CONTRACT=1 ` prefix, so recovery is cheaper here than
   in the merge gate — but a guard that denies ordinary read-only git still gets switched off.
