@@ -52,9 +52,22 @@ strings — no git command was executed.
 The controls matter: three spellings that must be SEEN are, and two that must be MISSED are,
 so the probe separates the verdicts rather than reporting one of them for everything.
 
-**Position is load-bearing.** `git commit -m x 2>/dev/null` — the redirect _trailing_ — is
-SEEN. Only an interposed redirect defeats it, because only there does it sit inside the
-globals group the regex is walking.
+**Position is load-bearing, and there are TWO defeating positions, not one.** A redirect
+_trailing the whole command_ (`git commit -m x 2>/dev/null`) is SEEN — that one is fine. The
+regex is defeated when the redirect sits INSIDE it:
+
+| position                            | example                       | shipped    |
+| ----------------------------------- | ----------------------------- | ---------- |
+| interposed, between binary and verb | `git 2>/dev/null commit -m x` | MISSED     |
+| interposed, glued to the binary     | `git>out commit -m x`         | MISSED     |
+| **glued to the VERB**               | `git commit>log`              | **MISSED** |
+| trailing the command                | `git commit -m x 2>/dev/null` | SEEN       |
+
+An earlier revision of this todo said "only an interposed redirect defeats it" and named only
+the first two. The verb-glued position defeats the regex's TRAILING boundary
+`([[:space:]]|\$)` instead of its globals group — a different mechanism, same defect class,
+found in review. Both are closed by the fix below; a third position is disclosed under Risks
+and is NOT closed.
 
 ### Why the existing comment does not cover it
 
@@ -78,6 +91,11 @@ you weigh the isolation guarantee higher.
 
 - [ ] `MUTATING_GIT_SEG_RE` SEES a mutating git command carrying a redirect between the
       binary and the verb, for every redirect spelling `_CMD_REDIR` models.
+- [ ] It also SEES a redirect GLUED TO THE VERB (`git commit>log`) — a second defeating
+      position, against the trailing boundary rather than the globals group.
+- [ ] A false-SEEN sweep runs in the same pass: widening a boundary class is the direction
+      that invents denials, so read-only verbs, near-miss binaries (`gitk`, `git-foo`,
+      `digit`, `legit`) and ordinary prose must all stay MISSED.
 - [ ] Controls in the same run, both directions: `git status` / `git log` with the same
       interposed redirect stay MISSED (a read-only verb must not become a deny), and ordinary
       prose stays MISSED.
@@ -105,22 +123,41 @@ defines `_CMD_GIT_GLOBALS` — the whole "what may sit between `git` and its ver
 including a redirect branch built correctly. Replace the hand-written group outright:
 
 ```bash
-MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git${_CMD_GIT_GLOBALS}[[:space:]]+(${MUTATING_GIT_VERBS})([[:space:]]|\$)"
+MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git${_CMD_GIT_GLOBALS}[[:space:]]+(${MUTATING_GIT_VERBS})${_CMD_POS_SUFFIX}"
 ```
+
+**Two constants, two positions.** `_CMD_GIT_GLOBALS` closes the interposed redirect;
+`_CMD_POS_SUFFIX` (`lib/cmd-detect.sh:126`) closes the verb-glued one, because its closer
+class admits `<` and `>` alongside whitespace and the usual separators. That is not a novel widening — the sibling
+predicate already needed it, and `test-cmd-detect.sh:775` pins
+`cmd_is_git_commit 'git commit>log' yes "a verb glued to a redirect is still an invocation"`
+with a comment naming `_CMD_POS_SUFFIX` as the reason. Reuse it rather than hand-writing a
+boundary class.
 
 `git-safety.sh` does **not** source `lib/cmd-detect.sh` today (verified — the file has no
 `source` statement at all), so the fix needs that line too.
 
 **Measured, corpus generated from its dimensions** — 14 operators × 4 targets × 6 verbs × 4
-positions (spaced / **glued** / between-globals / pre-verb) = **1344 rows**:
+positions (spaced / **glued** / between-globals / **verb-glued**) = **1344 rows**:
 
-|                           | shipped | `_CMD_GIT_GLOBALS` wholesale |
-| ------------------------- | ------- | ---------------------------- |
-| rows SEEN                 | 0       | **1344**                     |
-| SEEN → MISSED regressions | —       | **0**                        |
+|                           | shipped | globals only | globals + suffix |
+| ------------------------- | ------- | ------------ | ---------------- |
+| rows SEEN                 | 0       | 1008         | **1200**         |
+| SEEN → MISSED regressions | —       | 0            | **0**            |
+| false SEENs (13 probes)   | —       | —            | **0**            |
 
-Controls hold in both directions: `git status`, `git 2>/dev/null status`, `echo hello` and
-`npm run build` all stay MISSED; the three shipped-SEEN spellings stay SEEN.
+The false-SEEN sweep matters at least as much as the coverage one, because widening a
+boundary class is the direction that invents denials: `git status`, `git log --oneline`,
+`git diff`, `git status>log`, `git log>x`, `git remote -v`, `gitk`, `git-foo commit`,
+`digit commit`, `legit commit -m x`, `git status;echo hi`, `echo git commit` and
+`npm run build` all stay MISSED.
+
+**1200, not 1344, is the applicable population — again.** The 144 rows still missed are
+exactly the six digit-prefixed operators (`2>`, `1>`, `3>`, `0<`, `2>>`, `2>&1`) in the
+verb-glued position, where `git commit2>log` lexes as the word `commit2` followed by `>log`
+and therefore invokes `git commit2`, which is not a verb. Missing them is correct. This is
+the second time on this todo that a raw count had to be reduced to its applicable subset;
+quote the denominator, not the total.
 
 ### Two corrections to an earlier revision of this section, recorded rather than overwritten
 
@@ -145,9 +182,10 @@ carries values outside the population the check governs; quote the APPLICABLE de
 
 ## Scope Contract
 
-- **Mechanisms to use:** replace the hand-written globals group with `_CMD_GIT_GLOBALS` from
-  `lib/cmd-detect.sh`, sourcing that library. No new constant, no locally re-derived redirect
-  grammar, no hand-spliced alternative, no second predicate.
+- **Mechanisms to use:** replace the hand-written globals group with `_CMD_GIT_GLOBALS` and
+  the hand-written trailing boundary with `_CMD_POS_SUFFIX`, both from `lib/cmd-detect.sh`,
+  sourcing that library. No new constant, no locally re-derived redirect grammar or boundary
+  class, no hand-spliced alternative, no second predicate.
 - **Files in scope:** `.claude/hooks/git-safety.sh`, `.claude/hooks/test-git-safety.sh`.
 - No new mechanisms, files, or abstractions beyond those listed.
 
@@ -169,8 +207,9 @@ carries values outside the population the check governs; quote the APPLICABLE de
 - `_CMD_REDIR`'s target is mandatory and greedy. The 1344-row sweep varies the target across
   four values and shows 0 SEEN → MISSED transitions, so it does not swallow the verb on any
   spelling tested — but that is a bound from the tested set, not a proof.
-- **DISCLOSED RESIDUAL, out of scope and NOT closed by this fix: a redirect BEFORE the `git`
-  token.** `2>/dev/null git commit -m x` is a real, equally valid bash invocation and is
+- **DISCLOSED RESIDUAL — the one position this fix does NOT close: a redirect BEFORE the
+  `git` token.** (The two positions INSIDE the regex — interposed and verb-glued — are both
+  closed above; this is the third.) `2>/dev/null git commit -m x` is a real, equally valid bash invocation and is
   MISSED by the shipped regex, by the spliced candidate, and by the `_CMD_GIT_GLOBALS`
   version alike — the segment anchor `^[[:space:]]*(ENV=val )*git…` never reaches `git` when
   a redirect precedes it, and this fix only touches the group BETWEEN `git` and the verb.
