@@ -51,8 +51,30 @@ without a token.
 Measured 2026-09-07 over this project's own history (3,883 unique Bash commands): the guard's
 span layer — the source of every P0 filed against it — has synthesised a gated needle **zero**
 times in 1,555 opportunities. The plain-text layer is exercised on 25.5% of commands. A wrapper
-covers **both**, plus the then-open bypass classes and any future spelling, because none of them
-changes what `execve` resolves.
+covers **both**, plus the then-open bypass classes and any future spelling **that still resolves
+the bare name through the inherited `PATH`**.
+
+> **NAMED RESIDUALS — two spellings defeat a PATH wrapper BY CONSTRUCTION (measured 2026-09-13).**
+> An earlier revision of this sentence claimed "any future spelling", which is false and is the
+> kind of completeness claim this repo has been burned by. A wrapper only sees what `execve`
+> resolves **through the `PATH` it controls**:
+>
+> 1. **Launcher family — `npx`, `npx --yes`, `bunx`, `bun x`.** These install into and **prepend
+>    their own** cache bin directory, so the wrapper directory is never the resolution source.
+> 2. **Absolute-path invocation** — `/opt/homebrew/bin/eas update` skips `PATH` resolution
+>    entirely.
+>
+> Both are ALLOW at the only live control today. Measured against `guard-outward-cli.sh` with a
+> generated corpus of 3 launcher forms × 3 binaries = **9 rows, all ALLOW** (`npx eas update`,
+> `bunx eas-cli update`, `npx @railway/cli up`, `npx gh pr merge`, `/opt/homebrew/bin/eas update`,
+> …), with controls that held in both directions: bare `eas update` → DENY, `$(which eas) update`
+> → DENY, `ls -la` → ALLOW. The guard's own header already concedes the launcher half at
+> `guard-outward-cli.sh:147-149`, and `_OUT_POS_PREFIX` (`:1606`) anchors on a
+> shell-metacharacter class that contains no path-separator branch, which is the absolute-path
+> half.
+>
+> **These are GUARD-TEXT rules, not shim rules — no shim can close them**, so they belong to a
+> companion todo and must be closed before ruling 4's scope-out is treated as safe.
 
 > **The count "three currently-open bypass classes" was true on 2026-09-07 and is NOT re-verified
 > here (2026-09-13).** At least one of that era's classes has since closed. Treat the number as a
@@ -77,8 +99,11 @@ Neither layer subsumes the other, measured in both directions:
   **This coverage claim is CONTINGENT on ruling 5 and is not yet measured**: it follows only
   if the prepended `PATH` actually reaches Bash tool calls _and is inherited by their child
   processes_. If ruling 5's first task disproves that, this bullet does not hold and ruling 1
-  must be re-decided — the wrapper would then cover strictly less than stated here, and the
-  union argument would need re-checking rather than assuming.
+  must be re-decided — **the shims would be inert, not merely narrower**: coverage is zero, which
+  is also why ruling 4's scope-out must be re-decided rather than trimmed.
+- Even once ruling 5 is proven, "covers every `execve`" is **not** the same proposition as
+  "closes the incident class" — see the NAMED RESIDUALS block in the Summary. `npx`/`bunx` and
+  absolute-path invocation never resolve through the wrapper's `PATH` at all.
 
 Confirms the existing Scope Contract ("Do NOT weaken `guard-outward-cli.sh`"). Any later
 narrowing of the guard on the strength of the wrapper stays a separate, separately-reviewed
@@ -108,8 +133,10 @@ argued that point with two CONCRETE examples — `eas 2>/dev/null update` and
 The interior-redirect class was fixed 2026-09-07
 (`todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`,
 `status: done`), and the ANSI-C method residual is retracted **inside the very comment block
-that was cited**: `:358-372` quotes its "UNHANDLED GAP, CONFIRMED LIVE" half and stops nine
-lines short of `:381`'s "CLOSED — and this entry said otherwise for a day." Do not re-open
+that was cited**: the block beginning at `:356` ("UNHANDLED GAP, CONFIRMED LIVE") was quoted
+only through `:372`, stopping nine lines short of `:381`'s "CLOSED — and this entry said
+otherwise for a day." (The earlier draft cited the range as `:358-372`; the label itself sits at
+`:356`, so even the cited span was off by two.) Do not re-open
 either as an argument here. **The ruling does not depend on them** — it rests on the exit-0
 interface and the absent shared table, neither of which requires any bypass to be live.
 
@@ -155,6 +182,11 @@ task disproves that, re-decide this ruling before implementing** — `npm`/`pnpm
 into scope. (Checked 2026-09-13: no `eas-cli` dependency in `package.json` and no
 `node_modules/.bin/eas`, so no local-bin shadow independently defeats the premise.)
 
+**Narrower than it first reads.** The `eas` shim closes the OTA class _through the `npm run`
+path specifically_. It does **not** close `npx eas update` or `/opt/homebrew/bin/eas update` —
+neither resolves through the wrapper's `PATH` (Summary → NAMED RESIDUALS). Those are guard-text
+work, not shim work; do not read ruling 4 as "the OTA class is closed".
+
 ### 5. Committed to the repo, not the operator's environment
 
 `.claude/settings.json` and `.claude/hooks/` are both tracked. An environment-only wrapper
@@ -177,6 +209,26 @@ therefore carries both tokens. That is deliberate: it makes an irreversible acti
 two-key operation instead of a one-token habit. The name follows the existing `ALLOW_*`/`SKIP_*`
 convention.
 
+**The two tokens have DIFFERENT SCOPES for the same typed text — state this in the
+implementation, it is not cosmetic.** The guard honours the inline form by matching the literal
+prefix in the command **string** (`guard-outward-cli.sh:1426`), precisely because — as
+`:1419-1422` explains — a `VAR=val cmd` assignment never reaches that hook's environment. So
+inline `ALLOW_OUTWARD_CLI=1` is genuinely scoped to one tool call. A shim, by contrast, runs
+**inside** the gated command's process tree, so an inline `ALLOW_OUTWARD_EXEC=1` is a real
+environment assignment **inherited by every descendant**.
+
+Consequences, both binding:
+
+- **Do NOT publish the two tokens as one copy-pasteable line.** `docs/DEV_SETUP.md:185` is
+  `ALLOW_OUTWARD_CLI=1 railway run --service Postgres -- sh -c '…npx tsx …'` — an
+  arbitrary-command-against-production subtree. Prefixing both tokens there would disarm the exec
+  backstop for `railway`, the `sh -c`, `npx`, `tsx`, and anything that script execs. Document
+  them as two deliberate steps, or the "two-key" rationale collapses into one token with a longer
+  name.
+- **The exec token must be value-bearing or single-use, not a bare `=1`** — e.g. it names the
+  branch being published, and the shim refuses to re-honour it for a different target. A bare
+  inherited `=1` is exactly the habit ruling 6 exists to prevent.
+
 ### Consequences for the criteria below
 
 | Criterion            | Change                                                                      |
@@ -189,8 +241,15 @@ convention.
 ## Acceptance Criteria
 
 - [ ] **FIRST, and blocking (ruling 5):** proven by execution that a directory prepended to
-      `PATH` via `.claude/settings.json`'s `env` key actually reaches **Bash tool calls**. If it
-      does not, stop and re-decide the wiring — every criterion below is inert without this.
+      `PATH` via `.claude/settings.json`'s `env` key is observed at **all three levels**, using
+      the argv-printing sentinel-file stub the Implementation Notes mandate:
+      **(a)** a Bash tool call; **(b)** a **grandchild** of one — specifically the `eas`
+      resolution point inside `npm run update:preview`; **(c)** a **subagent's** Bash tool call.
+      Level (b) is not optional padding: ruling 4 REMOVES `npm`/`pnpm`/`yarn` from scope on the
+      strength of grandchild inheritance, so a criterion proving only (a) can pass green while
+      the premise a coverage-removal rests on stays unmeasured — and ruling 4's own escape clause
+      would then never fire. If any level fails, stop and re-decide the wiring — every criterion
+      below is inert without this.
 - [ ] A wrapper directory is prepended to the agent's `PATH` containing one shim per gated
       binary (`eas`, `railway`, `gh` — **three, per ruling 4**; `npm`/`pnpm`/`yarn` are out of
       scope). Each shim refuses with a non-zero exit and a clear message unless
@@ -204,16 +263,29 @@ convention.
       bypass-inheriting (**ruling 2 reverses this criterion's original "prefer delegating"**).
 - [ ] The rule is an **ALLOWLIST**: only enumerated read-only subcommands exec without the
       token; everything else refuses, including subcommands nobody has enumerated (ruling 3).
+- [ ] The allowlist matches on the **EXACT, FULL subcommand path** — `update:list`, never
+      `update:*`; `run view`, never `run`. **Prefix or verb granularity makes an allowlist drift
+      open exactly like a denylist.** Two concrete traps, both measured 2026-09-13:
+      `eas update:list` is allowlisted and shares its `update:` prefix with
+      `update:delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback`, which
+      the guard enumerates as mutating (`guard-outward-cli.sh:1994`; probed `eas update:republish`
+      → DENY, control `eas update:list` → ALLOW) — a shim matching `update:*` grants all six.
+      `gh run view` is allowlisted and shares its `run` verb with `gh run rerun|cancel|delete`,
+      which `GH_MUTATING_RE` (`:2597`) does not cover at all.
 - [ ] The `gh` shim inspects **flags, not just `$1`** — `gh api` spans read and write on one
-      verb. Any `-X`/`--method` other than GET, and any field flag implying a non-GET default,
-      is a write (ruling 3). Confirm `gh`'s default-method rule from published documentation;
-      **never** run `gh --help` to determine it.
+      verb. **Do not enumerate flag families; transcribe `gh`'s published default-method rule
+      verbatim into the shim's comments with a doc citation, and treat anything not provably GET
+      as a write.** An enumeration of `-X`/`--method` plus "field flags" already misses `--input`
+      (body from a file or stdin), which is neither, and `gh api graphql`, which is a different
+      shape. Confirm from published documentation; **never** run `gh --help` to determine it.
 - [ ] The escape hatch is `ALLOW_OUTWARD_EXEC=1` — **separate from `ALLOW_OUTWARD_CLI`, never a
       reuse of it** (ruling 6). Documented in `CLAUDE.md` beside the existing tokens, and usable
       by the **operator** for a real release without editing files. A genuine publish carries
       both tokens; that friction is the point.
-- [ ] `docs/DEV_SETUP.md:185`'s documented `railway run` flow is updated to carry both tokens,
-      or it silently breaks the moment the wrapper lands.
+- [ ] `docs/DEV_SETUP.md:185`'s documented `railway run` flow is updated, **as two deliberate
+      documented steps — NOT as one copy-pasteable two-token line** (ruling 6: that line runs an
+      arbitrary subtree against production, and an inline exec token is inherited by all of it).
+      It silently breaks the moment the wrapper lands if left untouched.
 - [ ] **Proven by execution, not by inspection**: with the wrapper active and no token, a
       PATH-stubbed harness confirms the real binary is never reached for a mutating invocation —
       and confirms it IS reached for the sanctioned read-only forms. Both directions, or the
@@ -267,9 +339,19 @@ convention.
   than duplicate.~~ **Superseded by ruling 2.** The risk is real but delegation is not the
   remedy: the guard has no shareable table (`_OUT_GATED_VERB` is a coarse cross-binary union),
   and delegating would make the wrapper inherit every guard bypass. Ruling 3 answers the drift
-  risk instead — an ALLOWLIST cannot drift _open_, because an unenumerated subcommand refuses.
-  The residual risk inverts to over-refusal, which is visible to the operator rather than
-  silent.
+  risk instead — an ALLOWLIST cannot drift _open_ **under exact full-subcommand matching**,
+  because an unenumerated subcommand refuses. That qualifier is load-bearing: under prefix or
+  verb granularity an allowlist drifts open exactly like a denylist (see the exact-match
+  criterion above). The residual risk then inverts to over-refusal, which is visible to the
+  operator rather than silent.
+- **Residuals the wrapper does NOT cover — named, so this list is not read as complete:**
+  (a) the launcher family (`npx`, `npx --yes`, `bunx`, `bun x`) and absolute-path invocation,
+  which never resolve through the wrapper's `PATH` — see the Summary's NAMED RESIDUALS block;
+  (b) a `node`/`tsx` script that talks to the Expo/EAS API directly with a token and never execs
+  a CLI; (c) the `mcp__railway__*` / `mcp__github__*` tool paths, which `CLAUDE.md` actively
+  PREFERS over `gh` and which no `PATH` shim and no Bash-tool hook observes. (b) and (c) are
+  declared **out of scope** here — neither can ship an OTA — but they are why "covers every
+  `execve`" must not be read as "closes the incident class".
 
 ## Related
 
