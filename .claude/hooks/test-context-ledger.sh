@@ -453,6 +453,25 @@ else
   no "missing lib did not fail loud: rc=$rc err=[$err]"
 fi
 
+# --- Task 5: SessionEnd cleanup ---
+# Drives the REAL hook with a real /tmp path (not CONTEXT_LEDGER_ROOT), because the
+# cleanup line necessarily hardcodes the production path the same way the existing
+# worktree-contract line does.
+
+COORD="$HOOKS_DIR/session-coord-hook.sh"
+SIDC="sess-cleanup-$$"
+REAL_DIR="/tmp/ocrecipes-context-ledger-${SIDC}"
+mkdir -p "$REAL_DIR"; printf 'x\n' > "$REAL_DIR/resume.md"
+
+printf '{"session_id":"%s"}' "$SIDC" | bash "$COORD" deregister >/dev/null 2>&1
+
+if [ ! -d "$REAL_DIR" ]; then
+  ok "SessionEnd removes the session's ledger directory"
+else
+  no "ledger directory leaked after deregister: $REAL_DIR"
+  rm -rf "$REAL_DIR"
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

@@ -18,6 +18,10 @@ if [ "$SUB" = "deregister" ] && command -v jq >/dev/null 2>&1; then
   # Charset guard: this value reaches rm -rf — never allow separators/traversal.
   case "$SESSION_ID" in ''|*[!A-Za-z0-9._-]*) SESSION_ID="" ;; esac
   [ -n "$SESSION_ID" ] && rm -rf "/tmp/claude-worktree-contracts-${SESSION_ID}"
+  # Context ledger (docs/superpowers/specs/2026-09-12-context-ledger-design.md §4.4).
+  # Same guarded SESSION_ID, same SessionEnd wiring — a second cleanup hook would be a
+  # second thing to forget.
+  [ -n "$SESSION_ID" ] && rm -rf "/tmp/ocrecipes-context-ledger-${SESSION_ID}"
 fi
 [ -f "$SCRIPT" ] || exit 0
 case "$SUB" in
