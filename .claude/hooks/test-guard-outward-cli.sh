@@ -1349,6 +1349,15 @@ assert_deny "forged --auto: >| at the INTERIOR tool->namespace slot (reaches the
 assert_deny "forged --auto: {fd}> at the INTERIOR tool->namespace slot (reaches the scan; the trailing row does not)" \
   "$(json 'gh {fd}> --auto pr merge 42')" "without a REAL --auto flag"
 
+# COMPANION ALLOW for the three rows above, because a deny-only bucket is a
+# ONE-SIDED control: a mutant that simply denied EVERY interior redirect would
+# pass all three and look like a working scan. This row is the other side --
+# a genuine armed automerge, same operator, same interior slot, must still
+# allow. argv measured with a stub shell FUNCTION named `gh` (PATH never
+# consulted, the real binary cannot run): [pr][merge][42][--auto].
+assert_allow "a GENUINE --auto still allows with an &> redirect at that same INTERIOR slot (the bucket above GATES, it does not disable)" \
+  "$(json 'gh &>log pr merge 42 --auto')"
+
 # (A) ATTRIBUTION CONTROL. The glued spelling denied before this fix too, but
 # only incidentally — `>--auto` was one awk field that did not compare equal.
 # It must still deny, now because the normalisation RECOGNISES it as a redirect
@@ -1394,12 +1403,58 @@ assert_deny "join control: split at a different offset" \
 assert_deny "join control: named-fd spelling cannot fuse either" \
   "$(json 'gh pr merge 42 --au{fd}> to')" "without a REAL --auto flag"
 
-# NEWLY GRANTED. A genuine --auto carrying a glued redirect: real bash argv is an
-# armed automerge, so the former DENY was an over-denial (the ACCEPTED OVER-DENIAL
-# residual, now retired). These are the ONLY decisions this change makes more
-# permissive; every one has a genuine --auto in argv.
-assert_allow "newly granted: --auto with a glued &> redirect" \
+# GRANTS -- AND THE CLAIM THAT STOOD HERE WAS WRONG TWICE OVER. A genuine --auto
+# carrying a glued redirect is an armed automerge in real argv, so the former
+# DENY was an over-denial (the ACCEPTED OVER-DENIAL residual, now retired).
+#
+# What was wrong, measured 2026-09-13 against main's committed guard:
+#   (a) The row below is NOT newly granted. Main ALREADY allows `--auto&>log`,
+#       because the clause cut excludes `&` and truncates before the scan ever
+#       runs. Kept and relabelled -- it pins a grant, not a NEW one.
+#   (b) "These are the ONLY decisions" undercounted. The in-place flip
+#       (`--auto>/dev/null`, main deny -> branch allow) is one real new grant;
+#       the VALUE-FLAG-TARGET family below is FIVE more, and had no row in this
+#       file, in the corpus, or in the todo's residual list.
+#
+# That second error is this repo's recurring one: a residual list that names one
+# residual reads as completeness, and the omitted entry is the live one.
+assert_allow "grant, but NOT a new one -- main allows it too: --auto with a glued &> redirect" \
   "$(json 'gh pr merge 42 --auto&>log')"
+
+# VALUE-FLAG-TARGET family, added 2026-09-13 in security review. When the
+# redirect's TARGET is the value flag itself, the redirect CONSUMES that flag and
+# the --auto after it survives into argv -- so ALLOW is correct here, and main
+# was over-denying because its whitespace split read prev="-b".
+#
+# THE MAUTO_GLUE AXIS CANNOT REACH THIS. That axis varies the redirect's SPACING
+# (`-b>x`, `-b >x`, `-b 2>x`) but always leaves an inert target word, so the
+# redirect never eats the flag. Five operators flip deny -> allow in this shape
+# and not one of them is the row above.
+#
+# argv measured under zsh -- the Bash tool's actual shell -- with a stub shell
+# FUNCTION, so PATH was never consulted: all five give `pr merge 42 --auto`.
+# `>!` IS THE ONE TO WATCH: under BASH the same text gives `pr merge 42 -b
+# --auto`, where -b eats the flag and this allow would be a FORGERY. Pinned at
+# the zsh reading because that is the shell that runs; see the `>!` entry under
+# "WHAT THIS BLOCK DOES NOT SETTLE" in guard-outward-cli.sh.
+assert_allow "value-flag target: > consumes -b, so the --auto that survives is real" \
+  "$(json 'gh pr merge 42 > -b --auto')"
+assert_allow "value-flag target: 2> consumes -b" \
+  "$(json 'gh pr merge 42 2> -b --auto')"
+assert_allow "value-flag target: >> consumes -b" \
+  "$(json 'gh pr merge 42 >> -b --auto')"
+assert_allow "value-flag target: < consumes -b" \
+  "$(json 'gh pr merge 42 < -b --auto')"
+assert_allow "value-flag target: >! consumes -b under zsh (SHELL-DIVERGENT -- forged under bash; see the guard's residual)" \
+  "$(json 'gh pr merge 42 >! -b --auto')"
+# CONTROLS, opposite direction. The two operators the clause cut swallows must
+# NOT grant in this shape either -- and they do not, on both trees. Without
+# these, the five rows above would pass a mutant that granted every redirect
+# whose target starts with `-`.
+assert_deny "value-flag target control: &> is cut before the scan, so it still denies" \
+  "$(json 'gh pr merge 42 &> -b --auto')" "without a REAL --auto flag"
+assert_deny "value-flag target control: >| is cut before the scan, so it still denies" \
+  "$(json 'gh pr merge 42 >| -b --auto')" "without a REAL --auto flag"
 
 # DIGIT-PREFIX CONTROLS — the defect the FIRST version of this fix introduced,
 # found in security review. `_CMD_REDIR` opens with an optional fd prefix, and a
@@ -3201,7 +3256,7 @@ _PIN_RAN=1
 #         api's clause, plus a read-only gh api carrying its own `2>&1`. These are
 #         the rows that go RED if `&[0-9-]` ever becomes a bare `&`.
 #         3 + 4 + 4 = 11.
-# 596 -> 639 on 2026-09-13: +43, the --auto field scan becomes REDIRECT-AWARE
+# 596 -> 647 on 2026-09-13: +51, the --auto field scan becomes REDIRECT-AWARE
 # (P0-2026-09-07-...-space-separated-redirect-target-forges-auto). One existing
 # assertion also FLIPPED deny->allow IN PLACE (the `--auto>/dev/null` accepted
 # over-denial, now correct); a flip changes no total, which is why the itemised
@@ -3211,10 +3266,19 @@ _PIN_RAN=1
 # reconciled with neither the total nor the breakdown -- a stale number sitting
 # directly above the constant it describes, the same failure this file calls out
 # at EXPECTED_DENY_ATTRIB_ROWS. Corrected 2026-09-13 by re-adding the items.
-#    +3  OPERATOR x POSITION: `&>`, `>|`, `{fd}>` at an INTERIOR slot, added
+#    +4  OPERATOR x POSITION: `&>`, `>|`, `{fd}>` at an INTERIOR slot, added
 #         2026-09-13 in review. Their trailing rows are swallowed by the clause
 #         cut and pass with strip_redirs deleted, so these are where those three
-#         operators actually earn their coverage.
+#         operators actually earn their coverage. The fourth is the companion
+#         ALLOW: three denies alone would pass a mutant that denied every
+#         interior redirect, which is a one-sided control, not a scan test.
+#    +7  VALUE-FLAG-TARGET family, added 2026-09-13 in security review, after
+#         the claim that this change made exactly two decisions more permissive
+#         was measured false. When the redirect's TARGET is the value flag, the
+#         redirect CONSUMES it and the --auto after it is real: five operators
+#         flip deny -> allow, plus two controls for the operators the clause cut
+#         swallows. The MAUTO_GLUE axis could not see this -- it varies the
+#         redirect's spacing but always leaves an inert target word.
 #    +6  forged target, OPERATOR axis: `>`, `2>`, `>>`, `&>`, `>|`, `{fd}>` each
 #         with a SPACE before a target spelled `--auto`. Real argv carries no
 #         --auto at all, so every one was an immediate unarmed merge.
@@ -3240,9 +3304,12 @@ _PIN_RAN=1
 #         always eats through to a boundary that blocks the join. An EQUIVALENT
 #         mutant, measured, not an unreached one. The rows pin the property
 #         against a future `_CMD_REDIR` whose target became optional.
-#    +1  newly granted: a genuine --auto carrying a glued redirect is a real armed
-#         automerge (`--auto&>log`). With the in-place flip above, two decisions
-#         in total became more permissive -- both of them here.
+#    +1  a genuine --auto carrying a glued redirect is a real armed automerge
+#         (`--auto&>log`) -- but NOT a new grant: main already allows it, because
+#         the clause cut excludes `&`. The earlier "two decisions in total became
+#         more permissive -- both of them here" was wrong on both halves. The
+#         real new grants are the in-place flip (`--auto>/dev/null`) and the
+#         VALUE-FLAG-TARGET family, which is why that bucket exists above.
 #   +11  DIGIT-PREFIX rows, added in review round 2 after the SECURITY REVIEW
 #         found the first version of this fix had introduced its own forgery.
 #         `_CMD_REDIR` opens with an optional fd prefix, and a plain
@@ -3276,8 +3343,8 @@ _PIN_RAN=1
 #    +4  over-granting controls: each new grant must still be stopped by the
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
-#         6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 40.
-EXPECTED_TOTAL=639
+#         4 + 7 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 51.
+EXPECTED_TOTAL=647
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

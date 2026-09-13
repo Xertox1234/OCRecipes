@@ -2451,15 +2451,19 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   #     correctness depends on WHICH shell interprets the string belongs where
   #     the check is defined, not inferred from an operator list.
   #
-  #   * awk PROVENANCE IS UNTESTED, and cannot be tested from here. This version
-  #     adds `match()` with a dynamic regex, a user function, `substr` and
-  #     `split(s, f, " ")` where the previous one used only default-FS
-  #     splitting. All are POSIX, and all behave correctly on the /usr/bin/awk
-  #     this repo runs against. But the guard calls BARE `awk` and the suite
-  #     resolves it through the SAME PATH, so a different awk earlier on PATH is
-  #     structurally invisible to every row in this file -- the corpus would
-  #     agree with itself under whichever awk it happened to run. Stated as a
-  #     bound, deliberately not as a probe.
+  #   * awk PROVENANCE IS UNTESTED BY THIS SUITE. This version adds `match()`
+  #     with a dynamic regex, a user function, `substr` and `split(s, f, " ")`
+  #     where the previous one used only default-FS splitting. All are POSIX,
+  #     and all behave correctly on the /usr/bin/awk this repo runs against. But
+  #     the guard calls BARE `awk` and every row in the suite resolves it through
+  #     the SAME PATH, so a different awk earlier on PATH is invisible there --
+  #     the corpus would agree with itself under whichever awk it happened to
+  #     run.
+  #     An earlier draft of this bullet said it "cannot be tested from here",
+  #     which overstates the bound: a stub named `awk` prepended to PATH would
+  #     test it directly, by this repo's own probing convention. The accurate
+  #     and smaller claim is that it is untested by the BLACK-BOX command-string
+  #     harness, which is the only thing the rows in that file exercise.
   #
   # Safe because every `<`/`>` that reaches $CLAUSE is a REAL, unquoted operator:
   # $CLAUSE is cut from $WORDS (cmd_words), whose `neutral()` rewrites a quoted

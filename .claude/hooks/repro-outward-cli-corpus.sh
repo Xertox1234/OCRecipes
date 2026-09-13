@@ -410,10 +410,47 @@ add "fautojoin-off"  DENY 'gh pr merge 42 --a>x uto'
 # were newly permissive: `fautogrant-amp` is NOT one of them. The clause cut
 # excludes `&`, so `--auto&>log` truncates to CLAUSE=[gh pr merge 42 --auto] on
 # main and on this branch alike, and main ALREADY grants it (HAS_REAL_AUTO=yes
-# on both trees). `fautogrant-glue` is the only decision this change makes more
-# permissive.
+# on both trees).
+#
+# `fautogrant-glue` is the only NEWLY permissive decision AMONG THESE TWO ROWS --
+# scoped deliberately, because the unscoped version of this sentence was measured
+# false a second time on 2026-09-13: the VALUE-FLAG-TARGET axis below flips five
+# more operators from deny to allow. Do not restore a global claim here.
 add "fautogrant-glue" ALLOW 'gh pr merge 42 --auto>/dev/null'
 add "fautogrant-amp"  ALLOW 'gh pr merge 42 --auto&>log'
+
+# VALUE-FLAG-TARGET axis (2026-09-13, security review). The redirect's TARGET is
+# the value flag itself, so the redirect CONSUMES the flag and the --auto after
+# it survives into argv. ALLOW is therefore correct, and main was over-denying.
+#
+# MAUTO_GLUE cannot reach this shape: it varies the redirect's SPACING but always
+# leaves an inert target word (`x`), so the redirect never eats the flag. This
+# axis was missing entirely until the claim that this change made exactly two
+# decisions more permissive was measured and found false.
+#
+# `&>` and `>|` are in the list as the OPPOSITE-DIRECTION controls: the clause
+# cut swallows them before the scan, so they must still DENY here. Without them
+# the five ALLOW rows would agree with a guard that granted any redirect whose
+# target begins with `-`.
+#
+# `vft-bang` (the `>!` operator) IS SHELL-DIVERGENT, AND THIS ROW PINS THE zsh
+# READING DELIBERATELY. Measured both ways with a stub shell function: under zsh
+# argv is `pr merge 42 --auto` (genuinely armed, so ALLOW is correct); under BASH
+# it is `pr merge 42 -b --auto`, where `-b` eats the flag and this same ALLOW
+# would be a FORGERY. Pinned at zsh because zsh is the shell the Bash tool
+# actually runs, so that is the verdict that decides real merges.
+#
+# READ THIS BEFORE TREATING A RED `vft-bang` AS A REGRESSION: if someone later
+# makes the guard bash-correct on `>!`, this row going red is the INTENDED
+# outcome. Move the pin to DENY; do not change the guard back to keep it green.
+# The divergence itself is recorded where the check lives -- see the `>!` entry
+# under "WHAT THIS BLOCK DOES NOT SETTLE" in guard-outward-cli.sh.
+VFT_IDS=(gt fd app bang in amp clob)
+VFT_OPS=('>' '2>' '>>' '>!' '<' '&>' '>|')
+VFT_WANT=(ALLOW ALLOW ALLOW ALLOW ALLOW DENY DENY)
+for k in "${!VFT_IDS[@]}"; do
+  add "vft-${VFT_IDS[$k]}" "${VFT_WANT[$k]}" "gh pr merge 42 ${VFT_OPS[$k]} -b --auto"
+done
 # DIGIT-PREFIX axis, added in review round 2: the forgery the FIRST version of
 # this fix introduced. `_CMD_REDIR` opens with an OPTIONAL fd prefix, and a plain
 # gsub let a match open on a MID-WORD digit run, eating characters off a real
@@ -1252,7 +1289,7 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=573
+EXPECTED_ROWS=580
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 483 of the 573 rows deny on the precise path; the other 90 are ALLOW there
@@ -1260,7 +1297,7 @@ EXPECTED_ROWS=573
 # precise-path gaps). These two numbers are bumped with
 # EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
 # stale, sitting directly above the constant they describe.
-EXPECTED_DENY_ATTRIB_ROWS=483
+EXPECTED_DENY_ATTRIB_ROWS=485
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1317,7 +1354,7 @@ EXPECTED_PRECISE_GAPS=31
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=220
+EXPECTED_ALLPATH_GAPS=225
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1555,6 +1592,11 @@ fautofd-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautofd-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautogrant-amp p=ALLOW j=DENY l=DENY a=DENY
 fautogrant-glue p=ALLOW j=DENY l=DENY a=DENY
+vft-gt p=ALLOW j=DENY l=DENY a=DENY
+vft-fd p=ALLOW j=DENY l=DENY a=DENY
+vft-app p=ALLOW j=DENY l=DENY a=DENY
+vft-bang p=ALLOW j=DENY l=DENY a=DENY
+vft-in p=ALLOW j=DENY l=DENY a=DENY
 fautogt-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautogt-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautonfd-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
@@ -1749,6 +1791,8 @@ fautoampl-lead     : command-position 'gh pr merge' without a REAL --auto flag m
 fautoampl-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoampl-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoclob-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vft-amp            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vft-clob           : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoclob-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoclob-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 fautoclob-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
