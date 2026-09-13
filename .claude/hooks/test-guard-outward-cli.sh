@@ -2353,7 +2353,7 @@ while IFS= read -r _line; do
   printf '%s' "$_line" | grep -qF -- '"$_GH_API_CUT"' || { _CUTS_OK=0; _BAD_CUT="$_line"; }
 done < <(grep 'GH_API_CLAUSE_[A-Z]*=\$(printf' "$HOOK")
 if [ -n "$_ANCHOR_RE" ] \
-   && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh${_OUT_SEP}api' \
+   && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh${_OUT_GH_GLOBALS}${_OUT_SEP}api' \
    && [ "$_CUT_DEFS" -eq 1 ] \
    && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*" \
    && [ "$_CLAUSE_CUTS" -eq 3 ] \
@@ -2407,14 +2407,38 @@ fi
 # others), so an unscoped grep fails on prose — and the tempting "fix" for that
 # is to loosen the pattern until it stops matching comments, which would also
 # stop it matching real code.
-_SEP_LEFT=$(grep -v '^[[:space:]]*#' "$HOOK" \
-  | grep -oE '(eas|railway|npm|pnpm|yarn|gh|pr|api|release|repo|variable|variables|vars|var|service|environment)\[\[:space:\]\]\+|\$\{_OUT_(GATED_BIN|EXPANSION_TOKEN)\}\[\[:space:\]\]\+' \
-  | wc -l | tr -d '[:space:]')
+# A LEADING BOUNDARY IS REQUIRED (2026-09-13), because the alternation names WORDS and
+# several of them are also the tail of a FLAG name. `_OUT_GH_GLOBALS` spells the
+# value-taking root flags as `--repo[[:space:]]+[^[:space:]]+`, whose `repo[[:space:]]+`
+# matched this list and reported a separator that is not one — a flag consuming its own
+# argument, not a gated word reaching its verb. Excluding a preceding `-`/alphanumeric does
+# NOT weaken the check: every REAL needle here is preceded by `"`, `}` or start-of-line,
+# all of which still match. Verified by injecting a `gh[[:space:]]+api` regression into a
+# copy of the hook and confirming this assertion still goes red (see the mutation row
+# immediately below).
+_SEP_LEFT_RE='(^|[^-A-Za-z0-9])((eas|railway|npm|pnpm|yarn|gh|pr|api|release|repo|variable|variables|vars|var|service|environment)\[\[:space:\]\]\+|\$\{_OUT_(GATED_BIN|EXPANSION_TOKEN)\}\[\[:space:\]\]\+)'
+_SEP_LEFT=$(grep -v '^[[:space:]]*#' "$HOOK" | grep -oE -- "$_SEP_LEFT_RE" | wc -l | tr -d '[:space:]')
 if [ "${_SEP_LEFT:-x}" = 0 ]; then
   echo "PASS: every tool->verb / namespace->verb separator goes through \$_OUT_SEP (structural: 0 hardcoded [[:space:]]+ left on code lines)"; PASS=$((PASS+1))
 else
   echo "FAIL: $_SEP_LEFT hardcoded [[:space:]]+ separator(s) still sit between a gated word and its verb — the interior-redirect absorber is applied SELECTIVELY, so those families remain bypassable by a redirect"
-  grep -v '^[[:space:]]*#' "$HOOK" | grep -nE '(eas|railway|npm|pnpm|yarn|gh|pr|api|release|repo|variable|variables|vars|var|service|environment)\[\[:space:\]\]\+' | head -5
+  grep -v '^[[:space:]]*#' "$HOOK" | grep -nE -- "$_SEP_LEFT_RE" | head -5
+  FAIL=$((FAIL+1))
+fi
+# MUTATION ROW for the assertion immediately above (2026-09-13). Adding the leading
+# boundary narrowed that pattern, and a narrowed detector that still reports 0 is
+# indistinguishable from a working one — "a clean zero needs its denominator". So inject
+# the exact regression the check exists to catch into a COPY of the hook and require the
+# same pattern to find it. Without this row, the boundary could have been narrowed until
+# the check matched nothing at all and the suite would still be green.
+_MUT_HOOK=$(mktemp)
+{ cat "$HOOK"; printf '%s\n' 'GH_FAKE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}"'; } > "$_MUT_HOOK"
+_SEP_MUT=$(grep -v '^[[:space:]]*#' "$_MUT_HOOK" | grep -oE -- "$_SEP_LEFT_RE" | wc -l | tr -d '[:space:]')
+rm -f "$_MUT_HOOK"
+if [ "${_SEP_MUT:-0}" -ge 1 ]; then
+  echo "PASS: the hardcoded-separator pattern still CATCHES an injected gh[[:space:]]+api regression (the 0 above is a real zero)"; PASS=$((PASS+1))
+else
+  echo "FAIL: the hardcoded-separator pattern no longer catches an injected gh[[:space:]]+api regression — it has been narrowed into a decoration, and its 0 means nothing"
   FAIL=$((FAIL+1))
 fi
 # The absorber itself must still interpolate the LIB constant and still carry its
@@ -3221,6 +3245,77 @@ assert_allow "union control: one gh api read stays ONE occurrence" \
 # ever executes. That half of the claim now lives on the `_on_exit` trap at the
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
+# ---------- gh: a repo-retarget flag in ROOT POSITION (2026-09-13) ----------
+# `gh -R owner/repo pr merge 42` is a FUNCTIONAL invocation — cobra strips flags while
+# resolving the subcommand and the `pr` group registers -R/--repo via EnableRepoOverride
+# (measured against the real binary). Before this date `_OUT_SEP` modelled a REDIRECT in
+# that slot but never a FLAG, so every `gh` needle in this file missed the spelling. The
+# merge block is `if -gt 1 / elif -eq 1 / fi` with NO else, so a zero occurrence count
+# skipped the repo check, the --auto carve-out AND the --admin deny together, and `merge`
+# is absent from GH_MUTATING_RE by design — nothing downstream re-caught it. A TOTAL
+# bypass, measured live on origin/main, including retargeted at THIS repository.
+# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+#
+# THE DENY REASON IS THE ASSERTION, not merely "it denied". These rows must be caught by
+# the REPO-RETARGET check (gh_pr_clause_has_repo, which builds its OWN clause regex and is
+# "checked FIRST so it wins regardless of --auto"). If they were caught by the --auto
+# carve-out instead, that clause regex would still be blind and the retarget would sail
+# through any command carrying a real --auto — which is exactly the next row down.
+assert_deny "root-position -R <v> denies as a retarget" \
+  "$(json 'gh -R other/org pr merge 42')" \
+  "targets a DIFFERENT GitHub repository"
+assert_deny "root-position --repo <v> denies as a retarget" \
+  "$(json 'gh --repo other/org pr merge 42')" \
+  "targets a DIFFERENT GitHub repository"
+assert_deny "root-position --repo=v denies as a retarget" \
+  "$(json 'gh --repo=other/org pr merge 42')" \
+  "targets a DIFFERENT GitHub repository"
+assert_deny "root-position -Rv (glued) denies as a retarget" \
+  "$(json 'gh -Rother/org pr merge 42')" \
+  "targets a DIFFERENT GitHub repository"
+# The retarget does not have to point ELSEWHERE to matter: naming this repository still
+# merges a PR here with no review record, and it is the spelling a person reaches for.
+assert_deny "root-position retarget naming THIS repo still denies" \
+  "$(json 'gh -R Xertox1234/OCRecipes pr merge 42 --squash')" \
+  "targets a DIFFERENT GitHub repository"
+# The row that proves the ORDER of the two checks survived the widening.
+assert_deny "root-position retarget beats a REAL --auto" \
+  "$(json 'gh -R other/org pr merge 42 --auto')" \
+  "targets a DIFFERENT GitHub repository"
+# The same slot, other gh namespaces — all seven needles moved together, so assert more
+# than the merge one. A detector widened without its consumer is this repo's
+# widened-extractor-unwidened-consumer pattern.
+assert_deny "root-position -R on gh pr create denies" \
+  "$(json 'gh -R other/org pr create --title x')" \
+  "writes to a DIFFERENT GitHub repository"
+assert_deny "root-position -R on a mutating gh pr verb denies" \
+  "$(json 'gh -R other/org pr close 42')" \
+  "command-position mutating 'gh pr/release/repo' subcommand"
+assert_deny "root-position flag on gh api still reaches the api gate" \
+  "$(json 'gh --repo other/org api repos/o/r -X POST')" \
+  "gh api"
+
+# THE OTHER DIRECTION, in the same section. Widening the binary-to-namespace slot must not
+# turn read-only usage into a gated call, and must not disturb this repo's own sanctioned
+# shapes. Without these the rows above are a restrictive failure wearing a green tick.
+assert_allow "root-position -R on a READ-ONLY pr list stays allowed" \
+  "$(json 'gh -R other/org pr list')"
+assert_allow "root-position -R on a READ-ONLY pr view stays allowed" \
+  "$(json 'gh -R other/org pr view 42')"
+assert_allow "root-position -R on a READ-ONLY api GET stays allowed" \
+  "$(json 'gh -R other/org api repos/o/r')"
+assert_allow "the sanctioned automerge shape is untouched" \
+  "$(json 'gh pr merge 42 --auto --squash --delete-branch')"
+assert_allow "this repo's own sanctioned PR-creation shape is untouched" \
+  "$(json 'gh pr create --title x --body y')"
+# A `-R` belonging to an EARLIER, unrelated command must not be read as gh's. These two
+# shapes are already pinned in the corpus as false-positive controls; assert them here too,
+# because this change is the one that taught the needles to read `-R` at all.
+assert_allow "a cp -R in an earlier clause does not retarget the gh call" \
+  "$(json 'cp -R src dst && gh pr create --title t')"
+assert_allow "a grep -R in an earlier clause does not retarget the gh call" \
+  "$(json 'grep -R foo . && gh pr comment 5 --body hi')"
+
 _PIN_RAN=1
 # 462 -> 491 on 2026-09-06/07: +27 across three rounds, itemised because the
 # breakdown was WRONG once (it said "+21" beside a total of 488 -- 462+21=483, so
@@ -3387,7 +3482,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=648
+EXPECTED_TOTAL=665
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

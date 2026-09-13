@@ -1019,7 +1019,7 @@ gh_pr_clause_has_repo() {
   # (`local clause` was dropped here at the same time: the multi-clause rewrite
   # moved to `clauses`, declared at its own use site, and left the singular name
   # declared but unread -- a name a future assignment could silently reuse.)
-  local rendering re="gh${_OUT_SEP}pr${_OUT_SEP}($1)([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
+  local rendering re="gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}($1)([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
   # ADDED 2026-09-05 (vanishing sigil): both occurrence counters that gate this
   # function now read a per-rendering MAXIMUM, so the count can be 1 because
   # the VANISHED rendering saw a NAMESPACE-glued sigil (`gh pr${UNSET} comment`)
@@ -1747,6 +1747,29 @@ _OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
 # DOCUMENTED RESIDUALS rather than papered over.
 _OUT_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
 
+# _OUT_GH_GLOBALS — the ROOT-POSITION flag slot, between `gh` and its namespace. This is
+# this file's own copy of lib/cmd-detect.sh's _CMD_GH_GLOBALS, for the same reason every
+# other `_OUT_*` constant is a copy: this hook is a deliberately WIDENED FORK of the lib's
+# grammar (see this file's header), so it cannot inherit the lib's version.
+#
+# `_OUT_SEP` above already absorbs a REDIRECT in this slot; what it never modelled is a
+# FLAG. `gh -R owner/repo pr merge 42` therefore matched none of this file's `gh` needles,
+# and because the merge block is `if -gt 1 / elif -eq 1 / fi` with NO else, a zero
+# occurrence count skipped the repo-retarget check, the --auto carve-out and the --admin
+# deny together — a total bypass, not a narrowed one. `merge` is also absent from
+# GH_MUTATING_RE by design, so nothing downstream re-caught it. Measured live on
+# origin/main 2026-09-13, including with the retarget pointed at THIS repository.
+# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+#
+# ORDERING IS LOAD-BEARING, exactly as for _OUT_SEP above: this interpolates `$_CMD_REDIR`,
+# so it must sit AFTER the lib source. The emptiness assertion below is not decoration —
+# an empty expansion here silently collapses every widened needle back to its pre-fix form,
+# which is a total regression that leaves the whole suite GREEN.
+_OUT_GH_GLOBALS='(([[:space:]]+(-R[[:space:]]+[^[:space:]]+|--repo[[:space:]]+[^[:space:]]+|-[^[:space:]]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
+if [ -z "${_OUT_GH_GLOBALS:-}" ] || [ -z "${_CMD_REDIR:-}" ]; then
+  deny "guard-outward-cli: the root-position flag grammar (_OUT_GH_GLOBALS) came back EMPTY, which would silently collapse every gh needle back to its pre-2026-09-13 form and re-open the repo-retarget bypass. Failing closed rather than running a guard that cannot see what it claims to. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+
 BARE=$(printf '%s' "$CMD" | cmd_bare)
 # WORDS is the argv-faithful rendering (lib/cmd-detect.sh): quote characters
 # deleted so `eas "update"` / `eas up"date"` read as the `eas update` the shell
@@ -2157,7 +2180,7 @@ if grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKE
 fi
 
 # --- gh: bare 'gh pr merge' (see the --auto/--admin carve-out in the header) -
-GH_PR_MERGE_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX}"
+GH_PR_MERGE_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX}"
 # The OCCURRENCE COUNT just below is counted on $WORDS_DEEP (so a merge hidden
 # inside a live substitution is not silently invisible to this whole block);
 # the CLAUSE extraction feeding the --auto carve-out further down deliberately
@@ -2351,7 +2374,7 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # whitespace boundary; a hard separator/bracket or end-of-string ends the
   # clause immediately with nothing captured past it. Two-sided regression
   # test: test-guard-outward-cli.sh's "2026-09-02 FIX (round 3)" block.
-  CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX_MERGE_CLAUSE}" | head -1)
+  CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX_MERGE_CLAUSE}" | head -1)
   # A naive "--auto present" substring check is bypassable: several of `gh pr
   # merge`'s own flags (and the cross-subcommand --repo/-R every gh command
   # accepts) are VALUE-TAKING, so the token immediately after one of them is
@@ -2594,7 +2617,7 @@ fi
 
 # --- gh: other mutating subcommands (pr create/comment allowed only without
 #     --repo/-R, see the header) -------------------------------------------
-GH_MUTATING_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}(pr${_OUT_SEP}(close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release${_OUT_SEP}(create|delete|delete-asset|edit|upload)|repo${_OUT_SEP}(create|delete|archive|unarchive|edit|rename|sync|fork))${_OUT_POS_SUFFIX}"
+GH_MUTATING_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release${_OUT_SEP}(create|delete|delete-asset|edit|upload)|repo${_OUT_SEP}(create|delete|archive|unarchive|edit|rename|sync|fork))${_OUT_POS_SUFFIX}"
 if grep -Eqi "$GH_MUTATING_RE" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position mutating 'gh pr/release/repo' subcommand. Read-only forms (gh pr view/checks/list, gh release view/list, gh repo view/list, ...) are unaffected; gh pr create/comment are deliberately allowed (routine PR workflow) unless retargeted with --repo/-R. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
@@ -2613,7 +2636,7 @@ fi
 # clause's --repo/-R sail through unexamined (`gh pr create --fill && gh pr
 # create --repo other/org --title x` was ALLOWED). Deny outright on >1
 # occurrence rather than guess which clause to inspect.
-GH_PR_CREATE_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}pr${_OUT_SEP}(create|comment)${_OUT_POS_SUFFIX}"
+GH_PR_CREATE_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}(create|comment)${_OUT_POS_SUFFIX}"
 GH_PR_CREATE_OCCURRENCES=$(_out_max_count "$GH_PR_CREATE_RE")
 if [ "${GH_PR_CREATE_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh pr create/comment' occurrence — ambiguous, cannot verify each is free of --repo/-R. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
@@ -2654,7 +2677,7 @@ fi
 # mutating second one (`gh api repos/x/y && gh api -X PUT .../merge` was
 # ALLOWED). Deny on >1, mirroring the identical multi-occurrence safe
 # direction the `gh pr merge` check above already takes.
-GH_API_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}"
+GH_API_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX}"
 # Counted AND clause-scoped on $WORDS_DEEP (unlike the `gh pr merge` block
 # above, whose CLAUSE stays shallow — see that block's own comment for why).
 # This check ALLOWS by default (a read-only `gh api` is fine) and only denies
@@ -2837,7 +2860,7 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # clauses differed before cannot become equal after -- unequal prefixes stay
   # unequal when both are extended by their own suffixes. A rendering that was
   # previously checked therefore cannot newly collapse into DEEP and vanish.
-  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
+  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
   GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT" | head -1)
   # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is
   # now a MAXIMUM across all three renderings, so it can be 1 because the VANISHED

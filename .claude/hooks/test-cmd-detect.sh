@@ -53,7 +53,8 @@ trap cleanup EXIT
 for f in cmd_bare cmd_words cmd_extract_substitutions cmd_words_deep cmd_bare_deep \
          cmd_is_git_commit cmd_is_gh_pr_create cmd_is_git \
          cmd_is_git_commit_or_push cmd_is_git_head_mover cmd_is_git_branch_create \
-         cmd_git_branch_create_segment cmd_git_repo_dir; do
+         cmd_git_branch_create_segment cmd_git_repo_dir \
+         cmd_gh_pr_write_subcommand cmd_gh_pr_ref; do
   declare -F "$f" >/dev/null || { echo "FAIL: $f is not defined by the lib"; exit 1; }
 done
 
@@ -1691,6 +1692,109 @@ van 'a \\cA is a real control byte and still splits'   "e\$'\\cA'as update" 'exa
 # bash), not a control character (one). The -1/-3 sentinel collision rendered one.
 van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
 
+# ---------- gh globals: root-position flags and redirects (2026-09-13) -------
+# WHY THIS BLOCK EXISTS. cmd_gh_pr_write_subcommand and cmd_gh_pr_ref had NO
+# direct coverage in this file until 2026-09-13 — they were exercised only
+# end-to-end through test-pr-verify.sh and test-merge-review-guard.sh, where a
+# miss looks like "no message" rather than a failed assertion. Three defects
+# lived in that gap, all measured on 2026-09-13:
+#
+#   (A) A ROOT-POSITION repo flag separated the binary from its namespace, so
+#       `gh -R owner/repo pr merge 42` resolved NO subcommand at all. That
+#       reached merge-review-guard.sh:148 as "not a merge" — a silent allow of
+#       an unreviewed merge, including one retargeted at THIS repository.
+#       todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+#   (B) A redirect in the same slot did the same thing (`gh 2>/dev/null pr
+#       merge 42`) — P1 mechanism (b), the shared-library half of
+#       todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md
+#   (C) cmd_gh_pr_ref's `--repo`/`-R` refusal scans $full_match, whose greedy
+#       tail BACKTRACKS off a trailing flag to end at the ref token. So
+#       `gh pr merge 42 --repo other/org` resolved ref 42 and the gate then
+#       classified the LOCAL PR #42 — measured byte-identical to a bare merge.
+#       The sibling ordering (`--repo other/org 42`) refused correctly, which is
+#       why the gap survived: merge-review-guard.sh's own comment claims the
+#       refusal is unconditional.
+#
+# The controls below run in the SAME block on purpose. A guard corpus whose
+# negative rows do not fire proves nothing about its positive ones.
+
+# ghsub <command> <expected-subcommand|-> <label>   ('-' = must be empty)
+# pipefail MUST be off for the call: cmd_gh_pr_write_subcommand signals REFUSE
+# with rc 1, but under pipefail a plain no-match in its trailing pipeline is
+# ALSO rc 1 — the two collapse. merge-review-guard.sh:104-111 brackets its own
+# call for exactly this reason.
+ghsub() {
+  local cmd="$1" want="$2" label="$3" got rc
+  [ "$want" = "-" ] && want=""
+  set +o pipefail
+  got=$(cmd_gh_pr_write_subcommand "$cmd"); rc=$?
+  set -o pipefail
+  if [ "$got" = "$want" ]; then
+    echo "PASS: $label"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $label (got '$got' rc=$rc, want '$want')"; FAIL=$((FAIL+1))
+  fi
+}
+
+# ghref <command> <expected-ref|-> <label>   ('-' = must refuse: empty AND rc != 0)
+ghref() {
+  local cmd="$1" want="$2" label="$3" got rc
+  got=$(cmd_gh_pr_ref "$cmd"); rc=$?
+  if [ "$want" = "-" ]; then
+    if [ -z "$got" ] && [ "$rc" -ne 0 ]; then
+      echo "PASS: $label"; PASS=$((PASS+1))
+    else
+      echo "FAIL: $label (got '$got' rc=$rc, want a refusal)"; FAIL=$((FAIL+1))
+    fi
+  elif [ "$got" = "$want" ] && [ "$rc" -eq 0 ]; then
+    echo "PASS: $label"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $label (got '$got' rc=$rc, want '$want' rc=0)"; FAIL=$((FAIL+1))
+  fi
+}
+
+echo "--- cmd_gh_pr_*: controls (these pass BEFORE the fix — two-sided proof) ---"
+ghsub 'gh pr merge 42 --squash'   merge  "bare merge resolves the subcommand"
+ghref 'gh pr merge 42 --squash'   42     "bare merge resolves the ref"
+ghsub 'gh pr create --title x'    create "create resolves the subcommand"
+ghref 'gh pr create --title x'    -      "create has no ref to resolve"
+ghsub 'git commit -m "docs: describe the gh pr merge gate"' - \
+  "quoted prose naming the verb is NOT a gh pr write"
+ghref 'gh pr merge --repo other/org 42' - \
+  "retarget BEFORE the ref already refuses (the ordering that worked)"
+ghsub 'cp -R src dst && gh pr create --title t' create \
+  "a cp -R decoy in an earlier clause does not become the verb"
+
+echo "--- cmd_gh_pr_*: a ROOT-POSITION repo flag must not hide the namespace (A) ---"
+ghsub 'gh -R other/org pr merge 42'       merge "-R <v> in root position: subcommand is SEEN"
+ghsub 'gh --repo other/org pr merge 42'   merge "--repo <v> in root position: subcommand is SEEN"
+ghsub 'gh --repo=other/org pr merge 42'   merge "--repo=v in root position: subcommand is SEEN"
+ghsub 'gh -Rother/org pr merge 42'        merge "-Rv in root position: subcommand is SEEN"
+ghref 'gh -R other/org pr merge 42'       -     "-R <v> in root position: retarget REFUSED"
+ghref 'gh --repo other/org pr merge 42'   -     "--repo <v> in root position: retarget REFUSED"
+ghref 'gh --repo=other/org pr merge 42'   -     "--repo=v in root position: retarget REFUSED"
+ghref 'gh -Rother/org pr merge 42'        -     "-Rv in root position: retarget REFUSED"
+ghref 'gh -R Xertox1234/OCRecipes pr merge 42 --squash' - \
+  "a root-position retarget at THIS repository is REFUSED, not resolved"
+
+echo "--- cmd_gh_pr_*: a redirect between binary and namespace (B) ---"
+ghsub 'gh 2>/dev/null pr merge 42 --squash'  merge "redirect, glued: subcommand is SEEN"
+ghsub 'gh 2> /dev/null pr merge 42 --squash' merge "redirect, spaced: subcommand is SEEN"
+ghref 'gh 2>/dev/null pr merge 42 --squash'  42    "redirect, glued: the ref still resolves"
+
+echo "--- cmd_gh_pr_write_subcommand: the verb comes from the VERB SLOT ---"
+# Once globals are inside the matched span, a keyword re-scan of that span reads
+# the REPOSITORY NAME. These two rows are the whole reason the extraction is
+# anchored to the slot after `pr` rather than searching the span.
+ghsub 'gh -R owner/merge pr create'    create "a repo NAMED merge does not become the verb"
+ghsub 'gh -R owner/create pr merge 42' merge  "a repo NAMED create does not become the verb"
+
+echo "--- cmd_gh_pr_ref: a TRAILING retarget refuses, whatever the flag order (C) ---"
+ghref 'gh pr merge 42 --repo other/org' - "ref BEFORE --repo <v>: REFUSED"
+ghref 'gh pr merge 42 -R other/org'     - "ref BEFORE -R <v>: REFUSED"
+ghref 'gh pr merge 42 --repo=other/org' - "ref BEFORE --repo=v: REFUSED"
+ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
+
 # ---------- assertion-total pin (2026-09-07) ---------------------------------
 # ADDED BECAUSE THIS FILE SHIPPED A SILENTLY-SKIPPED ASSERTION AND REPORTED GREEN.
 # A `vanb` row was written three lines ABOVE the `vanb` definition; under
@@ -1706,7 +1810,7 @@ van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
 # LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
 # assertion in a run that otherwise completed. It cannot catch an early
 # `return`/`exit` or a truncated file, because those terminate before this line.
-EXPECTED_TOTAL=569
+EXPECTED_TOTAL=594
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

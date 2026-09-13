@@ -568,13 +568,75 @@ denied "$out" && ok "ambiguous gh pr verb fails closed" || bad "ambiguous gh pr 
 # FILES risk-classified on purpose: stage 2 would HOLD these, so an ALLOW here proves the
 # command exited at the miss, not that it earned an exemption.
 export FAKE_FILES="client/hooks/useNutritionLookup.ts"
+
+# CLOSED 2026-09-13 — converted from tripwire to deny rows. lib/cmd-detect.sh's new
+# _CMD_GH_GLOBALS models the slot BETWEEN the binary and its namespace, so a redirect
+# sitting there no longer hides the verb. This is P1 mechanism (b), the shared-library
+# half of that todo; the three rows below it are mechanisms (a) and (c) and are UNCHANGED.
+for spelling in \
+  'gh 2>/dev/null pr merge 42 --squash' \
+  'gh 2> /dev/null pr merge 42 --squash' ; do
+  out=$(bash_payload "$spelling" | run)
+  denied "$out" && ok "CLOSED, P1 mech (b) redirect: [$spelling]" \
+                || bad "CLOSED, P1 mech (b) redirect: [$spelling]" "$out"
+done
+
+# STILL OPEN, and deliberately still pinned as ALLOW. The 2026-09-13 change closed the
+# binary-to-namespace SLOT; it did not touch how the BINARY ITSELF is rendered. These three
+# are P1 mechanism (a) (glued metacharacter) and (c) (quoted substitution), plus the
+# path-qualified spelling — all of which defeat the detector before the slot is ever
+# reached. Converting them is P1's remaining work, not this change's.
+# Re-measured 2026-09-13 against the widened extractor: all three still ALLOW.
 for spelling in \
   '/opt/homebrew/bin/gh pr merge 42 --squash' \
-  'gh 2>/dev/null pr merge 42 --squash' \
   'echo x;gh pr merge 42 --squash' \
   '"$(which gh)" pr merge 42 --squash' ; do
   out=$(bash_payload "$spelling" | run)
   assert_allowed "KNOWN GAP (see P1 todo): [$spelling]" "$out"
+done
+
+# ── The P0's own family: a repo-retarget flag in ROOT POSITION ────────────────
+# `gh -R owner/repo pr merge 42` is a FUNCTIONAL invocation (cobra strips flags while
+# resolving the subcommand), and before 2026-09-13 it resolved no subcommand at all, so it
+# reached the `[ "$SUB" = "merge" ]` test as "not a merge" and was silently allowed —
+# including with the retarget pointed at THIS repository. Both guards missed the same
+# string, so the defence in depth was depth of one.
+# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+for spelling in \
+  'gh -R other/org pr merge 42 --squash' \
+  'gh --repo other/org pr merge 42 --squash' \
+  'gh --repo=other/org pr merge 42 --squash' \
+  'gh -Rother/org pr merge 42 --squash' \
+  'gh -R Xertox1234/OCRecipes pr merge 42 --squash' ; do
+  out=$(bash_payload "$spelling" | run)
+  denied "$out" && ok "root-position retarget is no longer a silent allow: [$spelling]" \
+                || bad "root-position retarget is no longer a silent allow: [$spelling]" "$out"
+done
+
+# A TRAILING retarget must refuse too, and here the DENY ALONE PROVES NOTHING — this
+# spelling denied before the fix as well, from stage 3 ("no review record exists for head
+# …"), because cmd_gh_pr_ref resolved ref 42 and the gate went on to classify the LOCAL
+# PR #42. Its deny text was byte-identical to a bare merge's. So assert the REASON: the
+# retarget must be REFUSED at ref resolution, not classified against the wrong repository.
+out=$(bash_payload 'gh pr merge 42 --repo other/org' | run)
+r=$(reason "$out")
+if denied "$out" && printf '%s' "$r" | grep -qi 'could not resolve a PR number'; then
+  ok "trailing retarget refuses at ref resolution, not the local PR of that number"
+else
+  bad "trailing retarget refuses at ref resolution, not the local PR of that number" \
+      "denied=$(denied "$out" && echo yes || echo no) reason=[$r]"
+fi
+
+# THE OTHER DIRECTION, in the same run. A root-position flag on a READ-ONLY command must
+# stay silently allowed — widening the extractor must not turn `gh -R owner/repo pr list`
+# into a gated call. Without these the deny rows above are a restrictive failure wearing a
+# green tick.
+for spelling in \
+  'gh -R other/org pr list' \
+  'gh -R other/org pr view 42' \
+  'gh 2>/dev/null pr view 42' ; do
+  out=$(bash_payload "$spelling" | run)
+  assert_allowed "read-only usage in the same slot stays allowed: [$spelling]" "$out"
 done
 
 # THE PROSE DIRECTION, which is the regression this suite most needs to prevent.
@@ -760,7 +822,7 @@ rm -rf "$NOJQ_BIN"
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=67
+EXPECTED_TOTAL=77
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
