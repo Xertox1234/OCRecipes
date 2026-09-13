@@ -82,7 +82,29 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 ```
 
 Narrowing is the safe direction **at the grant and only there**: no clause means the carve-out
-flag is absent, which denies. Narrowing the deny-shaped needles would re-open the bypass
+flag is absent, which denies.
+
+### Narrowing the flag arms was not enough — check every arm the separator can enter
+
+The fix above closed the crossing through the **flag** arms and was reviewed, measured and
+shipped. It was still incomplete, and the second round found why: the clause can also begin
+in a previous command through the **redirect** arm, which interpolated a shared constant
+whose target class admits `(`. A process substitution then reads as *a redirect to a file
+named `(gh`*:
+
+    gh --auto >(gh pr merge 42)   ->   CLAUSE [gh --auto >(gh pr merge 42]
+
+Same donation, different arm. The lesson is not "also exclude `(`" — it is that **a
+separator can enter the span through any alternative of the grammar**, so narrowing one
+alternative and declaring the family closed repeats the original error one level down. The
+second fix masked the grant clause on a character class (`[$(\`]`) rather than narrowing the
+shared redirect constant, because that constant feeds every other consumer of the library.
+
+Verify executability rather than assuming a shape is theoretical: a stub named so it cannot
+collide with the real binary, an **inert outer command** so only the inner call can mark, and
+controls for a quoted and a backslash-escaped spelling. The first version of that probe used
+the same stub for outer and inner, so its control passed for the wrong reason and it measured
+"did anything run". Narrowing the deny-shaped needles would re-open the bypass
 (`gh -R=a;b pr merge 42` stops matching and goes back to a silent allow), so the split has to
 be per-consumer rather than a single compromise width.
 
@@ -100,6 +122,12 @@ Pin both directions, and pin the split itself:
 - Before widening a shared matcher, **enumerate its consumers and label each deny-shaped or
   grant-shaped.** The safety argument is per-consumer; a single sentence cannot cover a
   mixed set.
+- Then enumerate the matcher's own **alternatives**, not just its consumers. A separator that
+  can cross the span through a flag arm can usually cross through a redirect arm too, and
+  closing one reads as closing the family.
+- **A residual's direction is a property of the consumer, not of the pattern.** The same
+  earlier-anchoring residual that fails CLOSED at a deny-shaped consumer is a false ALLOW at
+  a grant-shaped one; a residual list copied between them silently inverts.
 - Run a **differential corpus against the previous revision** and read the `DENY → ALLOW`
   column, not only `ALLOW → DENY`. A change that closes a bypass is expected to move rows one
   way; any row moving the other way is a regression until attributed.
