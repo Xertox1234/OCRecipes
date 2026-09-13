@@ -599,6 +599,201 @@ else
   no "floor kept the wrong occurrence at the truncation boundary (recency ordering bug)"
 fi
 
+# --- Floor extension: the mechanical floor now joins the command WITH its result ---
+
+# Test: U+R join produces ONE line spanning "<command> ... <result>" — a composed-row
+# assertion, not two independent substring checks, so a mutant that emitted the tool_use
+# and tool_result as separate unjoined rows (defeating the whole point of the join) cannot
+# pass this the way it could pass two separate `grep`s.
+SID16="sess-floor-join"; L16="$CONTEXT_LEDGER_ROOT/$SID16"; mkdir -p "$L16"
+FAKE_TX6="$TMPROOT/fake-join.jsonl"
+cat > "$FAKE_TX6" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_J1","name":"Bash","input":{"command":"npm run test:run","description":"Run full suite"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_J1","content":"...\ntests=52 passed, 0 failed"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID16" "$FAKE_TX6" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -qE 'npm run test:run.*tests=52 passed, 0 failed' "$L16/resume.md" 2>/dev/null; then
+  ok "floor joins the command with its actual result on one composed row"
+else
+  no "floor did not compose the command and its result onto one row"
+fi
+
+# Test: a tool_result that MATCHED but carried empty content renders as "(empty)", kept
+# distinct from "never got a result at all" — otherwise a command with genuinely no
+# stdout (e.g. `mkdir -p`) would be indistinguishable from an in-flight/truncated call.
+SID17="sess-floor-empty-result"; L17="$CONTEXT_LEDGER_ROOT/$SID17"; mkdir -p "$L17"
+FAKE_TX7="$TMPROOT/fake-empty.jsonl"
+cat > "$FAKE_TX7" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_E1","name":"Bash","input":{"command":"mkdir -p some/dir","description":"Ensure scratch dir exists"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_E1","content":""}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID17" "$FAKE_TX7" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "Ensure scratch dir exists ← mkdir -p some/dir → (empty)" "$L17/resume.md" 2>/dev/null; then
+  ok "a matched-but-empty result renders as (empty), not (no result)"
+else
+  no "empty result did not render as the distinct (empty) placeholder"
+fi
+
+# Test: a Bash call with NO matching tool_result at all (call still in flight, or a
+# transcript truncated mid-turn) still produces a row, distinguished as "(no result)".
+SID18="sess-floor-no-result"; L18="$CONTEXT_LEDGER_ROOT/$SID18"; mkdir -p "$L18"
+FAKE_TX8="$TMPROOT/fake-noresult.jsonl"
+cat > "$FAKE_TX8" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_N1","name":"Bash","input":{"command":"long-running-build-step","description":"Kick off a build still in flight"}}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID18" "$FAKE_TX8" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "Kick off a build still in flight ← long-running-build-step → (no result)" "$L18/resume.md" 2>/dev/null; then
+  ok "a Bash call with no matching tool_result renders as (no result)"
+else
+  no "unmatched Bash call did not render as (no result)"
+fi
+
+# --- Secret redaction: the floor now captures raw command output, which can carry one ---
+
+# Test: a secret in the captured result is redacted VISIBLY, while a legitimate
+# neighbouring value on the SAME line survives — asserted in BOTH directions. A filter
+# that blanked the whole row (or the whole line) would pass a naive "secret is gone"
+# check with nothing left to prove the row wasn't simply nuked wholesale; the neighbour
+# check is what makes that mutation fail. Mutation-checked by hand (see report): with
+# redact_secrets neutered to a passthrough, this exact fixture surfaces the raw
+# "sk-testFAKE..." secret in resume.md — confirming the fixture reaches the digest before
+# redaction, and that this assertion actually goes red without the filter.
+SID19="sess-floor-secret"; L19="$CONTEXT_LEDGER_ROOT/$SID19"; mkdir -p "$L19"
+FAKE_TX9="$TMPROOT/fake-secret.jsonl"
+cat > "$FAKE_TX9" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_S1","name":"Bash","input":{"command":"printenv | grep API_KEY","description":"Check API key configuration"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_S1","content":"OPENAI_API_KEY=sk-testFAKEsecretvalue1234567890abcdef tests=52 passed neighbor-value-ok"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID19" "$FAKE_TX9" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "sk-testFAKEsecretvalue1234567890abcdef" "$L19/resume.md" 2>/dev/null; then
+  no "secret leaked into the digest unredacted"
+elif grep -q 'OPENAI_API_KEY=\[redacted\]' "$L19/resume.md" 2>/dev/null \
+     && grep -q "tests=52 passed neighbor-value-ok" "$L19/resume.md" 2>/dev/null; then
+  ok "secret redacted (NAME kept, value gone) while a legitimate neighbouring value survives"
+else
+  no "secret redaction missing, or it over-redacted the legitimate neighbour too"
+fi
+
+# Test: a Bearer token is ALSO redacted (a second minimum-coverage pattern from the spec,
+# independent of the NAME=value case above), again checked in both directions.
+SID20="sess-floor-secret-bearer"; L20="$CONTEXT_LEDGER_ROOT/$SID20"; mkdir -p "$L20"
+FAKE_TX10="$TMPROOT/fake-bearer.jsonl"
+cat > "$FAKE_TX10" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_B1","name":"Bash","input":{"command":"curl -sI https://api.example.com/health","description":"Probe health endpoint auth"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_B1","content":"HTTP/1.1 200 OK Authorization: Bearer abcDEF123456ghiJKL789 status=ok"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID20" "$FAKE_TX10" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "abcDEF123456ghiJKL789" "$L20/resume.md" 2>/dev/null; then
+  no "bearer token leaked into the digest unredacted"
+elif grep -q 'Bearer \[redacted\]' "$L20/resume.md" 2>/dev/null \
+     && grep -q "status=ok" "$L20/resume.md" 2>/dev/null; then
+  ok "bearer token redacted while a legitimate neighbouring value survives"
+else
+  no "bearer redaction missing, or it over-redacted the legitimate neighbour too"
+fi
+
+# --- Follow-up fixes found by inspecting a real transcript (not fixtures) ---
+
+# Test: a canonical UUID (session/task-id shape, 8-4-4-4-12 lowercase hex) SURVIVES the
+# high-entropy net, while a REAL secret sharing the same line is still redacted — both
+# directions checked, same rule as the earlier secret tests: a filter that exempted
+# everything 32+ chars long (not just the UUID shape) would pass a naive "UUID survives"
+# check while quietly stopping catching real secrets too.
+SID21="sess-floor-uuid-survives"; L21="$CONTEXT_LEDGER_ROOT/$SID21"; mkdir -p "$L21"
+FAKE_TX11="$TMPROOT/fake-uuid.jsonl"
+cat > "$FAKE_TX11" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_U1","name":"Bash","input":{"command":"echo $SESS; printenv AUTH_TOKEN","description":"Show session id and a token"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_U1","content":"SESS=dd1c98d8-4002-4a4e-b59a-375d2144d9fa AUTH_TOKEN=abcdefghij0123456789ABCDEFGHIJ01"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID21" "$FAKE_TX11" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "SESS=dd1c98d8-4002-4a4e-b59a-375d2144d9fa" "$L21/resume.md" 2>/dev/null \
+   && ! grep -q "abcdefghij0123456789ABCDEFGHIJ01" "$L21/resume.md" 2>/dev/null; then
+  ok "a canonical UUID survives the entropy net while a real secret on the same line is still redacted"
+else
+  no "UUID was wrongly redacted, or the real secret next to it survived unredacted"
+fi
+
+# Test: a plain kebab-case project-directory slug (all letters/hyphens, no digit — the
+# exact shape a real transcript showed being swallowed by the un-gated entropy net)
+# survives, while a bare digit-bearing high-entropy blob with NO recognizable secret prefix
+# (so only the generic net, not sk-/ghp_/etc., could catch it) is still redacted — proving
+# the digit-gate didn't just turn the net off altogether.
+SID22="sess-floor-slug-survives"; L22="$CONTEXT_LEDGER_ROOT/$SID22"; mkdir -p "$L22"
+FAKE_TX12="$TMPROOT/fake-slug.jsonl"
+cat > "$FAKE_TX12" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_G1","name":"Bash","input":{"command":"cd /Users/williamtower/projects/OCRecipes","description":"Change into the project directory"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_G1","content":"-Users-williamtower-projects-OCRecipes a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID22" "$FAKE_TX12" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q -- "-Users-williamtower-projects-OCRecipes" "$L22/resume.md" 2>/dev/null \
+   && ! grep -q "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6" "$L22/resume.md" 2>/dev/null; then
+  ok "a plain kebab-case path slug survives the net while a bare digit-bearing blob is still redacted"
+else
+  no "path slug was wrongly redacted, or the bare high-entropy blob survived unredacted"
+fi
+
+# Test: a tool_result ending in the Bash tool's own "Session cwd remains" trailer shows the
+# REAL preceding output line, not the trailer, as the result tail.
+SID23="sess-floor-skip-cwd-remains"; L23="$CONTEXT_LEDGER_ROOT/$SID23"; mkdir -p "$L23"
+FAKE_TX13="$TMPROOT/fake-cwdremains.jsonl"
+cat > "$FAKE_TX13" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_W1","name":"Bash","input":{"command":"npm run test:run &","description":"Kick off tests in the background"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_W1","content":"Command running in background with ID: bfo53uvv6.\nSession cwd remains /Users/williamtower/projects/OCRecipes; directory changes made by the backgrounded command do not apply to subsequent commands."}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID23" "$FAKE_TX13" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "Kick off tests in the background ← npm run test:run & → Command running in background with ID: bfo53uvv6." "$L23/resume.md" 2>/dev/null \
+   && ! grep -q "Session cwd remains" "$L23/resume.md" 2>/dev/null; then
+  ok "result tail skips the 'Session cwd remains' trailer and shows the real preceding line"
+else
+  no "result tail showed the harness trailer instead of the real preceding output line"
+fi
+
+# Test: same skip, for the "Shell cwd was reset to" trailer — a DIFFERENT wrapper string,
+# confirming the skip isn't hardcoded to only the background-command variant above.
+SID24="sess-floor-skip-cwd-reset"; L24="$CONTEXT_LEDGER_ROOT/$SID24"; mkdir -p "$L24"
+FAKE_TX14="$TMPROOT/fake-cwdreset.jsonl"
+cat > "$FAKE_TX14" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_W2","name":"Bash","input":{"command":"cd /tmp && ls","description":"List a scratch directory"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_W2","content":"scratch-file-one.txt\nscratch-file-two.txt\nShell cwd was reset to /Users/williamtower/projects/OCRecipes"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID24" "$FAKE_TX14" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "List a scratch directory ← cd /tmp && ls → scratch-file-two.txt" "$L24/resume.md" 2>/dev/null \
+   && ! grep -q "Shell cwd was reset to" "$L24/resume.md" 2>/dev/null; then
+  ok "result tail skips the 'Shell cwd was reset to' trailer and shows the real preceding line"
+else
+  no "result tail showed the harness trailer instead of the real preceding output line"
+fi
+
+# Test: if EVERY line is a wrapper trailer (nothing real left after skipping), the row
+# still degrades to one of the two EXISTING placeholders rather than erroring or going
+# blank — specifically "(empty)", since a tool_result DID match this id (the join succeeded
+# — the row shows the real command, not an unrelated one); it simply had nothing but
+# wrapper text once filtered, the same outcome as a command whose real stdout was empty.
+# "(no result)" stays reserved for the structurally different case (no tool_result matched
+# the id at all), covered separately above.
+SID25="sess-floor-skip-all-wrapper"; L25="$CONTEXT_LEDGER_ROOT/$SID25"; mkdir -p "$L25"
+FAKE_TX15="$TMPROOT/fake-allwrapper.jsonl"
+cat > "$FAKE_TX15" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_W3","name":"Bash","input":{"command":"cd /tmp","description":"Only a cd, nothing else"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_W3","content":"Shell cwd was reset to /Users/williamtower/projects/OCRecipes"}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID25" "$FAKE_TX15" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "Only a cd, nothing else ← cd /tmp → (empty)" "$L25/resume.md" 2>/dev/null; then
+  ok "a result made ENTIRELY of wrapper lines degrades to (empty), not blank or an error"
+else
+  no "an all-wrapper result did not degrade to the (empty) placeholder"
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

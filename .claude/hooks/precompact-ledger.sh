@@ -70,15 +70,28 @@ fi
 
 FLOOR=""
 if [ -n "$TRANSCRIPT" ]; then
-  # One line per Bash call: description and command, both clamped. Read as raw lines (`-R`)
-  # and parse each with `fromjson?` so one malformed line degrades instead of aborting
-  # extraction of every record after it — feeding the whole file to a plain `jq -r` parses
-  # it as one JSON stream, and a parse error partway through silently drops every record
-  # that follows. `// ""` on .input.command mirrors the guard .input.description already
-  # had, so a Bash record missing a command degrades instead of erroring. The second
-  # `// ""` after the index matters too: `"" | split("\n")` is `[]` in jq, so indexing `[0]`
-  # on a missing command is an out-of-bounds `null` — without this guard the floor line
-  # would show the literal text "null" instead of degrading cleanly to empty.
+  # One row per Bash call: description, command, AND a short tail of what the command
+  # RETURNED. `tool_use` (id) and `tool_result` (tool_use_id) records are the same string,
+  # so they join — no new hook, no per-call cost, all extracted from the transcript this
+  # hook already reads. Read as raw lines (`-R`) and parse each with `fromjson?` so one
+  # malformed line degrades instead of aborting extraction of every record after it —
+  # feeding the whole file to a plain `jq -r` parses it as one JSON stream, and a parse
+  # error partway through silently drops every record that follows. `// ""` on
+  # .input.command mirrors the guard .input.description already had, so a Bash record
+  # missing a command degrades instead of erroring. The second `// ""` after the index
+  # matters too: `"" | split("\n")` is `[]` in jq, so indexing `[0]` on a missing command
+  # is an out-of-bounds `null` — without this guard the floor line would show the literal
+  # text "null" instead of degrading cleanly to empty. `content_text` flattens the two
+  # shapes a real transcript's tool_result.content actually takes: a plain string (Bash)
+  # or an array of {type,text} blocks (MCP tools) — `.content // ""` covers a tool_result
+  # with no content field at all. `gsub("\t";" ")` on every captured field keeps these rows
+  # genuinely tab-separated for the awk join below; a literal tab in captured text would
+  # otherwise misalign it. Clamps here (300/2000/2000) are deliberately generous, NOT the
+  # final display width — redaction below needs the whole token intact to pattern-match;
+  # cutting to the 60/100-char display width first would slice a secret into a fragment
+  # too short to match its own pattern, leaking half of it. format_floor applies the real
+  # display clamp (in jq, so it slices by Unicode codepoint like the rest of this file, not
+  # by byte like an awk substr would) only after redaction has already run.
   # `tail -n 12` mirrors session-recent-issues.sh's cap; dedup via awk keeps repeats out.
   # Reversed first (pure-awk reverse — no GNU `tac`, and BSD `tail -r` doesn't exist on the
   # ubuntu-latest CI runner this hook's own tests run under; CI has no prior tail -r/tac use
@@ -87,13 +100,138 @@ if [ -n "$TRANSCRIPT" ]; then
   # draining its stdin and hand the writer SIGPIPE under `pipefail`) then keeps by true
   # recency; the trailing reverse restores chronological (oldest-of-the-kept-first) order.
   rev_lines() { awk '{ a[NR]=$0 } END { for (i=NR; i>=1; i--) print a[i] }'; }
+
+  # U/R join: keyed on tool_use id, done in awk (not jq) so the whole extraction stays one
+  # streaming pass with no buffering of the transcript. Emits "desc\tcmd\tresult" — the id
+  # has done its job and is dropped here, so redact_secrets below never risks touching a
+  # join key. A U with no matching R (call still in flight, or a truncated transcript)
+  # degrades to "(no result)"; a U whose R matched but carried empty output (e.g. `mkdir
+  # -p`, which prints nothing) is distinguished as "(empty)" rather than collapsing into
+  # the same placeholder as "never got a result at all". Falls back to a synthetic
+  # per-line key ("U<NR>") when `.id` is missing so distinct id-less records can't collide
+  # into one slot and silently overwrite each other.
+  join_ur() {
+    awk -F'\t' '
+      $1=="U" {
+        id = ($2!="") ? $2 : ("U" NR)
+        desc[id]=$3; cmd[id]=$4
+        if (!(id in seen)) { seen[id]=1; order[++n]=id }
+        next
+      }
+      $1=="R" { res[$2]=$3; matched[$2]=1; next }
+      END {
+        for (i=1; i<=n; i++) {
+          id=order[i]
+          if (id in matched) { r = (res[id]=="") ? "(empty)" : res[id] } else { r = "(no result)" }
+          print desc[id] "\t" cmd[id] "\t" r
+        }
+      }
+    '
+  }
+
+  # Secrets now land in this file because captured RESULT text can carry them (env dumps,
+  # curl auth headers, a printed token) in a way a bare command line rarely did. Redact
+  # VISIBLY ("[redacted]") rather than dropping the row silently, so a reader can tell
+  # something was removed. Runs on the id-free "desc\tcmd\tresult" rows from join_ur —
+  # after the join (so a long id can never be mistaken for a secret and corrupt the join)
+  # but before format_floor's display clamp (so a token isn't sliced in half first, see
+  # above). `#` as the sed delimiter throughout, since several patterns contain `/`.
+  #
+  # PROTECT_SENTINEL (0x1F, "unit separator" — not a character any real command/output is
+  # ever expected to contain, and outside every pattern's own character class below) marks
+  # text the LATER generic net must not reach, without deleting or renaming it. A canonical
+  # UUID (session/task ids throughout this project: `8-4-4-4-12` lowercase hex) is
+  # confirmed, against a real transcript, to be swept up by the generic net purely because
+  # it is 36 unbroken alnum/dash characters — it is not a secret, it is an identifier, and
+  # redacting it made the digest noisy without protecting anything. Splitting it into its
+  # five hyphen-delimited hex groups (max 12 chars each, all under the net's 32-char floor)
+  # by swapping its hyphens for the sentinel is enough to make the net skip straight over
+  # it; restore_protected (after the net has run) swaps the sentinel back to `-`, since a
+  # 1-for-1 character swap can't shift anything else's position. This ONLY protects the
+  # UUID shape itself — it does not need to protect a NAME=value or Bearer match, since
+  # those run on identifiers occurring OUTSIDE it.
+  PROTECT_SENTINEL=$'\x1f'
+  redact_secrets() {
+    sed -E \
+      -e "s/([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{12})/\\1${PROTECT_SENTINEL}\\2${PROTECT_SENTINEL}\\3${PROTECT_SENTINEL}\\4${PROTECT_SENTINEL}\\5/g" \
+      -e 's#sk-[A-Za-z0-9_-]{10,}#[redacted]#g' \
+      -e 's#ghp_[A-Za-z0-9]{20,}#[redacted]#g' \
+      -e 's#github_pat_[A-Za-z0-9_]{20,}#[redacted]#g' \
+      -e 's#AKIA[A-Z0-9]{16}#[redacted]#g' \
+      -e 's#eyJ[A-Za-z0-9_.=-]{15,}#[redacted]#g' \
+      -e 's#([Bb]earer)[[:space:]]+[A-Za-z0-9._~+/=-]{8,}#\1 [redacted]#g' \
+      -e 's#([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|CREDENTIAL|PRIVATE_KEY)[A-Za-z0-9_]*)=[^[:space:]]+#\1=[redacted]#g'
+  }
+
+  # Generic high-entropy net: 32+ unbroken alnum/+/-/_ chars, but ONLY when the run also
+  # contains a digit. A real transcript showed this net swallowing plain kebab-case project
+  # directory slugs (e.g. `-Users-williamtower-projects-OCRecipes`, from this floor's own
+  # `cd /Users/…` rows) — confirmed by testing the SAME sed rule against that exact string
+  # in isolation; nothing else in redact_secrets can match it, so it was this net alone. A
+  # random secret drawn from a 62+-character alphabet over 32+ characters contains a digit
+  # with overwhelming probability (>99.9%); a compound English identifier built from
+  # hyphen-joined words routinely does not. Requiring a digit is the cheapest available
+  # discriminator between the two without hand-listing every non-secret shape. POSIX ERE has
+  # no lookahead, so "32+ chars AND contains a digit" isn't expressible as one sed pattern —
+  # done in awk instead: scan each line for maximal `{32,}` runs (`match`/`substr`/`RSTART`/
+  # `RLENGTH` are POSIX awk, no gawk extension), and only replace a run that itself matches
+  # `[0-9]`. This runs AFTER redact_secrets (so it never re-matches text already turned into
+  # "[redacted]") and BEFORE restore_protected (so a protected UUID's hex groups — all ≤12
+  # chars — never re-assemble into one matchable run here; scanning after restoring them
+  # would rebuild the full 36-char, digit-bearing UUID and this net would redact it anyway).
+  entropy_net() {
+    awk '
+      {
+        rest = $0; out = ""
+        while (match(rest, /[A-Za-z0-9+_-]{32,}/)) {
+          out = out substr(rest, 1, RSTART-1)
+          cand = substr(rest, RSTART, RLENGTH)
+          out = out (cand ~ /[0-9]/ ? "[redacted]" : cand)
+          rest = substr(rest, RSTART+RLENGTH)
+        }
+        print out rest
+      }
+    '
+  }
+
+  restore_protected() { tr "$PROTECT_SENTINEL" '-'; }
+
+  # The Bash tool appends its own trailing notice about shell state after the real output —
+  # "Session cwd remains …" (a backgrounded run whose cd did not survive) and "Shell cwd was
+  # reset to …" (a foreground run whose cd got reverted). Confirmed against real transcripts:
+  # this notice is always the LAST line when present, and can trail genuinely useful
+  # preceding output (an ls listing, a tarball inspection) that a plain "last non-empty line"
+  # pick would hide entirely. Filtered out in the jq extraction below before the tail is
+  # taken. "Command running in background with ID: …" is deliberately NOT filtered — checked
+  # against real transcripts, it is always the WHOLE content with nothing real preceding it,
+  # so skipping it would trade real information for the (empty)/(no result) placeholder
+  # instead of recovering anything underneath.
+
+  # Final display clamp — same 60/100 widths the pre-result floor used for description and
+  # command, plus 60 for the new result tail. Done in jq (not awk substr) so the cut is by
+  # Unicode codepoint, matching how the rest of this file already slices text, rather than
+  # by byte.
+  format_floor() {
+    jq -R -r '
+      split("\t") as $f
+      | "  \($f[0][0:60] // "") ← \($f[1][0:100] // "") → \($f[2][0:60] // "")"
+    '
+  }
+
   FLOOR=$(jq -R -r '
+      def content_text:
+        if type=="string" then .
+        elif type=="array" then (map(if type=="object" then (.text? // "") else (.|tostring) end) | join(" "))
+        else (.|tostring) end;
       fromjson?
-      | select(.type=="assistant")
-      | .message.content[]?
-      | select(.type=="tool_use" and .name=="Bash")
-      | "  \((.input.description // "(no description)") | .[0:60]) ← \((.input.command // "") | split("\n")[0] // "" | .[0:100])"
-    ' "$TRANSCRIPT" 2>/dev/null | rev_lines | awk '!seen[$0]++' | awk 'NR<=12' | rev_lines)
+      | if (.type // "")=="assistant" then
+          (.message.content[]? | select(.type=="tool_use" and .name=="Bash")
+            | "U\t\(.id // "")\t\((.input.description // "(no description)") | gsub("\t";" ") | .[0:300])\t\((.input.command // "") | split("\n")[0] // "" | gsub("\t";" ") | .[0:2000])")
+        elif (.type // "")=="user" then
+          (.message.content[]? | select(.type=="tool_result")
+            | "R\t\(.tool_use_id // "")\t\((.content // "") | content_text | gsub("\t";" ") | split("\n") | map(select(length>0)) | map(select((test("^Session cwd remains ") or test("^Shell cwd was reset to ")) | not)) | (.[-1] // "") | .[0:2000])")
+        else empty end
+    ' "$TRANSCRIPT" 2>/dev/null | join_ur | redact_secrets | entropy_net | restore_protected | format_floor | rev_lines | awk '!seen[$0]++' | awk 'NR<=12' | rev_lines)
 fi
 
 # Both tiers empty -> write nothing. Spec §9: emitting "nothing captured" would spend
