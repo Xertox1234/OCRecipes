@@ -82,7 +82,9 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 ```
 
 Narrowing is the safe direction **at the grant and only there**: no clause means the carve-out
-flag is absent, which denies.
+flag is absent, which denies. Narrowing the deny-shaped needles instead would re-open the
+original bypass (`gh -R=a;b pr merge 42` stops matching and goes back to a silent allow), so
+the split has to be per-consumer rather than a single compromise width.
 
 ### Narrowing the flag arms was not enough — check every arm the separator can enter
 
@@ -104,9 +106,7 @@ Verify executability rather than assuming a shape is theoretical: a stub named s
 collide with the real binary, an **inert outer command** so only the inner call can mark, and
 controls for a quoted and a backslash-escaped spelling. The first version of that probe used
 the same stub for outer and inner, so its control passed for the wrong reason and it measured
-"did anything run". Narrowing the deny-shaped needles would re-open the bypass
-(`gh -R=a;b pr merge 42` stops matching and goes back to a silent allow), so the split has to
-be per-consumer rather than a single compromise width.
+"did anything run".
 
 Pin both directions, and pin the split itself:
 
