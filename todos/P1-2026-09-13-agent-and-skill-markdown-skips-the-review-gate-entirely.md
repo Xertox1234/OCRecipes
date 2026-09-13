@@ -188,41 +188,70 @@ reads as complete, which is this todo's own headline failure mode. `.github/copi
 would have stayed exempt.
 
 The defect is ORDER, not membership: step 2's markdown exemption runs before the sensitivity
-check. So take the exemption only when the path is not sensitive, and the carve-out set
-becomes whatever `SENSITIVE_OVERRIDE` already says — no sibling list to go stale:
+check.
+
+**But do not simply run the whole `SENSITIVE_OVERRIDE` first.** A revision of this todo
+proposed exactly that and it is WRONG — measured. `SENSITIVE_OVERRIDE` is not only the six
+structural directory entries; it also carries free-text keyword alternatives (`[Aa]dmin`,
+`[Pp]remium`, `[Ll]ogin`, `secret`, `credential`, `(^|/)[Hh]ealth`) written to classify CODE
+by filename, back when the regex was only ever reached by files that had already failed the
+doc exemption. Running it against documentation repurposes those keywords as a prose scan.
+Over the full 3567-path tracked corpus that flips **33 ordinary docs and todos** from PASS to
+HOLD — `premium-gate-parity-...md`, `005-p1-login-lacks-zod-validation.md` and so on —
+gating every future `/codify` and `/todo` archive whose slug happens to contain an everyday
+word, which defeats the exemption's entire purpose.
+
+**Split a STRUCTURAL-ONLY subset for the documentation path**, and leave the full
+keyword-bearing regex exactly where it is for code:
 
 ```bash
-# step 2, reordered: sensitive paths never take the markdown exemption.
-printf '%s' "$f" | grep -qE "$SENSITIVE_OVERRIDE" && { unsafe="${unsafe}  ${f}"$'\n'; continue; }
-if printf '%s' "$f" | grep -qE '^(docs|todos)/|\.md$'; then continue; fi
+# 2) structural sensitivity — whole-directory and exact-path entries ONLY.
+#    Markdown never escapes this. Deliberately NOT the full SENSITIVE_OVERRIDE:
+#    that regex carries free-text keywords for classifying CODE by filename, and
+#    running them over prose HOLDs any doc whose slug says "premium" or "login".
+STRUCTURAL_SENSITIVE='(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW\.md$|(^|/)docs/PATTERNS\.md$'
+printf '%s' "$f" | grep -qE "$STRUCTURAL_SENSITIVE" && { unsafe="${unsafe}  ${f}"$'\n'; continue; }
+
+# 3) the volume exemption, unchanged in effect
+printf '%s' "$f" | grep -qE '^(docs|todos)/|\.md$' && continue
+
+# 4) today's step 3, untouched: the full override for code paths
 ```
 
-The `docs/rules/` special case then becomes redundant and should be deleted — it is already a
-`SENSITIVE_OVERRIDE` entry.
-
-Then add the four enforcement-governing paths to `SENSITIVE_OVERRIDE`, since they are in no
-entry today:
-
-```
-(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW\.md$|(^|/)docs/PATTERNS\.md$
-```
+The `docs/rules/` special case then becomes redundant and should be deleted — it is covered by
+the structural subset. The four enforcement-governing paths (`.claude/agents/`,
+`.claude/skills/`, `docs/AI_WORKFLOW.md`, `docs/PATTERNS.md`) appear in the structural subset
+and should ALSO be added to `SENSITIVE_OVERRIDE` so a non-markdown file under those
+directories is held by step 4 as well.
 
 `docs/PATTERNS.md` belongs there because `.claude/agents/code-reviewer.md:36` makes it part of
 the Categorize step every roster reviewer performs — the same "checklist each reviewer
 executes" argument that covers the agent files.
 
-**Measured against a corpus generated from `git ls-files`, not hand-listed** (2026-09-13):
+**Measured over ALL 3567 tracked paths** (`git ls-files`, no sampling, 2026-09-13). Both
+classifiers implemented and diffed row by row:
 
-| class                                              | today | with the reorder             |
-| -------------------------------------------------- | ----- | ---------------------------- |
-| `.claude/agents/*.md`, `.claude/skills/*/SKILL.md` | PASS  | **HOLD**                     |
-| `.github/copilot-instructions.md`                  | PASS  | **HOLD**                     |
-| `docs/AI_WORKFLOW.md`, `docs/PATTERNS.md`          | PASS  | **HOLD**                     |
-| all 15 `docs/rules/*.md`                           | HOLD  | HOLD — no regression         |
-| `.claude/settings.json`, `.claude/hooks/*.sh`      | HOLD  | HOLD — no regression         |
-| `docs/solutions/**`, `todos/**`                    | PASS  | PASS — volume case preserved |
+| outcome                                                    | count |
+| ---------------------------------------------------------- | ----- |
+| classification changes, total                              | 25    |
+| — `.claude/skills/**`                                      | 13    |
+| — `.claude/agents/**`                                      | 9     |
+| — `.github/copilot-instructions.md`                        | 1     |
+| — `docs/AI_WORKFLOW.md`                                    | 1     |
+| — `docs/PATTERNS.md`                                       | 1     |
+| **unintended changes under `docs/solutions/` or `todos/`** | **0** |
 
-Zero unintended changes across the generated set.
+Non-regression spot checks, today vs fixed: `.claude/settings.json` HOLD→HOLD,
+`.claude/hooks/*.sh` HOLD→HOLD, `docs/rules/security.md` HOLD→HOLD,
+`premium-gate-parity-...md` PASS→PASS, `005-p1-login-lacks-zod-validation.md` PASS→PASS.
+
+**Why the previous revision of this table said "zero unintended changes" and was wrong.**
+It claimed to be generated from `git ls-files`. It was **sampled** — the high-volume classes
+went through `head -2`, and those two samples happened to contain none of the free-text
+keywords. A corpus that is sampled and called generated reproduces the author's blind spot
+and returns a reassuring number; this todo's own acceptance criteria demand a generated one,
+which the verification of its own candidate then failed to be. Recorded rather than quietly
+fixed, because the shape recurs.
 
 **The reorder DELETES the two-spelling coupling, and that is a reason to prefer it.** The
 script's own comment warns that the step-2 carve-out and its `SENSITIVE_OVERRIDE` entry are
@@ -247,8 +276,11 @@ the class rather than that instance, which is the point.
 
 ## Scope Contract
 
-- **Mechanisms to use:** widen the existing `rc_rules` carve-out regex and its
-  `SENSITIVE_OVERRIDE` twin. No new gate, no new file, no new classification concept.
+- **Mechanisms to use:** delete the `rc_rules` `docs/rules/` carve-out and replace it with a
+  `STRUCTURAL_SENSITIVE` check ahead of the markdown exemption; add the four
+  enforcement-governing paths to both that subset and `SENSITIVE_OVERRIDE`. No new gate, no
+  new file, no new classification concept — one added constant in the script that already
+  owns this decision.
 - **Files in scope:** `scripts/todo-automerge-guard.sh`,
   `scripts/__tests__/todo-automerge-guard.test.ts`.
 - No new mechanisms, files, or abstractions beyond those listed.
