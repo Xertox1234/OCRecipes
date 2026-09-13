@@ -33,6 +33,21 @@ case "$CLAIM$EVIDENCE" in
   *$'\n'*) echo "ledger-note: claim and evidence must be single-line" >&2; exit 1 ;;
 esac
 
+# Bound each field well under precompact-ledger.sh's 2048-byte curated-tier window: a row
+# that fills (or exceeds) that whole window leaves the byte-cut recovery nothing to fall
+# back on but the fragment itself, and poisons every future compaction since curated.md
+# only ever grows. 500 bytes each keeps even a VERIFIED row (tier + two separators) far
+# under 2048. Reject here, at write time, where the author can see and fix it.
+MAX_FIELD_BYTES=500
+CLAIM_BYTES=$(printf '%s' "$CLAIM" | wc -c | tr -d '[:space:]') || CLAIM_BYTES=0
+EVIDENCE_BYTES=$(printf '%s' "$EVIDENCE" | wc -c | tr -d '[:space:]') || EVIDENCE_BYTES=0
+case "$CLAIM_BYTES" in ''|*[!0-9]*) CLAIM_BYTES=$((MAX_FIELD_BYTES+1)) ;; esac
+case "$EVIDENCE_BYTES" in ''|*[!0-9]*) EVIDENCE_BYTES=$((MAX_FIELD_BYTES+1)) ;; esac
+if [ "$CLAIM_BYTES" -gt "$MAX_FIELD_BYTES" ] || [ "$EVIDENCE_BYTES" -gt "$MAX_FIELD_BYTES" ]; then
+  echo "ledger-note: claim and evidence must each be <= ${MAX_FIELD_BYTES} bytes (got claim=${CLAIM_BYTES}, evidence=${EVIDENCE_BYTES})" >&2
+  exit 1
+fi
+
 SID="${CLAUDE_CODE_SESSION_ID:-}"
 LEDGER_DIR=$(context_ledger_dir "$SID") || {
   echo "ledger-note: no usable CLAUDE_CODE_SESSION_ID; refusing to guess a ledger key" >&2

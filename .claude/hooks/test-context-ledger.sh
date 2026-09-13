@@ -325,8 +325,9 @@ for bad_input in 'not json at all' '{"session_id":"../etc","source":"compact"}' 
   fi
 done
 
-# Test 3: source=startup -> NOTHING. The most likely regression.
-for src in startup resume clear; do
+# Test 3: source=startup -> NOTHING. The most likely regression. `fork` included:
+# the installed SessionStart schema enumerates startup/resume/clear/compact/fork.
+for src in startup resume clear fork; do
   out=$(printf '{"session_id":"%s","source":"%s"}' "$SIDR" "$src" | bash "$RESUME_HOOK" 2>&1); rc=$?
   if [ $rc -eq 0 ] && [ -z "$out" ]; then
     ok "source=$src emits nothing"
@@ -503,6 +504,100 @@ else
   rm -rf "$ORD_DIR"
 fi
 rm -rf "$ORD_ROOT"
+
+# --- Final review fixes: CRITICAL — one oversized curated row must not empty the tier ---
+# A curated.md whose FIRST (only) row already exceeds the 2048-byte tail window used to
+# produce an empty CURATED after the byte-cut recovery dropped the sole (partial) line.
+# Manually confirmed against the pre-fix code: a 2527-byte single-row file produced a
+# 0-byte CURATED and (with no transcript) no resume.md at all.
+SIDCRIT="sess-crit-oversized-row"; LCRIT="$CONTEXT_LEDGER_ROOT/$SIDCRIT"; mkdir -p "$LCRIT"
+LONGCLAIM=$(printf 'x%.0s' $(seq 1 2500))
+printf 'VERIFIED | %s | some-command\n' "$LONGCLAIM" > "$LCRIT/curated.md"
+rowsize=$(wc -c < "$LCRIT/curated.md" 2>/dev/null | tr -d '[:space:]')
+printf '{"session_id":"%s"}' "$SIDCRIT" | bash "$PRECOMPACT" >/dev/null 2>&1
+# The "VERIFIED |" prefix itself legitimately falls outside the last-2048-byte window and
+# is gone — that's expected for a row this oversized. What must survive is the TAIL of the
+# row (the fallback CUT), so assert on "some-command" rather than the (correctly absent)
+# prefix.
+if [ -s "$LCRIT/resume.md" ] && grep -q "some-command" "$LCRIT/resume.md" 2>/dev/null; then
+  ok "a single oversized curated row (row=${rowsize}B > 2048B window) still yields a non-empty curated tier"
+else
+  no "oversized single curated row emptied the curated tier (row=${rowsize}B)"
+fi
+
+# ledger-note.sh must reject an oversized claim at write time, before it can ever reach
+# curated.md. Same before/after size bracket the other rejection cases in Task 4 use.
+SIDCRIT2="sess-crit-oversized-claim"
+CLAUDE_CODE_SESSION_ID="$SIDCRIT2" bash "$NOTE" VERIFIED "seed row" "seed cmd" >/dev/null 2>&1
+CUR_CRIT="$CONTEXT_LEDGER_ROOT/$SIDCRIT2/curated.md"
+BEFORE=$(wc -c < "$CUR_CRIT" 2>/dev/null | tr -d ' ')
+OVERSIZED_CLAIM=$(printf 'x%.0s' $(seq 1 600))
+if CLAUDE_CODE_SESSION_ID="$SIDCRIT2" bash "$NOTE" VERIFIED "$OVERSIZED_CLAIM" "y" >/dev/null 2>&1; then
+  no "ledger-note accepted an oversized (600B) claim"
+else
+  AFTER=$(wc -c < "$CUR_CRIT" 2>/dev/null | tr -d ' ')
+  if [ "$BEFORE" = "$AFTER" ]; then
+    ok "oversized claim rejected AND nothing written"
+  else
+    no "oversized claim rejected but the file grew: $BEFORE -> $AFTER"
+  fi
+fi
+
+# --- Final review fixes: IMPORTANT 1 — the three scripts are coupled only by the shared
+# lib pinning the ledger DIRECTORY; curated.md/resume.md filenames are hardcoded
+# independently in each script and a drift would leave every per-script test green. Chain
+# the REAL scripts end to end under one session id and assert a sentinel survives all three.
+SIDCHAIN="sess-chain-$$"
+CHAIN_TX="$TMPROOT/chain.jsonl"
+cat > "$CHAIN_TX" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"echo chain-fixture","description":"Chain fixture Bash call"}}]}}
+EOF
+CLAUDE_CODE_SESSION_ID="$SIDCHAIN" bash "$NOTE" VERIFIED "chain-sentinel-unique" "echo chain-fixture" >/dev/null 2>&1
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SIDCHAIN" "$CHAIN_TX" | bash "$PRECOMPACT" >/dev/null 2>&1
+chain_out=$(printf '{"session_id":"%s","source":"compact"}' "$SIDCHAIN" | bash "$RESUME_HOOK" 2>/dev/null)
+if printf '%s' "$chain_out" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null | grep -q "chain-sentinel-unique"; then
+  ok "full chain (ledger-note -> precompact -> session-resume) carries the sentinel through"
+else
+  no "full chain broke: [$chain_out]"
+fi
+
+# --- Final review fixes: IMPORTANT 2 — the digest must carry a build timestamp, so a
+# stale resume.md left behind by a run that wrote nothing is identifiable as stale rather
+# than silently injected as current. ---
+SIDTS="sess-timestamp-$$"
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SIDTS" "$FAKE_TX" | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -qE '^Built: [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' "$CONTEXT_LEDGER_ROOT/$SIDTS/resume.md" 2>/dev/null; then
+  ok "digest includes a build timestamp"
+else
+  no "digest missing a build timestamp"
+fi
+
+# --- Final review fixes: MINOR 1 — the "(most recent 12)" label must keep each distinct
+# command's MOST RECENT occurrence, not its first. Force a real truncation (13 distinct
+# commands against the real cap of 12): "recency-marker-alpha" runs first, then 12 distinct
+# fillers, then "recency-marker-alpha" reruns last (the true most-recent event overall).
+# Pre-fix, awk keeps first-occurrence order and `tail -n 12` drops the FRONT of that list —
+# which drops alpha (pinned at the front by its stale first run) and keeps the filler that
+# is, in real recency terms, the least recently invoked of the 13.
+SID15="sess-task2-recency"; L15="$CONTEXT_LEDGER_ROOT/$SID15"; mkdir -p "$L15"
+FAKE_TX5="$TMPROOT/fake-recency.jsonl"
+: > "$FAKE_TX5"
+printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"echo recency-marker-alpha","description":"Recency marker alpha first run"}}]}}\n' >> "$FAKE_TX5"
+i=1
+while [ $i -le 12 ]; do
+  printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"echo recency-filler-%02d","description":"Recency filler %02d"}}]}}\n' "$i" "$i" >> "$FAKE_TX5"
+  i=$((i+1))
+done
+printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"echo recency-marker-alpha","description":"Recency marker alpha first run"}}]}}\n' >> "$FAKE_TX5"
+
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SID15" "$FAKE_TX5" \
+  | bash "$PRECOMPACT" >/dev/null 2>&1
+if grep -q "recency-marker-alpha" "$L15/resume.md" 2>/dev/null \
+   && ! grep -q "recency-filler-01" "$L15/resume.md" 2>/dev/null; then
+  ok "floor keeps a command's MOST RECENT occurrence over its stale first-seen slot"
+else
+  no "floor kept the wrong occurrence at the truncation boundary (recency ordering bug)"
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

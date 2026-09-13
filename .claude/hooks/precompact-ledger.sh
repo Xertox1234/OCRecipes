@@ -55,7 +55,14 @@ if [ -r "$LEDGER_DIR/curated.md" ]; then
   CSIZE=$(wc -c < "$LEDGER_DIR/curated.md" 2>/dev/null | tr -d '[:space:]') || CSIZE=0
   case "$CSIZE" in ''|*[!0-9]*) CSIZE=0 ;; esac
   if [ "$CSIZE" -gt 2048 ]; then
-    CURATED=$(tail -c 2048 "$LEDGER_DIR/curated.md" 2>/dev/null | tail -n +2)
+    # `tail -n +2` drops the partial first line — but when that ONE partial line is the
+    # entire 2048-byte window (a single curated row over 2048 bytes on its own), dropping
+    # it leaves nothing. A row that big already can't be salvaged as a clean line, but an
+    # empty curated tier is worse: it silently discards every other (intact) row that
+    # fits in the window too. Fall back to the raw cut rather than lose the whole tier.
+    CUT=$(tail -c 2048 "$LEDGER_DIR/curated.md" 2>/dev/null)
+    CURATED=$(printf '%s\n' "$CUT" | tail -n +2)
+    [ -n "$CURATED" ] || CURATED="$CUT"
   else
     CURATED=$(cat "$LEDGER_DIR/curated.md" 2>/dev/null)
   fi
@@ -73,13 +80,20 @@ if [ -n "$TRANSCRIPT" ]; then
   # on a missing command is an out-of-bounds `null` — without this guard the floor line
   # would show the literal text "null" instead of degrading cleanly to empty.
   # `tail -n 12` mirrors session-recent-issues.sh's cap; dedup via awk keeps repeats out.
+  # Reversed first (pure-awk reverse — no GNU `tac`, and BSD `tail -r` doesn't exist on the
+  # ubuntu-latest CI runner this hook's own tests run under; CI has no prior tail -r/tac use
+  # to fall back on) so awk's "keep first occurrence" keeps each distinct command's MOST
+  # RECENT run, not its earliest; capping via awk (not `head`, which can exit before
+  # draining its stdin and hand the writer SIGPIPE under `pipefail`) then keeps by true
+  # recency; the trailing reverse restores chronological (oldest-of-the-kept-first) order.
+  rev_lines() { awk '{ a[NR]=$0 } END { for (i=NR; i>=1; i--) print a[i] }'; }
   FLOOR=$(jq -R -r '
       fromjson?
       | select(.type=="assistant")
       | .message.content[]?
       | select(.type=="tool_use" and .name=="Bash")
       | "  \((.input.description // "(no description)") | .[0:60]) ← \((.input.command // "") | split("\n")[0] // "" | .[0:100])"
-    ' "$TRANSCRIPT" 2>/dev/null | awk '!seen[$0]++' | tail -n 12)
+    ' "$TRANSCRIPT" 2>/dev/null | rev_lines | awk '!seen[$0]++' | awk 'NR<=12' | rev_lines)
 fi
 
 # Both tiers empty -> write nothing. Spec §9: emitting "nothing captured" would spend
@@ -99,6 +113,11 @@ fi
 # fact) start giving way. Re-measure after every drop; write only once it fits.
 assemble_digest() {
   echo "[CONTEXT LEDGER — verification state carried across compaction]"
+  # If a later PreCompact run exits without writing (both tiers empty, or a timeout), this
+  # file is left in place and gets injected as though it were current. It's still a real,
+  # true digest of an earlier compaction — worth keeping (fail-open asymmetry) — but a
+  # reader needs to be able to tell it's stale, hence the timestamp.
+  echo "Built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "Native compaction preserves the narrative. This carries what it cannot: which"
   echo "facts were MEASURED vs ASSUMED. Re-verify before relying on an ASSUMED line."
   if [ -n "$CURATED" ]; then
@@ -140,6 +159,9 @@ while [ "$DSIZE" -gt 4096 ]; do
 done
 
 mkdir -p "$LEDGER_DIR" 2>/dev/null || exit 0
-printf '%s\n' "$DIGEST" > "$LEDGER_DIR/resume.md" 2>/dev/null || exit 0
+# Write to a temp file and rename into place: a kill mid-write (e.g. a timeout) cannot
+# leave a truncated resume.md that the reader's `[ -s ]` check would accept as whole.
+printf '%s\n' "$DIGEST" > "$LEDGER_DIR/resume.md.tmp" 2>/dev/null || exit 0
+mv "$LEDGER_DIR/resume.md.tmp" "$LEDGER_DIR/resume.md" 2>/dev/null || exit 0
 
 exit 0
