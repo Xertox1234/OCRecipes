@@ -344,6 +344,20 @@ add "flagadjfp-roredir" ALLOW 'gh api repos/o/r 2>&1'
 # every time it was made.
 FAUTO_SPELL_IDS=(gt fd app amp ampl clob bang nfd nfddig in)
 FAUTO_SPELL=('>' '2>' '>>' '&>' '>&' '>|' '>!' '{fd}>' '{9}>' '<')
+# THE `-trail` SLOT IS NON-DISCRIMINATING FOR FIVE OF THESE TEN OPERATORS, and
+# saying so here is cheaper than a reader re-deriving it. Measured 2026-09-13:
+# branch 1 of _OUT_POS_SUFFIX_MERGE_CLAUSE excludes `&`, `|` and `{`, so for
+# `&>`, `>&`, `>|`, `{fd}>` and `{9}>` the clause is cut BEFORE the scan runs and
+# the row denies for that pre-existing reason -- on main too. Mutating
+# `norm = strip_redirs($0)` to `norm = $0` leaves all five GREEN, so they are not
+# evidence for the redirect-aware scan, whatever the surrounding prose once
+# implied by calling the family "inherited free".
+#
+# They stay: the verdict and its attributed reason are correct, and the pin
+# tracks both. What changes is only the claim made ABOUT them. The `-lead`,
+# `-tool` and `-ns` slots of those same five operators ARE discriminating --
+# _OUT_SEP and _OUT_POS_PREFIX interpolate _CMD_REDIR directly rather than
+# through an exclusion class, so the clause arrives intact there.
 for j in "${!FAUTO_SPELL_IDS[@]}"; do
   sp=${FAUTO_SPELL_IDS[$j]}; op=${FAUTO_SPELL[$j]}
   add "fauto$sp-trail" DENY "gh pr merge 42 $op --auto"
@@ -387,10 +401,17 @@ add "fautojoin-sp"   DENY 'gh pr merge 42 --au>x to'
 add "fautojoin-glue" DENY 'gh pr merge 42 --au>xto'
 add "fautojoin-off"  DENY 'gh pr merge 42 --a>x uto'
 
-# NEWLY GRANTED. A genuine --auto carrying a glued redirect IS an armed
-# automerge in real bash argv, so the former deny was an over-denial (the
-# ACCEPTED OVER-DENIAL residual, now retired). These are the only decisions this
-# change makes more permissive.
+# NEWLY GRANTED -- but only the FIRST of the two rows is. A genuine --auto
+# carrying a glued redirect IS an armed automerge in real bash argv, so the
+# former deny was an over-denial (the ACCEPTED OVER-DENIAL residual, now
+# retired).
+#
+# MEASURED 2026-09-13, correcting this comment's earlier claim that both rows
+# were newly permissive: `fautogrant-amp` is NOT one of them. The clause cut
+# excludes `&`, so `--auto&>log` truncates to CLAUSE=[gh pr merge 42 --auto] on
+# main and on this branch alike, and main ALREADY grants it (HAS_REAL_AUTO=yes
+# on both trees). `fautogrant-glue` is the only decision this change makes more
+# permissive.
 add "fautogrant-glue" ALLOW 'gh pr merge 42 --auto>/dev/null'
 add "fautogrant-amp"  ALLOW 'gh pr merge 42 --auto&>log'
 # DIGIT-PREFIX axis, added in review round 2: the forgery the FIRST version of

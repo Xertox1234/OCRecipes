@@ -1306,11 +1306,21 @@ assert_deny "forged --auto: fd-numbered redirect target" \
   "$(json 'gh pr merge 42 2> --auto')" "without a REAL --auto flag"
 assert_deny "forged --auto: append redirect target" \
   "$(json 'gh pr merge 42 >> --auto')" "without a REAL --auto flag"
-assert_deny "forged --auto: &> redirect target" \
+# THE NEXT THREE ROWS DO NOT TEST THE SCAN, AND ARE LABELLED SO NOBODY READS
+# THEM AS EVIDENCE THAT IT WORKS. Measured 2026-09-13: branch 1 of
+# _OUT_POS_SUFFIX_MERGE_CLAUSE excludes `&`, `|` and `{`, so for these three
+# operators the clause is cut to `gh pr merge 42 ` BEFORE the scan ever runs.
+# They deny identically on main and on this branch, for that pre-existing
+# reason -- mutating `norm = strip_redirs($0)` to `norm = $0` leaves all three
+# GREEN. Kept as clause-cut pins (the verdict and its reason are still correct
+# and worth holding), renamed from the "inherited free" claim they carried,
+# which was false for this position. Their real coverage is the INTERIOR block
+# immediately below, where _OUT_SEP delivers the clause intact.
+assert_deny "clause-cut pin, NOT a scan test: &> target is cut before the scan runs" \
   "$(json 'gh pr merge 42 &> --auto')" "without a REAL --auto flag"
-assert_deny "forged --auto: clobber-override >| target (a #939 grammar family, inherited free)" \
+assert_deny "clause-cut pin, NOT a scan test: >| target is cut before the scan runs" \
   "$(json 'gh pr merge 42 >| --auto')" "without a REAL --auto flag"
-assert_deny "forged --auto: named-fd {n}> target (a #939 grammar family, inherited free)" \
+assert_deny "clause-cut pin, NOT a scan test: {fd}> target is cut before the scan runs" \
   "$(json 'gh pr merge 42 {fd}> --auto')" "without a REAL --auto flag"
 
 # (A) forged target — POSITION axis. The leading row travels a different code
@@ -1325,6 +1335,19 @@ assert_deny "forged --auto at the INTERIOR namespace->verb slot" \
   "$(json 'gh pr > --auto merge 42')" "without a REAL --auto flag"
 assert_deny "forged --auto at BOTH interior slots at once (co-occurrence, not one-axis-at-a-time)" \
   "$(json 'gh > --auto pr > --auto merge 42')" "without a REAL --auto flag"
+
+# OPERATOR x POSITION, the cell the block above left empty. The three operators
+# the clause cut swallows at the TRAILING position reach the scan intact at an
+# INTERIOR one, because _OUT_SEP wraps _CMD_REDIR directly instead of through an
+# exclusion class. Without these rows, `&>`, `>|` and `{fd}>` had no
+# discriminating coverage anywhere in this file: their only rows were the
+# trailing ones, which pass against an implementation with strip_redirs deleted.
+assert_deny "forged --auto: &> at the INTERIOR tool->namespace slot (reaches the scan; the trailing row does not)" \
+  "$(json 'gh &> --auto pr merge 42')" "without a REAL --auto flag"
+assert_deny "forged --auto: >| at the INTERIOR tool->namespace slot (reaches the scan; the trailing row does not)" \
+  "$(json 'gh >| --auto pr merge 42')" "without a REAL --auto flag"
+assert_deny "forged --auto: {fd}> at the INTERIOR tool->namespace slot (reaches the scan; the trailing row does not)" \
+  "$(json 'gh {fd}> --auto pr merge 42')" "without a REAL --auto flag"
 
 # (A) ATTRIBUTION CONTROL. The glued spelling denied before this fix too, but
 # only incidentally — `>--auto` was one awk field that did not compare equal.
@@ -3178,10 +3201,20 @@ _PIN_RAN=1
 #         api's clause, plus a read-only gh api carrying its own `2>&1`. These are
 #         the rows that go RED if `&[0-9-]` ever becomes a bare `&`.
 #         3 + 4 + 4 = 11.
-# 596 -> 636 on 2026-09-12: +40, the --auto field scan becomes REDIRECT-AWARE
+# 596 -> 639 on 2026-09-13: +43, the --auto field scan becomes REDIRECT-AWARE
 # (P0-2026-09-07-...-space-separated-redirect-target-forges-auto). One existing
-# assertion also FLIPPED deny->allow in place (the `--auto>/dev/null` accepted
-# over-denial, now correct), which is why the delta is +30 and not +31.
+# assertion also FLIPPED deny->allow IN PLACE (the `--auto>/dev/null` accepted
+# over-denial, now correct); a flip changes no total, which is why the itemised
+# list below sums to the delta on its own.
+#
+# An earlier revision of this line read "the delta is +30 and not +31", which
+# reconciled with neither the total nor the breakdown -- a stale number sitting
+# directly above the constant it describes, the same failure this file calls out
+# at EXPECTED_DENY_ATTRIB_ROWS. Corrected 2026-09-13 by re-adding the items.
+#    +3  OPERATOR x POSITION: `&>`, `>|`, `{fd}>` at an INTERIOR slot, added
+#         2026-09-13 in review. Their trailing rows are swallowed by the clause
+#         cut and pass with strip_redirs deleted, so these are where those three
+#         operators actually earn their coverage.
 #    +6  forged target, OPERATOR axis: `>`, `2>`, `>>`, `&>`, `>|`, `{fd}>` each
 #         with a SPACE before a target spelled `--auto`. Real argv carries no
 #         --auto at all, so every one was an immediate unarmed merge.
@@ -3244,7 +3277,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 40.
-EXPECTED_TOTAL=636
+EXPECTED_TOTAL=639
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

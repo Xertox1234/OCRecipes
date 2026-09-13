@@ -270,7 +270,7 @@ completeness claim has been wrong every time it was made.
 A forged grant via the CUT, not the scan. Pinned as `fautobrace-pre` at what both trees do —
 flipping it would claim a fix this change does not make.
 
-**Evidence.** Test suite 596 → 636 assertions, 0 failed; full hook suite 34/34. Corpus
+**Evidence.** Test suite 596 → 639 assertions, 0 failed; full hook suite 34/34. Corpus
 498 → 573 rows, 420 → 483 attributions, 187 → 220 all-path gaps; **precise-path gaps
 unchanged at 31**, and **no pre-existing row moved** — every drift line the pin reported was
 a new `fauto*`/`mauto*` id. Four mutations, each with a named expected outcome:
@@ -278,9 +278,19 @@ a new `fauto*`/`mauto*` id. Four mutations, each with a named expected outcome:
 | mutation                                   | result                                           |
 | ------------------------------------------ | ------------------------------------------------ |
 | re-anchoring discarded (cut at `RSTART`)   | **7 red** — the digit rows, BOTH directions      |
-| normalisation removed (`norm = $0`)        | **13 red** — forged + masked rows                |
+| normalisation removed (`norm = $0`)        | **16 red** — forged + masked rows                |
 | spaced-target support removed from `redir` | **8 red** — exactly the SPACED rows, glued green |
 | `" "` → `""` replacement                   | **green — EQUIVALENT**, recorded, not chased     |
+
+The `norm = $0` row read **13 red** until 2026-09-13, and that number was correct for the
+tree it was measured on. Review round 5 added three `&>` / `>|` / `{fd}>` rows at an
+INTERIOR slot — the three operators whose only prior rows sat at the TRAILING position,
+where the clause cut swallows them before the scan ever runs, so those rows passed even
+with `strip_redirs` deleted. The three new rows die under this mutation, which is exactly
+what makes them worth having: 13 → **16**, precisely +3. Measured against the suite, the
+same way the other three rows of this table were. (A review pass reported 11 here; that
+count came from a hand-built 15-row reconstruction rather than from the suite, and did not
+reproduce — recorded so the discrepancy is not rediscovered as a defect.)
 
 ### False-positive population, measured by execution (AC item 6)
 

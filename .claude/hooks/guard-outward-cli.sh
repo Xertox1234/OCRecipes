@@ -2437,6 +2437,30 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   #   anyway: it costs nothing and it is the form that stays correct if
   #   `_CMD_REDIR` ever admits an optional target.
   #
+  # WHAT THIS BLOCK DOES NOT SETTLE, named rather than implied away (review
+  # round 5; both measured, neither opened by this change):
+  #
+  #   * `>!` IS SHELL-DIVERGENT, which "inherited from _CMD_REDIR" hides. The
+  #     spelling `... 42 >! -b --auto` yields argv `[pr][merge][42][--auto]`
+  #     under zsh -- genuinely armed, so ALLOW is correct -- but under bash it
+  #     yields `[pr][merge][42][-b][--auto]`, where `-b` eats the flag and the
+  #     SAME allow would be a forgery. This guard follows zsh, which is the
+  #     Bash tool's actual shell, so the shipped verdict is right for the shell
+  #     that runs it; the one bash-reachable spelling constructed (`bash -c`)
+  #     is ALLOW-identical on main and here. Recorded because a verdict whose
+  #     correctness depends on WHICH shell interprets the string belongs where
+  #     the check is defined, not inferred from an operator list.
+  #
+  #   * awk PROVENANCE IS UNTESTED, and cannot be tested from here. This version
+  #     adds `match()` with a dynamic regex, a user function, `substr` and
+  #     `split(s, f, " ")` where the previous one used only default-FS
+  #     splitting. All are POSIX, and all behave correctly on the /usr/bin/awk
+  #     this repo runs against. But the guard calls BARE `awk` and the suite
+  #     resolves it through the SAME PATH, so a different awk earlier on PATH is
+  #     structurally invisible to every row in this file -- the corpus would
+  #     agree with itself under whichever awk it happened to run. Stated as a
+  #     bound, deliberately not as a probe.
+  #
   # Safe because every `<`/`>` that reaches $CLAUSE is a REAL, unquoted operator:
   # $CLAUSE is cut from $WORDS (cmd_words), whose `neutral()` rewrites a quoted
   # separator to the letter `x` (`echo a '>' b` -> `echo a x b`). So a quoted
@@ -2453,9 +2477,21 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
     # Unreachable with a healthy lib (a broken one is already caught at the
     # source above, and _OUT_SEP/_OUT_POS_PREFIX interpolate this same constant
     # long before here). Stated explicitly because the degenerate case is not
-    # safe by accident: gsub("", " ", s) inserts a space between EVERY
-    # character, so no field could ever equal "--auto" and every merge -- the
-    # sanctioned automerge included -- would deny with a misleading reason.
+    # safe by accident -- and NOT for the reason an earlier draft of this
+    # comment gave. That draft described a `gsub("", " ", s)` fan-out, which is
+    # code this commit does not contain.
+    #
+    # MEASURED 2026-09-13 against the `while (match(s, redir))` loop below: an
+    # empty pattern matches at RSTART=1 with RLENGTH=0 on EVERY pass, so
+    # `s = substr(s, RSTART + RLENGTH)` hands back the same `s` and the loop
+    # never terminates -- `out` grows by one space per iteration until memory
+    # does. Both reviewers reproduced it; one had to kill an unbounded probe.
+    #
+    # So the degenerate case is a HANG inside a PreToolUse hook, not a deny with
+    # a misleading reason. That distinction is the whole point of this branch: a
+    # denied hook is a denied command, and a HUNG one is neither -- it cannot be
+    # told apart from an allow by anything downstream. Do not delete this as
+    # cosmetic on the grounds that "it would just deny anyway". It would not.
     HAS_REAL_AUTO=no
   else
     HAS_REAL_AUTO=$(awk -v flags="$GH_MERGE_VALUE_FLAGS" -v redir="$_CMD_REDIR" '
