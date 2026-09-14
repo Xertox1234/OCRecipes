@@ -209,7 +209,7 @@ model the slot between the binary and its namespace. Both guards DENY all four e
    spelling is caught by the retarget check, which wins over `--auto`.
 4. **AC 2 is unreachable as literally worded.** It asks that the spellings "reach the
    review-record requirement". A retarget makes the PR number unresolvable _by design_, so
-   the path ends at the unresolvable-PR deny (`merge-review-guard.sh:197-206`) instead.
+   the path ends at the unresolvable-PR deny (`merge-review-guard.sh`'s "could not resolve a PR number" branch) instead.
    Satisfied on intent — no longer a silent allow — and a redirect row with a resolvable
    number was added to demonstrate the stage-3 path as well.
 
@@ -229,7 +229,7 @@ instruction** (it is a different mechanism, so it is named separately for attrib
 a **trailing** flag to end on the ref. `gh pr merge 42 --repo other/org` therefore resolved
 ref 42 and the gate classified the **local** PR #42 — its deny text byte-identical to a bare
 merge's. The sibling ordering refused correctly, which is why it survived. The refusal now
-scans the clause. `merge-review-guard.sh:162-165` asserted this refusal was unconditional;
+scans the clause. `merge-review-guard.sh`'s "This mirrors the Bash arm" paragraph asserted this refusal was unconditional;
 that comment is corrected.
 
 Follow-up filed:

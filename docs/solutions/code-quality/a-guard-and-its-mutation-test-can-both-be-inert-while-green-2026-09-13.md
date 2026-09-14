@@ -66,7 +66,8 @@ nothing in the run distinguishes "passed" from "never ran".**
 # ask the grammar a BEHAVIOURAL question: fed a span that crosses a separator,
 # does the narrow form match it WHOLE? The wide form does; a correct one cannot.
 _OUT_GRANT_SPANS=no
-for _p in ' -x;y' ' -R a;y' ' --repo a;y' ' -x&y' ' -x|y' ' -R a&y' ' --repo a|y'; do
+for _p in ' -x;y' ' -x&y' ' -x|y' ' -R a;y' ' -R a&y' ' -R a|y' \
+          ' --repo a;y' ' --repo a&y' ' --repo a|y'; do   # every arm x every separator
   printf '%s' "$_p" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$" && { _OUT_GRANT_SPANS=yes; break; }
 done
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \

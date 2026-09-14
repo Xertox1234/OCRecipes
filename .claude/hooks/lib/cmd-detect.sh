@@ -160,7 +160,7 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # cobra strips flags while resolving the subcommand and the `pr` group registers
 # `-R`/`--repo` via cmdutil.EnableRepoOverride, so the root-position spelling is a FUNCTIONAL
 # invocation, not a parse error (measured against the real binary, 2026-09-13). It reached
-# merge-review-guard.sh:148 as "not a merge" — a silent allow of an unreviewed merge,
+# merge-review-guard.sh's `[ "$SUB" = "merge" ] || exit 0` check as "not a merge" — a silent allow of an unreviewed merge,
 # including one retargeted at THIS repository, and it skipped pr-preflight-guard.sh's stamp
 # gate as well. See todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-
 # merge-guards.md; the redirect arm additionally closes mechanism (b) of

@@ -1711,7 +1711,7 @@ van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
 #
 #   (A) A ROOT-POSITION repo flag separated the binary from its namespace, so
 #       `gh -R owner/repo pr merge 42` resolved NO subcommand at all. That
-#       reached merge-review-guard.sh:148 as "not a merge" — a silent allow of
+#       reached merge-review-guard.sh's `[ "$SUB" = "merge" ] || exit 0` check as "not a merge" — a silent allow of
 #       an unreviewed merge, including one retargeted at THIS repository.
 #       todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
 #   (B) A redirect in the same slot did the same thing (`gh 2>/dev/null pr
@@ -1731,7 +1731,7 @@ van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
 # ghsub <command> <expected-subcommand|-> <label>   ('-' = must be empty)
 # pipefail MUST be off for the call: cmd_gh_pr_write_subcommand signals REFUSE
 # with rc 1, but under pipefail a plain no-match in its trailing pipeline is
-# ALSO rc 1 — the two collapse. merge-review-guard.sh:104-111 brackets its own
+# ALSO rc 1 — the two collapse. merge-review-guard.sh's "PIPEFAIL MUST BE OFF FOR THIS CALL" block brackets its own
 # call for exactly this reason.
 ghsub() {
   local cmd="$1" want="$2" label="$3" got rc
