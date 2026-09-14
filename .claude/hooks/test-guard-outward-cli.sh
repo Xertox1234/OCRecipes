@@ -2734,6 +2734,128 @@ assert_allow "a quoted mention of a gated binary with a variable stays allowed" 
 assert_allow "a read-only eas colon subcommand with a variable stays allowed" \
   "$(json 'eas update:list --branch $B')"
 
+# ---------- 2026-09-14: narrow deny — a gated binary/verb glued to a brace RANGE (todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md) --
+# Bash brace RANGE expansion ({X..Y}) splits a token the same way the
+# expansion-token block above does, but carries NO `$` and NO backtick
+# anywhere -- every positive below measured ALLOW on the pre-fix tree
+# (reproduced by running the guard, not asserted from the regex).
+#
+# VERB-position closes: the binary name stays intact in raw text, so the
+# fast-path prefilter never declines these and they always reach the new
+# check. TOOL-position (the binary's own first letters split, e.g.
+# `{e..e}as update`) is a DOCUMENTED, DELIBERATE residual -- reaching it
+# would need the fast path's stage-3 decline widened to a brace-range shape,
+# which this todo's Scope Contract forbids ("no widening of the fast path's
+# sigil class"). Pinned below as assert_allow so a future change to that
+# boundary is visible in a diff rather than silently assumed.
+assert_deny "gh pr merge with a brace-range-split verb denies (todo's illustrative construction)" \
+  "$(json 'gh pr me{r..r}ge 42')" "glued to a brace RANGE"
+assert_deny "eas with a brace-range-split verb denies (todo's illustrative construction)" \
+  "$(json 'eas up{d..d}ate --branch preview')" "glued to a brace RANGE"
+assert_deny "gh pr comment with a brace-range-split verb denies" \
+  "$(jsonc 'gh pr com{m..m}ent 5 --body hi --repo other/org')" "glued to a brace RANGE"
+assert_deny "npm with a brace-range-split verb denies" \
+  "$(json 'npm pub{l..l}ish')" "glued to a brace RANGE"
+assert_deny "railway with a brace-range-split verb denies (no argument after it)" \
+  "$(json 'railway u{p..p}')" "glued to a brace RANGE"
+assert_deny "gh api with a brace-range-split verb denies" \
+  "$(json 'gh a{p..p}i repos/o/r -X POST')" "glued to a brace RANGE"
+# MULTI-VALUE range, ruled: denied IDENTICALLY to a single-value range.
+# Distinguishing them would mean evaluating what the range expands to, which
+# this file already refuses to do for the sibling $/backtick mechanism, and
+# `_OUT_POS_SUFFIX` already shipped the identical "any literal {/} is an
+# unconditional boundary" conservatism for the closer-only case.
+assert_deny "a MULTI-value brace range glued to a verb denies the same as a single-value one" \
+  "$(json 'eas up{a..z}ate --branch preview')" "glued to a brace RANGE"
+# CONTROL, already documented and pre-existing: a brace RANGE that follows an
+# INTACT, complete verb (not glued INSIDE it) must keep denying via the
+# EXISTING boundary check (_OUT_POS_SUFFIX already treats `{` as a closer) --
+# and, just as importantly, via THAT check's OWN reason, not this new one.
+# This exact collision shipped once during this fix's own development (the
+# new block ran BEFORE gh pr merge/create/comment/api and stole their reason
+# for a trailing, already-intact-verb range) and was closed by an explicit
+# exclusion in guard-outward-cli.sh -- this assertion is the regression pin
+# for that exclusion, not just for the verdict.
+assert_deny "brace range AFTER an intact verb still denies via the pre-existing boundary check, with ITS reason (control, unaffected by this change)" \
+  "$(json 'gh pr merge{1..3} 42')" "without a REAL --auto flag"
+assert_deny "a brace range after an intact gh api still denies via the pre-existing method check, with ITS reason" \
+  "$(json 'gh api{1..3} repos/o/r -X POST')" "mutating HTTP method"
+
+# ---- DECOY regression (CRITICAL, found by code-reviewer construct-and-run
+# during this todo's own review round, fixed same round via
+# `_OUT_BR_RANGE_ALREADY_HANDLED`'s command-position anchor) ----
+# The exclusion above (pinning that `gh pr merge{1..3}` keeps denying via the
+# PRE-EXISTING check) was first shipped as a bare substring search over the
+# WHOLE command. That let a decoy occurrence of `merge{1..3}` ANYWHERE in the
+# command -- even inside an unrelated argument, nowhere near command position
+# -- cancel the entire brace-range narrow-deny block for the WHOLE command,
+# silently ALLOWing a genuine glued construction elsewhere in the same line.
+# Every assertion below is a NAMED, mutation-sensitive regression pin for
+# that specific defect (not the "controls" above, which pin adjacent,
+# already-correct behavior and stay green with or without this fix) --
+# reverting `_OUT_BR_RANGE_ALREADY_HANDLED` to its bare, unanchored form must
+# flip every one of these from deny to allow.
+assert_deny "a decoy merge{1..3} AFTER a genuine glued construction does not suppress its deny" \
+  "$(json 'eas up{d..d}ate --branch preview && echo merge{1..3}')" "glued to a brace RANGE"
+assert_deny "a decoy merge{1..3} BEFORE a genuine glued construction does not suppress its deny (order-independence)" \
+  "$(json 'echo merge{1..3} && eas up{d..d}ate --branch preview')" "glued to a brace RANGE"
+assert_deny "a decoy create{1..3} does not suppress an unrelated genuine gh pr merge glued construction" \
+  "$(json 'gh pr me{r..r}ge 42 && echo create{1..3}')" "glued to a brace RANGE"
+assert_deny "a decoy api{1..3} does not suppress an unrelated genuine railway glued construction" \
+  "$(json 'railway u{p..p} && echo api{1..3}')" "glued to a brace RANGE"
+
+# ---- GENUINE co-occurrence regression (CRITICAL, found by code-reviewer
+# round-2 construct-and-run, per the dispatch's own instruction to try "a
+# decoy that's ALSO a genuine command-position gh construction elsewhere in
+# a multi-clause command"; fixed same round by making the exclusion
+# per-OCCURRENCE instead of per-command) ----
+# The round-2 anchoring fix closed the INERT-PROSE decoy above but not a
+# GENUINE one: `_OUT_BR_RANGE_ALREADY_HANDLED` was still a whole-command
+# existence check independent of which occurrence tripped which arm, so a
+# real, independently-ALLOWED gh construction sharing the excluded shape
+# (bare `gh api{1..3}` with no mutating flag; bare `gh pr create{1..3}`/
+# `gh pr comment{1..3}` with no `--repo`) ANYWHERE in the command silenced an
+# UNRELATED, dangerous glued construction elsewhere in the same command --
+# not decoy prose, a genuinely benign co-occurring command. Confirmed live
+# before the fix: `eas up{d..d}ate --branch preview && gh api{1..3}` fully
+# ALLOWED (real argv: an OTA publish). Every assertion below is a NAMED,
+# mutation-sensitive regression pin for that specific defect -- reverting
+# the per-occurrence extraction (back to the single whole-command `grep -Eq`
+# form) must flip every one of these from deny to allow.
+assert_deny "a genuine, independently-allowed gh api{X..Y} elsewhere does not suppress an unrelated genuine eas glued construction" \
+  "$(json 'eas up{d..d}ate --branch preview && gh api{1..3}')" "glued to a brace RANGE"
+assert_deny "same, reversed order (order-independence)" \
+  "$(json 'gh api{1..3} && eas up{d..d}ate --branch preview')" "glued to a brace RANGE"
+assert_deny "a genuine, independently-allowed gh pr create{X..Y} (no --repo) elsewhere does not suppress an unrelated genuine eas glued construction" \
+  "$(json 'eas up{d..d}ate --branch preview && gh pr create{1..3}')" "glued to a brace RANGE"
+assert_deny "a genuine, independently-allowed gh pr comment{X..Y} elsewhere does not suppress an unrelated genuine railway glued construction" \
+  "$(json 'railway u{p..p} && gh pr comment{1..3}')" "glued to a brace RANGE"
+assert_deny "a genuine, independently-allowed gh api{X..Y} elsewhere does not suppress an unrelated genuine npm glued construction" \
+  "$(json 'npm pub{l..l}ish && gh api{1..3}')" "glued to a brace RANGE"
+# Sanity control: the co-occurring gh construction really is independently
+# benign on its own (not itself a hidden deny riding along) -- if this ever
+# starts denying, the assertions above stop proving what they claim to.
+assert_allow "sanity: bare gh api{X..Y} with no mutating flag stays allowed on its own" \
+  "$(json 'gh api{1..3}')"
+
+# ---- bounds: ordinary brace use must NOT start denying ----
+assert_allow "a bare numeric brace range in argument position stays allowed" \
+  "$(json 'echo {1..3}')"
+assert_allow "a comma-form brace (not a range) stays allowed" \
+  "$(json 'mkdir -p /tmp/x/{a,b}')"
+assert_allow "a bare brace placeholder (find -exec, no range) stays allowed" \
+  "$(jsonc "find . -name '*.ts' -exec grep -l x {} +")"
+assert_allow "a brace range in a NON-command, non-glued argument position stays allowed" \
+  "$(json 'gh pr view {1..3}')"
+assert_allow "a brace range glued to an ARGUMENT, not the verb, stays allowed" \
+  "$(json 'gh pr view 42{1..3}')"
+
+# ---- TOOL-position: DOCUMENTED, DELIBERATE residual (not closed by this fix) ----
+assert_allow "TOOL-position brace-range split of a binary NAME stays allowed — documented residual, see guard-outward-cli.sh DOCUMENTED RESIDUALS" \
+  "$(json '{e..e}as update --branch preview')"
+assert_allow "TOOL-position brace-range split of gh stays allowed — documented residual" \
+  "$(json '{g..g}h api repos/o/r -X POST')"
+
 # ---------- 2026-09-05: gh_pr_clause_has_repo's vanished fallback -----------
 # The SAME detector/consumer pair defect already fixed at GH_API_CLAUSE, left
 # half-done here. Once the occurrence counters read a per-rendering maximum, a
@@ -2822,6 +2944,12 @@ check "no-jq: line-continuation gh pr merge closed" deny "$(nojq_hook "$LC_GH")"
 # is non-quote-aware by design, but a surviving `$` broke the letter-adjacency every
 # regex here requires (e$'a's has no literal "eas" substring).
 check "no-jq: \$-sigil-split eas update fails closed" deny "$(nojq_hook "$(jsonc "e\$'a's update --branch preview --platform all")")"
+# BRACE-RANGE bypass, degraded mirror (2026-09-14,
+# todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md):
+# crude_smells_outward's trailing-sigil class ([$`]) grew a brace-range
+# alternative alongside it -- a split VERB (binary name intact) is now caught
+# here too, not just on the precise path.
+check "no-jq: brace-range-split eas update fails closed" deny "$(nojq_hook "$(json 'eas up{d..d}ate --branch preview')")"
 
 # ---------- lib-unsourceable fallback (jq IS present, lib/cmd-detect.sh is NOT) ----------
 # A prior version of this hook silently ALLOWED every command here on the
@@ -2842,6 +2970,7 @@ check "no-lib: line-continuation npm publish closed" deny "$(nolib_hook "$LC_NPM
 check "no-lib: line-continuation railway up closed"  deny "$(nolib_hook "$LC_RAILWAY")"
 check "no-lib: line-continuation gh pr merge closed" deny "$(nolib_hook "$LC_GH")"
 check "no-lib: \$-sigil-split eas update fails closed" deny "$(nolib_hook "$(jsonc "e\$'a's update --branch preview --platform all")")"
+check "no-lib: brace-range-split eas update fails closed" deny "$(nolib_hook "$(json 'eas up{d..d}ate --branch preview')")"
 
 # ---------- ROUND-3 C4: awk missing → cmd_bare returns NOTHING ----------
 # jq/grep/sed present, awk absent: the lib sources fine and `declare -F
@@ -2857,6 +2986,7 @@ check "no-awk: benign command stays allowed"  allow "$(noawk_hook "$(json 'ls -l
 check "no-awk: inline bypass prefix allows"   allow "$(noawk_hook "$(json 'ALLOW_OUTWARD_CLI=1 eas update')")"
 check "no-awk: line-continuation eas update closed" deny "$(noawk_hook "$LC_EAS")"
 check "no-awk: \$-sigil-split eas update fails closed" deny "$(noawk_hook "$(jsonc "e\$'a's update --branch preview --platform all")")"
+check "no-awk: brace-range-split eas update fails closed" deny "$(noawk_hook "$(json 'eas up{d..d}ate --branch preview')")"
 
 # ---------- 2026-09-05: degraded path must not fail open on an expansion -----
 # The narrow-deny ruling is explicit that a precise-path-only fix "leaves the
@@ -3673,7 +3803,34 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=690
+#
+# 690 -> 709 (2026-09-14, todos/P2-2026-09-06-outward-cli-guard-brace-range-
+# splits-token-with-no-sigil.md): +19 for the brace-range narrow deny --
+# 6 positives (one per gated family: gh pr merge, eas update, gh pr comment,
+# npm publish, railway up, gh api) + 1 multi-value-range positive + 2
+# already-documented-boundary controls (pinning that a range AFTER an intact
+# verb keeps denying via the PRE-EXISTING check's own reason, not this new
+# one -- see guard-outward-cli.sh's `_OUT_BR_RANGE_ALREADY_HANDLED`
+# exclusion) + 5 assert_allow false-positive bounds + 2 assert_allow
+# TOOL-position documented-residual pins + 3 degraded-mirror (no-jq/no-lib/
+# no-awk) positives for the one VERB-position construction that mirror
+# closes. 6+1+2+5+2+3 = 19.
+#
+# 709 -> 713 (SAME DAY, code-reviewer CRITICAL finding on this todo's own
+# review round): +4 named, mutation-sensitive regression pins for the decoy
+# bypass the reviewer found by construct-and-run (a decoy occurrence of
+# merge{1..3}/create{1..3}/comment{1..3}/api{1..3} ANYWHERE in the command
+# silently disabled the whole brace-range block via the unanchored exclusion)
+# and its fix (`_OUT_BR_RANGE_ALREADY_HANDLED` anchored to command position).
+#
+# 713 -> 719 (SAME DAY, code-reviewer round-2 CRITICAL finding): +6 named,
+# mutation-sensitive regression pins for the deeper bypass the reviewer found
+# (a genuine, independently-ALLOWED gh construction sharing the excluded
+# shape elsewhere in the command silenced an unrelated dangerous one -- the
+# round-2 anchoring fix closed the inert-prose decoy but not this) and its
+# fix (the exclusion made per-OCCURRENCE via `grep -oE` extraction instead
+# of a second whole-command existence check).
+EXPECTED_TOTAL=719
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
