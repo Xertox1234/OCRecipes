@@ -24,6 +24,20 @@ previous tests" — docs.maestro.dev/maestro-flows/workspace-management/sequenti
 nothing here overrides that default — order is not alphabetical by directory,
 not alphabetical by filename, and not stable across CI runs.
 
+Two competing explanations — a per-directory walk, or the workflow's own
+invocation — are ruled out by that invocation, not by the config alone.
+`.github/workflows/e2e-regression.yml` runs `scripts/ci/e2e-with-flow-retry.sh`,
+whose attempt 1 (line 53) is a single flat `npm run e2e:regression`, i.e.
+`maestro test --include-tags regression … e2e/` over the whole tree — one
+command, no per-directory or per-job partition. Its SECOND pass re-runs only
+the flows that failed, one file at a time, so any whole-suite ordering
+observation is necessarily attempt 1's. That leaves `e2e/config.yaml` as the
+only lever on order.
+
+Read the wrapper, not the step comment, if you need to re-derive this: the
+comment above the workflow step describes the flat command, while the step
+itself runs the retry wrapper.
+
 If a flow's correctness genuinely depends on running before or after
 another, that dependency must be declared explicitly via `executionOrder`/
 `flowsOrder` in `e2e/config.yaml` — never assumed from directory layout,
@@ -38,8 +52,11 @@ re-appeared as "leaks into every later flow in path order (plan/, scan/)" in
 `e2e/flows/onboarding/complete-onboarding.yaml` — three separate false or
 under-cited claims from one misconception. A single measured CI run
 (`33826146222`) falsifies both concrete claims at once: `auth/login` ran 4th
-of 9 (not 1st), and `onboarding` ran 9th — LAST — after both `plan/` and
-`scan/` had already run (the opposite of "into every later flow").
+of the 9 `regression`-tagged flows that job selects (not 1st), and
+`onboarding` ran 9th — LAST — after both `plan/` and `scan/` had already run
+(the opposite of "into every later flow"). Nine is that tagged subset, not the
+15-flow `e2e/flows/**` tree: 6 flows carry no `regression` tag, so
+`--include-tags regression` never had them in scope for that run.
 
 Any code (or comment) that assumes a specific successor/predecessor is
 inherently flaky under Maestro's model, even when it happens to pass on a
