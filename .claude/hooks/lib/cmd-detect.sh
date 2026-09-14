@@ -167,15 +167,32 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
 #
 # Grammar mirrors _CMD_GIT_GLOBALS deliberately, arm for arm, INCLUDING its residual: the
-# arg-taking flags named explicitly (`-R`/`--repo`, the only two `gh` root flags that take a
-# separate argument), then a generic single-token `-…` catch-all that covers the glued and
+# arg-taking flags named explicitly (`-R`/`--repo`), then a generic single-token `-…` catch-all that covers the glued and
 # no-arg forms (`--repo=v`, `-Rv`, `--no-color`), then the redirect alternative at
 # `[[:space:]]*`. Do NOT "tighten" the generic arm to exclude `;&|`: that is the PERMISSIVE
 # direction — `gh -R=a;b pr merge 42` would stop matching and go back to a silent allow.
 #
-# INHERITED RESIDUAL, same as the git side: an unmodeled SEPARATE-arg root global would have
-# its argument mis-read as the namespace, losing the match — a false NEGATIVE, never a false
-# positive. Naming `-R`/`--repo` explicitly is what keeps the retarget flags out of it —
+# OPEN RESIDUAL — A BYPASS, NOT A SAFE DIRECTION. An unmodeled SEPARATE-arg root flag has its
+# VALUE mis-read as the namespace, so the needle never reaches `pr` and the match is lost. An
+# earlier version of this block called that "a false NEGATIVE, never a false positive" and
+# called `-R`/`--repo` "the only two gh root flags that take a separate argument". Both were
+# wrong, and the first is the more dangerous error: on a DENY gate a false negative IS the
+# bypass.
+#
+# cobra accepts any flag valid for the TARGET subcommand in root position, so the set is not
+# two flags — it is every separate-arg flag of whichever verb follows. `gh help pr merge` lists
+# five besides `-R`: `-A/--author-email`, `-b/--body`, `-F/--body-file`, `--match-head-commit`,
+# `-t/--subject`. Measured 2026-09-13 on BOTH layers, with `gh pr merge 42` and
+# `gh -R other/org pr merge 42` denying as controls: `gh -b x pr merge 42` and
+# `gh -t x pr merge 42 -R other/org` are ALLOWED by both. The second is the P0's own headline
+# shape in a different spelling. PRE-EXISTING — main allows them too — so widening this
+# grammar did not open it, and the P0 stays OPEN for it. Whoever closes it: generate the
+# corpus from `gh help pr <verb>` rather than from spellings you thought of, which is exactly
+# how the four closed spellings came to look complete; and note that widening this constant
+# also widens what reaches the GRANT-shaped clause cut in guard-outward-cli.sh, where two live
+# false grants were found in review.
+#
+# Naming `-R`/`--repo` explicitly is what keeps THOSE TWO retarget flags out of the residual —
 # BUT ONLY IN THE UNQUOTED RENDERING, and the scope of that sentence is load-bearing.
 # `cmd_bare` BLANKS a quoted span, so a QUOTED flag carrying a SEPARATE unquoted value
 # loses the flag and leaves the value sitting where the namespace belongs:

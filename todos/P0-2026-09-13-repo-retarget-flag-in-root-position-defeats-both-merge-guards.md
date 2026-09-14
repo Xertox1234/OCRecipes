@@ -167,11 +167,31 @@ todo is worth re-reading — a `gh api` merge is also "the binary, then somethin
   review. Raised from "disclosed in a PR body" to P0 because the outward-CLI guard and the
   merge review gate were confirmed to miss the _same_ string, against _this_ repository.
 
-### 2026-09-13 (later) — FIXED on `fix/gh-root-position-repo-flag`
+### 2026-09-13 (later) — PARTIALLY FIXED on `fix/gh-root-position-repo-flag`; STAYS OPEN
 
-Closed by `_CMD_GH_GLOBALS` (`lib/cmd-detect.sh`) and `_OUT_GH_GLOBALS`
-(`guard-outward-cli.sh`), each modelling the slot between the binary and its namespace.
-Both guards now DENY all four spellings; read-only root-position usage stays ALLOWED.
+`_CMD_GH_GLOBALS` (`lib/cmd-detect.sh`) and `_OUT_GH_GLOBALS` (`guard-outward-cli.sh`) now
+model the slot between the binary and its namespace. Both guards DENY all four enumerated
+`-R`/`--repo` spellings; read-only root-position usage stays ALLOWED.
+
+> **THIS TODO IS NOT CLOSED, AND THE HEADLINE SHAPE IS STILL LIVE.** Round-6 review measured
+> `gh -t x pr merge 42 -R other/org` as **ALLOW on both layers** — a root-position repo
+> retarget defeating both merge guards, which is this todo's title. Reproduced independently
+> before being accepted. It is PRE-EXISTING (main allows it too), so the branch is a net
+> improvement, but the closure must not be read as complete.
+>
+> **Why the four spellings looked like the whole problem.** `-R`/`--repo` were treated as the
+> only root flags taking a separate argument. cobra accepts any flag valid for the TARGET
+> subcommand in root position, and `gh help pr merge` lists five more: `-A/--author-email`,
+> `-b/--body`, `-F/--body-file`, `--match-head-commit`, `-t/--subject`. An unnamed one leaves
+> its VALUE as a non-dash token, the globals run stops there, and the needle never reaches the
+> namespace. The four-spelling corpus was a product of dimensions that were thought of, not
+> enumerated from the tool — the exact failure this repo records as "a harvest bounds FALSE
+> POSITIVES only; CONSTRUCT the adversarial shape".
+>
+> **To finish it:** generate the corpus from `gh help pr <verb>`, and note that widening
+> `_CMD_GH_GLOBALS` also widens what reaches the GRANT-shaped clause cut in
+> `guard-outward-cli.sh` — the surface where two live false grants were found in review, so
+> that widening needs its own adversarial round rather than riding along.
 
 **Four corrections to this todo, established by reading the files:**
 
@@ -193,7 +213,7 @@ Both guards now DENY all four spellings; read-only root-position usage stays ALL
    Satisfied on intent — no longer a silent allow — and a redirect row with a resolvable
    number was added to demonstrate the stage-3 path as well.
 
-**Three things closed that this todo did not record:**
+**What IS closed, all measured against the merge-base guard:**
 
 - `cmd_is_gh_pr_create` feeds `pr-preflight-guard.sh`, so the same spelling skipped the
   **PR-preflight stamp gate** outright.
