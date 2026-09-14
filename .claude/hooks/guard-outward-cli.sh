@@ -1832,8 +1832,13 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # branch, where the `;` spelling counts two. PRE-EXISTING and identical to main, so this
 # change neither opened nor closed it, and no live ALLOW was found: five variants, including
 # a real `--auto` on the outer merge with a decoy glued to the hidden inner one, all still
-# DENY — but they deny because the clause cut happens not to find a real `--auto` inside the
-# miscounted clause, which is accidental safety, not structural. Pinned as tripwire rows in
+# DENY — and the deny is STRUCTURAL for this family, not accidental. An earlier draft here
+# said the clause cut "happens not to find a real `--auto`". Measured: the clause IS
+# `[gh -a -c <(gh pr merge 7 --auto) pr merge 42 --auto --squash]` and it DOES contain a real
+# `--auto`. What refuses is the clause SIGIL MASK further down, and it refuses BY
+# CONSTRUCTION: the collapse IS the span absorbing ` <(gh`, so the `(` is necessarily inside
+# the clause. Removing only `(` from that mask flips exactly this row to ALLOW and leaves the
+# others untouched. The exposure here is the MISCOUNT, not an imminent grant. Tripwire rows in
 # test-guard-outward-cli.sh so a flip to ALLOW cannot be silent, and tracked in
 # todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md.
 # Do not read "cannot collapse" as "is counted correctly". Measured on all four
@@ -2980,6 +2985,15 @@ GH_API_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX
 # The same needle under the separator-safe grammar, for the occurrence COUNT only. Every other
 # consumer (the clause cut, the method check) keeps reading GH_API_RE.
 GH_API_RE_SEPSAFE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS_SEPSAFE}${_OUT_SEP_SEPSAFE}api${_OUT_POS_SUFFIX}"
+# BOTH CONSTANTS, not one. The fix needs a separator-safe GLOBALS run AND a separator-safe
+# SEP — the crossing that defeated the first attempt happened in the SEP, not the globals —
+# so asserting only the globals leaves half the repair revertible. Measured in round-4 review:
+# putting `${_OUT_SEP}` back in this needle and changing nothing else flips the four
+# process-substitution rows from DENY to ALLOW while this `case` stays quiet and no operand
+# above fires. The suite does go red on it, so it was silent-but-RED rather than
+# silent-and-green — but this file's stated bar is that a degradation must not be silent
+# HERE, and the P2 filed by the previous commit names this exact criterion.
+#
 # ASSERT THE CONSUMER, NOT ONLY THE CONSTANT. The shape assertion far above checks
 # _OUT_GH_GLOBALS_SEPSAFE, but it runs before this line, so swapping THIS needle back to the
 # wide form — or reassigning the constant after the assertion — leaves every operand silent
@@ -2987,8 +3001,8 @@ GH_API_RE_SEPSAFE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS_SEPSAFE}${_OUT_SEP_SEPS
 # at the wide form, and it is asserted here rather than left to the test rows because a
 # silent-and-green degradation is this file's stated bar for adding an operand.
 case "$GH_API_RE_SEPSAFE" in
-  *"$_OUT_GH_GLOBALS_SEPSAFE"*) : ;;
-  *) deny "guard-outward-cli: GH_API_RE_SEPSAFE is no longer built from _OUT_GH_GLOBALS_SEPSAFE, so the gh api occurrence count has lost the separator-safe grammar that keeps a consumed value from swallowing a command boundary. Failing closed. Bypass: ALLOW_OUTWARD_CLI=1 (one command)." ;;
+  *"$_OUT_GH_GLOBALS_SEPSAFE"*"$_OUT_SEP_SEPSAFE"*) : ;;
+  *) deny "guard-outward-cli: GH_API_RE_SEPSAFE is no longer built from BOTH _OUT_GH_GLOBALS_SEPSAFE and _OUT_SEP_SEPSAFE, so the gh api occurrence count has lost part of the separator-safe grammar that keeps a consumed value from swallowing a command boundary. Failing closed. Bypass: ALLOW_OUTWARD_CLI=1 (one command)." ;;
 esac
 # Counted AND clause-scoped on $WORDS_DEEP (unlike the `gh pr merge` block
 # above, whose CLAUSE stays shallow — see that block's own comment for why).

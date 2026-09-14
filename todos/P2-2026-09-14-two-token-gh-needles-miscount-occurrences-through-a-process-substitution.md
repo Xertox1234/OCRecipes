@@ -38,9 +38,15 @@ opened nor closed this.
 **No live ALLOW was found.** Five variants — including a real `--auto` on the outer merge with
 a decoy `--auto` glued to the hidden inner one, and the reverse ordering — all still DENY. But
 they deny on the `without a REAL --auto flag` branch, **not** on the ambiguity branch: the
-second merge is invisible to the counter, and the deny happens because the clause cut does not
-happen to find a real `--auto` inside the miscounted clause. That is accidental safety,
-contingent on the clause cut's exact scope, not a structural guarantee.
+second merge is invisible to the **counter**.
+
+The deny itself is **structural**, not accidental — an earlier version of this paragraph said
+otherwise and was measured wrong. The clause does contain a real `--auto`; what refuses is the
+clause **sigil mask**, and it refuses by construction, because the collapse _is_ the span
+absorbing ` <(gh`, so the `(` is necessarily inside the clause. Removing only `(` from that
+mask flips exactly this row to ALLOW. So the exposure is the MISCOUNT, not an imminent grant:
+fixing the count is still right, but do not implement it in a panic about an allow that the
+sigil mask is structurally preventing.
 
 ## Mechanism
 
@@ -59,8 +65,8 @@ narrowed the count-only grammar to `_OUT_POS_PREFIX`'s full anchor set (`[;&|(` 
       the ambiguity reason, on every two-token family (`pr merge`, `pr create|comment`,
       `release`, `repo`).
 - [ ] The three tripwire rows in `test-guard-outward-cli.sh` (search `TRIPWIRE: a hidden
-    second pr merge`) are **converted**, not deleted — they currently pin the miscount's
-      accidental DENY and its reason.
+  second pr merge`) are **converted**, not deleted — they currently pin the miscount's
+      current DENY and its reason.
 - [ ] Two-sided in the same run: the sanctioned automerge
       (`gh pr merge <n> --auto --squash --delete-branch`) still ALLOWS, and the `;` spelling
       still denies on the ambiguity reason.

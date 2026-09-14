@@ -2453,6 +2453,16 @@ rm -f "$_MUT_HOOK"
 # own location, so a copy elsewhere fails closed for the unrelated "lib unsourceable" reason
 # and the row would pass for the wrong one.
 _mut_goc_says_deny() {  # $1 = sed program that breaks one constant
+  _mut_goc_denies_with "$1" 'root-position flag grammar lost its shape'
+}
+# The reason string is a PARAMETER, because there is now more than one fail-closed deny in the
+# guard and the original helper hard-coded the shape assertion's wording. A row pointed at the
+# GH_API_RE_SEPSAFE integrity check could not have passed through the old helper no matter
+# what it mutated — which is how that check came to be exempted from the corpus's deny-site
+# axis on the claim that "its mutation coverage lives in test-guard-outward-cli.sh" while no
+# such row existed. A justification naming coverage that does not exist is worse than no
+# coverage, because it stops the next reader looking.
+_mut_goc_denies_with() {  # $1 = sed program  $2 = expected deny-reason substring
   local f out
   f="$(dirname "$HOOK")/.mut-out-gh-globals-$$.sh"
   sed "$1" "$HOOK" > "$f"
@@ -2460,8 +2470,25 @@ _mut_goc_says_deny() {  # $1 = sed program that breaks one constant
         | env -u ALLOW_OUTWARD_CLI bash "$f" 2>/dev/null)
   rm -f "$f"
   printf '%s' "$out" | grep -q '"permissionDecision": "deny"' \
-    && printf '%s' "$out" | grep -qF -- 'root-position flag grammar lost its shape'
+    && printf '%s' "$out" | grep -qF -- "$2"
 }
+# THE GH_API_RE_SEPSAFE INTEGRITY CHECK, one row per constant it guards. Both are expressed as
+# a whole-line replacement of the needle definition, which is why the sed LHS is anchored and
+# bracket-free.
+if _mut_goc_denies_with 's#^GH_API_RE_SEPSAFE=.*#GH_API_RE_SEPSAFE="$GH_API_RE"#' \
+     'GH_API_RE_SEPSAFE is no longer built from BOTH'; then
+  echo "PASS: swapping the count-only needle to the wide one fails closed"; PASS=$((PASS+1))
+else
+  echo "FAIL: GH_API_RE_SEPSAFE could be swapped to the wide needle without the integrity check firing — the gh api occurrence count would silently lose its separator-safe grammar"
+  FAIL=$((FAIL+1))
+fi
+if _mut_goc_denies_with 's#^GH_API_RE_SEPSAFE=.*#GH_API_RE_SEPSAFE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS_SEPSAFE}${_OUT_SEP}api${_OUT_POS_SUFFIX}"#' \
+     'GH_API_RE_SEPSAFE is no longer built from BOTH'; then
+  echo "PASS: reverting only the SEPARATOR half of the count-only needle fails closed"; PASS=$((PASS+1))
+else
+  echo "FAIL: the separator half of GH_API_RE_SEPSAFE could be reverted without the integrity check firing — the four process-substitution rows would go back to ALLOW"
+  FAIL=$((FAIL+1))
+fi
 # Operand 5, BOTH directions. The WIDE form must span a separate-arg flag it does not name;
 # the GRANT form must not.
 #
@@ -3692,7 +3719,9 @@ assert_deny "...opening at !" \
 # substitution is absorbed and `gh -a -c <(gh pr merge 7) pr merge 42` counts ONE occurrence
 # where the `;` spelling counts two. Identical on main, so this is PRE-EXISTING; and it still
 # DENIES, but on the "without a REAL --auto" branch rather than the ambiguity branch — i.e.
-# the second, really-executing merge is invisible to the counter and the deny is accidental.
+# the second, really-executing merge is invisible to the COUNTER. The deny itself is structural,
+# not accidental: the clause contains a real `--auto`, and the clause sigil mask refuses it
+# necessarily, because the collapse is the span absorbing ` <(gh` and so puts `(` in the clause.
 # These rows pin the CURRENT verdict AND its REASON so a flip to ALLOW cannot be silent, and
 # so the eventual fix must come here and convert them. See
 # todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md.
@@ -3906,7 +3935,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=731
+EXPECTED_TOTAL=733
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

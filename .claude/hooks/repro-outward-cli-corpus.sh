@@ -2657,15 +2657,23 @@ the hook envelope's .tool_input.command could not be read (malformed JSO
 the hook envelope's .tool_name could not be read (malformed JSON or a ch
 the quote-aware rendering came back empty for a non-empty command - eith
 the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is mis
-GH_API_RE_SEPSAFE is no longer built from _OUT_GH_GLOBALS_SEPSAFE, so th
+GH_API_RE_SEPSAFE is no longer built from BOTH _OUT_GH_GLOBALS_SEPSAFE a
 PIN_EXEMPT_EOF
 }
 # 27 as of 2026-09-14: the GH_API_RE_SEPSAFE integrity check above. Like the shape assertion
 # beside it, NO COMMAND TEXT CAN REACH IT -- it fires only on a definition that has been
 # edited so the count-only needle stops reading the separator-safe grammar. It is therefore
-# exempt from _pin_sites rather than given a row, and its mutation coverage lives in
-# test-guard-outward-cli.sh. Exempting is not the same as skipping: the reason is written
-# down here so the next reader can disagree with it.
+# exempt from _pin_sites rather than given a row. Its coverage is two mutation rows in
+# test-guard-outward-cli.sh -- search `GH_API_RE_SEPSAFE is no longer built from BOTH` -- one
+# per constant the check guards.
+#
+# THAT SENTENCE WAS FALSE WHEN FIRST WRITTEN, which is the reason it now names the rows. It
+# claimed the coverage existed; it did not, and it could not have: the mutation helper at the
+# time hard-coded the SHAPE assertion's reason string, so no row pointed at this check could
+# have passed. Exempting a site from the axis that exists to prove every deny is reachable,
+# on a claim of coverage elsewhere, leaves the site covered NOWHERE -- and a justification
+# naming coverage that does not exist is worse than none, because it stops the next reader
+# looking. Verify the rows exist before trusting this paragraph.
 EXPECTED_EMIT_SITES=27
 
 PIN_FAIL=0
