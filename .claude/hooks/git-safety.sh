@@ -679,12 +679,23 @@ if [ "$KIND" = "delete" ] && { [ -n "$REF" ] || [ -n "$SKIP_REASON" ]; }; then
     # any user permission decision and independent of guard-outward-cli.sh
     # (which screens the agent's own tool-call target, not a subprocess this
     # hook spawns internally). Numbers and branch names are untouched: git
-    # ref names cannot contain a colon (git-check-ref-format), so only a
-    # URL-shaped REF can match the disqualifying arm below.
+    # ref names cannot contain a colon OR two consecutive slashes anywhere
+    # (git-check-ref-format; verified: `git check-ref-format --branch
+    # '//foo'` and `git check-ref-format 'refs/heads/a//b'` both reject),
+    # so only a URL-SHAPED or PROTOCOL-RELATIVE (`//host/path`, no scheme,
+    # no colon at all — still a real host reference to `gh`'s own URL
+    # handling) REF can match the disqualifying arm below. The `//*` arm was
+    # added after review (security-auditor, round 2, CRITICAL): the
+    # colon-based check alone let a scheme-less `//host/path` fall through
+    # BOTH arms unrestricted — reproduced by construction, no `gh` invoked:
+    # `cmd_gh_pr_ref` on a `gh pr close //exfil.example.test/...` mention
+    # resolves that exact string with rc=0, and it matched neither the
+    # allowed-host prefix nor the original `*://*|*:*` pattern (no colon
+    # present at all).
     GH_ALLOWED_HOST="${GH_HOST:-github.com}"
     case "$REF" in
       "https://$GH_ALLOWED_HOST/"*) ;;
-      *://*|*:*) SKIP_REASON="extracted ref '${REF}' is a URL outside the configured GitHub host — refusing to look it up (this hook never contacts a host other than https://${GH_ALLOWED_HOST}/) — confirm this PR's state manually before closing." ;;
+      //*|*://*|*:*) SKIP_REASON="extracted ref '${REF}' is a URL outside the configured GitHub host — refusing to look it up (this hook never contacts a host other than https://${GH_ALLOWED_HOST}/) — confirm this PR's state manually before closing." ;;
     esac
   fi
   if [ -n "$SKIP_REASON" ]; then

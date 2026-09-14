@@ -712,27 +712,50 @@ assert_allow "advisor: quote-splicing the verb (gh pr clo\"\"se) is a known, pre
 assert_allow "advisor: gh pr create co-occurring with gh pr close is a known, accepted missed-warning (create-vs-rest guard)" \
   "$(json no-registry-session "$MAIN" 'gh pr create -t x && gh pr close 42')"
 
-# Gate strictly on "close" (git-safety.sh's own comment above the elif): these
-# three assert_allow rows are the load-bearing proof that a widened
-# `[ -n "$(cmd_gh_pr_write_subcommand ...)" ]` gate (which would ALSO match
-# create|merge|edit) is not what is wired in — without them, a future
-# accidental widening to that shape passes every other assertion in this file
-# unnoticed, since KIND="delete" is shared with the branch -D / push --delete
-# paths this advisor must not widen onto (see the code's own comment).
-assert_allow "advisor: gh pr merge alone is not matched (must stay 'close'-only)" \
+# Gate strictly on "close" (git-safety.sh's own comment above the elif).
+# Baseline coverage first (these three alone are NOT discriminating — none
+# contains a literal "close" substring, so they never clear the file's own
+# `*gh*`+`*close*` pre-source guard and never even reach the comparison this
+# block exists to pin; caught by review, code-reviewer round 2, proven by
+# mutation below).
+assert_allow "advisor: gh pr merge alone is not matched (baseline; not discriminating — see the echo-close row below)" \
   "$(json no-registry-session "$MAIN" 'gh pr merge 42')"
-assert_allow "advisor: gh pr edit alone is not matched (must stay 'close'-only)" \
+assert_allow "advisor: gh pr edit alone is not matched (baseline; not discriminating — see the echo-close row below)" \
   "$(json no-registry-session "$MAIN" 'gh pr edit 42')"
-assert_allow "advisor: gh pr create alone is not matched (must stay 'close'-only)" \
+assert_allow "advisor: gh pr create alone is not matched (baseline; not discriminating — see the echo-close row below)" \
   "$(json no-registry-session "$MAIN" 'gh pr create -t x')"
+
+# THE load-bearing proof that a widened `[ -n "$(cmd_gh_pr_write_subcommand
+# ...)" ]` gate (which would ALSO match create|merge|edit) is not what is
+# wired in. Each input is constructed to clear the pre-source guard (contains
+# both "gh" and "close" as literal substrings, via the "echo close" prefix)
+# while resolving via cmd_gh_pr_write_subcommand to a DIFFERENT verb than
+# "close" for the real `gh pr <verb>` clause — so these rows fail if the
+# comparison is ever widened, where the three baseline rows above would not.
+# Verified by mutation: widening `= "close"` to `-n "$(...)"` in a scratch
+# copy leaves the three baseline rows above unaffected (still silent — they
+# never reach the comparison at all) but makes these three rows emit a real
+# "PR #42 ... MERGED" / etc. warning about an unrelated gh pr merge/edit/
+# create clause — exactly the "must not widen to those" regression the
+# code's own comment warns against, and KIND="delete" is shared with the
+# branch -D / push --delete paths this advisor must not widen onto either.
+FAKE_GH_STATE=MERGED assert_allow "advisor: gh pr merge co-occurring with a bare 'close' mention is not matched (discriminating — proves close-only gating)" \
+  "$(json no-registry-session "$MAIN" 'echo close; gh pr merge 42')"
+FAKE_GH_STATE=MERGED assert_allow "advisor: gh pr edit co-occurring with a bare 'close' mention is not matched (discriminating — proves close-only gating)" \
+  "$(json no-registry-session "$MAIN" 'echo close; gh pr edit 42')"
+FAKE_GH_STATE=MERGED assert_allow "advisor: gh pr create co-occurring with a bare 'close' mention is not matched (discriminating — proves close-only gating)" \
+  "$(json no-registry-session "$MAIN" 'echo close; gh pr create -t x')"
 
 # AC's exact two-sided negative-control pairing: a read-only gh -R <repo> pr view
 # must not trigger the advisory even WITH the root-position retarget flag present
 # (view isn't in cmd_gh_pr_write_subcommand's create|merge|close|edit alternation,
 # so the globals slot never matters for it — but the todo names this exact input,
-# not just the no-flag form already covered below).
-assert_allow "advisor: gh -R owner/repo pr view 42 (read-only, with retarget) is not matched" \
-  "$(json no-registry-session "$MAIN" 'gh -R owner/repo pr view 42')"
+# not just the no-flag form already covered below). Lower-risk than the three
+# above (view's exclusion is a finite, separately-tested regex alternation in
+# lib/cmd-detect.sh, not a runtime comparison in this file a one-line edit could
+# silently widen), but made discriminating the same way for consistency.
+FAKE_GH_STATE=MERGED assert_allow "advisor: gh -R owner/repo pr view 42 (read-only, with retarget) is not matched (discriminating)" \
+  "$(json no-registry-session "$MAIN" 'echo close; gh -R owner/repo pr view 42')"
 
 # CRITICAL FIX: cmd_gh_pr_ref can return a URL (not just a number or branch
 # name). Without a host restriction, `gh pr close <url>` — including one
@@ -745,6 +768,16 @@ assert_warn_contains "advisor: gh pr close with an attacker-controlled URL ref i
   "is a URL outside the configured GitHub host"
 assert_warn_contains "advisor: gh pr close with a URL ref hidden inside a live substitution is refused, not looked up" \
   "$(jsonc no-registry-session "$MAIN" 'echo "$(gh pr close https://exfil.example.test/o/r/pull/1)"')" \
+  "is a URL outside the configured GitHub host"
+# Protocol-relative bypass (found by review, security-auditor round 2,
+# CRITICAL): a scheme-less `//host/path` reference contains no colon at all,
+# so it matched NEITHER the allowed-host prefix NOR the original `*://*|*:*`
+# disqualify pattern — falling through unrestricted. git ref names can never
+# contain two consecutive slashes anywhere (git-check-ref-format), so this
+# case can only arise from a URL-shaped ref, never collide with a legitimate
+# branch name from the other four KIND=delete branches.
+assert_warn_contains "advisor: gh pr close with a protocol-relative (//host) ref is refused, not looked up" \
+  "$(jsonc no-registry-session "$MAIN" 'gh pr close //exfil.example.test/o/r/pull/1')" \
   "is a URL outside the configured GitHub host"
 # Control: a URL ref that IS on the allowed host resolves normally — the
 # restriction targets the HOST, not "any URL shape", matching pr-verify.sh's
@@ -775,7 +808,7 @@ fi
 # Without it a row that is silently skipped (a helper that dies mid-pipeline,
 # incrementing neither PASS nor FAIL) makes N/0 look identical to (N+1)/0. Update
 # the number DELIBERATELY when adding assertions.
-EXPECTED_TOTAL=147
+EXPECTED_TOTAL=151
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
