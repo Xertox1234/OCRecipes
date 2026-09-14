@@ -321,7 +321,17 @@ git_c_target() {
       if (!tnt && (index(w, "<") || index(w, ">"))) {
         rpre = w; sub(/[<>].*$/, "", rpre)
         if (rpre == "" || rpre ~ /^[0-9]+$/ || rpre ~ /^[{][A-Za-z_][A-Za-z0-9_]*[}]$/) {
-          if (w ~ /[<>&|!]$/) predir = 1                 #   operator with no target: next word is it
+          #   Does this word END AT the operator, so its TARGET is the next word? The test must
+          #   be "ends with a complete operator RUN", not "ends with a character from the
+          #   operator class". `[<>&|!]$` was the latter and matched `>out!` on the FILENAME:
+          #   predir then swallowed the following `-C <main>`, the path after it was read as
+          #   the verb, nothing was emitted, and the repo fell back to cwd — a DENY->ALLOW
+          #   bypass of the whole destructive family (`>out! -C <main> reset --hard`,
+          #   `clean -fdx`, `--work-tree=<main> reset --hard`), each with a one-character
+          #   control (`>out`) that still denied. Do NOT narrow by dropping `!`/`|`: they model
+          #   `>|` and the zsh `>!` form, and this predicate keeps both plus a trailing `>`
+          #   (`>a>`), which is a genuine target-less operator.
+          if (w ~ /[<>]+&?[|!]?$/) predir = 1            #   operator with no target: next word is it
           return                                          #   a real redirect: skip, keep scanning
         }
         emit_effective(); done = 1; return                #   a VERB glued to a redirect: stop here
@@ -357,18 +367,25 @@ git_c_target() {
         }
       }
       endword()
-      # Fail-safe, still UNREACHABLE — but NOT for the reason the original note gave, and the
-      # difference is worth recording because one revision of this file got it wrong in each
-      # direction. The original read "SEG_RE-matched segments always contain a verb, so the
-      # verb branch sets done=1 first". A first cut at the redirect-skip arm above skipped
-      # `commit>log` wholesale, which made no word reach the verb branch and made THIS line
-      # live. That was a defect, not a feature: it also ran the walker past the verb, so a
-      # post-verb `-C /tmp/x` overwrote a real `-C <main>`. The arm now decides on the PREFIX,
-      # so a verb glued to a redirect emits and stops like any other verb, and the invariant
-      # above ("collection STOPS at the verb") holds again.
-      # Kept as defense in depth: if a future SEG_RE relaxation ever admitted a verbless
-      # segment, this still emits its redirect target rather than silently falling back to cwd,
-      # which could launder a main mutation. Do not delete it as dead code.
+      # Fail-safe, and it IS REACHED TODAY — this note has now been wrong in three successive
+      # revisions, so the evidence is recorded rather than the conclusion alone.
+      #   rev 1: "UNREACHABLE: SEG_RE-matched segments always contain a verb, so the verb
+      #          branch sets done=1 first."
+      #   rev 2: "REACHABLE" — true at the time, but only because a first cut at the
+      #          redirect-skip arm skipped `commit>log` wholesale. That was a defect (it also
+      #          ran the walker past the verb, letting a post-verb `-C /tmp/x` overwrite a real
+      #          `-C <main>`), and fixing it took the reachability away again.
+      #   rev 3: "still UNREACHABLE" — wrong for a reason neither earlier revision considered.
+      # The real route has been open the whole time and has nothing to do with redirects: the
+      # generic no-arg global arm `-[^[:space:]]+` lets an ARG-TAKING flag swallow the verb
+      # token, so no word ever reaches the verb branch. `git -C <main> -c commit` is the
+      # witness — `-c` sets pend and eats `commit`. Proven by MUTATION with both-direction
+      # controls: with this line disabled, that command flips DENY->ALLOW from a worktree cwd
+      # and `git -C /tmp/x -c commit` flips ALLOW->DENY from a main cwd, while four
+      # neighbouring rows are unchanged.
+      # Firing is harmless in itself (real git rejects a bare `-c`, so this is over-denial),
+      # but the line is LOAD-BEARING, not dead — keep it, and do not let a future reading of
+      # "unreachable" justify deleting a guard that runs.
       if (!done) emit_effective()
     }
   '

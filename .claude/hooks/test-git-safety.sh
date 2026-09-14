@@ -532,6 +532,47 @@ assert_allow "walker: SPACED redirect before -C <worktree>, cwd=main — sanctio
 assert_deny "walker: SPACED bare > before -C <main>, cwd=worktree — target consumed, -C mined" \
   "$(json "$SESSION" "$WT_A" "git > /dev/null -C $MAIN commit -m x")"
 
+# THE TARGET-S LAST CHARACTER IS AN AXIS TOO, and holding it at `/dev/null` across the three
+# rows above hid a DENY->ALLOW bypass through a green suite. Deciding "this word ends AT the
+# operator" from the word-s last CHARACTER rather than from a complete operator RUN made a
+# filename ending in `!` look target-less, so predir swallowed the following `-C <main>` and
+# the repo fell back to cwd. Each row is paired with its one-character control so it cannot
+# pass for the wrong reason, and the destructive verbs are covered, not just `commit`.
+assert_deny "target-last-char: >out! must not swallow the following -C <main> (bypass)" \
+  "$(json "$SESSION" "$WT_A" "git >out! -C $MAIN commit -m x")"
+assert_deny "target-last-char: control — >out (one char shorter) always denied" \
+  "$(json "$SESSION" "$WT_A" "git >out -C $MAIN commit -m x")"
+assert_deny "target-last-char: >out! with reset --hard — the destructive family" \
+  "$(json "$SESSION" "$WT_A" "git >out! -C $MAIN reset --hard")"
+assert_deny "target-last-char: >out! with clean -fdx — the destructive family" \
+  "$(json "$SESSION" "$WT_A" "git >out! -C $MAIN clean -fdx")"
+assert_deny "target-last-char: 2>err! must not swallow --work-tree=<main>" \
+  "$(json "$SESSION" "$WT_A" "git 2>err! --work-tree=$MAIN reset --hard")"
+assert_deny "target-last-char: control — 2>err (one char shorter) always denied" \
+  "$(json "$SESSION" "$WT_A" "git 2>err --work-tree=$MAIN reset --hard")"
+assert_allow "target-last-char: the MIRROR — >out! before -C <worktree> must stay ALLOWED" \
+  "$(json "$SESSION" "$MAIN" "git >out! -C $WT_A commit -m x")"
+assert_allow "target-last-char: control — >out before -C <worktree> was always allowed" \
+  "$(json "$SESSION" "$MAIN" "git >out -C $WT_A commit -m x")"
+# A genuinely target-less TRAILING `>` must still take the next word — and here that makes
+# ALLOW the correct answer, which is the opposite of what it looks like. Asked of bash with an
+# argv shim rather than assumed: `git >a> -C /MAINX commit -m x` creates a file literally named
+# `-C` and invokes argv `[/MAINX] [commit] [-m] [x]`, so the `-C` is consumed as the second
+# redirect's target and the command never acts on main at all. The one-character control
+# separates them: `git >a -C …` keeps `-C` in argv (`[-C] [/MAINX] [commit] …`) and DENIES.
+# This row first shipped as an assert_deny because the expectation was written from the shape
+# of the string instead of from the lexer. Always ask whether the verdict is CORRECT, not
+# whether it matches the guess.
+assert_allow "target-last-char: trailing > consumes the -C as its target, so nothing acts on main" \
+  "$(json "$SESSION" "$WT_A" "git >a> -C $MAIN commit -m x")"
+assert_deny "target-last-char: control — a single >a leaves -C in argv and is a real main mutation" \
+  "$(json "$SESSION" "$WT_A" "git >a -C $MAIN commit -m x")"
+
+# The END fail-safe is REACHED today by a route that has nothing to do with redirects: an
+# arg-taking global swallows the verb token, so no word reaches the verb branch.
+assert_deny "fail-safe: an arg-taking global eating the verb still resolves -C <main>" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN -c commit")"
+
 # A verb GLUED to a redirect is still the verb, so collection must STOP there — the invariant
 # git_c_target's own header states. A blanket skip broke it: the walker ran on into post-verb
 # territory and a `-C` that git would parse as a SUBCOMMAND option overwrote the real repo
