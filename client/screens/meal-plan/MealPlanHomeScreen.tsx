@@ -1462,7 +1462,25 @@ export default function MealPlanHomeScreen() {
         onDismiss={handleAddItemMenuDismiss}
         onChange={onAddItemMenuSheetChange}
         onAnimate={onAddItemMenuSheetAnimate}
-        accessibilityViewIsModal
+        // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
+        // "Bottom Sheet" on the DraggableView that WRAPS these children. On
+        // new-arch Fabric that makes the wrapper an accessibility LEAF
+        // (isAccessibilityElement=YES), so VoiceOver — and Maestro's iOS driver —
+        // see one opaque "Bottom Sheet" element and this sheet's content
+        // (incl. testIDs) becomes unreachable. accessible={false} keeps the
+        // children individually exposed. MUST be `false`, not `null`: gorhom does
+        // `_providedAccessible ?? undefined`, so null re-defaults to true.
+        // See docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
+        // (Same fix applies to the 3 sibling sheets below.)
+        accessible={false}
+        // NOTE: `accessibilityViewIsModal` was here but @gorhom/bottom-sheet's
+        // BottomSheet has no rest-spread, so it was silently dropped — a no-op /
+        // false focus-trap assurance (same dead prop ConfirmationModal.tsx's own
+        // fix removed). These 4 sheets have NO tracked focus-trap follow-up —
+        // the only existing focus-trap todo
+        // (P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md)
+        // is scoped to ConfirmationModal.tsx and its useConfirmationModal()
+        // callers only, not this screen.
       >
         {addItemMenuSheetChildren}
       </BottomSheetModal>
@@ -1476,7 +1494,10 @@ export default function MealPlanHomeScreen() {
         onDismiss={handleImportRecipeDismiss}
         onChange={onImportRecipeSheetChange}
         onAnimate={onImportRecipeSheetAnimate}
-        accessibilityViewIsModal
+        // accessible={false}: same iOS a11y-leaf fix as the sheet above (dead
+        // accessibilityViewIsModal removed too) — see
+        // docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
+        accessible={false}
       >
         {importRecipeSheetChildren}
       </BottomSheetModal>
@@ -1492,7 +1513,10 @@ export default function MealPlanHomeScreen() {
         onDismiss={handleQuickAddDismiss}
         onChange={handleQuickAddSheetChange}
         onAnimate={onQuickAddSheetAnimate}
-        accessibilityViewIsModal
+        // accessible={false}: same iOS a11y-leaf fix as the sheet above (dead
+        // accessibilityViewIsModal removed too) — see
+        // docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
+        accessible={false}
       >
         {quickAddSheetChildren}
       </BottomSheetModal>
@@ -1508,7 +1532,10 @@ export default function MealPlanHomeScreen() {
         onDismiss={handleSimpleEntryDismiss}
         onChange={handleSimpleEntrySheetChange}
         onAnimate={onSimpleEntrySheetAnimate}
-        accessibilityViewIsModal
+        // accessible={false}: same iOS a11y-leaf fix as the sheet above (dead
+        // accessibilityViewIsModal removed too) — see
+        // docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
+        accessible={false}
       >
         {simpleEntrySheetChildren}
       </BottomSheetModal>

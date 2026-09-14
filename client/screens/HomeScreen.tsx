@@ -546,6 +546,16 @@ export default function HomeScreen() {
         handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onChange={handleImportSheetChange}
         onAnimate={handleImportSheetAnimate}
+        // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
+        // "Bottom Sheet" on the DraggableView that WRAPS these children. On
+        // new-arch Fabric that makes the wrapper an accessibility LEAF
+        // (isAccessibilityElement=YES), so VoiceOver — and Maestro's iOS driver —
+        // see one opaque "Bottom Sheet" element and the title/message/buttons
+        // (incl. their testIDs) become unreachable. accessible={false} keeps the
+        // children individually exposed. MUST be `false`, not `null`: gorhom does
+        // `_providedAccessible ?? undefined`, so null re-defaults to true.
+        // See docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
+        accessible={false}
       >
         {importSheetChildren}
       </BottomSheetModal>
