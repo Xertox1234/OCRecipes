@@ -46,12 +46,36 @@ case "$AGENT_TYPE" in code-reviewer|server-reviewer|mobile-reviewer|ai-reviewer|
 # "Avoids the need to read and parse the transcript file". Fall back to the transcript
 # when it is absent (truncation, reformatting).
 MSG=$(printf '%s' "$INPUT" | jq -r '.last_assistant_message // empty' 2>/dev/null)
-if [ -z "$MSG" ]; then
-  TP=$(printf '%s' "$INPUT" | jq -r '.agent_transcript_path // empty' 2>/dev/null)
-  if [ -n "$TP" ] && [ -r "$TP" ]; then
-    MSG=$(jq -rs '[.[] | select(.type=="assistant")] | last | .message.content[]?
-                  | select(.type=="text") | .text' "$TP" 2>/dev/null) || MSG=""
-  fi
+TP=$(printf '%s' "$INPUT" | jq -r '.agent_transcript_path // empty' 2>/dev/null)
+if [ -z "$MSG" ] && [ -n "$TP" ] && [ -r "$TP" ]; then
+  MSG=$(jq -rs '[.[] | select(.type=="assistant")] | last | .message.content[]?
+                | select(.type=="text") | .text' "$TP" 2>/dev/null) || MSG=""
+fi
+
+# ASYNC (background) dispatch delivers the report somewhere else entirely. The final
+# assistant TEXT is a wrapper line ("Review complete and handed back to the caller.") and
+# the report itself rides in a SubagentHandback tool_use. Two things had to be true for
+# this to lose a stamp silently, which is why neither one alone reproduces it:
+#   (1) the wrapper is NON-EMPTY, so the `[ -z "$MSG" ]` fallback above never fires; and
+#   (2) the wrapper carries no REVIEWED-SHA, so the parse below yields nothing and the
+#       hook takes one of its many silent `exit 0` paths.
+# Measured 2026-09-14: a real async server-reviewer returned a correctly-formatted clean
+# review for 793a06b8e43c08e0ba19490eba571167be76e57f and NO record was written, while the
+# same payload fed in the synchronous shape stamped correctly — so the writer's LOGIC was
+# never the defect, only which field it was reading. merge-review-guard.sh is fail-closed
+# and treats "no record" exactly like a dirty one, so the whole review->merge path was
+# blocked for every background dispatch.
+#
+# Keyed on "$MSG lacks the contract", NOT on "$MSG is empty", because of (1). A direct
+# report that DOES carry the contract still wins — the transcript is consulted only when
+# the delivered message cannot be the report. `grep -q` reads a here-string rather than a
+# pipe: under `pipefail` an early-exiting reader makes the writer take SIGPIPE and the
+# pipeline report failure although the read succeeded.
+if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
+  HANDBACK=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
+                     | select(.type=="tool_use" and .name=="SubagentHandback")]
+                    | last | .input.message // empty' "$TP" 2>/dev/null) || HANDBACK=""
+  [ -n "$HANDBACK" ] && MSG="$HANDBACK"
 fi
 [ -n "$MSG" ] || exit 0
 

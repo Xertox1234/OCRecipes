@@ -521,12 +521,74 @@ else
   bad "anchoring fixture is usable (expected=[$ANCHOR_EXPECT])"
 fi
 
+# --- ASYNC (background) dispatch shape ---------------------------------------
+# A subagent dispatched in the background does not deliver its report as the final
+# assistant TEXT. The report travels inside a SubagentHandback tool_use, and
+# last_assistant_message carries only a wrapper line. Measured 2026-09-14: a real
+# async server-reviewer returned a correctly-formatted clean review for
+# 793a06b8e43c08e0ba19490eba571167be76e57f and NO stamp was written — the wrapper line
+# is NON-EMPTY, so the pre-existing `[ -z "$MSG" ]` transcript fallback never fires,
+# and the wrapper carries no REVIEWED-SHA. Both halves have to be true for the bug;
+# testing only "transcript fallback works" would miss it.
+WRAPPER_LINE="Review complete and handed back to the caller."
+
+async_transcript() {  # $1=report text -> prints a transcript path
+  local tp; tp=$(mktemp "$ROOT/transcript-XXXX")
+  jq -nc --arg m "$1" '{type:"assistant", message:{content:[
+      {type:"tool_use", name:"SubagentHandback", input:{message:$m}}]}}' >"$tp"
+  jq -nc --arg w "$WRAPPER_LINE" '{type:"assistant", message:{content:[
+      {type:"text", text:$w}]}}' >>"$tp"
+  printf '%s\n' "$tp"
+}
+async_payload() {  # $1=agent_type $2=transcript path
+  jq -n --arg t "$1" --arg p "$2" --arg w "$WRAPPER_LINE" \
+    '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+      last_assistant_message:$w, agent_transcript_path:$p}'
+}
+
+async_payload "code-reviewer" "$(async_transcript "$CLEAN_MSG")" | run_hook 20
+af="$ROOT/case-20/$SHA/code-reviewer.json"
+[ -f "$af" ] && ok "async SubagentHandback report writes a stamp" \
+             || bad "async SubagentHandback report writes a stamp"
+[ "$(jq -r .head_sha "$af" 2>/dev/null)" = "$SHA" ] \
+  && ok "async stamp records the reviewed sha" || bad "async stamp records the reviewed sha"
+[ "$(jq -r .verdict "$af" 2>/dev/null)" = "clean" ] \
+  && ok "async stamp records the clean verdict" || bad "async stamp records the clean verdict"
+# Same digest pin as case 1: the async path must produce a record INDISTINGUISHABLE from
+# the sync path for the same report, not merely a record that exists.
+[ "$(jq -r .reviewed_files_digest "$af" 2>/dev/null)" = "cf5a596de517834a" ] \
+  && ok "async stamp digest equals the sync digest for the same report" \
+  || bad "async stamp digest equals the sync digest for the same report"
+
+# CONTROL (negative): identical async envelope, transcript carrying NO handback — only the
+# wrapper text. There is nothing to parse, so there must be NO stamp. Without this, the
+# positive above would also pass a hook that blindly stamped every async envelope.
+NOHB_TP=$(mktemp "$ROOT/transcript-nohb-XXXX")
+jq -nc --arg w "$WRAPPER_LINE" '{type:"assistant", message:{content:[
+    {type:"text", text:$w}]}}' >"$NOHB_TP"
+async_payload "code-reviewer" "$NOHB_TP" | run_hook 21
+[ ! -f "$ROOT/case-21/$SHA/code-reviewer.json" ] \
+  && ok "async envelope with no handback writes no stamp" \
+  || bad "async envelope with no handback writes no stamp"
+
+# CONTROL (precedence): when last_assistant_message ALREADY carries the contract (the
+# synchronous shape), it must win. A transcript handback saying something different must
+# not override a valid direct report — otherwise the fix would silently re-route the sync
+# path through the transcript and this suite's other 47 assertions would stop covering it.
+MIXED_TP=$(async_transcript "$FINDINGS_MSG")
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$MIXED_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 22
+[ "$(jq -r .verdict "$ROOT/case-22/$SHA/code-reviewer.json" 2>/dev/null)" = "clean" ] \
+  && ok "a direct report still wins over a transcript handback" \
+  || bad "a direct report still wins over a transcript handback"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=47
+EXPECTED_TOTAL=53
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
