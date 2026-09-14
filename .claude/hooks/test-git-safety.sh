@@ -478,6 +478,71 @@ assert_allow "KNOWN-WRONG (filed): >& fractured by split_segments — real invoc
   "$(json "$SESSION" "$MAIN" 'git >&2 commit -m x')"
 assert_allow "KNOWN-WRONG (filed): >| fractured by split_segments — real invocation, ALLOWed" \
   "$(json "$SESSION" "$MAIN" 'git >|out commit -m x')"
+# NOTE on the four rows above: assert_allow passes on EMPTY output, so a hook that crashed
+# would satisfy them exactly as a correct ALLOW does. They are green for the stated reason —
+# neighbouring rows in this same file DENY through the same hook invocation path — but the
+# assertion itself cannot tell the two apart. The positive discriminator is the very next row.
+assert_deny "discriminator for the rows above: the hook is alive and still denying" \
+  "$(json "$SESSION" "$MAIN" 'git 2>/dev/null commit -m x')"
+# The KNOWN-WRONG rows above are all INTERPOSED. The same operator families in the VERB-GLUED
+# position are NOT open, so the residual is positional rather than per-family — a distinction
+# an earlier revision of the hook comment got wrong while this file already disproved it.
+assert_deny "verb-glued >& is newly SEEN (ALLOW on main) — the residual is positional" \
+  "$(json "$SESSION" "$MAIN" 'git commit>&out')"
+assert_deny "verb-glued >| is newly SEEN (ALLOW on main) — the residual is positional" \
+  "$(json "$SESSION" "$MAIN" 'git commit>|out')"
+assert_deny "verb-glued &> was ALREADY denied before this change (the & closer) — not new coverage" \
+  "$(json "$SESSION" "$MAIN" 'git commit&>out')"
+assert_allow "verb-glued 2>&1 stays allowed CORRECTLY — bash lexes the verb as commit2" \
+  "$(json "$SESSION" "$MAIN" 'git commit2>&1')"
+
+# ---------- git_c_target: a redirect is not the verb (security review, 2026-09-13) ----------
+# Widening the MATCHER without widening the TOKENIZER left them disagreeing. git_c_target's
+# phase-1 walker skips dash-tokens, but a redirect starts with a digit/`>`/`<`/`&`, so it fell
+# through to the "first non-option word = the verb" branch and ENDED the scan — a repo
+# redirect AFTER it was never mined and the target silently fell back to cwd. Both directions
+# were live, and the second was a REGRESSION introduced by this PR before the walker was fixed.
+assert_deny "walker: redirect before -C <main>, cwd=worktree — -C is mined, so DENY" \
+  "$(json "$SESSION" "$WT_A" "git 2>/dev/null -C $MAIN commit -m x")"
+assert_deny "walker: redirect before --git-dir=<main>, cwd=worktree — mined, so DENY" \
+  "$(json "$SESSION" "$WT_A" "git 2>/dev/null --git-dir=$MAIN/.git commit -m x")"
+# THE REGRESSION GUARD. `git -C <worktree>` is the spelling CLAUDE.md prescribes for worktree
+# sessions; with the matcher widened and the walker not, a redirect before it made the hook
+# DENY the sanctioned idiom. A guard that denies the prescribed command gets switched off.
+assert_allow "walker: redirect before -C <worktree>, cwd=main — the sanctioned idiom stays ALLOWED" \
+  "$(json "$SESSION" "$MAIN" "git 2>/dev/null -C $WT_A commit -m x")"
+# Ordering contrast: the SAME tokens with the redirect after the -C always resolved correctly.
+# This is what proves the tokenizer, not the regex, was the discriminator.
+assert_deny "walker: control — redirect AFTER the -C was always resolved correctly" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN 2>/dev/null commit -m x")"
+# The `!tnt` gate on that skip is load-bearing, tested in both directions. A QUOTED
+# redirect-shaped token is a literal argument, not a redirect: the argv shim shows bash passes
+# `2>/dev/null` to git as its subcommand, which is not a mutating invocation at all.
+assert_allow "walker: a QUOTED redirect-shaped token is a literal arg, not a redirect" \
+  "$(json "$SESSION" "$MAIN" "git '2>/dev/null' commit -m x")"
+
+# The fail-safe at the end of git_c_target became REACHABLE with the redirect-skip arm, and its
+# comment used to say it was not. A verb-glued redirect is skipped, so no word ever reaches the
+# verb branch and the END fail-safe is what emits. Pinned in BOTH directions so the branch that
+# just came alive is not the one branch without coverage — and so nobody deletes it as dead.
+assert_deny "fail-safe: verb-glued redirect, cwd=main — emits cwd, so DENY" \
+  "$(json "$SESSION" "$MAIN" 'git commit>log')"
+assert_allow "fail-safe: verb-glued redirect with -C <worktree> — emits the -C TARGET, not cwd" \
+  "$(json "$SESSION" "$MAIN" "git -C $WT_A commit>log")"
+
+# --- Two residuals this change does NOT close. Both are real invocations (argv shim) that
+# --- main ALSO allows, so they are un-closed gaps rather than regressions. Pinned as WRONG.
+# (i) The `!tnt` gate is word-level, so a real redirect whose TARGET is quoted taints the whole
+#     word and is not skipped — the walker stops and falls back to cwd. Fails toward DENY from
+#     a main cwd; from a worktree cwd it MISSES a real mutation of main, as pinned here.
+assert_allow "KNOWN-WRONG: redirect with a QUOTED TARGET is not skipped — real -C <main> mutation MISSED" \
+  "$(json "$SESSION" "$WT_A" "git 2>\\\"/dev/null\\\" -C $MAIN commit -m x")"
+# (ii) Phase 0 matches the binary as the exact word `git`, so a redirect GLUED to the binary
+#     makes `git>out` a different word and the walker never enters phase 1 at all. The regex
+#     sees the segment; the tokenizer does not resolve it.
+assert_allow "KNOWN-WRONG: redirect glued to the binary — walker never enters phase 1, -C <main> MISSED" \
+  "$(json "$SESSION" "$WT_A" "git>out -C $MAIN commit -m x")"
+
 # Inherited over-DENIAL, pinned in the other direction: a DIGIT glued to the binary is SEEN,
 # but bash lexes `git2>out` as the word `git2` plus `>out`, so it invokes `git2`, not git.
 # Pre-existing property of `_CMD_GIT_GLOBALS` shared by every consumer on main; the direction
@@ -485,6 +550,62 @@ assert_allow "KNOWN-WRONG (filed): >| fractured by split_segments — real invoc
 # deliberate `<`/`>` catch above. Pinned so a change of behaviour is noticed, not endorsed.
 assert_deny "KNOWN-OVERDENY (inherited, safe direction): git2>out invokes git2, not git" \
   "$(json "$SESSION" "$MAIN" 'git2>out commit -m x')"
+
+# ---------- FAIL-TO-STATUS-QUO on a broken lib (security review, 2026-09-13) ----------
+# Sourcing a shared 2258-line lib into a fail-CLOSED gate is a new coupling, and "the source
+# returned non-zero" is not the dangerous failure. Each stub below was measured to produce a
+# TOTAL silent ALLOW before the subshell + self-test went in. Run against a COPY of the hook
+# beside a stub lib/, so the real lib is untouched.
+LIBTMP=$(mktemp -d)
+mkdir -p "$LIBTMP/lib"
+cp "$HOOK" "$LIBTMP/git-safety.sh"
+assert_deny_stub() {  # $1=name $2=lib body
+  printf '%s\n' "$2" > "$LIBTMP/lib/cmd-detect.sh"
+  local out; out=$(json "$SESSION" "$MAIN" 'git commit -m x' | bash "$LIBTMP/git-safety.sh" 2>/dev/null)
+  if echo "$out" | grep -q '"permissionDecision": "deny"'; then
+    echo "PASS: $1"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $1 (expected deny; a broken lib must fall back, never allow)"
+    echo "  got: $(echo "$out" | head -2)"; FAIL=$((FAIL+1))
+  fi
+}
+# Control FIRST: with a healthy lib the copy must deny, or every row below passes vacuously.
+assert_deny_stub "broken-lib control: a HEALTHY lib still denies through the copied hook" \
+  "$(cat "$(dirname "$HOOK")/lib/cmd-detect.sh")"
+assert_deny_stub "broken lib: top-level unset var (fatal under set -u) falls back, not ALLOW" \
+  'BAD="${DEFINITELY_NOT_SET}"'
+assert_deny_stub "broken lib: stray top-level exit 0 falls back, not ALLOW" \
+  'exit 0'
+assert_deny_stub "broken lib: malformed ERE constant (grep rc=2) falls back, not ALLOW" \
+  '_CMD_GIT_GLOBALS="((" ; _CMD_POS_SUFFIX="([[:space:]]|$)"'
+assert_deny_stub "broken lib: valid ERE with WRONG semantics falls back, not ALLOW" \
+  '_CMD_GIT_GLOBALS="ZZZZNEVERMATCH" ; _CMD_POS_SUFFIX="([[:space:]]|$)"'
+# Contamination needs its OWN assertion, not assert_deny_stub: that helper greps for the deny
+# substring, which still matches when junk is PREPENDED, so it would pass either way. Check the
+# first byte instead — a strict envelope parser reads a leading non-`{` as a malformed reply,
+# i.e. no decision at all, which on a deny gate is an allow.
+printf '%s\n' 'echo CONTAMINATION
+_CMD_GIT_GLOBALS="(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-[^[:space:]]+)))*" ; _CMD_POS_SUFFIX="([[:space:]]|$)"' \
+  > "$LIBTMP/lib/cmd-detect.sh"
+CONTAM_OUT=$(json "$SESSION" "$MAIN" 'git commit -m x' | bash "$LIBTMP/git-safety.sh" 2>/dev/null)
+case "$CONTAM_OUT" in
+  '{'*) echo "PASS: broken lib: top-level stdout does not contaminate the decision JSON"; PASS=$((PASS+1)) ;;
+  *)    echo "FAIL: broken lib: stdout contaminated the decision JSON"
+        echo "  got: $(printf '%s' "$CONTAM_OUT" | head -c 60)"; FAIL=$((FAIL+1)) ;;
+esac
+# Non-vacuity control for the check just above: the same probe against a lib that prints
+# nothing must ALSO start with `{` — and a deliberately contaminated one must NOT, proving the
+# first-byte test can actually distinguish them.
+printf '%s\n' 'true' > "$LIBTMP/lib/cmd-detect.sh"
+CLEAN_OUT=$(json "$SESSION" "$MAIN" 'git commit -m x' | bash "$LIBTMP/git-safety.sh" 2>/dev/null)
+printf '%s\n' 'echo JUNK' > "$LIBTMP/lib/noise.sh"
+DIRTY_OUT="JUNK$CLEAN_OUT"
+if [ "${CLEAN_OUT#\{}" != "$CLEAN_OUT" ] && [ "${DIRTY_OUT#\{}" = "$DIRTY_OUT" ]; then
+  echo "PASS: control — the first-byte test separates a clean reply from a contaminated one"; PASS=$((PASS+1))
+else
+  echo "FAIL: control — the first-byte test cannot distinguish clean from contaminated"; FAIL=$((FAIL+1))
+fi
+rm -rf "$LIBTMP"
 
 # HERE resolution for the bare-filename (no-slash) invocation shape — this hook now sources
 # lib/cmd-detect.sh, so the naive `HERE="${BASH_SOURCE[0]%/*}"` would return the filename

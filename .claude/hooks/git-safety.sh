@@ -283,6 +283,25 @@ git_c_target() {
       # dash, so skipping a QUOTED decoy flag still lets a later real -C be reached — a taint-gated
       # skip would instead halt the scan at the decoy and miss the real redirect (a bypass).
       if (substr(w, 1, 1) == "-") return
+      # A REDIRECT token is not the verb (2026-09-13). It starts with a digit, `>`, `<`, `&`
+      # or `{`, so the dash-skip above misses it and it used to fall through to the verb
+      # branch below — ENDING the scan, so a repo-redirecting global AFTER it was never mined
+      # and the target silently fell back to cwd. Measured, both directions: with cwd inside a
+      # registered worktree `git 2>/dev/null -C <main> commit -m x` resolved to cwd and was
+      # ALLOWED though it really mutates main; with cwd at main, `git 2>/dev/null -C <worktree>
+      # commit -m x` — the -C spelling CLAUDE.md prescribes — was DENIED though it is safe.
+      # Ordering is the discriminator that proves this is the tokenizer and not the regex: the
+      # same tokens with the redirect AFTER the -C always resolved correctly.
+      # The test is `<` or `>` ANYWHERE in an UNQUOTED word, not a re-derived redirect grammar:
+      # this is the same insight stated in the note on _CMD_POS_SUFFIX — neither character can
+      # be part of a real unquoted verb or flag word — and re-deriving that grammar here is the
+      # defect this whole change exists to avoid. `!tnt` is load-bearing: a QUOTED
+      # redirect-shaped token (single- or double-quoted) is a literal ARGUMENT, not a redirect,
+      # and must NOT be skipped. Skipping only ever lets the walker reach MORE globals, so it
+      # can make the resolved target more accurate, never less.
+      # (No apostrophe appears in this block on purpose: the whole program is inside a
+      # single-quoted awk string, so one would close it and hand the rest to the shell.)
+      if (!tnt && (index(w, "<") || index(w, ">"))) return
       emit_effective()                                  #   first non-option word = the verb: emit & stop
       done = 1                                           #   (git commit -C HEAD: a -C after the verb is never mined)
     }
@@ -314,10 +333,14 @@ git_c_target() {
         }
       }
       endword()
-      # Fail-safe, currently UNREACHABLE: git_c_target only runs on SEG_RE-matched segments,
-      # which always contain a verb, so the verb branch sets done=1 first. Kept as defense in
-      # depth — if a future SEG_RE relaxation ever admitted a verbless segment, this still emits
-      # its redirect target instead of silently falling back to cwd (which could launder a main mutation).
+      # Fail-safe, REACHABLE as of 2026-09-13 — it was not before, and the reason it was not
+      # is the half that changed. The old note read "git_c_target only runs on SEG_RE-matched
+      # segments, which always contain a verb, so the verb branch sets done=1 first". The verb
+      # branch no longer always runs: the redirect-skip arm above steps over a VERB-GLUED
+      # redirect (`git commit>log`), so no word reaches the verb branch, done stays 0, and THIS
+      # line is what emits. Verified: `git commit>log` from a main-checkout cwd DENIES through
+      # this path, and `git -C <worktree> commit>log` correctly ALLOWS through it. Covered by a
+      # dedicated row in test-git-safety.sh — do not delete this branch as dead code.
       if (!done) emit_effective()
     }
   '
@@ -496,24 +519,71 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #      invocation and is still MISSED: the segment anchor never reaches `git` when a
     #      redirect precedes it, and this change only touches the group BETWEEN `git` and the
     #      verb. Pre-existing; `_CMD_POS_PREFIX` upstream models the shape if it is ever fixed.
-    #   2. A redirect operator CONTAINING `&` or `|` — `2>&1`, `&>`, `>&`, `>|` — never reaches
-    #      this regex at all: split_segments (above) flushes on those characters
-    #      unconditionally, so `git 2>&1 commit -m x` arrives as `git 2>` + `1 commit -m x` and
-    #      neither half matches. All four are real invocations (argv shim). Filed as
+    #   2. A redirect operator containing `&` or `|` (`2>&1`, `&>`, `>&`, `>|`) in an
+    #      INTERPOSED position — spaced, glued-to-binary, or between-globals. split_segments
+    #      (above) flushes on those characters unconditionally, so `git 2>&1 commit -m x`
+    #      arrives as `git 2>` + `1 commit -m x` and neither half matches. All are real
+    #      invocations (argv shim).
+    #      **The gap is POSITIONAL, not per-family** — an earlier revision of this note said
+    #      these families "never reach this regex at all", which this file's OWN test suite
+    #      already falsified: `git checkout>&2 -b foo` is an assert_deny here. Measured across
+    #      4 families x 4 positions against both hooks, the VERB-GLUED position is closed:
+    #      `git commit&>out` was already denied before this change (the `&` closer), and
+    #      `git commit>&out` / `git commit>|out` are newly denied BY this change. Only
+    #      `git commit2>&1` stays allowed there, correctly — it lexes as the verb `commit2`.
+    #      Filed as
     #      todos/P1-2026-09-13-split-segments-fractures-redirect-operators-containing-amp-or-pipe.md
     #      and pinned in test-git-safety.sh as KNOWN-WRONG rows. Do NOT "fix" it by narrowing
     #      where split_segments flushes without reading that todo's Risks: merging segments
     #      breaks the `^` anchor for a FOLLOWING command, which is the false-ALLOW direction.
     #
+    #   3. Two shapes the MATCHER now sees but the TOKENIZER still mis-resolves, so the
+    #      effective repo falls back to cwd and a real `-C <main>` mutation is missed from a
+    #      worktree cwd (both fail toward DENY from a main cwd, and main ALLOWs both today, so
+    #      these are un-closed gaps rather than regressions — pinned as KNOWN-WRONG rows):
+    #        * a redirect whose TARGET is quoted (`git 2>"/dev/null" -C <main> commit`) — the
+    #          skip arm in git_c_target is gated on `!tnt` and quoting taints the whole word;
+    #        * a redirect GLUED to the binary (`git>out -C <main> commit`) — phase 0 matches
+    #          the binary as the exact word `git`, so the walker never enters phase 1.
+    #
     # So: three spellings closed across two mechanisms; the redirect bypass is NARROWED, not
     # eliminated. Measured through the real two-stage pipeline (split_segments then the regex),
     # a 1344-row product-of-dimensions corpus goes from 24 SEEN to 912, with 0 regressions.
     # Measuring the regex ALONE reports 0 -> 1200 and is the wrong layer for that claim.
+    # SOURCED IN A SUBSHELL, and the result SELF-TESTED, because "the lib returned non-zero"
+    # is only one of four ways this can go wrong and it is not the dangerous one. Measured,
+    # each against a stub lib, with a healthy lib and an absent lib as the two controls:
+    #   (a) a top-level unset-var reference is FATAL under this file's `set -uo pipefail`
+    #       EVEN INSIDE AN `if` CONDITION — the hook died at rc=127 having printed ZERO
+    #       bytes, losing the contract, write-shape AND advisor branches at once. A stray
+    #       top-level `exit 0` does the same. For a deny gate that is a total silent ALLOW,
+    #       and NO in-band guard placed after the source can catch it: the shell is gone.
+    #       A subshell confines it — the capture is then empty and the fallback stands.
+    #   (b) a malformed constant (`((`) passes any -n test, and `grep -E` then rejects the
+    #       COMPOSED pattern at rc=2, which the `|| continue` below swallows for every
+    #       segment: also a total ALLOW.
+    #   (c) a well-formed constant with DIFFERENT SEMANTICS matches nothing: same outcome.
+    # (b) and (c) are what the self-test catches; (a) is what the subshell catches. The
+    # composition goes to a TEMP var so the shipped fallback is still intact to fall back to.
+    # Stdout of the source is discarded inside the brace group (the lib is silent today —
+    # measured, not assumed — but anything it ever printed would land ahead of deny()'s JSON
+    # and a strict envelope parser would read the malformed result as an allow).
     case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
-    if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
-       && [ -n "${_CMD_GIT_GLOBALS:-}" ] \
-       && [ -n "${_CMD_POS_SUFFIX:-}" ]; then
-      MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git${_CMD_GIT_GLOBALS}[[:space:]]+(${MUTATING_GIT_VERBS})${_CMD_POS_SUFFIX}"
+    _LIB_PAIR=$( { . "$HERE/lib/cmd-detect.sh" >/dev/null 2>&1; } \
+                 && printf '%s\t%s' "${_CMD_GIT_GLOBALS:-}" "${_CMD_POS_SUFFIX:-}" )
+    if [ -n "${_LIB_PAIR:-}" ] && [ "${_LIB_PAIR#*	}" != "$_LIB_PAIR" ]; then
+      _LIB_G=${_LIB_PAIR%%	*}
+      _LIB_S=${_LIB_PAIR#*	}
+      if [ -n "$_LIB_G" ] && [ -n "$_LIB_S" ]; then
+        _CAND="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git${_LIB_G}[[:space:]]+(${MUTATING_GIT_VERBS})${_LIB_S}"
+        # Positive self-test: the candidate must still match a canonical mutating invocation
+        # AND must still reject a non-invocation. Both directions, or a pattern that matches
+        # everything would pass as readily as a correct one.
+        if printf '%s' 'git commit -m x' | grep -qE "$_CAND" 2>/dev/null \
+           && ! printf '%s' 'echo hello' | grep -qE "$_CAND" 2>/dev/null; then
+          MUTATING_GIT_SEG_RE="$_CAND"
+        fi
+      fi
     fi
     VIOLATION=""; UNRESOLVABLE=""
     SEGS=$(printf '%s' "$CMD" | split_segments)

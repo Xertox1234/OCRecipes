@@ -26,6 +26,20 @@ one inside them:
 | `git >\|out commit -m x`                  | `git >` + `out commit -m x`       | **no**            |
 | `git 2>/dev/null commit -m x` _(control)_ | one segment                       | yes               |
 
+> 🛑 **THE GAP IS POSITIONAL, NOT PER-FAMILY.** Every row above is an INTERPOSED redirect, and
+> an earlier revision of this todo generalised them into a claim about the four operator
+> families as such. That is false in the VERB-GLUED position, and the parent PR's own test
+> suite already falsified it (`git checkout>&2 -b foo` is an `assert_deny` there). Measured
+> across 4 families × 4 positions against both hooks, cwd = main checkout:
+>
+> | position                                   | `&>`                   | `>&`                        | `>\|`                       | `2>&1`                                      |
+> | ------------------------------------------ | ---------------------- | --------------------------- | --------------------------- | ------------------------------------------- |
+> | spaced / glued-to-binary / between-globals | OPEN                   | OPEN                        | OPEN                        | OPEN                                        |
+> | verb-glued                                 | already denied on main | **closed by the parent PR** | **closed by the parent PR** | correctly allowed — lexes as verb `commit2` |
+>
+> So this todo's target is **the three interposed positions**, for all four families. Do not
+> go after the verb-glued rows: two of them are already green and one of them should be.
+
 Neither half matches `MUTATING_GIT_SEG_RE` — the first has no verb, the second does not start
 at `git` — so the segment loop takes its `|| continue` and the worktree contract is never
 checked for that command.
@@ -73,19 +87,24 @@ guarantee higher.
 ## Acceptance Criteria
 
 - [ ] A mutating git command whose redirect operator contains `&` or `|` reaches the contract
-      check with its segment intact, for all four families (`2>&1`, `&>`, `>&`, `>|`).
+      check with its segment intact, for all four families (`2>&1`, `&>`, `>&`, `>|`) **in the
+      three INTERPOSED positions** (spaced, glued-to-binary, between-globals). The verb-glued
+      position is out of scope — see the positional table above; two of its four cells are
+      already denied and the third correctly is not.
 - [ ] **No segment is merged that was previously separate.** This is the criterion the whole
       todo turns on — see Risks. A differential over a corpus that includes genuine control
       operators must show ZERO change in segment COUNT for every command whose `&`/`|` is a
       real separator.
 - [ ] Laundering controls, constructed not harvested: `git -C <worktree> status && git -C
-    <main> commit -m x` must still DENY, and every existing compound/laundering row in
-      `test-git-safety.sh` must stay green.
+  <main> commit -m x` must still DENY, and every existing compound/laundering row in
+    `test-git-safety.sh` must stay green.
 - [ ] The four `KNOWN-WRONG (filed)` rows in `test-git-safety.sh` flip to `assert_deny` and
       lose the KNOWN-WRONG label, in the same change that fixes the cause.
 - [ ] Corpus generated from a product of dimensions, measured through the REAL pipeline
       (`split_segments` then the regex), never the regex alone — the parent's mistake.
-- [ ] Mutation-verified: revert the fix and confirm only the four families redden.
+- [ ] Mutation-verified: revert the fix and confirm only the four families **in the three
+      interposed positions** redden. Stated as "the four families" it will not hold — the
+      verb-glued `>&` and `>|` rows are already green without this fix and would not move.
 - [ ] Full hook suite green; the `Outward-CLI guard corpus` required check reproduces its pin.
 
 ## Implementation Notes

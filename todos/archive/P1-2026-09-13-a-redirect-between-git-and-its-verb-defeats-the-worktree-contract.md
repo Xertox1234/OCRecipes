@@ -92,10 +92,12 @@ you weigh the isolation guarantee higher.
 - [~] **PARTIALLY MET — do not read this as closed.** `MUTATING_GIT_SEG_RE` SEES a mutating
   git command carrying a redirect between the binary and the verb, for every redirect
   spelling `_CMD_REDIR` models — **at the regex level, all 14 operators.** At the HOOK
-  level, which is what the Summary's "the contract is never checked" is about, 4 of the 14
-  operator families (`&>`, `>&`, `2>&`, `>|`) never reach the regex: `split_segments`
-  flushes on their unquoted `&`/`|` first. Those are real invocations and remain a live
-  bypass — filed separately, see Updates.
+  level, which is what the Summary's "the contract is never checked" is about, the four
+  operators containing `&`/`|` (`&>`, `>&`, `2>&`, `>|`) never reach the regex **in the three
+  INTERPOSED positions** — `split_segments` flushes on those characters first. Those are real
+  invocations and remain a live bypass, filed separately (see Updates). The gap is
+  **positional, not per-family**: in the VERB-GLUED position `&>` was already denied before
+  this change and `>&`/`>|` are newly denied by it.
 - [x] It also SEES a redirect GLUED TO THE VERB (`git commit>log`) — a second defeating
       position, against the trailing boundary rather than the globals group.
 - [x] A false-SEEN sweep runs in the same pass: widening a boundary class is the direction
@@ -340,6 +342,38 @@ carries values outside the population the check governs; quote the APPLICABLE de
   into one segment and breaks the `^` anchor that makes a following `git commit` visible —
   the false-ALLOW direction, and the laundering this splitter exists to prevent. That is a
   different mechanism and wants its own change, exactly as the leading-redirect position does.
+
+- **Review round (security-auditor + code-reviewer, PR #956) — three repairs, all landed in
+  the same PR rather than deferred:**
+  1. **The matcher was widened and the TOKENIZER was not, and that pair introduced a
+     regression.** `git_c_target`'s phase-1 walker skips dash-tokens, but a redirect starts
+     with a digit/`>`/`<`/`&`, so it fell through to the "first non-option word is the verb"
+     branch and ENDED the scan — every repo-redirecting global after it went unmined. Two
+     directions, measured: from a worktree cwd, `git 2>/dev/null -C <main> commit -m x`
+     resolved to cwd and was ALLOWED though it really mutates main; from a main cwd,
+     `git 2>/dev/null -C <worktree> commit -m x` — **the `-C` spelling CLAUDE.md prescribes** —
+     was newly DENIED. Fixed with a one-line redirect-skip arm gated on `!tnt`. Mutation:
+     removing it reddens exactly those 3 rows and nothing else.
+  2. **"FAIL-TO-STATUS-QUO" was false for three demonstrated paths.** `if . lib` only catches
+     a lib that _returns_ non-zero. A top-level unset-var reference is fatal under this file's
+     `set -uo pipefail` **even inside the `if` condition** — the hook died at rc=127 having
+     printed ZERO bytes, which on a deny gate is a total silent ALLOW across all three
+     branches; a stray top-level `exit` does the same; and a malformed or wrong-semantics
+     constant passes any `-n` test and then matches nothing. Fixed by sourcing in a SUBSHELL
+     (confines the fatal) plus a two-sided self-test of the composed regex before adopting it
+     over the fallback. Six stub-lib rows added, with a healthy-lib control first so they
+     cannot pass vacuously.
+  3. **The `&`/`|` residual was stated per-FAMILY when it is POSITIONAL** — and this repo's own
+     test suite already falsified it, since `git checkout>&2 -b foo` was an `assert_deny` in
+     the very same diff. Measured 4 families × 4 positions: the three interposed positions are
+     open, the verb-glued one is not (`&>` was already denied on main; `>&` and `>|` are newly
+     denied by this change; `2>&1` correctly stays allowed because it lexes as verb `commit2`).
+     Corrected in the hook comment, in the filed follow-up todo, and pinned with four rows.
+
+  Also caught in my own new test: a row labelled "stdout does not contaminate the decision
+  JSON" asserted with a `grep` for the deny substring, which still matches when junk is
+  PREPENDED — so it would have passed either way. Replaced with a first-byte check plus a
+  non-vacuity control. **A pin that cannot fail is not a pin.**
 
 - **Scoreboard, stated so it cannot be read as more than it is:** two positions closed at the
   regex level; 10 of 14 operator families closed end-to-end; 912/1344 rows SEEN through the

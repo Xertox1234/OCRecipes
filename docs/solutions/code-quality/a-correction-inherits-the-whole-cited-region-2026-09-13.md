@@ -158,7 +158,7 @@ construction — no corpus required, and scoped explicitly to the boundary swap,
 
 ## Related Files
 
-- `todos/P1-2026-09-13-a-redirect-between-git-and-its-verb-defeats-the-worktree-contract.md` — the disclosure block, after both rounds
+- `todos/archive/P1-2026-09-13-a-redirect-between-git-and-its-verb-defeats-the-worktree-contract.md` — the disclosure block, after both rounds (archived 2026-09-13 when the fix landed)
 - `.claude/hooks/lib/cmd-detect.sh:67-116` — the definitional header that was not read; `:119-125` the narrow note that was
 - `.claude/hooks/git-safety.sh:337,425` — `split_segments` and `MUTATING_GIT_SEG_RE`
 
