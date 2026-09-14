@@ -208,7 +208,11 @@ tags:
     timeout: 30000
 
 # Leave the suite logged out: without this, the fresh e2etest_* session leaks
-# into every later flow in path order (plan/, scan/) and they run as the
-# wrong user. Ending logged out makes each flow's user deterministic — the
-# login helper logs the rest in as the seeded testuser.
+# into whatever flow runs next — Maestro's flow order is non-deterministic
+# (no executionOrder/flowsOrder in e2e/config.yaml; see launch-app.yaml), so
+# that could be any other flow, not just a path-adjacent one (a real run
+# measured onboarding LAST of 9, after plan/ and scan/ had already run — the
+# opposite of "into every later flow in path order"). Ending logged out makes
+# each flow's user deterministic — the login helper logs the rest in as the
+# seeded testuser.
 - runFlow: ../../helpers/ensure-logged-out.yaml

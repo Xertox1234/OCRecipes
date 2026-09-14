@@ -58,9 +58,16 @@ appId: com.ocrecipes.app
 # replaced could render on screen while absent from the accessibility
 # hierarchy on CI, see ensure-logged-out.yaml) and the onboarding wizard
 # ("Get Started"/"Go back" — killed mid-registration; ensure-logged-out's
-# wizard-escape recovers from it, and every flow reaches that escape via the
-# login helper's own wizard-strand gate — auth/login is NOT reliably first
-# in path order (measured 4th; todos/P3-2026-09-03-launch-app-comment-claims-auth-login-runs-first.md)).
+# wizard-escape recovers from it, and every flow reaches that escape —
+# either via the login helper's own wizard-strand gate, or directly
+# (auth/login.yaml, complete-onboarding.yaml call ensure-logged-out.yaml
+# themselves) — no flow's position is guaranteed, auth/login included:
+# e2e/config.yaml sets no `executionOrder`/`flowsOrder`, so Maestro's
+# documented default applies — a NON-DETERMINISTIC order, by design, so
+# Flows stay independent of side effects from whatever ran before them. One
+# CI run (33826146222) put auth/login 4th of 9, not 1st — a single sample of
+# that, not a property to rely on (see
+# todos/archive/P3-2026-09-03-launch-app-comment-claims-auth-login-runs-first.md)).
 - extendedWaitUntil:
     visible: "(Continue|Sign In|Hello.*|Not Now|Connected to:|Are you sure you want to sign out.*|Get Started|Go back)"
     timeout: 240000
