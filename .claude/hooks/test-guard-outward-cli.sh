@@ -3263,6 +3263,38 @@ assert_deny "case mid-word (casexyz) must not open anything" \
 assert_deny "an unterminated case still denies via the blind-pass union" \
   "$(json 'e$(: ;case)as update --branch preview')" \
   "eas update/publish/submit"
+# POST-IMPLEMENTATION REVIEW CRITICALs, both confirmed live via a PATH-stubbed
+# binary before the fix landed.
+# CRITICAL 1: kwbound() originally treated ANY non-identifier character as a
+# bash word boundary, but `=` is not one -- `case=2` is ONE bash word, never
+# the keyword `case` followed by `=2`. The old kwbound let this spuriously
+# re-open casedepth, permanently suppressing the substitution close.
+assert_deny "an embedded case=NN inside the arm body must not re-open casedepth" \
+  "$(json 'e$(case x in a) : ; case=2 ;; esac)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "the esac=NN mirror must not spuriously decrement casedepth either" \
+  "$(json 'e$(case x in a) : ; esac=1 ;; b) : ;; esac)as update --branch preview')" \
+  "eas update/publish/submit"
+# CRITICAL 2: `atcmd` only recognised PUNCTUATION command-position openers, so
+# a `case` nested directly after a reserved word that opens a position with NO
+# operator before it (then/do/else/elif/time) was never recognised. Scoped to
+# match guard-outward-cli.sh's own existing _OUT_POS_PREFIX, which already
+# absorbs exactly this five-word set as runner words.
+assert_deny "a case nested directly after then opens command position" \
+  "$(json 'e$(if true; then case x in a) : ;; esac; fi)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a case nested directly after do opens command position" \
+  "$(json 'e$(for x in y; do case x in a) : ;; esac; done)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a case nested directly after else opens command position" \
+  "$(json 'e$(if false; then :; else case x in a) : ;; esac; fi)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a case nested directly after elif opens command position" \
+  "$(json 'e$(if false; then :; elif true; then case x in a) : ;; esac; fi)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a case nested directly after time opens command position" \
+  "$(json 'e$(time case x in a) : ;; esac)as update --branch preview')" \
+  "eas update/publish/submit"
 # ARITHMETIC is never empty, so the paren counter must not start deleting it --
 # `f$((1+2))oo` is really `f3oo`. Two-sided: the gated shape must NOT deny.
 # THIS ROW FLIPPED DELIBERATELY on 2026-09-07. It used to assert that arithmetic
@@ -3717,7 +3749,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=690
+EXPECTED_TOTAL=704
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

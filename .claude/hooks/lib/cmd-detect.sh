@@ -521,7 +521,21 @@ cmd_extract_substitutions() {
     # kwbound(ch): true when ch is empty (end of buffer) or is not an
     # identifier character -- the word-end test the case/esac recognizer
     # below needs so it never fires mid-word (casexyz, lowercase).
-    function kwbound(ch) { return (ch == "" || ch !~ /[A-Za-z0-9_]/) }
+    # kwbound(ch): true when ch is a REAL bash word-terminator -- empty (end
+    # of buffer), a blank (space/tab/CR/LF), or a shell operator character
+    # (; & | ( ) < >). CORRECTED (post-implementation review): the previous
+    # version treated ANY non-identifier character as a boundary, but bash
+    # word boundaries are far narrower than that -- `=` is not a terminator
+    # (case=2 is ONE word, never the keyword case followed by =2), and
+    # neither is a backtick or `$` (case`x`/case$x glue onto the same word
+    # too). Ground-truthed live: `e$(case x in a) : ; case=2 ;; esac)as
+    # update --branch preview` really invokes `eas update --branch preview`
+    # in real bash, and the old kwbound let the embedded `case=2` spuriously
+    # re-open casedepth, permanently suppressing the substitution close and
+    # ALLOWing the publish on the precise path. `#` is deliberately excluded:
+    # it only starts a comment at WORD START, so mid-word it is not a
+    # terminator either (case#x is one word).
+    function kwbound(ch) { return (ch == "" || ch == " " || ch == "\t" || ch == "\n" || ch == "\r" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")" || ch == "<" || ch == ">") }
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96) }
     { buf = buf $0 "\n" }
     END {
@@ -543,11 +557,19 @@ cmd_extract_substitutions() {
         # next. One update point, not one per branch, is required in
         # _cmd_vanish_pass (which continues out of most branches before a
         # trailing update would ever run) and is mirrored here so both
-        # scanners share the same shape. The reset set mirrors the openers in
-        # _CMD_POS_PREFIX above (semicolon, ampersand, pipe, open paren,
-        # brace, bang, start of line) MINUS a closing paren -- a case/esac
-        # glued directly onto one with no separator is a documented residual,
-        # not a requirement of this todo. Whitespace PRESERVES whatever
+        # scanners share the same shape. The reset set matches MOST of the
+        # openers in _CMD_POS_PREFIX above (semicolon, ampersand, pipe, open
+        # paren, brace, bang, start of line) MINUS a closing paren -- a
+        # case/esac glued directly onto one with no separator is NOT a live
+        # gap: ground-truthed via `bash -n`, that shape is not valid bash to
+        # begin with (`(:)case x in a) : ;; esac` is a syntax error), so the
+        # omission costs nothing reachable. CORRECTED (post-
+        # implementation review): _CMD_POS_PREFIX`s opener class also
+        # includes a backtick, deliberately NOT in this set -- a backtick
+        # command-position transition is handled explicitly at the push/pop
+        # sites below (cmdpos[depth]=1 on open, cmdpos[depth]=0 on close),
+        # never through this generic reset list, so listing it here would
+        # have been a duplicate, not a gap. Whitespace PRESERVES whatever
         # cmdpos[d] already was (a run of spaces/tabs after a separator must
         # not lose the boundary before the next word is reached); anything
         # else clears it.
@@ -606,6 +628,46 @@ cmd_extract_substitutions() {
             if (casedepth[d] > 0) casedepth[d]--
             if (d >= 1) accbuf[d] = accbuf[d] "esac"
             i += 3
+          }
+          # RESERVED-WORD COMMAND-POSITION OPENERS (found by post-implementation
+          # review, fixed same change). `atcmd` alone missed a `case` nested
+          # directly after `then`/`do`/`else`/`elif`/`time` -- these five
+          # reserved words open a fresh command position with NO operator
+          # between them and what follows (unlike `if`, which always sits
+          # after a real operator or start-of-string the punctuation reset set
+          # already covers). Ground-truthed live:
+          # `e$(if true; then case x in a) : ;; esac; fi)as update --branch
+          # preview` really invokes `eas update --branch preview`, and without
+          # this arm the case never opened, so the arm`s `)` closed the
+          # substitution early exactly like the original defect. Scoped to
+          # match guard-outward-cli.sh`s OWN existing `_OUT_POS_PREFIX`, which
+          # already absorbs precisely this five-word set as runner words --
+          # not a new judgement call, the same precedent this file`s own
+          # header already cites as the gap in the lib`s general verb anchor.
+          else if (c == "t" && atcmd && substr(buf, i, 4) == "then" && kwbound(substr(buf, i+4, 1))) {
+            if (d >= 1) accbuf[d] = accbuf[d] "then"
+            i += 3
+            cmdpos[d] = 1
+          }
+          else if (c == "d" && atcmd && substr(buf, i, 2) == "do" && kwbound(substr(buf, i+2, 1))) {
+            if (d >= 1) accbuf[d] = accbuf[d] "do"
+            i += 1
+            cmdpos[d] = 1
+          }
+          else if (c == "e" && atcmd && substr(buf, i, 4) == "else" && kwbound(substr(buf, i+4, 1))) {
+            if (d >= 1) accbuf[d] = accbuf[d] "else"
+            i += 3
+            cmdpos[d] = 1
+          }
+          else if (c == "e" && atcmd && substr(buf, i, 4) == "elif" && kwbound(substr(buf, i+4, 1))) {
+            if (d >= 1) accbuf[d] = accbuf[d] "elif"
+            i += 3
+            cmdpos[d] = 1
+          }
+          else if (c == "t" && atcmd && substr(buf, i, 4) == "time" && kwbound(substr(buf, i+4, 1))) {
+            if (d >= 1) accbuf[d] = accbuf[d] "time"
+            i += 3
+            cmdpos[d] = 1
           }
           # BARE-PAREN DEPTH, per level, state 0 ONLY (2026-09-06). A bare `(`
           # opens a SUBSHELL inside a substitution body, and its `)` must not be
@@ -889,7 +951,21 @@ _cmd_vanish_pass() {
     # kwbound(ch): true when ch is empty (end of buffer) or is not an
     # identifier character -- the word-end test the case/esac recognizer
     # below needs so it never fires mid-word (casexyz, lowercase).
-    function kwbound(ch) { return (ch == "" || ch !~ /[A-Za-z0-9_]/) }
+    # kwbound(ch): true when ch is a REAL bash word-terminator -- empty (end
+    # of buffer), a blank (space/tab/CR/LF), or a shell operator character
+    # (; & | ( ) < >). CORRECTED (post-implementation review): the previous
+    # version treated ANY non-identifier character as a boundary, but bash
+    # word boundaries are far narrower than that -- `=` is not a terminator
+    # (case=2 is ONE word, never the keyword case followed by =2), and
+    # neither is a backtick or `$` (case`x`/case$x glue onto the same word
+    # too). Ground-truthed live: `e$(case x in a) : ; case=2 ;; esac)as
+    # update --branch preview` really invokes `eas update --branch preview`
+    # in real bash, and the old kwbound let the embedded `case=2` spuriously
+    # re-open casedepth, permanently suppressing the substitution close and
+    # ALLOWing the publish on the precise path. `#` is deliberately excluded:
+    # it only starts a comment at WORD START, so mid-word it is not a
+    # terminator either (case#x is one word).
+    function kwbound(ch) { return (ch == "" || ch == " " || ch == "\t" || ch == "\n" || ch == "\r" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")" || ch == "<" || ch == ">") }
     # CODE 0 EMITS NOTHING, and that is the one case here that is a security
     # property rather than a fidelity one. Verified by od, bash 3.2:
     # e$(sq)\0(sq)as builds the three bytes `eas` -- the NUL is DROPPED and the token
@@ -1031,6 +1107,44 @@ _cmd_vanish_pass() {
           if (pcount && d >= 1 && s == 0 && atcmd && c == "e" && substr(buf, i, 4) == "esac" && kwbound(substr(buf, i+4, 1))) {
             if (casedepth[d] > 0) casedepth[d]--
             i += 3
+            continue
+          }
+          # RESERVED-WORD COMMAND-POSITION OPENERS, same fix and same
+          # gating as cmd_extract_substitutions -- see that function`s
+          # header for the full rationale and the ground-truthed live
+          # construction. `then`/`do`/`else`/`elif`/`time` open a fresh
+          # command position with no operator before them; without this,
+          # `case` nested directly after one of them was never recognised
+          # as command position and its arm`s `)` closed the substitution
+          # early exactly like the original defect. Gated identically to
+          # case/esac (pcount + d>=1): nothing downstream reads cmdpos
+          # outside the counting pass`s own case/esac recognition, and at
+          # d>=1 no branch here ever emits to `out` regardless, so gating
+          # costs nothing and keeps this extension`s scope exactly as wide
+          # as case/esac`s own.
+          if (pcount && d >= 1 && s == 0 && atcmd && c == "t" && substr(buf, i, 4) == "then" && kwbound(substr(buf, i+4, 1))) {
+            i += 3
+            cmdpos[d] = 1
+            continue
+          }
+          if (pcount && d >= 1 && s == 0 && atcmd && c == "d" && substr(buf, i, 2) == "do" && kwbound(substr(buf, i+2, 1))) {
+            i += 1
+            cmdpos[d] = 1
+            continue
+          }
+          if (pcount && d >= 1 && s == 0 && atcmd && c == "e" && substr(buf, i, 4) == "else" && kwbound(substr(buf, i+4, 1))) {
+            i += 3
+            cmdpos[d] = 1
+            continue
+          }
+          if (pcount && d >= 1 && s == 0 && atcmd && c == "e" && substr(buf, i, 4) == "elif" && kwbound(substr(buf, i+4, 1))) {
+            i += 3
+            cmdpos[d] = 1
+            continue
+          }
+          if (pcount && d >= 1 && s == 0 && atcmd && c == "t" && substr(buf, i, 4) == "time" && kwbound(substr(buf, i+4, 1))) {
+            i += 3
+            cmdpos[d] = 1
             continue
           }
         }

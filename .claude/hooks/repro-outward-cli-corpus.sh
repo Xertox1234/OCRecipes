@@ -637,11 +637,20 @@ add "fautoog-multi" DENY 'gh pr merge 42 --auto>log ; gh pr merge 7'
 # mechanism was a live DENY->ALLOW regression that this corpus could not see,
 # because every row was single-line and a comment needs a newline to terminate
 # (the row parser is newline-safe as of the same change). ADDED 2026-09-06.
+# vcasecomment (added 2026-09-13, post-implementation review of the case-arm
+# fix): a case arm COMPOSED with a shell COMMENT that itself contains a `;`
+# followed by a decoy `esac` -- the comment is inert to real bash, but the
+# scanner has no comment-state tracking (by established design, same as the
+# vcomment mechanism above), so the `;` inside it is misread as a real
+# separator and the decoy `esac` closes casedepth one arm early. PRE-EXISTING
+# (ALLOW on the parent commit too, before the case-arm fix landed) -- see
+# guard-outward-cli.sh's DOCUMENTED RESIDUALS entry for the full account.
 TOOL_MECHS=('$()' '${UNSET}' '``' '$(: $(:))' '$(: "x)y")' "\$(: 'a)b')" \
             "\$(: '\"' \"a)b\" )" '$( (:) )' '$(case x in a) : ;; esac)' \
             "\$(: # (
-)" '$((:)|(:))')
-TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep)
+)" '$((:)|(:))' '$(case x in a) : ;; #x;esac
+b) : ;; esac)')
+TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep vcasecomment)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
   for m in "${!TOOL_MECHS[@]}"; do
@@ -736,8 +745,9 @@ done
 #                The decoy is a PREFIX, so this row also pins that the corruption
 #                does not travel forward.
 SPAN2_MECHS=('$( (:) )' '$(case x in a) : ;; esac)' "\$(: # (
-)" '$((:)|(:))')
-SPAN2_IDS=(vbareparen vcasearm vcomment varithsep)
+)" '$((:)|(:))' '$(case x in a) : ;; #x;esac
+b) : ;; esac)')
+SPAN2_IDS=(vbareparen vcasearm vcomment varithsep vcasecomment)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
   lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
@@ -1362,11 +1372,11 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=602
+EXPECTED_ROWS=620
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 521 of the 602 rows deny on the precise path; the other 81 are ALLOW there
-# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-* controls, plus the 14
+# 522 of the 620 rows deny on the precise path; the other 98 are ALLOW there
+# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-* controls, plus the 31
 # precise-path gaps). Corrected 2026-09-13: this was the FIFTH stale copy of a
 # count in this file, found by review after four others were repaired -- and it
 # sits five lines above its own warning about exactly that. These numbers are
@@ -1378,22 +1388,55 @@ EXPECTED_ROWS=602
 # 504 -> 521, +17. The `case`-arm bucket (toolvcasearm-*/verbvcasearm-*/
 # flagvcasearm-easbld/ghapi/ghcomment) now denies on the precise path, each
 # attributed to its own family's check -- see EXPECTED_DENY_ATTRIB below.
-EXPECTED_DENY_ATTRIB_ROWS=521
+#
+# BUMPED AGAIN 2026-09-13 (post-implementation review, SAME todo): 521 -> 522,
+# +1. `flagvcasecomment-ghadmin` -- ONE of the 18 new vcasecomment rows added
+# by the same review round -- denies from the pre-existing "no REAL --auto"
+# check, same attribution pattern as flagvcasearm-ghadmin. The other 17
+# vcasecomment rows stay ALLOW (a documented, pre-existing residual -- see
+# EXPECTED_PRECISE_GAPS below), so they add no attribution rows.
+EXPECTED_DENY_ATTRIB_ROWS=522
 
 # This was "14 + 17 = 31" before the case-arm fix landed (2026-09-13,
-# todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md):
+# todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md),
+# THEN "14" for one revision (the 17-row case-arm bucket CLOSED), and is now
+# "14 + 17 = 31" AGAIN via a DIFFERENT 17 -- read that as two different
+# buckets landing at the same total, not as the fix being reverted:
 #   14  r4brange-tool-* (7) + r4brange-verb-* (7) -- brace range, no sigil.
-#   17  toolvcasearm-* (7) + verbvcasearm-* (7) + flagvcasearm-* (3 of 4)
-#       -- `case` arm `)` with no matching opener.
-# The 17-row bucket is CLOSED on the precise path: lib/cmd-detect.sh now
-# recognises `case`/`esac` at a genuine command-word start, so that `)` no
-# longer closes the enclosing $(...) early. Only the 14 r4brange-* rows
-# remain -- a documented residual with its own open todo, not a failure.
-# Pinning 0 here would make this gate permanently red, and a permanently red
-# gate gets disabled -- which is how the corpus ended up unguarded in the
-# first place.
-EXPECTED_PRECISE_GAPS=14
+#       Documented residual, own open todo, unrelated to case/esac.
+#   17  toolvcasecomment-* (7) + verbvcasecomment-* (7) +
+#       flagvcasecomment-* (3 of 4) -- a case arm COMPOSED with a shell
+#       COMMENT that hides a decoy `esac`, added by the SAME todo's
+#       post-implementation review as a documented, pre-existing residual
+#       (ALLOW on the parent commit too -- this fix did not open it, and
+#       fixing it needs comment-state tracking, already rejected elsewhere
+#       in this file as "a fifth grammar bet"). See guard-outward-cli.sh's
+#       DOCUMENTED RESIDUALS entry for the full account.
+# The ORIGINAL 17-row bucket (toolvcasearm-*/verbvcasearm-*/flagvcasearm-*,
+# the unterminated/comment-free case-arm shape) is CLOSED on the precise path
+# and no longer contributes here -- lib/cmd-detect.sh now recognises
+# `case`/`esac` at a genuine command-word start, so that `)` no longer closes
+# the enclosing $(...) early for THAT shape. Pinning 0 here would make this
+# gate permanently red, and a permanently red gate gets disabled -- which is
+# how the corpus ended up unguarded in the first place.
+EXPECTED_PRECISE_GAPS=31
 
+# SUPERSEDED 2026-09-13 -- MARKER ADDED (post-implementation review of the
+# case-arm todo, its own SIXTH instance of the exact stale-count defect this
+# file's header already names as its dominant failure mode -- found beside
+# the very constant this note describes). The "31 + 133 = 164" total below is
+# STALE: EXPECTED_PRECISE_GAPS moved twice in this same change (31 -> 14 ->
+# 31, via two DIFFERENT 17-row buckets, see that constant's own comment) and
+# neither move re-derived this cross-check. The CURRENT, measured total is
+# **31 + 219 = 250**, matching the live `all-path gaps=250` this file itself
+# prints -- verified by counting the actual "precise-clean, degraded-dirty"
+# section's data rows on this run (`awk` between its own header and the
+# "deny-reason attribution" header that follows it), not by arithmetic on
+# old numbers. The SUB-BREAKDOWN two paragraphs below (the 25/108/133 split)
+# is NOT re-derived here and must be treated as stale too -- re-count it from
+# a live run before citing any of its specific figures; only the TOTAL is
+# corrected in this pass.
+#
 # 31 + 133 = 164, and the 133 is independently printed above as the
 # "precise-clean, degraded-dirty" section's row count -- so this total has a
 # cross-check inside the same run rather than resting on this comment.
@@ -1452,7 +1495,14 @@ EXPECTED_PRECISE_GAPS=14
 #        and are still dirty (the degraded paths never source the lib), just
 #        with a different per-path tuple than the one pinned before.
 # -17 removed + 7 re-added = net -10 = 243 -> 233. See EXPECTED_ALLPATH_DIRTY_IDS.
-EXPECTED_ALLPATH_GAPS=233
+#
+# BUMPED AGAIN 2026-09-13 (post-implementation review, SAME todo): 233 -> 250,
+# net +17. The 18 new vcasecomment rows (see EXPECTED_PRECISE_GAPS above): 17
+# are ALLOW on all four paths (the documented, pre-existing comment-composition
+# residual -- straight ADDITIONS to this bucket, no prior tuple to replace),
+# and the 18th (flagvcasecomment-ghadmin) denies on every path via the
+# pre-existing "no REAL --auto" check and contributes nothing here.
+EXPECTED_ALLPATH_GAPS=250
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 r4brange-tool-easbld
@@ -1469,6 +1519,23 @@ r4brange-verb-ghcomment
 r4brange-verb-ghmerge
 r4brange-verb-npmpub
 r4brange-verb-railup
+flagvcasecomment-easbld
+flagvcasecomment-ghapi
+flagvcasecomment-ghcomment
+toolvcasecomment-easbld
+toolvcasecomment-easupd
+toolvcasecomment-ghapi
+toolvcasecomment-ghcomment
+toolvcasecomment-ghmerge
+toolvcasecomment-npmpub
+toolvcasecomment-railup
+verbvcasecomment-easbld
+verbvcasecomment-easupd
+verbvcasecomment-ghapi
+verbvcasecomment-ghcomment
+verbvcasecomment-ghmerge
+verbvcasecomment-npmpub
+verbvcasecomment-railup
 PIN_PRECISE_EOF
 )
 
@@ -1706,6 +1773,23 @@ ghroot-reposep-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
 ghroot-reposep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 ghroot-selfrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
 ghroot-vs-auto p=DENY j=ALLOW l=ALLOW a=ALLOW
+flagvcasecomment-easbld p=ALLOW j=DENY l=DENY a=DENY
+flagvcasecomment-ghapi p=ALLOW j=DENY l=DENY a=DENY
+flagvcasecomment-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+toolvcasecomment-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+verbvcasecomment-easbld p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-easupd p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-ghapi p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-npmpub p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-railup p=ALLOW j=DENY l=DENY a=DENY
 PIN_ALLPATH_EOF
 )
 
@@ -2105,6 +2189,7 @@ flagvvar-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag m
 flagvbt-ghadmin    : command-position 'gh pr merge --admin' uses administrator privileges to
 flagvbareparen-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 flagvcasearm-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcasecomment-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 flagvcomment-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 flagvarithsep-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 c1-submit-lit      : command-position 'eas build --auto-submit' submits the finished binary t
