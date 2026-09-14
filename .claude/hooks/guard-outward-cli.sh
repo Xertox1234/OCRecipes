@@ -1886,8 +1886,8 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # same optional-value arm as the wide form, so it parses `-t x` as flag-plus-value and reaches
 # `api` exactly as the wide form does. Instrumented at the two count sites,
 # `gh -t x api repos/o/r -X POST` and `gh -Z v api repos/o/r --method PUT` both report
-# wide=1 sepsafe=1, not sepsafe=0 — and the fail-closed operand a few lines above
-# (`_OUT_SEPSAFE_TAKES_VALUE`) exists precisely to REQUIRE that, so the false prose
+# wide=1 sepsafe=1, not sepsafe=0 — and the fail-closed operand `_OUT_SEPSAFE_TAKES_VALUE`
+# exists precisely to REQUIRE that, so the false prose
 # contradicted a true assertion in its own file.
 #
 # The real reason is directional. The two grammars disagree only where the WIDE form spans a
