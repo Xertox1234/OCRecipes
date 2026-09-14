@@ -159,7 +159,11 @@ construction — no corpus required, and scoped explicitly to the boundary swap,
 ## Related Files
 
 - `todos/archive/P1-2026-09-13-a-redirect-between-git-and-its-verb-defeats-the-worktree-contract.md` — the disclosure block, after both rounds (archived 2026-09-13 when the fix landed)
-- `.claude/hooks/lib/cmd-detect.sh:67-116` — the definitional header that was not read; `:119-125` the narrow note that was
+- `.claude/hooks/lib/cmd-detect.sh` — the definitional header above `_CMD_POS_PREFIX` (the one that was
+  not read) and the narrower 2026-09-01 note directly above `_CMD_POS_SUFFIX` (the one that was). Cited by
+  anchor: these read `:67-116` and `:119-125` until 2026-09-13. They were accurate, but `cmd-detect.sh` is
+  a frequently-edited shared lib with seven consumers, so a line range there is a citation waiting to rot —
+  and this document exists to say so.
 - `.claude/hooks/git-safety.sh` — the `split_segments` and `MUTATING_GIT_SEG_RE` definitions. Cited by
   symbol, not by line: this entry read `:337,425` until 2026-09-13, when a change to that file moved both
   and the numbers silently became wrong — positional decay inside the Related Files block of the document

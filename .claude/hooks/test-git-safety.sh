@@ -582,13 +582,19 @@ assert_deny "invariant: a post-verb -C must NOT overwrite the real -C <main> whe
 assert_deny "invariant: control — same shape without the glued redirect already stopped at the verb" \
   "$(json "$SESSION" "$WT_A" "git -C $MAIN commit -C $WT_A")"
 
-# Verb-glued redirects resolve through the VERB branch; the END fail-safe stays unreachable.
-# Two-sided, and only the SECOND row discriminates: the bare form emits NO target and would
-# DENY from a main cwd whether or not the fail-safe ran (check_repo_target falls back to cwd
-# either way), so it is a control. The -C row is the one that proves a TARGET is emitted.
-assert_deny "verb-glued redirect, cwd=main — control: DENY comes from the cwd fallback, not from emitting" \
+# Verb-glued redirects resolve through the VERB branch. BOTH rows below are CONTROLS: neither
+# can tell the prefix-based classification from the earlier blanket skip, because with nothing
+# after the glued verb the same target is emitted either way — verified by mutation, which
+# reverts the classification and leaves both of these green. The row that actually
+# discriminates is the invariant row ABOVE (`git -C <main> commit>log -C <worktree>`), which
+# has a trailing token to be wrongly consumed and does redden.
+# An earlier revision of this comment called the second row "the discriminating row". That was
+# the THIRD wrong claim in this file about which row proves what on this same question — the
+# hook-side comment records the other two. When a comment asserts that a row discriminates,
+# the way to find out is to run the mutation and see whether that row reddens.
+assert_deny "verb-glued redirect, cwd=main — control: DENY comes from the cwd fallback" \
   "$(json "$SESSION" "$MAIN" 'git commit>log')"
-assert_allow "verb-glued redirect with -C <worktree> — the discriminating row: the -C TARGET resolves" \
+assert_allow "verb-glued redirect with -C <worktree> — control: the -C target resolves either way" \
   "$(json "$SESSION" "$MAIN" "git -C $WT_A commit>log")"
 
 # --- Two residuals this change does NOT close. Both are real invocations (argv shim) that

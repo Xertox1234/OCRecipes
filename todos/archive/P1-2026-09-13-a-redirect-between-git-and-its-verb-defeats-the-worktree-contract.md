@@ -119,12 +119,19 @@ you weigh the isolation guarantee higher.
       todo passed a 630-row corpus that held spacing fixed and missed every glued row.
       Regenerated independently rather than inherited; the inherited table was wrong (above).
 - [x] Mutation-verified: revert the new alternative and confirm only the redirect rows redden.
-      Measured: 153 → 143 passed, and the 10 that redden are exactly the 9 new redirect DENY
-      rows plus the KNOWN-OVERDENY pin. The trailing-redirect control stays GREEN under the
-      mutation — shipped always saw that one — so the mutation is targeted, not a blanket break.
+      Round 1: 153 → 143 passed, the 10 that redden being exactly the 9 new redirect DENY rows
+      plus the KNOWN-OVERDENY pin, with the trailing-redirect control staying GREEN — targeted,
+      not a blanket break. **Five mutations in total across the three review rounds**, each
+      reddening only its own rows: the walker arm (3), the naive lib source (5), the blanket
+      skip (4), replace-instead-of-union (2), and the last-character predicate (5).
 - [x] `.claude/hooks/test-git-safety.sh` gains the rows; full hook suite green.
-      126 → 153 in this file; 37/37 hook self-test files pass; the required
+      **126 → 193 in this file at archive time**; 37/37 hook self-test files pass; the required
       `Outward-CLI guard corpus` check reproduces its pin exactly (rows=602, no drift).
+      The intermediate figures are kept in the Updates below because each belongs to the round
+      that measured it: 153 after round 1, 174 after round 2, 182 after round 3, 193 final. An
+      earlier revision of this AC left "126 → 153" standing after two further rounds had added
+      40 rows — the count is a property of the tree it was taken on, and this file is archived,
+      so a reader has no later revision to correct it from.
 
 ## Implementation Notes
 
@@ -374,6 +381,37 @@ carries values outside the population the check governs; quote the APPLICABLE de
   JSON" asserted with a `grep` for the deny substring, which still matches when junk is
   PREPENDED — so it would have passed either way. Replaced with a first-byte check plus a
   non-vacuity control. **A pin that cannot fail is not a pin.**
+
+- **Review rounds 2 and 3 — the matcher was right early; every later defect was in the
+  TOKENIZER or in a CLAIM.** Recorded because the shape repeated:
+  - **Round 2 found that widening the matcher without widening `git_c_target` introduced a
+    regression** — a redirect before a repo-redirecting global ended the walker's scan, so
+    `git 2>/dev/null -C <worktree> commit` (the spelling CLAUDE.md prescribes) was newly
+    DENIED and the mirror `-C <main>` case was silently ALLOWED. Also that
+    "FAIL-TO-STATUS-QUO" was false for three paths: under `set -uo pipefail` a lib fatal is
+    fatal **even inside the `if` condition**, so the hook died printing zero bytes — a total
+    silent ALLOW. Fixed with a subshell plus a self-test, and adoption changed from replace
+    to **union**, since a self-test cannot detect a candidate that is merely NARROWER.
+  - **Round 3 found a CRITICAL I had introduced in round 2's own repair.** The pending-target
+    test read the last CHARACTER of the word rather than a complete operator RUN, so a
+    redirect target whose filename ends in `!` swallowed the following `-C <main>`:
+    `git >out! -C <main> reset --hard` and `clean -fdx` both ALLOWED, each with a
+    one-character control (`>out`) that still denied.
+
+  **The axis that hid it, twice.** The round-2 rows all used `/dev/null` as the redirect
+  target, so the target's FINAL CHARACTER never varied — the same "an axis you do not vary is
+  an axis where a defect is invisible" rule this todo already states, one axis over from where
+  it had just been quoted into a code comment. Writing a rule down does not install it.
+
+  **Three claims about the same fail-safe were wrong in succession** (UNREACHABLE → REACHABLE
+  → UNREACHABLE), and the true route never involved redirects at all: an arg-taking global
+  swallows the verb token. All three readings are recorded in place in the hook rather than
+  overwritten, because the pattern is the lesson.
+
+  One row also shipped with the **wrong expectation**: `git >a> -C <main> commit` was asserted
+  DENY from the shape of the string, when bash creates a file named `-C`, consumes it as the
+  second redirect's target, and never acts on main — ALLOW was correct. Ask whether the verdict
+  is CORRECT, not whether it matches the guess.
 
 - **Scoreboard, stated so it cannot be read as more than it is:** two positions closed at the
   regex level; 10 of 14 operator families closed end-to-end; 912/1344 rows SEEN through the
