@@ -491,7 +491,7 @@ assert_deny "verb-glued >& is newly SEEN (ALLOW on main) — the residual is pos
   "$(json "$SESSION" "$MAIN" 'git commit>&out')"
 assert_deny "verb-glued >| is newly SEEN (ALLOW on main) — the residual is positional" \
   "$(json "$SESSION" "$MAIN" 'git commit>|out')"
-assert_deny "verb-glued &> was ALREADY denied before this change (the & closer) — not new coverage" \
+assert_deny "verb-glued &> was ALREADY denied — split_segments flushes its &, leaving 'git commit'" \
   "$(json "$SESSION" "$MAIN" 'git commit&>out')"
 assert_allow "verb-glued 2>&1 stays allowed CORRECTLY — bash lexes the verb as commit2" \
   "$(json "$SESSION" "$MAIN" 'git commit2>&1')"
@@ -521,13 +521,33 @@ assert_deny "walker: control — redirect AFTER the -C was always resolved corre
 assert_allow "walker: a QUOTED redirect-shaped token is a literal arg, not a redirect" \
   "$(json "$SESSION" "$MAIN" "git '2>/dev/null' commit -m x")"
 
-# The fail-safe at the end of git_c_target became REACHABLE with the redirect-skip arm, and its
-# comment used to say it was not. A verb-glued redirect is skipped, so no word ever reaches the
-# verb branch and the END fail-safe is what emits. Pinned in BOTH directions so the branch that
-# just came alive is not the one branch without coverage — and so nobody deletes it as dead.
-assert_deny "fail-safe: verb-glued redirect, cwd=main — emits cwd, so DENY" \
+# SPACED redirect operator: bash spells `2> /dev/null` as TWO words, so skipping only the
+# operator left the TARGET word to be read as the verb — ending the scan and reproducing the
+# same regression as the glued spelling. Invisible to the original corpus, which varied WHERE
+# the redirect sits while holding operator-to-target spacing glued throughout.
+assert_deny "walker: SPACED redirect before -C <main>, cwd=worktree — target consumed, -C mined" \
+  "$(json "$SESSION" "$WT_A" "git 2> /dev/null -C $MAIN commit -m x")"
+assert_allow "walker: SPACED redirect before -C <worktree>, cwd=main — sanctioned idiom stays ALLOWED" \
+  "$(json "$SESSION" "$MAIN" "git 2> /dev/null -C $WT_A commit -m x")"
+assert_deny "walker: SPACED bare > before -C <main>, cwd=worktree — target consumed, -C mined" \
+  "$(json "$SESSION" "$WT_A" "git > /dev/null -C $MAIN commit -m x")"
+
+# A verb GLUED to a redirect is still the verb, so collection must STOP there — the invariant
+# git_c_target's own header states. A blanket skip broke it: the walker ran on into post-verb
+# territory and a `-C` that git would parse as a SUBCOMMAND option overwrote the real repo
+# redirect, landing on a registered target. Deciding on the PREFIX keeps the two apart.
+assert_deny "invariant: a post-verb -C must NOT overwrite the real -C <main> when the verb is redirect-glued" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN commit>log -C $WT_A")"
+assert_deny "invariant: control — same shape without the glued redirect already stopped at the verb" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN commit -C $WT_A")"
+
+# Verb-glued redirects resolve through the VERB branch; the END fail-safe stays unreachable.
+# Two-sided, and only the SECOND row discriminates: the bare form emits NO target and would
+# DENY from a main cwd whether or not the fail-safe ran (check_repo_target falls back to cwd
+# either way), so it is a control. The -C row is the one that proves a TARGET is emitted.
+assert_deny "verb-glued redirect, cwd=main — control: DENY comes from the cwd fallback, not from emitting" \
   "$(json "$SESSION" "$MAIN" 'git commit>log')"
-assert_allow "fail-safe: verb-glued redirect with -C <worktree> — emits the -C TARGET, not cwd" \
+assert_allow "verb-glued redirect with -C <worktree> — the discriminating row: the -C TARGET resolves" \
   "$(json "$SESSION" "$MAIN" "git -C $WT_A commit>log")"
 
 # --- Two residuals this change does NOT close. Both are real invocations (argv shim) that
@@ -559,9 +579,9 @@ assert_deny "KNOWN-OVERDENY (inherited, safe direction): git2>out invokes git2, 
 LIBTMP=$(mktemp -d)
 mkdir -p "$LIBTMP/lib"
 cp "$HOOK" "$LIBTMP/git-safety.sh"
-assert_deny_stub() {  # $1=name $2=lib body
+assert_deny_stub() {  # $1=name $2=lib body $3=payload (default: an ordinary mutating git)
   printf '%s\n' "$2" > "$LIBTMP/lib/cmd-detect.sh"
-  local out; out=$(json "$SESSION" "$MAIN" 'git commit -m x' | bash "$LIBTMP/git-safety.sh" 2>/dev/null)
+  local out; out=$(json "$SESSION" "$MAIN" "${3:-git commit -m x}" | bash "$LIBTMP/git-safety.sh" 2>/dev/null)
   if echo "$out" | grep -q '"permissionDecision": "deny"'; then
     echo "PASS: $1"; PASS=$((PASS+1))
   else
@@ -569,8 +589,17 @@ assert_deny_stub() {  # $1=name $2=lib body
     echo "  got: $(echo "$out" | head -2)"; FAIL=$((FAIL+1))
   fi
 }
-# Control FIRST: with a healthy lib the copy must deny, or every row below passes vacuously.
-assert_deny_stub "broken-lib control: a HEALTHY lib still denies through the copied hook" \
+# Control FIRST, and it must be TWO-SIDED. `git commit -m x` is matched identically by the
+# shipped fallback and by the adopted regex, so a control using it stays green even if
+# adoption silently never engages — it would prove only "the copied hook does not crash".
+# A redirect-position command is denied ONLY by the adopted regex, so it fails if the lib is
+# not actually adopted. (Found by mutation: forcing the self-test to always fail left the
+# old control green while 17 adoption-dependent rows went red.)
+assert_deny_stub "broken-lib control: a HEALTHY lib is genuinely ADOPTED (redirect-only shape)" \
+  "$(cat "$(dirname "$HOOK")/lib/cmd-detect.sh")" 'git 2>/dev/null commit -m x'
+# Second half of the same control: the ordinary payload the broken-lib rows below use must
+# ALSO deny with a healthy lib, or those rows would be measuring the wrong thing.
+assert_deny_stub "broken-lib control: a HEALTHY lib also denies the ordinary payload" \
   "$(cat "$(dirname "$HOOK")/lib/cmd-detect.sh")"
 assert_deny_stub "broken lib: top-level unset var (fatal under set -u) falls back, not ALLOW" \
   'BAD="${DEFINITELY_NOT_SET}"'
@@ -580,6 +609,25 @@ assert_deny_stub "broken lib: malformed ERE constant (grep rc=2) falls back, not
   '_CMD_GIT_GLOBALS="((" ; _CMD_POS_SUFFIX="([[:space:]]|$)"'
 assert_deny_stub "broken lib: valid ERE with WRONG semantics falls back, not ALLOW" \
   '_CMD_GIT_GLOBALS="ZZZZNEVERMATCH" ; _CMD_POS_SUFFIX="([[:space:]]|$)"'
+# A NARROWER lib is the one the self-test cannot see: it matches the canonical string and
+# rejects the non-invocation, so it passes both directions, yet it SUBTRACTS denials the
+# shipped fallback made. Only alternating with the fallback (union, never substitute) makes
+# adoption monotone. Both stubs below are well-formed and pass the self-test.
+# The EOL-anchor case needs the BARE payload `git commit`: with `-m x` appended there is a
+# trailing space after the verb, so a suffix of `([[:space:]])` still matches and the dropped
+# `$` is invisible. A row whose payload cannot express the defect tests nothing.
+assert_deny_stub "narrower lib: dropping the EOL anchor must not lose a bare 'git commit'" \
+  '_CMD_GIT_GLOBALS="(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-[^[:space:]]+)))*" ; _CMD_POS_SUFFIX="([[:space:]])"' \
+  'git commit'
+STUBNARROW='_CMD_GIT_GLOBALS="([[:space:]]+-p)*" ; _CMD_POS_SUFFIX="([[:space:]]|$)"'
+printf '%s\n' "$STUBNARROW" > "$LIBTMP/lib/cmd-detect.sh"
+NARROW_OUT=$(json "$SESSION" "$WT_A" "git -C $MAIN commit -m x" | bash "$LIBTMP/git-safety.sh" 2>/dev/null)
+if echo "$NARROW_OUT" | grep -q '"permissionDecision": "deny"'; then
+  echo "PASS: narrower lib: dropping the -C arm must not lose the incident class itself"; PASS=$((PASS+1))
+else
+  echo "FAIL: narrower lib: dropping the -C arm LOST 'git -C <main> commit' — the incident class"
+  FAIL=$((FAIL+1))
+fi
 # Contamination needs its OWN assertion, not assert_deny_stub: that helper greps for the deny
 # substring, which still matches when junk is PREPENDED, so it would pass either way. Check the
 # first byte instead — a strict envelope parser reads a leading non-`{` as a malformed reply,

@@ -268,6 +268,7 @@ git_c_target() {
       # phase 1: walk the git global options until the verb, resolving EVERY repo redirect.
       # git honors cumulative -C (last absolute wins) and --git-dir/--work-tree redirects; a
       # benign unmodeled global (--no-pager/-p/…) must be skipped so a later real -C is reached.
+      if (predir)       { predir = 0; return }          #   target word of a SPACED redirect operator
       if (pend == "C")  { fold(w);  pend = ""; return } #   -C arg (value may be quoted): accumulate
       if (pend == "c")  { pend = ""; return }           #   -c value: skip (its name=value token)
       if (pend == "gd") { setgd(w); pend = ""; return } #   --git-dir arg (separate form)
@@ -292,16 +293,39 @@ git_c_target() {
       # commit -m x` — the -C spelling CLAUDE.md prescribes — was DENIED though it is safe.
       # Ordering is the discriminator that proves this is the tokenizer and not the regex: the
       # same tokens with the redirect AFTER the -C always resolved correctly.
-      # The test is `<` or `>` ANYWHERE in an UNQUOTED word, not a re-derived redirect grammar:
-      # this is the same insight stated in the note on _CMD_POS_SUFFIX — neither character can
-      # be part of a real unquoted verb or flag word — and re-deriving that grammar here is the
-      # defect this whole change exists to avoid. `!tnt` is load-bearing: a QUOTED
-      # redirect-shaped token (single- or double-quoted) is a literal ARGUMENT, not a redirect,
-      # and must NOT be skipped. Skipping only ever lets the walker reach MORE globals, so it
-      # can make the resolved target more accurate, never less.
+      # `!tnt` is load-bearing: a QUOTED redirect-shaped token is a literal ARGUMENT, not a
+      # redirect, and must NOT be skipped.
+      #
+      # THE PREFIX BEFORE THE FIRST OPERATOR DECIDES WHICH OF THREE THINGS THIS WORD IS, and
+      # collapsing them into one blanket skip was wrong in two measured ways (review round 2):
+      #   * prefix EMPTY or an fd number (`2>/dev/null`, `>out`, `{fd}>x`) — a real redirect.
+      #     Skip it. If the word ENDS at the operator (`2>` in `git 2> /dev/null -C <main> …`)
+      #     bash spells the redirect as TWO words, so the TARGET is the next word: set predir
+      #     and swallow that too. Skipping only the operator left `/dev/null` to be read as the
+      #     verb, which ended the scan and reproduced the exact regression this arm fixes — a
+      #     new false-DENY on the `-C <worktree>` idiom — in the spaced spelling. That spelling
+      #     was invisible because the corpus varied WHERE the redirect sits while holding
+      #     operator-to-target spacing glued: an axis you do not vary is an axis where a defect
+      #     is invisible.
+      #   * prefix is a real WORD (`commit>log`) — that prefix IS the verb, merely glued to a
+      #     redirect. Emit and STOP, exactly as a bare verb would. Skipping it instead ran the
+      #     walker on into post-verb territory and broke this function-s own stated invariant
+      #     that collection stops at the verb: `git -C <main> commit>log -C /tmp/x` emitted
+      #     `c /tmp/x`, letting a post-verb token overwrite the real repo redirect.
+      # Deciding on the PREFIX rather than on the presence of an operator anywhere is what keeps
+      # those three cases apart. It is not a re-derived redirect grammar: the only classes are
+      # empty, all-digits, and a `{name}` fd — the same insight stated in the note on
+      # _CMD_POS_SUFFIX, that neither `<` nor `>` can be part of a real unquoted word.
       # (No apostrophe appears in this block on purpose: the whole program is inside a
       # single-quoted awk string, so one would close it and hand the rest to the shell.)
-      if (!tnt && (index(w, "<") || index(w, ">"))) return
+      if (!tnt && (index(w, "<") || index(w, ">"))) {
+        rpre = w; sub(/[<>].*$/, "", rpre)
+        if (rpre == "" || rpre ~ /^[0-9]+$/ || rpre ~ /^[{][A-Za-z_][A-Za-z0-9_]*[}]$/) {
+          if (w ~ /[<>&|!]$/) predir = 1                 #   operator with no target: next word is it
+          return                                          #   a real redirect: skip, keep scanning
+        }
+        emit_effective(); done = 1; return                #   a VERB glued to a redirect: stop here
+      }
       emit_effective()                                  #   first non-option word = the verb: emit & stop
       done = 1                                           #   (git commit -C HEAD: a -C after the verb is never mined)
     }
@@ -333,14 +357,18 @@ git_c_target() {
         }
       }
       endword()
-      # Fail-safe, REACHABLE as of 2026-09-13 — it was not before, and the reason it was not
-      # is the half that changed. The old note read "git_c_target only runs on SEG_RE-matched
-      # segments, which always contain a verb, so the verb branch sets done=1 first". The verb
-      # branch no longer always runs: the redirect-skip arm above steps over a VERB-GLUED
-      # redirect (`git commit>log`), so no word reaches the verb branch, done stays 0, and THIS
-      # line is what emits. Verified: `git commit>log` from a main-checkout cwd DENIES through
-      # this path, and `git -C <worktree> commit>log` correctly ALLOWS through it. Covered by a
-      # dedicated row in test-git-safety.sh — do not delete this branch as dead code.
+      # Fail-safe, still UNREACHABLE — but NOT for the reason the original note gave, and the
+      # difference is worth recording because one revision of this file got it wrong in each
+      # direction. The original read "SEG_RE-matched segments always contain a verb, so the
+      # verb branch sets done=1 first". A first cut at the redirect-skip arm above skipped
+      # `commit>log` wholesale, which made no word reach the verb branch and made THIS line
+      # live. That was a defect, not a feature: it also ran the walker past the verb, so a
+      # post-verb `-C /tmp/x` overwrote a real `-C <main>`. The arm now decides on the PREFIX,
+      # so a verb glued to a redirect emits and stops like any other verb, and the invariant
+      # above ("collection STOPS at the verb") holds again.
+      # Kept as defense in depth: if a future SEG_RE relaxation ever admitted a verbless
+      # segment, this still emits its redirect target rather than silently falling back to cwd,
+      # which could launder a main mutation. Do not delete it as dead code.
       if (!done) emit_effective()
     }
   '
@@ -528,7 +556,9 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #      these families "never reach this regex at all", which this file's OWN test suite
     #      already falsified: `git checkout>&2 -b foo` is an assert_deny here. Measured across
     #      4 families x 4 positions against both hooks, the VERB-GLUED position is closed:
-    #      `git commit&>out` was already denied before this change (the `&` closer), and
+    #      `git commit&>out` was already denied before this change — split_segments flushes on
+    #      its unquoted `&` and leaves `git commit` to match the OLD trailing boundary at
+    #      end-of-string, so nothing about `_CMD_POS_SUFFIX` is involved — and
     #      `git commit>&out` / `git commit>|out` are newly denied BY this change. Only
     #      `git commit2>&1` stays allowed there, correctly — it lexes as the verb `commit2`.
     #      Filed as
@@ -581,7 +611,15 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
         # everything would pass as readily as a correct one.
         if printf '%s' 'git commit -m x' | grep -qE "$_CAND" 2>/dev/null \
            && ! printf '%s' 'echo hello' | grep -qE "$_CAND" 2>/dev/null; then
-          MUTATING_GIT_SEG_RE="$_CAND"
+          # UNION IN, NEVER SUBSTITUTE. The self-test above proves the candidate is neither
+          # empty nor absurdly wide; it CANNOT prove it is not NARROWER than the shipped
+          # fallback, and a wholesale replace would then SUBTRACT denials. Measured: a lib
+          # whose `_CMD_POS_SUFFIX` drops the end-of-line anchor turns a bare `git commit` at
+          # main from DENY into ALLOW, and one whose `_CMD_GIT_GLOBALS` drops the `-C` arm
+          # turns `git -C <main> commit -m x` from a worktree cwd into ALLOW — the incident
+          # class this hook exists for. Alternating with the fallback makes adoption monotone:
+          # the lib can only ever ADD matches, so no lib defect can subtract a denial.
+          MUTATING_GIT_SEG_RE="(${MUTATING_GIT_SEG_RE})|(${_CAND})"
         fi
       fi
     fi
