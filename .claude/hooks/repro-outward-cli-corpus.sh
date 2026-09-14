@@ -285,9 +285,18 @@ done
 # in test-guard-outward-cli.sh, since this corpus records the verdict, not the path.
 add ghrootv-retarget DENY 'gh -t x pr merge 42 -R other/org'
 add ghrootv-selfrepo DENY 'gh -t x pr merge 42 -R Xertox1234/OCRecipes'
-# FALSE-POSITIVE CONTROLS, same slot, read-only verbs. Without these the 34 rows
-# above are a restrictive failure wearing a green tick: a guard that denied every
+# FALSE-POSITIVE CONTROLS, same slot, read-only verbs. Without these the rows above
+# -- one per member of GH_ROOTV_FLAG_IDS x GH_ROOTV_FAM_IDS, plus the two literals --
+# are a restrictive failure wearing a green tick: a guard that denied every
 # root-position flag outright would pass all of them.
+#
+# THE COUNT IS NAMED AS A PRODUCT OF THE TWO ARRAYS DIRECTLY ABOVE, not as a literal.
+# A literal stood here and said 34, which was correct when this axis crossed 4 families
+# and silently wrong the moment ghcommentR/ghcreateR took it to 6 -- in the same commit,
+# two paragraphs below the sentence narrating that widening. EXPECTED_ROWS is the pin that
+# actually fires; a number in prose is just a claim, and this repo's rule is to compute
+# counts from the file rather than retype them. Naming the factors keeps it checkable by
+# reading two lines up.
 add ghrootvfp-list ALLOW 'gh -t x pr list'
 add ghrootvfp-view ALLOW 'gh -Z somevalue pr view 42'
 add ghrootvfp-get  ALLOW 'gh -t x api repos/o/r'
