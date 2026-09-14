@@ -3084,13 +3084,20 @@ assert_allow "R3 bound: same expansion NOT in command position stays allowed" \
   "$(json 'echo ${TOOL} run build')"
 assert_allow "R3 bound: command-position expansion with a NON-gated verb stays allowed" \
   "$(json '${TOOL} test')"
-# The bare-paren and case-arm spellings are NOT pinned as denies: they are still
-# ALLOWED, and the cause is one level down in lib/cmd-detect.sh's scanner, which
-# desynchronises on a bare `(` (measured: cmd_words_vanished renders
-# `e$( (:) )as update` as `e )as update`). Filed as
-# todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md.
-# Asserting the ALLOW here would encode the bypass as acceptable; the corpus
-# carries them with a DENY expectation so they report as gaps instead.
+# The bare-paren and case-arm SPELLINGS APPLIED TO THIS R3-SWEEP CONSTRUCTION
+# specifically are not pinned here either way -- this note originally said they
+# were still ALLOWED because of a scanner desync one level down in
+# lib/cmd-detect.sh. UPDATED 2026-09-13: that desync is now fixed for BOTH
+# mechanisms (bare-paren closed 2026-09-06, archived at
+# todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md;
+# case-arm closed on the precise path 2026-09-13, see the dedicated section
+# below), so the reasoning that justified NOT pinning a deny here no longer
+# holds in general -- see the "2026-09-06: bare-paren subshell" and
+# "2026-09-13: case-arm" sections further down in this file for the pinned
+# denies on the `eas`/`gh`/`npm`/`railway` families this corpus actually
+# generates. This specific `${TOOL} run build`-shaped combination was never
+# separately constructed or measured and stays untested here; asserting an
+# ALLOW or a DENY for a shape nobody built would be a guess, not a pin.
 # The second, independent trigger: a fixed 200-iteration cap was a decision
 # boundary with a sharp edge — 199 leading spans denied, 200 allowed. The bound
 # is now derived from the input length, so it cannot be reached by well-formed
@@ -3218,6 +3225,43 @@ assert_deny "bare-paren subshell splits gh's binary name" \
   "gh pr merge"
 assert_deny "bare-paren subshell splits the verb" \
   "$(json 'eas up$( (:) )date --branch preview')" \
+  "eas update/publish/submit"
+
+# ---------- 2026-09-13: case-arm `)` -- the sibling the paren counter cannot
+# reach (todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md)
+# ---------------------------------------------------------------------------
+# A case arm pattern's `)` has NO matching opener, so no depth arithmetic can
+# tell it apart from the substitution's real closer. Ground-truthed with a
+# PATH-stubbed `eas` before this fix landed: real bash invokes `eas update
+# --branch preview` for the decoy below, identically to the plain control.
+assert_deny "a case arm terminator does not close the substitution early" \
+  "$(json 'e$(case x in a) : ;; esac)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a case arm terminator splits gh's binary name too" \
+  "$(json 'g$(case x in a) : ;; esac)h pr merge 42')" \
+  "gh pr merge"
+assert_deny "the optional leading-paren arm form is balanced by the EXISTING bare-paren counter" \
+  "$(json 'e$(case x in (a) : ;; esac)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "multiple arms all stay open until the real esac" \
+  "$(json 'e$(case x in a) : ;; b) : ;; esac)as update --branch preview')" \
+  "eas update/publish/submit"
+# TWO-SIDED REGRESSION CONTROL: `case` must be recognised ONLY at a genuine
+# command-word start, never as a plain argument -- an unconditional tracker
+# would open a depth nothing ever closes here and silently lose this DENY.
+assert_deny "case as a plain ARGUMENT (echo case) must still deny" \
+  "$(json 'e$(echo case)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "case mid-word (casexyz) must not open anything" \
+  "$(json 'e$(echo casexyz)as update --branch preview')" \
+  "eas update/publish/submit"
+# UNION-PRESERVING CONTROL: case-tracking is gated to the COUNTING pass only
+# (cmd_words_vanished), never the blind one (cmd_words_vanished_blind) -- an
+# unterminated case is exactly the shape that would collapse BOTH renderings
+# to empty if it were tracked in both. The blind pass, which never tracks
+# case, still closes at the first unquoted `)` and denies here.
+assert_deny "an unterminated case still denies via the blind-pass union" \
+  "$(json 'e$(: ;case)as update --branch preview')" \
   "eas update/publish/submit"
 # ARITHMETIC is never empty, so the paren counter must not start deleting it --
 # `f$((1+2))oo` is really `f3oo`. Two-sided: the gated shape must NOT deny.

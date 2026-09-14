@@ -1493,6 +1493,47 @@ sub_eq() {  # $1=name $2=input $3=expected single body
 sub_eq 'extractor yields the WHOLE subshell body, not a truncation' \
   'f$( (:) )oo bar' ' (:) '
 
+# ---------- 2026-09-13: case-arm `)` -- the sibling the paren counter cannot
+# reach (todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md) ----
+# A case arm pattern (`a)`) has no matching opener, so no depth arithmetic can
+# tell its `)` apart from the substitution's real closer. Fixed by recognising
+# `case`/`esac` at a genuine command-word start (never as an argument, inside a
+# quote, or mid-word), tracked per level exactly like the bare-paren counter.
+sub_eq 'extractor yields the WHOLE case-arm body, arm terminator included' \
+  'e$(case x in a) : ;; esac)as update --branch preview' 'case x in a) : ;; esac'
+van 'a case arm terminator does not close the substitution early' \
+  'e$(case x in a) : ;; esac)as update --branch preview' 'eas update --branch preview'
+van 'the optional leading-paren arm form is balanced by the EXISTING counter' \
+  'e$(case x in (a) : ;; esac)as update --branch preview' 'eas update --branch preview'
+van 'multiple arms all stay open until the real esac' \
+  'e$(case x in a) : ;; b) : ;; esac)as update --branch preview' 'eas update --branch preview'
+# TWO-SIDED REGRESSION CONTROL, named per this todo's own AC: `case` must be
+# recognised ONLY at a genuine command-word start. Reverting the atcmd gate
+# (tracking the bare words unconditionally) turns this row red: the word
+# opens a depth nothing ever closes, the counting pass returns empty, and
+# `eas` never re-forms.
+van 'case as a plain ARGUMENT (echo case) must still deny -- NAMED two-sided pin' \
+  'e$(echo case)as update --branch preview' 'eas update --branch preview'
+van 'case mid-word (casexyz) must not open anything' \
+  'e$(echo casexyz)as update --branch preview' 'eas update --branch preview'
+van 'case as a suffix of a longer word (lowercase) must not open anything' \
+  'e$(echo lowercase)as update --branch preview' 'eas update --branch preview'
+van 'a quoted "case" must not open anything' \
+  'e$(echo "case")as update --branch preview' 'eas update --branch preview'
+# UNION-PRESERVING CONTROL: an unterminated case (no matching esac) is exactly
+# the shape that would collapse BOTH renderings to empty if case-tracking were
+# not gated to the counting pass alone -- see _cmd_vanish_pass's own header.
+# The counting pass is expected to render EMPTY here (casedepth never returns
+# to 0, so `if (depth >= 1) exit` fires); the blind pass, which never tracks
+# case at all, still closes at the first unquoted `)` and carries the verb.
+# (The vanb() assertions for this same construction are BELOW, in the
+# cmd_words_vanished_blind section -- vanb is not defined yet at this point in
+# the file, and calling it here silently no-ops as "command not found" under
+# `set -uo pipefail` with no `-e`, exactly the failure mode this suite's own
+# assertion-total pin exists to catch. Verified by running.)
+van 'an unterminated case leaves the COUNTING pass empty (expected)' \
+  'e$(: ;case)as update --branch preview' ''
+
 echo "--- cmd_words_vanished: ARITHMETIC gets NO special case, deliberately ---"
 # The arm that copied `$((...))` out verbatim was REMOVED 2026-09-07 after review.
 # It only ever prevented a FALSE POSITIVE -- an over-denial, never a bypass -- and
@@ -1580,6 +1621,14 @@ vanb 'a plain vanishing sigil renders identically in both passes' \
   'gh pr me${UNSET}rge 42' 'gh pr merge 42'
 vanb 'special-parameter deletion is present in the blind pass too' \
   'e$1as update' 'eas update'
+# case-arm union: the UNTERMINATED case above leaves the counting pass empty;
+# the blind pass, which never tracks case (gated to the counting pass only,
+# see _cmd_vanish_pass's own header), still closes at the first unquoted `)`
+# and carries the verb -- the union this rendering exists to provide.
+vanb 'the blind pass still denies an unterminated case -- the union this rendering exists for' \
+  'e$(: ;case)as update --branch preview' 'eas update --branch preview'
+vanb 'the blind pass stays case-BLIND by design (its own union contract)' \
+  'e$(case x in a) : ;; esac)as update --branch preview' 'e : ;; esac)as update --branch preview'
 
 echo "--- cmd_words_vanished: SPECIAL parameters are deletable, by the same criterion ---"
 # Each is ONE character long, so unlike an ordinary $name it TERMINATES against a
@@ -1873,7 +1922,7 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
 # assertion in a run that otherwise completed. It cannot catch an early
 # `return`/`exit` or a truncated file, because those terminate before this line.
-EXPECTED_TOTAL=611
+EXPECTED_TOTAL=622
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

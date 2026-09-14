@@ -518,6 +518,10 @@ cmd_words() {
 # not tuned for a nested-unescaped-backtick corner case no caller writes.
 cmd_extract_substitutions() {
   awk '
+    # kwbound(ch): true when ch is empty (end of buffer) or is not an
+    # identifier character -- the word-end test the case/esac recognizer
+    # below needs so it never fires mid-word (casexyz, lowercase).
+    function kwbound(ch) { return (ch == "" || ch !~ /[A-Za-z0-9_]/) }
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96) }
     { buf = buf $0 "\n" }
     END {
@@ -525,10 +529,31 @@ cmd_extract_substitutions() {
       depth = 0
       state[0] = 0
       parens[0] = 0
+      cmdpos[0] = 1
+      casedepth[0] = 0
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1)
         d = depth
         s = state[d]
+        # COMMAND-POSITION TRACKING, read-then-set at the very top of every
+        # iteration, before any branch below (2026-09-13, cmd-detect-case-arm
+        # todo). atcmd records whether position i is a genuine command-word
+        # start for level d, decided BEFORE this character is consumed;
+        # cmdpos[d] is then updated in the same motion for whatever comes
+        # next. One update point, not one per branch, is required in
+        # _cmd_vanish_pass (which continues out of most branches before a
+        # trailing update would ever run) and is mirrored here so both
+        # scanners share the same shape. The reset set mirrors the openers in
+        # _CMD_POS_PREFIX above (semicolon, ampersand, pipe, open paren,
+        # brace, bang, start of line) MINUS a closing paren -- a case/esac
+        # glued directly onto one with no separator is a documented residual,
+        # not a requirement of this todo. Whitespace PRESERVES whatever
+        # cmdpos[d] already was (a run of spaces/tabs after a separator must
+        # not lose the boundary before the next word is reached); anything
+        # else clears it.
+        atcmd = cmdpos[d]
+        if (c == ";" || c == "&" || c == "|" || c == "(" || c == "{" || c == "!" || c == "\n") cmdpos[d] = 1
+        else if (c != " " && c != "\t" && c != "\r") cmdpos[d] = 0
         if (s == 0) {
           if (c == BS) {
             if (d >= 1) accbuf[d] = accbuf[d] c
@@ -537,11 +562,12 @@ cmd_extract_substitutions() {
           }
           else if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
             depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""; parens[depth] = 0
+            cmdpos[depth] = 1; casedepth[depth] = 0
             i++
           }
           else if (c == BT) {
-            if (d >= 1 && kind[d] == "B") { print accbuf[d]; depth-- }
-            else { depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = ""; parens[depth] = 0 }
+            if (d >= 1 && kind[d] == "B") { print accbuf[d]; depth--; cmdpos[depth] = 0 }
+            else { depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = ""; parens[depth] = 0; cmdpos[depth] = 1; casedepth[depth] = 0 }
           }
           else if (c == "$" && i < n && substr(buf, i+1, 1) == SQ) {
             state[d] = 3
@@ -557,6 +583,30 @@ cmd_extract_substitutions() {
           }
           else if (c == SQ) { state[d] = 1; if (d >= 1) accbuf[d] = accbuf[d] c }
           else if (c == DQ) { state[d] = 2; if (d >= 1) accbuf[d] = accbuf[d] c }
+          # CASE/ESAC, command-position anchored (2026-09-13, this todo). A
+          # case arm pattern (a with a closing paren) has no matching opener
+          # for that paren, so the bare-paren counter just below can never
+          # reach it. Recognising the bare words case/esac unconditionally
+          # would be a deny-to-ALLOW regression generator on its own (an
+          # argument such as `echo case` would open a depth nothing ever
+          # closes, emptying the rendering), so both words count ONLY at
+          # atcmd (a genuine command-word start for this level, which already
+          # guarantees the preceding boundary) and ONLY as a whole word
+          # (kwbound guards the trailing boundary). esac never decrements
+          # below zero, so a decoy esac with no case open is inert. The
+          # optional leading-paren arm form needs no extra handling: that
+          # pair is balanced, so the EXISTING bare-paren counter absorbs it
+          # before the casedepth guard below is ever reached.
+          else if (c == "c" && atcmd && substr(buf, i, 4) == "case" && kwbound(substr(buf, i+4, 1))) {
+            casedepth[d]++
+            if (d >= 1) accbuf[d] = accbuf[d] "case"
+            i += 3
+          }
+          else if (c == "e" && atcmd && substr(buf, i, 4) == "esac" && kwbound(substr(buf, i+4, 1))) {
+            if (casedepth[d] > 0) casedepth[d]--
+            if (d >= 1) accbuf[d] = accbuf[d] "esac"
+            i += 3
+          }
           # BARE-PAREN DEPTH, per level, state 0 ONLY (2026-09-06). A bare `(`
           # opens a SUBSHELL inside a substitution body, and its `)` must not be
           # mistaken for the one closing the enclosing $(...). Before this, the
@@ -566,7 +616,7 @@ cmd_extract_substitutions() {
           # is literal text -- counting it there would unbalance the level and
           # reopen the very desynchronisation this closes.
           else if (c == "(") { parens[d]++; if (d >= 1) accbuf[d] = accbuf[d] c }
-          else if (c == ")" && d >= 1 && kind[d] == "P" && parens[d] == 0) { print accbuf[d]; depth-- }
+          else if (c == ")" && d >= 1 && kind[d] == "P" && parens[d] == 0 && casedepth[d] == 0) { print accbuf[d]; depth--; cmdpos[depth] = 0 }
           else if (c == ")" && parens[d] > 0) { parens[d]--; if (d >= 1) accbuf[d] = accbuf[d] c }
           else { if (d >= 1) accbuf[d] = accbuf[d] c }
         }
@@ -630,10 +680,12 @@ cmd_extract_substitutions() {
           }
           else if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
             depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""; parens[depth] = 0
+            cmdpos[depth] = 1; casedepth[depth] = 0
             i++
           }
           else if (c == BT) {
             depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = ""; parens[depth] = 0
+            cmdpos[depth] = 1; casedepth[depth] = 0
           }
           else if (c == DQ) { state[d] = 0; if (d >= 1) accbuf[d] = accbuf[d] c }
           else { if (d >= 1) accbuf[d] = accbuf[d] c }
@@ -834,6 +886,10 @@ _cmd_vanish_pass() {
     function safech(ch) {
       return (ch != "" && index(SAFE, ch) > 0) ? ch : PH
     }
+    # kwbound(ch): true when ch is empty (end of buffer) or is not an
+    # identifier character -- the word-end test the case/esac recognizer
+    # below needs so it never fires mid-word (casexyz, lowercase).
+    function kwbound(ch) { return (ch == "" || ch !~ /[A-Za-z0-9_]/) }
     # CODE 0 EMITS NOTHING, and that is the one case here that is a security
     # property rather than a fidelity one. Verified by od, bash 3.2:
     # e$(sq)\0(sq)as builds the three bytes `eas` -- the NUL is DROPPED and the token
@@ -855,8 +911,18 @@ _cmd_vanish_pass() {
     { buf = buf $0 "\n" }
     END {
       n = length(buf); depth = 0; state[0] = 0; parens[0] = 0; out = ""
+      cmdpos[0] = 1; casedepth[0] = 0
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1); d = depth; s = state[d]
+        # COMMAND-POSITION TRACKING, read-then-set at the top of the
+        # iteration, before any branch below can `continue` past a trailing
+        # update -- see the mirrored comment in cmd_extract_substitutions,
+        # which this shares the shape with. Whitespace preserves whatever
+        # cmdpos[d] already was; a reset operator sets it; anything else
+        # clears it.
+        atcmd = cmdpos[d]
+        if (c == ";" || c == "&" || c == "|" || c == "(" || c == "{" || c == "!" || c == "\n") cmdpos[d] = 1
+        else if (c != " " && c != "\t" && c != "\r") cmdpos[d] = 0
         if (s == 0 || s == 2) {
           if (c == BS) {
             if (d == 0) out = out c
@@ -913,12 +979,14 @@ _cmd_vanish_pass() {
           # rejoined. That is an over-DENIAL, which this rendering documents as
           # its safe direction.
           if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
-            depth++; state[depth] = 0; kind[depth] = "P"; parens[depth] = 0; i++
+            depth++; state[depth] = 0; kind[depth] = "P"; parens[depth] = 0
+            cmdpos[depth] = 1; casedepth[depth] = 0
+            i++
             continue
           }
           if (c == BT) {
-            if (s == 0 && d >= 1 && kind[d] == "B") depth--
-            else { depth++; state[depth] = 0; kind[depth] = "B"; parens[depth] = 0 }
+            if (s == 0 && d >= 1 && kind[d] == "B") { depth--; cmdpos[depth] = 0 }
+            else { depth++; state[depth] = 0; kind[depth] = "B"; parens[depth] = 0; cmdpos[depth] = 1; casedepth[depth] = 0 }
             continue
           }
           # BARE-PAREN DEPTH, per level, state 0 ONLY (2026-09-06) -- the mirror
@@ -939,8 +1007,31 @@ _cmd_vanish_pass() {
           # header for why a second pass exists at all.
           if (c == "(" && s == 0 && pcount) parens[d]++
           if (c == ")" && s == 0) {
-            if (d >= 1 && kind[d] == "P" && parens[d] == 0) { depth--; continue }
+            if (d >= 1 && kind[d] == "P" && parens[d] == 0 && casedepth[d] == 0) { depth--; cmdpos[depth] = 0; continue }
             if (parens[d] > 0) parens[d]--
+          }
+          # CASE/ESAC, command-position anchored, COUNTING PASS ONLY
+          # (2026-09-13, cmd-detect-case-arm todo) -- gated on `pcount` so the
+          # BLIND pass (cmd_words_vanished_blind, pcount=0) stays exactly as
+          # it was: this rendering exists to be UNIONED with that one at the
+          # consumer, never substituted for it, and adding case-tracking to
+          # both would collapse that union (an unterminated `case` with no
+          # matching `esac` would then empty BOTH renderings, a deny->ALLOW
+          # regression the union exists to prevent). Same recognition rule as
+          # cmd_extract_substitutions: only at a genuine command-word start
+          # (atcmd) and only as a whole word (kwbound). Gated to `d >= 1`
+          # because only the closing condition just above ever reads
+          # casedepth, so tracking it at depth 0 (outside every substitution)
+          # would be inert bookkeeping.
+          if (pcount && d >= 1 && s == 0 && atcmd && c == "c" && substr(buf, i, 4) == "case" && kwbound(substr(buf, i+4, 1))) {
+            casedepth[d]++
+            i += 3
+            continue
+          }
+          if (pcount && d >= 1 && s == 0 && atcmd && c == "e" && substr(buf, i, 4) == "esac" && kwbound(substr(buf, i+4, 1))) {
+            if (casedepth[d] > 0) casedepth[d]--
+            i += 3
+            continue
           }
         }
         if (s == 0) {

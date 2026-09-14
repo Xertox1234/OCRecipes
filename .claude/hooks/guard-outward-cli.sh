@@ -697,13 +697,17 @@
 #     own header names as its dominant defect. Corpus rows toolvbareparen-* now
 #     report `ok`.
 #
-#     THE `case`-ARM HALF IS STILL OPEN and unchanged:
-#         e$(case x in a) : ;; esac)as update --branch preview   -> ALLOW
-#     That `)` has no matching opener, so no depth arithmetic reaches it. Corpus
-#     rows toolvcasearm-*/verbvcasearm-*/flagvcasearm-* stay GAPs by design. Filed:
-#     todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
-#     The bare-paren todo is archived at
-#     todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
+#     THE `case`-ARM HALF IS CLOSED ON THE PRECISE PATH ONLY (2026-09-13,
+#     todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md):
+#         e$(case x in a) : ;; esac)as update --branch preview
+#           precise=DENY   nojq/nolib/noawk=ALLOW
+#     The lib now recognises `case`/`esac` at a genuine command-word start (per
+#     level, same shape as the bare-paren counter), so that `)` no longer closes
+#     the enclosing $(...) early on the path that sources the lib. The three
+#     degraded paths never read the lib at all, so they are UNCHANGED and stay a
+#     documented residual, same as every other lib-only fix in this file. The
+#     CLOSED entry ~90 lines below is the authority for the mechanism; this is
+#     the recap.
 #
 #   * SIDE EFFECT OF DECLINING, and it is a CORRECTNESS GAIN, not just a cost
 #     (2026-09-06, round 3): the 2026-09-03 narrow-deny rule denies an expansion
@@ -807,16 +811,33 @@
 #     number, so deleting it manufactures `foo` from `f$((1+2))oo`, whose real
 #     argv is `f3oo`. It is copied verbatim instead, exactly like `${#x}`.
 #
-#   * A `case` ARM'S `)` IS THE SAME SYMPTOM AND IS STILL OPEN.
-#     `e$(case x in a) : ;; esac)as update --branch preview` ALLOWS on all four.
-#     A paren counter cannot reach it: that `)` has no matching opener, so no
-#     depth arithmetic can distinguish it from the construct's real closer.
-#     Deliberately NOT fixed by tracking the `case`/`esac` keywords — a naive
-#     tracker is a deny→ALLOW regression generator, because `e$(echo case)as
-#     update` DENIES today and would leave the depth permanently open, emptying
-#     the rendering and silently losing that coverage. Tracked at
-#     todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
-#     and measured every run by this repo's corpus (`toolvcasearm-*`).
+#   * A `case` ARM'S `)` WAS THE SAME SYMPTOM. CLOSED 2026-09-13 ON THE PRECISE
+#     PATH (todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md;
+#     archived once merged):
+#         e$(case x in a) : ;; esac)as update --branch preview
+#           precise=DENY (command-position 'eas update/publish/submit')
+#           nojq=ALLOW  nolib=ALLOW  noawk=ALLOW  (documented residual, unchanged
+#           -- none of the three degraded paths sources the lib)
+#     A bare paren counter cannot reach this `)`: it has no matching opener, so
+#     no depth arithmetic can distinguish it from the construct's real closer,
+#     and tracking the literal words `case`/`esac` unconditionally would be a
+#     deny->ALLOW regression generator on its own -- `e$(echo case)as update`
+#     denies today and a naive tracker would leave that depth permanently open,
+#     emptying the rendering and silently losing that coverage. The fix instead
+#     recognises `case`/`esac` ONLY at a genuine command-word start (the same
+#     command-position discipline `_CMD_POS_PREFIX` above uses for verbs), so an
+#     argument, a quoted mention, or a mid-word occurrence (`casexyz`,
+#     `lowercase`) never opens anything; `e$(echo case)as update` is pinned as a
+#     named two-sided regression control in test-cmd-detect.sh. The tracking
+#     lives ONLY in the counting pass (`cmd_words_vanished`, not
+#     `cmd_words_vanished_blind`) so an adversarial unterminated `case` cannot
+#     collapse both unioned renderings at once -- the blind pass stays
+#     case-blind by design and still closes at the first unquoted `)`, which is
+#     exactly what keeps that construction denying. Measured every run by this
+#     repo's corpus (`toolvcasearm-*` stay a documented precise-path gap by
+#     design -- they exercise the TOOL position, which every family in this file
+#     already treats as a degraded-path residual; `verbvcasearm-*` and
+#     `flagvcasearm-*` flip to `ok`).
 #
 #   * UNHANDLED, PRE-EXISTING (round 4, same measurement session): BRACE RANGE
 #     expansion splits a token with NO `$` and NO backtick anywhere in the
