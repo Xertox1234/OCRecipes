@@ -1,5 +1,5 @@
 ---
-title: "A launcher prefix (npx / npm exec / bunx / pnpm dlx) or an absolute path defeats guard-outward-cli.sh, and `npm exec eas update` is a live OTA path"
+title: "A launcher prefix (npx / npm exec / bunx / pnpm dlx) or an absolute path defeats guard-outward-cli.sh — `npm exec eas update` reaches the guard as ALLOW"
 status: backlog
 priority: high
 created: 2026-09-13
@@ -9,7 +9,7 @@ labels: [deferred, harness, security]
 github_issue:
 ---
 
-# A launcher prefix or an absolute path reaches a real publish
+# A launcher prefix or an absolute path is invisible to the outward-CLI guard
 
 ## Summary
 
@@ -17,13 +17,23 @@ github_issue:
 `pnpm`, `yarn`, `gh`) in command position. Two shapes never present that word where the guard
 looks:
 
-1. **A launcher prefix** — `npx eas update`, `npm exec eas update`, `bunx eas-cli update`,
-   `pnpm dlx`, `yarn dlx`. The gated binary is an _argument to another binary_.
+1. **A launcher prefix** — `npx`, `npx -y`, `npx --yes`, `npm exec`, `npm exec --`, `bunx`,
+   `bun x`, `bun run`, `pnpm dlx`, `pnpm exec`, `yarn dlx`, `yarn exec`. The gated binary is an
+   _argument to another binary_. (All measured ALLOW; this list is the measured set, not a
+   sample.)
 2. **An absolute or relative path** — `/opt/homebrew/bin/eas update`. `_OUT_POS_PREFIX`
    (`:1606`) anchors on a shell-metacharacter class with no path-separator branch.
 
-**`npm exec eas update --branch preview` is ALLOW today and publishes a real OTA to real
-`preview` users.** `/opt/homebrew/bin/eas` is the real CLI on this machine.
+**`npm exec eas update --branch preview` is ALLOW at the guard today** — measured, with controls.
+`/opt/homebrew/bin/eas` is the real CLI on this host.
+
+> **Two propositions, and only one is measured. Keep them apart.** That the _guard allows this
+> text_ is measured (table below). That this invocation _resolves through `PATH` to the real
+> `eas` and publishes_ is **inferred, not measured** — and it is not safely measurable by the
+> obvious route, because if `npm exec` does NOT consult `PATH` it resolves `eas` from the
+> registry instead, which is the publish this todo exists to prevent. Measure the resolution
+> half with a sentinel under a name that is **not** a real package — `npm exec ocr-path-probe` —
+> so no gated binary ever appears in an argv. **Never probe with `npm exec eas …`.**
 
 ## Background
 
@@ -49,14 +59,22 @@ asserted in the probe output (`bash 5.3.15`).
 | `eas update --branch preview` _(control)_ | DENY          |
 | `ls -la` _(control)_                      | ALLOW         |
 
-Both controls held, so the harness renders both verdicts rather than one for everything. A wider
-grid run during the PR #952 review found **ten** ALLOW launcher forms, including `npx`, `npx -y`,
-`npx --yes`, `npm exec`, `bunx`, `bun x`, `bun run`, `pnpm dlx`, `yarn dlx`.
+Both controls held, so the harness renders both verdicts rather than one for everything.
+
+A wider grid run during the PR #952 review found that **every non-empty launcher form allowed
+every binary and verb tried** — `npx`, `npx -y`, `npx --yes`, `npm exec`, `npm exec --`, `bunx`,
+`bun x`, `bun run`, `pnpm dlx`, `pnpm exec`, `yarn dlx`, `yarn exec`. **No bare count is quoted
+here**: an earlier draft said "ten" with no denominator, which is the exact defect Acceptance
+Criterion 4 below forbids. One reviewer's generated corpus was 13 launcher-forms × 4 path-forms ×
+4 binary+verb targets = **208 rows, ALLOW 204/208**, the only four DENYs being the bare-name and
+bare-path control rows — quote a figure only with dimensions and denominator like that, and
+regenerate it on the host where the fix is verified.
 
 **Population note, and it matters:** `bunx`, `bun`, `pnpm` and `yarn` are **not installed** on the
-reference machine — only the `npm`/`npx` forms are live here. Do not quote the ten-row figure as
-ten live paths. Re-derive the live subset on whatever machine the fix is verified on, and quote
-the count with the corpus that produced it.
+reference machine — only the `npm`/`npx` forms are live here. So the launcher list above is a list
+of forms the guard ALLOWS, **not** a list of paths reachable on this host. Re-derive the live
+subset on whatever machine the fix is verified on, and quote any count with the corpus that
+produced it.
 
 ### A second control splits the two shapes — do not treat them as one
 
@@ -77,6 +95,13 @@ consistent with this repo's known path-qualified extractor gap
 
 - [ ] Reproduce each row above against unmodified `main` first, per shape. If a row does not
       reproduce, report that rather than fixing something that is not broken.
+- [ ] **Measure the resolution half separately from the guard-verdict half** (they are two
+      propositions — see the Summary). Use a sentinel under a name that is **not** a real
+      package: `npm exec ocr-path-probe`, with an argv-printing stub on `PATH` writing to a
+      sentinel file. That answers "does `npm exec` consult `PATH`" without any gated binary
+      appearing in an argv. **Never probe with `npm exec eas …`** — if `npm exec` does not
+      consult `PATH` it resolves `eas` from the registry, which is the publish this todo exists
+      to prevent.
 - [ ] The launcher family DENIES for every gated binary: the gated word is detected when it
       appears as the **argument of a launcher**, not only in command position.
 - [ ] Absolute- and relative-path invocation DENIES — `/opt/homebrew/bin/eas update`,
@@ -88,7 +113,8 @@ consistent with this repo's known path-qualified extractor gap
 - [ ] **A false-positive sweep in the same pass**, because widening a command-position anchor is
       the direction that invents denials. `npx tsc`, `npx prettier --write`, `npm exec vitest`,
       `npx eas-cli --version`-shaped read-onlys, `/usr/bin/git status`, and ordinary prose
-      mentioning these words must all stay ALLOW.
+      mentioning these words must all stay ALLOW — **as guard-verdict rows fed to the hook on
+      stdin, never executed.**
 - [ ] No ALLOW → DENY transition for any row outside the two named shapes; the change must be
       strictly tightening on the axes it touches.
 - [ ] Mutation-verified per shape, not in aggregate: reverting the launcher clause reddens only

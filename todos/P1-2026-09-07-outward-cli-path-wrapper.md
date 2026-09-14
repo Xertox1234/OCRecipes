@@ -54,13 +54,17 @@ times in 1,555 opportunities. The plain-text layer is exercised on 25.5% of comm
 covers **both**, plus the then-open bypass classes and any future spelling **that still resolves
 the bare name through the inherited `PATH`**.
 
-> **NAMED RESIDUALS — two spellings defeat a PATH wrapper BY CONSTRUCTION (measured 2026-09-13).**
+> **NAMED RESIDUALS — two spellings the wrapper as scoped does not cover (measured 2026-09-13).**
+> (An earlier header said "defeat a PATH wrapper BY CONSTRUCTION"; that is true only of residual
+> 2 — see the correction below.)
 > An earlier revision of this sentence claimed "any future spelling", which is false and is the
 > kind of completeness claim this repo has been burned by. A wrapper only sees what `execve`
 > resolves **through the `PATH` it controls**:
 >
-> 1. **Launcher family — `npx`, `npx --yes`, `bunx`, `bun x`.** These install into and **prepend
->    their own** cache bin directory, so the wrapper directory is never the resolution source.
+> 1. **Launcher family — `npx`, `npx -y`, `npx --yes`, `npm exec`, `npm exec --`, `bunx`,
+>    `bun x`, `bun run`, `pnpm dlx`, `pnpm exec`, `yarn dlx`, `yarn exec`** (the measured set, not
+>    a sample). These can prepend their own cache bin directory, so the wrapper directory need not
+>    be the resolution source.
 > 2. **Absolute-path invocation** — `/opt/homebrew/bin/eas update` skips `PATH` resolution
 >    entirely.
 >
@@ -89,9 +93,13 @@ the bare name through the inherited `PATH`**.
 > - **A live, unguarded OTA path is missing from the four spellings named above.**
 >   `npm exec eas update --branch preview` is **ALLOW** at the guard — re-measured directly, with
 >   both controls holding (`eas update --branch preview` → DENY; `ls -la` → ALLOW; bash 5.3.15).
->   Of the four named launcher spellings, three (`bunx`, `bun x`, and `pnpm`/`yarn` variants) are
->   **not even installed** on the reference machine, while the live one was omitted. A generated
->   grid found ten ALLOW forms, including `npm exec`, `npx -y`, `bun run`, `pnpm dlx`, `yarn dlx`.
+>   An earlier revision named only four launcher spellings (`npx`, `npx --yes`, `bunx`, `bun x`)
+>   and OMITTED the one that is both live on this host and reachable: `npm exec`. Of those four,
+>   **two** (`bunx`, `bun x`) are not installed here at all, while `npx`/`npx --yes` resolve
+>   (`/opt/homebrew/bin/npx`); `pnpm` and `yarn` are likewise absent. The list above is now the
+>   measured set. **No count is quoted here on purpose** — an earlier revision quoted "ten" with
+>   no denominator, repeating the very defect this block withdraws a figure for. Re-derive it per
+>   the companion todo's corpus criterion, with its dimensions and its denominator.
 > - **The "3 launcher forms × 3 binaries = 9 rows" figure does not reconcile** with its own five
 >   quoted examples (which span four binary spellings and include the absolute-path row, which is
 >   residual 2, not a launcher form). Treat the figure as withdrawn.
@@ -214,11 +222,14 @@ documentation — do NOT run `gh --help` to find out.** Executing an outward-fac
 
 **This REVISES the six-binary list in the first Acceptance Criterion below.**
 `npm run update:preview` ends in `exec eas update --branch preview --platform all "$@"`
-(`package.json:50`), and a child process inherits `PATH` — so the **`eas` shim already closes
-the OTA incident class through the npm path**. Shimming `npm`/`pnpm`/`yarn` would put a refusal
-in front of husky, lint-staged and `preflight:fast` for no added coverage of this class, and the
-Risks section already names breaking the operator's workflow as the primary risk. The guard
-continues to cover `npm run update:*` at its text layer — union, not substitution.
+(`package.json:50`), and a child process inherits `PATH` — so the `eas` shim closes the OTA class
+**through the `npm run` path specifically**. ~~so the `eas` shim already closes the OTA incident
+class through the npm path~~ and ~~for no added coverage of this class~~ — **both struck: falsified
+premise, see the RE-RULED block above.** `npm exec eas update` is a separate, still-open path.
+Shimming `npm`/`pnpm`/`yarn` would put a refusal in front of husky, lint-staged and
+`preflight:fast`, and the Risks section already names breaking the operator's workflow as the
+primary risk — **that** is the reason the scope-out stands. The guard continues to cover
+`npm run update:*` at its text layer — union, not substitution.
 
 **Provisional on ruling 5, exactly as ruling 1 is — and more consequentially.** This scope-out
 REMOVES coverage rather than describing it, so it is the costlier of the two to get wrong. It
@@ -244,7 +255,7 @@ before building any shim. If it does not, the wiring mechanism changes and every
 inert. This is the one claim in the design a reader cannot check by inspection — so it is
 the first task, not a late verification step.
 
-### 6. A SEPARATE token: `ALLOW_OUTWARD_EXEC=1`
+### 6. A SEPARATE **one-shot token**: `ALLOW_OUTWARD_EXEC` (never a bare `=1` env var)
 
 Not a reuse of `ALLOW_OUTWARD_CLI`. **Two independent layers must not share one disarm.**
 `ALLOW_OUTWARD_CLI=1` is already documented as a routine prefix (`docs/DEV_SETUP.md:185`), so
@@ -320,12 +331,12 @@ Consequences, both binding:
 
 - [ ] A wrapper directory is prepended to the agent's `PATH` containing one shim per gated
       binary (`eas`, `railway`, `gh` — **three, per ruling 4**; `npm`/`pnpm`/`yarn` are out of
-      scope). Each shim refuses with a non-zero exit and a clear message unless
-      `ALLOW_OUTWARD_EXEC=1` is set, and otherwise `exec`s the real binary found by scanning
-      `PATH` **past its own directory**. The disarm is the **one-shot token file** of ruling 6
-      (`scripts/arm-outward-exec.sh`, consumed and unlinked by the shim), **never a bare
-      `ALLOW_OUTWARD_EXEC=1` environment variable** — an env var is inherited by the whole
-      subtree and cannot express a scoped disarm.
+      scope). Each shim refuses with a non-zero exit and a clear message **unless a valid
+      one-shot token file is present — armed by `scripts/arm-outward-exec.sh <binary> <target>`,
+      naming this binary and target, unexpired, and consumed and unlinked by the shim before
+      `exec`** — and otherwise `exec`s the real binary found by scanning `PATH` **past its own
+      directory**. **Never gate on a bare `ALLOW_OUTWARD_EXEC=1` environment variable** (ruling
+      6): an env var is inherited by the whole subtree and cannot express a scoped disarm.
 - [ ] **Read-only invocations keep working without the token**, or the wrapper is unusable in
       practice — `gh pr view`, `gh pr list`, `gh run view`, `gh api` with no method flag,
       `eas update:list`. (`npm run <script>` and `npm ci` are no longer wrapper concerns —
@@ -370,6 +381,15 @@ Consequences, both binding:
 - [ ] **The `fake-eas` incident is replayed as a regression test.** A shim whose name does not
       match the binary must NOT allow fall-through to the real CLI. That construction is the
       reason this exists.
+
+      > 🛑 **Run this replay with the real binary UNREACHABLE.** A meaningful replay needs a
+      > *mutating* argv (a read-only one would be allowlisted and exec'd anyway), so the failure
+      > mode under test is literally "the real `eas` runs `update`". Set
+      > `PATH=<wrapper-dir>:<sentinel-dir>` and nothing else, the sentinel being an argv-printing
+      > stub standing in for "the real CLI", so fall-through lands on the sentinel and never on
+      > `/opt/homebrew/bin/eas` (measured present on this host). Same reasoning as the level-(b)
+      > bar above: a sentinel does not help if the real binary is still resolvable.
+
 - [ ] False-positive population measured by execution over harvested command history, not
       estimated — the same harness used for PR #929 (`fp-harvest`, 1,658 decision-relevant
       commands). Validate the harness on a known flip before trusting a zero.
