@@ -322,9 +322,17 @@ Consequences, both binding:
 - [ ] **FIRST, and blocking (ruling 5):** proven by execution that a directory prepended to
       `PATH` via `.claude/settings.json`'s `env` key is observed at **all three levels**, using
       the argv-printing sentinel-file stub the Implementation Notes mandate:
-      **(a)** a Bash tool call; **(b)** a **grandchild** of one, via a **scratch script that
-      reproduces `package.json:50`'s shape** (`sh -c '… exec ocr-path-probe …'`) and execs a
-      harmless sentinel binary; **(c)** a **subagent's** Bash tool call.
+      **(a)** a Bash tool call; **(b)** a **grandchild** of one, **invoked through `npm run`** —
+      a throwaway script in a scratch directory whose body is `sh -c 'exec ocr-path-probe'`,
+      reproducing `package.json:50`'s shape and exec'ing a harmless sentinel; **(c)** a
+      **subagent's** Bash tool call.
+
+      > ⚠️ **Level (b) must go through `npm run`, not a plain shell script.** A plain
+      > `sh -c` vehicle measures `sh`→`sh` env inheritance and never puts npm in the loop — but
+      > the premise ruling 4's coverage-REMOVAL rests on is specifically npm's
+      > (`@npmcli/run-script/lib/set-path.js` appends the inherited `PATH` **last**, after
+      > `binPaths` and the `node_modules/.bin` walk-up). An npm-free (b) passes green while that
+      > premise stays untested, so ruling 4's escape clause could never fire.
 
       > 🛑 **`update:preview` / `update:production` must NEVER be the probe vehicle.** An earlier
       > revision of this criterion named the `eas` resolution point inside `npm run update:preview`
@@ -352,8 +360,12 @@ Consequences, both binding:
       directory**. **Never gate on a bare `ALLOW_OUTWARD_EXEC=1` environment variable** (ruling
       6): an env var is inherited by the whole subtree and cannot express a scoped disarm.
 - [ ] **Read-only invocations keep working without the token**, or the wrapper is unusable in
-      practice — `gh pr view`, `gh pr list`, `gh run view`, `gh api` with no method flag,
-      `eas update:list`. (`npm run <script>` and `npm ci` are no longer wrapper concerns —
+      practice — `gh pr view`, `gh pr list`, `gh run view`, `eas update:list`, and `gh api`
+      **only when provably GET**. ⚠️ **Not "with no method flag"** — that predicate is false and
+      unsafe: gh's own manual (`share/man/man1/gh-api.1`) states "The default HTTP request method
+      is GET normally and **POST if any parameters were added**", so `gh api repos/o/r -f name=x`
+      carries no method flag and is a write. (It is ALLOW at the text guard today.) Provably GET
+      means no method flag **and** no parameter or body flag of any kind, `--input` included. (`npm run <script>` and `npm ci` are no longer wrapper concerns —
       ruling 4.) The shim distinguishes subcommands **itself, from its own argv** — it does NOT
       delegate to `guard-outward-cli.sh`, whose interface makes delegation both lossy and
       bypass-inheriting (**ruling 2 reverses this criterion's original "prefer delegating"**).
@@ -443,15 +455,18 @@ Consequences, both binding:
   "not invoked" for something that really did invoke (this cost a round during PR #929).
 - The Bash tool runs under **zsh** here, not bash — verify `PATH` prepending behaves under the
   shell that actually executes tool calls, not the one the hooks are written in.
-- Consider whether the wrapper belongs in the repo (committed, versioned, reviewable) or in the
+- ~~Consider whether the wrapper belongs in the repo (committed, versioned, reviewable) or in the
   operator's environment. Committed is auditable; environment-only means a fresh clone is
-  unprotected. State the choice and its consequence.
+  unprotected. State the choice and its consequence.~~ **Settled by ruling 5: committed.** Kept
+  for the record rather than deleted; it is no longer an open question.
 
 ## Scope Contract
 
 - **Files in scope:** a new wrapper directory and its shims (`eas`, `railway`, `gh`), the
   `PATH` wiring in `.claude/settings.json` (a new `env` key — ruling 5),
-  `scripts/arm-outward-exec.sh` (the one-shot token arm — ruling 6), `CLAUDE.md` (documenting
+  `scripts/arm-outward-exec.sh` (the one-shot token arm — ruling 6), `package.json` (only if the
+  level-(b) `npm run` probe script lands there rather than in a scratch directory),
+  `CLAUDE.md` (documenting
   `ALLOW_OUTWARD_EXEC`), `docs/DEV_SETUP.md` (the **two-step arm** `railway run` flow), and a new
   self-test under `.claude/hooks/`.
 - **Committed, not environment-only** (ruling 5) — a fresh clone must be protected.

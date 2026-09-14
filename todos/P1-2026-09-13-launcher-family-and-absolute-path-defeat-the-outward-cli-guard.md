@@ -116,11 +116,22 @@ consistent with this repo's known path-qualified extractor gap
 - [ ] **Keep the resolution half separate from the guard-verdict half** (two propositions — see
       the Summary). The resolution half is settled **by reading `libnpmexec`'s
       `needPackageCommandSwap`**, which never consults `PATH`; re-confirm by inspection on the
-      host under test, plus `ls -l $(npm prefix -g)/bin/eas`. **Run no `npm exec` probe of any
-      kind** — see the Summary's 🛑 block for why a made-up sentinel name is a registry
+      host under test, plus a pure-inspection `ls -l` of the global bin symlink and of
+      `eas-cli`'s own `package.json` — **not** `npm prefix -g`, which would execute one of the six
+      binaries this file's own Implementation Notes bar from execution. **Run no `npm exec` probe
+      of any kind** — see the Summary's 🛑 block for why a made-up sentinel name is a registry
       install-and-execute, not a safe test.
 - [ ] The launcher family DENIES for every gated binary: the gated word is detected when it
       appears as the **argument of a launcher**, not only in command position.
+- [ ] **The PACKAGE spelling is a second gated word on the launcher axis** — `eas-cli` as well as
+      `eas`, and likewise check `@railway/cli` and any `gh` equivalent. Measured: `npx eas-cli
+  update --branch preview` and `npm exec eas-cli update --branch preview` are both ALLOW
+      today, and they reach the real CLI — `/opt/homebrew/lib/node_modules/eas-cli/package.json`
+      declares `bin: {"eas": "./bin/run"}`, so `libnpmexec` misses every local lookup, rewrites
+      `args[0]` to `eas` via `getBinFromManifest`, and finds `/opt/homebrew/bin/eas`. **Gating
+      only the `eas` token closes `npx eas update` and leaves `npx eas-cli update` wide open.**
+      AC4's "binary spelling" dimension must be instantiated with package names, or a corpus
+      "generated from its dimensions" reproduces exactly this blind spot.
 - [ ] Absolute- and relative-path invocation DENIES — `/opt/homebrew/bin/eas update`,
       `./node_modules/.bin/eas update`, `../eas update`.
 - [ ] **Corpus GENERATED from its dimensions** (launcher form × binary spelling × gated verb ×
@@ -129,9 +140,11 @@ consistent with this repo's known path-qualified extractor gap
       used, since four of the launcher families are not installed on the reference host.
 - [ ] **A false-positive sweep in the same pass**, because widening a command-position anchor is
       the direction that invents denials. `npx tsc`, `npx prettier --write`, `npm exec vitest`,
-      `npx eas-cli --version`-shaped read-onlys, `/usr/bin/git status`, and ordinary prose
-      mentioning these words must all stay ALLOW — **as guard-verdict rows fed to the hook on
-      stdin, never executed.**
+      `/usr/bin/git status`, and ordinary prose mentioning these words must all stay ALLOW — **as
+      guard-verdict rows fed to the hook on stdin, never executed.** ⚠️ **Carve out on the
+      read-only VERB, never on the `eas-cli` token** — an earlier revision pinned
+      "`npx eas-cli --version`-shaped read-onlys" as must-stay-ALLOW, which, implemented
+      literally, would exempt the package spelling wholesale and leave `npx eas-cli update` open.
 - [ ] No ALLOW → DENY transition for any row outside the two named shapes; the change must be
       strictly tightening on the axes it touches.
 - [ ] Mutation-verified per shape, not in aggregate: reverting the launcher clause reddens only
