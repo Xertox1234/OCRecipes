@@ -4,11 +4,11 @@ track: bug
 category: logic-errors
 module: shared
 severity: medium
-tags: [bash, shell, glob, nullglob, ci, github-actions, hooks, set-e, fail-open, arithmetic, harness]
-symptoms: [A CI or gate step that "runs everything matching a glob" goes green having executed zero items after a rename or relocation, Step log shows none of the per-item markers yet the step exits 0, An existence guard with continue silently converts an unmatched literal glob pattern into "nothing to do", A glob runner reports a healthy non-zero count while a specific fixture you believe it covers has never been in its namespace, A file that looks like part of a suite is never named by any runner and its numbers drift into prose nobody executes]
+tags: [bash, shell, glob, nullglob, ci, github-actions, hooks, set-e, fail-open, arithmetic, harness, alternation, corpus-generation]
+symptoms: [A CI or gate step that "runs everything matching a glob" goes green having executed zero items after a rename or relocation, Step log shows none of the per-item markers yet the step exits 0, An existence guard with continue silently converts an unmatched literal glob pattern into "nothing to do", A glob runner reports a healthy non-zero count while a specific fixture you believe it covers has never been in its namespace, A file that looks like part of a suite is never named by any runner and its numbers drift into prose nobody executes, A deny check's alternation has one branch with a corpus row and the rest have none while every pin check stays green, A corpus row count or membership manifest is unchanged after deleting one branch from a multi-branch regex the gate matches on]
 applies_to: [.claude/hooks/**, scripts/**/*.sh, .github/workflows/*.yml, .husky/**]
 created: '2026-07-03'
-last_updated: '2026-09-08'
+last_updated: '2026-09-14'
 ---
 
 # A glob-driven runner loop passes green when the glob matches nothing — count runs and fail on zero
@@ -207,6 +207,85 @@ and this is broader than it first looks. It is not only the ORDER of the lines:
   test as a subprocess, an exported `LC_ALL` reaches it and can change the very behaviour being
   measured. Prefix the individual tools, do not export.
 
+**Then notice what emitter-coverage itself cannot see: a BRANCH INSIDE one regex with no row
+(2026-09-14).** `_pin_sites` proves every deny MESSAGE the gate can emit is reached by some row.
+A single check is not one message, though — most deny sites are an alternation,
+`(up|deploy|redeploy|restart|down|delete|remove|rm|run)`, and `_pin_sites` is satisfied the
+moment ANY ONE branch has a row. The other eight can be narrowed out invisibly, because a
+sibling branch still reaches the identical message: the count holds, the membership manifests
+hold, the per-path tuples hold, attribution holds (a DIFFERENT branch of the SAME check is still
+what fires), and `_pin_sites` holds (the message is still reached) — five independent checks,
+all blind to the same deletion, for the same reason they were each blind to the rung above it:
+they observe the SET OF ROWS THAT EXIST, and a branch with no row is not a member of that set to
+begin with.
+
+Measured on `.claude/hooks/repro-outward-cli-corpus.sh`, 2026-09-14: 4 command-position deny
+regexes had a row for exactly one alternation branch each (`railway up` of 9 branches, `eas
+update` of 3, `railway variable set` of 4, `railway service delete` of 2) — 13 branches with no
+row, including `railway run`, which the gate's own message calls as dangerous as `railway up`
+("executes an arbitrary command with the LIVE service env, incl. the production DATABASE_URL").
+Deleting `run` from that alternation in a scratch guard copy and running the then-current,
+602-row corpus against it: **0 of the 602 rows moved on any of the 4 execution paths** — the
+exact "exit 0, zero diff lines" shape the branch-with-no-row incident above already produced one
+level up, reproduced one level down inside a single check.
+
+The fix is the SAME durable form, one level deeper — read the alternation out of the source
+instead of hand-listing it, so the check self-updates instead of needing to be remembered:
+
+```bash
+# EXACTLY one line must define this alternation, or the extraction itself is wrong
+hit=$(grep -oE 'railway\$\{_OUT_SEP\}\([a-z|]+\)\$\{_OUT_POS_SUFFIX\}' "$GATE")
+[ "$(grep -c . <<< "$hit")" -eq 1 ] || { echo "FATAL: pattern matched $(grep -c . <<< "$hit") lines, expected 1" >&2; exit 1; }
+IFS='|' read -ra BRANCHES <<< "$(sed -E 's/^railway\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$hit")"
+for v in "${BRANCHES[@]}"; do add "site-$v" DENY "railway $v"; done   # one row per branch, not one row for the site
+```
+
+Two things about this shape are worth being deliberate about:
+
+- **The extraction's OWN failure mode must be loud, and it must be a bare statement.** `$(fn)`
+  suspends `errexit` for everything inside `fn` (see the locale section above and the general
+  rule this doc already carries), so an `exit 1` written inside a function that is itself called
+  as `x=$(fn)` never reaches the top level — it prints to stderr and the caller receives an empty
+  string, silently generating zero rows for that family while the corpus still reports a clean
+  run. Call the extractor bare (`_alt_or_die '...'; ALT=$(sed ... <<< "$_ALT_HIT")` — two
+  statements, not one), so a broken pattern kills the whole run instead of degrading to the exact
+  silent-empty-family shape this file opened with.
+- **In ordinary same-commit operation, the failure signature this produces is a ROW-COUNT
+  drift, not a verdict flip — and that is a WEAKER red than it first sounds, not a stronger
+  one.** Because extraction re-reads whichever guard file it is colocated with, a branch
+  removed from the real guard also vanishes from the corpus's own generated row set —
+  `EXPECTED_ROWS` reds and the membership manifest shows `-site-run` REMOVED, rather than an
+  existing `site-run` row flipping DENY→ALLOW. Verified by mutation: running the (now
+  branch-aware) corpus, unmodified, against a guard copy with `run` deleted from the
+  alternation produced `rows is 622, expected 623` and `-siterailverb-run : ...` in the
+  membership diff, exit 1. That IS a required, un-silenceable pin failure — but it is the
+  SAME shape a typo in the extraction pattern produces, and "the count moved, bump the pin"
+  is a more attractive rubber-stamp for a reviewer than a specific command going from denied
+  to allowed would be. Do not describe it as the stronger signal; say what it actually is.
+  **The genuine verdict-flip is a different, decoupled test**, needed to show the row-based
+  mechanism itself is sound rather than assume it: hold row GENERATION on the real (unmutated)
+  guard — so `siterailverb-run` still exists as a row — while pointing ONLY precise-path
+  verdict-testing at the mutant. That produced `precise-path gaps is 32, expected 31` with
+  `+siterailverb-run` (want DENY, got ALLOW) in the gap manifest, and `-siterailverb-run`
+  dropping out of attribution because it stopped denying — a genuine DENY→ALLOW gap on an
+  EXISTING row, the semantic signal a hand-written row would give directly. It only requires
+  this decoupling because generation and testing share one guard file in real CI; that is not
+  a workaround, it is the honest way to test the mechanism separately from the coincidence
+  that same-commit operation currently keeps them together. A negative control on the SAME
+  mutation against the PRE-fix, 602-row corpus (no per-branch rows yet) confirmed 0 mismatches
+  across the 602 existing rows first — the same before/after pairing PR #935's `_pin_sites`
+  incident used.
+
+**Scope this closes, and scope it does not.** This closes exactly the branches enumerable as a
+flat `(a|b|c)` alternation next to `${_OUT_SEP}`/`${_OUT_POS_PREFIX}` — four such regexes here.
+It does not extend to checks shaped some other way (an interior-redirect scan, a flag-adjacent
+regex, a decoy-clause union) — those are not alternations a source-grep can enumerate, and
+building a branch-style extractor for each of THEIR shapes is the "enumerate every mechanism x
+every branch" cross product a corpus this size cannot afford. Nor does it cover narrowing that is
+not branch deletion — tightening `${_OUT_SEP}` itself, or narrowing a character class inside one
+branch rather than removing the branch whole. Name what remains in the pin's own residual prose
+rather than letting the closed instance read as though the whole class closed with it.
+
 ## Prevention
 
 - Any gate loop of the shape "run everything matching `<glob>`" needs a floor assertion —
@@ -233,10 +312,27 @@ and this is broader than it first looks. It is not only the ORDER of the lines:
 - Both callers now single-source the loop through `scripts/run-hook-tests.sh` (extraction
   landed 2026-07-03), so this guard is carried to `scripts/preflight.sh` full mode and CI
   alike — there is no longer a twin loop to drift.
+- **A regex is not one thing to cover — its alternation is a set of things.** "Every deny site
+  has a row" and "every branch of every deny site's alternation has a row" are different claims;
+  only the second one survives someone narrowing a sibling branch out. When a corpus adds
+  coverage for a check shaped as `(a|b|c)`, generate one row per branch from the check's own
+  source text, not one row for the check.
+- **Prefer letting the check self-update over remembering to update it.** Extracting the branch
+  list from the guard's live source (rather than transcribing it into the corpus by hand) means a
+  branch added later grows the row count and reds the pin on its own; a branch removed shrinks it
+  the same way. Guard the extraction itself with a match-count assertion (`exit 1` on anything but
+  exactly one match, called as a bare statement so the exit actually propagates) — an extractor
+  that silently matches zero lines is the same failure this whole file is about, one layer deeper.
 
 ## Related Files
 
 - `scripts/run-hook-tests.sh` — single source for the loop, counter, and zero-count guard (both callers invoke it)
+- `.claude/hooks/repro-outward-cli-corpus.sh` — `_alt_or_die` + the "DENY-SITE COVERAGE,
+  ALTERNATION BRANCHES" axis; extracts each alternation from `guard-outward-cli.sh`'s own source
+  and generates one row per branch
+- `todos/archive/P2-2026-09-08-corpus-covers-deny-sites-but-not-their-alternation-branches.md` —
+  measured the 13 uncovered branches, the mutation evidence, and the negative control this rung
+  is built from
 - `.github/workflows/ci.yml` — "Hook self-tests" step calls `scripts/run-hook-tests.sh`
 - `scripts/preflight.sh` — full mode calls `scripts/run-hook-tests.sh` (now guarded too, no longer fails open)
 - `.claude/hooks/repro-outward-cli-corpus.sh` — the fixture the glob never named; now carries its own

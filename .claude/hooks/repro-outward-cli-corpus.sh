@@ -1167,10 +1167,30 @@ done
 # let the failure print to stderr and vanish, leaving the family silently empty
 # and the corpus reporting a clean run on zero rows -- exactly the hole this whole
 # file exists to close. A branch ADDED to one of these four regexes later grows
-# the extracted list, grows ROWS, and reds `EXPECTED_ROWS` until the pin is
-# bumped; a branch REMOVED shrinks it the same way -- the `_pin_sites` treatment
-# one level down, reusing the existing rows/membership pins rather than adding a
-# new pin function.
+# the extracted list and grows ROWS, redding `EXPECTED_ROWS` until the pin is
+# bumped -- caught automatically, with no row to write by hand.
+#
+# A branch REMOVED is caught too, but by a DIFFERENT and WEAKER mechanism than the
+# rows above it, and the difference matters enough to say plainly rather than
+# overclaim. Because extraction and verdict-testing both read the SAME guard file
+# in ordinary same-commit operation, a branch deleted from the guard also
+# disappears from THIS file's own generated row set: `rows` shrinks, `EXPECTED_ROWS`
+# reds, and the attribution manifest loses that branch's line -- a real, required,
+# un-silenceable pin failure, but a row-COUNT signal, not a semantic one. It is the
+# SAME signal a typo in an extraction pattern would produce, and "the count moved,
+# bump the pin" is a more attractive rubber-stamp than "this specific DENY became
+# an ALLOW." MUTATION-VERIFIED both ways, 2026-09-14 (see the todo below): running
+# this file, unmodified, against a guard copy with `run` deleted from the railway
+# alternation produced `rows is 622, expected 623` and `-siterailverb-run` removed
+# from attribution -- the row vanished; it was never evaluated. A SEPARATE run that
+# held row GENERATION on the real (unmutated) guard while pointing only
+# verdict-testing at that same mutant -- so `siterailverb-run` still exists as a
+# row -- produced the semantic form instead: `precise-path gaps is 32, expected 31`
+# with `+siterailverb-run` (want DENY, got ALLOW) in the gap manifest. That second
+# shape is what actually happens if this file's OWN reference commit lags the
+# guard's (a stale rebase, a hand-maintained row) rather than moving with it; in
+# ordinary same-commit CI it does not arise, which is exactly why the row-count
+# form is the one to expect and not to wave through without reading why it moved.
 _alt_or_die() {  # $1=grep -E pattern, must match EXACTLY one line of $HOOK
   local pat="$1"
   local hit n
@@ -1208,9 +1228,12 @@ for v in "${SITERAILVAR_BR[@]}";  do add "siterailvarset-$v" DENY "railway $v se
 add siterailvardelete DENY "railway ${SITERAILVAR_BR[0]} delete K"
 for v in "${SITERAILSVC_BR[@]}";  do add "siterailsvc-$v" DENY "railway $v delete svc"; done
 
-# FALSE-POSITIVE CONTROLS. Both deny messages above name these read-only forms as
-# unaffected; without a row here nothing would catch a widened match swallowing
-# them (the exact role `sitefp-*` plays for the eas colon-verb families above).
+# FALSE-POSITIVE CONTROLS. The top-level-verb deny message above names these
+# read-only forms as unaffected ("railway status, railway logs, railway whoami");
+# without a row here nothing would catch a widened match swallowing them (the
+# exact role `sitefp-*` plays for the eas colon-verb families above). Neither
+# `railway status` nor `railway logs` had an ALLOW row anywhere in the file
+# before this diff, so both are new, load-bearing controls, not decoration.
 add siterailfp-status ALLOW 'railway status'
 add siterailfp-logs   ALLOW 'railway logs'
 
@@ -1440,19 +1463,37 @@ fi
 #    pin is bumped, rather than sitting invisible the way the 13 measured here
 #    2026-09-08 did.
 #
-#    WHAT REMAINS is everything this instance's method does not reach: (a) any
-#    OTHER deny check in the file that does not take the "alternation of literal
-#    branches" shape a source-grep can enumerate -- the interior-redirect,
-#    flag-adjacent, forged/masked --auto, decoy-clause and root-position-flag
-#    families are each their own bespoke regex, not a branch list, and adding a
-#    branch-style row generator for them is exactly the "enumerate every
-#    mechanism x every branch" cross product this todo's own scope note declines;
-#    (b) narrowing that is not branch DELETION at all -- tightening `_OUT_SEP` or
+#    WHAT REMAINS is everything this instance's method does not reach, and one
+#    thing it COULD reach but does not yet (review round 1 caught this omission --
+#    naming it here rather than only in the residual is the same "a list that
+#    discloses only the residual it has already closed is worse than no list"
+#    discipline this whole paragraph is about):
+#    (a) the SITE_UPD_VERBS / SITE_CB_VERBS families a few hundred lines above
+#    (`eas update:(delete|edit|republish|...)`, `eas (channel|branch):(create|
+#    edit|delete|rename)`) are the EXACT SAME alternation-of-literal-branches
+#    shape `_alt_or_die` already handles -- SITE_CB_VERBS is even a two-group
+#    alternation, like the railvar site -- but they PRE-DATE this axis (PR #935)
+#    and are still hand-listed, not extracted. Their coverage is COMPLETE today
+#    (every branch of both alternations has a row), so this is not a live gap the
+#    way the 13 measured branches were; it is the same class of latent risk this
+#    todo closed for four OTHER regexes, left open for these two because
+#    retrofitting a shipped, working mechanism was judged out of THIS todo's
+#    scope rather than folded in under time pressure. A branch added to either
+#    regex later needs a human to remember to extend the hand-list, exactly the
+#    "hand-carved subset" failure NOTE6 exists to prevent.
+#    (b) any OTHER deny check in the file that does not take the alternation
+#    shape at all -- the interior-redirect, flag-adjacent, forged/masked --auto,
+#    decoy-clause and root-position-flag families are each their own bespoke
+#    regex, not a branch list, and adding a branch-style row generator for them
+#    is exactly the "enumerate every mechanism x every branch" cross product
+#    this todo's own scope note declines;
+#    (c) narrowing that is not branch DELETION at all -- tightening `_OUT_SEP` or
 #    `_OUT_POS_PREFIX` themselves, or narrowing a character class inside one
-#    branch rather than removing the branch whole. Both are real, unmeasured, and
-#    still invisible to every check in this block for the same reason the original
-#    paragraph gave: this is a question about which rows exist, not one a fixed
-#    pin can answer without a new axis for each shape.
+#    branch rather than removing the branch whole.
+#    All three are real, unmeasured, and still invisible to every check in this
+#    block for the same reason the original paragraph gave: this is a question
+#    about which rows exist, not one a fixed pin can answer without a new axis
+#    (or, for (a), the same axis extended) for each shape.
 #
 #    The residual this list USED to name second -- a deny site no row reaches, so
 #    deleting it is invisible -- was live when it was written and is closed now:
