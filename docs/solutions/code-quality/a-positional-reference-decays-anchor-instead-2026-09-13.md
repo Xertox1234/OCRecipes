@@ -5,7 +5,7 @@ category: code-quality
 tags: [harness, docs, verification, code-review, todos]
 module: shared
 applies_to: ["docs/solutions/**/*.md", "docs/rules/**/*.md", "todos/**/*.md", ".claude/hooks/**", ".claude/agents/**/*.md"]
-symptoms: ["A cited line range captures a claim and excludes the retraction that follows it in the same comment block", "An ACn / 'Acceptance Criterion N' cross-reference resolves to the wrong item, or to the bullet doing the pointing", "A citation was correct when written and is false now, with no edit to the citing sentence", "A reviewer re-derives a cross-reference by counting list items and lands somewhere the author did not mean", "Two authors independently start replacing line numbers with symbol names in the same week"]
+symptoms: ["A cited line range captures a claim and excludes the retraction that follows it in the same comment block", "An ACn / 'Acceptance Criterion N' cross-reference resolves to the wrong item, or to the bullet doing the pointing", "A citation was correct when written and is false now, with no edit to the citing sentence", "A reviewer re-derives a cross-reference by counting list items and lands somewhere the author did not mean", "Two independent branches start replacing line numbers with symbol names in the same week"]
 created: 2026-09-13
 severity: medium
 ---
@@ -44,8 +44,12 @@ Nothing edited the citing sentence; the document moved underneath it.
 - A citation that is false now was true when written, and nothing edited the citing sentence.
 - A reviewer resolves a cross-reference by counting list items, and lands somewhere the author
   never meant.
-- Two people independently begin replacing line numbers with symbol names in the same week —
-  convergence is evidence the positional form is the defect, not the individuals.
+- Two **independent branches** begin replacing line numbers with symbol names in the same week.
+  Convergence across lines of work that cannot see each other is evidence the positional form is
+  the defect rather than one author's habit — but state what the independence actually is. Here
+  both branches share a git author and an AI co-author; what is independent is the **work**
+  (merge-base `e50a5d08`, neither an ancestor of the other), not the people. "Two authors" would
+  overstate the diversity of the evidence, which is this document's own failure mode one level up.
 
 ## Root Cause
 
