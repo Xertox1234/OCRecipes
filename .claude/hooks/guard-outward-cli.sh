@@ -1844,8 +1844,10 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 #   4. $_CMD_REDIR is non-empty — which costs the REDIRECT arm, not "every needle".
 # Operand 3b asks the grammar a BEHAVIOURAL question instead of counting a literal: fed a
 # span that crosses a separator, does the grant form match it WHOLE? The wide form does; a
-# correct grant form cannot. One probe per arm per separator, so it is per-arm by
-# construction rather than by a total count.
+# correct grant form cannot. NINE probes: one per `-`-arm per separator, so the coverage is
+# per-arm by construction rather than by a total count. Review measured the earlier
+# seven-probe version leaving two holes — a form whose `-R` arm re-admitted only `|` matched
+# none of the seven — so the count and the claim now agree.
 #
 # THE COUNTING VERSION SHIPPED TWICE AND WAS WRONG BOTH TIMES, which is why this is
 # behavioural. First as `grep -c`, which counts matching LINES — the constant is one line, so
@@ -1857,7 +1859,7 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # count is also gameable: padding one arm with extra classes reaches the threshold while the
 # other arms stay wide.
 _OUT_GRANT_SPANS=no
-for _out_gp in ' -x;y' ' -R a;y' ' --repo a;y' ' -x&y' ' -x|y' ' -R a&y' ' --repo a|y'; do
+for _out_gp in ' -x;y' ' -x&y' ' -x|y' ' -R a;y' ' -R a&y' ' -R a|y' ' --repo a;y' ' --repo a&y' ' --repo a|y'; do
   if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_SPANS=yes; break; fi
 done
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \

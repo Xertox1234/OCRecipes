@@ -202,8 +202,10 @@ case "$TOOL" in
     # ref 42, and this gate went on to classify the LOCAL PR #42 - its deny text was
     # byte-identical to a bare one's. The sibling ordering `--repo other/org 42` refused
     # correctly, which is exactly why the gap survived a reader who checked one spelling.
-    # The refusal now scans the whole clause, so both orderings refuse; test-cmd-detect.sh
-    # pins all four spellings in both positions.
+    # The refusal now scans the clause that produced the ref — anchored at it, with only the
+    # TAIL truncated — so both orderings refuse. test-cmd-detect.sh pins all four spellings
+    # in both positions AND the shapes carrying an EARLIER command separator, which is where
+    # two successive versions of that scan silently resolved the ref instead of refusing.
     #
     # Mirrored in BOTH directions, the ABSENT case included — a bare
     # `gh pr merge 42` carries no `--repo` and is allowed to mean the ambient repo, so a

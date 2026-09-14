@@ -1808,6 +1808,26 @@ echo "--- cmd_gh_pr_write_subcommand: the verb comes from the VERB SLOT ---"
 ghsub 'gh -R owner/merge pr create'    create "a repo NAMED merge does not become the verb"
 ghsub 'gh -R owner/create pr merge 42' merge  "a repo NAMED create does not become the verb"
 
+# AND WHATEVER COMES BEFORE IT. Nothing pinned these until 2026-09-13, and two successive
+# versions of the clause scan resolved the ref for them instead of refusing — each measured
+# end-to-end as an ALLOW of a cross-repository merge authorised by a LOCAL review record.
+#   v1 cut the clause with its own grep, so it could anchor at an EARLIER `gh` and never
+#      reach the retarget the resolved span carried.
+#   v2 anchored at $full_match but truncated the CONCATENATION, so when a root-position
+#      global carried a separator the cut landed INSIDE $full_match and discarded the
+#      retarget with it: `gh --version;gh pr merge 42 --repo other/org` resolved 42.
+# Only truncating the TAIL closes both. The suite had NO row for this shape while both
+# defects were live, which is why a third version could have regressed in silence.
+echo "--- cmd_gh_pr_ref: an EARLIER separator must not hide a trailing retarget ---"
+ghref 'gh --version;gh pr merge 42 --repo other/org' - "a global before the separator: REFUSED"
+ghref 'gh -x;gh pr merge 42 --repo other/org'        - "a glued ; inside the span: REFUSED"
+ghref 'gh -x|gh pr merge 42 --repo other/org'        - "a glued | inside the span: REFUSED"
+ghref 'gh -x&gh pr merge 42 --repo other/org'        - "a glued & inside the span: REFUSED"
+ghref 'gh --repo o/r;gh pr merge 42'                 - "retarget in the FIRST clause: REFUSED"
+# The other direction, same shape: an earlier separator must NOT invent a refusal.
+ghref 'gh pr merge 42 --squash;echo done'            42 "a trailing command still resolves"
+ghref 'gh --version;gh pr merge 42 --auto'           42 "a leading command still resolves"
+
 echo "--- cmd_gh_pr_ref: a TRAILING retarget refuses, whatever the flag order (C) ---"
 ghref 'gh pr merge 42 --repo other/org' - "ref BEFORE --repo <v>: REFUSED"
 ghref 'gh pr merge 42 -R other/org'     - "ref BEFORE -R <v>: REFUSED"
@@ -1829,7 +1849,7 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
 # assertion in a run that otherwise completed. It cannot catch an early
 # `return`/`exit` or a truncated file, because those terminate before this line.
-EXPECTED_TOTAL=599
+EXPECTED_TOTAL=606
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

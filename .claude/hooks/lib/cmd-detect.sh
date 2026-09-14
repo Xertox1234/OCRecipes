@@ -2062,7 +2062,7 @@ cmd_gh_pr_write_subcommand() {
 # guard evaluated it.
 cmd_gh_pr_ref() {
   local value_flags='--author-email|--body-file|--body|--match-head-commit|--subject|--comment|--add-assignee|--add-label|--add-project|--add-reviewer|--base|--milestone|--remove-assignee|--remove-label|--remove-project|--remove-reviewer|--title|--repo'
-  local bare occurrences full_match repo_clause ref prev raw_bodies raw_body_count
+  local bare occurrences full_match repo_clause clause_tail ref prev raw_bodies raw_body_count
   # SAFETY GUARD (CRITICAL fix, code-reviewer, 2026-09-02): cmd_bare_deep's
   # per-line union of extracted substitution bodies is proven correct for
   # BOOLEAN mention-detection only (cmd_gh_pr_write_subcommand above,
@@ -2158,12 +2158,16 @@ cmd_gh_pr_ref() {
   # the gate), and stated together so the list is a partition rather than a sample:
   #   1. cmd_bare does not strip `#` comments, so a trailing
   #      `gh pr merge 42  # remember --repo` refuses.
-  #   2. (CLOSED 2026-09-13 by anchoring — see the note below. It used to read: this clause
-  #      can anchor EARLIER than the span that resolved the ref. That was not merely an
-  #      over-refusal; in the other direction it MISSED a retarget the resolved clause
-  #      carried, which review measured as an end-to-end ALLOW of a cross-repository merge
-  #      authorised by a local review record. Kept as a numbered entry rather than deleted so
-  #      the next reader can tell a closed residual from one that was never listed.)
+  #   2. (CLOSED 2026-09-13, in two steps, and the two-step history is the point. The clause
+  #      used to be cut by its own grep, so it could anchor EARLIER than the span that
+  #      resolved the ref and MISS the retarget that span carried — measured end-to-end as an
+  #      ALLOW of a cross-repository merge authorised by a local review record. Anchoring at
+  #      $full_match fixed that and introduced a SECOND form of the same defect: truncating
+  #      the concatenation cut inside $full_match whenever a global carried a separator,
+  #      re-opening the identical ALLOW. Only truncating the tail closes both. Kept as a
+  #      numbered entry rather than deleted so a reader can tell a closed residual from one
+  #      that was never listed — and because it took two attempts, neither of which the
+  #      suite caught until a row was written for it.)
   # Residual 1 has no plausible real-world shape — a panel of the commands this repo actually
   # runs resolves identically before and after — but a refusal costs a re-run, and the merge
   # gate has no per-command escape, so it is written down rather than discovered twice.
@@ -2180,10 +2184,31 @@ cmd_gh_pr_ref() {
   #
   # Taking the text FROM $full_match's own position removes the second anchor entirely, so
   # there is nothing left to disagree about: the scan sees exactly the clause that produced
-  # the ref, extended to the next command separator. $full_match cannot itself contain
-  # `;`/`&`/`|` (its classes exclude them), so the truncation only ever bites in the tail.
-  repo_clause="$full_match${bare#*"$full_match"}"
-  repo_clause=${repo_clause%%[;&|]*}
+  # the ref, extended to the next command separator.
+  #
+  # ONLY THE TAIL IS TRUNCATED, and the distinction is the whole correctness of this block.
+  # An earlier revision cut the CONCATENATION, justified by the sentence "$full_match cannot
+  # itself contain `;`/`&`/`|` (its classes exclude them)". That was asserted, not traversed,
+  # and it is false: _CMD_GH_GLOBALS's generic arm is `-[^[:space:]]+`, which admits all
+  # three — and the header above says not to tighten it, because doing so is the PERMISSIVE
+  # direction. So the cut landed INSIDE $full_match and threw away the merge clause carrying
+  # the retarget. Measured on `gh --version;gh pr merge 42 --repo other/org`:
+  #     full_match [gh --version;gh pr merge 42]
+  #     concatenated, then cut  ->  [gh --version]      <- the --repo is gone
+  # which resolved ref 42 where main REFUSES, and end-to-end a clean local review record then
+  # authorised a merge into another repository — verbatim the gap this anchoring was written
+  # to close. Truncating the tail alone keeps $full_match whole by construction.
+  #
+  # A NEWLINE IS ALSO A SEPARATOR AND IS DELIBERATELY NOT IN THAT CLASS. $bare is multi-line
+  # (cmd_bare_deep puts the outer command on one line and each substitution body on its own),
+  # so the tail can run past a newline into the next rendering. That direction is safe by
+  # construction — crossing EXTENDS the clause, so it can only ever ADD a refusal, never miss
+  # one — and it is the behaviour you want here: measured, `gh pr merge 42 $(echo --repo
+  # other/org)` refuses, which is correct, because the substitution really does supply the
+  # retarget. Controls in the same run: a substitution carrying no flag still resolves 42,
+  # and a merge hidden inside a substitution still resolves 42.
+  clause_tail=${bare#*"$full_match"}
+  repo_clause="$full_match${clause_tail%%[;&|]*}"
   if printf '%s' "$repo_clause" | grep -qE '(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'; then
     return 1
   fi
