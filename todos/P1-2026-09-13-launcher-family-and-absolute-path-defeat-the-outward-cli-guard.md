@@ -77,8 +77,8 @@ Both controls held, so the harness renders both verdicts rather than one for eve
 A wider grid run during the PR #952 review found that **every non-empty launcher form allowed
 every binary and verb tried** — `npx`, `npx -y`, `npx --yes`, `npm exec`, `npm exec --`, `bunx`,
 `bun x`, `bun run`, `pnpm dlx`, `pnpm exec`, `yarn dlx`, `yarn exec`. **No bare count is quoted
-here**: an earlier draft said "ten" with no denominator, which is the exact defect Acceptance
-Criterion 4 below forbids. One reviewer's generated corpus was 13 launcher-forms (the 12 above
+here**: an earlier draft said "ten" with no denominator, which is the exact defect the corpus
+criterion below forbids. One reviewer's generated corpus was 13 launcher-forms (the 12 above
 **plus the empty/no-launcher baseline**) × 4 path-forms × 4 binary+verb targets = **208 rows,
 ALLOW 204/208**. The only four DENYs are the rows that are **both launcher-free and path-free** —
 one per target. **The bare-path rows ALLOW everywhere**; that is residual 2, the gap this todo
@@ -125,13 +125,15 @@ consistent with this repo's known path-qualified extractor gap
       appears as the **argument of a launcher**, not only in command position.
 - [ ] **The PACKAGE spelling is a second gated word on the launcher axis** — `eas-cli` as well as
       `eas`, and likewise check `@railway/cli` and any `gh` equivalent. Measured: `npx eas-cli
-  update --branch preview` and `npm exec eas-cli update --branch preview` are both ALLOW
+update --branch preview` and `npm exec eas-cli update --branch preview` are both ALLOW
       today, and they reach the real CLI — `/opt/homebrew/lib/node_modules/eas-cli/package.json`
       declares `bin: {"eas": "./bin/run"}`, so `libnpmexec` misses every local lookup, rewrites
       `args[0]` to `eas` via `getBinFromManifest`, and finds `/opt/homebrew/bin/eas`. **Gating
       only the `eas` token closes `npx eas update` and leaves `npx eas-cli update` wide open.**
-      AC4's "binary spelling" dimension must be instantiated with package names, or a corpus
-      "generated from its dimensions" reproduces exactly this blind spot.
+      **the corpus criterion's** "binary spelling" dimension must be instantiated with package
+      names, or a corpus "generated from its dimensions" reproduces exactly this blind spot.
+      (Phrase-anchored deliberately: an ordinal `ACn` reference shifts every time a criterion is
+      inserted above it, which has already happened twice in this file.)
 - [ ] Absolute- and relative-path invocation DENIES — `/opt/homebrew/bin/eas update`,
       `./node_modules/.bin/eas update`, `../eas update`.
 - [ ] **Corpus GENERATED from its dimensions** (launcher form × binary spelling × gated verb ×
