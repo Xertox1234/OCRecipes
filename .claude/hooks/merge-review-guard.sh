@@ -137,23 +137,48 @@ case "$TOOL" in
         # `. "$HERE/lib/cmd-detect.sh"` above (same file, same `declare -F` guard's success),
         # so no separate sourcing check is added to that top chain — only a local, fail-safe
         # default here: PR_WRITE_EXECUTES starts at 1 (the old, still-true-for-case-a
-        # message) and flips to 0 ONLY on a successful capture that genuinely finds no
-        # command-position match. Any failure to capture (function missing, unexpected
-        # error) leaves it at 1, so an uncertain read never mis-claims "nothing executes".
+        # message) and flips to 0 ONLY when the capture below runs `grep` and finds no
+        # command-position match. NOT a guarantee against every capture failure — round-2
+        # code-reviewer, 2026-09-14: if `cmd_words` were itself broken AND `$CMD` carried no
+        # command substitution, `cmd_words_deep`'s trailing `while read ... done < <(...)`
+        # still returns 0 on zero iterations (confirmed empirically), so the capture
+        # "succeeds" with an empty string and this flips to 0 — the LESS cautious message —
+        # not 1. `cmd_is_gh_pr_create` carries the identical exposure and does not claim
+        # otherwise; this comment doesn't either. Currently unreachable end-to-end (a broken
+        # `cmd_words` also breaks `cmd_bare_deep`, so `cmd_gh_pr_write_subcommand` itself
+        # would already have exited via `[ "$SUB" = "merge" ] || exit 0` before this branch
+        # runs), but that is a property of the CALLER, not a property this local default can
+        # rely on in isolation.
         #
-        # RESIDUAL, deliberately not chased (measured 2026-09-14): _CMD_POS_PREFIX anchors
-        # on `(^|[;&|(`{!])` and grep's `^` matches PER LINE, so a heredoc body line whose
-        # write-verb sits at column 0 with no leading prose —
+        # RESIDUALS, deliberately not chased (measured 2026-09-14, two independent
+        # mechanisms — neither changes the verdict, both stay deny; each is its own gap, not
+        # one gap described twice):
+        #
+        # (1) _CMD_POS_PREFIX anchors on `(^|[;&|(`{!])` and grep's `^` matches PER LINE, so
+        # a heredoc body line whose write-verb sits at column 0 with no leading prose —
         #   cat >> ledger.md <<EOF
         #   gh pr merge 900 was run
         #   then gh pr create
         #   EOF
         # — still matches command position and keeps the OLD "split it" message, exactly
-        # like a real invocation would, even though nothing here executes either. Verdict is
-        # unaffected (still deny, the safe direction), and the two named repro shapes this
-        # todo fixes (leading prose on the line, and a live substitution that truly executes)
-        # both classify correctly. Closing this residual needs real heredoc-boundary
-        # parsing — a new mechanism, out of this todo's Scope Contract.
+        # like a real invocation would, even though nothing here executes either. Pinned as
+        # test-merge-review-guard.sh row 33c.
+        #
+        # (2) A QUOTED heredoc delimiter (`<<'EOF'`) suppresses ALL expansion inside the
+        # body — `$(gh pr merge 900)` there is 100% literal text, nothing executes — but
+        # cmd_extract_substitutions (the shared, unmodified library) has no heredoc-
+        # redirection semantics: it scans the body as ordinary unquoted text and reports the
+        # `$(...)` as live regardless of the enclosing `<<'...'` whose entire purpose is
+        # suppressing exactly that expansion. Confirmed by construction: the quoted-
+        # delimiter form and its unquoted control both return the SAME "split it" message,
+        # though only the control genuinely executes. Not pinned as its own row (rows 33/33b
+        # already assert the SAME message text this shares; a dedicated row would only
+        # re-assert an identical string).
+        #
+        # Both are library-level extraction gaps (cmd_extract_substitutions / cmd_words),
+        # not this call site's own classification logic — closing either needs real heredoc-
+        # boundary parsing in the shared lib, a new mechanism, out of this todo's Scope
+        # Contract, which composes existing primitives only.
         PR_WRITE_EXECUTES=1
         if PR_WRITE_WORDS=$(cmd_words_deep "$CMD" 2>/dev/null); then
           grep -Eq "${_CMD_POS_PREFIX}gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(create|merge|close|edit)${_CMD_POS_SUFFIX}" \
