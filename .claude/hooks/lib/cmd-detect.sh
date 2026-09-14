@@ -215,6 +215,14 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # complete. The property does not go stale.
 # docs/solutions/logic-errors/an-invented-enumeration-is-not-the-space-ask-the-tool-2026-09-13.md
 #
+# THE SAME CONSTRUCT IS STILL LIVE ONE SLOT OVER, and this pointer is here so the fixed slot
+# is not read as "the file is done". cmd_gh_pr_ref's POST-verb walker (`local value_flags=`)
+# is a named enumeration, duplicated in the `case "$prev" in` below it, and `--attach` is
+# missing from both. The property trick above does NOT transfer there: making that walker's
+# bare-dash arm consume a following token would swallow the REF, so `gh pr merge --squash 42`
+# would refuse. The ambiguity is genuine and needs its own design.
+# todos/P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list.md
+#
 # Naming `-R`/`--repo` explicitly is what keeps THOSE TWO retarget flags out of the residual —
 # BUT ONLY IN THE UNQUOTED RENDERING, and the scope of that sentence is load-bearing.
 # `cmd_bare` BLANKS a quoted span, so a QUOTED flag carrying a SEPARATE unquoted value

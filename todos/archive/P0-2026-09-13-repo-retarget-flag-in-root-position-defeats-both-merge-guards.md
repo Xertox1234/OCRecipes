@@ -312,3 +312,15 @@ span, removing the dash token the value arm anchors on, so this family GREW with
 the namespace→verb redirect slot; and P1's binary-rendering families. All tracked in
 `todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md`, all denied by
 `guard-outward-cli.sh`, all allowed by the merge gate, none a regression.
+
+**And one the same class, ONE SLOT OVER — named here because a residual list that omits it
+reads as completeness.** `cmd_gh_pr_ref`'s POST-verb flag walker is still a named
+enumeration, kept in two separate copies, and `--attach` (a real `gh pr edit` flag) is absent
+from both, so its value resolves AS THE REF: `gh pr edit --attach 99 42` resolves `99`. Short
+forms of listed flags fail CLOSED there (an accuracy cost, not a gap); unlisted ones resolve
+the wrong ref, which is what a future `gh` flag would do the day it ships. Not reachable by a
+functional command on the merge gate today, because every value-taking `gh pr merge` flag is
+covered and `--attach` belongs to `edit`. Filed as
+`todos/P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list.md`
+and deliberately NOT half-fixed here: adding `--attach` alone would close one member and
+leave the class open, which is the exact mistake this todo exists to record.

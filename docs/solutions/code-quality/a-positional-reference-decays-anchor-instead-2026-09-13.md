@@ -5,7 +5,7 @@ category: code-quality
 tags: [harness, docs, verification, code-review, todos]
 module: shared
 applies_to: ["docs/solutions/**/*.md", "docs/rules/**/*.md", "todos/**/*.md", ".claude/hooks/**", ".claude/agents/**/*.md"]
-symptoms: ["A cited line range captures a claim and excludes the retraction that follows it in the same comment block", "An ACn / 'Acceptance Criterion N' cross-reference resolves to the wrong item, or to the bullet doing the pointing", "A citation was correct when written and is false now, with no edit to the citing sentence", "A reviewer re-derives a cross-reference by counting list items and lands somewhere the author did not mean", "Two independent branches start replacing line numbers with symbol names in the same week"]
+symptoms: ["A cited line range captures a claim and excludes the retraction that follows it in the same comment block", "An ACn / 'Acceptance Criterion N' cross-reference resolves to the wrong item, or to the bullet doing the pointing", "A citation was correct when written and is false now, with no edit to the citing sentence", "A reviewer re-derives a cross-reference by counting list items and lands somewhere the author did not mean", "Two independent branches start replacing line numbers with symbol names in the same week", "An assertion greps for a literal that no longer occurs in either operand, so it cannot fire against any input"]
 created: 2026-09-13
 severity: medium
 ---
@@ -34,6 +34,26 @@ said "AC4's binary spelling dimension must be instantiated with package names." 
 were later inserted above the corpus criterion, walking it AC4 → AC5 → AC6 — so by the time it
 was read, `AC4` resolved to *the bullet doing the pointing*. The reference pointed at itself.
 Nothing edited the citing sentence; the document moved underneath it.
+
+**And the same decay in EXECUTABLE code, where it costs enforcement rather than accuracy.**
+A fail-closed assertion in `guard-outward-cli.sh` asserted that the narrow (grant-shaped)
+flag grammar had not been widened back to the wide one, by testing for a literal:
+
+```sh
+printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '|-[^[:space:]]+)'
+```
+
+That string was the wide form's generic arm **as spelled the day the assertion was written**.
+When the wide arm later gained an optional value token — becoming
+`-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?` — the pinned literal stopped
+occurring in *either* constant. The operand could no longer fire against any input. It was
+not wrong; it was **inert**, and an inert operand in a green suite is indistinguishable from
+a passing one.
+
+The decay is identical in kind to `:358-372`: the test names a *spelling* (a coordinate in
+text-space) rather than the *property* it cares about. Nothing declares what is supposed to
+be there, so nothing can notice that it is not. The difference is only in what is lost — a
+reader is misled by a stale citation, whereas a check silently stops protecting.
 
 ## Symptoms
 
@@ -64,6 +84,7 @@ Two distinct decay mechanisms share that root:
 | ------------------- | ------------------------------------------- | ----------------------------- |
 | **Exclusion**       | at write time — the span omits what matters | yes, partly                   |
 | **Ordinal drift**   | later — items inserted above shift the index | **no**                        |
+| **Spelling pin**    | later — the pinned text is re-spelled elsewhere | **no** — and the suite stays green |
 
 This distinction is why an existing prevention did not hold.
 [A correction inherits the whole cited region](a-correction-inherits-the-whole-cited-region-2026-09-13.md)
@@ -90,6 +111,7 @@ the defect. Anchors are that form.
 | `guard-outward-cli.sh:358-372` | the `DOCUMENTED RESIDUALS` entry for `gh api`'s method check |
 | `AC4`                          | the corpus criterion                                |
 | "step 3 above"                 | "the overlap-check step"                            |
+| `grep -qF -- '|-[^[:space:]]+)'` | a **probe**: does this grammar span ` -x;y`? does it span ` -t x`? |
 
 An anchor is self-verifying: `grep` for it either finds the thing or proves it moved. A line
 number greps to whatever now occupies that line, which is indistinguishable from being right.
@@ -115,6 +137,13 @@ which is precisely where a range that stops early will miss them.
   prose — `status:` frontmatter, a `CLOSED` marker, the current residuals list. Prose in a
   comment block records what was true when written, and this repo appends corrections rather
   than rewriting.
+- **In executable checks, assert the PROPERTY by probing, never a spelling by matching.** Feed
+  the thing under test an input and check the answer: "does this grammar span a separator?",
+  "does it consume a separate value?" A probe survives any re-spelling of what it tests, and
+  it fails loudly when the behaviour actually changes. A fixed-string test fails *silently*
+  when the spelling changes, which is the direction that removes protection. When retiring
+  such an operand, prove the mutant it existed to catch is still caught by something else —
+  measure it; do not assume the surviving operands cover it.
 - **Treat a same-day solution doc as weak protection against its own defect.** Codification
   records the lesson; it does not install it. If a defect is worth preventing, prefer a form
   that cannot express it (an anchor) or a check that fires (a lint, a review-checklist item)
@@ -130,4 +159,6 @@ which is precisely where a range that stops early will miss them.
 
 - [A correction inherits the whole cited region](a-correction-inherits-the-whole-cited-region-2026-09-13.md) — the exclusion half, codified the same day; this doc records why its prose prevention did not fire and what form does
 - [Re-verifying a stale item's citations is not re-verifying its premise](../logic-errors/citation-refresh-is-not-premise-refresh-2026-08-15.md) — refreshing citations while the load-bearing claim goes unchecked
+- [A guard and its mutation test can both be inert while green](a-guard-and-its-mutation-test-can-both-be-inert-while-green-2026-09-13.md) — what an inert operand costs; this doc records one WAY an operand becomes inert, by pinning a spelling
+- [An invented enumeration is not the space — ask the tool](../logic-errors/an-invented-enumeration-is-not-the-space-ask-the-tool-2026-09-13.md) — the same "name the thing, not a snapshot of it" lesson in the flag-set direction
 - [A sampled corpus described as generated](a-sampled-corpus-described-as-generated-2026-09-13.md) — a neighbouring evidence-hygiene defect from the sibling PR
