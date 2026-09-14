@@ -83,7 +83,16 @@ expect(mockApiRequest).toHaveBeenCalledWith(
 
 Mutating `useBatchConfirm.ts` to hardcode the header now fails this test immediately,
 because the mocked collaborator's distinctive return value is what the assertion
-checks for — a hardcoded `"UTC"` (or any other literal) no longer satisfies it.
+checks for: a hardcoded `"UTC"` — the value the no-header fallback and the pre-fix
+code both produce, and so the regression actually at risk — no longer satisfies it.
+
+Be precise about what that buys, since this doc's own standard is to ask what the
+test would still pass under. Pinning the literal rejects every value EXCEPT
+`"America/Los_Angeles"`; it does not reject hardcoding as a class. A mutant that
+hardcodes `"America/Los_Angeles"` itself still passes. That residual is acceptable
+here because the fixture deliberately picks a zone the fallback would never produce,
+so the mutants that matter are excluded — but the guarantee is "not this specific
+wrong value", not "the value was genuinely threaded".
 
 ## Prevention
 
