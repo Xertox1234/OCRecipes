@@ -3687,9 +3687,33 @@ assert_deny "...opening at !" \
   "$(json 'gh -a api -c !gh api -f a=b /repos/o/r/merges')" \
   "more than one command-position 'gh api' occurrence"
 
+# TRIPWIRES, NOT CLOSURES — the TWO-token families miscount through the same `(` mechanism.
+# `_OUT_SEP` interpolates the shared `_CMD_REDIR`, whose target class admits `(`, so a process
+# substitution is absorbed and `gh -a -c <(gh pr merge 7) pr merge 42` counts ONE occurrence
+# where the `;` spelling counts two. Identical on main, so this is PRE-EXISTING; and it still
+# DENIES, but on the "without a REAL --auto" branch rather than the ambiguity branch — i.e.
+# the second, really-executing merge is invisible to the counter and the deny is accidental.
+# These rows pin the CURRENT verdict AND its REASON so a flip to ALLOW cannot be silent, and
+# so the eventual fix must come here and convert them. See
+# todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md.
+assert_deny "TRIPWIRE: a hidden second pr merge is miscounted but still denies" \
+  "$(json 'gh -a -c <(gh pr merge 7) pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "TRIPWIRE: ...and with --auto on the outer merge, still denies" \
+  "$(json 'gh -a -c <(gh pr merge 7 --auto) pr merge 42 --auto --squash')" \
+  "without a REAL --auto flag"
+# CONTROL, so the two rows above cannot pass because the whole block broke: the `;` spelling
+# of the same pair IS counted, and denies on the ambiguity reason instead.
+assert_deny "control: the ; spelling of the same pair is counted as two" \
+  "$(json 'gh pr merge 7;gh pr merge 42')" \
+  "more than one command-position 'gh pr merge' occurrence"
+
 # TWO-SIDED. The count is the MAX of two grammars, not a swap — so the rows the value arm
-# NEWLY closes must stay closed. The separator-safe grammar cannot see these at all; the wide
-# one counts them as a single occurrence and the method check then fires.
+# NEWLY closes must stay closed. (An earlier version of this comment said the separator-safe
+# grammar "cannot see these at all". That was FALSE — instrumented, both rows report
+# wide=1 sepsafe=1, because SEPSAFE carries the same optional-value arm. Max is right for a
+# directional reason, not that one: the grammars disagree only where the wide form spans a
+# command boundary, and there the narrow count is HIGHER, so max can only add denies.)
 assert_deny "a root flag on a mutating gh api still denies on the METHOD reason" \
   "$(json 'gh -t x api repos/o/r -X POST')" \
   "with a mutating HTTP method"
@@ -3882,7 +3906,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=728
+EXPECTED_TOTAL=731
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

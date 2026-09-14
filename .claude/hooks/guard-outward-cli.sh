@@ -1821,8 +1821,22 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 #       wide  ->  [gh -a api -c x;gh api ]       COUNT=1  -> no deny      (` -c` ate ` x;gh`)
 #
 # `gh api` is the ONLY single-token gh needle in this file; every other family is two-token
-# (`pr merge`, `pr create|comment`, `release …`, `repo …`) and cannot collapse, because the
-# second token is not a dash token and so can never be a flag's value. Measured on all four
+# (`pr merge`, `pr create|comment`, `release …`, `repo …`) and cannot collapse THROUGH THE
+# VALUE ARM, because the second token is not a dash token and so can never be a flag's value.
+#
+# THAT SCOPE IS LOAD-BEARING AND WAS MISSING FROM THE FIRST DRAFT, which said only "cannot
+# collapse". The value arm is not the only collapse mechanism: `_OUT_SEP` interpolates the
+# shared `_CMD_REDIR`, whose target class admits `(`, so a process substitution collapses the
+# TWO-token families too. Measured on both revisions —
+# `gh -a -c <(gh pr merge 7) pr merge 42` counts ONE merge occurrence on main AND on this
+# branch, where the `;` spelling counts two. PRE-EXISTING and identical to main, so this
+# change neither opened nor closed it, and no live ALLOW was found: five variants, including
+# a real `--auto` on the outer merge with a decoy glued to the hidden inner one, all still
+# DENY — but they deny because the clause cut happens not to find a real `--auto` inside the
+# miscounted clause, which is accidental safety, not structural. Pinned as tripwire rows in
+# test-guard-outward-cli.sh so a flip to ALLOW cannot be silent, and tracked in
+# todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md.
+# Do not read "cannot collapse" as "is counted correctly". Measured on all four
 # separators, glued and spaced, with `gh api /repos/o/r` ALLOW and `gh api -X POST …` DENY as
 # in-band controls.
 #
@@ -1859,8 +1873,24 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 #
 # The count is therefore the MAX of the two grammars, never one or the other: the wide form is
 # what the downstream clause cut actually reads, so it must keep its say, while this form
-# restores the second occurrence. Max, not sum, and not a swap — a swap would LOSE the rows the
-# value arm newly closes, since this grammar cannot see `gh -t x api …` at all.
+# restores the second occurrence.
+#
+# WHY MAX AND NOT A SWAP — corrected 2026-09-14, because the first answer given here was
+# FALSE and a reader could have "simplified" the code on the strength of it. It claimed this
+# grammar "cannot see `gh -t x api …` at all". It sees it perfectly well: SEPSAFE carries the
+# same optional-value arm as the wide form, so it parses `-t x` as flag-plus-value and reaches
+# `api` exactly as the wide form does. Instrumented at the two count sites,
+# `gh -t x api repos/o/r -X POST` and `gh -Z v api repos/o/r --method PUT` both report
+# wide=1 sepsafe=1, not sepsafe=0 — and the fail-closed operand a few lines above
+# (`_OUT_SEPSAFE_TAKES_VALUE`) exists precisely to REQUIRE that, so the false prose
+# contradicted a true assertion in its own file.
+#
+# The real reason is directional. The two grammars disagree only where the WIDE form spans a
+# command boundary the narrow one refuses, and there the narrow count is the HIGHER one. Max
+# takes whichever grammar saw more invocations, so it can only ever ADD denies relative to
+# either alone; a swap would additionally hand the whole count to a grammar chosen for one
+# failure mode. Max needs no claim about what either form can or cannot see, which is the
+# property that makes it safe to state.
 # The token classes below exclude whitespace plus EVERY character in _OUT_POS_PREFIX's
 # command-position anchor set, and the redirect arm is a LOCAL narrowing of _CMD_REDIR for the
 # same reason — see the header's "ANCHORS, NOT SEPARATORS" paragraph.

@@ -295,7 +295,7 @@ sanctioned shape itself still allows.
 **Verification** (figures as of the closing merge; the LIVE values are the pins themselves —
 `EXPECTED_TOTAL` in each suite and `EXPECTED_ROWS` in the corpus — and this line has gone
 stale three times during review, so read the pins, not this sentence).
-627 / 728 / 95 assertions across the three suites; corpus 602 → 739 rows
+627 / 731 / 95 assertions across the three suites; corpus 602 → 739 rows
 with a new generated `ghrootv-*` axis (8 flags × 6 families, members derived from
 `man gh-pr-<verb>` plus two that do not exist), zero precise-path gaps, and **nothing removed**
 from either membership manifest — the check that says no pre-existing row changed behaviour.
