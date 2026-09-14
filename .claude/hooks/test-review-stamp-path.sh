@@ -55,7 +55,7 @@ if grep -qF -- "ocrecipes-review-stamps-global/feedface" <<<"$out"; then
   echo "PASS: stripped PATH triggers fallback"; PASS=$((PASS+1))
 else echo "FAIL: stripped PATH should trigger fallback"; echo "  got: $out"; FAIL=$((FAIL+1)); fi
 
-# Pin the assertion TOTAL, mirroring test-cmd-detect.sh:1709. Without it a row that is
+# Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that

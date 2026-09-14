@@ -2149,10 +2149,16 @@ cmd_gh_pr_ref() {
   # merge-review-guard.sh went on to classify the LOCAL PR #42 — its deny text was
   # byte-identical to a bare merge's, i.e. the retarget was completely invisible. The
   # sibling ordering `--repo other/org 42` refused correctly, which is exactly why the gap
-  # survived: merge-review-guard.sh:162-165 asserts this refusal is unconditional, and for
-  # one of the two orderings it was not. The clause runs from the same `gh` to the next
-  # command separator, so it is a strict SUPERSET of $full_match — this can only add
-  # refusals, never remove one.
+  # survived: merge-review-guard.sh's own "This mirrors the Bash arm" paragraph asserted this
+  # refusal was unconditional, and for one of the two orderings it was not. (Cited by its
+  # text, not a line range: this branch moved that sentence twice, and two other citations in
+  # these files went stale the same way.)
+  #
+  # An earlier revision of THIS paragraph went on to claim the clause "is a strict SUPERSET
+  # of $full_match — this can only add refusals, never remove one". That claim is refuted a
+  # few lines below by the note that replaced the mechanism it described; it is removed here
+  # rather than left standing, because a superseded justification sitting next to its own
+  # refutation is worse than no justification.
   #
   # ACCEPTED RESIDUALS, both failing CLOSED (an honest "could not verify" here, a deny at
   # the gate), and stated together so the list is a partition rather than a sample:
