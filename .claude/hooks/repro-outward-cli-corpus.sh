@@ -1418,14 +1418,41 @@ fi
 #    AND THE ONE THAT IS STILL OPEN, named because a residual list that discloses
 #    only the residual it has already closed is worse than no list. A scope
 #    NARROWING INSIDE a check that still fires first for every corpus row: the
-#    check keeps producing the same verdict AND the same reason for all 581 rows
-#    while commands outside the corpus flip. Nothing in this block can see that --
-#    not attribution, not the per-path tuples, not `_pin_sites`, which asks whether
-#    a check is reached, never whether it is reached by everything it should be.
-#    That is a question about which ROWS EXIST, and the only answers are new axes
-#    and adversarial construction. It is the honest boundary of what a per-row pin
-#    asserts, and the reason NOTE6's "a corpus can only report on the axes it
-#    varies" is the first thing to read after this.
+#    check keeps producing the same verdict AND the same reason for all 623 rows
+#    (the corpus's current size -- see EXPECTED_ROWS) while commands outside the
+#    corpus flip. Nothing in this block can see that -- not attribution, not the
+#    per-path tuples, not `_pin_sites`, which asks whether a check is reached, never whether it is
+#    reached by everything it should be. That is a question about which ROWS
+#    EXIST, and the only answers are new axes and adversarial construction. It is
+#    the honest boundary of what a per-row pin asserts, and the reason NOTE6's "a
+#    corpus can only report on the axes it varies" is the first thing to read
+#    after this.
+#
+#    NARROWED 2026-09-14 (todos/P2-2026-09-08-corpus-covers-deny-sites-but-not-
+#    their-alternation-branches.md): the most CONCRETE instance of this residual
+#    -- deleting one branch out of a MULTI-BRANCH alternation the guard's own
+#    regex already enumerates -- is closed for the four regexes it is shaped
+#    that way for (railway's top-level verb list, eas's top-level verb list, the
+#    railway variable/vars/var alternation, and the railway service/environment
+#    alternation). See the "DENY-SITE COVERAGE, ALTERNATION BRANCHES" axis above:
+#    it extracts each alternation from the guard's own source, so a branch ADDED
+#    to one of those four regexes later grows this file's own row count until the
+#    pin is bumped, rather than sitting invisible the way the 13 measured here
+#    2026-09-08 did.
+#
+#    WHAT REMAINS is everything this instance's method does not reach: (a) any
+#    OTHER deny check in the file that does not take the "alternation of literal
+#    branches" shape a source-grep can enumerate -- the interior-redirect,
+#    flag-adjacent, forged/masked --auto, decoy-clause and root-position-flag
+#    families are each their own bespoke regex, not a branch list, and adding a
+#    branch-style row generator for them is exactly the "enumerate every
+#    mechanism x every branch" cross product this todo's own scope note declines;
+#    (b) narrowing that is not branch DELETION at all -- tightening `_OUT_SEP` or
+#    `_OUT_POS_PREFIX` themselves, or narrowing a character class inside one
+#    branch rather than removing the branch whole. Both are real, unmeasured, and
+#    still invisible to every check in this block for the same reason the original
+#    paragraph gave: this is a question about which rows exist, not one a fixed
+#    pin can answer without a new axis for each shape.
 #
 #    The residual this list USED to name second -- a deny site no row reaches, so
 #    deleting it is invisible -- was live when it was written and is closed now:
@@ -1438,18 +1465,18 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=602
+EXPECTED_ROWS=623
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 504 of the 602 rows deny on the precise path; the other 98 are ALLOW there
-# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-* controls, plus the 31
-# precise-path gaps). Corrected 2026-09-13: this was the FIFTH stale copy of a
-# count in this file, found by review after four others were repaired -- and it
-# sits five lines above its own warning about exactly that. These numbers are
-# bumped with
+# 523 of the 623 rows deny on the precise path; the other 100 are ALLOW there
+# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-*/siterailfp-*
+# controls, plus the 31 precise-path gaps). Corrected 2026-09-13: this was the
+# FIFTH stale copy of a count in this file, found by review after four others
+# were repaired -- and it sits five lines above its own warning about exactly
+# that. These numbers are bumped with
 # EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
 # stale, sitting directly above the constant they describe.
-EXPECTED_DENY_ATTRIB_ROWS=504
+EXPECTED_DENY_ATTRIB_ROWS=523
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -2291,6 +2318,25 @@ sitebranch-delete  : command-position 'eas channel:/branch: create/edit/delete/r
 sitebranch-rename  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
 sitedup-ghcreate   : more than one command-position 'gh pr create/comment' occurrence — amb
 sitedup-ghcomment  : more than one command-position 'gh pr create/comment' occurrence — amb
+siterailverb-up    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-deploy : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-redeploy : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-restart : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-down  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-delete : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-remove : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-rm    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-run   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siteeasverb-update : command-position 'eas update/publish/submit' publishes an OTA update or
+siteeasverb-publish : command-position 'eas update/publish/submit' publishes an OTA update or
+siteeasverb-submit : command-position 'eas update/publish/submit' publishes an OTA update or
+siterailvarset-variable : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvarset-variables : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvarset-vars : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvarset-var : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvardelete  : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailsvc-service : command-position 'railway service/environment delete' deletes a live Rai
+siterailsvc-environment : command-position 'railway service/environment delete' deletes a live Rai
 ghroot-Rglued-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 ghroot-Rglued-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 ghroot-Rglued-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
