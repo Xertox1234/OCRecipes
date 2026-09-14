@@ -116,18 +116,37 @@ jobs:
     # step would be printing its summary. The point of the headroom is a real
     # Pass/Fail summary instead of an ambiguous timeout.
     #
-    # Pods + DerivedData caching (see the "Compute Pods/DerivedData cache
-    # keys" step onward, added 2026-09-02) is NOT yet reflected in these
-    # numbers. A cache MISS — the first dispatch after this change, or any
-    # run whose Podfile.lock/native source actually changed — still needs
-    # the full cold-build budget above, so this timeout is deliberately left
-    # untouched rather than shrunk on an unmeasured guess. Re-deriving it for
-    # the warm-cache case needs a human `workflow_dispatch` (ideally two: one
-    # to populate the cache, one to observe a real cache-hit build time) —
-    # record the measured "Build and install iOS app" step duration here and
-    # shrink both this and the step's own 70m bound once that number exists,
-    # per this file's existing rule of recomputing the timeout whenever the
-    # underlying budget changes.
+    # Pods + DerivedData caching (added 2026-09-02) was measured via four
+    # `workflow_dispatch` runs on 2026-09-03: cold (nothing cached) 39m03s;
+    # a `restore-keys` PREFIX hit on DerivedData with a Pods MISS, 36m48s
+    # (a prefix match does NOT set `cache-hit: 'true'` — only an exact
+    # primary-key match does — so this is not a warm measurement, it's
+    # another cold-ish build); then two genuine exact-hit-on-both warm runs,
+    # 51m01s and 47m17s — BOTH slower than cold. DerivedData caching was a
+    # net loss and was removed 2026-09-13 (see docs/solutions/conventions/
+    # actions-cache-restore-keys-hit-is-not-a-warm-measurement-2026-09-13.md
+    # for the full record and
+    # todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md for the
+    # decision). CocoaPods caching is kept — 132 MiB compressed cache entry,
+    # exact-match only, ~4s restore.
+    #
+    # Effect on THIS timeout: none of the sum-of-maxima decomposition above
+    # (setup ~6m + build <=70m + pre-warm <=10m + flows <=64m = ~150m) needs
+    # to shrink — that ~6m setup figure predates the Pods/DerivedData caching
+    # steps entirely (it was sized before 2026-09-02) and was never bumped to
+    # account for their restore/save time, so there is nothing in it to
+    # "trim back" now. The build step's own <=70m bound is likewise unchanged
+    # (see that step's comment below) and already covers a full cold
+    # compile, which is what every run still pays with or without
+    # DerivedData. Removing DerivedData's ~40s restore + ~2m30s save (the
+    # save ran AFTER the build step, not during setup) frees wall-clock time
+    # this 150m estimate never assumed away in the first place — it can only
+    # help the existing 10m margin, never shrink it, but the exact resulting
+    # margin isn't precisely quantifiable from this decomposition; 160
+    # stands. The steady state this leaves (Pods exact-hit, no DerivedData
+    # cache at all) has not itself been directly measured; that's fine here
+    # specifically because the number being relied on (the cold build)
+    # already assumes no cache benefit.
     timeout-minutes: 160
 
     env:
@@ -175,105 +194,56 @@ jobs:
       - name: Select Xcode 26.3
         run: sudo xcode-select -s /Applications/Xcode_26.3.app
 
-      # Compute the Pods/DerivedData cache keys ONCE, from the committed
-      # lockfile, before `pod install` (invoked inside "Build and install iOS
-      # app" below) can touch it. Verified locally: even a same-lockfile
-      # `pod install` rewrites `ios/Podfile.lock` and `ios/*.xcodeproj/
-      # project.pbxproj` in place (CocoaPods re-resolves any loosely-pinned
-      # transitive dep against whatever the spec repo currently has — running
-      # `pod install` twice back-to-back locally modified both tracked files
-      # both times, even with Pods already populated from the first run). If
-      # the save steps below re-hashed those paths AFTER the build instead of
-      # reusing these captured keys, the save key would drift from the key
-      # any future restore computes and the cache would never hit again —
-      # capturing the key here makes key equality structural instead of
-      # contingent on `pod install` being idempotent, which it measurably
-      # isn't. `$GITHUB_ENV` mirrors the existing "Boot iOS simulator" step's
-      # own IOS_SIMULATOR_UDID pattern.
+      # Compute the Pods cache key ONCE, from the committed lockfile, before
+      # `pod install` (invoked inside "Build and install iOS app" below) can
+      # touch it. Verified locally: even a same-lockfile `pod install`
+      # rewrites `ios/Podfile.lock` and `ios/*.xcodeproj/project.pbxproj` in
+      # place (CocoaPods re-resolves any loosely-pinned transitive dep
+      # against whatever the spec repo currently has — running `pod install`
+      # twice back-to-back locally modified both tracked files both times,
+      # even with Pods already populated from the first run). If the save
+      # step below re-hashed those paths AFTER the build instead of reusing
+      # this captured key, the save key would drift from the key any future
+      # restore computes and the cache would never hit again — capturing the
+      # key here makes key equality structural instead of contingent on
+      # `pod install` being idempotent, which it measurably isn't.
+      # `$GITHUB_ENV` mirrors the existing "Boot iOS simulator" step's own
+      # IOS_SIMULATOR_UDID pattern. See docs/solutions/conventions/
+      # ci-cache-key-inputs-must-precede-mutating-step-2026-09-02.md.
       #
-      # The `!ios/Pods/**`/`!ios/DerivedData/**` exclusions below are not
-      # load-bearing today — this step runs right after `npm ci` and before
-      # any pod install/build, so neither directory exists on disk yet
-      # (confirmed: `ios/Pods` isn't git-tracked, and the only postinstall
-      # script, patch-package, touches only `node_modules/`, never `ios/`).
-      # They're defensive future-proofing against a later reordering of
-      # these steps, which would otherwise silently reintroduce the exact
-      # save/restore key drift this comment is describing.
-      #
-      # Measured locally: `ios/Pods` is ~391 MB (`du -sh`) — well under
-      # GitHub's 10 GB cache budget on its own, and it's a single entry (Pods
-      # is exact-match only, so a new key REPLACES the old one, never adds to
+      # Measured locally: `ios/Pods` is ~391 MB on disk (`du -sh`) — well under
+      # GitHub's 10 GB cache budget, and it's a single entry (Pods is
+      # exact-match only, so a new key REPLACES the old one, never adds to
       # it). That budget is PER REPOSITORY, LRU, and shared with every other
       # workflow's cache entries — including ci.yml's `actions/setup-node`
-      # npm caches, which back the required PR-gating jobs. DerivedData's
-      # size AND count are both unmeasured (no CI access from here) — and
-      # unlike Pods, its `restore-keys` fallback means every distinct native-
-      # source hash creates a NEW entry rather than replacing the last one,
-      # so the real exposure after a few weeks is N accumulated entries, not
-      # one. After the first real dispatch, check `gh cache list --limit 50`
-      # (or repo Settings -> Actions -> Caches) for both the count and the
-      # actual sizes — a DerivedData footprint in the multi-GB range, single
-      # entry or accumulated, is worth treating as a signal to drop that half
-      # and keep Pods alone (the todo's own Risks section names this as the
-      # pragmatic fallback), rather than waiting for ci.yml's caches to
-      # visibly start thrashing first.
-      - name: Compute Pods/DerivedData cache keys
+      # npm caches, which back the required PR-gating jobs.
+      #
+      # Xcode DerivedData caching was ALSO added alongside this on
+      # 2026-09-02 and then REMOVED on 2026-09-13 after measurement showed it
+      # was a net loss: two independent exact-cache-hit `workflow_dispatch`
+      # runs (51m01s, 47m17s) both came in slower than a cold run with
+      # nothing cached (39m03s) — restoring ~1.63 GiB of DerivedData, plus
+      # whatever Xcode spends validating and then discarding most of it,
+      # cost more than it saved. See docs/solutions/conventions/
+      # actions-cache-restore-keys-hit-is-not-a-warm-measurement-2026-09-13.md
+      # for the full measurement record and
+      # todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md for the
+      # decision. Pods, by contrast, is a clear win: 132 MiB compressed
+      # cache entry, exact-match only, restores in ~4s.
+      - name: Compute Pods cache key
         run: |
           # Xcode version is READ from the toolchain `xcode-select` just
           # selected above, not retyped as a literal here: a future bump to
-          # that step's app path would otherwise leave these keys silently
-          # pinned to the old version, restoring an old-toolchain Pods/
-          # DerivedData sandbox against the new one — a correctness bug for
-          # DerivedData (compiled objects), not just a speed one.
+          # that step's app path would otherwise leave this key silently
+          # pinned to the old version, restoring an old-toolchain Pods
+          # sandbox against the new one.
           XCODE_VERSION="$(xcodebuild -version | head -1 | awk '{print $2}')"
-          DD_PREFIX="derived-data-${{ runner.os }}-xcode${XCODE_VERSION}-"
-          {
-            echo "PODS_CACHE_KEY=pods-${{ runner.os }}-xcode${XCODE_VERSION}-${{ hashFiles('ios/Podfile.lock', 'package-lock.json') }}"
-            echo "DD_CACHE_KEY_PREFIX=${DD_PREFIX}"
-            echo "DD_CACHE_KEY=${DD_PREFIX}${{ hashFiles('ios/**', '!ios/Pods/**', '!ios/DerivedData/**', 'package-lock.json', 'patches/**') }}"
-          } >> "$GITHUB_ENV"
-
-      # `expo run:ios` exposes no `-derivedDataPath`/`--derived-data-path`
-      # flag (checked `npx expo run:ios --help`), so the Implementation
-      # Notes' "derivedDataPath pinning" is done the only way available: this
-      # Xcode user default, which xcodebuild itself also reads (empirically
-      # confirmed locally — `xcodebuild -showBuildSettings` resolves
-      # BUILD_DIR/OBJROOT/SYMROOT under this path once set, run from both
-      # `ios/` and the repo root). It redirects Xcode's default hash-suffixed
-      # `~/Library/Developer/Xcode/DerivedData/<Project>-<hash>` to a FIXED
-      # path relative to $(PROJECT_DIR) instead — `ios/DerivedData` here, with
-      # no per-checkout hash, so `actions/cache` can address it by a stable
-      # path. `actions/cache` remains the only caching mechanism in play —
-      # this default just makes its target addressable. Named `DerivedData`
-      # deliberately: `ios/.gitignore` already excludes that name at any
-      # depth, so no gitignore change is needed.
-      - name: Set custom DerivedData location
-        run: defaults write com.apple.dt.Xcode IDECustomDerivedDataLocation "DerivedData"
+          echo "PODS_CACHE_KEY=pods-${{ runner.os }}-xcode${XCODE_VERSION}-${{ hashFiles('ios/Podfile.lock', 'package-lock.json') }}" >> "$GITHUB_ENV"
 
       # Restored here, saved (gated on success) right after "Build and
       # install iOS app" below — see that step's comment for why the gate
-      # exists. A MISS on either just means `pod install`/xcodebuild run
-      # cold, same as today.
+      # exists. A MISS just means `pod install` runs cold, same as today.
       #
-      # DerivedData uses a `restore-keys` fallback; Pods (below) does not.
-      # The Risks section asks to "prefer a conservative key" — for Pods that
-      # means exact-match only, because a wrong Pods sandbox is a
-      # correctness bug, not just a speed one. For DerivedData, a stale
-      # cache-hit is the SAFE axis (Xcode's incremental build already
-      # tolerates stale-vs-fresh source on every developer machine, every
-      # day); the DANGEROUS axis is a *locked* build database, and that's
-      # what the save-step's success-gate prevents outright — so a coarse
-      # fallback here buys the "hit across docs-only changes" criterion
-      # without reintroducing the risk the Risks section is actually naming.
-      - name: Restore Xcode DerivedData cache
-        id: cache-derived-data
-        uses: actions/cache/restore@v6
-        with:
-          path: ios/DerivedData
-          key: ${{ env.DD_CACHE_KEY }}
-          restore-keys: |
-            ${{ env.DD_CACHE_KEY_PREFIX }}
-
       # Exact-match only (no restore-keys): a Pods sandbox built from a
       # DIFFERENT Podfile.lock is a correctness risk, so a lockfile change
       # must miss cleanly and fall through to a real `pod install` in the
@@ -402,6 +372,31 @@ jobs:
       # (run 33373712907) was killed by a 35m bound one minute past a normal
       # build, mid-compile, with no code change since the green run. 70m =
       # 2x the measured build (slow-runner headroom) plus a warm retry.
+      #
+      # Re-measured 2026-09-03/13 after adding, then removing, DerivedData
+      # caching (see the "Compute Pods cache key" step's comment and
+      # todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md): the
+      # post-drop steady state (Pods exact-hit, no DerivedData cache at all)
+      # was never itself directly measured, but its two closest analogs —
+      # both effectively cold Xcode compiles, since neither run got a
+      # working DerivedData benefit — were 39m03s (fully cold) and 36m48s
+      # (Pods MISS + a stale, discarded DerivedData prefix hit). Applying
+      # this comment's own "2x measured build" rule to that new ~39m
+      # baseline literally computes ~78m, slightly ABOVE this 70m bound —
+      # so 70m is NOT a strict re-derivation of the original formula against
+      # the new number. It is kept anyway because every one of the four real
+      # dispatch measurements, including the two DerivedData-inflated warm
+      # runs that this same change just eliminated (51m01s, 47m17s — a
+      # scenario that cannot recur post-drop), landed under 70m with a
+      # further in-job warm retry (~2-3m) added on top; actual observed
+      # variance across the cold-ish runs that finished (33m33s-39m03s,
+      # ~15%) is far smaller than a literal 2x multiplier implies — this
+      # excludes run 33373712907 above, whose true duration is unknown
+      # (truncated by the old 35m bound before it could finish), which can
+      # only push real variance wider, not narrower, so it doesn't weaken
+      # the case for keeping a generous bound. Re-measure the genuine
+      # Pods-only-warm case on the next real dispatch and revisit this bound
+      # then rather than trusting this extrapolation indefinitely.
       - name: Build and install iOS app
         id: build-ios
         timeout-minutes: 70
@@ -417,18 +412,12 @@ jobs:
       # 'success', 'failure', or 'cancelled' — this workflow's own
       # `concurrency: cancel-in-progress: true` (top of file) can cancel a
       # run mid-build, and a step failure can also leave a build mid-flight;
-      # only 'success' means DerivedData's XCBuildData locks were released by
-      # a clean xcodebuild exit and Pods is a fully-resolved sandbox, so only
-      # then are both safe to persist. Without this gate, a killed/failed
-      # build could cache a DerivedData tree with a still-open lock,
-      # reproducing the "database is locked" failure the Diagnose step below
-      # already has to work around once it happens (run 33373712907) — this
-      # prevents ever creating that state instead of cleaning it up after the
-      # fact.
+      # only 'success' means Pods is a fully-resolved sandbox, so only then
+      # is it safe to persist.
       #
       # The `cache-hit` check matters separately from the success gate: per
       # actions/cache's own save implementation, the archive is tarred (the
-      # expensive part — ~391 MB for Pods alone) BEFORE it checks whether the
+      # expensive part — ~391 MB on disk for Pods) BEFORE it checks whether the
       # key already exists, so an unconditional save step pays that cost on
       # EVERY green run, hit or miss, exactly what actions/cache's own docs
       # warn against ("To avoid saving a cache that already exists, the
@@ -437,17 +426,9 @@ jobs:
       # 'true' (an EXACT primary-key match, not a restore-keys fallback)
       # avoids that on every already-warm run.
       #
-      # Keys are the ones captured in "Compute Pods/DerivedData cache keys"
-      # above, NOT re-hashed here — see that step's comment for why
-      # re-hashing post-build would silently break cache-hit continuity run
-      # over run.
-      - name: Save Xcode DerivedData cache
-        if: steps.build-ios.outcome == 'success' && steps.cache-derived-data.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ios/DerivedData
-          key: ${{ env.DD_CACHE_KEY }}
-
+      # The key is the one captured in "Compute Pods cache key" above, NOT
+      # re-hashed here — see that step's comment for why re-hashing
+      # post-build would silently break cache-hit continuity run over run.
       - name: Save CocoaPods cache
         if: steps.build-ios.outcome == 'success' && steps.cache-pods.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
