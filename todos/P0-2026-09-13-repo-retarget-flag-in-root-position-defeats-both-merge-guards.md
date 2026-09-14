@@ -114,10 +114,27 @@ gate. See also
 per-command escape and gets the gate switched off.
 
 That asymmetry argues for a _narrow, structural_ fix here rather than another text predicate:
-the flag set is closed and well-known (`-R`, `--repo`, and their `=`/glued forms), and it
-occupies a defined slot — after the binary, before the namespace. That is a far smaller
+the slot is well defined — after the binary, before the namespace — which is a far smaller
 grammar than "any rendering that resolves to the binary", and it is the reason this todo is
 separable from P1 rather than blocked on it.
+
+> **CORRECTION, 2026-09-13 — the sentence that used to stand here was the false premise this
+> todo was fixed against, and it is left named rather than silently deleted.** It read: "the
+> flag set is closed and well-known (`-R`, `--repo`, and their `=`/glued forms)". It is not
+> closed. cobra accepts any flag valid for the TARGET subcommand in root position, so the set
+> is not a property of `gh` at all — it is whatever flags the following verb defines.
+> `gh help pr merge` lists five separate-arg flags besides `-R`: `-A/--author-email`,
+> `-b/--body`, `-F/--body-file`, `--match-head-commit`, `-t/--subject`. Measured on both
+> layers: `gh -t x pr merge 42 -R other/org` is ALLOWED by both, which is this todo's
+> headline shape.
+>
+> The four spellings named above were closed and are pinned. They looked like the whole
+> problem because that list came from the flags that MEAN "retarget", while the grammar cares
+> only about which flags CONSUME A FOLLOWING TOKEN — a property of the tool's flag table, not
+> of anyone's model of intent. **Whoever finishes this: derive the set from
+> `gh help pr <verb>`, not from this file and not from memory.** The reusable form of the
+> mistake is codified in
+> `docs/solutions/logic-errors/an-invented-enumeration-is-not-the-space-ask-the-tool-2026-09-13.md`.
 
 **Do not fix this by truncating the clause at the flag.** Truncating the CLAUSE at a
 boundary is the reverted 2026-09-05 CRITICAL (it hid a later `${x:---admin}` from the
