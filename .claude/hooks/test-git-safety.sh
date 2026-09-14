@@ -395,6 +395,111 @@ out=$(echo "$(json "$SESSION" "$MAIN" 'git commit -m x')" | SKIP_WORKTREE_CONTRA
 if [ -z "$out" ]; then echo "PASS: SKIP_WORKTREE_CONTRACT=1 bypasses contract branch"; PASS=$((PASS+1));
 else echo "FAIL: SKIP_WORKTREE_CONTRACT=1 bypasses contract branch"; FAIL=$((FAIL+1)); fi
 
+# ---------- shell redirects between `git` and its verb (2026-09-13) ----------
+# A redirect token starts with a digit, `>`, `<`, `&` or `{`, so the hand-written globals
+# group matched none of them: the segment failed MUTATING_GIT_SEG_RE and took its
+# `|| continue`, and the contract was never checked. Closed by adopting lib/cmd-detect.sh's
+# `_CMD_GIT_GLOBALS` (interposed + glued) and `_CMD_POS_SUFFIX` (verb-glued).
+# Every command below was confirmed to be a REAL git invocation with an argv shim, not a
+# shape that only looks like one — the distinction the 144 correctly-missed corpus rows turn on.
+assert_deny "registry: interposed 2> redirect before a mutating verb is denied (was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'git 2>/dev/null commit -m x')"
+assert_deny "registry: interposed > redirect before a mutating verb is denied (was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'git >/dev/null commit -m x')"
+assert_deny "registry: interposed 1> redirect, reset --hard, is denied (was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'git 1>/dev/null reset --hard')"
+assert_deny "registry: interposed 2>> redirect is denied (was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'git 2>>log merge feature')"
+# GLUED to the binary — bash splits at the operator, so no space is required for this to run.
+# `_CMD_GIT_GLOBALS` separates its redirect branch with `[[:space:]]*`; a hand-spliced
+# `_CMD_REDIR` behind the group's mandatory `[[:space:]]+` misses every row like these.
+assert_deny "registry: redirect GLUED to the git binary is denied (was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'git>out commit -m x')"
+assert_deny "registry: glued < redirect before rebase is denied (was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'git<in rebase main')"
+# GLUED to the VERB — a different mechanism: this defeats the TRAILING boundary, not the
+# globals group. `_CMD_POS_SUFFIX`'s closer class admits `<`/`>` for exactly this.
+assert_deny "registry: redirect glued to the VERB is denied (was BYPASS, trailing boundary)" \
+  "$(json "$SESSION" "$MAIN" 'git commit>log')"
+assert_deny "registry: verb glued to >&2 with a branch-create flag is denied (was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'git checkout>&2 -b foo')"
+# Between globals, and trailing — the trailing form always matched; kept as a two-sided control.
+assert_deny "registry: redirect AFTER a global, before the verb, is denied (was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'git --no-pager 2>/dev/null commit -m x')"
+assert_deny "registry: control — redirect TRAILING the whole command was always seen" \
+  "$(json "$SESSION" "$MAIN" 'git commit -m x 2>/dev/null')"
+
+# --- FALSE-DENY sweep: widening a boundary class is the direction that invents denials, and
+# a guard that denies ordinary read-only git gets switched off. Every row here must ALLOW.
+assert_allow "registry: read-only verb with the SAME interposed redirect stays allowed" \
+  "$(json "$SESSION" "$MAIN" 'git 2>/dev/null status')"
+assert_allow "registry: read-only log with an interposed redirect stays allowed" \
+  "$(json "$SESSION" "$MAIN" 'git 2>/dev/null log --oneline')"
+assert_allow "registry: read-only verb GLUED to a redirect stays allowed" \
+  "$(json "$SESSION" "$MAIN" 'git status>log')"
+assert_allow "registry: read-only log glued to a redirect stays allowed" \
+  "$(json "$SESSION" "$MAIN" 'git log>x')"
+assert_allow "registry: redirect glued to the binary before a READ-ONLY verb stays allowed" \
+  "$(json "$SESSION" "$MAIN" 'git>out status')"
+# Near-miss binaries. `gitk>out` matters most: the redirect branch must not let `git` match a
+# PREFIX of a longer binary name. (`git2>out` is the one shape that does — see the pinned
+# over-denial rows below.)
+assert_allow "registry: near-miss binary gitk with a redirect stays allowed" \
+  "$(json "$SESSION" "$MAIN" 'gitk>out commit -m x')"
+assert_allow "registry: near-miss binary git-foo stays allowed" \
+  "$(json "$SESSION" "$MAIN" 'git-foo commit -m x')"
+assert_allow "registry: near-miss binary legit stays allowed" \
+  "$(json "$SESSION" "$MAIN" 'legit commit -m x')"
+# Not a blanket deny: the SAME newly-seen shapes must still pass from a registered worktree,
+# or the fix would have converted a false ALLOW into a gate nobody can work behind.
+assert_allow "registry: interposed redirect INSIDE the registered worktree is allowed" \
+  "$(json "$SESSION" "$WT_A" 'git 2>/dev/null commit -m x')"
+assert_allow "registry: verb-glued redirect INSIDE the registered worktree is allowed" \
+  "$(json "$SESSION" "$WT_A" 'git commit>log')"
+assert_allow "registry: the sanctioned escape still works on a newly-seen shape" \
+  "$(json "$SESSION" "$MAIN" 'SKIP_WORKTREE_CONTRACT=1 git 2>/dev/null commit -m x')"
+
+# --- PINNED AS INCORRECT — these ALLOWs are the CURRENT behaviour and the WRONG answer. ---
+# Recording a verdict's value without recording whether that value is CORRECT is a trap: the
+# next person "fixes" the guard to keep the row green. Each command below IS a real git
+# invocation (verified with an argv shim), so the ALLOW is a live bypass, not a safe miss.
+#
+# CAUSE: split_segments flushes on any unquoted `&` or `|`, unconditionally — before the
+# regex ever runs. Four operator families contain one, so the segment is fractured into
+# `git 2>` + `1 commit -m x` and neither half matches. The regex change cannot reach them;
+# narrowing the splitter instead would merge adjacent commands and break the `^`-anchor that
+# makes a following `git commit` visible at all, which is the false-ALLOW direction.
+# FILED: todos/P1-2026-09-13-split-segments-fractures-redirect-operators-containing-amp-or-pipe.md
+assert_allow "KNOWN-WRONG (filed): 2>&1 fractured by split_segments — real invocation, ALLOWed" \
+  "$(json "$SESSION" "$MAIN" 'git 2>&1 commit -m x')"
+assert_allow "KNOWN-WRONG (filed): &> fractured by split_segments — real invocation, ALLOWed" \
+  "$(json "$SESSION" "$MAIN" 'git &>/dev/null commit -m x')"
+assert_allow "KNOWN-WRONG (filed): >& fractured by split_segments — real invocation, ALLOWed" \
+  "$(json "$SESSION" "$MAIN" 'git >&2 commit -m x')"
+assert_allow "KNOWN-WRONG (filed): >| fractured by split_segments — real invocation, ALLOWed" \
+  "$(json "$SESSION" "$MAIN" 'git >|out commit -m x')"
+# Inherited over-DENIAL, pinned in the other direction: a DIGIT glued to the binary is SEEN,
+# but bash lexes `git2>out` as the word `git2` plus `>out`, so it invokes `git2`, not git.
+# Pre-existing property of `_CMD_GIT_GLOBALS` shared by every consumer on main; the direction
+# is safe (over-deny can never produce a wrong ALLOW) and narrowing it would delete the
+# deliberate `<`/`>` catch above. Pinned so a change of behaviour is noticed, not endorsed.
+assert_deny "KNOWN-OVERDENY (inherited, safe direction): git2>out invokes git2, not git" \
+  "$(json "$SESSION" "$MAIN" 'git2>out commit -m x')"
+
+# HERE resolution for the bare-filename (no-slash) invocation shape — this hook now sources
+# lib/cmd-detect.sh, so the naive `HERE="${BASH_SOURCE[0]%/*}"` would return the filename
+# unchanged and silently lose the redirect grammar. The payload must carry a LIVE registry and
+# a mutating git command, or the assignment sits behind two gates and never executes — a
+# vacuous pass. test-cmd-detect.sh's equivalent check enumerates other hooks, not this one.
+HERE_TRACE=$(cd "$(dirname "$HOOK")" && json "$SESSION" "$MAIN" 'git 2>/dev/null commit -m x' \
+  | bash -x "$(basename "$HOOK")" 2>&1 >/dev/null)
+if grep -qE '^\+ HERE=\.$' <<< "$HERE_TRACE"; then
+  echo "PASS: HERE=. for a bare-filename invocation (and the assignment actually ran)"; PASS=$((PASS+1))
+else
+  echo "FAIL: HERE did not resolve to '.' for a bare-filename invocation"
+  echo "  got: $(grep -E '^\+ HERE=' <<< "$HERE_TRACE" | head -1)"; FAIL=$((FAIL+1))
+fi
+
 # ---------- contract branch: write-shaped commands (real git for MAIN_ROOT) ----------
 # pwd -P for the same macOS symlink reason as in test-guard-worktree-isolation.sh.
 NEST_TMP=$(cd "$(mktemp -d)" && pwd -P)

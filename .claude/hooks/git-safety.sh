@@ -422,6 +422,12 @@ MUTATING_GIT_VERBS='commit|mv|rm|restore|checkout|switch|pull|revert|stash|reset
 # validating TWO independent targets (git-dir + work-tree) is likewise a superset of the old single
 # cwd/-C check, so the whole change is strictly-tightening: an old-vs-new differential over the whole
 # hook (630+ cases) finds ZERO DENY→ALLOW transitions — every transition is ALLOW→DENY.
+#
+# This definition is the FALLBACK as of 2026-09-13. It models globals only, so a redirect
+# between `git` and its verb defeats it; the contract branch below REDEFINES this from
+# lib/cmd-detect.sh's shared grammar when that lib is sourceable, and explains both the
+# closed and the still-open positions there. What survives here is what a broken install
+# gets — never `exit 0`, which on this deny gate would be a silent ALLOW.
 MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+|--git-dir[[:space:]]+[^[:space:]]+|--work-tree[[:space:]]+[^[:space:]]+|-[^[:space:]]+))*[[:space:]]+(${MUTATING_GIT_VERBS})([[:space:]]|\$)"
 
 # The hook process does not inherit inline assignments from the tool command, so
@@ -440,6 +446,60 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
   # xargs, find -exec, `$(…)`, here-docs — remain the accepted best-effort residual; the
   # jq-less fallback's cruder grep catches some.)
   if [[ "$CMD" == *git* ]]; then
+    # --- REDIRECT POSITIONS (2026-09-13) ------------------------------------------------
+    # The hand-written grammar above models everything between `git` and its verb as GLOBALS.
+    # A redirect token starts with a digit, `>`, `<`, `&` or `{`, so it matches none of them
+    # and the whole segment fails the regex — taking the `|| continue` below, which means the
+    # worktree contract was never checked for that command. TWO positions defeated it, by two
+    # different mechanisms:
+    #
+    #   git 2>/dev/null commit -m x   interposed  — defeats the GLOBALS group
+    #   git>out commit -m x           glued       — same group; bash splits at the operator,
+    #                                               so no space is required for this to run
+    #   git commit>log                verb-glued  — defeats the TRAILING BOUNDARY instead
+    #
+    # (A redirect TRAILING the whole command — `git commit -m x 2>/dev/null` — always matched.)
+    #
+    # Both are closed by adopting the SHARED grammar rather than re-deriving one here.
+    # `_CMD_GIT_GLOBALS` already carries a redirect branch separated by `[[:space:]]*`
+    # (zero-or-more — that is precisely what admits the glued spelling; splicing `_CMD_REDIR`
+    # into the local group behind its mandatory `[[:space:]]+` was tried and misses every
+    # glued row). `_CMD_POS_SUFFIX`'s closer class already admits `<`/`>`, which is what
+    # catches the verb-glued position. Re-deriving a redirect grammar in the consumer is this
+    # repo's most-repeated defect — reuse the constants, and the STRUCTURE around them.
+    #
+    # SOURCED HERE, not at file scope, because this is the regex's only use site and it sits
+    # behind the registry/bypass gate: a session with no worktree contract pays nothing
+    # (measured 3.4ms marginal to source the lib, n=50).
+    #
+    # FAIL-TO-STATUS-QUO, deliberately NOT fail-closed: if the lib is unsourceable the
+    # hand-written regex above stays in force. That is the exact predicate that shipped, so a
+    # broken install loses the redirect positions and nothing else. It must never degrade to
+    # `exit 0` the way the advisory-path hooks do — for this deny gate that is a silent ALLOW.
+    #
+    # INHERITED RESIDUALS — both are over-DENIALS (a SEEN verdict only sends the segment to
+    # the repo-resolution check, which can deny or pass; it can never produce a wrong ALLOW):
+    #   * `_CMD_POS_SUFFIX`'s closer class is `[);&|`{}<>]`. `;` `&` `|` are consumed by
+    #     split_segments before the regex runs, so they do not flip; `<` `>` are the fix
+    #     working (verified with an argv shim: `git commit>log` really does run `git commit`);
+    #     `)` `` ` `` `{` `}` flip on segments that are NOT real invocations. Do not narrow the
+    #     class to silence those four — it would delete the deliberate `<`/`>` catch.
+    #   * A DIGIT glued to the binary — `git2>out commit` — is SEEN, but bash lexes it as the
+    #     word `git2` plus `>out`, so it invokes `git2`, not git (verified with an argv shim).
+    #     This is a pre-existing property of `_CMD_GIT_GLOBALS` shared by every consumer on
+    #     main, not something this adoption introduces; near-miss binaries generally (`gitk`,
+    #     `gitk>out`, `git-foo`, `digit`, `legit`) all stay MISSED.
+    #
+    # NOT CLOSED — a redirect BEFORE the `git` token (`2>/dev/null git commit -m x`) is a real
+    # invocation and is still MISSED: the segment anchor never reaches `git` when a redirect
+    # precedes it, and this change only touches the group BETWEEN `git` and the verb. The
+    # redirect bypass is narrowed by two positions, not eliminated.
+    case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
+    if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
+       && [ -n "${_CMD_GIT_GLOBALS:-}" ] \
+       && [ -n "${_CMD_POS_SUFFIX:-}" ]; then
+      MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git${_CMD_GIT_GLOBALS}[[:space:]]+(${MUTATING_GIT_VERBS})${_CMD_POS_SUFFIX}"
+    fi
     VIOLATION=""; UNRESOLVABLE=""
     SEGS=$(printf '%s' "$CMD" | split_segments)
     while IFS= read -r seg; do

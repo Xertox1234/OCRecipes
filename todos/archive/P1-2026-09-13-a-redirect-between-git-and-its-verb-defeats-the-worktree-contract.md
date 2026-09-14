@@ -1,6 +1,6 @@
 ---
 title: "A redirect between `git` and its verb defeats MUTATING_GIT_SEG_RE, so the worktree contract is not enforced on that command"
-status: backlog
+status: done
 priority: high
 created: 2026-09-13
 updated: 2026-09-13
@@ -89,26 +89,40 @@ you weigh the isolation guarantee higher.
 
 ## Acceptance Criteria
 
-- [ ] `MUTATING_GIT_SEG_RE` SEES a mutating git command carrying a redirect between the
-      binary and the verb, for every redirect spelling `_CMD_REDIR` models.
-- [ ] It also SEES a redirect GLUED TO THE VERB (`git commit>log`) — a second defeating
+- [~] **PARTIALLY MET — do not read this as closed.** `MUTATING_GIT_SEG_RE` SEES a mutating
+  git command carrying a redirect between the binary and the verb, for every redirect
+  spelling `_CMD_REDIR` models — **at the regex level, all 14 operators.** At the HOOK
+  level, which is what the Summary's "the contract is never checked" is about, 4 of the 14
+  operator families (`&>`, `>&`, `2>&`, `>|`) never reach the regex: `split_segments`
+  flushes on their unquoted `&`/`|` first. Those are real invocations and remain a live
+  bypass — filed separately, see Updates.
+- [x] It also SEES a redirect GLUED TO THE VERB (`git commit>log`) — a second defeating
       position, against the trailing boundary rather than the globals group.
-- [ ] A false-SEEN sweep runs in the same pass: widening a boundary class is the direction
+- [x] A false-SEEN sweep runs in the same pass: widening a boundary class is the direction
       that invents denials, so read-only verbs, near-miss binaries (`gitk`, `git-foo`,
-      `digit`, `legit`) and ordinary prose must all stay MISSED.
-- [ ] Controls in the same run, both directions: `git status` / `git log` with the same
+      `digit`, `legit`) and ordinary prose must all stay MISSED. One inherited over-denial
+      found and disclosed rather than silenced: `git2>out commit` (a digit glued to the
+      binary) is SEEN though bash invokes `git2` — pre-existing in `_CMD_GIT_GLOBALS` for
+      every consumer on main, safe direction, pinned as KNOWN-OVERDENY.
+- [x] Controls in the same run, both directions: `git status` / `git log` with the same
       interposed redirect stay MISSED (a read-only verb must not become a deny), and ordinary
       prose stays MISSED.
-- [ ] No SEEN → MISSED transition anywhere — the change must be strictly tightening, the same
+- [x] No SEEN → MISSED transition anywhere — the change must be strictly tightening, the same
       property the existing comment claims for its own predecessor and backs with a
-      differential.
-- [ ] Corpus generated from a product of dimensions (operator × target × verb × position),
+      differential. **0 regressions at both the regex and the pipeline level.**
+- [x] Corpus generated from a product of dimensions (operator × target × verb × position),
       not hand-listed, with every count quoted together with the corpus that produced it AND
       with the applicable denominator (see the note below about `push`). **The position axis
       MUST include a glued, zero-space spelling (`git>out …`)** — the first candidate for this
       todo passed a 630-row corpus that held spacing fixed and missed every glued row.
-- [ ] Mutation-verified: revert the new alternative and confirm only the redirect rows redden.
-- [ ] `.claude/hooks/test-git-safety.sh` gains the rows; full hook suite green.
+      Regenerated independently rather than inherited; the inherited table was wrong (above).
+- [x] Mutation-verified: revert the new alternative and confirm only the redirect rows redden.
+      Measured: 153 → 143 passed, and the 10 that redden are exactly the 9 new redirect DENY
+      rows plus the KNOWN-OVERDENY pin. The trailing-redirect control stays GREEN under the
+      mutation — shipped always saw that one — so the mutation is targeted, not a blanket break.
+- [x] `.claude/hooks/test-git-safety.sh` gains the rows; full hook suite green.
+      126 → 153 in this file; 37/37 hook self-test files pass; the required
+      `Outward-CLI guard corpus` check reproduces its pin exactly (rows=602, no drift).
 
 ## Implementation Notes
 
@@ -140,9 +154,16 @@ boundary class.
 **Measured, corpus generated from its dimensions** — 14 operators × 4 targets × 6 verbs × 4
 positions (spaced / **glued** / between-globals / **verb-glued**) = **1344 rows**:
 
+> 🛑 **THIS TABLE IS A REGEX-LEVEL MEASUREMENT AND WAS READ AS A HOOK-LEVEL ONE.** It is
+> correct about `grep -qE` against the constant and wrong about what the hook does, because
+> `split_segments` runs FIRST and flushes on any unquoted `&` or `|`. Re-measured through the
+> real two-stage pipeline (implementation, 2026-09-13): shipped **24**, candidate **912**,
+> regressions **0**. Corrected table below; see Updates for why the error was invisible.
+
 |                           | shipped | globals only | globals + suffix |
 | ------------------------- | ------- | ------------ | ---------------- |
-| rows SEEN                 | 0       | 1008         | **1200**         |
+| rows SEEN (regex alone)   | 0       | 1008         | 1200             |
+| rows SEEN (real pipeline) | **24**  | —            | **912**          |
 | SEEN → MISSED regressions | —       | 0            | **0**            |
 | false SEENs (13 probes)   | —       | —            | **0**            |
 
@@ -288,3 +309,40 @@ carries values outside the population the check governs; quote the APPLICABLE de
 - Filed at the user's explicit request. The bypass, the absence of any other covering layer,
   and the candidate fix were each measured rather than inherited from the inventory note that
   surfaced it.
+
+- **IMPLEMENTED.** `git-safety.sh` now sources `lib/cmd-detect.sh` inside the contract branch
+  and rebuilds `MUTATING_GIT_SEG_RE` from `_CMD_GIT_GLOBALS` + `_CMD_POS_SUFFIX`. Sourcing
+  sits behind the registry/bypass gate because that is the regex's only use site, so a session
+  with no worktree contract pays nothing (measured 3.4ms marginal, n=50). When the lib is
+  unsourceable the shipped hand-written regex stays in force — **fail-to-status-quo, not
+  fail-closed**: it loses the redirect positions and nothing else, and never degrades to
+  `exit 0`, which on this deny gate would be a silent ALLOW.
+
+- 🛑 **The corpus table in Implementation Notes was a REGEX measurement read as a HOOK
+  measurement, and the arithmetic hid it.** The hook runs `split_segments` FIRST, and that
+  splitter flushes on any unquoted `&` or `|`. Four operator families contain one, so
+  `git 2>&1 commit -m x` is fractured into `git 2>` + `1 commit -m x` and neither half
+  matches — a real invocation (argv shim) that the regex change cannot reach.
+
+  **Why it was invisible is the part worth keeping.** The regex-level candidate SEEN was 1200. The number of corpus rows that are real invocations is also 1200 (1344 − the 144
+  correctly-missed digit verb-glued rows) — **and they are the same set**. So the table read
+  as a flawless 1200/1200 while the applicable hook-level result was 912/1200 = 76%. Two
+  different quantities collided on one number, and a perfect score is the least likely thing
+  to re-derive. A count is a property of the PIPELINE it was taken through, not of the
+  predicate you happened to test; measure at the layer your claim is about.
+
+  Found by running the change end-to-end against the real hook, not by re-reading the corpus.
+  The regex-only corpus had already agreed with itself twice.
+
+- **Residual filed, NOT closed here:**
+  `todos/P1-2026-09-13-split-segments-fractures-redirect-operators-containing-amp-or-pipe.md`.
+  Fixing it means narrowing where `split_segments` flushes, which merges adjacent commands
+  into one segment and breaks the `^` anchor that makes a following `git commit` visible —
+  the false-ALLOW direction, and the laundering this splitter exists to prevent. That is a
+  different mechanism and wants its own change, exactly as the leading-redirect position does.
+
+- **Scoreboard, stated so it cannot be read as more than it is:** two positions closed at the
+  regex level; 10 of 14 operator families closed end-to-end; 912/1344 rows SEEN through the
+  real pipeline, up from 24, with 0 regressions. **Two residual classes remain open** — a
+  redirect BEFORE the `git` token, and the four `&`/`|`-containing operator families. The
+  redirect bypass is narrowed, not eliminated.
