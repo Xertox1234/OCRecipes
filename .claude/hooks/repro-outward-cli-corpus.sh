@@ -1138,6 +1138,82 @@ for r in update:list update:view update:insights channel:list branch:view; do
   add "sitefp-${r//:/}" ALLOW "eas $r"
 done
 
+# axis: DENY-SITE COVERAGE, ALTERNATION BRANCHES (added 2026-09-14, security review
+# finding todos/P2-2026-09-08-corpus-covers-deny-sites-but-not-their-alternation-branches.md).
+#
+# _pin_sites (below) proves every deny SITE the guard can emit is reached by some
+# row. It cannot see one level deeper: a deny regex is usually an alternation, and
+# only ONE branch of it needs a row for the whole site to stay attributed --
+# `_pin_sites` is satisfied the moment ANY sibling branch still reaches the same
+# message. Before this axis, `railway (up|deploy|redeploy|restart|down|delete|
+# remove|rm|run)` had a row for `up` only; `eas (update|publish|submit)` had a row
+# for `update` only; `railway (variable|variables|vars|var) (set|delete)` had a
+# row for `variable set` only; `railway (service|environment) delete` had a row
+# for `service delete` only. Narrowing any OTHER branch out of its alternation --
+# deleting `railway run`, the exact shape of the guard's own "executes an
+# arbitrary command with the LIVE service env, incl. the production DATABASE_URL"
+# warning -- flipped that command DENY -> ALLOW while every existing check in this
+# file's pin stayed green, measured by mutating a scratch copy of the guard and
+# running the (then-current) corpus against it: 0 of the 602 pre-existing rows
+# moved on any of the 4 paths.
+#
+# EXTRACTED from the guard's OWN alternations, not hand-listed (NOTE6: a
+# hand-carved subset is how the tool position went missing in the first place).
+# `_alt_or_die` greps the literal regex text out of guard-outward-cli.sh and
+# aborts the WHOLE run if a pattern does not match EXACTLY one line -- the same
+# denominator discipline `EXPECTED_ROWS` already gives a generation loop that runs
+# dry. It is called as a plain statement, never inside `$(...)`, specifically so
+# its `exit 1` reaches the top level: wrapping it in a command substitution would
+# let the failure print to stderr and vanish, leaving the family silently empty
+# and the corpus reporting a clean run on zero rows -- exactly the hole this whole
+# file exists to close. A branch ADDED to one of these four regexes later grows
+# the extracted list, grows ROWS, and reds `EXPECTED_ROWS` until the pin is
+# bumped; a branch REMOVED shrinks it the same way -- the `_pin_sites` treatment
+# one level down, reusing the existing rows/membership pins rather than adding a
+# new pin function.
+_alt_or_die() {  # $1=grep -E pattern, must match EXACTLY one line of $HOOK
+  local pat="$1"
+  local hit n
+  hit=$(grep -oE "$pat" "$HOOK")
+  n=$(grep -c . <<< "$hit")
+  if [ "$n" -ne 1 ]; then
+    echo "FATAL: alternation-extraction pattern matched $n lines in guard-outward-cli.sh, expected exactly 1: $pat" >&2
+    exit 1
+  fi
+  _ALT_HIT="$hit"
+}
+
+_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z|]+\)\$\{_OUT_POS_SUFFIX\}'
+RAILWAY_VERB_ALT=$(sed -E 's/^railway\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
+_alt_or_die 'eas\$\{_OUT_SEP\}\([a-z|]+\)\$\{_OUT_POS_SUFFIX\}'
+EAS_VERB_ALT=$(sed -E 's/^eas\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
+_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z|]+\)\$\{_OUT_SEP\}\(set\|delete\)\$\{_OUT_POS_SUFFIX\}'
+RAILVAR_ALT=$(sed -E 's/^railway\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_SEP\}\(set\|delete\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
+_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z|]+\)\$\{_OUT_SEP\}delete\$\{_OUT_POS_SUFFIX\}'
+RAILSVC_ALT=$(sed -E 's/^railway\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_SEP\}delete\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
+
+IFS='|' read -ra SITERAILVERB_BR <<< "$RAILWAY_VERB_ALT"
+IFS='|' read -ra SITEEASVERB_BR  <<< "$EAS_VERB_ALT"
+IFS='|' read -ra SITERAILVAR_BR  <<< "$RAILVAR_ALT"
+IFS='|' read -ra SITERAILSVC_BR  <<< "$RAILSVC_ALT"
+
+for v in "${SITERAILVERB_BR[@]}"; do add "siterailverb-$v" DENY "railway $v"; done
+for v in "${SITEEASVERB_BR[@]}";  do add "siteeasverb-$v"  DENY "eas $v"; done
+for v in "${SITERAILVAR_BR[@]}";  do add "siterailvarset-$v" DENY "railway $v set K=V"; done
+# The SECOND alternation group of the railvar site -- (set|delete) -- is not one
+# of the 13 branches this todo measured, and cross-producting it against the four
+# branches above belongs to the wider mechanism-x-branch sweep this axis's own
+# header explicitly declines (see "Scope discipline" in the todo). One row keeps
+# it from being an entirely unexercised dimension without that cross product.
+add siterailvardelete DENY "railway ${SITERAILVAR_BR[0]} delete K"
+for v in "${SITERAILSVC_BR[@]}";  do add "siterailsvc-$v" DENY "railway $v delete svc"; done
+
+# FALSE-POSITIVE CONTROLS. Both deny messages above name these read-only forms as
+# unaffected; without a row here nothing would catch a widened match swallowing
+# them (the exact role `sitefp-*` plays for the eas colon-verb families above).
+add siterailfp-status ALLOW 'railway status'
+add siterailfp-logs   ALLOW 'railway logs'
+
 add fp-mention       ALLOW 'git commit -m "chore: mentions eas update and gh pr merge"'
 add fp-quotedall     ALLOW 'echo "gh pr merge 42"'
 add fp-automerge     ALLOW 'gh pr merge 42 --auto'
