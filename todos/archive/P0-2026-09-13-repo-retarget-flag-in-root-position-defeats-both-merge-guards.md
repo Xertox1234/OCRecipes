@@ -265,16 +265,16 @@ whose downstream check decides an ALLOW — deliberately did **not** get the val
 widening there is a false GRANT rather than an extra deny.
 
 **Measured `ALLOW → DENY` on BOTH layers**, controls in the same run (`echo hello`
-ALLOW/ALLOW; `gh pr VERB 42` DENY/DENY before and after):
+ALLOW/ALLOW; `gh pr merge 42` DENY/DENY before and after):
 
-| command                                                    | before      | after                                   |
-| ---------------------------------------------------------- | ----------- | --------------------------------------- |
-| `gh -t x pr VERB 42 -R other/org` _(this todo's headline)_ | ALLOW/ALLOW | **DENY/DENY**, on the _retarget_ reason |
-| `gh -b x pr VERB 42`                                       | ALLOW/ALLOW | DENY/DENY                               |
-| `gh -A a@b pr VERB 42`                                     | ALLOW/ALLOW | DENY/DENY                               |
-| `gh -F notes.md pr VERB 42`                                | ALLOW/ALLOW | DENY/DENY                               |
-| `gh --match-head-commit s pr VERB 42`                      | ALLOW/ALLOW | DENY/DENY                               |
-| `gh -Z x pr VERB 42` _(not a real flag)_                   | ALLOW/ALLOW | DENY/DENY                               |
+| command                                                     | before      | after                                   |
+| ----------------------------------------------------------- | ----------- | --------------------------------------- |
+| `gh -t x pr merge 42 -R other/org` _(this todo's headline)_ | ALLOW/ALLOW | **DENY/DENY**, on the _retarget_ reason |
+| `gh -b x pr merge 42`                                       | ALLOW/ALLOW | DENY/DENY                               |
+| `gh -A a@b pr merge 42`                                     | ALLOW/ALLOW | DENY/DENY                               |
+| `gh -F notes.md pr merge 42`                                | ALLOW/ALLOW | DENY/DENY                               |
+| `gh --match-head-commit s pr merge 42`                      | ALLOW/ALLOW | DENY/DENY                               |
+| `gh -Z x pr merge 42` _(not a real flag)_                   | ALLOW/ALLOW | DENY/DENY                               |
 
 Still ALLOWED, in the same run: `gh -R o/r pr list`, `gh -t x pr view 42`, a commit message
 naming the shape, `cp -R src dst`. `pr-preflight-guard.sh` now gates every root-flag
@@ -287,14 +287,14 @@ reopened for: the flag set is per-verb and open-ended, so it cannot be enumerate
 longer list would have gone stale the next time `gh` shipped a flag.
 
 **Accepted, stated over-denial.** Because the grant form stayed narrow, a root flag on an
-otherwise-sanctioned automerge (`gh -t x pr VERB 42 --auto --squash`) finds no clause and
+otherwise-sanctioned automerge (`gh -t x pr merge 42 --auto --squash`) finds no clause and
 denies. That direction has a per-command escape here (`ALLOW_OUTWARD_CLI=1`) and the merge
 gate has none, so it is the correct trade — pinned as a deny row next to the row proving the
 sanctioned shape itself still allows.
 
 **Verification.** 627 / 710 / 95 assertions across the three suites; corpus 602 → 655 rows
 with a new generated `ghrootv-*` axis (8 flags × 6 families, members derived from
-`man gh-pr-VERB` plus two that do not exist), zero precise-path gaps, and **nothing removed**
+`man gh-pr-<verb>` plus two that do not exist), zero precise-path gaps, and **nothing removed**
 from either membership manifest — the check that says no pre-existing row changed behaviour.
 Every assertion operand was mutation-verified with both an unmutated control and a
 forced-fire control; the negative control confirms a strictly-narrower healthy definition
@@ -307,7 +307,7 @@ operand replaced it, and the mutant it was meant to catch is now covered by the 
 probe (measured, not assumed).
 
 **Still open, and NOT closed by this change** (re-measured, not carried forward): the quoted
-root flag with a separate unquoted value (`gh "-t" x pr VERB 42`) — `cmd_bare` blanks the
+root flag with a separate unquoted value (`gh "-t" x pr merge 42`) — `cmd_bare` blanks the
 span, removing the dash token the value arm anchors on, so this family GREW with this change;
 the namespace→verb redirect slot; and P1's binary-rendering families. All tracked in
 `todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md`, all denied by

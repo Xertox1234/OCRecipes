@@ -5,7 +5,7 @@ category: code-quality
 tags: [harness, hooks, bash, verification, code-review]
 module: shared
 applies_to: [".claude/hooks/**", "scripts/**/*.sh", "scripts/**/*.py", "scripts/**/*.ts"]
-symptoms: ["A generated edit renames identifiers the author never mentioned", "A templating placeholder is a word that also appears in real code in the same file", "A file-wide string substitution is described as 'filling in the placeholder'", "A corrupted shell script still passes bash -n and only misbehaves at runtime", "An author uses a placeholder to route around a guard that inspects their own command text"]
+symptoms: ["A generated edit renames identifiers the author never mentioned", "A templating placeholder is a word that also appears in real code in the same file", "A file-wide string substitution is described as 'filling in the placeholder'", "A corrupted shell script still passes bash -n and only misbehaves at runtime", "An author uses a placeholder to route around a guard that inspects their own command text", "A probe script is run via bash script.sh so the guard sees no command text, and an unquoted heredoc then expands a command substitution inside it"]
 created: 2026-09-13
 severity: medium
 ---
@@ -99,11 +99,35 @@ assert 'VERB' not in original, "placeholder already occurs %d times" % original.
 **Prefer a placeholder that cannot collide.** `@@VERB@@`, `\x00VERB\x00`, a UUID. An
 all-caps English word is exactly the shape that shows up in real identifiers.
 
-**Better still, avoid the placeholder.** The constraint here was a guard reading Bash command
-text — but the guard reads *commands*, not *files*. Writing the script with the Write tool
-and running `bash script.sh` puts the forbidden string in a file, where it is not inspected
-at all, and no substitution is needed. Reach for the tool that removes the constraint before
-reaching for a trick that works around it.
+**Better still, avoid the placeholder — but read the next paragraph before you do.** The
+constraint here was a guard reading Bash command text, and the guard reads *commands*, not
+*files*. Writing the script with the Write tool and running `bash script.sh` puts the string
+in a file, where no substitution is needed.
+
+**THAT IS ALSO A GUARD BYPASS, AND IT HAS ALREADY FIRED FOR REAL.** The string is unguarded
+in the file *and* unguarded when the file runs: the Bash command text is `bash script.sh`,
+which contains nothing for the guard to match, so whatever the script does is unreviewed.
+Measured 2026-09-13, in the review of the very change this document was written for: a
+read-only reviewer agent wrote a probe script with an **unquoted** heredoc delimiter, bash
+expanded `$(gh pr merge 42)` inside it, and the agent really invoked `gh pr merge` against
+this repository. It was inert only by luck — PR #42 had been merged months earlier
+(`mergedAt 2026-04-29`, verified independently), so gh replied "already merged" instead of
+merging something. Nothing in the guard chain saw it, because nothing in the guard chain was
+looking at the file.
+
+So the rule is narrower than "use a file":
+
+- **Legitimate** when the forbidden string is INERT DATA — a test row, a corpus member, a
+  documentation example — that the script passes to something as an argument or writes to
+  disk. That is what the guard's own test suites do.
+- **Never** when the string sits anywhere it can be EXECUTED: a command substitution, an
+  `eval`, a here-doc with an UNQUOTED delimiter (`<<EOF` expands `$(...)`; `<<'EOF'` does
+  not), a variable later used as a command.
+
+Quote every heredoc delimiter you do not specifically need expanded, and prefer building the
+forbidden string from parts (`V='m'$'\x65''rge'`) over writing it whole, so that even an
+accidental expansion has nothing to run. Reaching for a tool that removes a constraint is
+right; reaching for one that removes the *check* is how the check stops existing.
 
 ## Prevention
 

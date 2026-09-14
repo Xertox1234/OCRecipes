@@ -1766,7 +1766,7 @@ _OUT_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
 # deny together — a total bypass, not a narrowed one. `merge` is also absent from
 # GH_MUTATING_RE by design, so nothing downstream re-caught it. Measured live on
 # origin/main 2026-09-13, including with the retarget pointed at THIS repository.
-# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+# todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
 _OUT_GH_GLOBALS="$_CMD_GH_GLOBALS"
 
 # _OUT_GH_GLOBALS_GRANT — the SAME slot, but separator-safe, for the ONE read in this file
@@ -1884,10 +1884,23 @@ done
 # Operand 5: a SEPARATE-ARG flag neither form names. The wide form must span it whole; the
 # grant form must not. Probed rather than pattern-matched, so the assertion survives a
 # re-spelling of either arm — which is exactly how operand 3 went inert.
+#
+# PROBE $_OUT_GH_GLOBALS, NOT $_CMD_GH_GLOBALS, and the difference is not cosmetic even though
+# the two are equal today. Every gh needle in THIS file is built from `$_OUT_GH_GLOBALS`; the
+# lib constant reaches them only through the one-line `_OUT_GH_GLOBALS="$_CMD_GH_GLOBALS"`
+# above — an assignment whose own header invites a future editor to reassign it
+# ("A future guard-local widening can still reassign this after the fact"). The first version
+# of this operand probed the LIB constant, so reassigning _OUT_GH_GLOBALS to the pre-value-arm
+# spelling left the assertion SILENT (operand 1 still sees `--repo`, operand 2 still sees two
+# different strings) while every needle in this file reverted and the P0's headline bypass
+# reopened. Measured in security review: on that mutant `gh -t x pr merge 42` and
+# `gh -t x pr merge 42 -R other/org` both went ALLOW where the unmutated copy denies, with
+# `gh pr merge 42` still denying to prove the hook had not merely crashed. ASSERT THE
+# CONSTANT THE CONSUMERS READ, not the one it happens to be copied from.
 _OUT_WIDE_TAKES_VALUE=yes
 _OUT_GRANT_TAKES_VALUE=no
 for _out_vp in ' -t x' ' -Z somevalue' ' --match-head-commit abc123'; do
-  if ! printf '%s' "$_out_vp" | grep -qE "^${_CMD_GH_GLOBALS}\$"; then _OUT_WIDE_TAKES_VALUE=no; fi
+  if ! printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS}\$"; then _OUT_WIDE_TAKES_VALUE=no; fi
   if printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_TAKES_VALUE=yes; fi
 done
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \

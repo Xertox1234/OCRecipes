@@ -2462,12 +2462,17 @@ _mut_goc_says_deny() {  # $1 = sed program that breaks one constant
   printf '%s' "$out" | grep -q '"permissionDecision": "deny"' \
     && printf '%s' "$out" | grep -qF -- 'root-position flag grammar lost its shape'
 }
-# Operand 5, GRANT direction: "harmonise the two constants" by giving the grant form the
-# value arm. That is a false GRANT at the one clause cut that decides an ALLOW, so the
-# assertion must refuse it. (The WIDE direction — losing the value arm — lives in
-# test-cmd-detect.sh, because that constant is defined in the lib, not here; a sed against
-# this file cannot reach it, and a mutation row that edits nothing that runs is the inert
-# kind this suite already documents.)
+# Operand 5, BOTH directions. The WIDE form must span a separate-arg flag it does not name;
+# the GRANT form must not.
+#
+# CORRECTED 2026-09-13 (security review). The first version of this block had only the grant
+# row, justified by the sentence "the WIDE direction lives in test-cmd-detect.sh, because that
+# constant is defined in the lib, not here; a sed against this file cannot reach it". That was
+# FALSE and it was load-bearing: `_OUT_GH_GLOBALS` is defined in guard-outward-cli.sh, a sed
+# against that file reaches it, and the needles read IT rather than the lib constant. Review
+# reached it and reopened the P0's headline bypass with the assertion silent. The premise that
+# a row could not be written is exactly how a suite ends up without the row that matters —
+# so the row is here now, and the claim that replaced the false sentence is the measurement.
 # The mutation is EXPRESSED AS A REASSIGNMENT, not as a patch to the definition. Patching it
 # in place needs a sed LHS containing `[`, `]` and `|` — and `|` is also the obvious `s`
 # delimiter, so the first version of this row silently terminated its own `s` command, edited
@@ -2479,6 +2484,18 @@ _mut_goc_says_deny() {  # $1 = sed program that breaks one constant
 # the shipped one ONLY by the value arm. That isolation is the point: operand 3b cannot see
 # this mutant (a separator-safe value arm still refuses to span ` -x;y`), so operand 5 is its
 # only coverage, and a silent row here would leave the one grant-shaped cut unprotected.
+# WIDE direction: reassign _OUT_GH_GLOBALS to main's pre-value-arm spelling. It still carries
+# `--repo` (so operand 1 stays silent) and still differs from the grant form (so operand 2
+# stays silent), which is what makes this row an ISOLATION of operand 5 rather than a test of
+# the assertion in general. Same appended-reassignment form and `#` delimiter as the row below,
+# for the same sed-delimiter reason.
+_mut_wide_revert_sed="s#^_OUT_GRANT_SPANS=no#_OUT_GH_GLOBALS='(([[:space:]]+(-R[[:space:]]+[^[:space:]]+|--repo[[:space:]]+[^[:space:]]+|-[^[:space:]]+))|([[:space:]]*'\"\$_CMD_REDIR\"'))*'; _OUT_GRANT_SPANS=no#"
+if _mut_goc_says_deny "$_mut_wide_revert_sed"; then
+  echo "PASS: reverting _OUT_GH_GLOBALS to the pre-value-arm spelling fails closed instead of silently reopening the root-position bypass"; PASS=$((PASS+1))
+else
+  echo "FAIL: _OUT_GH_GLOBALS could be reverted to its pre-value-arm spelling without the assertion firing — every gh needle in the guard would go back to missing an unnamed separate-arg root flag, with the suite green"
+  FAIL=$((FAIL+1))
+fi
 _mut_grant_value_sed="s#^_OUT_GRANT_SPANS=no#_OUT_GH_GLOBALS_GRANT='(([[:space:]]+-[^[:space:];\&|]+([[:space:]]+[^-[:space:];\&|][^[:space:];\&|]*)?)|([[:space:]]*'\"\$_CMD_REDIR\"'))*'; _OUT_GRANT_SPANS=no#"
 if _mut_goc_says_deny "$_mut_grant_value_sed"; then
   echo "PASS: giving _OUT_GH_GLOBALS_GRANT the value arm fails closed instead of opening a false grant"; PASS=$((PASS+1))
@@ -3456,7 +3473,7 @@ assert_deny "a merge carrying --admin inside a process substitution still denies
 # skipped the repo check, the --auto carve-out AND the --admin deny together, and `merge`
 # is absent from GH_MUTATING_RE by design — nothing downstream re-caught it. A TOTAL
 # bypass, measured live on origin/main, including retargeted at THIS repository.
-# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+# todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
 #
 # THE DENY REASON IS THE ASSERTION, not merely "it denied". These rows must be caught by
 # the REPO-RETARGET check (gh_pr_clause_has_repo, which builds its OWN clause regex and is
@@ -3785,7 +3802,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=710
+EXPECTED_TOTAL=711
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

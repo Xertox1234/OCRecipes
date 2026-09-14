@@ -1713,7 +1713,7 @@ van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
 #       `gh -R owner/repo pr merge 42` resolved NO subcommand at all. That
 #       reached merge-review-guard.sh's `[ "$SUB" = "merge" ] || exit 0` check as "not a merge" — a silent allow of
 #       an unreviewed merge, including one retargeted at THIS repository.
-#       todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+#       todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
 #   (B) A redirect in the same slot did the same thing (`gh 2>/dev/null pr
 #       merge 42`) — P1 mechanism (b), the shared-library half of
 #       todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md

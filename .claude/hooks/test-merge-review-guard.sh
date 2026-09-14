@@ -617,7 +617,7 @@ done
 # reached the `[ "$SUB" = "merge" ]` test as "not a merge" and was silently allowed —
 # including with the retarget pointed at THIS repository. Both guards missed the same
 # string, so the defence in depth was depth of one.
-# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+# todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
 for spelling in \
   'gh -R other/org pr merge 42 --squash' \
   'gh --repo other/org pr merge 42 --squash' \

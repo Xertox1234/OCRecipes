@@ -2,6 +2,8 @@
 title: "cmd_gh_pr_ref's POST-verb flag walker still enumerates gh's flags, in two separate copies, and one real flag is missing from both"
 status: backlog
 priority: medium
+human_led: true
+blocked_reason: "The middle acceptance criterion is a DECISION, not a spec: what an UNLISTED value-taking flag should do in the post-verb slot. Resolving the first non-dash token (today's behaviour) is fail-OPEN — the gate classifies a DIFFERENT PR's review record; refusing when a bare-dash token is followed by two or more non-dash tokens is fail-CLOSED, and turns some legitimate commands into denials on a gate with NO per-command escape. The two directions have opposite costs and neither is obviously right. An unattended run would pick whichever is cheaper to implement and write it into this file as a settled decision record — for a security gate, on `lib/cmd-detect.sh`, which this todo's own Risks section notes will wedge every open PR if edited carelessly. The property trick that closed the sibling P0 does NOT transfer here, so there is no safe default to fall back on."
 created: 2026-09-13
 updated: 2026-09-13
 assignee:
@@ -13,7 +15,7 @@ github_issue:
 
 ## Summary
 
-`todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md`
+`todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md`
 replaced a named flag list with a modelled PROPERTY in the slot **before** the namespace.
 `cmd_gh_pr_ref` has a **second** flag walker in the slot **after** the verb, and that one is
 still a named enumeration — kept in **two separate copies** — with one real `gh` flag absent
