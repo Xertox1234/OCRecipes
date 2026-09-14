@@ -314,7 +314,8 @@ export default function SettingsScreen() {
           case docs/solutions/conventions/in-screen-overlay-needs-android-focus-trap-2026-06-22.md
           carves an exception for — but Card.tsx is outside THIS todo's Scope
           Contract file list, so adding a ProductChip-style passthrough prop
-          there belongs in a follow-up that touches Card.tsx, not here. This
+          there is tracked separately by
+          todos/P3-2026-09-14-card-lacks-a11y-passthrough-props.md. This
           single-purpose wrapper (no position/zIndex of its own; never wraps
           <ConfirmationModal />) is the in-contract stand-in until then. */}
       <View {...behindContentA11yProps}>

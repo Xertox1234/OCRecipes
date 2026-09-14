@@ -46,6 +46,12 @@ the fix touches the shared hook's API and all 8 call sites.
 - [ ] While the sheet is presented on Android, TalkBack swipe navigation cannot
       reach the host screen's content behind it; when dismissed, the content is
       reachable again.
+      PARTIAL, and left unchecked for that reason. The host screen's own render
+      tree is covered. The navigator-rendered header is NOT — on 5 of the 8
+      screens its back/close control stays reachable, so this criterion is not
+      met end to end. `behindContentA11yProps` structurally cannot reach a
+      sibling the navigator renders. Tracked by
+      `todos/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`.
 - [x] The mechanism covers all 8 existing `useConfirmationModal()` callers
       (CookSessionCapture, CookSessionReview, SavedItems, ChatList, BatchScan,
       GroceryLists, Pantry, Settings) without per-screen bespoke wiring where
@@ -55,6 +61,13 @@ the fix touches the shared hook's API and all 8 call sites.
       diff with the sheet open vs closed (see
       docs/solutions/best-practices/adb-uiautomator-ondevice-android-verification-2026-07-12.md);
       `focusable=false` is NOT evidence of exclusion.
+      NOT PERFORMED — no Android SDK tooling in the authoring environment
+      (`adb` and the emulator both exited 127). This project's hardware is
+      Apple-only, and `adb input` does not drive TalkBack, so this criterion
+      needs a human at an emulator rather than a scripted pass. Carried by the
+      same follow-up todo as AC #1. jsdom prop-plumbing tests are the only
+      evidence behind this change today; they pin that the props are applied
+      and cannot observe reachability in either direction.
 
 ## Implementation Notes
 
@@ -119,13 +132,34 @@ importantForAccessibility}` pair derived from internal `isOpen` state
   pre-existing destructive-icon test relies on) — not TalkBack/VoiceOver
   reachability, which jsdom cannot assert.
 - Three residuals identified in review, deliberately left out of this
-  todo's scope (see PR body / DEFERRED_WARNINGS for detail): the native
-  navigator header (back button) stays reachable on 3 header-hosted
-  screens; `CookSessionCaptureScreen`'s bare `<CameraView>` lacks the
-  `accessible={false}` wrapper `BatchScanScreen`'s camera has (pre-existing,
-  unrelated to this mechanism); and this repo's jsdom mocks for
-  `FlatList`/`SectionList`/`Animated.View` don't route accessibility props
-  to `aria-hidden`, so 6 of the 8 screens' application sites aren't
-  test-observable (documented in the test file; production behavior is
-  very likely correct since real RN forwards unknown props to the
-  underlying `ScrollView`).
+  todo's scope (see PR body / DEFERRED_WARNINGS for detail):
+  1. The native navigator header (back/close button) stays reachable on
+     **5** header-hosted screens, not 3 — corrected after review counted
+     them against `ProfileStackNavigator.tsx` and `RootStackNavigator.tsx`:
+     Settings, SavedItems, GroceryLists, Pantry, CookSessionReview.
+     `behindContentA11yProps` only reaches a screen's OWN render tree and
+     cannot hide a sibling rendered by the navigator. The flagship case of
+     this todo — Settings → Sign Out — is one of the 5, so the escape route
+     it was written to close is still open at that surface. Now tracked by
+     `todos/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`.
+  2. `CookSessionCaptureScreen`'s bare `<CameraView>` is the only sibling in
+     that return block without the spread. DEFERRED, with the reason:
+     `CameraViewProps` (`client/camera/types.ts:36`) is a closed interface
+     with no rest-spread, so passing the props would mean editing
+     `client/camera/` — outside this todo's Scope Contract. The alternative,
+     wrapping the preview in an extra absolutely-positioned `View`, cannot be
+     verified here: the simulator has no camera, so a layout or preview
+     regression on a VisionCamera surface would ship unobserved. Real-world
+     risk is low (a native camera preview has no focusable descendants), so
+     deferring beats shipping an unverifiable change to a camera screen.
+  3. This repo's jsdom mocks for `FlatList`/`SectionList`/`Animated.View`
+     don't route accessibility props to `aria-hidden`. Counted per SITE:
+     the 8 screens hold 23 spread sites, 17 observable (View 11,
+     Pressable 4, ThemedText 1, ScrollView 1) and 6 not (FlatList 4,
+     SectionList 1, Animated.View 1). The earlier "3 + 5 + 1 of 8" phrasing
+     summed to 9 over 8 screens and mixed per-screen with per-site.
+     Production behavior at those 6 IS correct — verified in RN source, not
+     assumed: FlatList spreads `...restProps` into VirtualizedList, which
+     builds `scrollProps = {...this.props}` and renders
+     `<ScrollView {...props} />`; SectionList follows the same shape. The
+     gap is in the MOCKS.

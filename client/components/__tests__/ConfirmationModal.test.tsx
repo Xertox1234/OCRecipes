@@ -188,21 +188,33 @@ describe("ConfirmationModal", () => {
     // on-device uiautomator --compressed diff (see the todo's Acceptance
     // Criteria).
     //
-    // Further residual: even that prop-plumbing signal only reaches this
-    // harness through a plain View/Pressable, which is 3 of the 8 real
-    // call sites. The other 5 apply behindContentA11yProps to a FlatList/
-    // SectionList and 1 to an Animated.View — test/mocks/react-native.ts's
-    // createFlatListMock spreads no `...rest` (so both accessibility props
-    // are silently dropped before reaching the DOM), and
-    // test/mocks/react-native-reanimated.ts's mapA11yProps never routes
-    // through this file's ariaHiddenProps helper (the prop reaches the DOM
-    // as a raw, unmapped attribute instead of aria-hidden). So a spread
-    // removed or misplaced at one of those 6 call sites would NOT be
-    // caught by any test in this repo today — production behavior is very
-    // likely still correct (real RN FlatList/SectionList forward unknown
-    // props to the underlying ScrollView, which accepts both), but the
-    // verification gap is real and out of this todo's Scope Contract to
-    // close (fixing it means editing the two shared mock files).
+    // Further residual: that prop-plumbing signal only reaches this harness
+    // for element types whose mock routes through ariaHiddenProps. Counted
+    // per SITE, not per screen — the 8 caller screens hold 23 spread sites:
+    //
+    //   observable here (17): View 11, Pressable 4, ThemedText 1, ScrollView 1
+    //   NOT observable  (6): FlatList 4, SectionList 1, Animated.View 1
+    //
+    // (Per-screen is the wrong unit: ChatListScreen spreads onto 2 Views AND
+    // a FlatList, so no screen is wholly "covered" or wholly "uncovered".)
+    //
+    // Why those 6 are invisible: test/mocks/react-native.ts's
+    // createFlatListMock destructures a fixed prop list with no `...rest`, so
+    // both accessibility props are dropped before reaching the DOM; and
+    // test/mocks/react-native-reanimated.ts's mapA11yProps does not
+    // destructure them at all, so on Animated.View they land in ...domSafe and
+    // reach the DOM as raw unmapped attributes rather than aria-hidden.
+    // ScrollView is NOT in this bucket — it mocks via mockComponent and does
+    // route through ariaHiddenProps.
+    //
+    // So a spread removed or misplaced at one of those 6 sites would NOT be
+    // caught by any test in this repo today. Production behavior IS still
+    // correct there, verified in RN source rather than assumed: FlatList
+    // spreads ...restProps into VirtualizedList, which builds
+    // scrollProps = {...this.props} and renders <ScrollView {...props} />;
+    // SectionList follows the identical shape. The gap is in the MOCKS, not
+    // in RN. Closing it means editing the two shared mock files, which is
+    // outside this todo's Scope Contract.
     it("does not hide the host screen's content before the sheet is presented", () => {
       renderComponent(<TestHarness options={defaultOptions} />);
       const hostContent = screen.getByTestId("host-content");
