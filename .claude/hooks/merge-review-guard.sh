@@ -251,7 +251,26 @@ case "$TOOL" in
         # GENUINE, functioning merge — POST is graphql's own correct method, no PUT
         # involved, and this text contains neither `pulls` nor a method flag at all, so it
         # is a different SHAPE this two-conjunct detector was never built to parse, not an
-        # extension of the REST-path shape it targets). Confirmed zero-delta from main:
+        # extension of the REST-path shape it targets).
+        #
+        # A THIRD shape is likewise unhandled and belongs in this list: `gh api
+        # repos/o/r/pulls/42/merge --input body.json` reaches neither conjunct
+        # (probe-confirmed silent ALLOW, no `-X`/`--method` and no field flag present).
+        # Be precise about WHY, because the obvious justification does NOT hold: `gh api
+        # --help` ties the implicit-POST switch to FIELD PARAMETERS specifically — "the
+        # default HTTP request method is GET normally and POST if any parameters were
+        # added", restated in the `-f/--raw-field` paragraph as "adding request parameters
+        # will automatically switch the request method to POST" — while `--input` is
+        # documented only as supplying a request body ("a request body may be read from
+        # file specified by --input"), with no statement that it changes the method. So
+        # whether `--input` ALONE produces a mutating request is UNVERIFIED here, and was
+        # deliberately not settled empirically: this is a merge endpoint, and constructing
+        # the call to find out is the exact act this guard exists to prevent. It is named
+        # because an unhandled shape belongs in a STILL-OPEN list either way — not because
+        # its mechanism is established. Settle it against gh's source, not its manual,
+        # before relying on either answer.
+        #
+        # Confirmed zero-delta from main:
         # guard-outward-cli.sh (untouched by this change) allows the graphql construction
         # too, so this gate did not remove coverage that existed. Already named, not yet
         # closed, at todos/P1-2026-09-07-outward-cli-path-wrapper.md:387 ("gh api graphql,
