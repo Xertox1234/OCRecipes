@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
-import { AccessibilityInfo } from "react-native";
+import { AccessibilityInfo, View, Text } from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import { useConfirmationModal } from "../ConfirmationModal";
 import type { ConfirmOptions } from "../ConfirmationModal";
@@ -15,12 +15,21 @@ vi.mock("@react-navigation/native", () => ({
 
 // Test wrapper that exposes the hook API via a trigger button
 function TestHarness({ options }: { options: ConfirmOptions }) {
-  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
   return (
     <>
       <button onClick={() => confirm(options)} data-testid="trigger">
         Open
       </button>
+      {/* Stands in for a host screen's own content — spreads
+          behindContentA11yProps the same way the 3 real callers that apply
+          it to a plain View/Pressable do (5 more apply it to a FlatList/
+          SectionList, 1 to an Animated.View; see the describe block below
+          for why this harness can't stand in for those). */}
+      <View testID="host-content" {...behindContentA11yProps}>
+        <Text>Host screen content</Text>
+      </View>
       <ConfirmationModal />
     </>
   );
@@ -166,5 +175,53 @@ describe("ConfirmationModal", () => {
     triggerModal();
     const icon = screen.getByTestId("confirmation-modal-destructive-icon");
     expect(icon.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  describe("behindContentA11yProps (Android TalkBack / iOS VoiceOver focus trap)", () => {
+    // jsdom cannot assert Android focus-trap semantics or TalkBack/VoiceOver
+    // reachability (docs/solutions/conventions/
+    // jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md).
+    // These tests only pin that useConfirmationModal() flips the hiding-prop
+    // pair on presented/dismissed — the same aria-hidden mapping the
+    // destructive-icon test above relies on — never that a screen reader is
+    // actually blocked from reaching the content. Real verification is the
+    // on-device uiautomator --compressed diff (see the todo's Acceptance
+    // Criteria).
+    //
+    // Further residual: even that prop-plumbing signal only reaches this
+    // harness through a plain View/Pressable, which is 3 of the 8 real
+    // call sites. The other 5 apply behindContentA11yProps to a FlatList/
+    // SectionList and 1 to an Animated.View — test/mocks/react-native.ts's
+    // createFlatListMock spreads no `...rest` (so both accessibility props
+    // are silently dropped before reaching the DOM), and
+    // test/mocks/react-native-reanimated.ts's mapA11yProps never routes
+    // through this file's ariaHiddenProps helper (the prop reaches the DOM
+    // as a raw, unmapped attribute instead of aria-hidden). So a spread
+    // removed or misplaced at one of those 6 call sites would NOT be
+    // caught by any test in this repo today — production behavior is very
+    // likely still correct (real RN FlatList/SectionList forward unknown
+    // props to the underlying ScrollView, which accepts both), but the
+    // verification gap is real and out of this todo's Scope Contract to
+    // close (fixing it means editing the two shared mock files).
+    it("does not hide the host screen's content before the sheet is presented", () => {
+      renderComponent(<TestHarness options={defaultOptions} />);
+      const hostContent = screen.getByTestId("host-content");
+      expect(hostContent.getAttribute("aria-hidden")).toBeNull();
+    });
+
+    it("hides the host screen's content once the sheet is presented", () => {
+      renderComponent(<TestHarness options={defaultOptions} />);
+      triggerModal();
+      const hostContent = screen.getByTestId("host-content");
+      expect(hostContent.getAttribute("aria-hidden")).toBe("true");
+    });
+
+    it("unhides the host screen's content once the sheet is dismissed", () => {
+      renderComponent(<TestHarness options={defaultOptions} />);
+      triggerModal();
+      fireEvent.click(screen.getByText("Cancel"));
+      const hostContent = screen.getByTestId("host-content");
+      expect(hostContent.getAttribute("aria-hidden")).toBeNull();
+    });
   });
 });

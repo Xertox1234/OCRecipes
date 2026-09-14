@@ -135,7 +135,8 @@ export default function PantryScreen() {
   const haptics = useHaptics();
   const toast = useToast();
   const { features } = usePremiumContext();
-  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<MealPlanStackParamList, "Pantry">>();
@@ -295,6 +296,7 @@ export default function PantryScreen() {
     >
       <SectionList
         {...FLATLIST_DEFAULTS}
+        {...behindContentA11yProps}
         sections={sections}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (

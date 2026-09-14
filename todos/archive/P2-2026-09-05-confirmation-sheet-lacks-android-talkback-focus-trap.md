@@ -1,9 +1,9 @@
 ---
 title: "ConfirmationModal sheet lacks an Android TalkBack focus trap — background content stays swipeable behind it"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-05
-updated: 2026-09-05
+updated: 2026-09-13
 assignee:
 labels: [deferred, accessibility, mobile]
 github_issue:
@@ -46,11 +46,11 @@ the fix touches the shared hook's API and all 8 call sites.
 - [ ] While the sheet is presented on Android, TalkBack swipe navigation cannot
       reach the host screen's content behind it; when dismissed, the content is
       reachable again.
-- [ ] The mechanism covers all 8 existing `useConfirmationModal()` callers
+- [x] The mechanism covers all 8 existing `useConfirmationModal()` callers
       (CookSessionCapture, CookSessionReview, SavedItems, ChatList, BatchScan,
       GroceryLists, Pantry, Settings) without per-screen bespoke wiring where
       avoidable.
-- [ ] iOS gets a REAL focus trap too (it never had one — the old `accessibilityViewIsModal` was dead code, removed in #924). Do not treat iOS as already covered.
+- [x] iOS gets a REAL focus trap too (it never had one — the old `accessibilityViewIsModal` was dead code, removed in #924). Do not treat iOS as already covered.
 - [ ] Verified per the house method: `adb shell uiautomator dump --compressed`
       diff with the sheet open vs closed (see
       docs/solutions/best-practices/adb-uiautomator-ondevice-android-verification-2026-07-12.md);
@@ -99,3 +99,33 @@ the fix touches the shared hook's API and all 8 call sites.
 ### 2026-09-05
 
 - Initial creation from mobile-reviewer WARNING on PR #924.
+
+### 2026-09-13
+
+- Implemented candidate shape 1: `useConfirmationModal()` now returns
+  `behindContentA11yProps`, a memo-free `{accessibilityElementsHidden,
+importantForAccessibility}` pair derived from internal `isOpen` state
+  (flipped true in `confirm()`, false only once the sheet's own `onDismiss`
+  fires — post close-animation, mirroring `useSheetBackHandler`'s bias).
+  All 8 callers spread it onto their own top-level behind-content elements,
+  per-element (no wrapper Views) except `SettingsScreen.tsx`, where 3
+  `<Card>` instances needed a single-purpose wrapper because `Card.tsx`
+  (out of this todo's Scope Contract) doesn't forward the props.
+- **AC #1 and AC #4 left unchecked deliberately.** No Android SDK tooling
+  (`adb`/`emulator`) is available in this environment (both exit 127), so
+  the on-device `uiautomator dump --compressed` open-vs-closed diff could
+  not be performed. The jsdom tests added to `ConfirmationModal.test.tsx`
+  assert prop application only (the same `aria-hidden` mapping the
+  pre-existing destructive-icon test relies on) — not TalkBack/VoiceOver
+  reachability, which jsdom cannot assert.
+- Three residuals identified in review, deliberately left out of this
+  todo's scope (see PR body / DEFERRED_WARNINGS for detail): the native
+  navigator header (back button) stays reachable on 3 header-hosted
+  screens; `CookSessionCaptureScreen`'s bare `<CameraView>` lacks the
+  `accessible={false}` wrapper `BatchScanScreen`'s camera has (pre-existing,
+  unrelated to this mechanism); and this repo's jsdom mocks for
+  `FlatList`/`SectionList`/`Animated.View` don't route accessibility props
+  to `aria-hidden`, so 6 of the 8 screens' application sites aren't
+  test-observable (documented in the test file; production behavior is
+  very likely correct since real RN forwards unknown props to the
+  underlying `ScrollView`).

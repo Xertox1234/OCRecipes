@@ -42,7 +42,8 @@ export default function BatchScanScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
   const { permission, requestPermission } = useCameraPermissions();
   const { availableBarcodeTypes } = usePremiumCamera();
 
@@ -269,6 +270,7 @@ export default function BatchScanScreen() {
         accessibilityRole="button"
         accessibilityLabel="Close batch scan"
         hitSlop={12}
+        {...behindContentA11yProps}
       >
         <Feather name="x" size={24} color={theme.text} />
       </Pressable>
@@ -286,6 +288,7 @@ export default function BatchScanScreen() {
           accessibilityRole="text"
           accessibilityLabel={`${itemCount} item${itemCount !== 1 ? "s" : ""} scanned`}
           accessibilityLiveRegion="polite"
+          {...behindContentA11yProps}
         >
           <Feather
             name="layers"
@@ -310,6 +313,7 @@ export default function BatchScanScreen() {
           },
         ]}
         pointerEvents="none"
+        {...behindContentA11yProps}
       >
         <Text style={[styles.toastText, { color: theme.text }]}>
           {toastText}
@@ -329,6 +333,7 @@ export default function BatchScanScreen() {
           ]}
           accessibilityRole="button"
           accessibilityLabel={`Done, review ${itemCount} scanned item${itemCount !== 1 ? "s" : ""}`}
+          {...behindContentA11yProps}
         >
           <Text style={[styles.doneText, { color: theme.buttonText }]}>
             Done ({itemCount})
@@ -347,6 +352,7 @@ export default function BatchScanScreen() {
               backgroundColor: withOpacity(theme.backgroundRoot, 0.9),
             },
           ]}
+          {...behindContentA11yProps}
         >
           <Text style={[styles.maxText, { color: theme.text }]}>
             Maximum {MAX_ITEMS} items reached
