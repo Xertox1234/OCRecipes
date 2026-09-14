@@ -1,6 +1,6 @@
 ---
 title: "lib/cmd-detect.sh: a `case` arm's unmatched `)` closes the enclosing $(...) early, and no paren counter can reach it"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-06
 updated: 2026-09-06
