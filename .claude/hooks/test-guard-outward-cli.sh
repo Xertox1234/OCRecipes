@@ -3657,6 +3657,35 @@ assert_deny "collapsed pair whose second call mutates via -f, not -X" \
 assert_deny "collapsed pair whose second call mutates via --input" \
   "$(json 'gh -a api -c x;gh api --input - /repos/o/r/merges')" \
   "more than one command-position 'gh api' occurrence"
+# A SECOND COMMAND CAN ALSO BEGIN AT `(`, AND THE FIRST FIX FOR THE ABOVE DID NOT COVER IT.
+# The count-only grammar excluded `;&|`; _OUT_POS_PREFIX's anchor class is `[;&|(` backtick
+# `{!]`, and a process substitution is a genuinely EXECUTING second command opening at `(`.
+# Both counts collapsed together and max() restored nothing. The crossing happened in
+# _OUT_SEP -- which interpolates the SHARED _CMD_REDIR, whose target class admits `(` -- not
+# in the globals arms, so narrowing only those arms flipped the bare `(` opener and left
+# these four still allowed. Round-3 review; measured against main's guard with main's own lib.
+assert_deny "process substitution as the second gh api: <( ... )" \
+  "$(json 'gh -a api -c <(gh api -f merge_method=squash /repos/o/r/pulls/42/merge)')" \
+  "more than one command-position 'gh api' occurrence"
+assert_deny "...the output form, >( ... )" \
+  "$(json 'gh -a api -c >(gh api -f a=b /repos/o/r/merges)')" \
+  "more than one command-position 'gh api' occurrence"
+assert_deny "...glued to the flag, -c<( ... )" \
+  "$(json 'gh -a api -c<(gh api -f a=b /repos/o/r/merges)')" \
+  "more than one command-position 'gh api' occurrence"
+assert_deny "...carrying --input rather than -f" \
+  "$(json 'gh -a api -c <(gh api --input - /repos/o/r/merges)')" \
+  "more than one command-position 'gh api' occurrence"
+# The other anchor characters in the same class, each a place a second command may begin.
+assert_deny "a second gh api opening at a bare (" \
+  "$(json 'gh -a api -c (gh api -f a=b /repos/o/r/merges')" \
+  "more than one command-position 'gh api' occurrence"
+assert_deny "...opening at {" \
+  "$(json 'gh -a api -c {gh api -f a=b /repos/o/r/merges')" \
+  "more than one command-position 'gh api' occurrence"
+assert_deny "...opening at !" \
+  "$(json 'gh -a api -c !gh api -f a=b /repos/o/r/merges')" \
+  "more than one command-position 'gh api' occurrence"
 
 # TWO-SIDED. The count is the MAX of two grammars, not a swap — so the rows the value arm
 # NEWLY closes must stay closed. The separator-safe grammar cannot see these at all; the wide
@@ -3853,7 +3882,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=721
+EXPECTED_TOTAL=728
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

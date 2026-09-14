@@ -183,6 +183,26 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # the wide form for `--repo`; deleting them denies every command, including the shell needed
 # to put them back.
 #
+# SCOPE OF THAT CLAIM, because "models the PROPERTY" reads wider than it is. The value token
+# models consuming ONE WHITESPACE-FREE TOKEN. A value that is itself several words still
+# leaves the namespace hidden, and that residual is PRE-EXISTING — this arm narrows the
+# family rather than closing it. Measured 2026-09-14 against main's guard paired with main's
+# own lib, written as outward-guard/merge-review PAIRS:
+#
+#   gh -t x pr merge 42               main ALLOW/ALLOW  ->  branch DENY/DENY
+#   gh -t x >/dev/null pr merge 42    main ALLOW/ALLOW  ->  branch DENY/DENY
+#   gh -t "a b" pr merge 42           main ALLOW/DENY   ->  branch DENY/DENY   (outward only)
+#   gh -t 'a b' pr merge 42           main ALLOW/DENY   ->  branch DENY/DENY   (outward only)
+#   gh -t <(echo x) pr merge 42       main ALLOW/ALLOW  ->  branch ALLOW/ALLOW (UNCHANGED)
+#   gh -t $(echo x) pr merge 42       main DENY/ALLOW   ->  branch DENY/ALLOW  (UNCHANGED)
+#
+# NAMING THE LAYER IS THE POINT. The quoted rows move on the OUTWARD guard only — merge-review
+# already denied them on main — and the substitution rows are denied by the outward guard on
+# both revisions while merge-review allows them on both. An earlier draft of this paragraph
+# said the quoted forms flipped "on both layers" and that the substitution forms "were already
+# denied on both"; neither was true of the pair, and both were written before the pair was
+# measured. Tracked with P1's binary-rendering families; do not read "property" as "closed".
+#
 # The value token is `[^-[:space:]][^[:space:]]*` — it must NOT begin with `-`, so a dash
 # token always starts a fresh arm rather than being eaten as the previous flag's value. That
 # is also what lets a NO-ARG flag sit immediately before the namespace: `gh --no-color pr

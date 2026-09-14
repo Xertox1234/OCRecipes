@@ -327,17 +327,40 @@ add ghrootv-selfrepo DENY 'gh -t x pr merge 42 -R Xertox1234/OCRecipes'
 # not a sufficient compensating control: real `gh` sends POST when `-f` fields are present, so
 # the `apicollapse-*-mut` rows below carry no `-X` at all and only the occurrence refusal
 # stands between them and an allowed cross-command mutation.
+# THE DIMENSION IS COMMAND-POSITION OPENERS, NOT SEPARATORS, and the first version of this
+# axis got that wrong in a way worth keeping. It varied exactly `;`, `&` and `|` -- precisely
+# the three characters the first fix excluded -- so it could only ever CONFIRM that fix and
+# could not see the `(` member, which was live. An axis keyed on the thing the fix happens to
+# cover is a tautology with row numbers. The set that matters is _OUT_POS_PREFIX's own anchor
+# class, `[;&|(` + backtick + `{!]`: every character at which a SECOND COMMAND MAY BEGIN.
+# `<(` and `>(` are listed separately from `(` because they are the spellings that genuinely
+# EXECUTE -- `head -c 0 <(touch marker)` creates the marker under bash and zsh alike.
+#
+# EVERY OPENER IS EXPECTED TO DENY, and the backtick row is the reason this comment exists.
+# It was first declared ALLOW, on the strength of a hand probe that reported main=ALLOW. That
+# probe was wrong: it built its opener list as '\`' inside shell text, so it measured a
+# BACKSLASH-backtick -- an escaped character -- and never tested a backtick at all. This
+# corpus caught it immediately (9 rows, one per flag x tail, all GAP want=ALLOW), and a
+# re-measurement passing the byte as jq --arg data rather than as shell text settles it:
+# a real backtick opener DENIES on main and on this branch alike.
+#
+# The lesson is not about backticks. A probe that constructs its input THROUGH the shell is
+# testing whatever the shell left behind, which for exactly the characters this axis varies
+# -- the ones with syntactic meaning -- is not the character you named. Pass such inputs as
+# data. The corpus is what caught it, which is the argument for the axis existing at all.
 APICOL_FLAG_IDS=(shortc shortt unknown)
 APICOL_FLAGS=('-c x' '-t x' '-Z x')
-APICOL_SEP_IDS=(semi amp pipe)
-APICOL_SEPS=(';' '&' '|')
+APICOL_OPEN_IDS=(semi amp pipe paren brace bang psubin psubout btick)
+APICOL_OPENS=(';' '&' '|' '(' '{' '!' '<(' '>(' '`')
+APICOL_OPEN_EXPECT=(DENY DENY DENY DENY DENY DENY DENY DENY DENY)
 APICOL_TAIL_IDS=(read mut method)
 APICOL_TAILS=('/a/b' '-f a=b /repos/o/r/merges' '-X POST /repos/o/r')
 for i in "${!APICOL_FLAG_IDS[@]}"; do
-  for j in "${!APICOL_SEP_IDS[@]}"; do
+  for j in "${!APICOL_OPEN_IDS[@]}"; do
     for k in "${!APICOL_TAIL_IDS[@]}"; do
-      add "apicollapse-${APICOL_FLAG_IDS[$i]}-${APICOL_SEP_IDS[$j]}-${APICOL_TAIL_IDS[$k]}" DENY \
-        "gh -a api ${APICOL_FLAGS[$i]}${APICOL_SEPS[$j]}gh api ${APICOL_TAILS[$k]}"
+      add "apicollapse-${APICOL_FLAG_IDS[$i]}-${APICOL_OPEN_IDS[$j]}-${APICOL_TAIL_IDS[$k]}" \
+        "${APICOL_OPEN_EXPECT[$j]}" \
+        "gh -a api ${APICOL_FLAGS[$i]}${APICOL_OPENS[$j]}gh api ${APICOL_TAILS[$k]}"
     done
   done
 done
@@ -1506,6 +1529,23 @@ fi
 #    see the DENY-SITE COVERAGE axis and `_pin_sites`. It was found by a reviewer
 #    deleting three real protections and watching this file exit 0.
 #
+# BUMP 2026-09-14 (round-3 security review). The apicollapse-* axis was re-keyed from
+# SEPARATORS to COMMAND-POSITION OPENERS — `;&|` plus `(`, backtick, `{`, `!`, and the
+# executing `<(`/`>(` spellings — because keyed on separators it varied exactly the three
+# characters the previous fix excluded and could only confirm that fix. A process substitution
+# opening at `(` was live through it. 27 -> 81 rows in the axis, so +54 overall and +54
+# attribution rows (every new row denies); precise-path gaps unchanged at 31, all-path gaps
+# unchanged at 279, NOTHING REMOVED. EXPECTED_EMIT_SITES 26 -> 27 for the GH_API_RE_SEPSAFE
+# integrity check, which no command text can reach and which is registered in
+# _pin_exempt_sites with its reason rather than given a row.
+#
+# One expectation in this axis was WRONG on the first pass and the corpus caught it: the
+# backtick opener was declared ALLOW on the strength of a hand probe that had actually
+# measured a BACKSLASH-backtick, because it built the character through shell text. Nine rows
+# came back GAP. A probe that constructs its input through the shell tests whatever the shell
+# left behind — which, for precisely the characters an axis like this varies, is not the
+# character you named.
+#
 # BUMP 2026-09-14 (round-2 security review of the same change). ONE mechanism: the value arm
 # added in the bump below is not monotone on an occurrence COUNT, so a consumed value could
 # swallow a separator and collapse two `gh api` occurrences into one, retiring the ambiguity
@@ -1537,10 +1577,10 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=685
+EXPECTED_ROWS=739
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 565 of the 685 rows deny on the precise path; the other 120 are ALLOW there
+# 619 of the 739 rows deny on the precise path; the other 120 are ALLOW there
 # (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-*/ghrootvfp-* controls and
 # the 16 ghrootv-*-ghcomment/ghcreate two-sided rows, plus the 31 precise-path gaps). Corrected 2026-09-13: this was the FIFTH stale copy of a
 # count in this file, found by review after four others were repaired -- and it
@@ -1548,7 +1588,7 @@ EXPECTED_ROWS=685
 # bumped with
 # EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
 # stale, sitting directly above the constant they describe.
-EXPECTED_DENY_ATTRIB_ROWS=565
+EXPECTED_DENY_ATTRIB_ROWS=619
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -2505,6 +2545,60 @@ apicollapse-unknown-pipe-read : more than one command-position 'gh api' occurren
 apicollapse-unknown-semi-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
 apicollapse-unknown-semi-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
 apicollapse-unknown-semi-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-bang-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-bang-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-bang-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-brace-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-brace-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-brace-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-btick-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-btick-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-btick-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-paren-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-paren-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-paren-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubin-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubin-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubin-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubout-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubout-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubout-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-bang-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-bang-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-bang-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-brace-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-brace-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-brace-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-btick-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-btick-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-btick-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-paren-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-paren-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-paren-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubin-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubin-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubin-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubout-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubout-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubout-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-bang-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-bang-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-bang-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-brace-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-brace-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-brace-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-btick-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-btick-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-btick-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-paren-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-paren-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-paren-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubin-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubin-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubin-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubout-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubout-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubout-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
@@ -2563,9 +2657,16 @@ the hook envelope's .tool_input.command could not be read (malformed JSO
 the hook envelope's .tool_name could not be read (malformed JSON or a ch
 the quote-aware rendering came back empty for a non-empty command - eith
 the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is mis
+GH_API_RE_SEPSAFE is no longer built from _OUT_GH_GLOBALS_SEPSAFE, so th
 PIN_EXEMPT_EOF
 }
-EXPECTED_EMIT_SITES=26
+# 27 as of 2026-09-14: the GH_API_RE_SEPSAFE integrity check above. Like the shape assertion
+# beside it, NO COMMAND TEXT CAN REACH IT -- it fires only on a definition that has been
+# edited so the count-only needle stops reading the separator-safe grammar. It is therefore
+# exempt from _pin_sites rather than given a row, and its mutation coverage lives in
+# test-guard-outward-cli.sh. Exempting is not the same as skipping: the reason is written
+# down here so the next reader can disagree with it.
+EXPECTED_EMIT_SITES=27
 
 PIN_FAIL=0
 
