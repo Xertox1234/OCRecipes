@@ -578,6 +578,25 @@ case "$r" in
   *) bad "heredoc prose is told to route through a file tool" "$r" ;;
 esac
 
+# 33c. DENY, PINNED AS A TRIPWIRE — a KNOWN, MEASURED residual of the same fix (33/33b):
+#      a heredoc body line whose write-verb sits at COLUMN 0, with no leading prose, still
+#      matches _CMD_POS_PREFIX's command-position anchor (grep's `^` is per-line, and
+#      cmd_words/cmd_words_deep preserve the heredoc body's real newlines) — so this still
+#      gets the OLD "split it" message even though nothing here executes either. Verdict is
+#      unaffected (still deny, the safe direction) — only the message is stale for this one
+#      shape. Documented, not chased: closing it needs real heredoc-boundary parsing, out of
+#      todos/P2-2026-09-10-outward-cli-guard-denies-prose-naming-two-pr-verbs.md's Scope
+#      Contract. IF THIS ROW EVER FLIPS TO THE HONEST MESSAGE, that is a genuine improvement
+#      — update this comment and the assertion rather than treating it as a regression.
+HEREDOC_COL0_CMD=$'cat >> ledger.md <<EOF\ngh pr merge 900 was run\nthen gh pr create\nEOF'
+out=$(bash_payload "$HEREDOC_COL0_CMD" | run)
+denied "$out" && ok "column-0 heredoc verb still fails closed (residual)" || bad "column-0 heredoc verb still fails closed (residual)" "$out"
+r=$(reason "$out")
+case "$r" in
+  *"Split it into one"*) ok "column-0 heredoc verb still gets the pre-fix message (KNOWN GAP)" ;;
+  *) bad "column-0 heredoc verb still gets the pre-fix message (KNOWN GAP)" "$r" ;;
+esac
+
 # ── THE EXTRACTOR-MISS GAP, PINNED AS A TRIPWIRE — one row per mechanism the P1 todo
 #    names: path-qualified binary, redirect between binary and verb, glued metacharacter,
 #    and quoted command substitution. (unnumbered: rows 34-40 are already
@@ -867,7 +886,7 @@ rm -rf "$NOJQ_BIN"
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=84
+EXPECTED_TOTAL=86
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
