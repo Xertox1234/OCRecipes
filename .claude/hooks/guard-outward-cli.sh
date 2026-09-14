@@ -863,19 +863,36 @@
 #     already treats as a degraded-path residual; `verbvcasearm-*` and
 #     `flagvcasearm-*` flip to `ok`).
 #
-#     TWO FURTHER LIVE GAPS IN THE FIRST DRAFT, found by post-implementation
-#     review and closed in the SAME change: `kwbound` (the word-terminator
-#     test) originally treated any non-identifier byte as a boundary, so an
-#     embedded `case=2`/`esac=1` inside an arm's own action spuriously
-#     re-toggled `casedepth` (`=` is not a real bash word-terminator -- `case=2`
-#     is ONE word, ground-truthed live); and the command-position anchor
-#     (`atcmd`) only recognised PUNCTUATION openers, so a `case` nested directly
-#     after `then`/`do`/`else`/`elif`/`time` (which open a fresh command
-#     position with no operator before them) was invisible. Both fixed by
-#     narrowing `kwbound` to bash's real word-terminator set and by recognising
-#     that five-word set the same way this file's own `_OUT_POS_PREFIX` already
-#     does. Pinned as named regression controls in test-cmd-detect.sh and
-#     test-guard-outward-cli.sh.
+#     THREE FURTHER LIVE GAPS IN THE FIRST DRAFT, found by post-implementation
+#     review across two rounds and closed in the SAME change: `kwbound` (the
+#     word-terminator test) originally treated any non-identifier byte as a
+#     boundary, so an embedded `case=2`/`esac=1` inside an arm's own action
+#     spuriously re-toggled `casedepth` (`=` is not a real bash word-terminator
+#     -- `case=2` is ONE word, ground-truthed live); the command-position
+#     anchor (`atcmd`) only recognised PUNCTUATION openers, so a `case` nested
+#     directly after `then`/`do`/`else`/`elif`/`time` (which open a fresh
+#     command position with no operator before them) was invisible; and the
+#     ROUND-1 FIX FOR THE FIRST GAP ITSELF ALSO WRONGLY INCLUDED `\r`
+#     (carriage return) as a word-terminator (both in `kwbound` and in the
+#     separate `cmdpos` reset set that decides `atcmd`), reintroducing the
+#     exact `case=2`-shaped regression through a different decoy byte one
+#     round later -- CR does not separate in real bash (this file already
+#     carried a mutation-confirmed precedent for that, for a different
+#     function, before this todo). All three fixed: `kwbound` narrowed to
+#     bash's real word-terminator set (blank/tab/newline/EOF plus `; &amp; | ( )
+#     &lt; &gt;`, no CR), the five-word reserved-word set recognised the same way
+#     this file's own `_OUT_POS_PREFIX` already does, and `\r` removed from
+#     both places that had wrongly treated it as inert. Pinned as named
+#     regression controls in test-cmd-detect.sh and test-guard-outward-cli.sh.
+#
+#     STILL OPEN (found live by round-2 review, NOT fixed -- an owner
+#     decision, not overlooked): `if`/`while`/`until` are not in the five-word
+#     reserved-word set above, so a `case` nested directly after one of them
+#     is still invisible -- `e$(if case x in a) : ;; esac; then :; fi)as
+#     update --branch preview` (and the `while`/`until` equivalents)
+#     ground-truthed live to really invoke `eas update --branch preview`.
+#     `_OUT_POS_PREFIX` does not cover these three either, so this is a
+#     genuine pre-existing sibling gap, not a regression this change opened.
 #
 #     STILL OPEN, EVEN ON PRECISE: a case arm COMPOSED with a shell COMMENT
 #     containing a `;` followed by a decoy `esac` closes `casedepth` one arm

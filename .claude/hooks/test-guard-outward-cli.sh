@@ -3275,6 +3275,19 @@ assert_deny "an embedded case=NN inside the arm body must not re-open casedepth"
 assert_deny "the esac=NN mirror must not spuriously decrement casedepth either" \
   "$(json 'e$(case x in a) : ; esac=1 ;; b) : ;; esac)as update --branch preview')" \
   "eas update/publish/submit"
+# CRITICAL 3 (found by ROUND-2 review of the CRITICAL 1 fix itself): the
+# round-1 kwbound() fix also wrongly included `\r` (carriage return) as a
+# word-terminator. This file already carries a mutation-confirmed precedent
+# in lib/cmd-detect.sh (search "THE BOUNDARY WHITESPACE MUST BE") that
+# bash's tokenizer does NOT treat CR (or VT/FF) as word-separating -- glued
+# between two halves of a word they fuse into ONE token, the same shape as
+# `=` above. Reintroduced the exact CRITICAL 1 regression class through a
+# different decoy byte one round later. Uses jsonc (jq-encoded), not json
+# (plain printf %s), because a raw CR byte inside a plain-printf JSON string
+# is not valid JSON -- jq's --arg does the escaping correctly.
+assert_deny "an embedded CR byte inside the arm body must not re-open casedepth either" \
+  "$(jsonc "$(printf 'e$(case x in a) : ; case\r2 ;; esac)as update --branch preview')")" \
+  "eas update/publish/submit"
 # CRITICAL 2: `atcmd` only recognised PUNCTUATION command-position openers, so
 # a `case` nested directly after a reserved word that opens a position with NO
 # operator before it (then/do/else/elif/time) was never recognised. Scoped to
@@ -3749,7 +3762,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=704
+EXPECTED_TOTAL=705
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

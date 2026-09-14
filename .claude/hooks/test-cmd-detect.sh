@@ -1640,6 +1640,17 @@ van 'an embedded case=NN inside the arm body must not re-open casedepth' \
   'e$(case x in a) : ; case=2 ;; esac)as update --branch preview' 'eas update --branch preview'
 van 'the esac=NN mirror must not spuriously decrement casedepth either' \
   'e$(case x in a) : ; esac=1 ;; b) : ;; esac)as update --branch preview' 'eas update --branch preview'
+# CRITICAL 3 (found by ROUND-2 review of the CRITICAL 1 fix itself): the
+# round-1 kwbound() fix also wrongly included `\r` (carriage return) as a
+# word-terminator. This file already carries a mutation-confirmed precedent
+# ~1300 lines below (search "THE BOUNDARY WHITESPACE MUST BE") that bash's
+# tokenizer does NOT treat CR (or VT/FF) as word-separating -- glued between
+# two halves of a word they fuse into ONE token, the same shape as `=`
+# above. Reintroduced the exact CRITICAL 1 regression class through a
+# different decoy byte one round later.
+van 'an embedded CR byte inside the arm body must not re-open casedepth either' \
+  "$(printf 'e$(case x in a) : ; case\r2 ;; esac)as update --branch preview')" \
+  'eas update --branch preview'
 # CRITICAL 2: `atcmd` only recognised PUNCTUATION command-position openers, so
 # a `case` nested directly after a reserved word that opens a position with NO
 # operator before it (then/do/else/elif/time) was never recognised. Scoped to
@@ -1965,7 +1976,7 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
 # assertion in a run that otherwise completed. It cannot catch an early
 # `return`/`exit` or a truncated file, because those terminate before this line.
-EXPECTED_TOTAL=630
+EXPECTED_TOTAL=631
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

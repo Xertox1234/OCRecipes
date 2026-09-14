@@ -518,14 +518,13 @@ cmd_words() {
 # not tuned for a nested-unescaped-backtick corner case no caller writes.
 cmd_extract_substitutions() {
   awk '
-    # kwbound(ch): true when ch is empty (end of buffer) or is not an
-    # identifier character -- the word-end test the case/esac recognizer
-    # below needs so it never fires mid-word (casexyz, lowercase).
     # kwbound(ch): true when ch is a REAL bash word-terminator -- empty (end
-    # of buffer), a blank (space/tab/CR/LF), or a shell operator character
-    # (; & | ( ) < >). CORRECTED (post-implementation review): the previous
-    # version treated ANY non-identifier character as a boundary, but bash
-    # word boundaries are far narrower than that -- `=` is not a terminator
+    # of buffer), a blank (space or tab), a newline, or a shell operator
+    # character (; & | ( ) < >). This is the word-end test the case/esac
+    # recognizer below needs so it never fires mid-word (casexyz, lowercase).
+    # CORRECTED (post-implementation review, round 1): the ORIGINAL version
+    # treated ANY non-identifier character as a boundary, but bash word
+    # boundaries are far narrower than that -- `=` is not a terminator
     # (case=2 is ONE word, never the keyword case followed by =2), and
     # neither is a backtick or `$` (case`x`/case$x glue onto the same word
     # too). Ground-truthed live: `e$(case x in a) : ; case=2 ;; esac)as
@@ -535,7 +534,21 @@ cmd_extract_substitutions() {
     # ALLOWing the publish on the precise path. `#` is deliberately excluded:
     # it only starts a comment at WORD START, so mid-word it is not a
     # terminator either (case#x is one word).
-    function kwbound(ch) { return (ch == "" || ch == " " || ch == "\t" || ch == "\n" || ch == "\r" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")" || ch == "<" || ch == ">") }
+    # CORRECTED AGAIN (post-implementation review, round 2): the round-1 fix
+    # above ALSO wrongly included `\r` (carriage return) as a terminator.
+    # This file already carries a mutation-confirmed precedent for exactly
+    # this byte class, ~1300 lines below (search "THE BOUNDARY WHITESPACE
+    # MUST BE"): bash`s tokenizer does not treat CR (or VT/FF) as
+    # word-separating at all -- glued between two halves of a word they fuse
+    # into ONE token, the same shape as `=` above. Ground-truthed live with a
+    # literal CR byte: `e$(case x in a) : ; case<CR>2 ;; esac)as update
+    # --branch preview` really invokes `eas update --branch preview` (the CR
+    # fuses into `case<CR>2`, one non-keyword word), and the `\r` entry in
+    # kwbound spuriously re-opened casedepth on it -- the SAME regression
+    # class as the `=` fix, reintroduced through a different decoy byte one
+    # round later. `\n` stays IN the set (newline genuinely IS a bash command
+    # separator, unlike CR/VT/FF); only `\r` was removed.
+    function kwbound(ch) { return (ch == "" || ch == " " || ch == "\t" || ch == "\n" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")" || ch == "<" || ch == ">") }
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96) }
     { buf = buf $0 "\n" }
     END {
@@ -569,13 +582,25 @@ cmd_extract_substitutions() {
         # command-position transition is handled explicitly at the push/pop
         # sites below (cmdpos[depth]=1 on open, cmdpos[depth]=0 on close),
         # never through this generic reset list, so listing it here would
-        # have been a duplicate, not a gap. Whitespace PRESERVES whatever
-        # cmdpos[d] already was (a run of spaces/tabs after a separator must
-        # not lose the boundary before the next word is reached); anything
-        # else clears it.
+        # have been a duplicate, not a gap. Whitespace (space/tab) PRESERVES
+        # whatever cmdpos[d] already was (a run of spaces/tabs after a
+        # separator must not lose the boundary before the next word is
+        # reached); anything else clears it. CORRECTED (post-implementation
+        # review, round 2): `\r` was wrongly in the PRESERVE set too, the
+        # mirror of the kwbound CR fix on the PRECEDING side of a word
+        # instead of the trailing side -- a CR does not separate in real
+        # bash, so `;<CR>case` is the single token `<CR>case` (never a
+        # recognised keyword; confirmed with `bash -n`, a syntax error),
+        # while treating `\r` as preserving meant this scanner could still
+        # think atcmd was true right at the `c` of `case` there. No live
+        # guard-level bypass was found through this specific path (the
+        # over-recognition this caused only ever advances casedepth, which
+        # is the over-DENY / safe direction, not a missed deny), but it is
+        # the same category error kwbound had, and removing `\r` can only
+        # narrow what preserves command position -- the safe direction.
         atcmd = cmdpos[d]
         if (c == ";" || c == "&" || c == "|" || c == "(" || c == "{" || c == "!" || c == "\n") cmdpos[d] = 1
-        else if (c != " " && c != "\t" && c != "\r") cmdpos[d] = 0
+        else if (c != " " && c != "\t") cmdpos[d] = 0
         if (s == 0) {
           if (c == BS) {
             if (d >= 1) accbuf[d] = accbuf[d] c
@@ -633,9 +658,7 @@ cmd_extract_substitutions() {
           # review, fixed same change). `atcmd` alone missed a `case` nested
           # directly after `then`/`do`/`else`/`elif`/`time` -- these five
           # reserved words open a fresh command position with NO operator
-          # between them and what follows (unlike `if`, which always sits
-          # after a real operator or start-of-string the punctuation reset set
-          # already covers). Ground-truthed live:
+          # between them and what follows. Ground-truthed live:
           # `e$(if true; then case x in a) : ;; esac; fi)as update --branch
           # preview` really invokes `eas update --branch preview`, and without
           # this arm the case never opened, so the arm`s `)` closed the
@@ -644,6 +667,18 @@ cmd_extract_substitutions() {
           # already absorbs precisely this five-word set as runner words --
           # not a new judgement call, the same precedent this file`s own
           # header already cites as the gap in the lib`s general verb anchor.
+          #
+          # STILL OPEN (found live by round-2 review): `if`/`while`/`until`
+          # are NOT in this set, and a `case` nested directly after one of
+          # them is still invisible -- `e$(if case x in a) : ;; esac; then
+          # :; fi)as update --branch preview` (and the `while`/`until`
+          # equivalents) really invoke `eas update --branch preview`
+          # (ground-truthed live) and are silently ALLOWED. `_OUT_POS_PREFIX`
+          # does not cover these three either, so this is a genuine
+          # pre-existing sibling gap this todo`s scope does not require
+          # closing, not a regression this change opened. Disclosed in
+          # guard-outward-cli.sh`s DOCUMENTED RESIDUALS, pending an owner
+          # decision on whether to fold it into a future widening pass.
           else if (c == "t" && atcmd && substr(buf, i, 4) == "then" && kwbound(substr(buf, i+4, 1))) {
             if (d >= 1) accbuf[d] = accbuf[d] "then"
             i += 3
@@ -948,14 +983,13 @@ _cmd_vanish_pass() {
     function safech(ch) {
       return (ch != "" && index(SAFE, ch) > 0) ? ch : PH
     }
-    # kwbound(ch): true when ch is empty (end of buffer) or is not an
-    # identifier character -- the word-end test the case/esac recognizer
-    # below needs so it never fires mid-word (casexyz, lowercase).
     # kwbound(ch): true when ch is a REAL bash word-terminator -- empty (end
-    # of buffer), a blank (space/tab/CR/LF), or a shell operator character
-    # (; & | ( ) < >). CORRECTED (post-implementation review): the previous
-    # version treated ANY non-identifier character as a boundary, but bash
-    # word boundaries are far narrower than that -- `=` is not a terminator
+    # of buffer), a blank (space or tab), a newline, or a shell operator
+    # character (; & | ( ) < >). This is the word-end test the case/esac
+    # recognizer below needs so it never fires mid-word (casexyz, lowercase).
+    # CORRECTED (post-implementation review, round 1): the ORIGINAL version
+    # treated ANY non-identifier character as a boundary, but bash word
+    # boundaries are far narrower than that -- `=` is not a terminator
     # (case=2 is ONE word, never the keyword case followed by =2), and
     # neither is a backtick or `$` (case`x`/case$x glue onto the same word
     # too). Ground-truthed live: `e$(case x in a) : ; case=2 ;; esac)as
@@ -965,7 +999,21 @@ _cmd_vanish_pass() {
     # ALLOWing the publish on the precise path. `#` is deliberately excluded:
     # it only starts a comment at WORD START, so mid-word it is not a
     # terminator either (case#x is one word).
-    function kwbound(ch) { return (ch == "" || ch == " " || ch == "\t" || ch == "\n" || ch == "\r" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")" || ch == "<" || ch == ">") }
+    # CORRECTED AGAIN (post-implementation review, round 2): the round-1 fix
+    # above ALSO wrongly included `\r` (carriage return) as a terminator.
+    # This file already carries a mutation-confirmed precedent for exactly
+    # this byte class, ~1300 lines below (search "THE BOUNDARY WHITESPACE
+    # MUST BE"): bash`s tokenizer does not treat CR (or VT/FF) as
+    # word-separating at all -- glued between two halves of a word they fuse
+    # into ONE token, the same shape as `=` above. Ground-truthed live with a
+    # literal CR byte: `e$(case x in a) : ; case<CR>2 ;; esac)as update
+    # --branch preview` really invokes `eas update --branch preview` (the CR
+    # fuses into `case<CR>2`, one non-keyword word), and the `\r` entry in
+    # kwbound spuriously re-opened casedepth on it -- the SAME regression
+    # class as the `=` fix, reintroduced through a different decoy byte one
+    # round later. `\n` stays IN the set (newline genuinely IS a bash command
+    # separator, unlike CR/VT/FF); only `\r` was removed.
+    function kwbound(ch) { return (ch == "" || ch == " " || ch == "\t" || ch == "\n" || ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")" || ch == "<" || ch == ">") }
     # CODE 0 EMITS NOTHING, and that is the one case here that is a security
     # property rather than a fidelity one. Verified by od, bash 3.2:
     # e$(sq)\0(sq)as builds the three bytes `eas` -- the NUL is DROPPED and the token
@@ -993,12 +1041,14 @@ _cmd_vanish_pass() {
         # COMMAND-POSITION TRACKING, read-then-set at the top of the
         # iteration, before any branch below can `continue` past a trailing
         # update -- see the mirrored comment in cmd_extract_substitutions,
-        # which this shares the shape with. Whitespace preserves whatever
-        # cmdpos[d] already was; a reset operator sets it; anything else
-        # clears it.
+        # which this shares the shape with (including the round-2 `\r`
+        # correction -- CR does not preserve command position, it clears it
+        # like any other non-blank byte). Whitespace (space/tab) preserves
+        # whatever cmdpos[d] already was; a reset operator sets it; anything
+        # else clears it.
         atcmd = cmdpos[d]
         if (c == ";" || c == "&" || c == "|" || c == "(" || c == "{" || c == "!" || c == "\n") cmdpos[d] = 1
-        else if (c != " " && c != "\t" && c != "\r") cmdpos[d] = 0
+        else if (c != " " && c != "\t") cmdpos[d] = 0
         if (s == 0 || s == 2) {
           if (c == BS) {
             if (d == 0) out = out c
