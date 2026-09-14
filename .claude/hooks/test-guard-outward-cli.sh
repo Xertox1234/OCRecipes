@@ -2353,7 +2353,7 @@ while IFS= read -r _line; do
   printf '%s' "$_line" | grep -qF -- '"$_GH_API_CUT"' || { _CUTS_OK=0; _BAD_CUT="$_line"; }
 done < <(grep 'GH_API_CLAUSE_[A-Z]*=\$(printf' "$HOOK")
 if [ -n "$_ANCHOR_RE" ] \
-   && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh${_OUT_SEP}api' \
+   && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh${_OUT_GH_GLOBALS}${_OUT_SEP}api' \
    && [ "$_CUT_DEFS" -eq 1 ] \
    && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*" \
    && [ "$_CLAUSE_CUTS" -eq 3 ] \
@@ -2407,14 +2407,109 @@ fi
 # others), so an unscoped grep fails on prose — and the tempting "fix" for that
 # is to loosen the pattern until it stops matching comments, which would also
 # stop it matching real code.
-_SEP_LEFT=$(grep -v '^[[:space:]]*#' "$HOOK" \
-  | grep -oE '(eas|railway|npm|pnpm|yarn|gh|pr|api|release|repo|variable|variables|vars|var|service|environment)\[\[:space:\]\]\+|\$\{_OUT_(GATED_BIN|EXPANSION_TOKEN)\}\[\[:space:\]\]\+' \
-  | wc -l | tr -d '[:space:]')
+# A LEADING BOUNDARY IS REQUIRED (2026-09-13), because the alternation names WORDS and
+# several of them are also the tail of a FLAG name. `_OUT_GH_GLOBALS` spells the
+# value-taking root flags as `--repo[[:space:]]+[^[:space:]]+`, whose `repo[[:space:]]+`
+# matched this list and reported a separator that is not one — a flag consuming its own
+# argument, not a gated word reaching its verb. Excluding a preceding `-`/alphanumeric does
+# NOT weaken the check: every REAL needle here is preceded by `"`, `}` or start-of-line,
+# all of which still match. Verified by injecting a `gh[[:space:]]+api` regression into a
+# copy of the hook and confirming this assertion still goes red (see the mutation row
+# immediately below).
+_SEP_LEFT_RE='(^|[^-A-Za-z0-9])((eas|railway|npm|pnpm|yarn|gh|pr|api|release|repo|variable|variables|vars|var|service|environment)\[\[:space:\]\]\+|\$\{_OUT_(GATED_BIN|EXPANSION_TOKEN)\}\[\[:space:\]\]\+)'
+_SEP_LEFT=$(grep -v '^[[:space:]]*#' "$HOOK" | grep -oE -- "$_SEP_LEFT_RE" | wc -l | tr -d '[:space:]')
 if [ "${_SEP_LEFT:-x}" = 0 ]; then
   echo "PASS: every tool->verb / namespace->verb separator goes through \$_OUT_SEP (structural: 0 hardcoded [[:space:]]+ left on code lines)"; PASS=$((PASS+1))
 else
   echo "FAIL: $_SEP_LEFT hardcoded [[:space:]]+ separator(s) still sit between a gated word and its verb — the interior-redirect absorber is applied SELECTIVELY, so those families remain bypassable by a redirect"
-  grep -v '^[[:space:]]*#' "$HOOK" | grep -nE '(eas|railway|npm|pnpm|yarn|gh|pr|api|release|repo|variable|variables|vars|var|service|environment)\[\[:space:\]\]\+' | head -5
+  grep -v '^[[:space:]]*#' "$HOOK" | grep -nE -- "$_SEP_LEFT_RE" | head -5
+  FAIL=$((FAIL+1))
+fi
+# MUTATION ROW for the assertion immediately above (2026-09-13). Adding the leading
+# boundary narrowed that pattern, and a narrowed detector that still reports 0 is
+# indistinguishable from a working one — "a clean zero needs its denominator". So inject
+# the exact regression the check exists to catch into a COPY of the hook and require the
+# same pattern to find it. Without this row, the boundary could have been narrowed until
+# the check matched nothing at all and the suite would still be green.
+_MUT_HOOK=$(mktemp)
+{ cat "$HOOK"; printf '%s\n' 'GH_FAKE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}"'; } > "$_MUT_HOOK"
+_SEP_MUT=$(grep -v '^[[:space:]]*#' "$_MUT_HOOK" | grep -oE -- "$_SEP_LEFT_RE" | wc -l | tr -d '[:space:]')
+rm -f "$_MUT_HOOK"
+# MUTATION ROWS for the shape assertion on the two root-position constants (2026-09-13,
+# rewritten after review). That assertion is registered in the corpus's _pin_exempt_sites —
+# no command TEXT can reach it, only a broken definition can — so _pin_sites deliberately
+# does not cover it and these rows are the ONLY thing standing between it and silent
+# deletion. It was originally written as a `-z` emptiness test, which review showed is
+# structurally unreachable: both constants are single-quoted literals concatenated with
+# "$_CMD_REDIR", so each is ~100 bytes even when _CMD_REDIR is empty. It now asserts SHAPE,
+# and these rows break the shape rather than the length.
+#
+# THE PROBE COMMAND MUST REACH THE CONSTANTS. `echo hello` does NOT — it exits at the
+# fast-path needle filter, which runs long before the _OUT_* block — so probing with it
+# returns a silent allow and "proves" nothing. This is not hypothetical: the first version
+# of this check used `echo hello`, produced empty output, and would have been read as a pass.
+#
+# The copy lives NEXT TO the original, not in /tmp: the hook derives its lib path from its
+# own location, so a copy elsewhere fails closed for the unrelated "lib unsourceable" reason
+# and the row would pass for the wrong one.
+_mut_goc_says_deny() {  # $1 = sed program that breaks one constant
+  local f out
+  f="$(dirname "$HOOK")/.mut-out-gh-globals-$$.sh"
+  sed "$1" "$HOOK" > "$f"
+  out=$(jq -cn '{tool_name:"Bash",tool_input:{command:"gh pr list"}}' \
+        | env -u ALLOW_OUTWARD_CLI bash "$f" 2>/dev/null)
+  rm -f "$f"
+  printf '%s' "$out" | grep -q '"permissionDecision": "deny"' \
+    && printf '%s' "$out" | grep -qF -- 'root-position flag grammar lost its shape'
+}
+if _mut_goc_says_deny 's|^_OUT_GH_GLOBALS="\$_CMD_GH_GLOBALS"|_OUT_GH_GLOBALS=|'; then
+  echo "PASS: a shapeless _OUT_GH_GLOBALS fails closed instead of silently collapsing every gh needle"; PASS=$((PASS+1))
+else
+  echo "FAIL: a shapeless _OUT_GH_GLOBALS did NOT fail closed — the widened gh needles would quietly revert to their pre-fix form and the whole suite would stay green"
+  FAIL=$((FAIL+1))
+fi
+# The grant form losing its separator-safe class is the CRITICAL this pair exists for: it
+# re-opens the false-ALLOW where a glued dash-token donates a previous command's --auto.
+# THE SURGICAL MUTATION, and the one the first version of the assertion missed. Reverting
+# ONLY the GENERIC arm to the wide class — leaving the -R and --repo arms narrow — is the
+# exact regression that re-opens the glued-separator donation. The original assertion was
+# satisfied by the two named arms and stayed silent; both reviewers found that independently.
+# Those two arms are also effectively unreachable at the grant cut, since any -R/--repo
+# command is denied earlier by gh_pr_clause_has_repo — so the assertion was keying on arms
+# that can never be exercised there. `;&|]+))` occurs exactly once in the constant: the
+# generic arm, followed by its closing parens.
+# Operand 3b counts the separator-safe class ONCE PER `-`-ARM. Removing it from a SINGLE arm
+# is the degradation the fixed-string operand 3 is silent about (review measured operand 3
+# silent under both a reordered alternation and a partially-widened class). This row removes
+# it from the `-R` arm only, dropping the count from 3 to 2.
+#
+# The count MUST be computed with `grep -o | wc -l`, never `grep -c`: `-c` counts matching
+# LINES, and the constant is one line, so it returns 1 for any healthy value and the
+# assertion fires on every command. That is not hypothetical — it shipped for one run here
+# and denied the whole suite plus the shell being used to fix it, because a fail-closed
+# assertion that is itself wrong blocks its own repair.
+if _mut_goc_says_deny 's/;&|]+|--repo/]+|--repo/'; then
+  echo "PASS: removing the separator-safe class from a SINGLE arm fails closed"; PASS=$((PASS+1))
+else
+  echo "FAIL: the separator-safe class can be removed from one arm with the shape assertion silent — operand 3b is not counting what it claims to"
+  FAIL=$((FAIL+1))
+fi
+if _mut_goc_says_deny 's/;&|]+))/]+))/'; then
+  echo "PASS: widening ONLY the grant form's generic arm fails closed"; PASS=$((PASS+1))
+else
+  echo "FAIL: the grant form's generic arm can be widened back to the unsafe class with the shape assertion silent — the glued-separator donation returns and no self-check goes red"
+  FAIL=$((FAIL+1))
+fi
+if _mut_goc_says_deny "s|^_OUT_GH_GLOBALS_GRANT=.*|_OUT_GH_GLOBALS_GRANT=\"\$_OUT_GH_GLOBALS\"|"; then
+  echo "PASS: a grant form widened back to the deny form's class fails closed"; PASS=$((PASS+1))
+else
+  echo "FAIL: the grant form can be silently widened back to the deny form's class — the glued-separator false ALLOW returns with no test going red"
+  FAIL=$((FAIL+1))
+fi
+if [ "${_SEP_MUT:-0}" -ge 1 ]; then
+  echo "PASS: the hardcoded-separator pattern still CATCHES an injected gh[[:space:]]+api regression (the 0 above is a real zero)"; PASS=$((PASS+1))
+else
+  echo "FAIL: the hardcoded-separator pattern no longer catches an injected gh[[:space:]]+api regression — it has been narrowed into a decoration, and its 0 means nothing"
   FAIL=$((FAIL+1))
 fi
 # The absorber itself must still interpolate the LIB constant and still carry its
@@ -3221,6 +3316,187 @@ assert_allow "union control: one gh api read stays ONE occurrence" \
 # ever executes. That half of the claim now lives on the `_on_exit` trap at the
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
+# ---------- gh: the GRANT-shaped clause cut must not start in a previous command ----------
+# Found in review of the change that added _OUT_GH_GLOBALS (2026-09-13), as a CRITICAL, and
+# it is the reason there are TWO root-position constants rather than one.
+#
+# The wide form's generic arm is `-[^[:space:]]+`, which does not exclude `;`, `&` or `|`.
+# On every DENY-shaped needle that is harmless — an over-wide capture only ever ADDS a deny.
+# The `--auto` carve-out's clause cut is the ONE read here whose downstream check decides an
+# ALLOW, so there the same width is a false GRANT: the globals run swallows a dash-token
+# glued to a separator, the clause starts inside a PREVIOUS command, and that command's
+# standalone `--auto` is donated to a merge that never carried one.
+#
+#     gh --auto -x;gh pr merge 42  ->  fields <gh> <--auto> <-x;gh> <pr> <merge> <42>
+#
+# Measured against main's guard on all four separators: ALLOW here, DENY on main, while the
+# SPACED sibling denied on both — so the glue is the vector, not the token. Narrowing is the
+# safe direction at a grant: no clause means HAS_REAL_AUTO=no, which denies.
+assert_deny "glued ; before the merge cannot donate a previous --auto" \
+  "$(json 'gh --auto -x;gh pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "glued && before the merge cannot donate a previous --auto" \
+  "$(json 'gh --auto -x&&gh pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "glued || before the merge cannot donate a previous --auto" \
+  "$(json 'gh --auto -x||gh pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "glued | before the merge cannot donate a previous --auto" \
+  "$(json 'gh --auto -x|gh pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "two stacked root flags before the glue still cannot donate --auto" \
+  "$(json 'gh --version --auto -x;gh pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "a leading unrelated command does not change the glued vector" \
+  "$(json 'true;gh --auto -x;gh pr merge 42')" \
+  "without a REAL --auto flag"
+# The SPACED sibling is the control that names the vector: if this row ever flips, the fix
+# has stopped being about glue and has started denying an ordinary two-command line.
+assert_deny "the spaced sibling denies too (it always did — this is the control)" \
+  "$(json 'gh --auto -x ; gh pr merge 42')" \
+  "without a REAL --auto flag"
+
+# MUST-ALLOW, same run. Narrowing a grant-shaped capture is the direction that breaks
+# sanctioned usage, so every shape this repo actually runs is pinned here. Without these the
+# seven rows above are satisfied by a guard that simply denies every merge.
+assert_allow "the sanctioned automerge shape still allows" \
+  "$(json 'gh pr merge 42 --auto --squash --delete-branch')"
+assert_allow "a bare --auto still allows" \
+  "$(json 'gh pr merge 42 --auto')"
+assert_allow "--auto after other flags still allows" \
+  "$(json 'gh pr merge 42 --squash --auto')"
+assert_allow "a redirect in the root slot does not break the carve-out" \
+  "$(json 'gh 2>/dev/null pr merge 42 --auto')"
+assert_allow "a preceding unrelated gh command does not break the carve-out" \
+  "$(json 'gh --version;gh pr merge 42 --auto')"
+# The generic single-token arm exists so a NON-retarget root flag still reaches the verb.
+# Nothing pinned that until now, so "simplifying" the arm to only -R/--repo would silently
+# start over-denying this shape with no row going red.
+assert_allow "a non-retarget flag in the root slot does not break the carve-out" \
+  "$(json 'gh --no-color pr merge 42 --auto')"
+
+# ---------- gh: PROCESS SUBSTITUTION cannot donate a previous --auto either ----------
+# Round-2 review, CRITICAL. Narrowing the grant form's FLAG arms closed the glued-separator
+# crossing; the clause could still begin in a previous command through the REDIRECT arm,
+# because _OUT_SEP interpolates the shared _CMD_REDIR whose target class admits `(`. A
+# process substitution therefore reads as "a redirect to a file named `(gh`":
+#
+#     gh --auto >(gh pr merge 42)  ->  CLAUSE [gh --auto >(gh pr merge 42]
+#
+# Measured against main: ALLOW on the branch, DENY on main, for all four spellings. The
+# inner command really runs — probed with a stub named `ghx` (never `gh`) and an inert outer
+# command so only the INNER call marks: `>(`, `<(`, `2>(` execute under BOTH bash and zsh,
+# `>>(` under zsh, which is the Bash tool's actual shell. Closed by widening the clause's
+# sigil mask to `[$(`]` rather than by cutting the clause — truncating at the offending byte
+# is the reverted 2026-09-05 CRITICAL.
+assert_deny "process substitution >( cannot donate a previous --auto" \
+  "$(json 'gh --auto >(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+assert_deny "process substitution <( cannot donate a previous --auto" \
+  "$(json 'gh --auto <(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+assert_deny "process substitution 2>( cannot donate a previous --auto" \
+  "$(json 'gh --auto 2>(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+assert_deny "process substitution >>( cannot donate a previous --auto" \
+  "$(json 'gh --auto >>(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+# A backtick in the clause is masked by the same class, for the same reason.
+# The backtick form denies EARLIER and more strongly: the substitution is extracted, so
+# the occurrence counter sees two command-position merges and refuses the ambiguity
+# outright. Asserting the --auto reason here would have asserted the wrong mechanism.
+assert_deny "a backtick substitution in the root slot refuses as ambiguous" \
+  "$(json 'gh --auto `gh pr merge 42`')" \
+  "more than one command-position"
+# NEGATIVE CONTROLS for the four rows above: each removes exactly one ingredient, so a guard
+# that simply denied everything containing a paren would not satisfy them.
+assert_deny "no --auto to donate, so the deny is not evidence of the mask" \
+  "$(json 'gh -x >(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+assert_deny "a non-dash token stops the globals run before the paren" \
+  "$(json 'gh --auto y >(gh pr merge 42)')" \
+  "without a REAL --auto flag"
+# --admin inside the substitution denies via the CARVE-OUT, not the --admin check: the
+# carve-out runs first in the block. The row still discriminates (it needs the mask to
+# fire), it just names the mechanism that actually decides it.
+assert_deny "a merge carrying --admin inside a process substitution still denies" \
+  "$(json 'gh --auto >(gh pr merge 42 --admin)')" \
+  "without a REAL --auto flag"
+
+# ---------- gh: a repo-retarget flag in ROOT POSITION (2026-09-13) ----------
+# `gh -R owner/repo pr merge 42` is a FUNCTIONAL invocation — cobra strips flags while
+# resolving the subcommand and the `pr` group registers -R/--repo via EnableRepoOverride
+# (measured against the real binary). Before this date `_OUT_SEP` modelled a REDIRECT in
+# that slot but never a FLAG, so every `gh` needle in this file missed the spelling. The
+# merge block is `if -gt 1 / elif -eq 1 / fi` with NO else, so a zero occurrence count
+# skipped the repo check, the --auto carve-out AND the --admin deny together, and `merge`
+# is absent from GH_MUTATING_RE by design — nothing downstream re-caught it. A TOTAL
+# bypass, measured live on origin/main, including retargeted at THIS repository.
+# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+#
+# THE DENY REASON IS THE ASSERTION, not merely "it denied". These rows must be caught by
+# the REPO-RETARGET check (gh_pr_clause_has_repo, which builds its OWN clause regex and is
+# "checked FIRST so it wins regardless of --auto"). If they were caught by the --auto
+# carve-out instead, that clause regex would still be blind and the retarget would sail
+# through any command carrying a real --auto — which is exactly the next row down.
+assert_deny "root-position -R <v> denies as a retarget" \
+  "$(json 'gh -R other/org pr merge 42')" \
+  "targets a DIFFERENT GitHub repository"
+assert_deny "root-position --repo <v> denies as a retarget" \
+  "$(json 'gh --repo other/org pr merge 42')" \
+  "targets a DIFFERENT GitHub repository"
+assert_deny "root-position --repo=v denies as a retarget" \
+  "$(json 'gh --repo=other/org pr merge 42')" \
+  "targets a DIFFERENT GitHub repository"
+assert_deny "root-position -Rv (glued) denies as a retarget" \
+  "$(json 'gh -Rother/org pr merge 42')" \
+  "targets a DIFFERENT GitHub repository"
+# The retarget does not have to point ELSEWHERE to matter: naming this repository still
+# merges a PR here with no review record, and it is the spelling a person reaches for.
+assert_deny "root-position retarget naming THIS repo still denies" \
+  "$(json 'gh -R Xertox1234/OCRecipes pr merge 42 --squash')" \
+  "targets a DIFFERENT GitHub repository"
+# The row that proves the ORDER of the two checks survived the widening.
+assert_deny "root-position retarget beats a REAL --auto" \
+  "$(json 'gh -R other/org pr merge 42 --auto')" \
+  "targets a DIFFERENT GitHub repository"
+# The same slot, other gh namespaces — all seven needles moved together, so assert more
+# than the merge one. A detector widened without its consumer is this repo's
+# widened-extractor-unwidened-consumer pattern.
+assert_deny "root-position -R on gh pr create denies" \
+  "$(json 'gh -R other/org pr create --title x')" \
+  "writes to a DIFFERENT GitHub repository"
+assert_deny "root-position -R on a mutating gh pr verb denies" \
+  "$(json 'gh -R other/org pr close 42')" \
+  "command-position mutating 'gh pr/release/repo' subcommand"
+# The expected substring names the SPECIFIC check: bare "gh api" is shared by the
+# mutating-method, non-literal-method and multi-occurrence denies, so it could not tell a
+# misrouted verdict from the right one.
+assert_deny "root-position flag on gh api still reaches the api gate" \
+  "$(json 'gh --repo other/org api repos/o/r -X POST')" \
+  "with a mutating HTTP method"
+
+# THE OTHER DIRECTION, in the same section. Widening the binary-to-namespace slot must not
+# turn read-only usage into a gated call, and must not disturb this repo's own sanctioned
+# shapes. Without these the rows above are a restrictive failure wearing a green tick.
+assert_allow "root-position -R on a READ-ONLY pr list stays allowed" \
+  "$(json 'gh -R other/org pr list')"
+assert_allow "root-position -R on a READ-ONLY pr view stays allowed" \
+  "$(json 'gh -R other/org pr view 42')"
+assert_allow "root-position -R on a READ-ONLY api GET stays allowed" \
+  "$(json 'gh -R other/org api repos/o/r')"
+assert_allow "the sanctioned automerge shape is untouched" \
+  "$(json 'gh pr merge 42 --auto --squash --delete-branch')"
+assert_allow "this repo's own sanctioned PR-creation shape is untouched" \
+  "$(json 'gh pr create --title x --body y')"
+# A `-R` belonging to an EARLIER, unrelated command must not be read as gh's. These two
+# shapes are already pinned in the corpus as false-positive controls; assert them here too,
+# because this change is the one that taught the needles to read `-R` at all.
+assert_allow "a cp -R in an earlier clause does not retarget the gh call" \
+  "$(json 'cp -R src dst && gh pr create --title t')"
+assert_allow "a grep -R in an earlier clause does not retarget the gh call" \
+  "$(json 'grep -R foo . && gh pr comment 5 --body hi')"
+
 _PIN_RAN=1
 # 462 -> 491 on 2026-09-06/07: +27 across three rounds, itemised because the
 # breakdown was WRONG once (it said "+21" beside a total of 488 -- 462+21=483, so
@@ -3297,6 +3573,16 @@ _PIN_RAN=1
 #         the rows that go RED if `&[0-9-]` ever becomes a bare `&`.
 #         3 + 4 + 4 = 11.
 # 596 -> 648 on 2026-09-13: +52, the --auto field scan becomes REDIRECT-AWARE
+# 648 -> 690 on 2026-09-13: +42, the ROOT-POSITION flag slot between `gh` and its
+#   namespace. +16 root-position rows (9 deny across the gh namespaces + 7 allow controls,
+#   incl. the read-only and cp -R/grep -R decoy shapes); +13 grant-clause rows (7 deny for
+#   the glued-separator donation across ; && || | and the spaced control, + 6 allow for every
+#   sanctioned shape, since narrowing a GRANT is what breaks real usage); +8 process-
+#   substitution rows (5 deny for >( <( 2>( >>( and a backtick, + 3 negative controls each
+#   removing one ingredient); +5 mutation-row assertions (shapeless wide form, grant form
+#   replaced by the wide form, grant form's GENERIC arm alone widened, and the narrowed
+#   hardcoded-separator pattern still catching an injected regression, and the single-arm
+#   removal of the separator-safe class).
 # (P0-2026-09-07-...-space-separated-redirect-target-forges-auto). One existing
 # assertion also FLIPPED deny->allow IN PLACE (the `--auto>/dev/null` accepted
 # over-denial, now correct); a flip changes no total, which is why the itemised
@@ -3387,7 +3673,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=648
+EXPECTED_TOTAL=690
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

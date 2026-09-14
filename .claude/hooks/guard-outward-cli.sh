@@ -1019,7 +1019,7 @@ gh_pr_clause_has_repo() {
   # (`local clause` was dropped here at the same time: the multi-clause rewrite
   # moved to `clauses`, declared at its own use site, and left the singular name
   # declared but unread -- a name a future assignment could silently reuse.)
-  local rendering re="gh${_OUT_SEP}pr${_OUT_SEP}($1)([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
+  local rendering re="gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}($1)([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
   # ADDED 2026-09-05 (vanishing sigil): both occurrence counters that gate this
   # function now read a per-rendering MAXIMUM, so the count can be 1 because
   # the VANISHED rendering saw a NAMESPACE-glued sigil (`gh pr${UNSET} comment`)
@@ -1747,6 +1747,129 @@ _OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
 # DOCUMENTED RESIDUALS rather than papered over.
 _OUT_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
 
+# _OUT_GH_GLOBALS — the ROOT-POSITION flag slot, between `gh` and its namespace.
+#
+# TAKEN BY REFERENCE from lib/cmd-detect.sh's _CMD_GH_GLOBALS, NOT re-spelled here. The lib
+# is sourced at the fail-closed check far above, so the constant is already in scope, and
+# this mirrors what `_OUT_POS_PREFIX` was deliberately changed to do on 2026-09-05 —
+# interpolate the lib's text rather than duplicate it. Two literal copies of one grammar is
+# precisely how `_CMD_POS_SUFFIX`/`_OUT_POS_SUFFIX` and the `_CMD_POS_PREFIX`
+# redirect-absorption gap each became a live bypass: the guard's copy fell behind the lib's
+# and nothing compared them. A future guard-local widening can still reassign this after the
+# fact, exactly as the other `_OUT_*` constants do — but it must be a deliberate edit, not
+# a copy that silently rots.
+#
+# `_OUT_SEP` above already absorbs a REDIRECT in this slot; what it never modelled is a
+# FLAG. `gh -R owner/repo pr merge 42` therefore matched none of this file's `gh` needles,
+# and because the merge block is `if -gt 1 / elif -eq 1 / fi` with NO else, a zero
+# occurrence count skipped the repo-retarget check, the --auto carve-out and the --admin
+# deny together — a total bypass, not a narrowed one. `merge` is also absent from
+# GH_MUTATING_RE by design, so nothing downstream re-caught it. Measured live on
+# origin/main 2026-09-13, including with the retarget pointed at THIS repository.
+# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+_OUT_GH_GLOBALS="$_CMD_GH_GLOBALS"
+
+# _OUT_GH_GLOBALS_GRANT — the SAME slot, but separator-safe, for the ONE read in this file
+# whose downstream check decides an ALLOW.
+#
+# WHY A SECOND CONSTANT (CRITICAL, found in review of the change that added the first one).
+# The wide form's generic arm is `-[^[:space:]]+`, which does NOT exclude `;`, `&` or `|`.
+# On every DENY-shaped needle that is the safe direction — an over-wide capture can only
+# ever ADD a deny. The clause cut feeding the `--auto` carve-out is the single exception,
+# and this file's own comment above that cut already says so: it is "the ONE
+# _OUT_POS_SUFFIX-family clause-cut whose downstream check decides an ALLOW on flag
+# presence". There, a dash-token GLUED to a separator lets the globals run swallow the
+# separator, so the clause STARTS INSIDE A PREVIOUS COMMAND and that command's standalone
+# `--auto` grants the carve-out to a merge that never carried one:
+#
+#     gh --auto -x;gh pr merge 42   ->  CLAUSE [gh --auto -x;gh pr merge 42]
+#                                       fields <gh> <--auto> <-x;gh> <pr> <merge> <42>
+#
+# Measured against main's guard, with controls, on all four separators: the glued rows were
+# ALLOW here and DENY on main, while the SPACED sibling (`gh --auto -x ; gh pr merge 42`)
+# denied on both — so the glue is the vector, not the token. `_OUT_POS_SUFFIX_MERGE_CLAUSE`
+# had closed this same false-ALLOW on the TRAILING side; the wide globals form re-opened it
+# on the LEADING side. Narrowing is the safe direction HERE and only here: no clause means
+# `HAS_REAL_AUTO=no`, which denies.
+#
+# NARROWING THE FLAG ARMS IS NOT THE WHOLE STORY, and the sentence above must not be read as
+# a completeness claim. The clause can also begin in a previous command through the REDIRECT
+# arm, which interpolates the shared `_CMD_REDIR` whose target class admits `(` — a process
+# substitution reads as "a redirect to a file named `(gh`". That family is closed at the
+# clause's sigil mask further down (widened to `[$(`]`), not here, because narrowing
+# `_CMD_REDIR` itself would change every consumer of the lib.
+#
+# POLARITY, because it inverts between consumers: `lib/cmd-detect.sh` records EARLIER
+# ANCHORING as an accepted residual and argues it fails CLOSED. That is true of its own
+# deny-shaped consumer. At THIS cut the same earlier anchor is a false ALLOW. A residual's
+# direction is a property of the consumer, not of the pattern.
+_OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:space:]]+[^[:space:];&|]+|-[^[:space:];&|]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
+
+# Fail closed if either form lost its shape. NOT an emptiness test: both are single-quoted
+# literals concatenated with "$_CMD_REDIR", so each is ~100 bytes even when _CMD_REDIR is
+# empty — a `-z` test on them is structurally unreachable and asserts nothing (review, and
+# measured by re-running the assignment with _CMD_REDIR=''). What an empty _CMD_REDIR
+# actually costs is the REDIRECT arm alone, not "every needle": the flag arms still match.
+# So assert the shape each form must have, and assert that the grant form is the NARROW one.
+# ASSERT THE PROPERTY, NOT A SPELLING (rewritten 2026-09-13 after both reviewers found the
+# first version weaker than its own comment). Requiring the narrow class to appear SOMEWHERE
+# in the grant form was satisfied by its `-R` and `--repo` arms alone — so the GENERIC arm,
+# the one that carried the round-1 defect, could be reverted to the wide class with the
+# assertion silent. Worse, those two named arms are effectively unreachable at the grant cut:
+# gh_pr_clause_has_repo denies any `-R`/`--repo` command earlier in the same block, so the
+# assertion was keying on arms that can never be exercised there.
+#
+# The operands below are spelling-INDEPENDENT in the narrowing direction, which matters
+# because the first version also broke against its own fix: pinning an exact literal class
+# meant tightening that class (as the process-substitution repair does) tripped the
+# assertion and denied every gated command until the assertion itself was edited.
+#   1. the wide form still carries its --repo arm;
+#   2. the grant form is NOT the wide form (catches a wholesale swap);
+#   3. the grant form does NOT contain the WIDE generic arm (catches reverting that one arm,
+#      and stays true under any FURTHER narrowing);
+#   3b. the separator-safe class occurs at least ONCE PER `-`-ARM (three of them). Operand 3
+#      is a fixed-string test, so review measured it silent under two degradations its
+#      wording implied it covered: REORDERING the alternation so the generic arm comes first
+#      and is widened, and widening only PART of the class (`-[^[:space:];]+`). A count is
+#      spelling-independent and catches removing the class from any single arm in any order.
+#      The behavioural glue rows catch both mutants as well, so this operand is redundant
+#      coverage — which is why it could be made behavioural without losing anything. NO ROW
+#      COUNT IS GIVEN HERE ON PURPOSE. Three different pairs of numbers have been written
+#      into this comment; the first was retyped from an earlier draft, the second from a
+#      review, and an attempt to measure the third produced a contaminated figure because the
+#      probe's neutralisation of this very assertion silently failed, so every glue row
+#      reddened on the wrong reason and the run looked plausible. A count here would be the
+#      fourth guess. If you need one, isolate the rows FIRST and prove the isolation with an
+#      unmutated control that reddens zero;
+#   4. $_CMD_REDIR is non-empty — which costs the REDIRECT arm, not "every needle".
+# Operand 3b asks the grammar a BEHAVIOURAL question instead of counting a literal: fed a
+# span that crosses a separator, does the grant form match it WHOLE? The wide form does; a
+# correct grant form cannot. NINE probes: one per `-`-arm per separator, so the coverage is
+# per-arm by construction rather than by a total count. Review measured the earlier
+# seven-probe version leaving two holes — a form whose `-R` arm re-admitted only `|` matched
+# none of the seven — so the count and the claim now agree.
+#
+# THE COUNTING VERSION SHIPPED TWICE AND WAS WRONG BOTH TIMES, which is why this is
+# behavioural. First as `grep -c`, which counts matching LINES — the constant is one line, so
+# it returned 1 for every healthy value, fired on every command, and blocked the shell needed
+# to fix it. Then as `grep -o | wc -l` on the exact 11-byte class, which fires on a healthy
+# but STRICTLY NARROWER definition: adding `(` and a backtick to the class — the documented
+# next fix for this very file — scores 0, as does writing the same class as
+# `[^;&|[:space:]]`. Measured, with the wide form and the shipped form as controls. A total
+# count is also gameable: padding one arm with extra classes reaches the threshold while the
+# other arms stay wide.
+_OUT_GRANT_SPANS=no
+for _out_gp in ' -x;y' ' -x&y' ' -x|y' ' -R a;y' ' -R a&y' ' -R a|y' ' --repo a;y' ' --repo a&y' ' --repo a|y'; do
+  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_SPANS=yes; break; fi
+done
+if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
+   || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
+   || printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '|-[^[:space:]]+)' \
+   || [ "$_OUT_GRANT_SPANS" = yes ] \
+   || [ -z "${_CMD_REDIR:-}" ]; then
+  deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has had its generic arm widened back to it, or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+
 BARE=$(printf '%s' "$CMD" | cmd_bare)
 # WORDS is the argv-faithful rendering (lib/cmd-detect.sh): quote characters
 # deleted so `eas "update"` / `eas up"date"` read as the `eas update` the shell
@@ -2157,7 +2280,7 @@ if grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKE
 fi
 
 # --- gh: bare 'gh pr merge' (see the --auto/--admin carve-out in the header) -
-GH_PR_MERGE_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX}"
+GH_PR_MERGE_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX}"
 # The OCCURRENCE COUNT just below is counted on $WORDS_DEEP (so a merge hidden
 # inside a live substitution is not silently invisible to this whole block);
 # the CLAUSE extraction feeding the --auto carve-out further down deliberately
@@ -2351,7 +2474,10 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # whitespace boundary; a hard separator/bracket or end-of-string ends the
   # clause immediately with nothing captured past it. Two-sided regression
   # test: test-guard-outward-cli.sh's "2026-09-02 FIX (round 3)" block.
-  CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX_MERGE_CLAUSE}" | head -1)
+  # _OUT_GH_GLOBALS_GRANT, not _OUT_GH_GLOBALS: this is the grant-shaped cut, and the wide
+  # form lets a dash-token glued to a separator start the clause inside a PREVIOUS command,
+  # donating that command's standalone --auto to this merge. See the constant's own header.
+  CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS_GRANT}${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX_MERGE_CLAUSE}" | head -1)
   # A naive "--auto present" substring check is bypassable: several of `gh pr
   # merge`'s own flags (and the cross-subcommand --repo/-R every gh command
   # accepts) are VALUE-TAKING, so the token immediately after one of them is
@@ -2475,7 +2601,43 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # CLAUSE at a redirect instead is what produced the 2026-09-05 CRITICAL (it
   # hid a later `${x:---admin}` from that mask); see the ACCEPTED OVER-DENIAL
   # residual. Fix the scan, not the cut.
-  if printf '%s' "$CLAUSE" | grep -qF '$'; then
+  # THE MASK COVERS `(` AND A BACKTICK, NOT JUST `$` (2026-09-13, second review round).
+  # Narrowing _OUT_GH_GLOBALS_GRANT's FLAG arms closed the glued-separator crossing, but the
+  # clause can still begin in a previous command through the REDIRECT arm: `_OUT_SEP`
+  # interpolates the shared `_CMD_REDIR`, whose target class admits `(`, so a PROCESS
+  # SUBSTITUTION reads as "a redirect to a file named `(gh`" and the cut anchors at the outer
+  # binary:
+  #
+  #     gh --auto >(gh pr merge 42)   ->  CLAUSE [gh --auto >(gh pr merge 42]
+  #
+  # donating the outer `--auto` to the inner merge. Measured against main: ALLOW here, DENY
+  # there, for `>(`, `<(`, `2>(` and `>>(`. The inner command really runs — probed with a
+  # stub named `ghx` (never `gh`), outer command inert so only the INNER call marks:
+  # `>(`, `<(`, `2>(` execute under BOTH bash and zsh, and `>>(` under zsh, which is the
+  # Bash tool's actual shell. Controls in the same run: a quoted spelling and a
+  # backslash-escaped `\>(` both inert, a plain `;` both live.
+  #
+  # Masked rather than cut, for the reason the paragraph above gives: truncating the CLAUSE
+  # at the offending byte is the reverted 2026-09-05 CRITICAL. Masking only ever sets
+  # HAS_REAL_AUTO=no, which DENIES — the safe direction at the one grant-shaped read. A
+  # QUOTED paren cannot reach here: $CLAUSE is cut from $WORDS, whose neutral() rewrites a
+  # quoted separator to the letter `x`, so `--subject "fix(hooks): …"` and
+  # `--body "closes (#41)"` keep their ALLOW (both measured).
+  #
+  # ACCEPTED OVER-DENIAL, stated rather than claimed away. An earlier draft of this comment
+  # asserted that "no sanctioned shape carries these bytes"; that is a NEGATIVE claim and it
+  # was not traversed. A generated corpus of {7 wrapper prefixes} x {5 trailing suffixes}
+  # around this repo's own automerge command flips 14 of 35 rows ALLOW->DENY, including
+  # `(gh pr merge <n> --auto --squash --delete-branch)` wrapped in a subshell and the same
+  # command followed by a trailing comment that contains a parenthesis. The shapes the suite
+  # pins — the bare automerge command and the redirect form — do stay ALLOW. The direction is
+  # safe and this hook has a per-command escape (ALLOW_OUTWARD_CLI=1), so this is an accuracy
+  # cost, not a bypass; it is recorded because a restrictive failure is what gets a gate
+  # switched off. If it is ever worth closing, the direction is to exempt a `(`/backtick that
+  # IS the match's own leading _OUT_POS_PREFIX boundary byte — a clause starting at the
+  # boundary cannot contain a previous command's --auto, whereas the process-substitution `(`
+  # sits mid-clause and would still mask. That is reasoned, not measured; measure it first.
+  if printf '%s' "$CLAUSE" | grep -qE '[$(`]'; then
     HAS_REAL_AUTO=no
   elif [ -z "${_CMD_REDIR:-}" ]; then
     # Unreachable with a healthy lib (a broken one is already caught at the
@@ -2594,7 +2756,7 @@ fi
 
 # --- gh: other mutating subcommands (pr create/comment allowed only without
 #     --repo/-R, see the header) -------------------------------------------
-GH_MUTATING_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}(pr${_OUT_SEP}(close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release${_OUT_SEP}(create|delete|delete-asset|edit|upload)|repo${_OUT_SEP}(create|delete|archive|unarchive|edit|rename|sync|fork))${_OUT_POS_SUFFIX}"
+GH_MUTATING_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release${_OUT_SEP}(create|delete|delete-asset|edit|upload)|repo${_OUT_SEP}(create|delete|archive|unarchive|edit|rename|sync|fork))${_OUT_POS_SUFFIX}"
 if grep -Eqi "$GH_MUTATING_RE" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position mutating 'gh pr/release/repo' subcommand. Read-only forms (gh pr view/checks/list, gh release view/list, gh repo view/list, ...) are unaffected; gh pr create/comment are deliberately allowed (routine PR workflow) unless retargeted with --repo/-R. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
@@ -2613,7 +2775,7 @@ fi
 # clause's --repo/-R sail through unexamined (`gh pr create --fill && gh pr
 # create --repo other/org --title x` was ALLOWED). Deny outright on >1
 # occurrence rather than guess which clause to inspect.
-GH_PR_CREATE_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}pr${_OUT_SEP}(create|comment)${_OUT_POS_SUFFIX}"
+GH_PR_CREATE_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}(create|comment)${_OUT_POS_SUFFIX}"
 GH_PR_CREATE_OCCURRENCES=$(_out_max_count "$GH_PR_CREATE_RE")
 if [ "${GH_PR_CREATE_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh pr create/comment' occurrence — ambiguous, cannot verify each is free of --repo/-R. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
@@ -2654,7 +2816,7 @@ fi
 # mutating second one (`gh api repos/x/y && gh api -X PUT .../merge` was
 # ALLOWED). Deny on >1, mirroring the identical multi-occurrence safe
 # direction the `gh pr merge` check above already takes.
-GH_API_RE="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}"
+GH_API_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX}"
 # Counted AND clause-scoped on $WORDS_DEEP (unlike the `gh pr merge` block
 # above, whose CLAUSE stays shallow — see that block's own comment for why).
 # This check ALLOWS by default (a read-only `gh api` is fine) and only denies
@@ -2837,7 +2999,7 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # clauses differed before cannot become equal after -- unequal prefixes stay
   # unequal when both are extended by their own suffixes. A rendering that was
   # previously checked therefore cannot newly collapse into DEEP and vanish.
-  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
+  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
   GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT" | head -1)
   # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is
   # now a MAXIMUM across all three renderings, so it can be 1 because the VANISHED

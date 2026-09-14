@@ -150,6 +150,65 @@ _CMD_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'
 # would leave a hole the `-`-flag alternatives do not have.
 _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+|--git-dir[[:space:]]+[^[:space:]]+|--work-tree[[:space:]]+[^[:space:]]+|-[^[:space:]]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
 
+# _CMD_GH_GLOBALS — the same slot for `gh`: the option run BETWEEN `gh` and its namespace.
+# The `gh` needles below carried NONE of the treatment _CMD_GIT_GLOBALS gave the git ones in
+# #898, so every one of them spelled the gap as a bare `[[:space:]]+` and went blind to:
+#
+#     gh -R owner/repo pr merge 42        gh --repo=owner/repo pr merge 42
+#     gh -Rowner/repo pr merge 42         gh 2>/dev/null pr merge 42
+#
+# cobra strips flags while resolving the subcommand and the `pr` group registers
+# `-R`/`--repo` via cmdutil.EnableRepoOverride, so the root-position spelling is a FUNCTIONAL
+# invocation, not a parse error (measured against the real binary, 2026-09-13). It reached
+# merge-review-guard.sh's `[ "$SUB" = "merge" ] || exit 0` check as "not a merge" — a silent allow of an unreviewed merge,
+# including one retargeted at THIS repository, and it skipped pr-preflight-guard.sh's stamp
+# gate as well. See todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-
+# merge-guards.md; the redirect arm additionally closes mechanism (b) of
+# todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
+#
+# Grammar mirrors _CMD_GIT_GLOBALS deliberately, arm for arm, INCLUDING its residual: the
+# arg-taking flags named explicitly (`-R`/`--repo`), then a generic single-token `-…` catch-all that covers the glued and
+# no-arg forms (`--repo=v`, `-Rv`, `--no-color`), then the redirect alternative at
+# `[[:space:]]*`. Do NOT "tighten" the generic arm to exclude `;&|`: that is the PERMISSIVE
+# direction — `gh -R=a;b pr merge 42` would stop matching and go back to a silent allow.
+#
+# OPEN RESIDUAL — A BYPASS, NOT A SAFE DIRECTION. An unmodeled SEPARATE-arg root flag has its
+# VALUE mis-read as the namespace, so the needle never reaches `pr` and the match is lost. An
+# earlier version of this block called that "a false NEGATIVE, never a false positive" and
+# called `-R`/`--repo` "the only two gh root flags that take a separate argument". Both were
+# wrong, and the first is the more dangerous error: on a DENY gate a false negative IS the
+# bypass.
+#
+# cobra accepts any flag valid for the TARGET subcommand in root position, so the set is not
+# two flags — it is every separate-arg flag of whichever verb follows. `gh help pr merge` lists
+# five besides `-R`: `-A/--author-email`, `-b/--body`, `-F/--body-file`, `--match-head-commit`,
+# `-t/--subject`. Measured 2026-09-13 on BOTH layers, with `gh pr merge 42` and
+# `gh -R other/org pr merge 42` denying as controls: `gh -b x pr merge 42` and
+# `gh -t x pr merge 42 -R other/org` are ALLOWED by both. The second is the P0's own headline
+# shape in a different spelling. PRE-EXISTING — main allows them too — so widening this
+# grammar did not open it, and the P0 stays OPEN for it. Whoever closes it: generate the
+# corpus from `gh help pr <verb>` rather than from spellings you thought of, which is exactly
+# how the four closed spellings came to look complete; and note that widening this constant
+# also widens what reaches the GRANT-shaped clause cut in guard-outward-cli.sh, where two live
+# false grants were found in review.
+#
+# Naming `-R`/`--repo` explicitly is what keeps THOSE TWO retarget flags out of the residual —
+# BUT ONLY IN THE UNQUOTED RENDERING, and the scope of that sentence is load-bearing.
+# `cmd_bare` BLANKS a quoted span, so a QUOTED flag carrying a SEPARATE unquoted value
+# loses the flag and leaves the value sitting where the namespace belongs:
+#
+#     gh "-R" o/r pr merge 42   ->  cmd_bare_deep  [gh      o/r pr merge 42]  ->  no match
+#
+# so this function returns "" and merge-review-guard.sh reads that as "not a merge".
+# Measured 2026-09-13 with an isolating control: `gh "--no-color" pr merge 42` still
+# resolves, so the cause is the SEPARATE VALUE being mis-read as the namespace, not quoting
+# as such. NOT a regression — main's lib returns "" for these rows too — and
+# guard-outward-cli.sh still denies them, because it reads `cmd_words` (which DELETES quote
+# characters) rather than `cmd_bare` (which blanks the span). Tracked with P1's other
+# binary-rendering families; do not read the list here or in merge-review-guard.sh as
+# closed just because the unquoted slot is.
+_CMD_GH_GLOBALS='(([[:space:]]+(-R[[:space:]]+[^[:space:]]+|--repo[[:space:]]+[^[:space:]]+|-[^[:space:]]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
+
 # Verb alternations, named ONCE. cmd_git_repo_dir (below) must be called with the SAME verb
 # set as the predicate whose match it is qualifying — passing a wider set re-opens the
 # false-DENY described in that function's header — so the sets are constants rather than
@@ -1207,7 +1266,7 @@ cmd_bare_deep() {
 cmd_is_gh_pr_create() {
   local words
   words=$(cmd_words_deep "$1")
-  grep -Eq "${_CMD_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+create${_CMD_POS_SUFFIX}" <<< "$words"
+  grep -Eq "${_CMD_POS_PREFIX}gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+create${_CMD_POS_SUFFIX}" <<< "$words"
 }
 
 # cmd_is_git_commit <command>  → exit 0 if it invokes `git [-c k=v]* commit` in command position.
@@ -1882,14 +1941,27 @@ cmd_gh_pr_write_subcommand() {
   # cmd_gh_pr_ref's own occurrence guard's header comment for that exact
   # documented gotcha; `grep -q` sidesteps it by not counting at all.
   if printf '%s' "$words" \
-       | grep -qE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' \
+       | grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+create([[:space:]]|\$)" \
      && printf '%s' "$words" \
-       | grep -qE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]|$)'; then
+       | grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]|\$)"; then
     return 1
   fi
+  # THE VERB COMES FROM THE VERB SLOT, NOT FROM A RE-SCAN OF THE SPAN (2026-09-13).
+  # This used to pluck the verb with a second, UNANCHORED `grep -oE
+  # '(create|merge|close|edit)' | head -1` over whatever the first stage matched. That was
+  # safe only while the span could not contain a repository name. Once _CMD_GH_GLOBALS put
+  # the root-position flags INSIDE the span, `gh -R owner/merge pr create` matched stage one
+  # and the re-scan returned `merge` — read out of the repo name — so a create was reported
+  # as a merge. The `sed` below instead captures the alternation that actually sits in the
+  # slot after `pr`: the greedy `.*` runs to the LAST ` pr `, which is the namespace (a
+  # global's value cannot supply one, since it carries no leading whitespace).
+  # `head -1` stays BEFORE the sed so first-occurrence semantics are unchanged — a leading
+  # greedy `.*` applied across all lines would silently become last-occurrence — and `-n…p`
+  # emits nothing rather than echoing the line back when the capture does not match.
   printf '%s' "$words" \
-    | grep -oE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+(create|merge|close|edit)([[:space:]]|$)' \
-    | grep -oE '(create|merge|close|edit)' | head -1
+    | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(create|merge|close|edit)([[:space:]]|\$)" \
+    | head -1 \
+    | sed -nE 's/.*[[:space:]]pr[[:space:]]+(create|merge|close|edit).*/\1/p'
 }
 
 # cmd_gh_pr_ref <command>  → echo the PR ref (number, branch name, or URL) that
@@ -2007,7 +2079,7 @@ cmd_gh_pr_write_subcommand() {
 # guard evaluated it.
 cmd_gh_pr_ref() {
   local value_flags='--author-email|--body-file|--body|--match-head-commit|--subject|--comment|--add-assignee|--add-label|--add-project|--add-reviewer|--base|--milestone|--remove-assignee|--remove-label|--remove-project|--remove-reviewer|--title|--repo'
-  local bare occurrences full_match ref prev raw_bodies raw_body_count
+  local bare occurrences full_match repo_clause clause_tail ref prev raw_bodies raw_body_count
   # SAFETY GUARD (CRITICAL fix, code-reviewer, 2026-09-02): cmd_bare_deep's
   # per-line union of extracted substitution bodies is proven correct for
   # BOOLEAN mention-detection only (cmd_gh_pr_write_subcommand above,
@@ -2071,13 +2143,13 @@ cmd_gh_pr_ref() {
   # over `grep -oE` output, NOT `grep -c` — `-c` counts matching LINES, and a
   # compound command is normally one line.
   occurrences=$(printf '%s' "$bare" \
-    | grep -oE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]|$)' \
+    | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]|\$)" \
     | wc -l | tr -d '[:space:]')
   if [ "${occurrences:-0}" -gt 1 ]; then
     return 1
   fi
   full_match=$(printf '%s' "$bare" \
-    | grep -oE "(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]+(${value_flags})[[:space:]]+[^[:space:];&|]*|[[:space:]]+-[^[:space:];&|]*)*[[:space:]]+[^[:space:];&|-][^[:space:];&|]*" \
+    | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]+(${value_flags})[[:space:]]+[^[:space:];&|]*|[[:space:]]+-[^[:space:];&|]*)*[[:space:]]+[^[:space:];&|-][^[:space:];&|]*" \
     | head -1)
   [ -n "$full_match" ] || return 1
   # `--repo`/`-R` retargets another repository, which this function cannot
@@ -2085,7 +2157,82 @@ cmd_gh_pr_ref() {
   # accepts: `--repo v`, `--repo=v`, `-R v`, `-Rv`. This also subsumes `-R` as
   # a value-taking short flag, which is why `-R` is absent from the `prev`
   # list below; that list stays exactly the set derivable from `gh --help`.
-  if printf '%s' "$full_match" | grep -qE '(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'; then
+  #
+  # SCANNED OVER THE CLAUSE, NOT $full_match (2026-09-13). $full_match's trailing
+  # `[[:space:]]+[^[:space:];&|-]…` must end on a NON-dash token, so when the ref precedes
+  # the flag the greedy flag-run BACKTRACKS off the trailing `--repo other/org` to leave the
+  # ref as the final token — and the flag then sits OUTSIDE the span this check reads.
+  # Measured 2026-09-13: `gh pr merge 42 --repo other/org` resolved ref 42, and
+  # merge-review-guard.sh went on to classify the LOCAL PR #42 — its deny text was
+  # byte-identical to a bare merge's, i.e. the retarget was completely invisible. The
+  # sibling ordering `--repo other/org 42` refused correctly, which is exactly why the gap
+  # survived: merge-review-guard.sh's own "This mirrors the Bash arm" paragraph asserted this
+  # refusal was unconditional, and for one of the two orderings it was not. (Cited by its
+  # text, not a line range: this branch moved that sentence twice, and two other citations in
+  # these files went stale the same way.)
+  #
+  # An earlier revision of THIS paragraph went on to claim the clause "is a strict SUPERSET
+  # of $full_match — this can only add refusals, never remove one". That claim is refuted a
+  # few lines below by the note that replaced the mechanism it described; it is removed here
+  # rather than left standing, because a superseded justification sitting next to its own
+  # refutation is worse than no justification.
+  #
+  # ACCEPTED RESIDUALS, both failing CLOSED (an honest "could not verify" here, a deny at
+  # the gate), and stated together so the list is a partition rather than a sample:
+  #   1. cmd_bare does not strip `#` comments, so a trailing
+  #      `gh pr merge 42  # remember --repo` refuses.
+  #   2. (CLOSED 2026-09-13, in two steps, and the two-step history is the point. The clause
+  #      used to be cut by its own grep, so it could anchor EARLIER than the span that
+  #      resolved the ref and MISS the retarget that span carried — measured end-to-end as an
+  #      ALLOW of a cross-repository merge authorised by a local review record. Anchoring at
+  #      $full_match fixed that and introduced a SECOND form of the same defect: truncating
+  #      the concatenation cut inside $full_match whenever a global carried a separator,
+  #      re-opening the identical ALLOW. Only truncating the tail closes both. Kept as a
+  #      numbered entry rather than deleted so a reader can tell a closed residual from one
+  #      that was never listed — and because it took two attempts, neither of which the
+  #      suite caught until a row was written for it.)
+  # Residual 1 has no plausible real-world shape — a panel of the commands this repo actually
+  # runs resolves identically before and after — but a refusal costs a re-run, and the merge
+  # gate has no per-command escape, so it is written down rather than discovered twice.
+  # ANCHORED AT $full_match, not re-matched independently. An earlier revision cut the clause
+  # with its own grep and claimed to be "a strict SUPERSET of $full_match". That was false:
+  # this clause has no trailing-token requirement where $full_match does, so its own grep
+  # could anchor at a DIFFERENT, EARLIER `gh` and stop at the separator, never reaching the
+  # retarget the resolved clause carries. Measured: `gh pr mergeX ; gh pr merge 42 --repo
+  # other/org` resolved ref 42, and end-to-end with a clean review record present for the
+  # local PR the gate ALLOWED it — a local record authorising a merge into another
+  # repository, which is the gap the trailing-ordering fix was written to close. The decoy
+  # escapes the occurrence counter because its `([[:space:]]|$)` suffix rejects `mergeX`
+  # while an independent `[^;&|]*` cut accepts it.
+  #
+  # Taking the text FROM $full_match's own position removes the second anchor entirely, so
+  # there is nothing left to disagree about: the scan sees exactly the clause that produced
+  # the ref, extended to the next command separator.
+  #
+  # ONLY THE TAIL IS TRUNCATED, and the distinction is the whole correctness of this block.
+  # An earlier revision cut the CONCATENATION, justified by the sentence "$full_match cannot
+  # itself contain `;`/`&`/`|` (its classes exclude them)". That was asserted, not traversed,
+  # and it is false: _CMD_GH_GLOBALS's generic arm is `-[^[:space:]]+`, which admits all
+  # three — and the header above says not to tighten it, because doing so is the PERMISSIVE
+  # direction. So the cut landed INSIDE $full_match and threw away the merge clause carrying
+  # the retarget. Measured on `gh --version;gh pr merge 42 --repo other/org`:
+  #     full_match [gh --version;gh pr merge 42]
+  #     concatenated, then cut  ->  [gh --version]      <- the --repo is gone
+  # which resolved ref 42 where main REFUSES, and end-to-end a clean local review record then
+  # authorised a merge into another repository — verbatim the gap this anchoring was written
+  # to close. Truncating the tail alone keeps $full_match whole by construction.
+  #
+  # A NEWLINE IS ALSO A SEPARATOR AND IS DELIBERATELY NOT IN THAT CLASS. $bare is multi-line
+  # (cmd_bare_deep puts the outer command on one line and each substitution body on its own),
+  # so the tail can run past a newline into the next rendering. That direction is safe by
+  # construction — crossing EXTENDS the clause, so it can only ever ADD a refusal, never miss
+  # one — and it is the behaviour you want here: measured, `gh pr merge 42 $(echo --repo
+  # other/org)` refuses, which is correct, because the substitution really does supply the
+  # retarget. Controls in the same run: a substitution carrying no flag still resolves 42,
+  # and a merge hidden inside a substitution still resolves 42.
+  clause_tail=${bare#*"$full_match"}
+  repo_clause="$full_match${clause_tail%%[;&|]*}"
+  if printf '%s' "$repo_clause" | grep -qE '(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'; then
     return 1
   fi
   ref=$(printf '%s' "$full_match" | awk '{print $NF}')

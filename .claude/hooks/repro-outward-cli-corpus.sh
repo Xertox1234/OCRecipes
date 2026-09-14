@@ -150,6 +150,60 @@ for i in "${!FAM_NS_IDS[@]}"; do
   add "nsvvar-$id" DENY "$(sed -E "s/^(${np})/\1\${UNSET}/" <<< "$cmd")"
 done
 
+# axis: ROOT-POSITION REPO-RETARGET FLAG (2026-09-13 -- the P0 tracked as
+# repo-retarget-flag-in-root-position-defeats-both-merge-guards, PARTIALLY closed).
+# THE TODO STAYS OPEN. The four -R/--repo spellings generated below now DENY, but they are
+# not the whole shape: cobra accepts any flag of the TARGET subcommand in root position, and
+# any separate-arg flag this grammar does not name leaves its VALUE where the namespace
+# belongs. `gh -t x pr merge 42 -R other/org` measured ALLOW on BOTH layers 2026-09-13 --
+# a cross-repository retarget defeating both merge guards, which is the todo's own headline.
+# Pre-existing (main allows it too), pinned as a tripwire in test-cmd-detect.sh, and recorded
+# where the constant is defined. Generate the rest from `gh help pr <verb>` rather than from
+# spellings you thought of -- that is exactly how these four came to look complete.
+# A FLAG between the binary and its namespace. The interior-redirect axis above
+# closed the same SLOT for redirects; `_OUT_SEP` never modelled a flag there, so
+# `gh -R other/org pr merge 42` matched none of the guard's gh needles and the
+# merge block -- which has no `else` -- was skipped whole, taking the repo
+# check, the --auto carve-out and the --admin deny with it.
+#
+# EXPECTED=DENY on its own merits, not copied from the documented-position row:
+# cobra strips flags while resolving the subcommand and the `pr` group registers
+# -R/--repo via cmdutil.EnableRepoOverride, so this spelling really does retarget
+# the call. Measured against the real binary 2026-09-13, read-only, no mutation.
+#
+# GENERATED from the product of {flag spelling} x {family}, per NOTE6: the four
+# spellings are exactly what gh's flag parser accepts, and hand-picking a subset
+# is how the tool position came to be missing in the first place.
+GH_ROOT_FAM_IDS=(ghmerge ghcomment ghcreate ghapi)
+GH_ROOT_FAM_CMDS=(
+  'gh pr merge 42'
+  'gh pr comment 5 --body hi'
+  'gh pr create --title x'
+  'gh api repos/o/r -X POST'
+)
+GH_ROOT_FLAG_IDS=(Rsep reposep repoeq Rglued)
+GH_ROOT_FLAGS=('-R other/org' '--repo other/org' '--repo=other/org' '-Rother/org')
+for i in "${!GH_ROOT_FAM_IDS[@]}"; do
+  for j in "${!GH_ROOT_FLAG_IDS[@]}"; do
+    # `#` delimiter, not `/`: every flag value here contains a slash.
+    add "ghroot-${GH_ROOT_FLAG_IDS[$j]}-${GH_ROOT_FAM_IDS[$i]}" DENY \
+      "$(sed -E "s#^gh #gh ${GH_ROOT_FLAGS[$j]} #" <<< "${GH_ROOT_FAM_CMDS[$i]}")"
+  done
+done
+# The retarget does not have to point ELSEWHERE to matter: naming THIS repository
+# still merges a PR here with no review record, and it is the spelling a person
+# would reach for innocently. Literal, because it is one specific value rather
+# than a new dimension.
+add ghroot-selfrepo DENY 'gh -R Xertox1234/OCRecipes pr merge 42 --squash'
+# The retarget must beat a REAL --auto, which is the one carve-out in this block.
+add ghroot-vs-auto  DENY 'gh -R other/org pr merge 42 --auto'
+# FALSE-POSITIVE CONTROLS, same slot, read-only verbs. Without these the 18 rows
+# above are a restrictive failure wearing a green tick: a guard that denied every
+# root-position flag outright would pass all of them.
+add ghrootfp-list ALLOW 'gh -R other/org pr list'
+add ghrootfp-view ALLOW 'gh -R other/org pr view 42'
+add ghrootfp-get  ALLOW 'gh -R other/org api repos/o/r'
+
 # axis: INTERIOR REDIRECT (2026-09-07 -- the P0 tracked as
 # outward-cli-guard-interior-redirect-defeats-every-family, now closed).
 # A redirect BETWEEN two required-adjacent words. Generated across families x
@@ -1308,18 +1362,18 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=581
+EXPECTED_ROWS=602
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 486 of the 581 rows deny on the precise path; the other 95 are ALLOW there
-# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-* controls, plus the 31
+# 504 of the 602 rows deny on the precise path; the other 98 are ALLOW there
+# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-* controls, plus the 31
 # precise-path gaps). Corrected 2026-09-13: this was the FIFTH stale copy of a
 # count in this file, found by review after four others were repaired -- and it
 # sits five lines above its own warning about exactly that. These numbers are
 # bumped with
 # EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
 # stale, sitting directly above the constant they describe.
-EXPECTED_DENY_ATTRIB_ROWS=486
+EXPECTED_DENY_ATTRIB_ROWS=504
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1376,7 +1430,7 @@ EXPECTED_PRECISE_GAPS=31
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=225
+EXPECTED_ALLPATH_GAPS=243
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1639,6 +1693,24 @@ fautoin-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautoin-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautonfddig-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
 fautonfddig-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rglued-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rglued-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rglued-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rglued-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rsep-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rsep-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rsep-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rsep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-repoeq-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-repoeq-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-repoeq-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-repoeq-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-reposep-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-reposep-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-reposep-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-reposep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-selfrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-vs-auto p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -2143,6 +2215,24 @@ sitebranch-delete  : command-position 'eas channel:/branch: create/edit/delete/r
 sitebranch-rename  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
 sitedup-ghcreate   : more than one command-position 'gh pr create/comment' occurrence — amb
 sitedup-ghcomment  : more than one command-position 'gh pr create/comment' occurrence — amb
+ghroot-Rglued-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghroot-Rglued-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-Rglued-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-Rglued-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghroot-Rsep-ghapi  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghroot-Rsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-Rsep-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-Rsep-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghroot-repoeq-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghroot-repoeq-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-repoeq-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-repoeq-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghroot-reposep-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghroot-reposep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-reposep-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-reposep-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghroot-selfrepo    : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghroot-vs-auto     : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
@@ -2200,9 +2290,10 @@ lib/cmd-detect.sh is unsourceable (broken install) - failing closed via
 the hook envelope's .tool_input.command could not be read (malformed JSO
 the hook envelope's .tool_name could not be read (malformed JSON or a ch
 the quote-aware rendering came back empty for a non-empty command - eith
+the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is mis
 PIN_EXEMPT_EOF
 }
-EXPECTED_EMIT_SITES=25
+EXPECTED_EMIT_SITES=26
 
 PIN_FAIL=0
 

@@ -93,6 +93,10 @@ docs/cowork/
 docs/plans/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
+# Mutation-probe copies of a hook, written NEXT TO the original so the copy's lib path still
+# resolves. A review probe once left a 215KB deliberately WEAKENED copy of a merge gate here;
+# it was untracked but not ignored, so `git add -A` would have swept it in.
+.claude/hooks/.mut-*
 .ui-design/
 
 # AI-workflow history: kept locally, not synced to GitHub.
