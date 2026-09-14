@@ -548,6 +548,35 @@ denied "$out" && ok "--repo retarget fails closed" || bad "--repo retarget fails
 #     bypass an agent can author: the merge really runs, the decoy never does.
 out=$(bash_payload 'echo "$(gh pr merge 938)" # gh pr create' | run)
 denied "$out" && ok "ambiguous gh pr verb fails closed" || bad "ambiguous gh pr verb fails closed" "$out"
+# The merge in this one genuinely executes (a live command substitution), so the
+# executable-occurrence message — including its "split into one call" advice, which is
+# actionable here — must be unchanged.
+r=$(reason "$out")
+case "$r" in
+  *"Split it into one \`gh pr\` call per command"*) ok "executing co-occurrence keeps the split-it advice" ;;
+  *) bad "executing co-occurrence keeps the split-it advice" "$r" ;;
+esac
+
+# 33b. DENY, but for a DIFFERENT reason than #33: prose that merely NAMES two `gh pr`
+#      write-verbs — inside a heredoc body appended to a file, nothing executes — must
+#      still fail closed (todos/P2-2026-09-10-outward-cli-guard-denies-prose-naming-two-pr-verbs.md
+#      acceptance criteria: verdict unchanged, message honest and actionable). The old
+#      "Split it into one `gh pr` call per command and re-run" advice was factually wrong
+#      here — there is nothing to split, because nothing in this command invokes `gh` at
+#      all — so it must NOT appear; the message must instead say routing the content
+#      through a file tool is the way out.
+HEREDOC_CMD=$'cat >> ledger.md <<EOF\n- ran gh pr merge 900\n- then gh pr create for the follow-up\nEOF'
+out=$(bash_payload "$HEREDOC_CMD" | run)
+denied "$out" && ok "heredoc prose naming two verbs still fails closed" || bad "heredoc prose naming two verbs still fails closed" "$out"
+r=$(reason "$out")
+case "$r" in
+  *"Split it into one"*) bad "heredoc prose does not get the split-it advice" "$r" ;;
+  *) ok "heredoc prose does not get the split-it advice" ;;
+esac
+case "$r" in
+  *"file tool"*"Write"*) ok "heredoc prose is told to route through a file tool" ;;
+  *) bad "heredoc prose is told to route through a file tool" "$r" ;;
+esac
 
 # ── THE EXTRACTOR-MISS GAP, PINNED AS A TRIPWIRE — one row per mechanism the P1 todo
 #    names: path-qualified binary, redirect between binary and verb, glued metacharacter,
@@ -838,7 +867,7 @@ rm -rf "$NOJQ_BIN"
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=80
+EXPECTED_TOTAL=84
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

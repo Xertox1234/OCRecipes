@@ -118,7 +118,36 @@ case "$TOOL" in
       # `echo "$(gh pr merge 42)" # gh pr create` really runs only the merge. Treating that
       # empty answer as "not a merge" would hand the agent a one-comment bypass.
       if [ "$SUB_RC" -ne 0 ]; then
-        deny "Blocked: this command mentions more than one \`gh pr\` write subcommand, so merge-review-guard cannot tell which one executes or which PR it targets. Split it into one \`gh pr\` call per command and re-run. $BYPASS"
+        # DISTINGUISH TWO SUB-CASES OF THIS SAME REFUSE, message-only — the verdict below is
+        # `deny` unconditionally in BOTH: (a) a command-position `gh pr <write-verb>` really
+        # executes somewhere in $CMD (e.g. `echo "$(gh pr merge 938)" # gh pr create`, which
+        # SUB_RC's own co-occurrence guard above cannot itself tell apart from case b), vs.
+        # (b) the command's TEXT merely NAMES two write-verbs with nothing in command
+        # position at all — a heredoc body, a ledger comment, a commit message. Case (b)'s
+        # old advice ("split it into one `gh pr` call per command") was actively wrong: there
+        # is nothing here to split, because nothing here runs `gh`.
+        #
+        # Composed from cmd_is_gh_pr_create's own building blocks (_CMD_POS_PREFIX,
+        # _CMD_GH_GLOBALS, _CMD_POS_SUFFIX, cmd_words_deep) — NOT a new detector, and NOT a
+        # widening of cmd_gh_pr_write_subcommand/cmd_bare_deep, which stay exactly as they
+        # are (docs/solutions/conventions/compose-precise-detector-from-shared-primitives-
+        # without-widening-extractor-2026-09-14.md). cmd_words_deep is already loaded by the
+        # `. "$HERE/lib/cmd-detect.sh"` above (same file, same `declare -F` guard's success),
+        # so no separate sourcing check is added to that top chain — only a local, fail-safe
+        # default here: PR_WRITE_EXECUTES starts at 1 (the old, still-true-for-case-a
+        # message) and flips to 0 ONLY on a successful capture that genuinely finds no
+        # command-position match. Any failure to capture (function missing, unexpected
+        # error) leaves it at 1, so an uncertain read never mis-claims "nothing executes".
+        PR_WRITE_EXECUTES=1
+        if PR_WRITE_WORDS=$(cmd_words_deep "$CMD" 2>/dev/null); then
+          grep -Eq "${_CMD_POS_PREFIX}gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(create|merge|close|edit)${_CMD_POS_SUFFIX}" \
+            <<< "$PR_WRITE_WORDS" || PR_WRITE_EXECUTES=0
+        fi
+        if [ "$PR_WRITE_EXECUTES" -eq 1 ]; then
+          deny "Blocked: this command mentions more than one \`gh pr\` write subcommand, so merge-review-guard cannot tell which one executes or which PR it targets. Split it into one \`gh pr\` call per command and re-run. $BYPASS"
+        else
+          deny "Blocked: this command's TEXT names more than one \`gh pr\` write subcommand (e.g. inside a heredoc body, a comment, or a commit/ledger message), but none of them sits in command position — nothing here appears to actually run \`gh\`. merge-review-guard denies out of caution anyway, since it cannot prove a substitution or later edit won't make one executable. If this really is inert text, write it through a file tool (Write/Edit) instead of passing it as a single Bash argument. $BYPASS"
+        fi
       fi
       # AN EXTRACTOR MISS IS INDISTINGUISHABLE FROM "NOT A MERGE" HERE, AND THAT IS A
       # KNOWN, MEASURED GAP - see todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
