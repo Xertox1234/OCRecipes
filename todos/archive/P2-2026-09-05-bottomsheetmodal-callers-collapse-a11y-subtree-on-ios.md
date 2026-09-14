@@ -44,15 +44,30 @@ address this leaf-collapse of the sheet's OWN content.
 
 ## Acceptance Criteria
 
-- [ ] `accessible={false}` on the `<BottomSheetModal>` at each site below.
+- [x] `accessible={false}` on the `<BottomSheetModal>` at each site below.
+      All 8 applied; `<BottomSheetModal` occurs 9 times in `client/**` and the
+      9th (`ConfirmationModal`) already carried it from PR #924.
 - [ ] Each fixed sheet's content (its labelled/testID'd children) is reachable
       as individual descendants — verified per site with Maestro
       `inspect_screen` on a booted sim (the dev loop supports this; jsdom render
       tests CANNOT see the native leaf-collapse, so they are not sufficient
       evidence).
-- [ ] No `accessible={false}` regresses a sheet that intentionally relies on the
+      **Deliberately left unchecked.** Not performed for any of the 8 sites.
+      Carried forward by
+      `todos/P3-2026-09-14-bottomsheetmodal-background-trap-and-on-device-pass.md`,
+      which owns the device session. The mechanism itself is not unverified —
+      the same code path was device-verified for `ConfirmationModal` in PR #924
+      and re-derived from library source during review of this PR — but that is
+      mechanism evidence, not per-site evidence, and this criterion asked for
+      the latter.
+- [x] No `accessible={false}` regresses a sheet that intentionally relies on the
       wrapper being one adjustable element (none known — the role has no backing
       gesture handler, per the #924 finding — but confirm per site).
+      Confirmed library-wide rather than per site, which is stronger:
+      `grep -rn "onAccessibilityAction\|accessibilityActions"
+    node_modules/@gorhom/bottom-sheet/src/` returns no matches, so the default
+      `accessibilityRole="adjustable"` on that wrapper has no backing handler
+      anywhere in the library and nothing could have depended on the grouping.
 
 ## Implementation Notes
 

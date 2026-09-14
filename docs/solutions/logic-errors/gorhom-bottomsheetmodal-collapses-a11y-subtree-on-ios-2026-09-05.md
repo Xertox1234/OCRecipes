@@ -83,11 +83,25 @@ exact no-op the Prevention section warns about: `MealPlanHomeScreen.tsx`'s 4
 directly on the `BottomSheetModal` wrapper — confirmed as a real occurrence,
 not just a hypothetical. It was removed alongside adding `accessible={false}`.
 
-Two independent reviewer agents verified via direct
-`node_modules/@gorhom/bottom-sheet` source inspection that
-`BottomSheetModal`, `BottomSheet`, and `BottomSheetContent` have zero
-rest-spreads, confirming `accessibilityViewIsModal` placed directly on
-`BottomSheetModal` never reaches a native view.
+Why it never reaches a native view — the prop does travel, then stops.
+`BottomSheetModal` DOES have a rest-spread: it destructures
+`...bottomSheetProps` (`BottomSheetModal.tsx:61`) and spreads it onto
+`<BottomSheet>` (`:547`), so `accessibilityViewIsModal` rides that far.
+`BottomSheet.tsx` is where it dies — it destructures explicitly, has no
+rest-spread at all (`grep -cE '\.\.\.rest|\.\.\.props\b'` → `0`), and forwards
+only `accessible` / `accessibilityLabel` / `accessibilityRole` onward. Nothing
+passes the remainder to a native view.
+
+Stated this way deliberately: an earlier revision of this paragraph said all
+three components "have zero rest-spreads", which is false for
+`BottomSheetModal` and contradicts this file's own Root Cause section above
+(which correctly describes the default riding `...bottomSheetProps`). The
+functional conclusion was right and the supporting fact was wrong — and since
+this doc auto-injects on every `client/**/*.tsx` edit, the wrong half would
+have been read as authoritative on the next prop-forwarding question.
+Contrast `BottomSheetView`, which DOES spread `...rest` onto a real native
+View — which is why `accessibilityViewIsModal` works there and not on the
+wrapper.
 
 ## Testing pattern for multiple simultaneous sheets
 
