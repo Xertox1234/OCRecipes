@@ -292,7 +292,7 @@ denies. That direction has a per-command escape here (`ALLOW_OUTWARD_CLI=1`) and
 gate has none, so it is the correct trade — pinned as a deny row next to the row proving the
 sanctioned shape itself still allows.
 
-**Verification.** 627 / 711 / 95 assertions across the three suites; corpus 602 → 655 rows
+**Verification.** 627 / 721 / 95 assertions across the three suites; corpus 602 → 685 rows
 with a new generated `ghrootv-*` axis (8 flags × 6 families, members derived from
 `man gh-pr-<verb>` plus two that do not exist), zero precise-path gaps, and **nothing removed**
 from either membership manifest — the check that says no pre-existing row changed behaviour.

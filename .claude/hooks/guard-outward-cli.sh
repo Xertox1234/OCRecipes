@@ -1805,6 +1805,38 @@ _OUT_GH_GLOBALS="$_CMD_GH_GLOBALS"
 # direction is a property of the consumer, not of the pattern.
 _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:space:]]+[^[:space:];&|]+|-[^[:space:];&|]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
 
+# _OUT_GH_GLOBALS_SEPSAFE — the wide grammar with `;&|` excluded from EVERY class, value
+# token included. Used at exactly one site: counting `gh api` occurrences.
+#
+# WHY A COUNT NEEDS ITS OWN GRAMMAR (CRITICAL, found in round-2 security review of the change
+# that added the value arm). Adding `(...)?` to an arm strictly GROWS the language each needle
+# matches, and on every boolean read that is monotone — a string that matched before still
+# matches. An OCCURRENCE COUNT is not a boolean read and is not monotone: a longer match
+# absorbs text that would otherwise have started a SECOND match, so growing the language can
+# LOWER the count. The wide value token excludes only whitespace, so it swallows a separator
+# and the command after it:
+#
+#     gh -a api -c x;gh api /a/b
+#       main  ->  [gh -a api ] [;gh api ]        COUNT=2  -> ambiguity DENY
+#       wide  ->  [gh -a api -c x;gh api ]       COUNT=1  -> no deny      (` -c` ate ` x;gh`)
+#
+# `gh api` is the ONLY single-token gh needle in this file; every other family is two-token
+# (`pr merge`, `pr create|comment`, `release …`, `repo …`) and cannot collapse, because the
+# second token is not a dash token and so can never be a flag's value. Measured on all four
+# separators, glued and spaced, with `gh api /repos/o/r` ALLOW and `gh api -X POST …` DENY as
+# in-band controls.
+#
+# The `-X`/`--method` check is NOT a sufficient compensating control. It does still fire on the
+# collapsed clause, but the ambiguity refusal also covered mutations carrying no `-X` at all:
+# `gh -a api -c x;gh api -f a=b /repos/o/r/merges` (real gh sends POST when fields are present)
+# and the `--input -` form were main-DENY / branch-ALLOW.
+#
+# The count is therefore the MAX of the two grammars, never one or the other: the wide form is
+# what the downstream clause cut actually reads, so it must keep its say, while this form
+# restores the second occurrence. Max, not sum, and not a swap — a swap would LOSE the rows the
+# value arm newly closes, since this grammar cannot see `gh -t x api …` at all.
+_OUT_GH_GLOBALS_SEPSAFE='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:space:]]+[^[:space:];&|]+|-[^[:space:];&|]+([[:space:]]+[^-[:space:];&|][^[:space:];&|]*)?))|([[:space:]]*'"$_CMD_REDIR"'))*'
+
 # Fail closed if either form lost its shape. NOT an emptiness test: both are single-quoted
 # literals concatenated with "$_CMD_REDIR", so each is ~100 bytes even when _CMD_REDIR is
 # empty — a `-z` test on them is structurally unreachable and asserts nothing (review, and
@@ -1878,8 +1910,15 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # count is also gameable: padding one arm with extra classes reaches the threshold while the
 # other arms stay wide.
 _OUT_GRANT_SPANS=no
+_OUT_SEPSAFE_SPANS=no
 for _out_gp in ' -x;y' ' -x&y' ' -x|y' ' -R a;y' ' -R a&y' ' -R a|y' ' --repo a;y' ' --repo a&y' ' --repo a|y'; do
-  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_SPANS=yes; break; fi
+  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_SPANS=yes; fi
+  # The SEPSAFE form must refuse the same spans, INCLUDING with a value token in play — that
+  # is the whole reason it exists, and ' -x y;z' is the probe the grant rows cannot make.
+  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$"; then _OUT_SEPSAFE_SPANS=yes; fi
+done
+for _out_gp in ' -x y;z' ' -x y&z' ' -x y|z' ' -R a b;z' ' --repo a b|z'; do
+  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$"; then _OUT_SEPSAFE_SPANS=yes; fi
 done
 # Operand 5: a SEPARATE-ARG flag neither form names. The wide form must span it whole; the
 # grant form must not. Probed rather than pattern-matched, so the assertion survives a
@@ -1899,17 +1938,23 @@ done
 # CONSTANT THE CONSUMERS READ, not the one it happens to be copied from.
 _OUT_WIDE_TAKES_VALUE=yes
 _OUT_GRANT_TAKES_VALUE=no
+_OUT_SEPSAFE_TAKES_VALUE=yes
 for _out_vp in ' -t x' ' -Z somevalue' ' --match-head-commit abc123'; do
   if ! printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS}\$"; then _OUT_WIDE_TAKES_VALUE=no; fi
   if printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_TAKES_VALUE=yes; fi
+  # SEPSAFE must take a value like the wide form; without it the gh api count would MISS
+  # `gh -t x api …` entirely and the max would silently fall back to the wide count alone.
+  if ! printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$"; then _OUT_SEPSAFE_TAKES_VALUE=no; fi
 done
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
    || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
    || [ "$_OUT_WIDE_TAKES_VALUE" != yes ] \
    || [ "$_OUT_GRANT_TAKES_VALUE" != no ] \
    || [ "$_OUT_GRANT_SPANS" = yes ] \
+   || [ "$_OUT_SEPSAFE_TAKES_VALUE" != yes ] \
+   || [ "$_OUT_SEPSAFE_SPANS" = yes ] \
    || [ -z "${_CMD_REDIR:-}" ]; then
-  deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has been widened to span a separator, the wide form has lost the separate-arg value arm that closes unnamed root flags (or the grant form has gained it), or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has been widened to span a separator, the wide form has lost the separate-arg value arm that closes unnamed root flags (or the grant form has gained it), _OUT_GH_GLOBALS_SEPSAFE has lost its value arm or gained the ability to span a separator (which silently un-does the gh api occurrence refusal), or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 BARE=$(printf '%s' "$CMD" | cmd_bare)
@@ -2859,6 +2904,9 @@ fi
 # ALLOWED). Deny on >1, mirroring the identical multi-occurrence safe
 # direction the `gh pr merge` check above already takes.
 GH_API_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX}"
+# The same needle under the separator-safe grammar, for the occurrence COUNT only. Every other
+# consumer (the clause cut, the method check) keeps reading GH_API_RE.
+GH_API_RE_SEPSAFE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS_SEPSAFE}${_OUT_SEP}api${_OUT_POS_SUFFIX}"
 # Counted AND clause-scoped on $WORDS_DEEP (unlike the `gh pr merge` block
 # above, whose CLAUSE stays shallow — see that block's own comment for why).
 # This check ALLOWS by default (a read-only `gh api` is fine) and only denies
@@ -2867,7 +2915,14 @@ GH_API_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX
 # Reading $WORDS_DEEP makes the quoted spellings AND a live-substitution-hidden
 # occurrence visible, without resorting to raw $CMD, which would lose the
 # command-position anchor and the separator neutralisation with it.
-GH_API_OCCURRENCES=$(_out_max_count "$GH_API_RE")
+# MAX OF TWO GRAMMARS, not one. See _OUT_GH_GLOBALS_SEPSAFE's header: an occurrence COUNT is
+# the one read in this file that is not monotone in the grammar's language, so the value arm
+# that closed the root-position bypass could LOWER this count by letting a single match absorb
+# a separator and the command after it. The wide count keeps its say because the clause cut
+# below reads the wide form; the separator-safe count restores the second occurrence.
+_gh_api_n_wide=$(_out_max_count "$GH_API_RE")
+_gh_api_n_sepsafe=$(_out_max_count "$GH_API_RE_SEPSAFE")
+GH_API_OCCURRENCES=$(( ${_gh_api_n_wide:-0} > ${_gh_api_n_sepsafe:-0} ? ${_gh_api_n_wide:-0} : ${_gh_api_n_sepsafe:-0} ))
 if [ "${GH_API_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then

@@ -297,6 +297,59 @@ add ghrootv-selfrepo DENY 'gh -t x pr merge 42 -R Xertox1234/OCRecipes'
 # actually fires; a number in prose is just a claim, and this repo's rule is to compute
 # counts from the file rather than retype them. Naming the factors keeps it checkable by
 # reading two lines up.
+
+# axis: A CONSUMED VALUE COLLAPSING AN OCCURRENCE COUNT (2026-09-13, round-2 review).
+#
+# THIS AXIS EXISTS BECAUSE THE CORPUS COULD NOT SEE THE REGRESSION THAT PROMPTED IT, and that
+# is the more useful half of the story. The value arm added above closed a real bypass and
+# introduced a real regression, and a full run of this file -- 655 rows, four paths each --
+# moved by exactly zero rows. Not because the corpus is weak: because no dimension here
+# varied "a flag whose VALUE swallows a separator". NOTE6's "a corpus can only report on the
+# axes it varies" is not a caveat, it is the failure, observed.
+#
+# THE MECHANISM. Adding `(...)?` to an arm strictly GROWS the language a needle matches, so on
+# every BOOLEAN read it is monotone -- what matched before still matches. An occurrence COUNT
+# is not a boolean read and is not monotone: a longer match absorbs text that would otherwise
+# have begun a SECOND match. The wide value token excludes only whitespace, so it eats a
+# separator and the command after it:
+#
+#     gh -a api -c x;gh api /a/b
+#       main  ->  [gh -a api ] [;gh api ]   COUNT=2  -> ambiguity DENY
+#       wide  ->  [gh -a api -c x;gh api ]  COUNT=1  -> silently ALLOWED
+#
+# `gh api` is the ONLY single-token gh needle in the guard; the two-token families
+# (`pr merge`, `pr create|comment`, `release ...`, `repo ...`) are structurally immune,
+# because their second token is not a dash token and so can never be a flag's value. That is
+# why this axis varies only the api family -- a deliberate scope, not a hand-picked subset,
+# and the reason is stated so the next reader can check it rather than trust it.
+#
+# EXPECTED=DENY on the AMBIGUITY reason, not the method reason. The `-X`/`--method` check is
+# not a sufficient compensating control: real `gh` sends POST when `-f` fields are present, so
+# the `apicollapse-*-mut` rows below carry no `-X` at all and only the occurrence refusal
+# stands between them and an allowed cross-command mutation.
+APICOL_FLAG_IDS=(shortc shortt unknown)
+APICOL_FLAGS=('-c x' '-t x' '-Z x')
+APICOL_SEP_IDS=(semi amp pipe)
+APICOL_SEPS=(';' '&' '|')
+APICOL_TAIL_IDS=(read mut method)
+APICOL_TAILS=('/a/b' '-f a=b /repos/o/r/merges' '-X POST /repos/o/r')
+for i in "${!APICOL_FLAG_IDS[@]}"; do
+  for j in "${!APICOL_SEP_IDS[@]}"; do
+    for k in "${!APICOL_TAIL_IDS[@]}"; do
+      add "apicollapse-${APICOL_FLAG_IDS[$i]}-${APICOL_SEP_IDS[$j]}-${APICOL_TAIL_IDS[$k]}" DENY \
+        "gh -a api ${APICOL_FLAGS[$i]}${APICOL_SEPS[$j]}gh api ${APICOL_TAILS[$k]}"
+    done
+  done
+done
+# FALSE-POSITIVE CONTROLS. Without these the rows above pass on a guard that denies every
+# `gh api` outright, which is the restrictive failure this file exists to catch as well.
+add apicolfp-read    ALLOW 'gh api repos/o/r'
+add apicolfp-rootflag ALLOW 'gh -t x api repos/o/r'
+# PRE-EXISTING and pinned as ALLOW so the rows above are not misread as closing it: a
+# SINGLE-command field mutation is allowed on main too. It belongs to
+# todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md.
+add apicolfp-oneshot ALLOW 'gh api -f a=b /repos/o/r/merges'
+
 add ghrootvfp-list ALLOW 'gh -t x pr list'
 add ghrootvfp-view ALLOW 'gh -Z somevalue pr view 42'
 add ghrootvfp-get  ALLOW 'gh -t x api repos/o/r'
@@ -1453,6 +1506,20 @@ fi
 #    see the DENY-SITE COVERAGE axis and `_pin_sites`. It was found by a reviewer
 #    deleting three real protections and watching this file exit 0.
 #
+# BUMP 2026-09-14 (round-2 security review of the same change). ONE mechanism: the value arm
+# added in the bump below is not monotone on an occurrence COUNT, so a consumed value could
+# swallow a separator and collapse two `gh api` occurrences into one, retiring the ambiguity
+# refusal. Counting now takes the MAX of the wide and separator-safe grammars. +30 rows, all
+# in the new generated apicollapse-* axis (3 flags x 3 separators x 3 tails = 27, plus 3
+# controls); +27 attribution rows = exactly the DENY-expecting new rows; +2 all-path dirty =
+# the two ALLOW controls whose degraded mirror over-denies, the category this file already
+# documents. Precise-path gaps unchanged at 31, and NOTHING WAS REMOVED.
+#
+# READ THIS BEFORE TRUSTING THE AXES BELOW: the regression that prompted this bump moved
+# ZERO rows of the 655-row corpus that existed at the time. Not because the corpus is weak --
+# because no dimension varied "a flag whose value swallows a separator". The axis exists now;
+# the lesson is that its absence was invisible.
+#
 # BUMP 2026-09-13 (second half of the root-position P0). ONE mechanism moved every ID:
 # _CMD_GH_GLOBALS's generic arm gained an OPTIONAL non-dash value token, so a root-position
 # flag that TAKES a separate argument no longer leaves that argument where the namespace
@@ -1470,10 +1537,10 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=655
+EXPECTED_ROWS=685
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 538 of the 655 rows deny on the precise path; the other 117 are ALLOW there
+# 565 of the 685 rows deny on the precise path; the other 120 are ALLOW there
 # (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-*/ghrootvfp-* controls and
 # the 16 ghrootv-*-ghcomment/ghcreate two-sided rows, plus the 31 precise-path gaps). Corrected 2026-09-13: this was the FIFTH stale copy of a
 # count in this file, found by review after four others were repaired -- and it
@@ -1481,7 +1548,7 @@ EXPECTED_ROWS=655
 # bumped with
 # EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
 # stale, sitting directly above the constant they describe.
-EXPECTED_DENY_ATTRIB_ROWS=538
+EXPECTED_DENY_ATTRIB_ROWS=565
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1538,7 +1605,7 @@ EXPECTED_PRECISE_GAPS=31
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=277
+EXPECTED_ALLPATH_GAPS=279
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1853,6 +1920,8 @@ ghrootv-unknownshort-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 ghrootv-unknownshort-ghcommentR p=DENY j=ALLOW l=ALLOW a=ALLOW
 ghrootv-unknownshort-ghcreateR p=DENY j=ALLOW l=ALLOW a=ALLOW
 ghrootv-unknownshort-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+apicolfp-oneshot p=ALLOW j=DENY l=DENY a=DENY
+apicolfp-read p=ALLOW j=DENY l=DENY a=DENY
 PIN_ALLPATH_EOF
 )
 
@@ -2409,6 +2478,33 @@ ghrootv-unknownshort-ghapi : command-position 'gh api' with a mutating HTTP meth
 ghrootv-unknownshort-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 ghrootv-unknownshort-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 ghrootv-unknownshort-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+apicollapse-shortc-amp-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-amp-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-amp-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-pipe-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-pipe-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-pipe-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-semi-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-semi-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-semi-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-amp-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-amp-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-amp-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-pipe-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-pipe-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-pipe-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-semi-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-semi-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-semi-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-amp-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-amp-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-amp-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-pipe-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-pipe-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-pipe-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-semi-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-semi-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-semi-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)

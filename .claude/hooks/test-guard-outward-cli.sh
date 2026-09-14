@@ -3626,6 +3626,57 @@ assert_allow "unnamed root flag on a READ-ONLY api GET stays allowed" \
 assert_allow "prose naming the newly-closed shape is not denied" \
   "$(jsonc 'git commit -m "docs: gh -t x pr merge 42 was allowed by both layers"')"
 
+# ---------- the value arm LOWERED an occurrence count (2026-09-13, round-2 review) ----------
+# Adding `(...)?` to an arm strictly GROWS the language each needle matches, so on every
+# BOOLEAN read it is monotone — a string that matched before still matches. An occurrence
+# COUNT is not a boolean read and is NOT monotone: a longer match absorbs text that would
+# otherwise have started a SECOND match. The wide value token excludes only whitespace, so it
+# swallows a separator and the command after it, and two `gh api` occurrences became one:
+#
+#     gh -a api -c x;gh api /a/b
+#       main  ->  [gh -a api ] [;gh api ]   COUNT=2  -> ambiguity DENY
+#       wide  ->  [gh -a api -c x;gh api ]  COUNT=1  -> silently allowed
+#
+# `gh api` is the ONLY single-token gh needle here; the two-token families (`pr merge`,
+# `release …`, `repo …`) cannot collapse, because their second token is not a dash token and
+# so can never be a flag's value. Closed by counting under BOTH grammars and taking the max.
+assert_deny "two gh api occurrences collapsed by a consumed value: ;" \
+  "$(json 'gh -a api -c x;gh api /a/b')" \
+  "more than one command-position 'gh api' occurrence"
+assert_deny "...with & as the separator" \
+  "$(json 'gh -a api -c x&gh api /a/b')" \
+  "more than one command-position 'gh api' occurrence"
+assert_deny "...with | as the separator" \
+  "$(json 'gh -a api -c x|gh api /a/b')" \
+  "more than one command-position 'gh api' occurrence"
+# THE PART THE -X/--method CHECK DOES NOT COVER, which is why the ambiguity refusal matters.
+# Real gh sends POST when fields are present, so these carry no -X for the method check to see.
+assert_deny "collapsed pair whose second call mutates via -f, not -X" \
+  "$(json 'gh -a api -c x;gh api -f a=b /repos/o/r/merges')" \
+  "more than one command-position 'gh api' occurrence"
+assert_deny "collapsed pair whose second call mutates via --input" \
+  "$(json 'gh -a api -c x;gh api --input - /repos/o/r/merges')" \
+  "more than one command-position 'gh api' occurrence"
+
+# TWO-SIDED. The count is the MAX of two grammars, not a swap — so the rows the value arm
+# NEWLY closes must stay closed. The separator-safe grammar cannot see these at all; the wide
+# one counts them as a single occurrence and the method check then fires.
+assert_deny "a root flag on a mutating gh api still denies on the METHOD reason" \
+  "$(json 'gh -t x api repos/o/r -X POST')" \
+  "with a mutating HTTP method"
+assert_deny "...with a flag that does not exist" \
+  "$(json 'gh -Z v api repos/o/r --method PUT')" \
+  "with a mutating HTTP method"
+# ...and no NEW over-denial: a single read-only api call, with or without a root flag.
+assert_allow "a single read-only gh api stays allowed" \
+  "$(json 'gh api repos/o/r')"
+assert_allow "a single read-only gh api behind a root flag stays allowed" \
+  "$(json 'gh -t x api repos/o/r')"
+# The one-command mutating form is ALLOW on main too — pinned so a reader does not mistake
+# the rows above for a claim that this change closed it. It is the P2 gh-api-route todo's.
+assert_allow "the ONE-command -f mutation is allowed here, as it is on main (pre-existing)" \
+  "$(json 'gh api -f a=b /repos/o/r/merges')"
+
 _PIN_RAN=1
 # 462 -> 491 on 2026-09-06/07: +27 across three rounds, itemised because the
 # breakdown was WRONG once (it said "+21" beside a total of 488 -- 462+21=483, so
@@ -3802,7 +3853,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=711
+EXPECTED_TOTAL=721
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
