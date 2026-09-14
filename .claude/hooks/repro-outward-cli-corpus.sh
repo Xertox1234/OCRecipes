@@ -151,7 +151,15 @@ for i in "${!FAM_NS_IDS[@]}"; do
 done
 
 # axis: ROOT-POSITION REPO-RETARGET FLAG (2026-09-13 -- the P0 tracked as
-# repo-retarget-flag-in-root-position-defeats-both-merge-guards, now closed).
+# repo-retarget-flag-in-root-position-defeats-both-merge-guards, PARTIALLY closed).
+# THE TODO STAYS OPEN. The four -R/--repo spellings generated below now DENY, but they are
+# not the whole shape: cobra accepts any flag of the TARGET subcommand in root position, and
+# any separate-arg flag this grammar does not name leaves its VALUE where the namespace
+# belongs. `gh -t x pr merge 42 -R other/org` measured ALLOW on BOTH layers 2026-09-13 --
+# a cross-repository retarget defeating both merge guards, which is the todo's own headline.
+# Pre-existing (main allows it too), pinned as a tripwire in test-cmd-detect.sh, and recorded
+# where the constant is defined. Generate the rest from `gh help pr <verb>` rather than from
+# spellings you thought of -- that is exactly how these four came to look complete.
 # A FLAG between the binary and its namespace. The interior-redirect axis above
 # closed the same SLOT for redirects; `_OUT_SEP` never modelled a flag there, so
 # `gh -R other/org pr merge 42` matched none of the guard's gh needles and the
