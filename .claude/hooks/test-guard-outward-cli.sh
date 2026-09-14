@@ -2462,6 +2462,30 @@ _mut_goc_says_deny() {  # $1 = sed program that breaks one constant
   printf '%s' "$out" | grep -q '"permissionDecision": "deny"' \
     && printf '%s' "$out" | grep -qF -- 'root-position flag grammar lost its shape'
 }
+# Operand 5, GRANT direction: "harmonise the two constants" by giving the grant form the
+# value arm. That is a false GRANT at the one clause cut that decides an ALLOW, so the
+# assertion must refuse it. (The WIDE direction — losing the value arm — lives in
+# test-cmd-detect.sh, because that constant is defined in the lib, not here; a sed against
+# this file cannot reach it, and a mutation row that edits nothing that runs is the inert
+# kind this suite already documents.)
+# The mutation is EXPRESSED AS A REASSIGNMENT, not as a patch to the definition. Patching it
+# in place needs a sed LHS containing `[`, `]` and `|` — and `|` is also the obvious `s`
+# delimiter, so the first version of this row silently terminated its own `s` command, edited
+# nothing, and reported the assertion as missing. Anchoring on a plain line and appending a
+# second assignment on the SAME line (`;`, so no newline is needed in the replacement) keeps
+# the sed program free of brackets entirely.
+#
+# The reassigned form is separator-SAFE — it keeps `;&|` out of every class — and differs from
+# the shipped one ONLY by the value arm. That isolation is the point: operand 3b cannot see
+# this mutant (a separator-safe value arm still refuses to span ` -x;y`), so operand 5 is its
+# only coverage, and a silent row here would leave the one grant-shaped cut unprotected.
+_mut_grant_value_sed="s#^_OUT_GRANT_SPANS=no#_OUT_GH_GLOBALS_GRANT='(([[:space:]]+-[^[:space:];\&|]+([[:space:]]+[^-[:space:];\&|][^[:space:];\&|]*)?)|([[:space:]]*'\"\$_CMD_REDIR\"'))*'; _OUT_GRANT_SPANS=no#"
+if _mut_goc_says_deny "$_mut_grant_value_sed"; then
+  echo "PASS: giving _OUT_GH_GLOBALS_GRANT the value arm fails closed instead of opening a false grant"; PASS=$((PASS+1))
+else
+  echo "FAIL: _OUT_GH_GLOBALS_GRANT could be widened with the value arm without the assertion firing — the one grant-shaped clause cut would start absorbing a previous command's tokens"
+  FAIL=$((FAIL+1))
+fi
 if _mut_goc_says_deny 's|^_OUT_GH_GLOBALS="\$_CMD_GH_GLOBALS"|_OUT_GH_GLOBALS=|'; then
   echo "PASS: a shapeless _OUT_GH_GLOBALS fails closed instead of silently collapsing every gh needle"; PASS=$((PASS+1))
 else
@@ -3497,6 +3521,94 @@ assert_allow "a cp -R in an earlier clause does not retarget the gh call" \
 assert_allow "a grep -R in an earlier clause does not retarget the gh call" \
   "$(json 'grep -R foo . && gh pr comment 5 --body hi')"
 
+# ---------- the SECOND HALF: a root flag the grammar does not NAME (2026-09-13) ----------
+# Naming `-R`/`--repo` closed four spellings and looked complete. It was not: cobra accepts
+# any flag of the TARGET subcommand in root position, so any OTHER separate-arg flag left its
+# VALUE where the namespace belongs and every gh needle in this file went blind again.
+# `gh -t x pr merge 42 -R other/org` — a cross-repository retarget — was ALLOWED by this guard
+# AND by merge-review-guard.sh, which is the P0's own headline shape.
+#
+# Closed by giving the generic arm an OPTIONAL non-dash value token — the PROPERTY that makes
+# a root flag dangerous — instead of a longer list of names. The `-Z` / `--not-a-real-flag`
+# rows exist to keep it that way: neither is a real gh flag, so a membership-list fix cannot
+# pass them.
+assert_deny "unnamed separate-arg root flag: -t hides the namespace no longer" \
+  "$(json 'gh -t x pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "unnamed separate-arg root flag: -b" \
+  "$(json 'gh -b body pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "unnamed separate-arg root flag: --match-head-commit (no short alias)" \
+  "$(json 'gh --match-head-commit abc123 pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "a flag that does NOT EXIST is covered — this is a property, not a list" \
+  "$(json 'gh -Z somevalue pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "...and in long form" \
+  "$(json 'gh --not-a-real-flag v pr merge 42')" \
+  "without a REAL --auto flag"
+# THE HEADLINE SHAPE, asserted on the RETARGET reason — not merely on "it denied". The
+# generic no---auto deny would be the WRONG mechanism here: it would mean the guard never saw
+# the cross-repository target, and the retarget check is the one that must win.
+assert_deny "unnamed root flag carrying a retarget denies AS A RETARGET" \
+  "$(json 'gh -t x pr merge 42 -R other/org')" \
+  "targets a DIFFERENT GitHub repository"
+assert_deny "...behind a flag that does not exist, likewise" \
+  "$(json 'gh -Z v pr merge 42 --repo other/org')" \
+  "targets a DIFFERENT GitHub repository"
+# The other six needles moved with it, so assert past the merge one.
+# NOT a plain `gh pr create` row: this guard does not gate PR CREATION at all (measured —
+# `gh pr create --title x --body y` allows here), that is pr-preflight-guard.sh's stamp gate.
+# An earlier draft of this row asserted a deny reason this hook never emits, and it failed
+# for the right reason. What this hook owns on the create path is the CROSS-REPOSITORY form.
+assert_deny "unnamed root flag on a cross-repo gh pr create" \
+  "$(json 'gh -t x pr create --title y --repo other/org')" \
+  "writes to a DIFFERENT GitHub repository"
+assert_deny "unnamed root flag on a mutating gh pr verb" \
+  "$(json 'gh -Z v pr close 42')" \
+  "command-position mutating 'gh pr/release/repo' subcommand"
+assert_deny "unnamed root flag on gh api" \
+  "$(json 'gh -t x api repos/o/r -X POST')" \
+  "with a mutating HTTP method"
+
+# TWO-SIDED, and this is the direction the value arm could itself have BROKEN. When the flag
+# takes NO value the namespace is the very next token, so the grammar must DECLINE to consume
+# it. If it consumed it these would go silently ALLOW — a regression the deny rows above
+# cannot see.
+assert_deny "a NO-ARG root flag still reaches the merge gate" \
+  "$(json 'gh --no-color pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "a RUN of no-arg root flags still reaches it" \
+  "$(json 'gh -q -v --no-color pr merge 42')" \
+  "without a REAL --auto flag"
+assert_deny "the glued retarget form still denies as a retarget" \
+  "$(json 'gh --repo=other/org pr merge 42')" \
+  "targets a DIFFERENT GitHub repository"
+
+# ACCEPTED OVER-DENIAL, PINNED RATHER THAN DISCOVERED TWICE. _OUT_GH_GLOBALS_GRANT was
+# deliberately NOT given the value arm: it feeds the one clause cut whose downstream check
+# decides an ALLOW, and widening there is a false GRANT rather than an extra deny. The
+# consequence is that a root flag on an otherwise-sanctioned automerge finds no clause,
+# HAS_REAL_AUTO=no, and the command denies. That direction has a per-command escape here
+# (ALLOW_OUTWARD_CLI=1) and the merge gate has none, so it is the correct trade — but it is a
+# REAL restrictive failure and is pinned as one, next to the row proving the sanctioned shape
+# itself is untouched.
+assert_deny "a root flag on an automerge over-denies (stated trade, not a bug)" \
+  "$(json 'gh -t x pr merge 42 --auto --squash --delete-branch')" \
+  "without a REAL --auto flag"
+assert_allow "...while the sanctioned automerge WITHOUT a root flag still allows" \
+  "$(json 'gh pr merge 42 --auto --squash --delete-branch')"
+
+# THE PERMISSIVE DIRECTION, in the same run. Read-only usage in the widened slot, and prose.
+assert_allow "unnamed root flag on a READ-ONLY pr list stays allowed" \
+  "$(json 'gh -t x pr list')"
+assert_allow "unnamed root flag on a READ-ONLY pr view stays allowed" \
+  "$(json 'gh -Z somevalue pr view 42')"
+assert_allow "unnamed root flag on a READ-ONLY api GET stays allowed" \
+  "$(json 'gh --no-color api repos/o/r')"
+assert_allow "prose naming the newly-closed shape is not denied" \
+  "$(jsonc 'git commit -m "docs: gh -t x pr merge 42 was allowed by both layers"')"
+
 _PIN_RAN=1
 # 462 -> 491 on 2026-09-06/07: +27 across three rounds, itemised because the
 # breakdown was WRONG once (it said "+21" beside a total of 488 -- 462+21=483, so
@@ -3673,7 +3785,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=690
+EXPECTED_TOTAL=710
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

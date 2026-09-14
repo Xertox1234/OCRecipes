@@ -1795,30 +1795,58 @@ ghref 'gh --repo=other/org pr merge 42'   -     "--repo=v in root position: reta
 ghref 'gh -Rother/org pr merge 42'        -     "-Rv in root position: retarget REFUSED"
 ghref 'gh -R Xertox1234/OCRecipes pr merge 42 --squash' - \
   "a root-position retarget at THIS repository is REFUSED, not resolved"
+ghref 'gh -t x pr merge 42 -R other/org'   -     "an unnamed root flag no longer hides a TRAILING retarget"
+ghref 'gh -Z v pr merge 42 -R other/org'   -     "...including behind a flag that does not exist"
+ghref 'gh -t x pr merge 42'                42    "but an ordinary root flag still RESOLVES the ref"
+ghref 'gh -Z v pr merge 42'                42    "...likewise for an unknown one"
+ghref 'gh --no-color pr merge 42'          42    "and a no-arg root flag does not eat the ref"
 
-# STILL OPEN, PINNED AS A TRIPWIRE — the P0's headline shape in a spelling the four closed
-# ones do not cover. `-R`/`--repo` are NOT the only root flags taking a separate argument:
-# cobra accepts any flag of the TARGET subcommand in root position, and `gh help pr merge`
-# lists five more (`-A/--author-email`, `-b/--body`, `-F/--body-file`, `--match-head-commit`,
-# `-t/--subject`). An unnamed one leaves its VALUE as a non-dash token, the globals run stops
-# there, and the needle never reaches the namespace — so the subcommand comes back empty and
-# merge-review-guard.sh reads that as "not a merge".
+# CONVERTED 2026-09-13 — these four rows were the tripwire pinning this gap as OPEN, and the
+# comment that stood here said "WHEN IT IS CLOSED THESE ROWS WILL FAIL, which is the point:
+# the fix must come here and convert them." They are converted, not deleted, so the suite
+# still shows what the shape was.
 #
-# Measured 2026-09-13 on BOTH layers: `gh -t x pr merge 42 -R other/org` is ALLOWED by both,
-# which is a cross-repository retarget defeating both merge guards. PRE-EXISTING — main
-# behaves identically — so this branch did not open it. These rows assert the CURRENT,
-# known-incomplete behaviour so the gap is visible in the suite instead of invisible. WHEN IT
-# IS CLOSED THESE ROWS WILL FAIL, which is the point: the fix must come here and convert them.
-# Generate that corpus from `gh help pr <verb>`, not from spellings you thought of — that is
-# precisely how the four closed spellings came to look like the whole problem.
-ghsub 'gh -b x pr merge 42'            - "KNOWN GAP: an unnamed separate-arg root flag hides the namespace"
-ghsub 'gh -t x pr merge 42'            - "KNOWN GAP: same, --subject short form"
-ghsub 'gh --body x pr merge 42'        - "KNOWN GAP: same, long form"
-ghsub 'gh -t x pr merge 42 -R o/org'   - "KNOWN GAP: and it carries a retarget through"
+# The gap: `-R`/`--repo` are NOT the only root flags taking a separate argument. cobra accepts
+# any flag of the TARGET subcommand in root position, so an unnamed one left its VALUE as a
+# non-dash token, the globals run stopped there, and the needle never reached the namespace —
+# the subcommand came back empty and merge-review-guard.sh read that as "not a merge".
+# `gh -t x pr merge 42 -R other/org`, a cross-repository retarget, was ALLOWED by BOTH layers.
+#
+# Closed by modelling the PROPERTY (a dash token may consume a following non-dash token)
+# rather than by lengthening the list of named flags — which is why the `-Z` rows below,
+# testing a flag that does not exist, are the load-bearing ones. If this block ever contains
+# only flags that appear in `gh help pr merge`, the corpus has gone back to being an
+# enumeration of what someone thought of.
+ghsub 'gh -b x pr merge 42'            merge "an unnamed separate-arg root flag no longer hides the namespace"
+ghsub 'gh -t x pr merge 42'            merge "same, --subject short form"
+ghsub 'gh --body x pr merge 42'        merge "same, long form"
+ghsub 'gh -t x pr merge 42 -R o/org'   merge "and the retarget it carries is now SEEN"
+ghsub 'gh -A a@b.c pr merge 42'        merge "--author-email, short form"
+ghsub 'gh -F notes.md pr merge 42'     merge "--body-file, short form"
+ghsub 'gh --match-head-commit abc pr merge 42' merge "--match-head-commit, no short alias"
+# THE PROPERTY ROWS. Neither flag exists in any `gh` version; they pass only because the
+# grammar models "consumes the next token", not a membership list. Deleting these turns this
+# block back into the enumeration that made the four -R/--repo spellings look complete.
+ghsub 'gh -Z somevalue pr merge 42'    merge "an UNKNOWN separate-arg short flag is covered too"
+ghsub 'gh --not-a-real-flag v pr merge 42' merge "an UNKNOWN separate-arg long flag likewise"
 # CONTROL, so the rows above cannot pass because the whole predicate broke: the GLUED form of
 # the same flag has no separate value, so the generic arm consumes it and the namespace is
 # still reached.
 ghsub 'gh --body=x pr merge 42'        merge "a GLUED unnamed flag does not hide the namespace"
+# TWO-SIDED, the direction the value arm could have BROKEN: when the flag takes NO value the
+# namespace is the very next token, so the engine must DECLINE the optional group. POSIX
+# requires that, but "POSIX requires it" is not a measurement — these rows are.
+ghsub 'gh --no-color pr merge 42'      merge "a NO-ARG flag sitting immediately before the namespace"
+ghsub 'gh -q -v --no-color pr close 42' close "a RUN of no-arg flags, still reaching the namespace"
+ghsub 'gh --repo=o/r pr merge 42'      merge "the glued retarget form still resolves"
+# ADVERSARIAL VALUES: the verb comes from the SLOT. A value that is itself a verb, or itself
+# the namespace token, must not be read as either. Only the value arm makes a span able to
+# contain two ` pr ` tokens, so these rows became reachable with this change.
+ghsub 'gh -t merge pr create 42'       create "a global's value that IS a verb does not become the verb"
+ghsub 'gh -t pr pr close 42'          close  "a global's value that IS the namespace token"
+# NEGATIVE: the globals slot binds immediately after the BINARY. A flag after some other
+# namespace is not a root global, and must not drag `pr merge` into a match.
+ghsub 'gh issue create -t pr merge x'  - "a flag after a DIFFERENT namespace is not a root global"
 
 echo "--- cmd_gh_pr_*: a redirect between binary and namespace (B) ---"
 ghsub 'gh 2>/dev/null pr merge 42 --squash'  merge "redirect, glued: subcommand is SEEN"
@@ -1873,7 +1901,7 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
 # assertion in a run that otherwise completed. It cannot catch an early
 # `return`/`exit` or a truncated file, because those terminate before this line.
-EXPECTED_TOTAL=611
+EXPECTED_TOTAL=627
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

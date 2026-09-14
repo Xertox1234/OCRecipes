@@ -1,6 +1,6 @@
 ---
 title: "A repo-retarget flag in ROOT position defeats BOTH merge guards — measured, live on main"
-status: backlog
+status: done
 priority: critical
 created: 2026-09-13
 updated: 2026-09-13
@@ -81,19 +81,19 @@ EMPTY stamp root, so "the gate engaged" and "the gate denied" are the same event
 
 ## Acceptance Criteria
 
-- [ ] A merge carrying a repo-retarget flag in root position is DENIED by
+- [x] A merge carrying a repo-retarget flag in root position is DENIED by
       `guard-outward-cli.sh`, for every spelling matched by `_OUT_REPO_FLAG_RE` (`.claude/hooks/guard-outward-cli.sh:944` — the todo originally cited `:899`, which is inside a comment block)
       — `-R`, `--repo`,
       `--repo=x`, `-Rx`).
-- [ ] The same spellings are SEEN by `merge-review-guard.sh` — i.e. they reach the
+- [x] The same spellings are SEEN by `merge-review-guard.sh` — i.e. they reach the
       review-record requirement rather than exiting early at the `!= merge` check.
-- [ ] Controls, both directions, in the same run: ordinary prose naming the flag is NOT
+- [x] Controls, both directions, in the same run: ordinary prose naming the flag is NOT
       denied, and read-only root-position usage (`gh -R owner/repo pr list`) stays ALLOWED.
-- [ ] Corpus rows generated from the product of {flag spelling} × {position} × {subcommand},
+- [x] Corpus rows generated from the product of {flag spelling} × {position} × {subcommand},
       not hand-listed, with the count quoted together with the corpus that produced it.
-- [ ] Mutation-verified per mechanism: break each new clause and confirm it reddens only
+- [x] Mutation-verified per mechanism: break each new clause and confirm it reddens only
       its own rows.
-- [ ] `Outward-CLI guard corpus` re-pinned and green against **branch ⊕ main**.
+- [x] `Outward-CLI guard corpus` re-pinned and green against **branch ⊕ main**.
 
 ## Implementation Notes
 
@@ -251,3 +251,64 @@ that comment is corrected.
 
 Follow-up filed:
 `todos/P3-2026-09-13-git-safety-re-derives-the-gh-pr-close-needle-instead-of-using-the-shared-library.md`.
+
+### 2026-09-13 (final) — CLOSED on `fix/gh-root-flag-property-arm`
+
+The remaining half is closed. `_CMD_GH_GLOBALS`'s generic arm now optionally consumes a
+following NON-dash token, so a root-position flag that takes a separate argument no longer
+leaves that argument sitting where the namespace belongs.
+
+**What actually changed is one alternation arm**, from `-[^[:space:]]+` to
+`-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?`. `guard-outward-cli.sh` inherits it
+by reference. `_OUT_GH_GLOBALS_GRANT` — the separator-safe form feeding the ONE clause cut
+whose downstream check decides an ALLOW — deliberately did **not** get the value arm, because
+widening there is a false GRANT rather than an extra deny.
+
+**Measured `ALLOW → DENY` on BOTH layers**, controls in the same run (`echo hello`
+ALLOW/ALLOW; `gh pr VERB 42` DENY/DENY before and after):
+
+| command                                                    | before      | after                                   |
+| ---------------------------------------------------------- | ----------- | --------------------------------------- |
+| `gh -t x pr VERB 42 -R other/org` _(this todo's headline)_ | ALLOW/ALLOW | **DENY/DENY**, on the _retarget_ reason |
+| `gh -b x pr VERB 42`                                       | ALLOW/ALLOW | DENY/DENY                               |
+| `gh -A a@b pr VERB 42`                                     | ALLOW/ALLOW | DENY/DENY                               |
+| `gh -F notes.md pr VERB 42`                                | ALLOW/ALLOW | DENY/DENY                               |
+| `gh --match-head-commit s pr VERB 42`                      | ALLOW/ALLOW | DENY/DENY                               |
+| `gh -Z x pr VERB 42` _(not a real flag)_                   | ALLOW/ALLOW | DENY/DENY                               |
+
+Still ALLOWED, in the same run: `gh -R o/r pr list`, `gh -t x pr view 42`, a commit message
+naming the shape, `cp -R src dst`. `pr-preflight-guard.sh` now gates every root-flag
+`pr create` spelling (measured, with `gh pr list` / `echo hello` as ungated controls).
+
+**The `-Z` / `--not-a-real-flag` rows are the load-bearing ones.** Neither exists in any `gh`
+version, so they pass only against a grammar that models the PROPERTY — "this token may
+consume the next one" — rather than a membership list. That is the correction this todo was
+reopened for: the flag set is per-verb and open-ended, so it cannot be enumerated, and a
+longer list would have gone stale the next time `gh` shipped a flag.
+
+**Accepted, stated over-denial.** Because the grant form stayed narrow, a root flag on an
+otherwise-sanctioned automerge (`gh -t x pr VERB 42 --auto --squash`) finds no clause and
+denies. That direction has a per-command escape here (`ALLOW_OUTWARD_CLI=1`) and the merge
+gate has none, so it is the correct trade — pinned as a deny row next to the row proving the
+sanctioned shape itself still allows.
+
+**Verification.** 627 / 710 / 95 assertions across the three suites; corpus 602 → 655 rows
+with a new generated `ghrootv-*` axis (8 flags × 6 families, members derived from
+`man gh-pr-VERB` plus two that do not exist), zero precise-path gaps, and **nothing removed**
+from either membership manifest — the check that says no pre-existing row changed behaviour.
+Every assertion operand was mutation-verified with both an unmutated control and a
+forced-fire control; the negative control confirms a strictly-narrower healthy definition
+stays silent, which both earlier counting versions failed.
+
+**One assertion operand was RETIRED rather than repaired.** It was a fixed-string test for the
+wide form's generic arm as spelled that day; re-spelling that arm made the literal occur in
+neither constant, so it could not fire against any input — inert while green. A behavioural
+operand replaced it, and the mutant it was meant to catch is now covered by the separator
+probe (measured, not assumed).
+
+**Still open, and NOT closed by this change** (re-measured, not carried forward): the quoted
+root flag with a separate unquoted value (`gh "-t" x pr VERB 42`) — `cmd_bare` blanks the
+span, removing the dash token the value arm anchors on, so this family GREW with this change;
+the namespace→verb redirect slot; and P1's binary-rendering families. All tracked in
+`todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md`, all denied by
+`guard-outward-cli.sh`, all allowed by the merge gate, none a regression.

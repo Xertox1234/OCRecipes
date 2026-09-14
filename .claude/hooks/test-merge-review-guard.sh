@@ -643,6 +643,56 @@ else
       "denied=$(denied "$out" && echo yes || echo no) reason=[$r]"
 fi
 
+# ── The SECOND HALF of the same P0: a root flag this grammar does not NAME ────
+# The five spellings above were closed on 2026-09-13 by naming `-R`/`--repo`. That looked
+# complete and was not: cobra accepts any flag of the TARGET subcommand in root position, so
+# `gh -t x pr merge 42` left `x` where the namespace belongs and resolved no subcommand at all
+# — reaching `[ "$SUB" = "merge" ]` as "not a merge", the same silent allow, one spelling over.
+# Closed by modelling the PROPERTY (a dash token may consume a following non-dash token)
+# rather than by naming more flags, which is why the `-Z` and `--not-a-real-flag` rows are
+# here: neither exists in any `gh`, and a membership-list fix would leave both open.
+for spelling in \
+  'gh -t x pr merge 42 --squash' \
+  'gh -b body pr merge 42 --squash' \
+  'gh -A a@b.c pr merge 42 --squash' \
+  'gh -F notes.md pr merge 42 --squash' \
+  'gh --match-head-commit abc123 pr merge 42 --squash' \
+  'gh -Z somevalue pr merge 42 --squash' \
+  'gh --not-a-real-flag v pr merge 42 --squash' ; do
+  out=$(bash_payload "$spelling" | run)
+  denied "$out" && ok "an unnamed separate-arg root flag is no longer a silent allow: [$spelling]" \
+                || bad "an unnamed separate-arg root flag is no longer a silent allow: [$spelling]" "$out"
+done
+
+# THE HEADLINE SHAPE, and again THE DENY ALONE IS NOT THE ASSERTION. `gh -t x pr merge 42
+# -R other/org` must refuse at REF RESOLUTION — if it instead reached stage 3 it would be
+# classifying the LOCAL PR #42 while gh merges someone else's, and the deny text would be
+# byte-identical to a bare merge's. That is the exact trap the trailing-retarget row above
+# was written for; it applies here too, so it is asserted here too.
+for spelling in \
+  'gh -t x pr merge 42 -R other/org' \
+  'gh -Z v pr merge 42 --repo other/org' ; do
+  out=$(bash_payload "$spelling" | run)
+  r=$(reason "$out")
+  if denied "$out" && printf '%s' "$r" | grep -qi 'could not resolve a PR number'; then
+    ok "root flag + retarget refuses at ref resolution: [$spelling]"
+  else
+    bad "root flag + retarget refuses at ref resolution: [$spelling]" \
+        "denied=$(denied "$out" && echo yes || echo no) reason=[$r]"
+  fi
+done
+
+# TWO-SIDED for the value arm specifically: a NO-ARG root flag puts the namespace in the very
+# next token, so the grammar must DECLINE to consume it. If it consumed it these would go
+# silently ALLOW — the value arm's own failure direction, and the one it could have caused.
+for spelling in \
+  'gh --no-color pr merge 42 --squash' \
+  'gh -q -v --no-color pr merge 42 --squash' ; do
+  out=$(bash_payload "$spelling" | run)
+  denied "$out" && ok "a NO-ARG root flag still reaches the gate: [$spelling]" \
+                || bad "a NO-ARG root flag still reaches the gate: [$spelling]" "$out"
+done
+
 # THE OTHER DIRECTION, in the same run. A root-position flag on a READ-ONLY command must
 # stay silently allowed — widening the extractor must not turn `gh -R owner/repo pr list`
 # into a gated call. Without these the deny rows above are a restrictive failure wearing a
@@ -650,7 +700,10 @@ fi
 for spelling in \
   'gh -R other/org pr list' \
   'gh -R other/org pr view 42' \
-  'gh 2>/dev/null pr view 42' ; do
+  'gh 2>/dev/null pr view 42' \
+  'gh -t x pr list' \
+  'gh -Z somevalue pr view 42' \
+  'gh --no-color pr status' ; do
   out=$(bash_payload "$spelling" | run)
   assert_allowed "read-only usage in the same slot stays allowed: [$spelling]" "$out"
 done
@@ -663,7 +716,8 @@ for prose in \
   'git commit -m "docs: describe the gh pr merge gate"' \
   'git commit -m "highlight: through pr merge notes"' \
   'git commit -m "highlight: cost $var pr merge plan"' \
-  'git commit -m "fix highlight for pr merge"' ; do
+  'git commit -m "fix highlight for pr merge"' \
+  'git commit -m "docs: gh -t x pr merge 42 was allowed by both layers"' ; do
   out=$(bash_payload "$prose" | run)
   assert_allowed "prose must never be denied: [$prose]" "$out"
 done
@@ -838,7 +892,7 @@ rm -rf "$NOJQ_BIN"
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=80
+EXPECTED_TOTAL=95
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

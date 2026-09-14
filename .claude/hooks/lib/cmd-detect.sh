@@ -166,31 +166,54 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # merge-guards.md; the redirect arm additionally closes mechanism (b) of
 # todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
 #
-# Grammar mirrors _CMD_GIT_GLOBALS deliberately, arm for arm, INCLUDING its residual: the
-# arg-taking flags named explicitly (`-R`/`--repo`), then a generic single-token `-…` catch-all that covers the glued and
-# no-arg forms (`--repo=v`, `-Rv`, `--no-color`), then the redirect alternative at
-# `[[:space:]]*`. Do NOT "tighten" the generic arm to exclude `;&|`: that is the PERMISSIVE
-# direction — `gh -R=a;b pr merge 42` would stop matching and go back to a silent allow.
+# Grammar follows _CMD_GIT_GLOBALS arm for arm, with ONE deliberate divergence: the
+# arg-taking flags named explicitly (`-R`/`--repo`), then a generic `-…` arm that covers the
+# glued and no-arg forms (`--repo=v`, `-Rv`, `--no-color`) AND OPTIONALLY CONSUMES A
+# FOLLOWING NON-DASH TOKEN, then the redirect alternative at `[[:space:]]*`. Do NOT "tighten"
+# the generic arm to exclude `;&|`: that is the PERMISSIVE direction — `gh -R=a;b pr merge 42`
+# would stop matching and go back to a silent allow.
 #
-# OPEN RESIDUAL — A BYPASS, NOT A SAFE DIRECTION. An unmodeled SEPARATE-arg root flag has its
-# VALUE mis-read as the namespace, so the needle never reaches `pr` and the match is lost. An
-# earlier version of this block called that "a false NEGATIVE, never a false positive" and
-# called `-R`/`--repo` "the only two gh root flags that take a separate argument". Both were
-# wrong, and the first is the more dangerous error: on a DENY gate a false negative IS the
-# bypass.
+# THE OPTIONAL VALUE TOKEN IS WHY THIS IS NOT A COPY OF _CMD_GIT_GLOBALS (2026-09-13, the
+# second half of the P0). It models the PROPERTY that makes a root flag dangerous — that it
+# consumes the next token — instead of naming the flags that have it. Naming them cannot
+# work here: cobra accepts any flag valid for the TARGET subcommand in root position, so the
+# set is not a property of `gh` at all, it is whatever the following verb defines, and it
+# changes when `gh` ships a new flag. The named `-R`/`--repo` arms are now SUBSUMED by the
+# generic one and are kept only because guard-outward-cli.sh's fail-closed assertion greps
+# the wide form for `--repo`; deleting them denies every command, including the shell needed
+# to put them back.
 #
-# cobra accepts any flag valid for the TARGET subcommand in root position, so the set is not
-# two flags — it is every separate-arg flag of whichever verb follows. `gh help pr merge` lists
-# five besides `-R`: `-A/--author-email`, `-b/--body`, `-F/--body-file`, `--match-head-commit`,
-# `-t/--subject`. Measured 2026-09-13 on BOTH layers, with `gh pr merge 42` and
-# `gh -R other/org pr merge 42` denying as controls: `gh -b x pr merge 42` and
-# `gh -t x pr merge 42 -R other/org` are ALLOWED by both. The second is the P0's own headline
-# shape in a different spelling. PRE-EXISTING — main allows them too — so widening this
-# grammar did not open it, and the P0 stays OPEN for it. Whoever closes it: generate the
-# corpus from `gh help pr <verb>` rather than from spellings you thought of, which is exactly
-# how the four closed spellings came to look complete; and note that widening this constant
-# also widens what reaches the GRANT-shaped clause cut in guard-outward-cli.sh, where two live
-# false grants were found in review.
+# The value token is `[^-[:space:]][^[:space:]]*` — it must NOT begin with `-`, so a dash
+# token always starts a fresh arm rather than being eaten as the previous flag's value. That
+# is also what lets a NO-ARG flag sit immediately before the namespace: `gh --no-color pr
+# merge 42` needs the engine to DECLINE the optional group, which POSIX requires it to do
+# when a parse exists. Measured under BSD grep 2.6.0-FreeBSD and bash 5.3.15, together with
+# `--repo=o/r`, `-Ro/r` and a run of three no-arg flags. Timing was measured against main on
+# the same inputs at 5/20/40 flag-value pairs and at 10/16/20 dash tokens with no match
+# (the worst case for a backtracking engine): within noise of main at every size, because
+# the ~14 ms cost of this helper is three forked processes, not the regex.
+#
+# CLOSED 2026-09-13 (the value arm above), and the history is kept because the WAY it was
+# missed is more reusable than the fix. This block previously read "an unmodeled SEPARATE-arg
+# root flag has its VALUE mis-read as the namespace, so the needle never reaches `pr`" and
+# classed that as "a false NEGATIVE, never a false positive". Both halves were wrong: on a
+# DENY gate a false negative IS the bypass, and the flag set was never enumerable in the
+# first place. `gh help pr merge` lists five separate-arg flags besides `-R`
+# (`-A/--author-email`, `-b/--body`, `-F/--body-file`, `--match-head-commit`, `-t/--subject`)
+# and cobra takes any flag of the TARGET subcommand, so the set is per-verb and open-ended.
+#
+# Measured 2026-09-13 on BOTH layers, controls in the same run (`echo hello` ALLOW/ALLOW,
+# `gh pr merge 42` DENY/DENY): `gh -t x pr merge 42 -R other/org` — a cross-repository retarget,
+# the P0's own headline shape — was ALLOW/ALLOW before the value arm and is DENY/DENY after,
+# on the retarget reason specifically, not the generic one. So are `-b`, `-A`, `-F`,
+# `--match-head-commit`, and `-Z` — a flag that does not exist, which is the row that proves
+# this models the property rather than a longer list. Read-only root-position usage
+# (`gh -R o/r pr list`, `gh -t x pr view 42`) stays ALLOWED.
+#
+# DO NOT "SIMPLIFY" THIS BY ENUMERATING THE FLAGS FROM `gh help`. A list is correct only
+# against the gh version it was read from, and the whole defect was that a list LOOKS
+# complete. The property does not go stale.
+# docs/solutions/logic-errors/an-invented-enumeration-is-not-the-space-ask-the-tool-2026-09-13.md
 #
 # Naming `-R`/`--repo` explicitly is what keeps THOSE TWO retarget flags out of the residual —
 # BUT ONLY IN THE UNQUOTED RENDERING, and the scope of that sentence is load-bearing.
@@ -207,7 +230,7 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # characters) rather than `cmd_bare` (which blanks the span). Tracked with P1's other
 # binary-rendering families; do not read the list here or in merge-review-guard.sh as
 # closed just because the unquoted slot is.
-_CMD_GH_GLOBALS='(([[:space:]]+(-R[[:space:]]+[^[:space:]]+|--repo[[:space:]]+[^[:space:]]+|-[^[:space:]]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
+_CMD_GH_GLOBALS='(([[:space:]]+(-R[[:space:]]+[^[:space:]]+|--repo[[:space:]]+[^[:space:]]+|-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?))|([[:space:]]*'"$_CMD_REDIR"'))*'
 
 # Verb alternations, named ONCE. cmd_git_repo_dir (below) must be called with the SAME verb
 # set as the predicate whose match it is qualifying — passing a wider set re-opens the
@@ -1953,8 +1976,14 @@ cmd_gh_pr_write_subcommand() {
   # the root-position flags INSIDE the span, `gh -R owner/merge pr create` matched stage one
   # and the re-scan returned `merge` — read out of the repo name — so a create was reported
   # as a merge. The `sed` below instead captures the alternation that actually sits in the
-  # slot after `pr`: the greedy `.*` runs to the LAST ` pr `, which is the namespace (a
-  # global's value cannot supply one, since it carries no leading whitespace).
+  # slot after `pr`: the greedy `.*` runs to the LAST ` pr <verb>` in the span, which is the
+  # namespace-and-verb slot BY CONSTRUCTION — stage one's pattern ends at
+  # `pr[[:space:]]+<verb>([[:space:]]|$)`, so no later occurrence can exist inside the span.
+  # That argument is structural and holds whatever the globals contain, which matters because
+  # the justification written here on 2026-09-13 ("a global's value cannot supply one, since
+  # it carries no leading whitespace") was falsified the same day by the value arm: a value
+  # CAN now be ` pr `. Both adversarial orderings are pinned — `gh -t merge pr create 42`
+  # resolves `create`, and `gh -t pr pr close 42` resolves `close`.
   # `head -1` stays BEFORE the sed so first-occurrence semantics are unchanged — a leading
   # greedy `.*` applied across all lines would silently become last-occurrence — and `-n…p`
   # emits nothing rather than echoing the line back when the capture does not match.
@@ -2212,9 +2241,11 @@ cmd_gh_pr_ref() {
   # ONLY THE TAIL IS TRUNCATED, and the distinction is the whole correctness of this block.
   # An earlier revision cut the CONCATENATION, justified by the sentence "$full_match cannot
   # itself contain `;`/`&`/`|` (its classes exclude them)". That was asserted, not traversed,
-  # and it is false: _CMD_GH_GLOBALS's generic arm is `-[^[:space:]]+`, which admits all
+  # and it is false: _CMD_GH_GLOBALS's generic arm excludes only whitespace, so it admits all
   # three — and the header above says not to tighten it, because doing so is the PERMISSIVE
-  # direction. So the cut landed INSIDE $full_match and threw away the merge clause carrying
+  # direction. (Cited by the PROPERTY, not the spelling: that arm gained an optional value
+  # token on 2026-09-13, whose class excludes whitespace too, so the sentence survived the
+  # re-spelling where a quoted literal would have gone quietly stale.) So the cut landed INSIDE $full_match and threw away the merge clause carrying
   # the retarget. Measured on `gh --version;gh pr merge 42 --repo other/org`:
   #     full_match [gh --version;gh pr merge 42]
   #     concatenated, then cut  ->  [gh --version]      <- the --repo is gone

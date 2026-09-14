@@ -1825,8 +1825,17 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # assertion and denied every gated command until the assertion itself was edited.
 #   1. the wide form still carries its --repo arm;
 #   2. the grant form is NOT the wide form (catches a wholesale swap);
-#   3. the grant form does NOT contain the WIDE generic arm (catches reverting that one arm,
-#      and stays true under any FURTHER narrowing);
+#   3. RETIRED 2026-09-13, and retired rather than repaired because the repair is the same
+#      class of mistake. It was `grep -qF -- '|-[^[:space:]]+)'` on the grant form: a fixed
+#      string naming the wide form's generic arm AS IT WAS SPELLED THAT DAY. Adding the
+#      separate-arg value arm to that arm changed its spelling to
+#      `-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?`, so the pinned literal now
+#      occurs in NEITHER form and the operand could not fire against any input — INERT while
+#      green, which is the defect this file already records twice (the `grep -c` line count
+#      and the `grep -o | wc -l` class count). Re-pinning the new spelling would only reset
+#      the clock. Operand 3b already asks the same question behaviourally, per arm, per
+#      separator, and it CAUGHT the mutant operand 3 was meant to catch (measured: a grant
+#      form whose generic arm is widened to the new wide spelling spans ` -x;y`);
 #   3b. the separator-safe class occurs at least ONCE PER `-`-ARM (three of them). Operand 3
 #      is a fixed-string test, so review measured it silent under two degradations its
 #      wording implied it covered: REORDERING the alternation so the generic arm comes first
@@ -1841,7 +1850,17 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 #      reddened on the wrong reason and the run looked plausible. A count here would be the
 #      fourth guess. If you need one, isolate the rows FIRST and prove the isolation with an
 #      unmutated control that reddens zero;
-#   4. $_CMD_REDIR is non-empty — which costs the REDIRECT arm, not "every needle".
+#   4. $_CMD_REDIR is non-empty — which costs the REDIRECT arm, not "every needle";
+#   5. the two forms DISAGREE about a separate-arg flag they do not name — the wide form
+#      spans ` -t x`, the grant form does not. This is the 2026-09-13 value arm, and it is
+#      asserted because its absence is a silent, green BYPASS, not an inaccuracy: cobra takes
+#      any flag of the TARGET subcommand in root position, so an unnamed separate-arg flag
+#      leaves its VALUE where the namespace belongs and the needle never reaches `pr`.
+#      `gh -t x pr merge 42 -R other/org` — a cross-repository retarget — was ALLOWED by BOTH
+#      layers until that arm landed. The same probe pinned from the other side keeps the
+#      grant form narrow, because widening THAT one is a false grant rather than a deny (see
+#      this constant's header). One operand, both directions, so "harmonise the two
+#      constants" cannot pass.
 # Operand 3b asks the grammar a BEHAVIOURAL question instead of counting a literal: fed a
 # span that crosses a separator, does the grant form match it WHOLE? The wide form does; a
 # correct grant form cannot. NINE probes: one per `-`-arm per separator, so the coverage is
@@ -1862,12 +1881,22 @@ _OUT_GRANT_SPANS=no
 for _out_gp in ' -x;y' ' -x&y' ' -x|y' ' -R a;y' ' -R a&y' ' -R a|y' ' --repo a;y' ' --repo a&y' ' --repo a|y'; do
   if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_SPANS=yes; break; fi
 done
+# Operand 5: a SEPARATE-ARG flag neither form names. The wide form must span it whole; the
+# grant form must not. Probed rather than pattern-matched, so the assertion survives a
+# re-spelling of either arm — which is exactly how operand 3 went inert.
+_OUT_WIDE_TAKES_VALUE=yes
+_OUT_GRANT_TAKES_VALUE=no
+for _out_vp in ' -t x' ' -Z somevalue' ' --match-head-commit abc123'; do
+  if ! printf '%s' "$_out_vp" | grep -qE "^${_CMD_GH_GLOBALS}\$"; then _OUT_WIDE_TAKES_VALUE=no; fi
+  if printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_TAKES_VALUE=yes; fi
+done
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
    || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
-   || printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '|-[^[:space:]]+)' \
+   || [ "$_OUT_WIDE_TAKES_VALUE" != yes ] \
+   || [ "$_OUT_GRANT_TAKES_VALUE" != no ] \
    || [ "$_OUT_GRANT_SPANS" = yes ] \
    || [ -z "${_CMD_REDIR:-}" ]; then
-  deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has had its generic arm widened back to it, or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has been widened to span a separator, the wide form has lost the separate-arg value arm that closes unnamed root flags (or the grant form has gained it), or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 BARE=$(printf '%s' "$CMD" | cmd_bare)

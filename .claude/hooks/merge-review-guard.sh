@@ -147,7 +147,14 @@ case "$TOOL" in
       # redirect in BOTH slots. The same change closed a
       # separate P0: a repo-retarget flag in ROOT position (`gh -R owner/repo pr <verb> 42`)
       # sat in that same slot and reached this line as "not a merge", including with the
-      # retarget pointed at THIS repository.
+      # retarget pointed at THIS repository. That P0 was closed in TWO steps and only the
+      # first landed then: naming `-R`/`--repo` covered four spellings, but cobra takes any
+      # flag of the TARGET subcommand in root position, so ANY OTHER separate-arg flag still
+      # left its value where the namespace belongs -- `gh -t x pr merge 42 -R other/org`, a
+      # cross-repository retarget, reached this line as "not a merge" too. Closed 2026-09-13 by
+      # giving _CMD_GH_GLOBALS's generic arm an optional non-dash value token, i.e. by modelling
+      # the PROPERTY rather than naming more flags; `-Z somevalue` and `--not-a-real-flag v`
+      # are pinned in the suite precisely because neither is a real gh flag.
       # STILL OPEN, re-measured against the widened extractor and still pinned ALLOW: the
       # path-qualified binary, the glued metacharacter, and the quoted substitution. Those
       # three defeat the detector before the slot is ever reached - they are about how the
@@ -160,7 +167,13 @@ case "$TOOL" in
       # `gh      o/r pr merge 42` and the VALUE lands where the namespace belongs - SUB
       # comes back empty and this line allows. Isolating control measured the same day:
       # `gh "--no-color" pr merge 42` still resolves, so the cause is the separate value,
-      # not quoting as such. Not a regression (main behaves identically), and
+      # not quoting as such. RE-MEASURED 2026-09-13 against the value arm, which does NOT
+      # help here and was not expected to: the arm anchors on a DASH token, and blanking
+      # removes the only one, so there is nothing left for it to attach a value to. The
+      # family GREW with that change rather than shrinking -- every newly-covered flag has a
+      # quoted spelling too, e.g. `gh "-t" x pr merge 42`, measured ALLOW here and DENY in
+      # guard-outward-cli.sh. Closing it means making cmd_bare's blanking preserve token
+      # boundaries, which is a lib-wide change and P1's, not this one's. Not a regression (main behaves identically), and
       # guard-outward-cli.sh still denies it because that hook reads cmd_words, which
       # DELETES quote characters, rather than cmd_bare, which blanks the span.
       #

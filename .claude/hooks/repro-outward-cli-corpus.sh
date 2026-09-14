@@ -151,15 +151,11 @@ for i in "${!FAM_NS_IDS[@]}"; do
 done
 
 # axis: ROOT-POSITION REPO-RETARGET FLAG (2026-09-13 -- the P0 tracked as
-# repo-retarget-flag-in-root-position-defeats-both-merge-guards, PARTIALLY closed).
-# THE TODO STAYS OPEN. The four -R/--repo spellings generated below now DENY, but they are
-# not the whole shape: cobra accepts any flag of the TARGET subcommand in root position, and
-# any separate-arg flag this grammar does not name leaves its VALUE where the namespace
-# belongs. `gh -t x pr merge 42 -R other/org` measured ALLOW on BOTH layers 2026-09-13 --
-# a cross-repository retarget defeating both merge guards, which is the todo's own headline.
-# Pre-existing (main allows it too), pinned as a tripwire in test-cmd-detect.sh, and recorded
-# where the constant is defined. Generate the rest from `gh help pr <verb>` rather than from
-# spellings you thought of -- that is exactly how these four came to look complete.
+# repo-retarget-flag-in-root-position-defeats-both-merge-guards, CLOSED in two
+# steps). These four -R/--repo spellings were step one. They were generated from a
+# flag list that looked complete and was not; the ghrootv-* axis below is step two
+# and is generated from the tool instead. Read the two together -- this block on its
+# own is the shape of the mistake, not the shape of the fix.
 # A FLAG between the binary and its namespace. The interior-redirect axis above
 # closed the same SLOT for redirects; `_OUT_SEP` never modelled a flag there, so
 # `gh -R other/org pr merge 42` matched none of the guard's gh needles and the
@@ -203,6 +199,98 @@ add ghroot-vs-auto  DENY 'gh -R other/org pr merge 42 --auto'
 add ghrootfp-list ALLOW 'gh -R other/org pr list'
 add ghrootfp-view ALLOW 'gh -R other/org pr view 42'
 add ghrootfp-get  ALLOW 'gh -R other/org api repos/o/r'
+
+# axis: ROOT-POSITION FLAG THE GRAMMAR DOES NOT NAME (2026-09-13 -- the second and
+# final half of the same P0, which this closes).
+#
+# The four spellings above were generated from a flag list, and the list was the
+# defect. `-R`/`--repo` are the flags that MEAN "retarget", but the grammar cares
+# only about which flags CONSUME A FOLLOWING TOKEN -- a property of the tool's flag
+# table, not of anyone's model of intent. cobra accepts any flag valid for the
+# TARGET subcommand in root position, so an unnamed separate-arg flag left its
+# VALUE where the namespace belongs and every gh needle went blind again:
+#
+#     gh -t x pr merge 42 -R other/org   -> ALLOW on BOTH layers, before this change
+#
+# which is a cross-repository retarget defeating both merge guards -- the P0's own
+# headline, in a spelling its own corpus could not reach.
+#
+# DIMENSION MEMBERS, AND WHERE THEY CAME FROM. Not from this file and not from
+# memory: from `man gh-pr-merge` (the man page rather than `gh help`, because the
+# help text contains the very command string this repo's guard denies). Every flag
+# there rendered as `--flag <PLACEHOLDER>` takes a separate argument -- six of them,
+# `-R/--repo` plus the five below. Re-derive rather than trust this list; a first
+# pass here grepped `<[a-z-]+>` and silently missed `--match-head-commit <SHA>` on
+# the placeholder's CASE, which is this same mistake one level down.
+#
+# THE LAST TWO MEMBERS ARE NOT GH FLAGS AT ALL, and they are the point. `-Z` and
+# `--not-a-real-flag` exist in no version of gh, so they can only pass against a
+# grammar that models the PROPERTY. If a future change makes them fail, the fix has
+# reverted to an enumeration and the next unnamed flag is live again.
+#
+# `noarg` is the two-sided member, inside the same generated product rather than
+# beside it: `-d/--delete-branch` takes NO value, so the namespace is the very next
+# token and the grammar must DECLINE to consume it. A value arm that over-consumed
+# would turn this row into a silent ALLOW, and no deny row above could see it.
+#
+# THE PRODUCT IS FULL, INCLUDING CELLS GH ITSELF WOULD REJECT (`gh -t x api ...`:
+# `-t` is not an `api` flag). That is deliberate. The guard cannot know which flags
+# a verb defines -- that is the whole reason it models the property -- so a cell gh
+# would reject is a harmless over-denial, while carving those cells out by hand is
+# exactly the hand-picked subset NOTE6 exists to prevent.
+# THE EXPECTED VERDICT IS PER FAMILY, AND EACH IS ON ITS OWN MERITS. The first draft of
+# this axis declared DENY for all four families by copying the -R/--repo axis above, and 16
+# rows came back as gaps. They were right and the declaration was wrong: those rows deny
+# because they carry a RETARGET, and this guard does not gate `gh pr create`/`gh pr comment`
+# at all without one (measured: `gh pr create --title x --body y` ALLOWS here; PR creation is
+# pr-preflight-guard.sh's stamp gate, which was separately measured to gate every spelling
+# below). The corpus header three blocks up says "EXPECTED=DENY on its own merits, not copied
+# from the documented-position row" — this is what ignoring that sentence looks like.
+#
+# So the create/comment families appear TWICE: once bare, expected ALLOW, which is the
+# two-sided control proving the widening did not turn ordinary PR creation into a denied
+# command; and once carrying a retarget (`R` suffix), expected DENY, which is the cell that
+# actually exercises those needles. Without the second, the flag dimension would prove
+# nothing for four of the six families.
+GH_ROOTV_FAM_IDS=(ghmerge ghcomment ghcreate ghapi ghcommentR ghcreateR)
+GH_ROOTV_FAM_CMDS=(
+  'gh pr merge 42'
+  'gh pr comment 5 --body hi'
+  'gh pr create --title x'
+  'gh api repos/o/r -X POST'
+  'gh pr comment 5 --body hi --repo other/org'
+  'gh pr create --title x --repo other/org'
+)
+GH_ROOTV_FAM_EXPECT=(DENY ALLOW ALLOW DENY DENY DENY)
+GH_ROOTV_FLAG_IDS=(subject body authoremail bodyfile matchhead unknownshort unknownlong noarg)
+GH_ROOTV_FLAGS=(
+  '-t x'
+  '-b body'
+  '-A a@b.c'
+  '-F notes.md'
+  '--match-head-commit abc123'
+  '-Z somevalue'
+  '--not-a-real-flag v'
+  '-d'
+)
+for i in "${!GH_ROOTV_FAM_IDS[@]}"; do
+  for j in "${!GH_ROOTV_FLAG_IDS[@]}"; do
+    add "ghrootv-${GH_ROOTV_FLAG_IDS[$j]}-${GH_ROOTV_FAM_IDS[$i]}" "${GH_ROOTV_FAM_EXPECT[$i]}" \
+      "$(sed -E "s#^gh #gh ${GH_ROOTV_FLAGS[$j]} #" <<< "${GH_ROOTV_FAM_CMDS[$i]}")"
+  done
+done
+# THE HEADLINE SHAPE ITSELF, literal because it is one specific pairing rather than
+# a new dimension: an unnamed root flag CARRYING a retarget through. The deny must
+# come from the retarget check, not the generic no---auto one -- asserted by reason
+# in test-guard-outward-cli.sh, since this corpus records the verdict, not the path.
+add ghrootv-retarget DENY 'gh -t x pr merge 42 -R other/org'
+add ghrootv-selfrepo DENY 'gh -t x pr merge 42 -R Xertox1234/OCRecipes'
+# FALSE-POSITIVE CONTROLS, same slot, read-only verbs. Without these the 34 rows
+# above are a restrictive failure wearing a green tick: a guard that denied every
+# root-position flag outright would pass all of them.
+add ghrootvfp-list ALLOW 'gh -t x pr list'
+add ghrootvfp-view ALLOW 'gh -Z somevalue pr view 42'
+add ghrootvfp-get  ALLOW 'gh -t x api repos/o/r'
 
 # axis: INTERIOR REDIRECT (2026-09-07 -- the P0 tracked as
 # outward-cli-guard-interior-redirect-defeats-every-family, now closed).
@@ -1356,24 +1444,35 @@ fi
 #    see the DENY-SITE COVERAGE axis and `_pin_sites`. It was found by a reviewer
 #    deleting three real protections and watching this file exit 0.
 #
+# BUMP 2026-09-13 (second half of the root-position P0). ONE mechanism moved every ID:
+# _CMD_GH_GLOBALS's generic arm gained an OPTIONAL non-dash value token, so a root-position
+# flag that TAKES a separate argument no longer leaves that argument where the namespace
+# belongs. +53 rows, all in the new generated ghrootv-* axis (8 flags x 6 families = 48, plus
+# 2 literals and 3 false-positive controls). +34 all-path dirty and +34 attribution rows --
+# the same 34, i.e. exactly the DENY-expecting new rows; the 16 two-sided ALLOW rows and the
+# 3 controls add neither. NOTHING WAS REMOVED from either manifest, which is the check that
+# says no pre-existing row changed behaviour. Precise-path gaps are unchanged at 31: the new
+# axis contributes none. Every number here was read out of the run, and the manifest lines
+# were pasted from the run's own "+" output rather than typed.
+#
 # HOW TO BUMP: a bump is a deliberate, dated edit, and the DIFF is where a
 # reviewer confirms the movement was intended. Re-run this file, paste the sets
 # it reports, and state in the commit message WHICH mechanism moved each ID.
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=602
+EXPECTED_ROWS=655
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 504 of the 602 rows deny on the precise path; the other 98 are ALLOW there
-# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-* controls, plus the 31
-# precise-path gaps). Corrected 2026-09-13: this was the FIFTH stale copy of a
+# 538 of the 655 rows deny on the precise path; the other 117 are ALLOW there
+# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-*/ghrootvfp-* controls and
+# the 16 ghrootv-*-ghcomment/ghcreate two-sided rows, plus the 31 precise-path gaps). Corrected 2026-09-13: this was the FIFTH stale copy of a
 # count in this file, found by review after four others were repaired -- and it
 # sits five lines above its own warning about exactly that. These numbers are
 # bumped with
 # EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
 # stale, sitting directly above the constant they describe.
-EXPECTED_DENY_ATTRIB_ROWS=504
+EXPECTED_DENY_ATTRIB_ROWS=538
 
 # 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1430,7 +1529,7 @@ EXPECTED_PRECISE_GAPS=31
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=243
+EXPECTED_ALLPATH_GAPS=277
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1711,6 +1810,40 @@ ghroot-reposep-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
 ghroot-reposep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 ghroot-selfrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
 ghroot-vs-auto p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-authoremail-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-authoremail-ghcommentR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-authoremail-ghcreateR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-authoremail-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-body-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-body-ghcommentR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-body-ghcreateR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-body-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-bodyfile-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-bodyfile-ghcommentR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-bodyfile-ghcreateR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-bodyfile-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-matchhead-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-matchhead-ghcommentR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-matchhead-ghcreateR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-matchhead-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-noarg-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-noarg-ghcommentR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-noarg-ghcreateR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-noarg-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-retarget p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-selfrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-subject-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-subject-ghcommentR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-subject-ghcreateR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-subject-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-unknownlong-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-unknownlong-ghcommentR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-unknownlong-ghcreateR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-unknownlong-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-unknownshort-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-unknownshort-ghcommentR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-unknownshort-ghcreateR p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghrootv-unknownshort-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -2233,6 +2366,40 @@ ghroot-reposep-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFF
 ghroot-reposep-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
 ghroot-selfrepo    : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
 ghroot-vs-auto     : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghrootv-authoremail-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-authoremail-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-authoremail-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-authoremail-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-body-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-body-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-body-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-body-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-bodyfile-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-bodyfile-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-bodyfile-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-bodyfile-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-matchhead-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-matchhead-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-matchhead-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-matchhead-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-noarg-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-noarg-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-noarg-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-noarg-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-retarget   : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghrootv-selfrepo   : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghrootv-subject-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-subject-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-subject-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-subject-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-unknownlong-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-unknownlong-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-unknownlong-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-unknownlong-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-unknownshort-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-unknownshort-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-unknownshort-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-unknownshort-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
