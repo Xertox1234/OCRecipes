@@ -450,8 +450,8 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     # The hand-written grammar above models everything between `git` and its verb as GLOBALS.
     # A redirect token starts with a digit, `>`, `<`, `&` or `{`, so it matches none of them
     # and the whole segment fails the regex — taking the `|| continue` below, which means the
-    # worktree contract was never checked for that command. TWO positions defeated it, by two
-    # different mechanisms:
+    # worktree contract was never checked for that command. THREE spellings defeated it, by
+    # TWO different mechanisms — the first two share one, the third does not:
     #
     #   git 2>/dev/null commit -m x   interposed  — defeats the GLOBALS group
     #   git>out commit -m x           glued       — same group; bash splits at the operator,
@@ -490,10 +490,25 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #     main, not something this adoption introduces; near-miss binaries generally (`gitk`,
     #     `gitk>out`, `git-foo`, `digit`, `legit`) all stay MISSED.
     #
-    # NOT CLOSED — a redirect BEFORE the `git` token (`2>/dev/null git commit -m x`) is a real
-    # invocation and is still MISSED: the segment anchor never reaches `git` when a redirect
-    # precedes it, and this change only touches the group BETWEEN `git` and the verb. The
-    # redirect bypass is narrowed by two positions, not eliminated.
+    # NOT CLOSED — TWO residual classes, listed together because a residual list naming only
+    # one reads as completeness and the omitted one is the live route:
+    #   1. A redirect BEFORE the `git` token (`2>/dev/null git commit -m x`) is a real
+    #      invocation and is still MISSED: the segment anchor never reaches `git` when a
+    #      redirect precedes it, and this change only touches the group BETWEEN `git` and the
+    #      verb. Pre-existing; `_CMD_POS_PREFIX` upstream models the shape if it is ever fixed.
+    #   2. A redirect operator CONTAINING `&` or `|` — `2>&1`, `&>`, `>&`, `>|` — never reaches
+    #      this regex at all: split_segments (above) flushes on those characters
+    #      unconditionally, so `git 2>&1 commit -m x` arrives as `git 2>` + `1 commit -m x` and
+    #      neither half matches. All four are real invocations (argv shim). Filed as
+    #      todos/P1-2026-09-13-split-segments-fractures-redirect-operators-containing-amp-or-pipe.md
+    #      and pinned in test-git-safety.sh as KNOWN-WRONG rows. Do NOT "fix" it by narrowing
+    #      where split_segments flushes without reading that todo's Risks: merging segments
+    #      breaks the `^` anchor for a FOLLOWING command, which is the false-ALLOW direction.
+    #
+    # So: three spellings closed across two mechanisms; the redirect bypass is NARROWED, not
+    # eliminated. Measured through the real two-stage pipeline (split_segments then the regex),
+    # a 1344-row product-of-dimensions corpus goes from 24 SEEN to 912, with 0 regressions.
+    # Measuring the regex ALONE reports 0 -> 1200 and is the wrong layer for that claim.
     case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
     if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
        && [ -n "${_CMD_GIT_GLOBALS:-}" ] \
