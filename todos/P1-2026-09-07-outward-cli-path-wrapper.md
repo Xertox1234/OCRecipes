@@ -243,6 +243,20 @@ path specifically_. It does **not** close `npx eas update` or `/opt/homebrew/bin
 neither resolves through the wrapper's `PATH` (Summary → NAMED RESIDUALS). Those are guard-text
 work, not shim work; do not read ruling 4 as "the OTA class is closed".
 
+**The mechanism is PER-SUBCOMMAND, and the two npm subcommands go opposite ways** — state it this
+way so nobody "fixes" it later by prepending harder:
+
+- `npm run` — `@npmcli/run-script/lib/set-path.js` orders `binPaths`, then `node_modules/.bin`
+  walking up, then the inherited `PATH` **last**. There is no local `eas` (no `eas-cli`
+  dependency, no `node_modules/.bin/eas`), so resolution falls through to the inherited `PATH`
+  and **the shim wins**. Ruling 4's premise holds here.
+- `npm exec` — `libnpmexec` pushes **npm's global bin** ahead of the inherited `PATH` on a hit,
+  and `/opt/homebrew/bin/eas` is exactly that hit, so **the shim loses**. No `PATH` ordering
+  change recovers it; only the guard-text layer covers this one.
+
+All guard verdicts quoted in this file were produced **text-only** — a PreToolUse JSON envelope
+piped to the hook on stdin, nothing executed.
+
 ### 5. Committed to the repo, not the operator's environment
 
 `.claude/settings.json` and `.claude/hooks/` are both tracked. An environment-only wrapper
@@ -389,10 +403,27 @@ Consequences, both binding:
       > stub standing in for "the real CLI", so fall-through lands on the sentinel and never on
       > `/opt/homebrew/bin/eas` (measured present on this host). Same reasoning as the level-(b)
       > bar above: a sentinel does not help if the real binary is still resolvable.
+      >
+      > **Pair it with a POSITIVE control under the identical restricted `PATH`**, or a green
+      > negative is not evidence. Stripping `PATH` to `<wrapper-dir>:<sentinel-dir>` also removes
+      > `/usr/bin` and `/bin`, so any external utility the shim needs — the `stat`/`date` TTL
+      > check on the one-shot token file, for one — fails to resolve, the shim dies, the sentinel
+      > is never written, and "the real CLI was not reached" passes **for the wrong reason**. So:
+      > an allowlisted read-only argv (`eas update:list`) run under the same restricted `PATH`
+      > MUST produce a sentinel write.
 
-- [ ] False-positive population measured by execution over harvested command history, not
-      estimated — the same harness used for PR #929 (`fp-harvest`, 1,658 decision-relevant
-      commands). Validate the harness on a known flip before trusting a zero.
+- [ ] False-positive population measured over harvested command history, not estimated —
+      the same corpus as PR #929 (`fp-harvest`, 1,658 decision-relevant commands). Validate the
+      harness on a known flip before trusting a zero. **State explicitly which component you are
+      measuring, and run a shim sweep only with the real binaries unreachable:** `fp-harvest` as
+      built is a guard-verdict harness (command text in, hook verdict out), so reused literally it
+      measures `guard-outward-cli.sh`'s false positives, **not the shim's**. The only adaptation
+      that measures the shim invokes it with argv — and a shim's ALLOW path is `exec` of the real
+      binary, so a sweep over 1,658 real commands with `/opt/homebrew/bin/{eas,railway,gh}`
+      reachable would execute every allowlisted row for real, and one over-broad allowlist entry
+      (the `update:*` / bare-`run` prefix trap named above) would execute a real mutating
+      invocation. Run it as `PATH=<wrapper-dir>:<sentinel-dir>` and score sentinel-file hits
+      against refusals.
 - [ ] Interaction with `guard-outward-cli.sh` is **BESIDE it — union, not substitution**
       (ruling 1, which answers this criterion's question). **Do not silently weaken the guard**
       on the assumption the wrapper covers it — this repo has a solution doc about substituting
@@ -445,8 +476,11 @@ Consequences, both binding:
   so exact-subcommand matching alone does not protect it. The residual risk then inverts to
   over-refusal, which is visible to the operator rather than silent.
 - **Residuals the wrapper does NOT cover — named, so this list is not read as complete:**
-  (a) the launcher family (`npx`, `npx --yes`, `bunx`, `bun x`) and absolute-path invocation,
-  which never resolve through the wrapper's `PATH` — see the Summary's NAMED RESIDUALS block;
+  (a) the launcher family and absolute-path invocation — **do not re-enumerate the launchers
+  here; the measured set lives in the Summary's NAMED RESIDUALS block.** An earlier revision of
+  this bullet repeated a stale four-item list (`npx`, `npx --yes`, `bunx`, `bun x`) under a
+  preamble asserting completeness, omitting the one form that is both live on this host and
+  reachable (`npm exec`) — the exact defect the Summary block was rewritten to fix;
   (b) a `node`/`tsx` script that talks to the Expo/EAS API directly with a token and never execs
   a CLI; (c) the `mcp__railway__*` / `mcp__github__*` tool paths, which `CLAUDE.md` actively
   PREFERS over `gh` and which no `PATH` shim and no Bash-tool hook observes. (b) and (c) are

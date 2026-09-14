@@ -27,13 +27,26 @@ looks:
 **`npm exec eas update --branch preview` is ALLOW at the guard today** — measured, with controls.
 `/opt/homebrew/bin/eas` is the real CLI on this host.
 
-> **Two propositions, and only one is measured. Keep them apart.** That the _guard allows this
-> text_ is measured (table below). That this invocation _resolves through `PATH` to the real
-> `eas` and publishes_ is **inferred, not measured** — and it is not safely measurable by the
-> obvious route, because if `npm exec` does NOT consult `PATH` it resolves `eas` from the
-> registry instead, which is the publish this todo exists to prevent. Measure the resolution
-> half with a sentinel under a name that is **not** a real package — `npm exec ocr-path-probe` —
-> so no gated binary ever appears in an argv. **Never probe with `npm exec eas …`.**
+> **Two propositions. Both are now answered, and NEITHER needs an execution probe.**
+>
+> - _The guard allows this text_ — **measured** (table below).
+> - _This invocation reaches the real `eas`_ — **established by reading npm's resolution code**,
+>   not by running anything. `libnpmexec`'s `needPackageCommandSwap` consults a local package
+>   `bin`, then `node_modules/.bin` walking up, then **npm's global bin** — and never `PATH`
+>   (`grep` for `process.env.PATH` in `libnpmexec/lib/` returns nothing). On this host
+>   `/opt/homebrew/bin/eas -> ../lib/node_modules/eas-cli/bin/run` **is** that global bin, so
+>   `npm exec eas` execs the real CLI directly: no install, no cache, no prompt.
+>
+> 🛑 **Do NOT probe this with `npm exec` at all — not even under a made-up name.** An earlier
+> revision of this todo prescribed `npm exec ocr-path-probe` as the "safe" probe. It is not: since
+> `npm exec` never consults `PATH`, a stub placed there is missed by all three lookups, and the
+> miss branch runs `pacote.manifest(…, {preferOnline: true})` then `reify()` — and because this
+> environment is non-interactive (`noTTY()` true), npm **warns and installs** rather than
+> prompting. That probe would fetch and execute an arbitrary remote package. It is deleted, not
+> hardened, because the question it asked is already answered above by inspection. If an
+> execution probe is ever wanted, the sentinel must be installed where npm actually looks
+> (`node_modules/.bin/`), never merely on `PATH` — and note that `npm_config_yes=false` stops
+> install-and-execute but **not** the registry lookup, which runs upstream in `missingFromTree`.
 
 ## Background
 
@@ -65,10 +78,12 @@ A wider grid run during the PR #952 review found that **every non-empty launcher
 every binary and verb tried** — `npx`, `npx -y`, `npx --yes`, `npm exec`, `npm exec --`, `bunx`,
 `bun x`, `bun run`, `pnpm dlx`, `pnpm exec`, `yarn dlx`, `yarn exec`. **No bare count is quoted
 here**: an earlier draft said "ten" with no denominator, which is the exact defect Acceptance
-Criterion 4 below forbids. One reviewer's generated corpus was 13 launcher-forms × 4 path-forms ×
-4 binary+verb targets = **208 rows, ALLOW 204/208**, the only four DENYs being the bare-name and
-bare-path control rows — quote a figure only with dimensions and denominator like that, and
-regenerate it on the host where the fix is verified.
+Criterion 4 below forbids. One reviewer's generated corpus was 13 launcher-forms (the 12 above
+**plus the empty/no-launcher baseline**) × 4 path-forms × 4 binary+verb targets = **208 rows,
+ALLOW 204/208**. The only four DENYs are the rows that are **both launcher-free and path-free** —
+one per target. **The bare-path rows ALLOW everywhere**; that is residual 2, the gap this todo
+exists to close, not a row that denies. Quote a figure only with dimensions and denominator like
+that, and regenerate it on the host where the fix is verified.
 
 **Population note, and it matters:** `bunx`, `bun`, `pnpm` and `yarn` are **not installed** on the
 reference machine — only the `npm`/`npx` forms are live here. So the launcher list above is a list
@@ -93,15 +108,17 @@ consistent with this repo's known path-qualified extractor gap
 
 ## Acceptance Criteria
 
-- [ ] Reproduce each row above against unmodified `main` first, per shape. If a row does not
-      reproduce, report that rather than fixing something that is not broken.
-- [ ] **Measure the resolution half separately from the guard-verdict half** (they are two
-      propositions — see the Summary). Use a sentinel under a name that is **not** a real
-      package: `npm exec ocr-path-probe`, with an argv-printing stub on `PATH` writing to a
-      sentinel file. That answers "does `npm exec` consult `PATH`" without any gated binary
-      appearing in an argv. **Never probe with `npm exec eas …`** — if `npm exec` does not
-      consult `PATH` it resolves `eas` from the registry, which is the publish this todo exists
-      to prevent.
+- [ ] Reproduce each row above against unmodified `main` first, per shape — **as guard-verdict
+      rows fed to the hook on stdin, never executed.** These are the live-ALLOW rows:
+      `npm exec eas update` and `/opt/homebrew/bin/gh pr merge` are stopped by **no** live
+      control, so a literal reproduction-by-execution publishes an OTA or merges a PR. If a row
+      does not reproduce, report that rather than fixing something that is not broken.
+- [ ] **Keep the resolution half separate from the guard-verdict half** (two propositions — see
+      the Summary). The resolution half is settled **by reading `libnpmexec`'s
+      `needPackageCommandSwap`**, which never consults `PATH`; re-confirm by inspection on the
+      host under test, plus `ls -l $(npm prefix -g)/bin/eas`. **Run no `npm exec` probe of any
+      kind** — see the Summary's 🛑 block for why a made-up sentinel name is a registry
+      install-and-execute, not a safe test.
 - [ ] The launcher family DENIES for every gated binary: the gated word is detected when it
       appears as the **argument of a launcher**, not only in command position.
 - [ ] Absolute- and relative-path invocation DENIES — `/opt/homebrew/bin/eas update`,
