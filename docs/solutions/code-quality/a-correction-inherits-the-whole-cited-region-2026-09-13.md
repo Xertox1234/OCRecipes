@@ -124,6 +124,16 @@ construction — no corpus required, and scoped explicitly to the boundary swap,
 
 ## Prevention
 
+> **RECURRED THE SAME DAY — this prose did not hold.** Hours after this file was committed,
+> PR #952 cited `guard-outward-cli.sh:358-372` for a bypass documented there as "CONFIRMED
+> LIVE", stopping nine lines short of `:381`'s "CLOSED — and this entry said otherwise for a
+> day", and argued a ruling from it. Same author, same defect, caught only in review. The
+> reason is structural: the rule below is about **reading**, and the failure happens while
+> **writing** — picking a narrow range feels like precision, and nothing in the prose cues
+> that a traversal is owed. Prefer a form that cannot express the defect — cite by anchor
+> (`_CMD_REDIR`, "the `DOCUMENTED RESIDUALS` entry for …") rather than by line range. See
+> [A positional reference decays](a-positional-reference-decays-anchor-instead-2026-09-13.md).
+
 - **A correction is a claim, and inherits the full verification burden of what it
   contradicts.** Before replacing someone's citation, read the *entire* cited region. The
   cost is one `sed -n '67,127p'`; the cost of skipping it is asserting a falsehood in the
@@ -154,6 +164,7 @@ construction — no corpus required, and scoped explicitly to the boundary swap,
 
 ## See Also
 
+- [A positional reference decays](a-positional-reference-decays-anchor-instead-2026-09-13.md) — the recurrence of this defect hours after codification, plus the ordinal-drift half this file does not cover and the anchor form that removes both
 - [A "metrics are stable" justification that was verified for only one of the cited metrics](../logic-errors/multi-metric-stability-claim-checked-for-one-metric-2026-07-16.md) — the same shape one layer out: a plural claim backed by evidence for one member
 - [Re-verifying a stale item's citations is not re-verifying its premise](../logic-errors/citation-refresh-is-not-premise-refresh-2026-08-15.md) — citation work that looks like diligence while leaving the load-bearing claim unchecked
 - [A sampled corpus described as generated](a-sampled-corpus-described-as-generated-2026-09-13.md) — the corpus-scope half of this defect, from the sibling PR
