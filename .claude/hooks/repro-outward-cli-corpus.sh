@@ -1486,11 +1486,7 @@ fi
 #    naming it here rather than only in the residual is the same "a list that
 #    discloses only the residual it has already closed is worse than no list"
 #    discipline this whole paragraph is about):
-#    (a1) the SITE_UPD_VERBS / SITE_CB_VERBS families a few hundred lines above,
-#    and GH_PR_CREATE_RE (guard-outward-cli.sh:2778, `gh pr (create|comment)`) --
-#    added 2026-09-15 so this bucket matches the companion solution doc, which
-#    already counted it among the six left hand-listed. Its coverage is likewise
-#    COMPLETE (19 rows for `create`, 49 for `comment` across the 623),
+#    (a1) the SITE_UPD_VERBS / SITE_CB_VERBS families a few hundred lines above
 #    (`eas update:(delete|edit|republish|...)`, `eas (channel|branch):(create|
 #    edit|delete|rename)`) are the EXACT SAME alternation-of-literal-branches
 #    shape `_alt_or_die` already handles -- SITE_CB_VERBS is even a two-group
@@ -1503,6 +1499,10 @@ fi
 #    scope rather than folded in under time pressure. A branch added to either
 #    regex later needs a human to remember to extend the hand-list, exactly the
 #    "hand-carved subset" failure NOTE6 exists to prevent.
+#    GH_PR_CREATE_RE (guard-outward-cli.sh:2778, `gh pr (create|comment)`) belongs
+#    in this bucket too -- added 2026-09-15 so the corpus and the companion
+#    solution doc stop disagreeing about the same list. Hand-listed, and coverage
+#    COMPLETE: 19 rows for `create`, 49 for `comment` across the 623.
 #    (a2) TWO MORE ALTERNATION-SHAPED SITES THAT ARE HAND-LISTED *AND*
 #    INCOMPLETELY COVERED. Added 2026-09-15 after a review pointed out that (a1)
 #    discloses only a family whose coverage is COMPLETE while these two, with
@@ -1533,15 +1533,36 @@ fi
 #      here, because retrofitting them is the same shipped-mechanism retrofit
 #      (a1) was scoped out for.
 #    (a3) FLAG-, VERB- AND METHOD-POSITION BRANCH LISTS, hand-listed and
-#    incompletely covered. Added 2026-09-15: the (a1)/(a2) split still was not a
-#    partition, because it only looked at alternations sitting next to
-#    `${_OUT_SEP}` in a command-position SITE regex. These four are literal
-#    branch lists a source-grep can enumerate just as easily, and they feed deny
-#    decisions from other positions:
+#    incompletely covered.
+#
+#    *** DERIVE THIS BUCKET, DO NOT READ IT AS A LIST. *** Three successive
+#    revisions of this paragraph each added a bucket the previous one had called
+#    exhaustive, so the enumeration itself is the defect and the list below is a
+#    SNAPSHOT of a scan, not a closed set. THE SCAN, which is the durable part:
+#    take every NON-COMMENT line of guard-outward-cli.sh and pull each flat
+#    `(a|b|c)` alternation whose branches are all literals out of it. Compare
+#    THAT population against these buckets -- not against the names written here,
+#    which is how the last three misses happened.
+#
+#    DO NOT PIN THE COUNT THE SCAN RETURNS. Two independent runs of it at the
+#    2026-09-15 head returned 43 groups over 20 lines and 42 over 20, and the
+#    difference is the branch-character class each one allowed, not a change in
+#    the file: `_OUT_POS_SUFFIX` (guard-outward-cli.sh:1607) is an alternation of
+#    CHARACTER CLASSES rather than a hand-listed branch list, so whether it
+#    counts depends entirely on where you draw that line. The count is a property
+#    of the scan, exactly as this file says elsewhere about every other number;
+#    the LINE SET is the stable part, and both runs agreed on it.
+#
+#    Known members at that head, with the ones whose coverage is incomplete:
 #      _OUT_GATED_BIN   guard-outward-cli.sh:2274   6 branches
-#      _OUT_GATED_VERB  guard-outward-cli.sh:2275  18 branches
+#      _OUT_GATED_VERB  guard-outward-cli.sh:2275  17 branches
 #      _GH_API_M        guard-outward-cli.sh:3172   4 branches
 #      _OUT_REPO_FLAG_RE guard-outward-cli.sh:944   2 branches
+#      GH_MERGE_VALUE_FLAGS guard-outward-cli.sh:2493  25 branches, 17 with NO row
+#      (-X|--method)      guard-outward-cli.sh:3157 and :3219 -- hand-listed but
+#                         COVERED: deleting `--method` moves 3 rows
+#                         (flagadj{glue,sp,fd}-ghapimeth), so an enumeration gap
+#                         rather than a hole.
 #    Two of their branches are measurably uncovered, constructed and run rather
 #    than inferred:
 #      _GH_API_M: deleting the PATCH branch makes `gh api repos/o/r -X PATCH`
@@ -1551,28 +1572,52 @@ fi
 #        guard exists for.
 #      _OUT_GATED_BIN: deleting `pnpm` makes a pnpm invocation ALLOW (control:
 #        the yarn form still DENY) and moves 0 of 623 rows.
+#      GH_MERGE_VALUE_FLAGS is the FORGED-`--auto` DEFENCE and the most costly of
+#        these: it rejects an --auto match whose preceding token is a value-taking
+#        flag, so `--add-label --auto` must not count as a real --auto. Deleting
+#        that ONE branch was measured to flip `gh pr merge 42 --add-label --auto`
+#        from DENY to ALLOW, with three controls holding in the same run
+#        (`--title --auto` still DENY, so the mechanism works for a branch left
+#        in place; `--auto` alone still ALLOW, the sanctioned carve-out; no
+#        --auto at all still DENY) -- and 0 of 623 rows move. Seventeen of its
+#        25 branches have no row, so seventeen such deletions are invisible.
 #    Positive control for both, in the same runs: deleting `run` from the
 #    railway alternation moved exactly one row (siterailverb-run), so the
 #    instrument was live.
+#    (a4) THE CRUDE DEGRADED MIRROR'S OWN COPIES. Added 2026-09-15. The mirror --
+#    the fail-closed function that runs only when jq, awk or the lib is already
+#    broken -- carries its own hand-listed branch lists at guard-outward-cli.sh
+#    :1293 `(eas|railway|npm|pnpm|yarn|gh)`, :1355 (sixteen alternation groups
+#    mirroring essentially every command-position site regex) and :1358
+#    (`(create|comment)` and `(--repo|-R)`): 19 groups, in none of (a1)/(a2)/(a3).
+#    They are NOT redundant with the precise-path lists -- they are a PARALLEL
+#    COPY governing the three degraded paths this corpus tests and pins per-path,
+#    so covering the precise list does not cover them, and the two must be kept
+#    in step BY HAND. Measured: deleting `pnpm` from :1293 alone, leaving
+#    _OUT_GATED_BIN intact, keeps the precise verdict at DENY and flips the
+#    DEGRADED verdict DENY->ALLOW, control `yarn` holding DENY on both paths, and
+#    0 of 623 rows move when precise AND degraded verdicts are compared per row.
 #    (b) any OTHER deny check in the file that is GENUINELY not a branch list --
 #    narrowed twice now, because it twice asserted a universal that measurement
 #    broke: the interior-redirect, flag-adjacent, forged/masked --auto,
 #    decoy-clause and root-position-flag families are each their own bespoke
 #    regex, not a branch list, and adding a branch-style row generator for them
 #    is exactly the "enumerate every mechanism x every branch" cross product
-#    this todo's own scope note declines. TWO NARROWINGS RECORDED, because the
-#    same sentence was wrong twice: it first said the remaining checks "do not
-#    take the alternation shape at all" ((a2) refuted that), then still implied
-#    the remainder were bespoke regexes ((a3) refuted that). What is left here
-#    really is bespoke -- but treat that as a claim awaiting its next
-#    counter-example, not as a closed set;
+#    this todo's own scope note declines. THREE NARROWINGS RECORDED, because the
+#    same sentence has now been wrong three times: it first said the remaining
+#    checks "do not take the alternation shape at all" ((a2) refuted that), then
+#    implied the remainder were bespoke regexes ((a3) refuted that), then still
+#    missed the degraded mirror's parallel copies ((a4) refuted that). The
+#    honest reading is that this bucket is whatever the scan in (a3) does not
+#    account for -- a REMAINDER, not a characterisation. Do not restate it as a
+#    property;
 #    (c) narrowing that is not branch DELETION at all -- tightening `_OUT_SEP` or
 #    `_OUT_POS_PREFIX` themselves, or narrowing a character class inside one
 #    branch rather than removing the branch whole.
-#    All FIVE are real and still invisible to every check in this
+#    All SIX are real and still invisible to every check in this
 #    block for the same reason the original paragraph gave: this is a question
 #    about which rows exist, not one a fixed pin can answer without a new axis
-#    (or, for (a1)/(a2)/(a3), the same axis extended) for each shape.
+#    (or, for (a1)/(a2)/(a3)/(a4), the same axis extended) for each shape.
 #
 #    The residual this list USED to name second -- a deny site no row reaches, so
 #    deleting it is invisible -- was live when it was written and is closed now:
