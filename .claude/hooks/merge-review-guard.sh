@@ -127,10 +127,20 @@ case "$TOOL" in
     # deny branch. Version skew is the realistic trigger -- this hook cherry-picked without
     # lib/cmd-detect.sh, a partially-merged tree, a stale .claude/ copy. Every function
     # called below this line must appear in this conjunction; the `else` arm's deny is the
-    # only correct outcome when one does not.
+    # only correct outcome when one does not. cmd_words_deep -- used by the gh-api route
+    # below -- was NOT in it when that sentence was first written, which made the sentence
+    # false about its own file. Unreachable in practice (it is defined far above
+    # cmd_gh_pr_ref, so any source defining the last necessarily defined it), but an
+    # invariant a file does not satisfy is worse than no invariant.
+    # SCOPE, stated so this is not over-trusted: this conjunction covers FUNCTIONS only. The
+    # shared CONSTANTS (_CMD_POS_PREFIX, _CMD_GH_GLOBALS, _CMD_POS_SUFFIX, _CMD_REDIR) are
+    # not checked. Under `set -u` an unset one kills the hook, and a PreToolUse hook that
+    # exits without emitting JSON is NON-BLOCKING -- so that path is fail-open and this line
+    # does not close it.
     if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
        && declare -F cmd_gh_pr_write_subcommand >/dev/null \
        && declare -F cmd_gh_pr_has_merge >/dev/null \
+       && declare -F cmd_words_deep >/dev/null \
        && declare -F cmd_gh_pr_ref >/dev/null; then
       # PIPEFAIL MUST BE OFF FOR THIS CALL. cmd_gh_pr_write_subcommand signals REFUSE with
       # an explicit `return 1`, but signals NO MATCH through the rc of its trailing
@@ -380,7 +390,21 @@ case "$TOOL" in
           # also resolved, its ref is deliberately DISCARDED rather than classified, since
           # classifying it would allow the api merge riding alongside it.
           PR=""
-        elif ! cmd_gh_pr_has_merge "$CMD"; then
+        else
+          # ANY rc THAT IS NEITHER 0 NOR 1 FAILS CLOSED. `if ! <cmd>` collapses every
+          # non-zero status into one answer, and this read -- the only ALLOW-shaped one in
+          # the file -- has been bitten by that twice: rc 127 when the function was undefined
+          # under lib/consumer skew, and rc 141 when SIGPIPE hit past the 64KB pipe buffer.
+          # Both were fixed one spelling at a time. This handles the CLASS: grep's own rc 2,
+          # reachable by corrupting a shared constant, inverted to ALLOW under the old shape
+          # too. "I could not tell" is not "there is no merge here", and only one of those is
+          # safe to answer with exit 0.
+          MRG_HAS_RC=0
+          cmd_gh_pr_has_merge "$CMD" || MRG_HAS_RC=$?
+          if [ "$MRG_HAS_RC" -ne 0 ] && [ "$MRG_HAS_RC" -ne 1 ]; then
+            deny "Blocked: merge-review-guard could not determine whether this command contains a \`gh pr merge\`. The existence check returned $MRG_HAS_RC, which is neither \"found\" (0) nor \"absent\" (1) -- so this fails closed rather than guessing. $BYPASS"
+          fi
+          if [ "$MRG_HAS_RC" -eq 1 ]; then
           # EXISTENCE, NOT FIRST-OCCURRENCE -- this is the one ALLOW-shaped read in this
           # file, so it must be monotone under a widening of the shared grammar. It used to
           # ask `[ "$SUB" != "merge" ]`, i.e. "is the FIRST gh-pr clause a merge", and $SUB
@@ -403,8 +427,8 @@ case "$TOOL" in
           # create decoy. A QUOTED mention is unaffected -- `git commit -m "gh pr merge 42"`
           # still allows, because cmd_bare blanks the quoted span -- which is the row that
           # would matter if this were over-denying in practice.
-          exit 0
-        else
+            exit 0
+          fi
           PR=$(cmd_gh_pr_ref "$CMD") || PR=""
         fi
     else

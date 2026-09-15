@@ -2243,12 +2243,21 @@ cmd_is_git_branch_create() {
 # this fix) — this is the exact same latent-risk shape `cmd_gh_pr_ref`'s own
 # established `full_match=$(printf ... | grep -oE ... | head -1)` line
 # already carries (see below), not something this fix introduces or worsens.
-# Left as-is rather than restructured to avoid the trailing pipe entirely
-# (e.g. onto `<<<`), because no caller of either function checks `$?` today
-# (`pr-verify.sh` reads only the captured stdout value), and a "capture
-# first" pass already closes the concrete bug this WARNING was about — a
-# wrong VALUE reaching the caller. Note this if that residual risk is ever
-# revisited: fix both functions together, since they share it.
+# RESTRUCTURED ONTO `<<<` 2026-09-15, AND THE REASON RECORDED HERE WAS FALSE.
+# It read: "Left as-is rather than restructured to avoid the trailing pipe
+# entirely (e.g. onto `<<<`), because no caller of either function checks `$?`
+# today (`pr-verify.sh` reads only the captured stdout value)". A caller does:
+# merge-review-guard.sh reads `SUB=$(cmd_gh_pr_write_subcommand "$CMD"); SUB_RC=$?`
+# and routes `-ne 0` to a deny.
+# NOTE THE DIRECTION before correcting this the other way — a stray 141 reaching
+# THAT caller denies, which is the safe side. So the defect was the
+# justification, not the caller's behaviour: a load-bearing reason that licensed
+# leaving a hazard in place, and was no longer true of the tree it sat in. That
+# is worse than no reason at all, because it stops the next reader looking.
+# The hazard was removed anyway — not for that caller, but because the refuse
+# guard below fails OPEN on the same rc, which is the direction that matters.
+# Its own closing instruction ("fix both functions together, since they share
+# it") is what this change finally carries out.
 cmd_gh_pr_write_subcommand() {
   local words
   words=$(cmd_bare_deep "$1")
@@ -2302,10 +2311,29 @@ cmd_gh_pr_write_subcommand() {
   # single-line compound with both keywords would misreport 1) — see
   # cmd_gh_pr_ref's own occurrence guard's header comment for that exact
   # documented gotcha; `grep -q` sidesteps it by not counting at all.
-  if printf '%s' "$words" \
-       | grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+create([[:space:]]|\$)" \
-     && printf '%s' "$words" \
-       | grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]|\$)"; then
+  # NO PIPES HERE EITHER. This refuse guard is the twin of cmd_gh_pr_has_merge's read and
+  # failed open by the same mechanism until 2026-09-15. Both legs were
+  # `printf '%s' "$words" | grep -qE ...` used as `&&` conditions. `grep -q` exits on its
+  # first match and closes the pipe; past the 64KB pipe buffer with the match on an early
+  # LINE the writer takes SIGPIPE, the leg returns 141 under the `pipefail` its callers set
+  # (pr-verify.sh and git-safety.sh both set it and neither disables it around the call), the
+  # `&&` is therefore false, and THE REFUSAL NEVER FIRES.
+  # Measured with this function's OWN documented CRITICAL input -- a real hidden merge
+  # carrying a decoy create:
+  #        39 bytes             -> rc 1, refused    (positive control)
+  #   114,039 bytes SINGLE-line -> rc 1, refused    (over the buffer, but grep cannot exit
+  #                                                  mid-line so the writer never blocks)
+  #   144,039 bytes MULTI-line  -> rc 0, "create"   <- the decoy wins head -1 over the real
+  #                                                  hidden merge
+  # with merge-only inputs resolving "merge" at both sizes and a no-gh input refusing, as
+  # controls in the same run. The single-line row is the discriminator: same size, opposite
+  # outcome, so the cause is SIGPIPE and not length. A "create" answer here is precisely the
+  # "SILENTLY WRONG PR reported as verified" this function's header warns about.
+  # An earlier probe of this exact claim came back clean because its padding produced only
+  # 48KB and never crossed the buffer. A negative from a probe that never traverses the path
+  # is not evidence about the path.
+  if grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+create([[:space:]]|\$)" <<< "$words" \
+     && grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]|\$)" <<< "$words"; then
     return 1
   fi
   # THE VERB COMES FROM THE VERB SLOT, NOT FROM A RE-SCAN OF THE SPAN (2026-09-13).
@@ -2388,7 +2416,13 @@ cmd_gh_pr_write_subcommand() {
 # subtract denies, which is what makes the union safe here and would not make a substitution
 # safe. The residual extractor-miss class is still tracked in
 # todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md; this closes the
-# glued-separator part of it at this call site only.
+# glued-separator part of it AT THIS CALL SITE, AND ONLY FOR THE OPENERS
+# _CMD_POS_PREFIX MODELS. `)` is not in that class, so a case-arm spelling still slips both
+# layers: `case 1 in 1)gh pr merge 42 --squash;; esac` delivers argv
+# <pr> <merge> <42> <--squash> under bash AND zsh (measured with an argv-dumping stub and a
+# non-matching pattern as the control), and both merge-review-guard.sh and
+# guard-outward-cli.sh ALLOW it -- on this branch and identically on main, so it is
+# pre-existing and not a regression here. Do not read "closed" as covering it.
 cmd_gh_pr_has_merge() {
   local words
   words=$(cmd_bare_deep "$1")

@@ -1878,6 +1878,37 @@ ghref 'gh pr merge --repo other/org 42' - \
 ghsub 'cp -R src dst && gh pr create --title t' create \
   "a cp -R decoy in an earlier clause does not become the verb"
 
+# --- the refuse guard's SIGPIPE pin, and it deliberately does NOT go through ghsub ---
+# ghsub brackets its call with `set +o pipefail`. With pipefail OFF a pipeline reports only
+# its LAST command's status, so a SIGPIPE in the writer is invisible -- meaning a row written
+# through ghsub CANNOT observe this defect and would be an inert pin. The callers that matter
+# (pr-verify.sh, git-safety.sh) run with pipefail ON and do not disable it around the call,
+# so these two rows reproduce THAT state on purpose.
+#
+# Until 2026-09-15 the co-occurrence refuse guard used `printf | grep -qE` on both legs of an
+# `&&`. `grep -q` exits on first match and closes the pipe; past the 64KB pipe buffer with the
+# match on an early LINE the writer took SIGPIPE, the leg returned 141, the `&&` was false, and
+# the refusal never fired -- so a real hidden merge carrying a decoy create resolved as
+# "create", the "SILENTLY WRONG PR reported as verified" this function's header warns about.
+# Measured before the fix: 39 bytes refused, 114,039 bytes SINGLE-line refused, 144,039 bytes
+# MULTI-line returned "create". The single-line row is the DISCRIMINATOR -- same size, opposite
+# outcome -- which is what proves the cause is SIGPIPE and not length. Keep both rows: without
+# the single-line one, a future reader cannot tell this pin from a plain size limit.
+_rg_decoy=$'echo "$(gh pr merge 42)" # gh pr create'
+_rg_multi="$_rg_decoy"; _rg_single="$_rg_decoy"
+for _rg_i in $(seq 1 6000); do _rg_multi+=$'\n# padding line for size'; _rg_single+=' # padding for size'; done
+for _rg_row in "multi:$_rg_multi" "single:$_rg_single"; do
+  _rg_shape="${_rg_row%%:*}"; _rg_cmd="${_rg_row#*:}"
+  _rg_label="a >64KB ${_rg_shape}-line decoy still REFUSES with pipefail ON (SIGPIPE rc-141)"
+  _rg_got=$(cmd_gh_pr_write_subcommand "$_rg_cmd"); _rg_rc=$?
+  if [ -z "$_rg_got" ] && [ "$_rg_rc" -ne 0 ]; then
+    echo "PASS: $_rg_label"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $_rg_label (got '$_rg_got' rc=$_rg_rc, want a refusal)"; FAIL=$((FAIL+1))
+  fi
+done
+unset _rg_decoy _rg_multi _rg_single _rg_i _rg_row _rg_shape _rg_cmd _rg_label _rg_got _rg_rc
+
 # NOTE ON WHAT EACH ROW BELOW PROVES. The `ghsub ... "subcommand is SEEN"` rows are the
 # discriminating ones: emptying _CMD_GH_GLOBALS reddens them. The `ghref ... "retarget
 # REFUSED"` rows do NOT discriminate on their own - cmd_gh_pr_ref bails at
@@ -2039,7 +2070,10 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # literal, and so merge it silently -- is
 # docs/solutions/code-quality/a-clean-merge-leaves-a-stale-count-pin-2026-09-14.md.
 # A pin that both sides agree on is the one a merge cannot protect.
-EXPECTED_TOTAL=651
+# 651 -> 653: +2 for the refuse guard's SIGPIPE pin (a multi-line row past the 64KB pipe
+# buffer and its same-size single-line discriminator), both run with pipefail ON because
+# ghsub's `set +o pipefail` would make them inert.
+EXPECTED_TOTAL=653
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
