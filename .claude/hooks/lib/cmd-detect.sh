@@ -206,9 +206,17 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # The value token is `[^-[:space:]][^[:space:]]*` — it must NOT begin with `-`, so a dash
 # token always starts a fresh arm rather than being eaten as the previous flag's value.
 #
-# OPEN RESIDUAL, AND IT IS THE HEADLINE CLASS WEARING A DIFFERENT VALUE. Refusing a leading
-# dash is what lets a NO-ARG flag sit immediately before the namespace, and it is why
-# `gh --no-color pr merge 42` resolves. The cost is that a value which IS a dash stops the run:
+# That is also what lets a NO-ARG flag sit immediately before the namespace: `gh --no-color pr
+# merge 42` needs the engine to DECLINE the optional group, which POSIX requires it to do
+# when a parse exists. Measured under BSD grep 2.6.0-FreeBSD and bash 5.3.15, together with
+# `--repo=o/r`, `-Ro/r` and a run of three no-arg flags. Timing was measured against main on
+# the same inputs at 5/20/40 flag-value pairs and at 10/16/20 dash tokens with no match
+# (the worst case for a backtracking engine): within noise of main at every size, because
+# the ~14 ms cost of this helper is three forked processes, not the regex.
+#
+# OPEN RESIDUAL, AND IT IS THE HEADLINE CLASS WEARING A DIFFERENT VALUE. That same refusal --
+# the one that makes the no-arg spelling resolve, two paragraphs up -- has a cost: a value
+# which IS a dash stops the run:
 # a bare `-` matches neither the value arm (leading dash) nor a fresh flag arm (`-[^[:space:]]+`
 # needs a character after the dash), so the globals end and the needle never reaches `pr`.
 #
@@ -231,14 +239,16 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # flag" from "value-taking flag whose value starts with a dash" requires the tool's FLAG TABLE,
 # which a regex does not have. Naming the separate-arg flags again would re-import the
 # enumeration this arm exists to avoid. Surfaced to the user rather than filed, per the repo's
-# never-auto-file bar for high-severity findings. That
-# is also what lets a NO-ARG flag sit immediately before the namespace: `gh --no-color pr
-# merge 42` needs the engine to DECLINE the optional group, which POSIX requires it to do
-# when a parse exists. Measured under BSD grep 2.6.0-FreeBSD and bash 5.3.15, together with
-# `--repo=o/r`, `-Ro/r` and a run of three no-arg flags. Timing was measured against main on
-# the same inputs at 5/20/40 flag-value pairs and at 10/16/20 dash tokens with no match
-# (the worst case for a backtracking engine): within noise of main at every size, because
-# the ~14 ms cost of this helper is three forked processes, not the regex.
+# never-auto-file bar for high-severity findings.
+#
+# WHY THIS ONE IS DISCLOSURE-ONLY WHILE ITS THREE SIBLINGS HAVE TODO FILES. The other residuals
+# disclosed alongside it (P1's binary renderings, the post-verb enumeration P2, the two-token
+# miscount P2) were each filed at MEDIUM or below, which this repo auto-files. This one is
+# HIGH — a live cross-repository merge both layers allow — and the repo's bar is that high and
+# critical findings are NEVER auto-filed: they are surfaced for a human to rule on. So the
+# asymmetry is the rule working, not an omission. If the ruling is to track it, it becomes the
+# fourth todo; until then the disclosure plus the tripwire rows in test-cmd-detect.sh are what
+# keep it from being invisible.
 #
 # CLOSED 2026-09-13 (the value arm above), and the history is kept because the WAY it was
 # missed is more reusable than the fix. This block previously read "an unmodeled SEPARATE-arg

@@ -1904,12 +1904,19 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # exists precisely to REQUIRE that, so the false prose
 # contradicted a true assertion in its own file.
 #
-# The real reason is directional. The two grammars disagree only where the WIDE form spans a
-# command boundary the narrow one refuses, and there the narrow count is the HIGHER one. Max
-# takes whichever grammar saw more invocations, so it can only ever ADD denies relative to
-# either alone; a swap would additionally hand the whole count to a grammar chosen for one
-# failure mode. Max needs no claim about what either form can or cannot see, which is the
-# property that makes it safe to state.
+# The real reason is that MAX IS SAFE REGARDLESS OF WHICH SIDE IS HIGHER, and that is the whole
+# claim — no directional invariant is needed or asserted. An earlier draft said "the two
+# grammars disagree only where the WIDE form spans a command boundary the narrow one refuses,
+# and there the narrow count is the HIGHER one". Measured false: the narrow grammar's stricter
+# classes can make the WHOLE anchored match fail where the wide one parses, so sepsafe can be
+# strictly LOWER, including zero — `gh -c a;b api /repos/o/r` gives wide=1 sepsafe=0, as do
+# `gh -x a(b api …` and `gh -x ; api …`.
+#
+# THAT FALSE INVARIANT WAS THE DANGEROUS PART, not the wording: a maintainer who believed
+# "narrow is always higher" could drop the WIDE side of the max as redundant, which would
+# silently undercount any real `gh api` whose flag value carries a boundary character. Max
+# needs no claim about what either form can or cannot see; that is the property that makes it
+# safe to state, and it is the only property the code relies on.
 # The token classes below exclude whitespace plus EVERY character in _OUT_POS_PREFIX's
 # command-position anchor set, and the redirect arm is a LOCAL variant of _CMD_REDIR (narrower
 # on the anchor bytes, WIDER on `)`; the two classes are incomparable, not nested) for the

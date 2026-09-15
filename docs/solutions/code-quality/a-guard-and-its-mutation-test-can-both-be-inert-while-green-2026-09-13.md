@@ -86,6 +86,15 @@ separate-arg flag neither names (the wide one spans ` -t x`, the narrow one must
 form **cannot span a separator**; and `$_CMD_REDIR` is non-empty (which costs the redirect arm —
 say that, not "every needle").
 
+**THE EXCERPT IS A POINT-IN-TIME SNAPSHOT AND THE REAL ASSERTION HAS SINCE GROWN.** It shows six
+conditions; the shipped check now enforces eight — the two omitted are
+`_OUT_SEPSAFE_TAKES_VALUE != yes` and `_OUT_SEPSAFE_SPANS = yes`, guarding a third grammar added
+later for an occurrence COUNT (see the monotonicity doc in See Also). They are named here rather
+than reproduced, because the lesson is the SHAPE of an operand, not the roster. Saying so is the
+point: this is the same "doc exemplar drifts from the guard it documents" defect as recurrence 4
+below, found in the same review that fixed the first instance, and a caveat that is checked beats
+a roster that silently falls behind.
+
 A fourth operand once sat between the second and the fourth — a fixed-string test that the narrow
 form does not contain the wide generic arm. It is **gone, and its removal is the fourth recurrence
 below**: the literal it matched was the wide arm's spelling on the day it was written, and the next
