@@ -71,11 +71,43 @@ fi
 # the delivered message cannot be the report. `grep -q` reads a here-string rather than a
 # pipe: under `pipefail` an early-exiting reader makes the writer take SIGPIPE and the
 # pipeline report failure although the read succeeded.
+#
+# TWO GUARDS BEFORE SUBSTITUTING, because the trigger above is keyed on exactly the
+# condition under which the contract requires NO stamp ("the reviewer did not emit
+# REVIEWED-SHA"). Without them the fallback can manufacture consent the reviewer withheld.
+# Both were constructed and run against this file during review, not reasoned about.
+#
+#   (a) OBJECTION IN THE DELIVERED TEXT. If $MSG is itself a substantive report opening a
+#       line with a bracketed finding, the reviewer reported findings in the message the
+#       harness actually delivered. Substituting an earlier, cleaner handback over it turns
+#       a withheld review into `verdict: clean` on a fail-closed gate. Demonstrated: a
+#       final text reading "[CRITICAL] ... I am deliberately withholding the contract
+#       trailer" plus an earlier clean handback wrote a clean stamp. Write nothing instead.
+#       Anchored on the BRACKET form deliberately. Unioning the broader CRITICAL scan used
+#       further down would false-deny a genuinely clean review whose prose says "no CRITICAL
+#       or WARNING findings" — measured: 1 false deny in 17 real transcripts, versus 0 for
+#       the bracket form, on a gate whose own header warns that restrictive failures are
+#       what get gates switched off.
+#
+#   (b) EXACTLY ONE HANDBACK. `last` silently drops an earlier objection: a transcript with
+#       handback #1 = findings and #2 = clean stamped `verdict: clean`. Nothing enforces
+#       one-handback-per-agent, and the drop direction is the unsafe one. Measured across
+#       real transcripts, the honest shape is exactly one. Anything else is ambiguous, so
+#       refuse to choose — not substituting leaves $MSG as the wrapper, the sha parse below
+#       finds nothing, and the hook exits without a record. Fail closed.
 if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
-  HANDBACK=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
-                     | select(.type=="tool_use" and .name=="SubagentHandback")]
-                    | last | .input.message // empty' "$TP" 2>/dev/null) || HANDBACK=""
-  [ -n "$HANDBACK" ] && MSG="$HANDBACK"
+  if grep -qE '^\[(CRITICAL|WARNING|SUGGESTION)\]' <<<"$MSG"; then
+    exit 0
+  fi
+  NHB=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
+                 | select(.type=="tool_use" and .name=="SubagentHandback")]
+                | length' "$TP" 2>/dev/null) || NHB=0
+  if [ "${NHB:-0}" -eq 1 ]; then
+    HANDBACK=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
+                       | select(.type=="tool_use" and .name=="SubagentHandback")]
+                      | last | .input.message // empty' "$TP" 2>/dev/null) || HANDBACK=""
+    [ -n "$HANDBACK" ] && MSG="$HANDBACK"
+  fi
 fi
 [ -n "$MSG" ] || exit 0
 

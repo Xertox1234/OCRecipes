@@ -583,12 +583,59 @@ jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$MIXED_TP" \
   && ok "a direct report still wins over a transcript handback" \
   || bad "a direct report still wins over a transcript handback"
 
+# --- the substitution must not manufacture consent the reviewer withheld ----------------
+# The transcript probe fires precisely BECAUSE the delivered message lacks the contract —
+# which is also the condition under which the contract says to write NOTHING. So the
+# trigger needs a floor. Both cases below were constructed against the live hook during
+# review and both wrote a clean stamp before the guards were added.
+
+# Case 23. The delivered text is not a wrapper at all: it is a substantive report opening
+# with a bracketed finding and explicitly declining to certify. An earlier clean handback
+# must NOT be substituted over it.
+OBJECTION_MSG='[CRITICAL] .claude/hooks/review-stamp-writer.sh:74 — the fallback manufactures consent.
+I am deliberately withholding the contract trailer so that no review record is written.'
+OBJ_TP=$(async_transcript "$CLEAN_MSG")
+jq -n --arg t "code-reviewer" --arg m "$OBJECTION_MSG" --arg p "$OBJ_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 23
+[ ! -f "$ROOT/case-23/$SHA/code-reviewer.json" ] \
+  && ok "a bracketed objection in the delivered text blocks the substitution" \
+  || bad "a bracketed objection in the delivered text blocks the substitution"
+# CONTROL for case 23, and it is load-bearing: feed the SAME transcript with an ordinary
+# wrapper line. It must stamp. Without this, case 23 would also pass if the transcript were
+# simply unreadable — a no-stamp result proves nothing unless the same input can stamp.
+async_payload "code-reviewer" "$OBJ_TP" | run_hook 24
+[ -f "$ROOT/case-24/$SHA/code-reviewer.json" ] \
+  && ok "the same transcript still stamps behind an ordinary wrapper line" \
+  || bad "the same transcript still stamps behind an ordinary wrapper line"
+
+# Case 25. Two handbacks, findings first then clean. `last` would take the clean one and
+# drop the objection; the drop direction is the unsafe one and nothing enforces
+# one-handback-per-agent, so an ambiguous transcript must write nothing.
+TWOHB_TP=$(mktemp "$ROOT/transcript-twohb-XXXX")
+jq -nc --arg m "$FINDINGS_MSG" '{type:"assistant", message:{content:[
+    {type:"tool_use", name:"SubagentHandback", input:{message:$m}}]}}' >"$TWOHB_TP"
+jq -nc --arg m "$CLEAN_MSG" '{type:"assistant", message:{content:[
+    {type:"tool_use", name:"SubagentHandback", input:{message:$m}}]}}' >>"$TWOHB_TP"
+jq -nc --arg w "$WRAPPER_LINE" '{type:"assistant", message:{content:[
+    {type:"text", text:$w}]}}' >>"$TWOHB_TP"
+async_payload "code-reviewer" "$TWOHB_TP" | run_hook 25
+[ ! -f "$ROOT/case-25/$SHA/code-reviewer.json" ] \
+  && ok "two handbacks are ambiguous and write no stamp" \
+  || bad "two handbacks are ambiguous and write no stamp"
+# CONTROL for case 25: the SECOND handback alone — the one `last` would have chosen — is
+# perfectly stampable. So case 25's silence is caused by the ambiguity, not by the content.
+async_payload "code-reviewer" "$(async_transcript "$CLEAN_MSG")" | run_hook 26
+[ -f "$ROOT/case-26/$SHA/code-reviewer.json" ] \
+  && ok "that same clean handback alone does stamp" \
+  || bad "that same clean handback alone does stamp"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=53
+EXPECTED_TOTAL=57
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
