@@ -40,7 +40,8 @@ export default function CookSessionCaptureScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
-  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "CookSessionCapture">>();
@@ -279,7 +280,10 @@ export default function CookSessionCaptureScreen() {
       />
 
       {/* Top bar */}
-      <View style={[styles.topBar, { paddingTop: insets.top + Spacing.sm }]}>
+      <View
+        style={[styles.topBar, { paddingTop: insets.top + Spacing.sm }]}
+        {...behindContentA11yProps}
+      >
         <Pressable
           onPress={handleClose}
           style={styles.topButton}
@@ -320,7 +324,7 @@ export default function CookSessionCaptureScreen() {
 
       {/* Analyzing overlay */}
       {isAnalyzing && (
-        <View style={styles.analyzingOverlay}>
+        <View style={styles.analyzingOverlay} {...behindContentA11yProps}>
           <ActivityIndicator size="large" color={CameraColors.text} />
           <ThemedText type="body" style={styles.analyzingText}>
             Detecting ingredients...
@@ -335,6 +339,7 @@ export default function CookSessionCaptureScreen() {
           showsHorizontalScrollIndicator={false}
           style={[styles.thumbnailStrip, { bottom: 140 + insets.bottom }]}
           contentContainerStyle={styles.thumbnailContent}
+          {...behindContentA11yProps}
         >
           {photos.map((uri, index) => (
             <Image
@@ -353,6 +358,7 @@ export default function CookSessionCaptureScreen() {
           styles.bottomBar,
           { paddingBottom: insets.bottom + Spacing.lg },
         ]}
+        {...behindContentA11yProps}
       >
         <View style={styles.bottomControls}>
           {/* Photo count */}
