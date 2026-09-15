@@ -1487,8 +1487,9 @@ EXPECTED_DENY_ATTRIB_ROWS=522
 # the BARE and BRACE-GROUPED case-arm shape -- NOT "comment-free", which an
 # earlier wording claimed and which the bare-paren-subshell composition
 # falsifies: that shape is comment-free and still allows, see the DOCUMENTED
-# RESIDUALS entry and todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-
-# steals-the-paren-credit.md) is CLOSED on the precise path
+# RESIDUALS entry and
+# todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md)
+# is CLOSED on the precise path
 # and no longer contributes here -- lib/cmd-detect.sh now recognises
 # `case`/`esac` at a genuine command-word start, so that `)` no longer closes
 # the enclosing $(...) early for THAT shape. Pinning 0 here would make this
@@ -1574,9 +1575,18 @@ EXPECTED_PRECISE_GAPS=31
 # -17 removed + 7 re-added = net -10 = 243 -> 233. See EXPECTED_ALLPATH_DIRTY_IDS.
 #
 # BUMPED AGAIN 2026-09-13 (post-implementation review, SAME todo): 233 -> 250,
-# net +17. The 18 new vcasecomment rows (see EXPECTED_PRECISE_GAPS above): 17
-# are ALLOW on all four paths (the documented, pre-existing comment-composition
-# residual -- straight ADDITIONS to this bucket, no prior tuple to replace),
+# net +17. The 18 new vcasecomment rows (see EXPECTED_PRECISE_GAPS above) split
+# by POSITION, and an earlier revision said all 17 were "ALLOW on all four paths"
+# -- one FORM's property asserted of the whole CLASS, which is the defect
+# one-form-property-asserted-of-whole-syntax-class-2026-09-06.md names, and it
+# contradicted NOTE 3 two hundred lines above, which uses the other ten as its
+# example of rows that DENY on the degraded paths. Measured:
+#    7  toolvcasecomment-*   p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+#    7  verbvcasecomment-*   p=ALLOW j=DENY  l=DENY  a=DENY
+#    3  flagvcasecomment-*   p=ALLOW j=DENY  l=DENY  a=DENY
+# All 17 miss on the PRECISE path, which is what makes them straight ADDITIONS
+# with no prior tuple to replace -- the +17 and the 250 are unaffected and only
+# the characterisation was wrong,
 # and the 18th (flagvcasecomment-ghadmin) denies on every path via the
 # pre-existing "no REAL --auto" check and contributes nothing here.
 EXPECTED_ALLPATH_GAPS=250
@@ -2697,6 +2707,14 @@ exit 0
 # the `--admin` boundary check has started to matter. Read its ATTRIBUTION
 # line, never its verdict alone -- same rule as co-mask-c1.
 #
+# CITATION HYGIENE, mechanical. A path broken across a comment wrap is invisible to
+# `grep -F` for the whole path, which has produced a confident false "0 remaining" in
+# this repo six times. The sweep that finds the class, and the one to run before
+# claiming a path sweep is complete:
+#     awk '/todos\/|docs\// && !/\.md/ {print FILENAME":"NR}' <file>
+# Every line citing a todos/ or docs/ path must carry the `.md` on that SAME line.
+# Run it, not a full-path grep.
+#
 # NOTE6 -- THE THREE ROWS THAT ARE STILL GAPS, AND WHY THEY STAY GAPS
 # (2026-09-06, outward-CLI-guard-folded-repair, Tasks 7-9 complete).
 #
@@ -2876,8 +2894,9 @@ exit 0
 #
 # The zero on BOTH "opened" axes is the check that matters, and it is a per-ID
 # set difference, not a total. A summary count cannot express a row getting
-# strictly worse (docs/solutions/code-quality/summary-count-cannot-express-a-row-
-# getting-strictly-worse-2026-09-06.md), and an earlier revision of this note was
+# strictly worse
+# (docs/solutions/code-quality/summary-count-cannot-express-a-row-getting-strictly-worse-2026-09-06.md),
+# and an earlier revision of this note was
 # corrected for exactly that arithmetic.
 #
 # THE 60 CLOSED, counted BY ID (21 + 21 + 17 + 1 = 60):

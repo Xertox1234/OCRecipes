@@ -67,15 +67,20 @@ for these four that belonged to a third revision entirely, neither the anchor ab
 head they were written at, which is the same positional-citation defect this todo records one
 level up. Search for the quoted text:
 
-- "Running all 308 rows across main / pre-fix / post-fix gave" — past-tense experiment record
+- "Running all 308 rows across" — past-tense experiment record. Quoted this short because the
+  full sentence wraps mid-phrase in the corpus and a longer quote returns 0.
 - "generated 272 rows from 5 glue POSITIONS" — past-tense experiment record
 - "both sides see the same 427 rows" — a differential record, scoped to a named baseline
   (`origin/main` at a9d77417, PR #930) two lines above it
-- "372, expected 356" — illustrative error-message text inside quotes, not a live count
+- "372, expected" — illustrative error-message text inside quotes, not a live count. Same
+  reason for the short quote: the full phrase wraps at "expected".
 
 A SEPARATE COUNT IN THE SAME FAMILY, folded in here because it would otherwise fall between
-todos: line 66 says "none of the current 17 fingerprints does it", while lines 1383 and 2404
-both say 20, and a run reported 20. It is a fingerprint count rather than a row count, so it
+todos: one site says "none of the current 17 fingerprints does it" while two others say 20.
+Quoted rather than numbered — an earlier revision of THIS line carried coordinates valid only
+at a mid-PR commit, the same third-revision defect corrected in the exclusions three lines
+above. Search for "20 of each over all" and "all 20 fingerprints the corpus reaches". A run
+reported 20. It is a fingerprint count rather than a row count, so it
 is outside this todo's title, but it is the same present-tense-number-from-an-earlier-state
 defect and a reader should not have to pick between two figures three thousand lines apart.
 Re-derive it from a run before changing it.
@@ -134,3 +139,15 @@ so the `448` predates both.
   from a third revision — not the anchor the tables use, and not the head they were written
   at — so they resolved to unrelated text at both. Quoting the string removes the coordinate
   system from the citation entirely.
+
+### 2026-09-15 (fifth)
+
+- Two of the four exclusion quotes did not resolve — both wrapped across a comment break in the
+  corpus, so `grep -F` on the full phrase returned 0. Shortened to fragments that survive the
+  wrap. Quoting a string removes the coordinate system only if the string fits on one line.
+- The fingerprint note carried line numbers valid at neither anchor this file declares. Now
+  quoted, like the exclusions above it.
+- The mechanical sweep for this whole class is now recorded in the corpus beside NOTE6:
+  every line citing a `todos/` or `docs/` path must carry the `.md` on that same line. A
+  full-path `grep -F` cannot see a wrapped citation, which is how it has returned a false zero
+  six times in this repo.
