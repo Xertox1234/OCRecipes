@@ -236,7 +236,7 @@ instead of hand-listing it, so the check self-updates instead of needing to be r
 
 ```bash
 # EXACTLY one line must define this alternation, or the extraction itself is wrong
-hit=$(grep -oE 'railway\$\{_OUT_SEP\}\([a-z|]+\)\$\{_OUT_POS_SUFFIX\}' "$GATE")
+hit=$(grep -oE 'railway\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_POS_SUFFIX\}' "$GATE")
 [ "$(grep -c . <<< "$hit")" -eq 1 ] || { echo "FATAL: pattern matched $(grep -c . <<< "$hit") lines, expected 1" >&2; exit 1; }
 IFS='|' read -ra BRANCHES <<< "$(sed -E 's/^railway\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$hit")"
 for v in "${BRANCHES[@]}"; do add "site-$v" DENY "railway $v"; done   # one row per branch, not one row for the site
