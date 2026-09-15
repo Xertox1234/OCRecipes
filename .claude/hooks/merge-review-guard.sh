@@ -132,16 +132,21 @@ case "$TOOL" in
     # false about its own file. Unreachable in practice (it is defined far above
     # cmd_gh_pr_ref, so any source defining the last necessarily defined it), but an
     # invariant a file does not satisfy is worse than no invariant.
-    # SCOPE, stated so this is not over-trusted: this conjunction covers FUNCTIONS only. The
-    # shared CONSTANTS (_CMD_POS_PREFIX, _CMD_GH_GLOBALS, _CMD_POS_SUFFIX, _CMD_REDIR) are
-    # not checked. Under `set -u` an unset one kills the hook, and a PreToolUse hook that
-    # exits without emitting JSON is NON-BLOCKING -- so that path is fail-open and this line
-    # does not close it.
+    # THE CONSTANTS ARE CHECKED TOO, and documenting that they were not was not good enough.
+    # All four are interpolated unguarded below; under `set -u` an unset one kills the hook
+    # before it emits JSON, and a PreToolUse hook that exits without JSON is NON-BLOCKING --
+    # i.e. the blocking gate silently disarms, in the one direction that matters. The trigger
+    # is the same lib/consumer skew that justified the function checks. Routing them through
+    # the same conjunction sends a missing constant to the `else` deny instead of to an
+    # unguarded abort. They are tested with -n rather than declare -F because they are
+    # assignments, not functions.
     if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
        && declare -F cmd_gh_pr_write_subcommand >/dev/null \
        && declare -F cmd_gh_pr_has_merge >/dev/null \
        && declare -F cmd_words_deep >/dev/null \
-       && declare -F cmd_gh_pr_ref >/dev/null; then
+       && declare -F cmd_gh_pr_ref >/dev/null \
+       && [ -n "${_CMD_POS_PREFIX:-}" ] && [ -n "${_CMD_GH_GLOBALS:-}" ] \
+       && [ -n "${_CMD_POS_SUFFIX:-}" ] && [ -n "${_CMD_REDIR:-}" ]; then
       # PIPEFAIL MUST BE OFF FOR THIS CALL. cmd_gh_pr_write_subcommand signals REFUSE with
       # an explicit `return 1`, but signals NO MATCH through the rc of its trailing
       # `grep -oE … | head -1` pipeline. Under `set -o pipefail` a no-match grep makes that

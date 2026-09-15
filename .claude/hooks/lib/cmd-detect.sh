@@ -2707,7 +2707,25 @@ cmd_gh_pr_ref() {
   # and a merge hidden inside a substitution still resolves 42.
   clause_tail=${bare#*"$full_match"}
   repo_clause="$full_match${clause_tail%%[;&|]*}"
-  if printf '%s' "$repo_clause" | grep -qE '(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'; then
+  # NO PIPE. This is the THIRD site of the same SIGPIPE family, after the refuse guard and
+  # cmd_gh_pr_has_merge, and it is the one MOST exposed to it: the line above deliberately
+  # lets $clause_tail run past newlines, and multi-line is the only shape that SIGPIPEs.
+  # `grep -q` exits on its first match and closes the pipe; past the 64KB buffer the writer
+  # takes SIGPIPE, the condition returns 141 under the `pipefail` its consumers have on, the
+  # `if` is false, AND THE RETARGET REFUSAL NEVER FIRES. Measured on this tree with
+  # `set -uo pipefail`, mirroring merge-review-guard.sh's call site:
+  #        31 bytes,     1 line   -> rc 1, refused          (positive control)
+  #   156,832 bytes,     1 line   -> rc 1, refused          (size-matched discriminator)
+  #   156,831 bytes, 3,201 lines  -> rc 0, RESOLVES ref 42  <- refusal lost
+  # with the two no-retarget rows resolving 42 at both sizes as negative controls. The
+  # consequence is this file's own residual #2: the gate classifies the LOCAL pr 42 while the
+  # command targets other/org -- a cross-repository merge authorised by a local review
+  # record, which is the P0 this branch closed by another route.
+  # NOT A REGRESSION: origin/main carries a byte-identical construction and an A/B of both
+  # libraries on the same three inputs gives identical results. A herestring preserves the
+  # multi-line clause byte-for-byte, so this can only ADD refusals lost to SIGPIPE and cannot
+  # subtract one -- the "crossing extends the clause" argument above is untouched.
+  if grep -qE '(^|[[:space:]])(--repo([=[:space:]]|$)|-R)' <<< "$repo_clause"; then
     return 1
   fi
   ref=$(printf '%s' "$full_match" | awk '{print $NF}')

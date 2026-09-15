@@ -1941,6 +1941,29 @@ for _rg_row in "multi:$_rg_multi" "single:$_rg_single"; do
   fi
 done
 unset _rg_words _rg_lbl
+
+# --- the THIRD SIGPIPE site: cmd_gh_pr_ref's retarget refusal ---
+# Same family as the pin above, different function, and this one is the most exposed: the
+# repo_clause it reads is deliberately allowed to run past newlines, and multi-line is the
+# only shape that SIGPIPEs. Before the fix, a retarget padded past the 64KB buffer over many
+# lines RESOLVED the local ref instead of refusing -- which is a cross-repository merge
+# authorised by a local review record.
+# ghref is used on purpose: unlike ghsub it does NOT bracket its call with `set +o pipefail`,
+# so it reproduces the real consumer state and the pin cannot be inert.
+_rr_base='gh pr merge 42 --repo other/org'
+_rr_multi="$_rr_base"; _rr_single="$_rr_base"
+for _rr_i in $(seq 1 3200); do _rr_multi+=$'\n# padding line for size'; done
+while [ "${#_rr_single}" -lt "${#_rr_multi}" ]; do _rr_single+=' # padding for size'; done
+_rr_lbl="the retarget pin's own input really exceeds the 64KB pipe buffer"
+if [ "${#_rr_multi}" -gt 65536 ]; then
+  echo "PASS: $_rr_lbl"; PASS=$((PASS+1))
+else
+  echo "FAIL: $_rr_lbl (${#_rr_multi} bytes, need >65536)"; FAIL=$((FAIL+1))
+fi
+ghref "$_rr_multi"  - "a >64KB MULTI-line --repo retarget still REFUSES (pins the SIGPIPE fail-open)"
+ghref "$_rr_single" - "a >64KB SIZE-MATCHED single-line --repo retarget still REFUSES (control: green under the piped form)"
+ghref "$_rr_base"   - "the small retarget still refuses (positive control)"
+unset _rr_base _rr_multi _rr_single _rr_i _rr_lbl
 unset _rg_decoy _rg_multi _rg_single _rg_i _rg_row _rg_shape _rg_cmd _rg_label _rg_got _rg_rc
 
 # NOTE ON WHAT EACH ROW BELOW PROVES. The `ghsub ... "subcommand is SEEN"` rows are the
@@ -2109,7 +2132,10 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # `set +o pipefail` would make them inert, +1 for the precondition row that asserts the pin's
 # input actually exceeds the buffer -- without it the refusal assertion is satisfied by a
 # 39-byte string and the pin can silently stop testing its subject.
-EXPECTED_TOTAL=654
+# 654 -> 658: +4 for the third SIGPIPE site (cmd_gh_pr_ref's retarget refusal) -- a
+# precondition row, a >64KB multi-line pin, its size-matched single-line control, and a small
+# positive control. Via ghref, which unlike ghsub leaves pipefail ON.
+EXPECTED_TOTAL=658
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
