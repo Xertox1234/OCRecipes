@@ -5,7 +5,13 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { AccessibilityInfo, StyleSheet, View, Pressable } from "react-native";
+import {
+  AccessibilityInfo,
+  StyleSheet,
+  View,
+  Pressable,
+  type ViewProps,
+} from "react-native";
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -44,12 +50,39 @@ export interface ConfirmOptions {
 }
 
 /**
+ * The hiding-prop pair a host screen spreads onto its OWN behind-content
+ * (never onto `<ConfirmationModal />` itself) while the sheet is presented,
+ * so TalkBack/VoiceOver can't reach it. `ConfirmationModal` renders through a
+ * `@gorhom/bottom-sheet` PORTAL, not as a literal view-tree descendant of the
+ * host's content — see the 2026-03-25 LEARNINGS entry ("VoiceOver cannot
+ * reach the bottom sheet" when it was placed as a sibling outside the host's
+ * `accessibilityViewIsModal` container) — so the sibling-scoped
+ * `accessibilityViewIsModal` can't be relied on here the way
+ * docs/solutions/conventions/in-screen-overlay-needs-android-focus-trap-2026-06-22.md
+ * generally recommends for in-screen overlays. It's also moot on iOS
+ * regardless: `BottomSheetModal` has no rest-spread, so a prop passed to it
+ * is silently dropped (the removed `accessibilityViewIsModal` prop — see the
+ * file header comment below). `accessibilityElementsHidden` on the
+ * behind-content is therefore the ONLY iOS trap available for this
+ * component, which is why both props are applied together here rather than
+ * "completing a pair" the convention doc otherwise warns against.
+ */
+type BehindContentA11yProps = Pick<
+  ViewProps,
+  "accessibilityElementsHidden" | "importantForAccessibility"
+>;
+
+/**
  * Hook providing a themed confirmation bottom sheet.
  *
  * Usage:
  * ```
- * const { confirm, ConfirmationModal } = useConfirmationModal();
+ * const { confirm, ConfirmationModal, behindContentA11yProps } = useConfirmationModal();
  * confirm({ title: "Delete?", message: "...", onConfirm: () => {} });
+ * // Spread behindContentA11yProps onto the screen's own top-level content
+ * // (never onto <ConfirmationModal />) so it's hidden from screen readers
+ * // while the sheet is presented:
+ * <FlatList {...behindContentA11yProps} ... />
  * // render <ConfirmationModal /> once at bottom of JSX
  * ```
  */
@@ -58,10 +91,12 @@ export function useConfirmationModal() {
   const optionsRef = useRef<ConfirmOptions | null>(null);
   const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [, setRevision] = useState(0);
+  const [isOpen, setIsOpen] = useState(false);
 
   const confirm = useCallback((opts: ConfirmOptions) => {
     optionsRef.current = opts;
     setRevision((r) => r + 1);
+    setIsOpen(true);
     sheetRef.current?.present();
     // Announce the sheet's purpose on open — same pattern and rationale as
     // UpgradeModal: without it the only screen-reader feedback is the present
@@ -86,6 +121,15 @@ export function useConfirmationModal() {
     [],
   );
 
+  // Confirmed closed only once the sheet's own onDismiss fires (post
+  // close-animation) — mirrors useSheetBackHandler's bias toward "still
+  // open" through the close animation rather than racing ahead of what the
+  // user still sees on screen. Stable identity ([] via useCallback) so it
+  // never invalidates the ConfirmationModal useMemo below.
+  const handleClosed = useCallback(() => {
+    setIsOpen(false);
+  }, []);
+
   // Stable component identity — never changes, so React re-renders (not remounts)
   const ConfirmationModal = useMemo(
     () =>
@@ -95,13 +139,21 @@ export function useConfirmationModal() {
             sheetRef={sheetRef}
             optionsRef={optionsRef}
             announceTimerRef={announceTimerRef}
+            onClosed={handleClosed}
           />
         );
       },
-    [],
+    [handleClosed],
   );
 
-  return { confirm, ConfirmationModal };
+  const behindContentA11yProps: BehindContentA11yProps = isOpen
+    ? {
+        accessibilityElementsHidden: true,
+        importantForAccessibility: "no-hide-descendants",
+      }
+    : { accessibilityElementsHidden: false, importantForAccessibility: "auto" };
+
+  return { confirm, ConfirmationModal, behindContentA11yProps };
 }
 
 // --- Inner component ---
@@ -110,6 +162,7 @@ interface ConfirmationModalInnerProps {
   sheetRef: React.RefObject<BottomSheetModal | null>;
   optionsRef: React.RefObject<ConfirmOptions | null>;
   announceTimerRef: React.RefObject<ReturnType<typeof setTimeout> | null>;
+  onClosed: () => void;
 }
 
 const MAX_DYNAMIC_HEIGHT = 350;
@@ -118,6 +171,7 @@ function ConfirmationModalInner({
   sheetRef,
   optionsRef,
   announceTimerRef,
+  onClosed,
 }: ConfirmationModalInnerProps) {
   const options = optionsRef.current;
   const { theme } = useTheme();
@@ -144,7 +198,8 @@ function ConfirmationModalInner({
       optionsRef.current?.onCancel?.();
     }
     isActioning.current = false;
-  }, [optionsRef, announceTimerRef]);
+    onClosed();
+  }, [optionsRef, announceTimerRef, onClosed]);
 
   // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
   const { onSheetChange, onSheetAnimate } = useSheetBackHandler(sheetRef);
@@ -205,7 +260,9 @@ function ConfirmationModalInner({
       // NOTE: `accessibilityViewIsModal` was here but @gorhom/bottom-sheet's
       // BottomSheet has no rest-spread, so it was silently dropped — a no-op /
       // false focus-trap assurance. The real cross-platform focus trap is the
-      // open follow-up: todos/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md
+      // `behindContentA11yProps` hiding-prop pair (see the JSDoc above
+      // useConfirmationModal) that hosts spread onto their OWN content —
+      // this element never regains that prop itself.
       handleIndicatorStyle={{ display: "none" }}
       backgroundStyle={{ backgroundColor: theme.backgroundDefault }}
       animationConfigs={animationConfigs}

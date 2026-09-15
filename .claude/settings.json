@@ -41,6 +41,26 @@
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" register"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-resume-ledger.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/precompact-ledger.sh\"",
+            "timeout": 15
+          }
+        ]
       }
     ],
     "PreToolUse": [

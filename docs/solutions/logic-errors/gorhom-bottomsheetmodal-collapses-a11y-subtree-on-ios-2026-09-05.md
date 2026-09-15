@@ -7,6 +7,7 @@ module: client
 applies_to: ["client/**/*.tsx"]
 symptoms: ["a BottomSheetModal's title/message/buttons are absent from the iOS view hierarchy dump while the sheet container ('Bottom Sheet') IS present", "a Maestro tapOn/assertVisible on text or testID inside a bottom sheet never matches on iOS", "VoiceOver reads a presented sheet as one 'Bottom Sheet, adjustable' element with no way to reach its contents", "the same selectors work in a jsdom render test (the mock renders children plainly) but fail on device"]
 created: 2026-09-05
+last_updated: 2026-09-13
 severity: high
 ---
 
@@ -74,6 +75,46 @@ Also drop any `accessibilityViewIsModal` passed to `BottomSheetModal` — gorhom
 code and false assurance of a focus trap (the real cross-platform trap is a
 separate follow-up).
 
+## Real-world confirmation
+
+Extending the fix to the remaining 8 sites surfaced a real occurrence of the
+exact no-op the Prevention section warns about: `MealPlanHomeScreen.tsx`'s 4
+`BottomSheetModal` sites were found carrying the dead `accessibilityViewIsModal`
+directly on the `BottomSheetModal` wrapper — confirmed as a real occurrence,
+not just a hypothetical. It was removed alongside adding `accessible={false}`.
+
+Why it never reaches a native view — the prop does travel, then stops.
+`BottomSheetModal` DOES have a rest-spread: it destructures
+`...bottomSheetProps` (`BottomSheetModal.tsx:61`) and spreads it onto
+`<BottomSheet>` (`:547`), so `accessibilityViewIsModal` rides that far.
+`BottomSheet.tsx` is where it dies — it destructures explicitly, has no
+rest-spread at all (`grep -cE '\.\.\.rest|\.\.\.props\b'` → `0`), and forwards
+only `accessible` / `accessibilityLabel` / `accessibilityRole` onward. Nothing
+passes the remainder to a native view.
+
+Stated this way deliberately: an earlier revision of this paragraph said all
+three components "have zero rest-spreads", which is false for
+`BottomSheetModal` and contradicts this file's own Root Cause section above
+(which correctly describes the default riding `...bottomSheetProps`). The
+functional conclusion was right and the supporting fact was wrong — and since
+this doc auto-injects on every `client/**/*.tsx` edit, the wrong half would
+have been read as authoritative on the next prop-forwarding question.
+Contrast `BottomSheetView`, which DOES spread `...rest` onto a real native
+View — which is why `accessibilityViewIsModal` works there and not on the
+wrapper.
+
+## Testing pattern for multiple simultaneous sheets
+
+For a screen with multiple simultaneous `BottomSheetModal` instances (e.g.
+`MealPlanHomeScreen`'s 4 sheets), the shared `test/mocks/gorhom-bottom-sheet.ts`
+mock's fixed `data-testid='bottom-sheet-modal'` cannot distinguish instances.
+Such a test file needs its own local `vi.mock('@gorhom/bottom-sheet', ...)`
+override that captures each instance's `accessible` prop keyed by a stable
+per-instance identifier (e.g. `snapPoints[0]`), asserting the captured value
+directly rather than querying the DOM. See
+`client/screens/meal-plan/__tests__/MealPlanHomeScreen.test.tsx` for the worked
+example.
+
 ## Prevention
 
 - Any new `BottomSheetModal`/`BottomSheetView` whose content must be reachable
@@ -91,6 +132,15 @@ separate follow-up).
   ChatList, BatchScan, GroceryLists, Pantry, Settings) — all inherit the fix
 - `todos/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md`
   — the separate focus-trap follow-up
+- `client/screens/HomeScreen.tsx` — `accessible={false}` added
+- `client/screens/meal-plan/MealPlanHomeScreen.tsx` — `accessible={false}` added to all 4 sheets
+- `client/screens/meal-plan/RecipeBrowserScreen.tsx` — `accessible={false}` added
+- `client/screens/meal-plan/RecipeEntryHubScreen.tsx` — `accessible={false}` added
+- `client/components/BeveragePickerSheet.tsx` — `accessible={false}` added
+
+These 5 files were the remaining 8 `BottomSheetModal` sites from the archived
+`todos/P2-2026-09-05-bottomsheetmodal-callers-collapse-a11y-subtree-on-ios`;
+`ConfirmationModal.tsx` above was the first site fixed.
 
 ## See Also
 

@@ -57,7 +57,8 @@ export default function CookSessionReviewScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
-  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "CookSessionReview">>();
@@ -247,6 +248,7 @@ export default function CookSessionReviewScreen() {
     <ThemedView style={styles.container} accessibilityViewIsModal={true}>
       <FlatList
         {...FLATLIST_DEFAULTS}
+        {...behindContentA11yProps}
         data={ingredients}
         keyExtractor={(item) => item.id}
         renderItem={renderIngredient}
@@ -312,6 +314,7 @@ export default function CookSessionReviewScreen() {
             borderTopColor: withOpacity(theme.border, 0.3),
           },
         ]}
+        {...behindContentA11yProps}
       >
         <Pressable
           style={[styles.actionButton, { backgroundColor: theme.success }]}

@@ -117,7 +117,7 @@ into the fixture and retire the only artifact pointing at it.
 - `.claude/hooks/lib/cmd-detect.sh` — `cmd_words_vanished`'s allow-list and its eligibility criterion
 - `.claude/hooks/repro-outward-cli-corpus.sh` — the `r4spec-`/`r4dig-`/`r4ansic-`/`r4brange-` rows
 - `todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md`
-- `todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md`
+- `todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md`
 
 ## See Also
 

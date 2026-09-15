@@ -818,17 +818,95 @@
 #     todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #     and measured every run by this repo's corpus (`toolvcasearm-*`).
 #
-#   * UNHANDLED, PRE-EXISTING (round 4, same measurement session): BRACE RANGE
-#     expansion splits a token with NO `$` and NO backtick anywhere in the
-#     command, so no sigil-keyed decline can ever see it —
-#     `{e..e}as update --branch preview`, `eas up{d..d}ate --branch preview` and
-#     `gh pr me{r..r}ge 42` all ALLOW on ALL FOUR paths. The control
-#     `gh pr merge{1..3} 42` DENIES, because there the verb is intact and the
-#     brace only follows it. This is why enumerating `$`-spellings at the fast
-#     path can never be complete: it is not a missing spelling, it is a second
-#     expansion mechanism. Closing it needs a narrow deny on a brace RANGE that
-#     shares a token with a gated binary or verb — NOT another deleting
-#     rendering, which would re-open the span-end problem round 3 closed.
+#   * PARTIALLY CLOSED 2026-09-14 (round 4 finding;
+#     todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md).
+#     BRACE RANGE expansion splits a token with NO `$` and NO backtick
+#     anywhere in the command, so no sigil-keyed decline can ever see it. This
+#     is why enumerating `$`-spellings at the fast path can never be
+#     complete: it is not a missing spelling, it is a second expansion
+#     mechanism. The control `gh pr merge{1..3} 42` DENIES, because there the
+#     verb is intact and the brace only follows it — that shape was already
+#     handled before this fix, by `_OUT_POS_SUFFIX` treating `{` as a closer.
+#
+#     VERB-position — CLOSED AT THE FIRST VERB WORD, AND AT `gh pr <verb>`
+#     ONLY. That bound is structural, not incidental: the three trigger arms
+#     below reach (1) a range token in the word immediately after the binary,
+#     (2) `gh pr <word>` — arm 2 spells the literal `pr`, no namespace
+#     alternation — and (3) a range token at command position. A verb in the
+#     THIRD word of any other namespace is unreachable by construction. FLAG
+#     POSITIONS ARE REACHED ONLY IN THE FIRST WORD AFTER THE BINARY (arm 1);
+#     later flag-name and flag-value positions are not. An earlier revision said
+#     the arms "never look at" flag positions, which understated the coverage --
+#     measured, these DENY while their brace-free forms ALLOW:
+#       gh --re{p..p}o other/org pr list
+#       gh -{R..R} other/org pr list
+#       eas --pro{f..f}ile production update --branch preview
+#     and `gh pr create --re{p..p}o other/org --title t` ALLOWs, because that
+#     flag is not the first word. Note the POLARITY of that error, since it
+#     decides how hard to look: this one understated coverage, so a reader
+#     concludes less is protected than truly is -- it can waste a fixer's time,
+#     it cannot hide a hole. The earlier defect in this same entry ran the other
+#     way and is the one to fear.
+#
+#     THE FLAG-VALUE CASE IS THE ONE TO READ, because that position has its own
+#     DEDICATED check and this is this file's own solution-doc thesis reappearing
+#     inside it: a brace range is a SECOND EXPANSION MECHANISM, not a sigil
+#     spelling, so a sigil-keyed check cannot see it. Measured at this head, the
+#     `gh api` method check denies the literal AND all three sigil spellings of
+#     the same value and lets the brace-range spelling through:
+#       gh api repos/o/r -X POST                 DENY
+#       gh api repos/o/r -X ${M}                 DENY
+#       gh api repos/o/r -X $M                   DENY
+#       gh api repos/o/r -X $'\x50\x4f\x53\x54'   DENY
+#       gh api repos/o/r -X POS{T..T}            ALLOW   <- bash expands to POST
+#     Flag NAME position likewise: `gh pr create --re{p..p}o other/org --title t`
+#     and `gh pr merge 42 --auto --adm{i..i}n` both ALLOW.
+#     MEASURED at this head, each ALLOWs while its brace-free form DENIES:
+#       npm run update:prev{i..i}ew -- --message x    (the OTA-publish path)
+#       gh repo dele{t..t}e o/r
+#       gh release up{l..l}oad v1 f.zip
+#       railway variable se{t..t} K=V
+#     All four also ALLOW on origin/main, so this is PRE-EXISTING and not
+#     opened by this change — which closes the second-word forms that main
+#     allows (`gh pr me{r..r}ge 42` and `eas up{d..d}ate --branch preview` both
+#     go ALLOW on main -> DENY here). It is the owner's Model B ruling residual
+#     (todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md,
+#     RECLASSIFIED 2026-09-07), and it is NOT measured by any row: the corpus's
+#     r4brange-verb-* axis generates from FAM_IDS, which carries no third-word
+#     family. Tracked at
+#     todos/P3-2026-09-15-brace-range-third-word-verb-unreachable.md
+#     Within that bound it is CLOSED as a solitary construction and against BOTH
+#     adversarial decoy shapes found by review: `eas up{d..d}ate --branch
+#     preview` and `gh pr me{r..r}ge 42` DENY on all four paths (a narrow
+#     deny keyed on a bounded brace-range TOKEN class, placed next to the
+#     existing expansion-token narrow-deny block; the degraded mirror's
+#     trailing-sigil class grew the same range alternative), and this stays
+#     true even with an unrelated occurrence of the exclusion's own excluded
+#     shape (`merge{1..3}`/`create{1..3}`/`comment{1..3}`/`api{1..3}`)
+#     elsewhere in the same command — whether that occurrence is inert prose
+#     (`... && echo merge{1..3}`) or a genuine, independently-ALLOWED gh
+#     construction (`... && gh api{1..3}`) — because the exclusion is
+#     evaluated per-OCCURRENCE (below), not as a second whole-command
+#     existence check. Two rounds of review each found a real, live bypass in
+#     this exact exclusion before it reached that form — see the exclusion's
+#     own comment for both. "CLOSED" here means: no construction found by two
+#     independent adversarial review rounds still allows; it does not mean
+#     no construction of any kind could. Single- and multi-value ranges
+#     (`{e..e}` vs `{a..z}`) are denied IDENTICALLY — never evaluated,
+#     same ruling as the `$`/backtick expansion-token siblings.
+#
+#     TOOL-position — the range glued INSIDE the binary's own first letters
+#     (`{e..e}as update --branch preview`, `{g..g}h api repos/o/r -X POST`)
+#     STAYS OPEN, deliberately: reaching a fix here needs the fast path's
+#     stage-3 decline (keyed on `${`/`$(`/backtick/special-params) widened to
+#     a brace-range shape, so the command isn't cheap-exited before
+#     $WORDS_SCAN is ever computed — and this todo's Scope Contract explicitly
+#     forbids that ("no widening of the fast path's sigil class"). Still
+#     allows on all four paths. Tracked by `repro-outward-cli-corpus.sh`'s
+#     `r4brange-tool-*` rows (7, ALL EXPECTED-DENY, all `GAP` by design) and
+#     `todos/P1-2026-09-07-outward-cli-path-wrapper.md`, which attacks PATH
+#     resolution rather than command text and so covers this residual without
+#     reading the command at all.
 #
 #   * ACCEPTED COST, not a gap (2026-09-06, round 3): the fast path DECLINES its
 #     cheap exit for any command containing `${`, `$(` or a backtick, so those
@@ -1290,7 +1368,21 @@ crude_smells_outward() {
   # remaining degraded ALLOW after the `$` mirror landed. Adding one character
   # to the class closes it, in the same fail-closed direction as everything
   # else in this function.
-  grep -Eq '(^|[^a-zA-Z])(eas|railway|npm|pnpm|yarn|gh)[^;&|]*[$`]' <<< "$t" && return 0
+  #
+  # PLUS a brace RANGE ({X..Y}) alternative (2026-09-14,
+  # todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md).
+  # A brace range reconstructs a split VERB the identical way `$`/backtick do
+  # (`eas up{d..d}ate` — `eas` intact, `{d..d}` follows in the same segment)
+  # but carries neither sigil, so it was invisible to this line even after the
+  # 2026-08-17 backtick fix. Same VERB-position-only coverage as the precise
+  # path's sibling fix: the binary NAME must still be intact for the
+  # alternation above to anchor on it at all, so a split BINARY NAME
+  # (`{e..e}as update`) stays a documented residual here too — closing it
+  # would need `_out_crude_vanish` to also delete brace-range spans, which is
+  # the deleting-rendering this todo's Scope Contract forbids adding. NEVER
+  # EVALUATES the range (single- or multi-value denied identically), same
+  # ruling as the precise path.
+  grep -Eq '(^|[^a-zA-Z])(eas|railway|npm|pnpm|yarn|gh)[^;&|]*([$`]|\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\})' <<< "$t" && return 0
   # ADDED 2026-09-06 (security review of PR #926, finding C1 — the DEGRADED
   # half). The mirror just above requires the gated binary NAME to survive
   # intact, with a sigil somewhere after it. That covers a split VERB
@@ -2277,6 +2369,163 @@ if grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKE
    || grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
    || grep -Eq "${_OUT_POS_PREFIX}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+
+# --- narrow deny: a gated binary/verb glued to a brace RANGE ({X..Y}) --------
+# todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
+# (ruled 2026-09-07, model B -- requires deliberate construction, no accident
+# produces it; a documented residual, not a critical). Bash brace RANGE
+# expansion splits a token exactly the way the block above does, but carries
+# NO `$` and NO backtick anywhere: `eas up{d..d}ate` (real argv: `eas
+# update`) and `gh pr me{r..r}ge 42` (real argv: `gh pr merge 42`) are both
+# ALLOWED by every rendering above, because `{d..d}`/`{r..r}` are a SECOND,
+# unrelated bash expansion mechanism this file's sigil-keyed checks were never
+# built to see. This block extends the SAME shape-only, never-evaluate
+# reasoning as the block immediately above (same `_OUT_GATED_BIN`/`_OUT_SEP`
+# glue requirement, same placement rationale) to a brace-range token class.
+#
+# NEVER EVALUATES THE RANGE. A single-value range (`{e..e}`, X==Y) and a
+# multi-value range (`{a..z}`, X!=Y) are DENIED IDENTICALLY -- distinguishing
+# them would mean computing what the range expands to, which this file
+# already refuses to do for the `$`/backtick expansion-token siblings, and
+# `_OUT_POS_SUFFIX` already shipped the identical "any literal `{`/`}` is an
+# unconditional boundary, whether or not the specific span is provably inert"
+# conservatism for the closer-only case (see
+# docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md).
+# Ruling stated once, not re-derived per construction.
+#
+# PLACEMENT is load-bearing for the same reason as the block above (shares
+# its home so it inherits the same "runs after eas/railway/npm, before gh pr
+# merge" ordering -- see that block's own placement comment; the two blocks
+# are kept SEPARATE rather than merged into one token class so a brace-range
+# deny and an expansion-token deny each keep their own attributable reason
+# string).
+#
+# TOOL-position (the binary NAME itself split -- `{e..e}as update`, `{g..g}h
+# api ...`) is a KNOWN, DOCUMENTED GAP this block does not close: reaching
+# this line requires the fast-path prefilter (stage 1/2 substring match, or
+# the stage-3 `${`/`$(`/backtick/special-param decline) to NOT have taken the
+# cheap exit first, and a brace range glued to the BINARY's own first letters
+# supplies neither an intact `eas`/`gh` substring (stage 1/2) nor any of
+# stage 3's decline sigils -- so `{e..e}as update --branch preview` and
+# `{g..g}h api repos/o/r -X POST` take the cheap exit before $WORDS_SCAN is
+# ever computed, and this line never runs for them. This todo's Scope
+# Contract explicitly forbids the fix that would reach them ("no widening of
+# the fast path's sigil class"), so TOOL-position is left as a documented
+# residual rather than silently narrowed — see DOCUMENTED RESIDUALS below and
+# repro-outward-cli-corpus.sh's NOTE6. VERB-position (the range glued inside
+# the verb word, or following a `pr`/tool-name namespace) IS closed by this
+# block: the binary name stays intact in raw text, so stage 1/2 already finds
+# the needle and skips stage 3 entirely, reaching this line same as any other
+# already-handled command. The third arm just below (an opaque range token
+# then a gated VERB) is kept for defense in depth on a command that reaches
+# this point via some OTHER trigger (e.g. an unrelated `$(...)` elsewhere in
+# the same command) even though it is TOOL-position-shaped — not a claim that
+# the 7 `r4brange-tool-*` corpus rows are closed by this change.
+_OUT_BR_RANGE_TOKEN='[^;&|)`{}[:space:]]*\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\}[^;&|)`{}[:space:]]*'
+# EXCLUSION, found by construct-and-run before this shipped (2026-09-14): the
+# claim in this block's own deny message below -- "a range glued only AFTER an
+# intact literal verb is unaffected, that already denies via the existing
+# boundary check" -- is true of the VERDICT but was false of the REASON.
+# `_OUT_POS_SUFFIX` already treats `{` as a valid closer, so `gh pr
+# merge{1..3} 42`, `gh pr create{1..3} ...`, `gh pr comment{1..3} ...` and
+# `gh api{1..3} ...` ALL also satisfy the arms above (the token's prefix IS
+# the complete verb; the range just happens to sit at its very end) -- and
+# because this block runs BEFORE the gh pr merge / gh pr create-comment / gh
+# api checks below, it fired FIRST and reported ITS reason instead of theirs,
+# exactly the deny-reason-assertion-goes-stale defect this repo has a named
+# solution for. Measured: all four flipped from "without a REAL --auto
+# flag"/"--repo/-R writes to a DIFFERENT..."/"mutating HTTP method" to this
+# block's own reason before this exclusion existed. EAS, NPM AND RAILWAY never
+# reach this line for the equivalent shape (`eas update{1..3}`, `npm
+# publish{1..3}`, `railway up{1..3}`) -- their own checks run BEFORE this block
+# and exit first, verified the same way -- so the exclusion only needs to name
+# the gh verbs actually reachable here.
+#
+# PNPM AND YARN DO REACH THIS LINE, and an earlier version of this sentence
+# listed them with the other three. Measured: `pnpm publish{1..3}` and
+# `yarn publish{1..3}` go ALLOW on main -> DENY WITH THIS BLOCK'S OWN REASON
+# here, so they arrive with no prior check having fired. The reason is not that
+# they are handled earlier -- it is that THERE IS NO pnpm/yarn PUBLISH CHECK
+# ANYWHERE: bare `pnpm publish`, `yarn publish` and `pnpm publish --access
+# public` all ALLOW on main AND here, while `npm publish` denies.
+#
+# DO NOT "FIX" THE ATTRIBUTION BY ADDING THEM TO THE EXCLUSION. The sentence
+# above used to invite exactly that, and it is the one edit that turns a
+# fail-closed deny into an ALLOW with nothing behind it. The brace-range deny is
+# currently the ONLY thing standing between `pnpm publish{1..3}` and a registry
+# push. The pre-existing pnpm/yarn gap is a separate matter and is surfaced as
+# its own question, not papered over here.
+#
+# ANCHORED TO COMMAND POSITION (CRITICAL, found by code-reviewer construct-
+# and-run during this fix's own review, fixed same round): the first shipped
+# version of this exclusion was a bare, position-unanchored substring search
+# over the WHOLE $WORDS_SCAN -- so a LITERAL DECOY occurrence of
+# `merge{1..3}`/`create{1..3}`/`comment{1..3}`/`api{1..3}` ANYWHERE in the
+# command, including inside an unrelated argument, cancelled the entire
+# brace-range narrow-deny block for the WHOLE command. Confirmed live before
+# this fix: `eas up{d..d}ate --branch preview && echo merge{1..3}` ALLOWED
+# (real argv: an OTA publish), where the bare `eas up{d..d}ate --branch
+# preview` alone correctly denied -- the trailing `echo merge{1..3}` (not
+# even command-position gh text) silenced the check via the unanchored
+# exclusion, handing the bypass string straight out of the deny message this
+# block itself emits. The fix: require the excluded shape to be gh AT
+# COMMAND POSITION (`_OUT_POS_PREFIX`), not merely present as text anywhere
+# -- the exact same anchoring discipline every OTHER check in this file
+# already uses, which this exclusion skipped when first written.
+#
+# ROUND 3 (CRITICAL, found by code-reviewer round-2 construct-and-run,
+# dispatch item 2's own adversarial-shape instruction). Command-position
+# anchoring closed the INERT-PROSE decoy above but not a GENUINE one: the
+# trigger arms and the exclusion were still two INDEPENDENT whole-command
+# existence checks over `$WORDS_SCAN`, with no link between WHICH matched
+# occurrence tripped the trigger and WHICH matched occurrence satisfies the
+# exclusion. So a real, independently-ALLOWED gh construction sharing the
+# excluded shape (bare `gh api{1..3}` with no mutating flag; bare `gh pr
+# create{1..3}`/`gh pr comment{1..3}` with no `--repo`) ANYWHERE in the same
+# command -- not decoy prose, a genuinely benign co-occurring command --
+# satisfied the exclusion and silenced an UNRELATED, dangerous glued
+# construction elsewhere in the same command line, on both orders:
+# `eas up{d..d}ate --branch preview && gh api{1..3}` and
+# `gh api{1..3} && eas up{d..d}ate --branch preview` both ALLOWED (real argv:
+# an OTA publish; the trailing/leading `gh api{1..3}` is a real, harmless GET
+# whose own benign-ness is exactly what let it silence the unrelated deny).
+#
+# FIX: per-OCCURRENCE, not per-command. Extract every trigger MATCH with
+# `grep -oE` (one match per line), then test EACH extracted occurrence
+# against the exclusion pattern independently -- deny the moment any single
+# occurrence is NOT itself covered by the exclusion. This is the same
+# per-occurrence discipline this file already uses for its multi-occurrence
+# ambiguity checks (`gh pr merge`/`gh api` occurrence counting) applied to a
+# boolean exclusion instead of a count: "some text elsewhere also matches
+# the excluded shape" can never license silencing a DIFFERENT occurrence
+# that does not.
+_OUT_BR_RANGE_ALREADY_HANDLED="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment)|api)"'\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\}'"${_OUT_POS_SUFFIX}"
+# LOAD-BEARING COUPLING, stated because it is invisible from here: this exclusion is
+# safe ONLY because `_OUT_POS_SUFFIX` accepts `{` as a closer, which is what keeps the
+# four excluded verbs visible to their own downstream checks. Verified at this head --
+# `gh pr merge{ab..cd} 42`, `gh api{1..3..1} repos/o/r -X POST` and
+# `gh pr create{a..z} --repo other/org` all still DENY with their own reasons. Narrow
+# `_OUT_POS_SUFFIX`'s closer class and this exclusion silently becomes a live bypass with
+# nothing here to catch it, so change the two together or not at all.
+_OUT_BR_OCC=$(
+  { grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
+    grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
+    grep -oE "${_OUT_POS_PREFIX}${_OUT_BR_RANGE_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"
+  } 2>/dev/null
+)
+_OUT_BR_FIRE=0
+if [ -n "$_OUT_BR_OCC" ]; then
+  while IFS= read -r _OUT_BR_ONE; do
+    [ -n "$_OUT_BR_ONE" ] || continue
+    if ! grep -Eq "$_OUT_BR_RANGE_ALREADY_HANDLED" <<< "$_OUT_BR_ONE"; then
+      _OUT_BR_FIRE=1
+      break
+    fi
+  done <<< "$_OUT_BR_OCC"
+fi
+if [ "$_OUT_BR_FIRE" = 1 ]; then
+  deny "guard-outward-cli: an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}), which real bash brace expansion resolves before this command runs — this hook cannot evaluate what the range expands to (single- or multi-value), so it cannot tell a read-only call from a mutating one. Denying, per the 2026-09-14 brace-range narrow-deny. A range glued only AFTER an intact literal verb (e.g. merge{1..3}) is unaffected — that already denies via the existing boundary check. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 # --- gh: bare 'gh pr merge' (see the --auto/--admin carve-out in the header) -

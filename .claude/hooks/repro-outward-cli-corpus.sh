@@ -676,11 +676,19 @@ done
 #                        form that follows an intact verb (that one DENIES).
 #
 # 56 ROWS (4 mechanisms x 2 positions x 7 families), ALL EXPECTED-DENY. They are real,
-# reproduced bypasses, pre-existing (they allow on `main` too), and deliberately
-# NOT closed in this PR -- see the guard's DOCUMENTED RESIDUALS entries. The rows
-# exist so the gap is measured on every run instead of living in a review
-# transcript. Verb-position rows additionally INVERT this file's usual asymmetry:
-# precise ALLOWs while all three degraded paths DENY.
+# reproduced bypasses, pre-existing (they allow on `main` too). The rows exist so
+# the gap is measured on every run instead of living in a review transcript.
+# Verb-position rows additionally INVERT this file's usual asymmetry: precise
+# ALLOWs while all three degraded paths DENY.
+#
+# UPDATED 2026-09-14: "deliberately NOT closed" no longer describes all 56, and
+# hasn't since an earlier PR closed r4spec/r4dig/r4ansic-tool-* (21) and
+# r4spec/r4dig/r4ansic-verb-* (21) — see the FULL ATTRIBUTION note above ("60
+# CLOSED"). Of the 14 that were still open after that (r4brange-tool-*,
+# r4brange-verb-*, 7 each), r4brange-verb-* closed 2026-09-14 too — see the
+# "r4brange-verb-* CLOSED 2026-09-14" entry in NOTE6 above for the fix and its
+# verification. So of the original 56: 49 now closed, 7 (r4brange-tool-* only)
+# remain per the guard's DOCUMENTED RESIDUALS entry.
 R4_INS_MECHS=('$!' '$1');       R4_INS_IDS=(r4spec r4dig)
 R4_RSP_IDS=(r4ansic r4brange)
 for i in "${!FAM_IDS[@]}"; do
@@ -706,6 +714,72 @@ for i in "${!FAM_IDS[@]}"; do
       esac
       add "$mid-$pos-$id" DENY "${pre}${sp}${post}"
     done
+  done
+done
+
+# axis: r4brange-verb DECOY combination (2026-09-14, found by code-reviewer
+# construct-and-run during this todo's own review round; fixed same round in
+# guard-outward-cli.sh via `_OUT_BR_RANGE_ALREADY_HANDLED`'s command-position
+# anchor). The first shipped version of that exclusion was a bare,
+# position-unanchored substring search over the WHOLE rendered command, so a
+# LITERAL DECOY occurrence of `merge{1..3}`/`create{1..3}`/`comment{1..3}`/
+# `api{1..3}` ANYWHERE in the command -- even inside an unrelated `echo`
+# argument, nowhere near command position -- cancelled the ENTIRE brace-range
+# narrow-deny block for the whole command, silently ALLOWing a genuine
+# VERB-position glued construction elsewhere in the same command line. GENERATED
+# from the product of {each r4brange-verb family's real construction} x {each
+# of the four decoy shapes the exclusion names}, appended via `&&` -- not
+# hand-listed, so a fifth decoy shape added to the exclusion later must be
+# added here too or this axis silently stops covering it. Every row here
+# EXPECTS DENY: the decoy is inert prose (never at gh command position), so
+# only the genuine construction's own deny should fire, and this axis exists
+# to catch the case where it does NOT.
+R4_DECOY_SHAPES=('merge{1..3}' 'create{1..3}' 'comment{1..3}' 'api{1..3}')
+for i in "${!FAM_IDS[@]}"; do
+  id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
+  lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
+  vhead="${lead}${lw:0:$h}"; vtail="${lw:$h}"; vrest=${cmd#"$vp"}
+  glued="${vhead}{${vtail:0:1}..${vtail:0:1}}${vtail:1}${vrest}"
+  for d in "${!R4_DECOY_SHAPES[@]}"; do
+    decoy=${R4_DECOY_SHAPES[$d]}
+    add "r4brange-verb-decoy-after-$id-$d"  DENY "${glued} && echo ${decoy}"
+    add "r4brange-verb-decoy-before-$id-$d" DENY "echo ${decoy} && ${glued}"
+  done
+done
+
+# axis: r4brange-verb GENUINE co-occurrence (2026-09-14, found by
+# code-reviewer construct-and-run in the SAME todo's review, ROUND 2 --
+# dispatch item 2's own instruction to try "a decoy that's ALSO a genuine
+# command-position gh construction elsewhere in a multi-clause command").
+# The round-1 fix (command-position anchoring) closed the INERT-PROSE decoy
+# axis above but shared its defect one level down: `_OUT_BR_RANGE_ALREADY_
+# HANDLED` was still a whole-command existence check, independent of WHICH
+# occurrence tripped a trigger arm and WHICH occurrence satisfies the
+# exclusion. So a REAL, independently-ALLOWED gh construction sharing the
+# excluded shape (bare `gh api{X..Y}` with no mutating flag; bare `gh pr
+# create{X..Y}`/`gh pr comment{X..Y}` with no `--repo`) -- not decoy prose,
+# a genuinely benign co-occurring command -- silenced an UNRELATED dangerous
+# glued construction elsewhere in the same command line. Confirmed live
+# before the round-2 fix: `eas up{d..d}ate --branch preview && gh api{1..3}`
+# fully ALLOWED. Fixed by making the exclusion per-OCCURRENCE (`grep -oE`
+# extraction, testing each match independently) instead of a second
+# whole-command existence check. GENERATED from the product of {each
+# r4brange-verb family} x {each genuine benign gh shape the exclusion names}
+# x {before,after} -- not hand-listed, same reason as the decoy axis above.
+# Every row EXPECTS DENY: the co-occurring gh construction is genuinely
+# benign on its own merits (no -X/--repo), so only the glued construction's
+# own deny should fire, and this axis exists to catch the case where it does
+# NOT.
+R4_GENUINE_SHAPES=('api{1..3}' 'pr create{1..3}' 'pr comment{1..3}')
+for i in "${!FAM_IDS[@]}"; do
+  id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
+  lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
+  vhead="${lead}${lw:0:$h}"; vtail="${lw:$h}"; vrest=${cmd#"$vp"}
+  glued="${vhead}{${vtail:0:1}..${vtail:0:1}}${vtail:1}${vrest}"
+  for g in "${!R4_GENUINE_SHAPES[@]}"; do
+    genuine="gh ${R4_GENUINE_SHAPES[$g]}"
+    add "r4brange-verb-genuine-after-$id-$g"  DENY "${glued} && ${genuine}"
+    add "r4brange-verb-genuine-before-$id-$g" DENY "${genuine} && ${glued}"
   done
 done
 
@@ -1675,58 +1749,113 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=623
+EXPECTED_ROWS=721
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 523 of the 623 rows deny on the precise path; the other 100 are ALLOW there
+# 628 of the 721 rows deny on the precise path; the other 93 are ALLOW there
 # (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-*/siterailfp-*
-# controls, plus the 31 precise-path gaps). Corrected 2026-09-13: this was the
-# FIFTH stale copy of a count in this file, found by review after four others
-# were repaired -- and it sits five lines above its own warning about exactly
-# that. These numbers are bumped with
+# controls, plus the 24 precise-path gaps). Corrected 2026-09-13: this was the FIFTH stale copy of a
+# count in this file, found by review after four others were repaired -- and it
+# sits five lines above its own warning about exactly that. These numbers are
+# bumped with
 # EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
 # stale, sitting directly above the constant they describe.
-EXPECTED_DENY_ATTRIB_ROWS=523
+# BUMPED 2026-09-14 (todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md):
+# 504 -> 511. The 7 `r4brange-verb-*` rows now deny (their own new check, see
+# guard-outward-cli.sh's brace-range narrow-deny block) and moved from the gap
+# bucket below into this one. The 7 `r4brange-tool-*` rows did NOT move --
+# still a documented residual, see EXPECTED_PRECISE_GAPS just below.
+# BUMPED AGAIN, SAME DAY (code-reviewer round-1 CRITICAL on this todo's own
+# review): 511 -> 567, +56 new `r4brange-verb-decoy-{after,before}-*` rows
+# (56 = 7 families x 4 decoy shapes x 2 positions). These did not exist when
+# the block above was written; they were added to durably regression-pin the
+# fix for a real bypass the reviewer found by construct-and-run (a decoy
+# occurrence of `merge{1..3}`/etc. ANYWHERE in the command silently disabled
+# the entire brace-range narrow-deny block, because the exclusion added by the
+# block above was a bare, position-unanchored substring search). All 56 rows
+# deny (EXPECTED_ROWS also bumped 602 -> 658 for the same reason) -- none are
+# gaps, so EXPECTED_PRECISE_GAPS/EXPECTED_ALLPATH_GAPS below are unaffected by
+# this second bump.
+# BUMPED A THIRD TIME, SAME DAY (code-reviewer round-2 CRITICAL, found by the
+# SAME dispatch's own "try a genuine co-occurring gh construction" adversarial
+# instruction): 567 -> 609, +42 new `r4brange-verb-genuine-{after,before}-*`
+# rows (42 = 7 families x 3 genuine-benign gh shapes x 2 positions). The
+# round-1 fix (command-position anchoring) closed the inert-prose decoy axis
+# above but not this one: the exclusion was still a whole-command existence
+# check, so a REAL, independently-ALLOWED gh construction sharing the excluded
+# shape (bare `gh api{X..Y}`, no mutating flag; bare `gh pr create{X..Y}`/
+# `gh pr comment{X..Y}`, no `--repo`) elsewhere in the command silenced an
+# unrelated dangerous glued construction. Fixed by making the exclusion
+# per-OCCURRENCE (`grep -oE` extraction) instead of a second whole-command
+# check. All 42 rows deny (EXPECTED_ROWS bumped 658 -> 700 too) -- none are
+# gaps.
+# BUMPED A FOURTH TIME 2026-09-15, and this one is NOT a guard behaviour change --
+# it is the arithmetic of two branches that each grew the same corpus, reconciled
+# at merge. See todos/archive/P2-2026-09-08-corpus-covers-deny-sites-but-not-their-alternation-branches.md
+# for the branch side: it added 21 rows on a base of 602 (19 of them denying on the
+# precise path), covering every alternation BRANCH at a deny site instead of one row
+# per site. main meanwhile went 602 -> 700 for the brace-range work described above.
+# Merged, that is 700 + 21 = 721 rows and 609 + 19 = 628 attributions.
+# MEASURED, NOT COMPUTED: the arithmetic above is stated only because re-running this
+# file on the resolved tree independently reported `rows=721  precise-path gaps=24
+# all-path gaps=236`, with NO id in either +/- drift list -- so nothing opened,
+# nothing closed, and no row was rerouted to a different check. Had the two figures
+# disagreed, the measurement would be the one that counts.
+# EXPECTED_PRECISE_GAPS/EXPECTED_ALLPATH_GAPS are unaffected (24/236, main's values):
+# every added row denies, so none of them lands in a gap bucket.
+# The `siterailfp-*` control family was ALSO restored to the ALLOW decomposition above.
+# It is the merged tree's EIGHTH control family (2 rows) and main's copy of that
+# sentence predates it, so resolving this conflict to main's side wholesale would have
+# silently dropped a real control family from the documented list -- the sentence is
+# load-bearing precisely because it is how a reader reconciles 721 - 628 = 93.
+EXPECTED_DENY_ATTRIB_ROWS=628
 
-# 14 + 17 = 31. This is the SAME decomposition as the "FULL ATTRIBUTION of the
+# 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
-#   14  r4brange-tool-* (7) + r4brange-verb-* (7) -- brace range, no sigil.
+#   7   r4brange-tool-* (7) -- brace range glued to the BINARY name itself,
+#       no sigil. CLOSED 2026-09-14 for the sibling r4brange-verb-* (7, the
+#       range glued to the VERB instead) -- see guard-outward-cli.sh's
+#       brace-range narrow-deny block and its own DOCUMENTED RESIDUALS entry
+#       for why TOOL-position specifically stays open (reaching the new check
+#       needs the fast-path prefilter to not cheap-exit first, which needs an
+#       intact binary-name substring or a stage-3 decline sigil neither of
+#       which a split BINARY name supplies, and this todo's Scope Contract
+#       forbids widening the fast path's sigil class to reach it).
 #   17  toolvcasearm-* (7) + verbvcasearm-* (7) + flagvcasearm-* (3 of 4)
 #       -- `case` arm `)` with no matching opener.
 # Both buckets are DELIBERATE, documented residuals with open todos, not
 # failures. Pinning 0 here would make this gate permanently red, and a
 # permanently red gate gets disabled -- which is how the corpus ended up
 # unguarded in the first place.
-EXPECTED_PRECISE_GAPS=31
+EXPECTED_PRECISE_GAPS=24
 
-# 31 + 133 = 164, and the 133 is independently printed above as the
-# "precise-clean, degraded-dirty" section's row count -- so this total has a
-# cross-check inside the same run rather than resting on this comment.
-#   31  every precise-path gap (a precise gap is all-path dirty by definition;
+# PRE-EXISTING STALENESS, found incidentally while bumping this pin for the
+# brace-range fix (2026-09-14) and left AS FOUND rather than silently
+# re-derived: the "31 + 133 = 164" cross-check this comment used to state does
+# not equal the pinned constant below even before this change (243, not 164).
+# Measured directly against a fresh run rather than assumed: the
+# "precise-clean, degraded-dirty" section printed 212 rows on this same run,
+# not 133, and 31 (the OLD EXPECTED_PRECISE_GAPS) + 212 = 243 -- the actual old
+# pinned value. So "133" (and the sub-splits below it: "25 over-denied... 108
+# DENY-expected...") is itself a stale count this comment never caught, from
+# before some now-untraced axis was added. This bump does not re-derive that
+# breakdown -- it is out of THIS todo's scope (a fast-path/precise-path narrow
+# deny, not a degraded-mirror audit) and the 212 figure has no verified
+# per-family split behind it yet. What IS verified for this bump: with the 7
+# `r4brange-verb-*` rows closed, GAPS dropped 31 -> 24 and the hidden-section
+# row count stayed 212 (unchanged, confirmed by diffing pre- and post-fix
+# runs) -- so 24 + 212 = 236, matching EXPECTED_ALLPATH_GAPS below exactly. A
+# future pass auditing the 133/212 discrepancy should start from that 212, not
+# from this comment's old sub-splits.
+#   24  every precise-path gap (a precise gap is all-path dirty by definition;
 #       verified as a strict subset, not assumed)
-#  133  precise-CLEAN rows dirty on at least one degraded path -- the
+#  212  precise-CLEAN rows dirty on at least one degraded path -- the
 #       crude_smells_outward mirror, deliberately NOT widened in PR #931.
 #       READ THAT CITATION NARROWLY. todos/P1-2026-09-07-crude-smells-degraded-mirror-lags-the-flag-adjacent-fix.md
 #       enumerates SIX rows (flagadjfd-* x3, flagadjsp-* x2, flagadjglue-npmlog),
-#       NOT this bucket. Measured split of the 133: 25 are over-denied
-#       ALLOW-expecting rows (safe direction) and 108 are DENY-expected rows that
-#       ALLOW on all three degraded paths -- intrtoolsp/intrtoolglue 11 each,
-#       toolv* and r4*-tool 7 each, intrnssp/intrnsglue 6 each, trailclose 3,
-#       nssufx 2, flagadj* 6. Only that last 6 is tracked anywhere by ID. The
-#       other 102 are ENUMERATED for the first time by the manifest below, which
-#       is a strict improvement -- before this pin nothing ran the corpus at all
-#       -- but enumerated is NOT tracked, and must not be read as such.
-# NOTE, and do not "fix" it: this metric counts any row whose expectation is
-# missed on ANY path, which includes ALLOW-expecting rows the degraded mirror
-# OVER-denies. MEASURED 2026-09-07, not enumerated by hand: **25** of the 164 are
-# ALLOW-expecting (out of 40 such rows in the corpus) -- decoyfp-auto,
-# flagadjfp-* (3), c1g-* (7), c2-fp-* (7), c2-readonly, c2-dynpath, fp-c2-noflag,
-# fp-easread, fp-mention, fp-quotedall, fp-automerge. An earlier revision of this
-# block named only "the four" (decoyfp-auto plus the three flagadjfp-*). That
-# list was WRITTEN RATHER THAN MEASURED, and the tell is that fp-automerge
-# carries the same command text as decoyfp-auto, yet one was named and one was
-# not. The 25 split the 133 below exactly: 25 over-denied ALLOW rows + 108
-# DENY-expected rows that ALLOW on the degraded paths = 133.
+#       NOT this bucket. The family-by-family sub-split this comment used to
+#       carry (25 ALLOW-expecting + 108 DENY-expected = 133) is the stale part
+#       named above -- NOT re-stated here as fact; see that paragraph.
 # THE ALL-PATH GAPS BELOW ARE NAMED, NOT ABSORBED -- AND THE FIRST VERSION OF
 # THIS NOTE NAMED THE WRONG CAUSE. It said the c9-ws-* rows degrade because the
 # crude mirror "does not model a `{name}` fd prefix at all". Measured, that is
@@ -1743,7 +1872,7 @@ EXPECTED_PRECISE_GAPS=31
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=243
+EXPECTED_ALLPATH_GAPS=236
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasearm-easbld
@@ -1756,13 +1885,6 @@ r4brange-tool-ghcomment
 r4brange-tool-ghmerge
 r4brange-tool-npmpub
 r4brange-tool-railup
-r4brange-verb-easbld
-r4brange-verb-easupd
-r4brange-verb-ghapi
-r4brange-verb-ghcomment
-r4brange-verb-ghmerge
-r4brange-verb-npmpub
-r4brange-verb-railup
 toolvcasearm-easbld
 toolvcasearm-easupd
 toolvcasearm-ghapi
@@ -1878,37 +2000,30 @@ r4spec-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4spec-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4spec-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4spec-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4spec-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4spec-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4spec-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-r4brange-verb-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 verbvcasearm-easupd p=ALLOW j=DENY l=DENY a=DENY
 verbvcasearm-easbld p=ALLOW j=DENY l=DENY a=DENY
 verbvcasearm-npmpub p=ALLOW j=DENY l=DENY a=DENY
@@ -2565,6 +2680,111 @@ ghroot-reposep-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFF
 ghroot-reposep-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
 ghroot-selfrepo    : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
 ghroot-vs-auto     : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+r4brange-verb-easbld : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-easupd : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-ghapi : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-ghcomment : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-ghmerge : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-npmpub : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-railup : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easbld-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easupd-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghapi-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghcomment-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghmerge-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-npmpub-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-railup-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easbld-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easupd-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghapi-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghcomment-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghmerge-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-npmpub-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-railup-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
@@ -2625,7 +2845,7 @@ the quote-aware rendering came back empty for a non-empty command - eith
 the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is mis
 PIN_EXEMPT_EOF
 }
-EXPECTED_EMIT_SITES=26
+EXPECTED_EMIT_SITES=27
 
 PIN_FAIL=0
 
@@ -3064,14 +3284,20 @@ exit 0
 #       Confirmed by ID in the before/after diff, not predicted in advance.
 #
 # FULL ATTRIBUTION of the remaining precise-path gaps. Was 14 + 17 + 2 = 33;
-# the `2` bucket closed on 2026-09-07, so it is now 14 + 17 = 31. Each has an
-# OPEN todo — none is a defect this change introduced, and every one allows on
-# `main` too:
+# the `2` bucket closed on 2026-09-07, so it became 14 + 17 = 31. The `14`
+# bucket itself halved on 2026-09-14 (r4brange-verb-* closed, see below), so
+# it is now 7 + 17 = 24. Each remaining row has an OPEN todo — none is a
+# defect this change introduced, and every one allows on `main` too:
 #
-#   14  r4brange-tool-* and r4brange-verb-*. A brace RANGE carries no `$` and no
-#       backtick anywhere, so no sigil-keyed decline can see it and no deleting
-#       rendering can reach it. Needs a narrow guard-side deny. Tracked at
-#       todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
+#    7  (was 14) r4brange-tool-*. A brace RANGE carries no `$` and no backtick
+#       anywhere, so no sigil-keyed decline can see it and no deleting
+#       rendering can reach it. Needs a narrow guard-side deny — CLOSED
+#       2026-09-14 for the sibling r4brange-verb-* (see below), still open here
+#       because closing it would additionally need the fast-path prefilter's
+#       stage-3 decline widened to a brace-range shape, which this todo's Scope
+#       Contract explicitly forbids ("no widening of the fast path's sigil
+#       class"). Tracked at
+#       todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
 #
 #   17  toolvcasearm-* (7), verbvcasearm-* (7), flagvcasearm-* (3 of 4). A `case`
 #       arm's `)` has NO matching opener, so the paren counter that closed the
@@ -3116,7 +3342,8 @@ exit 0
 #
 #   r4*-tool-*     (28 rows)  ALLOW on ALL FOUR paths — a total detection
 #                             failure at the binary-name position. 21 of these
-#                             are now closed; r4brange-tool-* remains.
+#                             are now closed; r4brange-tool-* (7) remains —
+#                             still open 2026-09-14, see FULL ATTRIBUTION above.
 #   r4spec/r4dig/r4ansic-verb-*
 #                  (21 rows)  precise ALLOW, all three degraded DENY — the
 #                             precise path was the WEAK one, so "degraded fails
@@ -3124,7 +3351,98 @@ exit 0
 #   r4brange-verb-*  (7 rows) ALLOW on all four — the ONLY verb-position
 #                             mechanism that also defeats the degraded paths,
 #                             because that mirror keys on `$`/backtick and a
-#                             brace range contains neither. Still open.
+#                             brace range contains neither. CLOSED 2026-09-14:
+#                             guard-outward-cli.sh grew a brace-range narrow
+#                             deny in the same location as the existing
+#                             expansion-token narrow deny (the binary name
+#                             stays intact in raw text for every row in this
+#                             bucket, so the fast-path prefilter never declines
+#                             them, unlike r4brange-tool-* above), AND
+#                             crude_smells_outward's trailing sigil class grew
+#                             a brace-range alternative alongside its existing
+#                             `$`/backtick one. All 7 rows now report `ok` on
+#                             all four paths — verified by re-running this
+#                             corpus, not asserted.
+#
+#                             CORRECTED, SAME DAY (code-reviewer CRITICAL
+#                             finding on this todo's own review round): the
+#                             sentence above was true of what this corpus
+#                             tested at the time it was written, and that was
+#                             NOT enough — the fix's first shipped version had
+#                             a real, reachable bypass this corpus's 7 bare
+#                             rows structurally could not see: the exclusion
+#                             added to stop the new check stealing an existing
+#                             check's deny REASON (`gh pr merge{1..3}` etc.
+#                             already denying correctly) was a bare,
+#                             position-unanchored substring search over the
+#                             WHOLE command, so a decoy occurrence of
+#                             `merge{1..3}`/`create{1..3}`/`comment{1..3}`/
+#                             `api{1..3}` ANYWHERE — even inside an unrelated
+#                             `echo` argument — cancelled the entire block and
+#                             silently ALLOWED a genuine glued construction
+#                             elsewhere in the same command. Confirmed live:
+#                             `eas up{d..d}ate --branch preview && echo
+#                             merge{1..3}` ALLOWED where the bare construction
+#                             alone correctly denied. Fixed by anchoring the
+#                             exclusion to command position
+#                             (`_OUT_BR_RANGE_ALREADY_HANDLED` now requires
+#                             `_OUT_POS_PREFIX`+`gh`, not a bare substring),
+#                             and the gap this corpus had against THAT decoy
+#                             shape is now closed: see the `r4brange-verb-
+#                             decoy-*` axis (56 rows, generated from
+#                             {7 families} x {4 decoy shapes} x
+#                             {before,after} positions, all EXPECT=DENY, all
+#                             `ok`) added the same round.
+#
+#                             CORRECTED AGAIN, SAME DAY (code-reviewer ROUND
+#                             2, same review, same instruction to try a
+#                             "genuine" not just an "inert" decoy): the
+#                             paragraph above made the IDENTICAL overclaiming
+#                             mistake it exists to correct, one level down.
+#                             "the gap this corpus had is now closed" was
+#                             true only against an INERT-PROSE decoy (a decoy
+#                             that itself does nothing, like `echo
+#                             merge{1..3}`). The command-position anchor did
+#                             NOT close a GENUINE decoy: a real,
+#                             independently-ALLOWED gh construction sharing
+#                             the excluded shape (bare `gh api{1..3}` with no
+#                             mutating flag; bare `gh pr create{1..3}`/`gh pr
+#                             comment{1..3}` with no `--repo`) elsewhere in
+#                             the command still silenced an unrelated
+#                             dangerous glued construction, because the
+#                             exclusion was still ONE whole-command existence
+#                             check independent of which occurrence tripped
+#                             which arm. Confirmed live:
+#                             `eas up{d..d}ate --branch preview && gh
+#                             api{1..3}` fully ALLOWED (a real OTA publish).
+#                             Fixed by making the exclusion per-OCCURRENCE
+#                             (`grep -oE` extraction, testing each matched
+#                             trigger occurrence against the exclusion
+#                             independently, denying if any one is not
+#                             covered) instead of a second whole-command
+#                             check. The gap against THIS shape is now closed
+#                             too: see the `r4brange-verb-genuine-*` axis (42
+#                             rows, {7 families} x {3 genuine-benign gh
+#                             shapes} x {before,after}, all EXPECT=DENY, all
+#                             `ok`) added the same round.
+#
+#                             The lesson, twice now in the same paragraph:
+#                             "verified by re-running this corpus" is only as
+#                             strong as what the corpus was capable of
+#                             constructing, and a correction that narrows an
+#                             overclaim to a SPECIFIC counter-example (here:
+#                             "closed against a decoy" narrowed from "closed")
+#                             can still overclaim if the counter-example
+#                             itself had an unexamined dimension (inert vs.
+#                             genuine). Neither correction lied about what it
+#                             tested; both stated a broader conclusion than
+#                             the construction space behind it supported. The
+#                             fix that finally held is the SHAPE of fix this
+#                             file's own Prevention sections keep landing on:
+#                             per-occurrence, not per-command — the same
+#                             discipline already required for `gh pr merge`/
+#                             `gh api` occurrence counting, now applied to a
+#                             boolean exclusion instead of a count.
 #
 # Each remaining row is a REAL, reachable bypass out of the folded repair's Scope
 # Contract — the list below is exhaustive OF THIS FILE'S ROWS, which is not the

@@ -46,6 +46,7 @@ type CapturedSheet = {
   onChange?: (index: number) => void;
   onAnimate?: (fromIndex: number, toIndex: number) => void;
   dismiss: ReturnType<typeof vi.fn>;
+  accessible?: boolean;
 };
 
 const { mockApiRequest, capturedSheets, hookCalls } = vi.hoisted(() => ({
@@ -176,6 +177,7 @@ vi.mock("@gorhom/bottom-sheet", () => {
       snapPoints?: string[];
       onChange?: (index: number) => void;
       onAnimate?: (fromIndex: number, toIndex: number) => void;
+      accessible?: boolean;
     },
     ref: React.Ref<{ present: () => void; dismiss: () => void }>,
   ) {
@@ -185,6 +187,7 @@ vi.mock("@gorhom/bottom-sheet", () => {
       onChange: props.onChange,
       onAnimate: props.onAnimate,
       dismiss: dismissSpy.current,
+      accessible: props.accessible,
     });
     React.useImperativeHandle(ref, () => ({
       present: () => {},
@@ -441,4 +444,30 @@ describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day
     ).filter((l) => l.includes(", selected"));
     expect(selected).toEqual(["Wednesday, September 2, selected"]);
   });
+});
+
+describe("MealPlanHomeScreen — iOS a11y-leaf fix (4 sheets)", () => {
+  beforeEach(() => {
+    capturedSheets.clear();
+    mockApiRequest.mockReset();
+    mockApiRequest.mockResolvedValue({ json: async () => ({}) });
+  });
+
+  afterEach(() => cleanup());
+
+  it.each(SHEETS)(
+    "passes accessible={false} to the $label sheet (prevents the iOS a11y-leaf collapse; jsdom cannot verify the native effect)",
+    ({ key, label }) => {
+      // On new-arch iOS, @gorhom/bottom-sheet's default accessible=true makes
+      // the wrapper an accessibility LEAF, hiding this sheet's content from
+      // VoiceOver AND Maestro (jsdom renders children plainly and cannot see
+      // the native leaf-collapse — this only pins that the prop is passed).
+      // See docs/solutions/logic-errors/
+      // gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
+      renderComponent(<MealPlanHomeScreen />);
+      const target = capturedSheets.get(key);
+      expect(target, `no BottomSheetModal captured for ${label}`).toBeDefined();
+      expect(target!.accessible).toBe(false);
+    },
+  );
 });
