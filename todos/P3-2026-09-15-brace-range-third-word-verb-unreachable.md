@@ -32,18 +32,31 @@ All four ALLOW at both `origin/main` and the brace-range head; probes ran under
 `bash 5.3.15(1)-release`, asserted in the probe's own output, and were handed to the guard
 as hook input rather than executed.
 
-| construction                                 | bash expands to            | verdict |
-| -------------------------------------------- | -------------------------- | ------- |
-| `npm run update:prev{i..i}ew -- --message x` | the OTA publish path       | ALLOW   |
-| `gh repo dele{t..t}e o/r`                    | `gh repo delete o/r`       | ALLOW   |
-| `gh release up{l..l}oad v1 f.zip`            | `gh release upload …`      | ALLOW   |
-| `railway variable se{t..t} K=V`              | `railway variable set K=V` | ALLOW   |
+| construction                                   | bash expands to            | verdict |
+| ---------------------------------------------- | -------------------------- | ------- |
+| `npm run update:prev{i..i}ew -- --message x`   | the OTA publish path       | ALLOW   |
+| `gh repo dele{t..t}e o/r`                      | `gh repo delete o/r`       | ALLOW   |
+| `gh release up{l..l}oad v1 f.zip`              | `gh release upload …`      | ALLOW   |
+| `railway variable se{t..t} K=V`                | `railway variable set K=V` | ALLOW   |
+| `gh api repos/o/r -X POS{T..T}`                | `gh api … -X POST`         | ALLOW   |
+| `gh pr create --re{p..p}o other/org --title t` | `--repo other/org`         | ALLOW   |
+| `gh pr merge 42 --auto --adm{i..i}n`           | `--auto --admin`           | ALLOW   |
 
 Controls in the same run, all DENY: the three literal forms, plus `gh pr me{r..r}ge 42` and
 `eas up{d..d}ate --branch preview` (second-word verbs, which arms 1 and 2 do reach).
 
 The first row is the one that decides priority if this is ever promoted: it reconstructs
 this repo's own documented OTA publish command, which is the 2026-08-16 incident class.
+
+**The scope is wider than this todo's title says, and the `-X` row is why.** The last three
+rows are not third-word verbs at all — they are FLAG-NAME and FLAG-VALUE positions, which the
+three arms never look at. The `-X` one is the sharpest, because that position has its own
+dedicated check: measured, it denies the literal `POST` **and all three sigil spellings of
+it** — `${M}`, `$M`, and the ANSI-C form — while letting `POS{T..T}` through. That is exactly
+the thesis of `docs/solutions/conventions/brace-range-is-a-second-expansion-mechanism-not-a-sigil-spelling-2026-09-14.md`
+reappearing one position over: a sigil-keyed check cannot see a brace range, because a brace
+range is not a sigil. Treat "third-word verb" as one instance of the class rather than its
+definition, and re-title when picking this up.
 
 ## Not measured by anything
 
@@ -97,3 +110,9 @@ Both want one EXPECTED row each so the cost shows on every run.
 
 - Filed from the verification pass on the brace-range PR. Scoped out of it because the gap
   is pre-existing, owner-ruled, and closing it means changing a required check's matcher.
+
+### 2026-09-15 (later)
+
+- Three flag-position rows added after review: the class is not limited to third-word verbs.
+  The `gh api -X` row matters most — that position has a dedicated check which denies every
+  sigil spelling of the value and misses the brace-range one.

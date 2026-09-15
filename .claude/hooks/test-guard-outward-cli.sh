@@ -3832,8 +3832,9 @@ _PIN_RAN=1
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
 #
-# 690 -> 709 (2026-09-14, todos/P2-2026-09-06-outward-cli-guard-brace-range-
-# splits-token-with-no-sigil.md): +19 for the brace-range narrow deny --
+# 690 -> 709 (2026-09-14,
+# todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md):
+# +19 for the brace-range narrow deny --
 # 6 positives (one per gated family: gh pr merge, eas update, gh pr comment,
 # npm publish, railway up, gh api) + 1 multi-value-range positive + 2
 # already-documented-boundary controls (pinning that a range AFTER an intact

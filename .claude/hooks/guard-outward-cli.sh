@@ -833,7 +833,22 @@
 #     below reach (1) a range token in the word immediately after the binary,
 #     (2) `gh pr <word>` — arm 2 spells the literal `pr`, no namespace
 #     alternation — and (3) a range token at command position. A verb in the
-#     THIRD word of any other namespace is unreachable by construction.
+#     THIRD word of any other namespace is unreachable by construction, AND SO
+#     ARE FLAG-NAME AND FLAG-VALUE POSITIONS, which the three arms never look at.
+#
+#     THE FLAG-VALUE CASE IS THE ONE TO READ, because that position has its own
+#     DEDICATED check and this is this file's own solution-doc thesis reappearing
+#     inside it: a brace range is a SECOND EXPANSION MECHANISM, not a sigil
+#     spelling, so a sigil-keyed check cannot see it. Measured at this head, the
+#     `gh api` method check denies the literal AND all three sigil spellings of
+#     the same value and lets the brace-range spelling through:
+#       gh api repos/o/r -X POST                 DENY
+#       gh api repos/o/r -X ${M}                 DENY
+#       gh api repos/o/r -X $M                   DENY
+#       gh api repos/o/r -X $'\x50\x4f\x53\x54'   DENY
+#       gh api repos/o/r -X POS{T..T}            ALLOW   <- bash expands to POST
+#     Flag NAME position likewise: `gh pr create --re{p..p}o other/org --title t`
+#     and `gh pr merge 42 --auto --adm{i..i}n` both ALLOW.
 #     MEASURED at this head, each ALLOWs while its brace-free form DENIES:
 #       npm run update:prev{i..i}ew -- --message x    (the OTA-publish path)
 #       gh repo dele{t..t}e o/r
