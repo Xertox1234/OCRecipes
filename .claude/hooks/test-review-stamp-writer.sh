@@ -521,12 +521,201 @@ else
   bad "anchoring fixture is usable (expected=[$ANCHOR_EXPECT])"
 fi
 
+# --- ASYNC (background) dispatch shape ---------------------------------------
+# A subagent dispatched in the background does not deliver its report as the final
+# assistant TEXT. The report travels inside a SubagentHandback tool_use, and
+# last_assistant_message carries only a wrapper line. Measured 2026-09-14: a real
+# async server-reviewer returned a correctly-formatted clean review for
+# 793a06b8e43c08e0ba19490eba571167be76e57f and NO stamp was written — the wrapper line
+# is NON-EMPTY, so the pre-existing `[ -z "$MSG" ]` transcript fallback never fires,
+# and the wrapper carries no REVIEWED-SHA. Both halves have to be true for the bug;
+# testing only "transcript fallback works" would miss it.
+WRAPPER_LINE="Review complete and handed back to the caller."
+
+async_transcript() {  # $1=report text -> prints a transcript path
+  local tp; tp=$(mktemp "$ROOT/transcript-XXXX")
+  jq -nc --arg m "$1" '{type:"assistant", message:{content:[
+      {type:"tool_use", name:"SubagentHandback", input:{message:$m}}]}}' >"$tp"
+  jq -nc --arg w "$WRAPPER_LINE" '{type:"assistant", message:{content:[
+      {type:"text", text:$w}]}}' >>"$tp"
+  printf '%s\n' "$tp"
+}
+async_payload() {  # $1=agent_type $2=transcript path
+  jq -n --arg t "$1" --arg p "$2" --arg w "$WRAPPER_LINE" \
+    '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+      last_assistant_message:$w, agent_transcript_path:$p}'
+}
+
+async_payload "code-reviewer" "$(async_transcript "$CLEAN_MSG")" | run_hook 20
+af="$ROOT/case-20/$SHA/code-reviewer.json"
+[ -f "$af" ] && ok "async SubagentHandback report writes a stamp" \
+             || bad "async SubagentHandback report writes a stamp"
+[ "$(jq -r .head_sha "$af" 2>/dev/null)" = "$SHA" ] \
+  && ok "async stamp records the reviewed sha" || bad "async stamp records the reviewed sha"
+[ "$(jq -r .verdict "$af" 2>/dev/null)" = "clean" ] \
+  && ok "async stamp records the clean verdict" || bad "async stamp records the clean verdict"
+# Same digest pin as case 1: the async path must produce a record INDISTINGUISHABLE from
+# the sync path for the same report, not merely a record that exists.
+[ "$(jq -r .reviewed_files_digest "$af" 2>/dev/null)" = "cf5a596de517834a" ] \
+  && ok "async stamp digest equals the sync digest for the same report" \
+  || bad "async stamp digest equals the sync digest for the same report"
+
+# CONTROL (negative): identical async envelope, transcript carrying NO handback — only the
+# wrapper text. There is nothing to parse, so there must be NO stamp. Without this, the
+# positive above would also pass a hook that blindly stamped every async envelope.
+NOHB_TP=$(mktemp "$ROOT/transcript-nohb-XXXX")
+jq -nc --arg w "$WRAPPER_LINE" '{type:"assistant", message:{content:[
+    {type:"text", text:$w}]}}' >"$NOHB_TP"
+async_payload "code-reviewer" "$NOHB_TP" | run_hook 21
+[ ! -f "$ROOT/case-21/$SHA/code-reviewer.json" ] \
+  && ok "async envelope with no handback writes no stamp" \
+  || bad "async envelope with no handback writes no stamp"
+
+# CONTROL (precedence): when last_assistant_message ALREADY carries the contract (the
+# synchronous shape), it must win. A transcript handback saying something different must
+# not override a valid direct report — otherwise the fix would silently re-route the sync
+# path through the transcript and this suite's other 47 assertions would stop covering it.
+MIXED_TP=$(async_transcript "$FINDINGS_MSG")
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$MIXED_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 22
+[ "$(jq -r .verdict "$ROOT/case-22/$SHA/code-reviewer.json" 2>/dev/null)" = "clean" ] \
+  && ok "a direct report still wins over a transcript handback" \
+  || bad "a direct report still wins over a transcript handback"
+
+# --- the substitution must not manufacture consent the reviewer withheld ----------------
+# The transcript probe fires precisely BECAUSE the delivered message lacks the contract —
+# which is also the condition under which the contract says to write NOTHING. So the
+# trigger needs a floor. Both cases below were constructed against the live hook during
+# review and both wrote a clean stamp before the guards were added.
+
+# Case 23. The delivered text is not a wrapper at all: it is a substantive report opening
+# with a bracketed finding and explicitly declining to certify. An earlier clean handback
+# must NOT be substituted over it.
+OBJECTION_MSG='[CRITICAL] .claude/hooks/review-stamp-writer.sh:74 — the fallback manufactures consent.
+I am deliberately withholding the contract trailer so that no review record is written.'
+OBJ_TP=$(async_transcript "$CLEAN_MSG")
+jq -n --arg t "code-reviewer" --arg m "$OBJECTION_MSG" --arg p "$OBJ_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 23
+[ ! -f "$ROOT/case-23/$SHA/code-reviewer.json" ] \
+  && ok "a bracketed objection in the delivered text blocks the substitution" \
+  || bad "a bracketed objection in the delivered text blocks the substitution"
+# CONTROL for case 23, and it is load-bearing: feed the SAME transcript with an ordinary
+# wrapper line. It must stamp. Without this, case 23 would also pass if the transcript were
+# simply unreadable — a no-stamp result proves nothing unless the same input can stamp.
+async_payload "code-reviewer" "$OBJ_TP" | run_hook 24
+[ -f "$ROOT/case-24/$SHA/code-reviewer.json" ] \
+  && ok "the same transcript still stamps behind an ordinary wrapper line" \
+  || bad "the same transcript still stamps behind an ordinary wrapper line"
+
+# Case 25. Two handbacks, findings first then clean. `last` would take the clean one and
+# drop the objection; the drop direction is the unsafe one and nothing enforces
+# one-handback-per-agent, so an ambiguous transcript must write nothing.
+TWOHB_TP=$(mktemp "$ROOT/transcript-twohb-XXXX")
+jq -nc --arg m "$FINDINGS_MSG" '{type:"assistant", message:{content:[
+    {type:"tool_use", name:"SubagentHandback", input:{message:$m}}]}}' >"$TWOHB_TP"
+jq -nc --arg m "$CLEAN_MSG" '{type:"assistant", message:{content:[
+    {type:"tool_use", name:"SubagentHandback", input:{message:$m}}]}}' >>"$TWOHB_TP"
+jq -nc --arg w "$WRAPPER_LINE" '{type:"assistant", message:{content:[
+    {type:"text", text:$w}]}}' >>"$TWOHB_TP"
+async_payload "code-reviewer" "$TWOHB_TP" | run_hook 25
+[ ! -f "$ROOT/case-25/$SHA/code-reviewer.json" ] \
+  && ok "two handbacks are ambiguous and write no stamp" \
+  || bad "two handbacks are ambiguous and write no stamp"
+# CONTROL for case 25: the SECOND handback alone — the one `last` would have chosen — is
+# perfectly stampable. So case 25's silence is caused by the ambiguity, not by the content.
+async_payload "code-reviewer" "$(async_transcript "$CLEAN_MSG")" | run_hook 26
+[ -f "$ROOT/case-26/$SHA/code-reviewer.json" ] \
+  && ok "that same clean handback alone does stamp" \
+  || bad "that same clean handback alone does stamp"
+
+# --- the objection guard must honour the rendering the ROSTER mandates -------------------
+# Case 23 covers `[CRITICAL]` at column 0, which is what docs/AI_WORKFLOW.md's dispatch
+# prompt asks for. But every agent definition mandates the UNBRACKETED
+# `file:line — issue — concrete fix` tagged with a bare severity word, and the first
+# version of this guard honoured only the bracketed form: measured, four of five objection
+# shapes wrote `verdict: clean` over a real objection. Each row below is a shape a roster
+# reviewer actually produces, paired with the same clean handback as case 23.
+objection_case() {  # $1 = case id, $2 = delivered message, $3 = assertion label
+  local tp; tp=$(async_transcript "$CLEAN_MSG")
+  jq -n --arg t "code-reviewer" --arg m "$2" --arg p "$tp" \
+    '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+      last_assistant_message:$m, agent_transcript_path:$p}' | run_hook "$1"
+  [ ! -f "$ROOT/case-$1/$SHA/code-reviewer.json" ] && ok "$3" || bad "$3"
+}
+objection_case 27 'client/a.ts:74 — missing check — add it. CRITICAL
+Withholding the trailer deliberately.' \
+  "the roster-mandated file:line rendering blocks the substitution"
+objection_case 28 'CRITICAL — client/a.ts:74 — missing check — add it
+Withholding the trailer deliberately.' \
+  "a leading bare severity word with a citation blocks the substitution"
+objection_case 29 '  [CRITICAL] client/a.ts:74 — missing check' \
+  "an indented bracketed finding blocks the substitution"
+objection_case 30 '- [CRITICAL] client/a.ts:74 — missing check' \
+  "a bulleted bracketed finding blocks the substitution"
+# Case 31 asserts the OPPOSITE of what an earlier revision pinned, and the reason is worth
+# stating precisely because an earlier version of THIS comment got it wrong. It used to
+# require that "Review complete: no CRITICAL or WARNING findings" still stamps. Pinning
+# that as must-stamp is what forced arm 2 to demand a `:<digit>` citation, and that demand
+# is what let a citation-free REFUSAL through (case 34) — a fail-open on the merge gate.
+#
+# The justification is NOT that the contract forbids this phrasing "because $CRITICALS
+# over-detects it": $CRITICALS never sees this message at all, and the outcome asserted
+# below is NO RECORD, not a `findings` record. What actually justifies it is parity — the
+# SYNC path records `findings` for this same sentence via $CRITICALS, so before the flip
+# the async path was strictly more permissive than sync for one shape. The flip removes
+# that asymmetry. The cost is a re-dispatch for a reviewer who has not read the agent
+# definition; residual 6 in the hook carries it. Contract-compliant clean wrapper: case 33.
+CLEAN_PROSE_TP=$(async_transcript "$CLEAN_MSG")
+jq -n --arg t "code-reviewer" --arg p "$CLEAN_PROSE_TP" \
+  --arg m 'Review complete: no CRITICAL or WARNING findings in this diff.' \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 31
+[ ! -f "$ROOT/case-31/$SHA/code-reviewer.json" ] \
+  && ok "prose using a forbidden severity word is treated as an objection (contract: write 'no blocking issues')" \
+  || bad "prose using a forbidden severity word is treated as an objection (contract: write 'no blocking issues')"
+
+# Case 34 — the CRITICAL that the citation requirement let through. A refusal carries no
+# file:line by its nature, so requiring one made arm 2 blind to exactly the shape the guard
+# exists for. Measured before this fix: stamp written with verdict `clean`, unresolved 0,
+# digest matching, and merge-review-guard ALLOWED the merge over an explicit refusal.
+objection_case 34 'CRITICAL: this fallback manufactures consent.
+Withholding the contract trailer deliberately so that NO review record is written.' \
+  "a citation-free refusal blocks the substitution"
+# Case 35 — arm 1 is case-insensitive here because a miss at THIS site is fail-OPEN, which
+# inverts residual 4 (that rationale governs the fail-CLOSED $CRITICALS site).
+objection_case 35 '[critical] client/a.ts:74 — withholding deliberately.' \
+  "a lowercase bracketed tag blocks the substitution (arm 1 is case-insensitive)"
+
+# RESIDUAL 6, pinned as a KNOWN-WRONG row rather than left undocumented. Both guard arms
+# match per LINE (grep anchors `^` at every line start of a herestring), so a genuinely
+# clean wrapper that QUOTES the contract on a later line writes no stamp. This assertion
+# records the current behaviour deliberately: if someone narrows the guard to the first
+# non-empty line, this row flips and they are forced to read residual 6 and re-derive
+# which direction is cheaper, instead of silently reopening the manufactured-consent hole.
+QUOTE_TP=$(async_transcript "$CLEAN_MSG")
+jq -n --arg t "code-reviewer" --arg p "$QUOTE_TP" \
+  --arg m 'Review complete and handed back to the caller.
+[CRITICAL]/[WARNING]/[SUGGESTION] tags are used for findings, per the reviewer contract.' \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 32
+[ ! -f "$ROOT/case-32/$SHA/code-reviewer.json" ] \
+  && ok "KNOWN-WRONG (residual 6): a clean wrapper quoting the tags on line 2 is denied" \
+  || bad "KNOWN-WRONG (residual 6): a clean wrapper quoting the tags on line 2 is denied"
+# CONTROL for case 32: the SAME transcript behind a plain one-line wrapper stamps, so the
+# denial above is caused by the quoted second line and not by an unusable fixture.
+async_payload "code-reviewer" "$QUOTE_TP" | run_hook 33
+[ -f "$ROOT/case-33/$SHA/code-reviewer.json" ] \
+  && ok "the same transcript stamps behind a one-line wrapper (residual 6 control)" \
+  || bad "the same transcript stamps behind a one-line wrapper (residual 6 control)"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=47
+EXPECTED_TOTAL=66
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

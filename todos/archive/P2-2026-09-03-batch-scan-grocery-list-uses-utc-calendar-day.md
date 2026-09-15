@@ -1,9 +1,9 @@
 ---
 title: "Batch-scan grocery lists are titled and dated from a UTC basis, so an evening scan west of Greenwich is stamped tomorrow"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-14
 assignee:
 labels: [deferred, database, server]
 github_issue:
@@ -67,24 +67,44 @@ rather than patching only the site this todo names.
 
 ## Acceptance Criteria
 
-- [ ] `server/storage/batch.ts` no longer derives a calendar day from a UTC basis; it uses
+- [x] `server/storage/batch.ts` no longer derives a calendar day from a UTC basis; it uses
       `server/lib/civil-date.ts` (`civilDateString`) with an explicit timezone.
-- [ ] The timezone actually reaches this code path. **Verify by execution that the caller
+- [x] The timezone actually reaches this code path. **Verify by execution that the caller
       supplies one** — do not assume a header is sent because the server parses it. (An
       identical assumption was the CRITICAL finding in the PR #901 review: the chat route
       parsed `X-Timezone` while no client ever sent it, making that fix a production
       no-op.) If no timezone is available at this call site, say so and treat plumbing it
       as part of this todo, not a follow-up.
-- [ ] `server/routes/grocery.ts:156-157` is examined in the SAME change and either brought
+      Verified by grep: neither `server/routes/batch-scan.ts` nor its only client caller
+      `client/hooks/useBatchConfirm.ts` read/sent `X-Timezone` before this change. Plumbed
+      both: the route now parses `parseTimezone(req.headers["x-timezone"])` and the hook
+      now sends `X-Timezone: getDeviceTimezone()`, matching the ~15 other routes already
+      on this convention. The persisted `users.timezone` column was considered and
+      rejected — grep confirms it is never written anywhere, so reading it would
+      reproduce the same no-op defect through a different mechanism.
+- [x] `server/routes/grocery.ts:156-157` is examined in the SAME change and either brought
       onto the same basis or explicitly documented as intentionally different, with the
       reason.
-- [ ] A test pins the behaviour at BOTH offset signs (a UTC-negative and a UTC-positive
+      Examined: its `dateRangeStart`/`dateRangeEnd` are the client-supplied, already
+      `isValidCalendarDate`-validated `startDate`/`endDate` strings passed through
+      verbatim, with no `new Date()`/server-clock derivation of those two column values.
+      No functional change; documented in a code comment at the write site.
+- [x] A test pins the behaviour at BOTH offset signs (a UTC-negative and a UTC-positive
       zone), with the zone passed as explicit data — not via ambient `process.env.TZ`, and
       not in a `describe.each` table (tables evaluate before hooks; see
       `docs/solutions/logic-errors/each-tables-evaluate-before-hooks-so-pinned-env-misses-fixtures-2026-08-31.md`).
-- [ ] Mutation-tested two-sided: reverting the fix makes the new assertions FAIL. A test
+      `server/storage/__tests__/batch.test.ts` pins `America/Los_Angeles` (UTC-7) and
+      `Asia/Kolkata` (UTC+5:30) as explicit string arguments, each with its own frozen
+      instant chosen so only that zone's basis disagrees with UTC (a shared instant cannot
+      discriminate both signs).
+- [x] Mutation-tested two-sided: reverting the fix makes the new assertions FAIL. A test
       that passes under CI's UTC either way is a decoration — UTC is the one zone where
       both bases agree.
+      Verified by execution: reverting `civilDateString(new Date(), tz)` to
+      `civilDateString(new Date())` made both new zone tests fail with the expected
+      wrong-day values (LA: got `2026-09-04`, expected `2026-09-03`; Kolkata: got
+      `2026-09-03`, expected `2026-09-04`), then the fix was restored and both passed
+      again. Independently re-verified by the code-reviewer agent in Step 6.
 
 ## Implementation Notes
 

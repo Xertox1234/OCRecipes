@@ -170,6 +170,134 @@ assert_allowed "fast-path hit that is not a merge stays silent" "$out"
 out=$(bash_payload "gh pr create --title x --body y" | run)
 assert_allowed "gh pr create is not gated" "$out"
 
+# ── gh api merge route (P2) ──────────────────────────────────────────────────
+# todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md
+# A THIRD merge route: `gh api` against the REST merge endpoint carries no `pr`
+# substring at all, so it must be detected independently of
+# cmd_gh_pr_write_subcommand/cmd_gh_pr_ref (both scoped to `gh pr <verb>`). These rows
+# do not depend on FAKE_FILES/stamp state — the new detector routes straight through
+# the ref-less deny (or an early allow) before stage 1/2/3 are ever reached.
+
+# 3a. DENY. --method PUT spelling, an -f field carrying the merge strategy.
+out=$(bash_payload 'gh api --method PUT repos/Xertox1234/OCRecipes/pulls/938/merge -f merge_method=squash' | run)
+denied "$out" && ok "gh api --method PUT against pulls/N/merge denies" \
+              || bad "gh api --method PUT against pulls/N/merge denies" "$out"
+
+# 3b. DENY. -X spelling, path-only (no -f fields).
+out=$(bash_payload 'gh api -X PUT /repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "gh api -X PUT against pulls/N/merge denies" \
+              || bad "gh api -X PUT against pulls/N/merge denies" "$out"
+
+# 3b-i..iv. THE PIGGYBACK. A `gh pr merge` anywhere in the same command used to make the
+#     gh-api scan unreachable: the detector was nested inside `if [ "$SUB" != "merge" ]`,
+#     so a resolved `gh pr merge` took the else, only that first PR was classified, and the
+#     api merge rode through unexamined.
+#
+#     FILES_SAFE IS LOAD-BEARING HERE, and the first version of this block omitted it and
+#     therefore tested nothing. With a RISKY diff the leading `gh pr merge 938` denies on
+#     its own for want of a stamp, so all three rows below pass whether or not the api
+#     merge is ever seen — measured: the bug reinstated still gave 98/0. A safe diff makes
+#     the leading clause legitimately ALLOW, so a deny can only come from the api merge.
+#     Case 3b-i is that control and must stay first: without it these are three assertions
+#     that cannot fail.
+MRG_PIGGY_FILES_SAVE="$FAKE_FILES"
+export FAKE_FILES="$FILES_SAFE"
+
+out=$(bash_payload 'gh pr merge 938 --auto --squash' | run)
+assert_allowed "CONTROL: the leading pr-merge clause alone allows on a safe diff" "$out"
+
+out=$(bash_payload 'gh pr merge 938 --auto --squash; gh api -X PUT repos/Xertox1234/OCRecipes/pulls/999/merge' | run)
+denied "$out" && ok "a gh-api merge piggybacked after pr merge (;) still denies" \
+              || bad "a gh-api merge piggybacked after pr merge (;) still denies" "$out"
+
+out=$(bash_payload 'gh pr merge 938 --auto --squash && gh api -X PUT repos/Xertox1234/OCRecipes/pulls/999/merge' | run)
+denied "$out" && ok "a gh-api merge piggybacked after pr merge (&&) still denies" \
+              || bad "a gh-api merge piggybacked after pr merge (&&) still denies" "$out"
+
+out=$(bash_payload 'gh api -X PUT repos/Xertox1234/OCRecipes/pulls/999/merge; gh pr merge 938 --auto --squash' | run)
+denied "$out" && ok "a gh-api merge BEFORE pr merge still denies" \
+              || bad "a gh-api merge BEFORE pr merge still denies" "$out"
+
+export FAKE_FILES="$MRG_PIGGY_FILES_SAVE"
+
+# 3c. DENY. The ALLOW_OUTWARD_CLI=1 escape belongs to the SIBLING guard
+#     (guard-outward-cli.sh) and must not be inherited here — this gate never reads
+#     that variable at all (grep it: zero hits).
+out=$(bash_payload 'ALLOW_OUTWARD_CLI=1 gh api -X PUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "ALLOW_OUTWARD_CLI=1 prefix does not bypass the merge gate" \
+              || bad "ALLOW_OUTWARD_CLI=1 prefix does not bypass the merge gate" "$out"
+
+# 3d. DENY. A benign gh api clause followed by the REAL merge in a SECOND gh api
+#     clause on the same compound command — proves every matched clause is scanned,
+#     not only the first (docs/solutions/conventions/one-axis-at-a-time-corpus-misses-co-occurrence-checks-2026-09-01.md).
+out=$(bash_payload 'gh api repos/Xertox1234/OCRecipes; gh api -X PUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "a real merge in a LATER gh api clause still denies" \
+              || bad "a real merge in a LATER gh api clause still denies" "$out"
+
+# 3e. The deny names the ACTUAL cause (gh api / REST route) and the gh-pr-merge
+#     remedy, not just a bare re-use of the missing-number wording.
+r=$(reason "$(bash_payload 'gh api -X PUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)")
+if grep -qi 'gh api' <<<"$r" && grep -qi 'gh pr merge' <<<"$r"; then
+  ok "gh-api-merge deny names the actual route and the gh pr merge remedy"
+else
+  bad "gh-api-merge deny names the actual route and the gh pr merge remedy" "$r"
+fi
+
+# 3f. ALLOW CONTROL. An ordinary read-only gh api call — no pulls/merge in the path.
+out=$(bash_payload 'gh api repos/Xertox1234/OCRecipes' | run)
+assert_allowed "ordinary read-only gh api call stays silent" "$out"
+
+# 3g. ALLOW CONTROL. The real, read-only "has PR N been merged?" REST route — same
+#     path, no method flag (defaults GET). It does not merge anything.
+out=$(bash_payload 'gh api repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+assert_allowed "read-only merge-status check (no method flag) stays silent" "$out"
+
+# 3h. ALLOW CONTROL. A mutating gh api call against an UNRELATED endpoint — this
+#     gate's business is the merge sub-resource specifically, not every mutating call.
+out=$(bash_payload 'gh api -X POST repos/Xertox1234/OCRecipes/issues/938/lock' | run)
+assert_allowed "mutating gh api call against an unrelated endpoint stays silent" "$out"
+
+# 3i. ALLOW CONTROL, the prose direction — the regression this whole route most needs
+#     to avoid repeating (see the withdrawn raw-token predicates in the P1 todo). A
+#     commit message merely mentioning the endpoint text must never be denied.
+out=$(bash_payload 'git commit -m "docs: explain the gh api -X PUT pulls/N/merge route"' | run)
+assert_allowed "commit message mentioning the gh-api merge endpoint is not denied" "$out"
+
+# 3j/3k. DENY. A redirect sitting in the flag->value separator (same class
+#     guard-outward-cli.sh already fixed for its own gh-api mutating-method check,
+#     2026-09-07 "THE FLAG->VALUE SEPARATOR TAKES THE ABSORBER"). Confirmed by
+#     construction: `gh api -X 2>&1 PUT repos/o/r/pulls/N/merge` genuinely invokes gh
+#     with argv [api -X PUT repos/o/r/pulls/N/merge] under both bash and zsh (an
+#     argv-dumping stub), so this is real argv, not decoy text.
+out=$(bash_payload 'gh api -X 2>&1 PUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "redirect in the -X/value separator still denies" \
+              || bad "redirect in the -X/value separator still denies" "$out"
+out=$(bash_payload 'gh api --method 2>&1 PUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "redirect in the --method/value separator still denies" \
+              || bad "redirect in the --method/value separator still denies" "$out"
+
+# 3l. DENY. A method value supplied by a live command substitution cannot be verified
+#     read-only — the literal-value match alone cannot see it (cmd_words renders the
+#     substitution as a placeholder, not "PUT"), so a second, presence-only arm
+#     (-X/--method co-occurring with $/backtick anywhere in the clause) is what fails
+#     this closed, mirroring guard-outward-cli.sh's own "cannot verify -> deny" check.
+out=$(bash_payload 'gh api -X "$(echo PUT)" repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "a substituted method value fails closed" \
+              || bad "a substituted method value fails closed" "$out"
+
+# 3m. DENY CONTROL. The glued short form (-XPUT, no separator at all) must keep
+#     denying — the redirect-absorbing separator must not have narrowed this.
+out=$(bash_payload 'gh api -XPUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "glued -XPUT still denies" || bad "glued -XPUT still denies" "$out"
+
+# 3n. DENY CONTROL. A redirect glued to the TRAILING boundary of the value
+#     (`-X PUT>/dev/null`, not between the flag and the value) is a different
+#     position than 3j/3k and must already be covered by the closer class
+#     (_CMD_POS_SUFFIX), not by the separator fix.
+out=$(bash_payload 'gh api -X PUT>/dev/null repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "trailing redirect glued to the value still denies" \
+              || bad "trailing redirect glued to the value still denies" "$out"
+
 # ── Stage 2: content risk ────────────────────────────────────────────────────
 
 # 4. ALLOW. Safe paths need no stamp.
@@ -872,14 +1000,20 @@ if [ -x "$NOJQ_BIN/bash" ] && ! PATH="$NOJQ_BIN" command -v jq >/dev/null 2>&1; 
   out=$(bash_payload "gh pr merge 938 --auto --squash" | run PATH="$NOJQ_BIN")
   denied "$out" && ok "no jq: Bash merge route denies" || bad "no jq: Bash merge route denies" "$out"
 
-  # 43. ALLOW CONTROL — without it, 41/42 only say "this hook denies everything once jq is
-  #     gone", which would be its own restrictive failure. An unrelated Bash call must
+  # 42b. The gh-api merge route (P2) — the no-jq fallback's own crude pre-check needed the
+  #      same second alternative the fast path did, or a jq-less environment would silently
+  #      allow exactly the merge shape the rest of this file now denies.
+  out=$(bash_payload 'gh api --method PUT repos/Xertox1234/OCRecipes/pulls/938/merge -f merge_method=squash' | run PATH="$NOJQ_BIN")
+  denied "$out" && ok "no jq: gh-api merge route denies" || bad "no jq: gh-api merge route denies" "$out"
+
+  # 43. ALLOW CONTROL — without it, 41/42/42b only say "this hook denies everything once jq
+  #     is gone", which would be its own restrictive failure. An unrelated Bash call must
   #     still pass through silently, AND exit 0 while doing so.
   out=$(bash_payload "npm run lint" | run PATH="$NOJQ_BIN")
   assert_allowed "no jq: unrelated Bash command is untouched" "$out"
 
   # 44. ALLOW CONTROL — the documented bypass still works with no jq (it is read before the
-  #     jq probe), so 41/42 are evidence about the missing tool, not about a blanket deny.
+  #     jq probe), so 41/42/42b are evidence about the missing tool, not about a blanket deny.
   out=$(mcp_payload 938 | run PATH="$NOJQ_BIN" SKIP_MERGE_REVIEW=1)
   assert_allowed "no jq: SKIP_MERGE_REVIEW still bypasses" "$out"
 else
@@ -892,7 +1026,7 @@ rm -rf "$NOJQ_BIN"
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=95
+EXPECTED_TOTAL=114
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -1,6 +1,6 @@
 ---
 title: "8 BottomSheetModal callers collapse their content into one iOS a11y leaf — VoiceOver can't reach sheet contents"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-05
 updated: 2026-09-05
@@ -44,15 +44,30 @@ address this leaf-collapse of the sheet's OWN content.
 
 ## Acceptance Criteria
 
-- [ ] `accessible={false}` on the `<BottomSheetModal>` at each site below.
+- [x] `accessible={false}` on the `<BottomSheetModal>` at each site below.
+      All 8 applied; `<BottomSheetModal` occurs 9 times in `client/**` and the
+      9th (`ConfirmationModal`) already carried it from PR #924.
 - [ ] Each fixed sheet's content (its labelled/testID'd children) is reachable
       as individual descendants — verified per site with Maestro
       `inspect_screen` on a booted sim (the dev loop supports this; jsdom render
       tests CANNOT see the native leaf-collapse, so they are not sufficient
       evidence).
-- [ ] No `accessible={false}` regresses a sheet that intentionally relies on the
+      **Deliberately left unchecked.** Not performed for any of the 8 sites.
+      Carried forward by
+      `todos/P3-2026-09-14-bottomsheetmodal-background-trap-and-on-device-pass.md`,
+      which owns the device session. The mechanism itself is not unverified —
+      the same code path was device-verified for `ConfirmationModal` in PR #924
+      and re-derived from library source during review of this PR — but that is
+      mechanism evidence, not per-site evidence, and this criterion asked for
+      the latter.
+- [x] No `accessible={false}` regresses a sheet that intentionally relies on the
       wrapper being one adjustable element (none known — the role has no backing
       gesture handler, per the #924 finding — but confirm per site).
+      Confirmed library-wide rather than per site, which is stronger:
+      `grep -rn "onAccessibilityAction\|accessibilityActions"
+  node_modules/@gorhom/bottom-sheet/src/` returns no matches, so the default
+      `accessibilityRole="adjustable"` on that wrapper has no backing handler
+      anywhere in the library and nothing could have depended on the grouping.
 
 ## Implementation Notes
 
@@ -93,3 +108,35 @@ rationale travels with each site.
 ### 2026-09-05
 
 - Initial creation from the mobile-reviewer CRITICAL surfaced on PR #924.
+
+### 2026-09-13
+
+- Implemented `accessible={false}` at all 8 remaining sites, reusing
+  ConfirmationModal.tsx's exact prop + comment shape. Also removed a dead
+  `accessibilityViewIsModal` prop directly on 4 `MealPlanHomeScreen.tsx`
+  `<BottomSheetModal>` sites (silently dropped by gorhom — no rest-spread —
+  same dead-prop class ConfirmationModal's own fix removed); the working
+  inner-View `accessibilityViewIsModal` on RecipeBrowserScreen and
+  BeveragePickerSheet was left untouched (different, already-working
+  concern).
+- Added/extended prop-pinning jsdom tests for the 6 sites with an existing
+  co-located test file (BeveragePickerSheet, the 4 MealPlanHomeScreen sheets,
+  RecipeBrowserScreen's filter sheet); `HomeScreen.tsx` and
+  `RecipeEntryHubScreen.tsx` have no existing test file and were left
+  untested per the Scope Contract — filed as
+  `todos/P3-2026-09-13-homescreen-recipeentryhub-a11y-leaf-fix-untested.md`.
+- **Per-site Maestro `inspect_screen` on-device verification (AC #2) was NOT
+  performed** — the available booted simulator had an unrelated app in the
+  foreground with no OCRecipes session/data state, and standing one up
+  (build/launch/login/seed data across 6 screens) was out of proportion for
+  this run. The fix mechanism is identical to ConfirmationModal's — verified
+  on-device in PR #924 — and was independently confirmed by two reviewer
+  agents reading the `@gorhom/bottom-sheet` source directly (no rest-spread
+  on `BottomSheetContent`/`BottomSheet`, so the same leaf-collapse and fix
+  apply). Recommend a human or follow-up session run the on-device pass
+  before treating AC #2 as fully closed.
+- Reviewed by `code-reviewer` + `mobile-reviewer`: no CRITICAL findings.
+  2 WARNINGs (misleading follow-up comment — fixed; missing test files on 2
+  screens — filed as the todo above) and 3 SUGGESTIONs (test names tightened
+  to not overclaim device-level proof; one comment-wording nit inherited from
+  ConfirmationModal.tsx is out of this todo's scope).

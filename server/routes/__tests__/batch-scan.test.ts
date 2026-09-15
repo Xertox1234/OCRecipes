@@ -135,7 +135,31 @@ describe("Batch Scan Routes", () => {
       expect(storage.batchCreateGroceryItems).toHaveBeenCalledWith(
         [validItem],
         "1",
+        "UTC",
         42,
+      );
+    });
+
+    it("threads the X-Timezone header to batchCreateGroceryItems", async () => {
+      vi.mocked(storage.batchCreateGroceryItems).mockResolvedValue({
+        count: 1,
+        groceryListId: 7,
+      });
+
+      await request(app)
+        .post("/api/batch/save")
+        .set("Authorization", "Bearer token")
+        .set("X-Timezone", "America/Los_Angeles")
+        .send({
+          items: [validItem],
+          destination: "grocery_list",
+        });
+
+      expect(storage.batchCreateGroceryItems).toHaveBeenCalledWith(
+        [validItem],
+        "1",
+        "America/Los_Angeles",
+        undefined,
       );
     });
 

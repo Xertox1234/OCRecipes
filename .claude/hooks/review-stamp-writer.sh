@@ -46,11 +46,131 @@ case "$AGENT_TYPE" in code-reviewer|server-reviewer|mobile-reviewer|ai-reviewer|
 # "Avoids the need to read and parse the transcript file". Fall back to the transcript
 # when it is absent (truncation, reformatting).
 MSG=$(printf '%s' "$INPUT" | jq -r '.last_assistant_message // empty' 2>/dev/null)
-if [ -z "$MSG" ]; then
-  TP=$(printf '%s' "$INPUT" | jq -r '.agent_transcript_path // empty' 2>/dev/null)
-  if [ -n "$TP" ] && [ -r "$TP" ]; then
-    MSG=$(jq -rs '[.[] | select(.type=="assistant")] | last | .message.content[]?
-                  | select(.type=="text") | .text' "$TP" 2>/dev/null) || MSG=""
+TP=$(printf '%s' "$INPUT" | jq -r '.agent_transcript_path // empty' 2>/dev/null)
+if [ -z "$MSG" ] && [ -n "$TP" ] && [ -r "$TP" ]; then
+  MSG=$(jq -rs '[.[] | select(.type=="assistant")] | last | .message.content[]?
+                | select(.type=="text") | .text' "$TP" 2>/dev/null) || MSG=""
+fi
+
+# ASYNC (background) dispatch delivers the report somewhere else entirely. The final
+# assistant TEXT is a wrapper line ("Review complete and handed back to the caller.") and
+# the report itself rides in a SubagentHandback tool_use. Two things had to be true for
+# this to lose a stamp silently, which is why neither one alone reproduces it:
+#   (1) the wrapper is NON-EMPTY, so the `[ -z "$MSG" ]` fallback above never fires; and
+#   (2) the wrapper carries no REVIEWED-SHA, so the parse below yields nothing and the
+#       hook takes one of its many silent `exit 0` paths.
+# Measured 2026-09-14: a real async server-reviewer returned a correctly-formatted clean
+# review for 793a06b8e43c08e0ba19490eba571167be76e57f and NO record was written, while the
+# same payload fed in the synchronous shape stamped correctly — so the writer's LOGIC was
+# never the defect, only which field it was reading. merge-review-guard.sh is fail-closed
+# and treats "no record" exactly like a dirty one, so the whole review->merge path was
+# blocked for every background dispatch.
+#
+# Keyed on "$MSG lacks the contract", NOT on "$MSG is empty", because of (1). A direct
+# report that DOES carry the contract still wins — the transcript is consulted only when
+# the delivered message cannot be the report. `grep -q` reads a here-string rather than a
+# pipe: under `pipefail` an early-exiting reader makes the writer take SIGPIPE and the
+# pipeline report failure although the read succeeded.
+#
+# TWO GUARDS BEFORE SUBSTITUTING, because the trigger above is keyed on exactly the
+# condition under which the contract requires NO stamp ("the reviewer did not emit
+# REVIEWED-SHA"). Without them the fallback can manufacture consent the reviewer withheld.
+# Both were constructed and run against this file during review, not reasoned about.
+#
+#   (a) OBJECTION IN THE DELIVERED TEXT. If $MSG is itself a substantive report opening a
+#       line with a bracketed finding, the reviewer reported findings in the message the
+#       harness actually delivered. Substituting an earlier, cleaner handback over it turns
+#       a withheld review into `verdict: clean` on a fail-closed gate. Demonstrated: a
+#       final text reading "[CRITICAL] ... I am deliberately withholding the contract
+#       trailer" plus an earlier clean handback wrote a clean stamp. Write nothing instead.
+#       CORRECTED twice, and the history is the point. Round 1 anchored on the BRACKET form
+#       alone, citing "1 false deny in 17 real transcripts" against the broader scan. That
+#       measurement was real but settled the wrong question: it compared against an
+#       unanchored prose scan, not against the anchored union this now uses, and it ignored
+#       that the roster MANDATES the unbracketed rendering — so the guard honoured the one
+#       shape reviewers are not told to write. Round 2 added the severity-word arm but
+#       required a `:<digit>` citation on the same line, which made it blind to a
+#       citation-free REFUSAL and let a clean handback be substituted over one, measured
+#       through to an ALLOWED merge. What makes removing that citation safe is STRUCTURAL,
+#       not contractual: this block only runs when $MSG lacks `^REVIEWED-SHA:`, so a clean
+#       report that CARRIES the contract never reaches either arm. Residual 6 carries the
+#       real cost — a clean async WRAPPER can trip arm 2, and the outcome is NO RECORD.
+#
+#   (b) EXACTLY ONE HANDBACK. `last` silently drops an earlier objection: a transcript with
+#       handback #1 = findings and #2 = clean stamped `verdict: clean`. Nothing enforces
+#       one-handback-per-agent, and the drop direction is the unsafe one. Measured across
+#       real transcripts, the honest shape is exactly one. Anything else is ambiguous, so
+#       refuse to choose — not substituting leaves $MSG as the wrapper, the sha parse below
+#       finds nothing, and the hook exits without a record. Fail closed.
+if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
+  # Match the marker-tolerant BRACKET form OR the roster's own UNBRACKETED rendering.
+  # Both, because they live in different documents and only one of them is what the
+  # reviewers are actually told to produce: docs/AI_WORKFLOW.md's dispatch prompt asks for
+  # `[CRITICAL] …`, while all five agent definitions (.claude/agents/code-reviewer.md:14,
+  # security-auditor.md:11, server-reviewer.md:14, …) mandate
+  # `file:line — issue — concrete fix` tagged with a bare severity word.
+  #
+  # This file already settled the argument ~100 lines below, where the $CRITICALS detector
+  # unions both renderings for exactly this reason: a bracket-only match "misses the
+  # agent-definition rendering entirely and would record `verdict: clean` on genuine
+  # CRITICAL findings — fail-open". Guard (a) answers the same question, so it has to use
+  # the same union; the first version of it did not, and used the detector this file
+  # rejects. Measured before this fix, one clean handback behind each: of five objection
+  # shapes only the column-0 bracketed one was honoured, and the MANDATED rendering wrote
+  # `verdict: clean` over the objection.
+  #
+  # Captured into a variable rather than piped into `grep -q`: under `pipefail` an
+  # early-exiting reader makes the writer take SIGPIPE and the pipeline reports failure
+  # even though the read succeeded.
+  # Arm 2 takes ANY standalone severity word. An earlier revision also required a
+  # `:<digit>` on the same line, reasoning that it protected a clean review whose prose
+  # said "no CRITICAL or WARNING findings". That was wrong in the one direction that
+  # matters here: an OBJECTION need not cite a file at all. A refusal —
+  #     CRITICAL: this fallback manufactures consent.
+  #     Withholding the contract trailer deliberately so NO record is written.
+  # carries no citation, matched neither arm, and the clean handback was substituted over
+  # it: measured `verdict: clean`, `unresolved: 0`, digest matching, and
+  # merge-review-guard.sh then ALLOWED the merge. A DENY->ALLOW conversion against main,
+  # in exactly the class this guard exists to close.
+  #
+  # What makes the removal safe is STRUCTURAL, and it is the only argument that survives
+  # measurement: this block runs only when $MSG lacks `^REVIEWED-SHA:`, so a clean report
+  # that CARRIES the contract cannot reach either arm. That set is empty by construction.
+  #
+  # An earlier revision of this comment argued instead that the contract forbids the
+  # severity words in clean prose, so "a clean review that trips arm 2 was already going to
+  # be recorded `findings` anyway". BOTH halves were wrong, and the second was wrong about
+  # this file's own control flow — which is why it is recorded here rather than deleted.
+  # The contract's imperative is scoped to the report BODY ("in that prose"), not to the
+  # async wrapper that $MSG actually holds here. And tripping arm 2 does NOT produce a
+  # `findings` record: the hook `exit 0`s below before any stamp exists, so the outcome is
+  # NO RECORD. ($CRITICALS never sees the wrapper either way — if arm 2 does not fire,
+  # $MSG has already been replaced by the handback.) Measured, behind a contract-compliant
+  # clean handback: a wrapper naming the severity words writes nothing, while the control
+  # wrapper saying "no blocking issues" stamps clean. Residual 6 carries that cost.
+  #
+  # Arm 1 is case-INSENSITIVE, and that does not contradict residual 4. Residual 4 forbids
+  # `-i` at the $CRITICALS site, where a miss is fail-CLOSED (no stamp). Here a miss is
+  # fail-OPEN (substitute a clean handback over an objection), so the direction inverts and
+  # the rationale does not transfer. Arm 1 is anchored to a bracketed tag at line start
+  # after optional markers, so residual 4's prose false-positives cannot reach it —
+  # measured: "this is critical for correctness", "the fix is critical; nothing to flag"
+  # and "a critical path in the reducer" all NOMATCH, while `[critical]` and `- [Critical]`
+  # both match. Arm 2 stays case-SENSITIVE: unanchored, it is exactly where residual 4's
+  # prose problem lives.
+  SEV=$(grep -E '(^|[^A-Za-z0-9_])(CRITICAL|WARNING|SUGGESTION)($|[^A-Za-z0-9_])' <<<"$MSG" || true)
+  if grep -qiE '^[[:space:]]*(([-*+>#]+|[0-9]+[.)])[[:space:]]*)*\[(CRITICAL|WARNING|SUGGESTION)\]' <<<"$MSG" \
+     || [ -n "$SEV" ]; then
+    exit 0
+  fi
+  NHB=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
+                 | select(.type=="tool_use" and .name=="SubagentHandback")]
+                | length' "$TP" 2>/dev/null) || NHB=0
+  if [ "${NHB:-0}" -eq 1 ]; then
+    HANDBACK=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
+                       | select(.type=="tool_use" and .name=="SubagentHandback")]
+                      | last | .input.message // empty' "$TP" 2>/dev/null) || HANDBACK=""
+    [ -n "$HANDBACK" ] && MSG="$HANDBACK"
   fi
 fi
 [ -n "$MSG" ] || exit 0
@@ -290,6 +410,7 @@ fi
 #    parser is deliberately left permissive — tightening it to a positive bare-path shape
 #    would trade this for a false-deny on legitimate paths.
 #
+#
 #    Do NOT restate the inverse ("a changed-file path that CONTAINS whitespace truncates
 #    the list") as a live residual: `git ls-files | grep -c ' '` is 0 in this repo, so
 #    that half is unreachable, and naming it instead of the shapes above is what made this
@@ -303,6 +424,69 @@ fi
 #    containing a space" on its own is the OLD, pre-round-5 boundary, and a reviewer who
 #    leaves a space-only separator and infers from that shorter wording that the block
 #    already ended reaches every row of the table above with a `clean` verdict.
+
+# 6. Objection-guard false-DENY class (fail-closed; introduced by the async handback
+#    fallback, widened by its roster-rendering fix, named here rather than narrowed).
+#    Guard (a) above scans the DELIVERED message for an objection before it will let a
+#    transcript handback stand in. Both arms match PER LINE, not per message — `grep`'s `^`
+#    anchors at every line start of a herestring — so ANY reply containing a standalone
+#    severity word, or a line that begins (after optional markers) with a bracketed tag,
+#    is read as an objection and writes no stamp.
+#
+#    The cost runs in BOTH directions and the earlier version of this item named only one.
+#      FAIL-CLOSED (this item): a genuinely clean dispatch that merely QUOTES the contract
+#        writes no stamp — e.g. a wrapper whose second line reads
+#        "[CRITICAL]/[WARNING]/[SUGGESTION] tags are used for findings". Pinned as
+#        KNOWN-WRONG case 32 with case 33 as its control.
+#      FAIL-OPEN, closed for renderings that carry an UPPERCASE severity token — not
+#        closed absolutely, and the difference matters: an earlier revision required a
+#        `:<digit>` on the severity line, which made arm 2 blind to a citation-free REFUSAL
+#        and let a clean handback be substituted over it, measured through
+#        merge-review-guard.sh to an ALLOWED merge. Case 34 pins that. What remains open,
+#        measured at this head: `critical:` / `Critical:` (arm 2 is case-SENSITIVE, per the
+#        note below), and a refusal carrying NO severity word at all. The second of those
+#        is unclosable by any severity-word predicate, so this guard is a best-effort FLOOR
+#        on manufactured consent, not a proof of its absence. Do not read "closed" as more
+#        than that.
+#
+#    The marker class arm 1 tolerates is wide, and naming one example understated it:
+#    indentation, `-`/`*`/`+` bullets, `>` blockquotes, `#`/`##` headings, `1.`/`1)`
+#    numbering, and combinations, all before the bracket.
+#
+#    NOT narrowed to the first non-empty line, deliberately. That would close the
+#    fail-closed half but reopen the fail-open one for an objection following a preamble.
+#    The two directions are not equally costly — a missed objection manufactures consent on
+#    a fail-closed gate, while a false deny costs a re-dispatch — so the guard keeps the
+#    wider read and the cost is named here instead. Like item 4, a deliberate narrowing NOT
+#    to be "fixed" without re-deriving which direction is cheaper; unlike item 4, arm 1 IS
+#    case-insensitive, because at THIS site a miss is fail-open and that inverts item 4's
+#    reasoning.
+#
+#    What is genuinely safe is STRUCTURAL, not contractual: this whole block is gated on
+#    `$MSG` lacking `^REVIEWED-SHA:`, so a clean report that CARRIES the contract never
+#    reaches either arm. The set of contract-shaped clean reports arm 2 can eat is empty by
+#    construction.
+#
+#    An earlier version of this item claimed more than that — that all five agent
+#    definitions forbid the severity words in clean prose, so "a reviewer following the
+#    contract never trips either arm". Checked, and the imperative does not reach this far:
+#    every one of the five scopes it to "that prose", meaning the patterns/notes list in the
+#    report BODY. Nothing governs the async WRAPPER line, which is exactly what `$MSG` holds
+#    whenever this guard runs. Measured at this head, each behind a fully contract-compliant
+#    clean handback: "Review complete and handed back to the caller. No CRITICAL or WARNING
+#    findings." denies, and so does a wrapper that merely names the tag format. The control
+#    in the same run — "Review complete and handed back to the caller. No blocking issues."
+#    — stamps. So a legitimately clean reviewer CAN trip arm 2 on its wrapper. Fail-closed,
+#    costing a re-dispatch, and not a removal against main; but the guarantee was wrong and
+#    stating it invited the next reader to skip the check.
+#
+#    Making that sentence true needs a CONTRACT edit, not a code edit: the five agent
+#    definitions and docs/AI_WORKFLOW.md's dispatch prompt would have to say the rule covers
+#    the entire reply including any hand-back wrapper. Worth doing — it would also fix the
+#    deny loop for a reviewer who has not read the agent definition, since the gate's
+#    message says only "no review record exists" and never mentions wrapper wording, so a
+#    re-dispatch reproduces it. Filed rather than done here: it edits five agent definitions
+#    and the dispatch prompt, which is outside this PR's two files.
 
 # --- write -------------------------------------------------------------------
 case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac

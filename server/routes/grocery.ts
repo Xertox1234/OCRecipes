@@ -148,6 +148,15 @@ export function register(app: Express): void {
           parsed.data.title ||
           `Grocery List ${parsed.data.startDate} to ${parsed.data.endDate}`;
 
+        // dateRangeStart/dateRangeEnd here are an intentionally different
+        // basis from server/storage/batch.ts's auto-created list: they are
+        // the client-supplied startDate/endDate strings, already validated as
+        // yyyy-mm-dd by isValidCalendarDate above, passed through verbatim —
+        // no server-clock derivation of THESE TWO COLUMN VALUES happens on
+        // this path (the `new Date(...)` calls above are for the day-count
+        // limit check only and never feed these columns), so there is no
+        // UTC-vs-local basis to unify (see
+        // docs/solutions/logic-errors/two-writers-of-one-date-column-must-share-a-normalisation-basis-2026-08-31.md).
         // Atomically check count + create list + insert items (TOCTOU-safe)
         const result = await storage.createGroceryListWithLimitCheck(
           {
