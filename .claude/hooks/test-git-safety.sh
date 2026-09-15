@@ -801,6 +801,22 @@ assert_allow "advisor: a separator glued to gh with no space (foo;gh) loses the 
 assert_allow "advisor: a --repo retarget BETWEEN 'pr' and the verb is SILENT here — pre-existing, identical on main, surfaced not fixed" \
   "$(jsonc no-registry-session "$MAIN" 'gh pr --repo o/r close 42')"
 
+# SIXTH residual, and the one the pre-guard's own justification denied was possible. The
+# `*gh*`+`*close*` pre-guard rests on a necessary-substring argument that is unsound:
+# cmd_bare_deep routes through cmd_extract_substitutions, which DELETES a nested
+# substitution and leaves a zero-width hole, so deletion can synthesise a substring the raw
+# text never contained. Measured, with the plain form as control:
+#   gh pr close 42                    lib=close  advisory=warn   (control)
+#   echo "$(gh pr clo$(echo)se 42)"   lib=close  advisory=SILENT
+#   echo "$(g$(echo)h pr close 42)"   lib=close  advisory=SILENT
+# Both really execute `gh pr close 42`; the library resolves the verb and only the
+# pre-guard drops it. Distinct from the g"h" and clo""se rows above, which cmd_bare_deep's
+# tokenizer suppresses even when the library is reached directly — neither of those covers
+# this case. Missed warning only: both DENY at guard-outward-cli.sh, and both are SILENT on
+# origin/main too.
+assert_allow "advisor: a nested substitution that SYNTHESISES the verb is dropped by the cheap pre-guard — deliberate perf trade, deny layer still covers it" \
+  "$(jsonc no-registry-session "$MAIN" 'echo "$(gh pr clo$(echo)se 42)"')"
+
 # Accepted trade-off (documented in cmd_gh_pr_write_subcommand's own header): a `gh
 # pr create` mention co-occurring with the close means the create-vs-rest guard
 # refuses the whole subcommand lookup, so this advisor now stays silent where the
@@ -931,7 +947,7 @@ fi
 # Without it a row that is silently skipped (a helper that dies mid-pipeline,
 # incrementing neither PASS nor FAIL) makes N/0 look identical to (N+1)/0. Update
 # the number DELIBERATELY when adding assertions.
-EXPECTED_TOTAL=157
+EXPECTED_TOTAL=158
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

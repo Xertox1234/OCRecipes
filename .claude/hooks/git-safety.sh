@@ -551,10 +551,25 @@ fi
 # CONTRACT deny gate, above) has its own independent inline scanners and must
 # keep denying even when this lib cannot be sourced — an advisory hook may
 # fail silent, the main-checkout deny gate must not (see test-git-safety.sh's
-# "lib-missing" pair). Cheap `*gh*`+`*close*` pre-guard first — cmd_bare only
-# BLANKS characters, never inserts them, so both substrings must be literally
-# present in $CMD for cmd_gh_pr_write_subcommand to ever return "close" (same
-# necessary-substring reasoning pr-verify.sh's own pre-guard uses, narrowed
+# "lib-missing" pair). Cheap `*gh*`+`*close*` pre-guard first — a deliberate
+# PERFORMANCE trade, and the necessary-substring argument that used to justify
+# it is UNSOUND. The premise was "cmd_bare only BLANKS characters, never inserts
+# them, so both substrings must be literally present". cmd_bare is blanking-only,
+# but the consumer is cmd_bare_deep, which routes through
+# cmd_extract_substitutions — and that DELETES a nested substitution, leaving a
+# zero-width hole. Deletion can SYNTHESISE a substring the raw text never had.
+# Measured under bash 5.3.15, control in the same run:
+#   gh pr close 42                       raw has both   lib=close   advisory=warn
+#   echo "$(gh pr clo$(echo)se 42)"      no "close"     lib=close   advisory=SILENT
+#   echo "$(g$(echo)h pr close 42)"      no "gh"        lib=close   advisory=SILENT
+# Both really execute `gh pr close 42`. So this pre-guard SUPPRESSES shapes the
+# library resolves. Kept anyway: this hook is advisory, both shapes DENY at
+# guard-outward-cli.sh, and the cost is a missed warning against a stated
+# ~140ms/hook budget on every Bash call. Pinned as a row below so the cost is
+# visible on every run rather than rediscovered. Do NOT restate the substring
+# argument as sound — and note pr-verify.sh's pre-guard, cited below as
+# precedent, has the same property, which makes it a second instance rather
+# than support. (Narrowed
 # here from `gh` alone: that single-substring form still sourced the library
 # for any command containing "gh" as a substring of an unrelated word —
 # highlight, through, weight, right — which this hook sees on every single
