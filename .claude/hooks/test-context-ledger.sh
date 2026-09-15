@@ -1150,9 +1150,23 @@ rm -f "$EXFROOT/exfil" "$TMPFIXROOT/tmpsid/resume.md.tmp" 2>/dev/null
 # rows ARE the guard: delete either check and exactly one row reddens. Source-scanning
 # assertions have precedent in this suite family -- test-assert-needle-dash.sh greps the
 # source of every test-*.sh and guards the population size the same way.
+#
+# CEILING, so these rows are not read as more than they are: they assert POSITION, not
+# REACHABILITY. Measured -- wrapping the hoisted guard in `if false; then ... fi` leaves it
+# matching at the right line number and the suite stays green. The realistic version of that
+# is not a literal `if false` but a guard drifting inside a conditional branch during a
+# refactor. The behavioural row still covers both-guards-gone, so the residual is bounded to
+# "present and correctly placed, but not necessarily executed".
 PCL="$HOOKS_DIR/precompact-ledger.sh"
 guard_line=$(grep -n '^context_ledger_path_ok "\$LEDGER_DIR" || exit 0$' "$PCL" | cut -d: -f1 | head -1)
-read_line=$(grep -n 'LEDGER_DIR/curated.md' "$PCL" | cut -d: -f1 | head -1)
+# ANCHORED TO THE CODE LINE, not to the substring. The unanchored form matched COMMENTS
+# too, which made row 2 silently vacuous: measured, with the write-time guard deleted AND
+# one ordinary comment mentioning $LEDGER_DIR/curated.md placed between the reads and the
+# mkdir, the suite stayed at 83/0 with both positional rows green while nothing guarded the
+# directory at write time. The anchored pattern matches exactly one line, so head-vs-tail
+# stops mattering, and if that read is ever refactored the variable goes empty and the
+# `[ -n "$read_line" ]` test below reddens the row instead of greening it.
+read_line=$(grep -n '^if \[ -r "\$LEDGER_DIR/curated.md" \]' "$PCL" | cut -d: -f1 | head -1)
 mkdir_line=$(grep -n '^(umask 077; mkdir -p "\$LEDGER_DIR")' "$PCL" | cut -d: -f1 | head -1)
 last_guard=$(grep -n '^context_ledger_path_ok "\$LEDGER_DIR" || exit 0$' "$PCL" | cut -d: -f1 | tail -1)
 if [ -n "$guard_line" ] && [ -n "$read_line" ] && [ "$guard_line" -lt "$read_line" ]; then
