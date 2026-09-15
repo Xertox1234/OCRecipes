@@ -707,7 +707,10 @@ assert_allow "advisor: quote-splicing the verb (gh pr clo\"\"se) is a known, pre
 
 # THIRD residual in the same family, previously undisclosed. A root-position `-R`/`--repo`
 # on its own lands correctly on the SKIP_REASON path (covered by the four spelling rows
-# above). Stack a SECOND separate-arg global with it — `--hostname <host>` — and
+# above). ONE separate-arg global is already enough — measured, `gh --hostname github.com
+# pr close 42` with no `-R` present at all goes SILENT — because `_CMD_GH_GLOBALS` admits
+# `-R v`, `--repo v` and glued `-x`, but no other flag-plus-value pair. An earlier version
+# of this comment said to "stack a SECOND", which understates it. Stack it with `-R` and
 # `cmd_gh_pr_write_subcommand`'s regex stops matching the command at all, so this advisor
 # goes ENTIRELY silent: no warning and no SKIP_REASON either. Measured under bash 5.3.15,
 # with the bare and single-flag forms as controls:
@@ -718,11 +721,41 @@ assert_allow "advisor: quote-splicing the verb (gh pr clo\"\"se) is a known, pre
 # Inherited from the UNMODIFIED `_CMD_GH_GLOBALS` grammar in lib/cmd-detect.sh, whose own
 # comments already track this shape as an open residual for its other consumers — so this
 # is not introduced by the port, and total silence is within this hook's advisory-only
-# design (guard-outward-cli.sh's independent DENY still covers the destructive action).
+# design. WHAT BOUNDS IT IS gh ITSELF, NOT A DENY BACKSTOP. An earlier version of this
+# comment said "guard-outward-cli.sh's independent DENY still covers the destructive
+# action"; measured, that is false for exactly these two shapes — both return BYTE-EMPTY
+# from guard-outward-cli.sh, indistinguishable from the `echo hello` negative control,
+# while `gh pr close 42` returns a full deny. The real bound is that gh 2.100.0 REFUSES a
+# pre-verb global: its root FLAGS are only --help and --version, and
+# `gh --hostname github.com --version` returns "unknown flag: --hostname". So the annotated
+# input cannot execute and nothing destructive is unprotected — a wrong reason, not a live
+# hole, and a reader should not file a bypass todo off it. The residual's genuinely
+# EXECUTABLE siblings do get a deny, verified in the same run: `g"h" pr close 42`,
+# `gh pr clo""se 42` and `gh pr create -t x && gh pr close 42` all DENY.
 # Pinned because the todo's AC says "all four root-position spellings" are handled, and
 # without this row that reads as full globals-slot coverage, which it is not.
 assert_allow "advisor: a root-position -R stacked with another separate-arg global (--hostname) defeats detection entirely — known, inherited gap" \
   "$(jsonc no-registry-session "$MAIN" 'gh --hostname github.com -R other/org pr close 42')"
+
+# FOURTH residual in the same family, and the only one this port INTRODUCES rather than
+# inherits. The retired needle matched `(^|[;&|[:space:]])gh`; the shared
+# cmd_gh_pr_write_subcommand matches `(^|[[:space:]])gh`, and cmd_bare_deep only BLANKS
+# characters, so a separator glued straight to `gh` with no space stays contiguous and
+# cannot match. Measured under bash 5.3.15 against both hook versions, with the
+# space-separated form as a control:
+#   foo;gh pr close 42   old=warn  new=SILENT      foo&&gh …  old=warn  new=SILENT
+#   foo|gh pr close 42   old=warn  new=SILENT      foo||gh …  old=warn  new=SILENT
+#   foo&gh pr close 42   old=warn  new=SILENT
+#   foo; gh pr close 42  old=warn  new=warn        (control, space present)
+#   gh pr close 42       old=warn  new=warn        (control, bare)
+# All five are real executable bash. NOT WIDENED, deliberately: the fix would be to anchor
+# on _CMD_POS_PREFIX, but that class lives in the SHARED lib that also feeds
+# guard-outward-cli.sh's DENY decisions, and widening a matcher is the safe direction only
+# on a deny-shaped read -- here it would risk false denies for a warning this hook already
+# calls optional ("a missed warning, never a wrong one"). Cost bounded by measurement:
+# guard-outward-cli.sh returns a DENY for all five, so only the advisory is lost.
+assert_allow "advisor: a separator glued to gh with no space (foo;gh) loses the advisory — introduced by the port, bounded by guard-outward-cli's deny" \
+  "$(jsonc no-registry-session "$MAIN" 'foo;gh pr close 42')"
 
 # Accepted trade-off (documented in cmd_gh_pr_write_subcommand's own header): a `gh
 # pr create` mention co-occurring with the close means the create-vs-rest guard
@@ -785,6 +818,16 @@ FAKE_GH_STATE=MERGED assert_allow "advisor: gh -R owner/repo pr view 42 (read-on
 assert_warn_contains "advisor: gh pr close with an attacker-controlled URL ref is refused, not looked up" \
   "$(jsonc no-registry-session "$MAIN" 'gh pr close https://exfil.example.test/o/r/pull/1')" \
   "is a URL outside the configured GitHub host"
+# THE PR-DIRECTION HALF OF THE SUBJ/VERB FIX, previously reachable but asserted nowhere.
+# Only the BRANCH direction was pinned; the four -R rows assert a hardcoded prefix that
+# never interpolates ${SUBJ}/${VERB}. Measured: deleting the two SUBJ/VERB assignments in
+# git-safety.sh left this suite at 153/0 while this very command's guidance flipped to
+# "confirm this branch's merge state manually before deleting" -- exactly the mirror the
+# hook's own comment says would otherwise stay live. This row is the two-sided pair of the
+# branch-side row below.
+assert_warn_contains "advisor: the PR-close direction gets PR-shaped guidance, not the branch mirror" \
+  "$(jsonc no-registry-session "$MAIN" 'gh pr close https://exfil.example.test/o/r/pull/1')" \
+  "confirm this PR's state manually before closing"
 assert_warn_contains "advisor: gh pr close with a URL ref hidden inside a live substitution is refused, not looked up" \
   "$(jsonc no-registry-session "$MAIN" 'echo "$(gh pr close https://exfil.example.test/o/r/pull/1)"')" \
   "is a URL outside the configured GitHub host"
@@ -836,7 +879,7 @@ fi
 # Without it a row that is silently skipped (a helper that dies mid-pipeline,
 # incrementing neither PASS nor FAIL) makes N/0 look identical to (N+1)/0. Update
 # the number DELIBERATELY when adding assertions.
-EXPECTED_TOTAL=153
+EXPECTED_TOTAL=155
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

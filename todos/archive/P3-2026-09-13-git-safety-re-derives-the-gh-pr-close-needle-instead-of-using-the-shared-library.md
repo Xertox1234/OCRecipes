@@ -136,7 +136,10 @@ root position; it is the reason to port rather than patch.
   documented and verified, not silently dropped. The old raw needle never detected either
   shape either (verified directly), so this is not a regression versus `main`.
 - **THIRD residual, found in review and previously undisclosed — AC #2's "all four
-  root-position spellings" is true only for the BARE forms.** Stack a SECOND separate-arg
+  root-position spellings" is true only for the BARE forms.** ONE separate-arg global is
+  already enough — measured, `gh --hostname github.com pr close 42` with no `-R` present at
+  all goes SILENT, because `_CMD_GH_GLOBALS` admits `-R v`, `--repo v` and glued `-x` but no
+  other flag-plus-value pair. Stack a SECOND separate-arg
   global onto the retarget flag and `cmd_gh_pr_write_subcommand`'s regex stops matching the
   command at all, so the advisor goes entirely silent — no warning and no `SKIP_REASON`.
   Measured under bash 5.3.15, with the bare and single-flag forms as controls:
@@ -151,7 +154,14 @@ root position; it is the reason to port rather than patch.
   Inherited from the UNMODIFIED `_CMD_GH_GLOBALS` grammar in `lib/cmd-detect.sh`, whose own
   comments already track this shape as an open residual for its other consumers — so it is
   not introduced by this port, and total silence is within this hook's advisory-only design
-  (`guard-outward-cli.sh`'s independent DENY still covers the destructive action). Now
+  — bounded by **gh itself**, not by a deny backstop. Measured 2026-09-15: both annotated
+  forms return BYTE-EMPTY from `guard-outward-cli.sh`, indistinguishable from an `echo hello`
+  negative control, while the bare close form returns a full deny. What makes the shape
+  harmless is that gh 2.100.0 refuses a pre-verb global — its root FLAGS are only `--help`
+  and `--version`, and `gh --hostname github.com --version` returns "unknown flag" — so the
+  annotated input cannot execute. An earlier revision credited a DENY that does not exist
+  for these two shapes; a wrong reason, not a live hole, and no bypass todo should be filed
+  off it. Now
   pinned as a test alongside the other two, because without it "all four root-position
   spellings" reads as full globals-slot coverage, which it is not.
 
