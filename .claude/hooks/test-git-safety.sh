@@ -725,13 +725,22 @@ assert_allow "advisor: quote-splicing the verb (gh pr clo\"\"se) is a known, pre
 # comment said "guard-outward-cli.sh's independent DENY still covers the destructive
 # action"; measured, that is false for exactly these two shapes — both return BYTE-EMPTY
 # from guard-outward-cli.sh, indistinguishable from the `echo hello` negative control,
-# while `gh pr close 42` returns a full deny. The real bound is that gh 2.100.0 REFUSES a
-# pre-verb global: its root FLAGS are only --help and --version, and
-# `gh --hostname github.com --version` returns "unknown flag: --hostname". So the annotated
-# input cannot execute and nothing destructive is unprotected — a wrong reason, not a live
-# hole, and a reader should not file a bypass todo off it. The residual's genuinely
-# EXECUTABLE siblings do get a deny, verified in the same run: `g"h" pr close 42`,
-# `gh pr clo""se 42` and `gh pr create -t x && gh pr close 42` all DENY.
+# while `gh pr close 42` returns a full deny. What bounds THESE TWO INPUTS is gh's own
+# parser, and the scope matters: gh 2.100.0 refuses a global in the ROOT slot, before `pr`
+# — its root FLAGS are only --help and --version, and `gh --hostname github.com --version`
+# returns "unknown flag: --hostname" — so these two annotated inputs cannot execute.
+#
+# THAT BOUND IS ABOUT THE ROOT SLOT ONLY. An earlier version of this comment generalised it
+# to "gh REFUSES a pre-verb global" and added "a reader should not file a bypass todo off
+# it". Both were wrong, and the second would have suppressed the investigation that finds
+# the counter-example: gh accepts `--repo`/`-R` BETWEEN `pr` and the verb (measured,
+# `gh pr --repo cli/cli view --help` resolves and prints `gh pr view`'s help, while
+# `gh pr --bogus x view --help` errors), and that position is NOT covered here — see the
+# SEPARATE residual below. Do not read this paragraph as clearing any shape other than the
+# two it annotates.
+#
+# The residual's genuinely EXECUTABLE siblings do get a deny, verified in the same run:
+# `g"h" pr close 42`, `gh pr clo""se 42` and `gh pr create -t x && gh pr close 42` all DENY.
 # Pinned because the todo's AC says "all four root-position spellings" are handled, and
 # without this row that reads as full globals-slot coverage, which it is not.
 assert_allow "advisor: a root-position -R stacked with another separate-arg global (--hostname) defeats detection entirely — known, inherited gap" \
@@ -756,6 +765,30 @@ assert_allow "advisor: a root-position -R stacked with another separate-arg glob
 # guard-outward-cli.sh returns a DENY for all five, so only the advisory is lost.
 assert_allow "advisor: a separator glued to gh with no space (foo;gh) loses the advisory — introduced by the port, bounded by guard-outward-cli's deny" \
   "$(jsonc no-registry-session "$MAIN" 'foo;gh pr close 42')"
+
+# FIFTH residual, and the only one here that BOTH hooks miss. A `--repo`/`-R` retarget
+# placed BETWEEN `pr` and the verb reaches neither this advisor nor guard-outward-cli.sh.
+# Measured at this head AND against origin/main, identical on both, with three controls in
+# the same run that are all covered:
+#   gh pr close 42                    advisory=warn    guard=DENY   (control)
+#   gh -R o/r pr close 42             advisory=warn    guard=DENY   (control, ROOT slot)
+#   gh pr close 42 --repo o/r         advisory=warn    guard=DENY   (control, POST-verb)
+#   gh pr --repo o/r close 42         advisory=SILENT  guard=allow
+#   gh pr --repo=o/r close 42         advisory=SILENT  guard=allow
+#   gh pr -R o/r close 42             advisory=SILENT  guard=allow
+#   gh pr -Ro/r close 42              advisory=SILENT  guard=allow
+# The shape PARSES: `gh pr --repo cli/cli view --help` resolves and prints `gh pr view`'s
+# help, while `gh pr --bogus x view --help` errors "unknown flag", so that slot genuinely
+# binds --repo rather than skipping it. Boundary of the claim: that is a PARSING result --
+# no close was executed.
+#
+# NOT INTRODUCED HERE and not this PR's to fix: guard-outward-cli.sh is not in this PR's
+# changed files and main behaves identically, so this port neither creates nor widens it.
+# Pinned rather than filed, because guard-outward-cli.sh's own deny text names --repo/-R
+# retargeting as the thing it exists to catch, and a gap that contradicts a guard's stated
+# purpose should be visible on every run rather than living in one reviewer's report.
+assert_allow "advisor: a --repo retarget BETWEEN 'pr' and the verb reaches neither hook — pre-existing, identical on main, surfaced not fixed" \
+  "$(jsonc no-registry-session "$MAIN" 'gh pr --repo o/r close 42')"
 
 # Accepted trade-off (documented in cmd_gh_pr_write_subcommand's own header): a `gh
 # pr create` mention co-occurring with the close means the create-vs-rest guard
@@ -825,7 +858,15 @@ assert_warn_contains "advisor: gh pr close with an attacker-controlled URL ref i
 # "confirm this branch's merge state manually before deleting" -- exactly the mirror the
 # hook's own comment says would otherwise stay live. This row is the two-sided pair of the
 # branch-side row below.
+# The tail alone is NOT unique to this clause -- it is also the verbatim ending of the
+# hardcoded close-arm ref-refusal SKIP_REASON, so a row asserting only the tail would be
+# satisfied by a DIFFERENT skip path (measured: `gh -R owner/repo pr close 42` and
+# `gh --repo=owner/repo pr close 42` both emit it). Pinning the host-guard PREFIX in the
+# same row is what ties the assertion to the clause it names.
 assert_warn_contains "advisor: the PR-close direction gets PR-shaped guidance, not the branch mirror" \
+  "$(jsonc no-registry-session "$MAIN" 'gh pr close https://exfil.example.test/o/r/pull/1')" \
+  "is a URL outside the configured GitHub host"
+assert_warn_contains "advisor: ... and that same host-guard clause ends with the PR-shaped tail, not the branch mirror" \
   "$(jsonc no-registry-session "$MAIN" 'gh pr close https://exfil.example.test/o/r/pull/1')" \
   "confirm this PR's state manually before closing"
 assert_warn_contains "advisor: gh pr close with a URL ref hidden inside a live substitution is refused, not looked up" \
@@ -879,7 +920,7 @@ fi
 # Without it a row that is silently skipped (a helper that dies mid-pipeline,
 # incrementing neither PASS nor FAIL) makes N/0 look identical to (N+1)/0. Update
 # the number DELIBERATELY when adding assertions.
-EXPECTED_TOTAL=155
+EXPECTED_TOTAL=157
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
