@@ -5,8 +5,9 @@ category: logic-errors
 tags: [harness, security, shell-quoting, false-negative, verification]
 module: server
 applies_to: [".claude/hooks/**"]
-symptoms: ["A comment or todo justifies NOT widening a detector by asserting a property of a whole syntax class (\"a bare $name cannot split a token\"), and the property is only true of the one example the author had in mind", "A gated command is DENIED with the documented spelling but ALLOWED with a sibling spelling from the same syntax class", "The PRECISE execution path allows what the DEGRADED paths deny — inverting the usual fail-closed asymmetry", "A detector's allow-list is incomplete against its own written eligibility criterion", "Every spelling the enumeration anticipated is caught; the bypass uses a second MECHANISM the enumeration's key (a sigil, a prefix) cannot see at all"]
+symptoms: ["A comment or todo justifies NOT widening a detector by asserting a property of a whole syntax class (\"a bare $name cannot split a token\"), and the property is only true of the one example the author had in mind", "A gated command is DENIED with the documented spelling but ALLOWED with a sibling spelling from the same syntax class", "The PRECISE execution path allows what the DEGRADED paths deny — inverting the usual fail-closed asymmetry", "A detector's allow-list is incomplete against its own written eligibility criterion", "Every spelling the enumeration anticipated is caught; the bypass uses a second MECHANISM the enumeration's key (a sigil, a prefix) cannot see at all", "A word-terminator or word-boundary character class is written by negating a convenient positive class (\"not an identifier character\") instead of enumerating bash's real metacharacter set, so it silently accepts bytes that are not real terminators", "A character removed from a boundary class for being unsafe is replaced with a narrower class that still contains a DIFFERENT unsafe byte from the same perceived category (whitespace-like control bytes)"]
 created: 2026-09-06
+last_updated: '2026-09-14'
 severity: critical
 ---
 
@@ -111,13 +112,69 @@ into the fixture and retire the only artifact pointing at it.
   family × glue POSITION × mechanism, and treat "is there a second mechanism entirely?" as
   its own question — a sigil-keyed axis cannot ask it.
 
+## A word-boundary class negated from "not an identifier" instead of enumerated from bash's real grammar (2026-09-14)
+
+The same failure pattern recurred twice more, one layer down, in a **different** detector in
+the **same file**: `lib/cmd-detect.sh`'s `kwbound()`, added to recognise the reserved words
+`case`/`esac` only at a genuine word boundary (so `echo case`, `casexyz`, and a quoted `"case"`
+never open a false match). The first version was written as a negation of a convenient class:
+
+```awk
+function kwbound(ch) { return (ch == "" || ch !~ /[A-Za-z0-9_]/) }
+```
+
+"Not an identifier character" reads as a safe, conservative boundary test. It is not the
+property bash's lexer actually uses. `=` is not a bash word-terminator — `case=2` is **one**
+word, never the reserved word `case` followed by `=2` — but it is not an identifier character
+either, so the negation classified it as a boundary anyway. An embedded `case=2`/`esac=1`
+inside a case arm's own action spuriously re-toggled the scanner's depth counter, permanently
+suppressing the substitution close:
+
+```
+e$(case x in a) : ; case=2 ;; esac)as update --branch preview   → ALLOW ×1 (precise)
+```
+
+Ground-truthed live with a PATH-stubbed binary: real bash really invokes `eas update --branch
+preview`, confirming the construction is live, not merely a scanner artifact.
+
+**The fix repeated the exact defect it was fixing, one round later.** The corrected version
+enumerated bash's real word-terminator set explicitly — but still included `\r` (carriage
+return) alongside space/tab/newline, on the unexamined assumption that CR belongs to the same
+"whitespace-like control byte" category. This file already carried a **mutation-confirmed
+precedent for exactly this category error**, for a different function, written before this
+todo: bash's tokenizer does not treat CR (or VT/FF) as word-separating at all — glued between
+two halves of a word, they fuse into **one** token, the same shape `=` demonstrated above. `\r`
+in the corrected `kwbound` reopened the identical `case=2`-shaped bypass through a different
+decoy byte:
+
+```
+e$(case x in a) : ; case<CR>2 ;; esac)as update --branch preview   → ALLOW ×1 (precise)
+```
+
+Found by an independent reviewer's **round 2** — re-verifying the round-1 fix, not merely
+trusting that "fixed" meant fixed — constructing a new adversarial byte from the same class
+the round-1 fix had just corrected, rather than re-running the round-1 reproduction only.
+
+**The generalisation, stated once for both instances:** a character class built by **negating**
+a convenient positive predicate ("not an identifier") inherits every byte that predicate never
+considered, and a character class built by **enumerating** the real grammar still needs each
+enumerated member individually verified against that grammar — membership in a plausible
+category (blank, control byte, "whitespace-like") is not evidence of membership in the actual
+rule (bash's specific metacharacter set). **Fixing one wrong member of a class does not
+validate the rest of the class; each byte needs its own check against the real grammar, not
+against the category it appears to belong to.** The same discipline applies whether the class
+is being built for the first time or corrected a second time.
+
 ## Related Files
 
+- `.claude/hooks/lib/cmd-detect.sh` — `kwbound()`, both copies (`cmd_extract_substitutions` and `_cmd_vanish_pass`)
+- `.claude/hooks/test-cmd-detect.sh` — the `case=NN`/`esac=NN`/CR regression pins
+- `todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md`
 - `.claude/hooks/guard-outward-cli.sh` — DOCUMENTED RESIDUALS carries the retraction and both open classes
 - `.claude/hooks/lib/cmd-detect.sh` — `cmd_words_vanished`'s allow-list and its eligibility criterion
 - `.claude/hooks/repro-outward-cli-corpus.sh` — the `r4spec-`/`r4dig-`/`r4ansic-`/`r4brange-` rows
 - `todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md`
-- `todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md`
+- `todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md`
 
 ## See Also
 

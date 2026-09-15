@@ -1,9 +1,9 @@
 ---
 title: "The corpus covers every deny SITE but not every alternation BRANCH inside one — 13 live protections can be narrowed away invisibly"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-09-14
 assignee:
 labels: [deferred, harness, testing, security]
 github_issue:
@@ -55,19 +55,64 @@ OTA publish, i.e. the 2026-08-16 incident class.
 
 ## Acceptance Criteria
 
-- [ ] Every alternation branch listed above is exercised by at least one corpus row, generated
+- [x] Every alternation branch listed above is exercised by at least one corpus row, generated
       from the guard's own alternation lists rather than hand-listed (NOTE6's rule: new
       dimensions are GENERATED — a hand-carved subset is how the tool position went missing).
-- [ ] **Mutation-verified per regex, not per row.** For each of the 4 regexes, delete one branch
-      that previously had no row and show the corpus goes RED. Assumed-correct is not acceptable
-      in this file.
-- [ ] A negative control: confirm the same mutation was **green** before the new rows, so the
-      rows are demonstrably what closed it (same evidence shape PR #935 used for `_pin_sites`).
-- [ ] The residual paragraph in the pin block is updated — narrowed to whatever remains, or
-      marked closed if nothing does. Do not leave it asserting a hole that has been filled; a
-      residual list that names a closed residual is the defect PR #935 already fixed once.
-- [ ] Runtime impact stated. The corpus is a REQUIRED check; ~13-20 new rows on a 448-row,
-      ~100s run is expected to be minor, but state the measurement rather than assuming it.
+      **Done differently than hand-listing, and stronger than what was asked**: a new
+      `_alt_or_die` helper in `.claude/hooks/repro-outward-cli-corpus.sh` `grep -oE`s the literal
+      alternation text straight out of `guard-outward-cli.sh`'s own 4 regex lines, asserts each
+      pattern matches EXACTLY one line (aborting the whole run otherwise), and generates one row
+      per extracted branch — 21 new rows (19 DENY + 2 ALLOW false-positive controls for
+      `railway status`/`railway logs`, matching the axis's existing `sitefp-*` convention). A
+      branch added to one of these 4 regexes later grows the row count and reds `EXPECTED_ROWS`
+      until re-pinned; this is the `_pin_sites`-one-level-down automation the Implementation
+      Notes asked to be weighed, not just the rows.
+- [x] **Mutation-verified per regex, not per row.** For each of the 4 regexes, a scratch mutant
+      guard with one previously-uncovered branch deleted was built and probed directly (not
+      assumed): `railway run`, `eas publish`, `railway vars set K=V`, `railway environment delete
+svc` each measured `real=DENY mutant=ALLOW`. One regex (`railway` top verb, deleting `run`)
+      was additionally run through the FULL, re-pinned corpus two different ways against that
+      mutant, because the first way understated what it proved: (1) mutant used for BOTH row
+      generation and verdict-testing (ordinary same-commit shape) — exit 1, `rows is 622,
+expected 623`, `-siterailverb-run` removed from the membership manifest. This is a real,
+      required, un-silenceable pin failure, but it is a ROW-COUNT signal (the row never gets
+      evaluated at all), not proof the row-based mechanism itself catches a verdict change. (2)
+      DECOUPLED — row generation held on the real/unmutated guard (so `siterailverb-run` still
+      exists as a row) while ONLY verdict-testing pointed at the mutant — exit 1,
+      `precise-path gaps is 32, expected 31`, `+siterailverb-run` (want DENY, got ALLOW) in the
+      gap manifest, `-siterailverb-run` dropping out of attribution. That is the genuine
+      DENY→ALLOW gap on an existing row the acceptance criterion asks for. Both are documented,
+      with the row-count form correctly characterized as the weaker of the two (see the pin
+      comment and the extended solution doc) rather than overclaimed.
+- [x] A negative control: confirmed **green** before the new rows — probed each of the 4 mutant
+      guards against every pre-existing row that invokes the affected tool: 32 railway rows × 3
+      railway mutants + 80 `eas` rows × 1 eas mutant = **176** precise-path checks, 0 mismatches
+      on every one, i.e. none of the 4 deletions were visible to the corpus before this change.
+      Row populations re-derived 2026-09-14 by building the corpus `ROWS` array from `main` and
+      counting per-row (the build reproduces main's published `rows=602` exactly, which is the
+      denominator that makes these counts meaningful). Two earlier figures in this line were
+      wrong and are corrected here: the product read `434`, which does not follow from any
+      reading of the operands, and the eas operand read `86`, which came from a loose `eas`
+      substring match — 6 of those 86 are `gh release …` rows that contain `eas` inside
+      `release` and that the eas mutant cannot affect. Counting `eas` as a standalone token
+      gives 80. Do not "restore" 86 without re-running the per-row count.
+- [x] The residual paragraph in the pin block is updated. The alternation-branch instance of the
+      "scope narrowing inside a check" residual is now named CLOSED for these 4 regexes (with a
+      pointer to the new axis); the paragraph is narrowed to what remains — non-alternation-shaped
+      deny checks (interior-redirect, flag-adjacent, forged/masked `--auto`, decoy-clause,
+      root-position-flag families) and narrowing that is not branch deletion (tightening
+      `_OUT_SEP`/`_OUT_POS_PREFIX` or a branch's own character class) — rather than left asserting
+      a hole this change fills.
+- [x] Runtime impact stated as a measurement: the pre-change baseline (602 rows) measured
+      182.69s user + 294.91s system = 477.6s CPU (~0.79s CPU/row); 21 new rows project to
+      roughly +16.6s CPU, a ~3.5% increase — against the file's own documented CI figure
+      (~2m10s on ubuntu-latest), a low-single-digit-second delta on a REQUIRED check. The
+      session's own wall-clock samples were **not** used for this estimate: the first full run
+      measured 58m33s wall at 13% CPU utilization, attributable to concurrent sibling-PR sessions
+      on this machine running the same suites, not to this change — two LATER full runs of the
+      post-change (623-row) corpus in the same session both completed in under 10 minutes
+      wall-clock once that external contention eased, which is directional confirmation that the
+      added rows are not the driver of wall-clock time.
 
 ## Implementation Notes
 
