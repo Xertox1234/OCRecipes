@@ -1,9 +1,9 @@
 ---
 title: "guard-outward-cli.sh: brace RANGE expansion splits a binary or verb with no $ or backtick anywhere, defeating every sigil-keyed check on all four paths"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-15
 assignee:
 labels: [deferred, security, harness, outward-cli-guard]
 github_issue:
@@ -110,7 +110,7 @@ itself.
       in the JSON output (not the process exit code, which is always 0 for a PreToolUse hook).
       All 4 constructions ALLOW; control `gh pr merge{1..3} 42` DENIES. Confirmed again via a
       full `repro-outward-cli-corpus.sh` baseline run: `rows=602 precise-path gaps=31
-  all-path gaps=243`, matching the pin already in place on `main`.
+all-path gaps=243`, matching the pin already in place on `main`.
 - [x] A **narrow deny** on a brace RANGE (`{X..Y}`) that shares a token with a gated binary or
       a gated verb. Narrow means: the range must be glued to gated-command text, not merely
       present in the command.
@@ -173,7 +173,7 @@ grep -l x {} +`, and a brace range in a NON-command position.
       the exclusion was still a whole-command existence check independent of WHICH occurrence
       tripped WHICH arm, so a real, independently-ALLOWED gh construction sharing the excluded
       shape (bare `gh api{1..3}`, no mutating flag; bare `gh pr create{1..3}`/`gh pr
-  comment{1..3}`, no `--repo`) elsewhere in the command silenced an unrelated dangerous
+comment{1..3}`, no `--repo`) elsewhere in the command silenced an unrelated dangerous
       glued construction. Confirmed live: `eas up{d..d}ate --branch preview && gh api{1..3}`
       fully ALLOWED (both orderings). Fixed by making the exclusion per-OCCURRENCE (`grep -oE`
       extraction of every trigger match, testing each independently against the exclusion,
@@ -197,11 +197,11 @@ grep -l x {} +`, and a brace range in a NON-command position.
       inherit a precise-path fix.
       — `crude_smells_outward`'s trailing-sigil class widened with a brace-range alternative
       alongside its existing `[$`]`. VERB-position rows now DENY on all four paths (confirmed
-  via `repro-outward-cli-corpus.sh`'s per-path columns AND its deny-reason attribution list,
-  which requires the SAME check to fire, not just the same verdict). TOOL-position rows
-  stay ALLOW on all four paths — the degraded mirror ALSO requires the binary name intact,
-  the identical limitation as the precise path, for the identical reason (closing it would
-  need a deleting rendering in `\_out_crude_vanish`, which this todo forbids).
+via `repro-outward-cli-corpus.sh`'s per-path columns AND its deny-reason attribution list,
+which requires the SAME check to fire, not just the same verdict). TOOL-position rows
+stay ALLOW on all four paths — the degraded mirror ALSO requires the binary name intact,
+the identical limitation as the precise path, for the identical reason (closing it would
+need a deleting rendering in `\_out_crude_vanish`, which this todo forbids).
 - [x] False-positive population measured by EXECUTION, not estimated. Braces are common in real
       commands, so this is the highest-FP-risk change in the whole guard chain. Harvest
       historical commands, diff decisions before/after, and **validate the harness on a known
@@ -244,7 +244,7 @@ grep -l x {} +`, and a brace range in a NON-command position.
   regression-pinning the genuine-co-occurrence fix). `EXPECTED_EMIT_SITES` 26→27 (one new
   `deny()` call site; unaffected by the later two bumps, which reuse the same site). Corpus
   pin is green at the final state: `rows=700 precise-path gaps=24 all-path gaps=236 ... all
-  609 deny reasons attributed`. A pre-existing, unrelated staleness in NOTE6's own "31 + 133
+609 deny reasons attributed`. A pre-existing, unrelated staleness in NOTE6's own "31 + 133
   = 164" cross-check (already inconsistent with the pin before this todo) was found and
   flagged, not silently re-derived — see the corpus file's own 2026-09-14 comment for the
   measured 212 figure and why the 133/108/25 sub-splits beneath it are out of this todo's

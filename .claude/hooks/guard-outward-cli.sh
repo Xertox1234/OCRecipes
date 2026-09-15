@@ -819,7 +819,7 @@
 #     and measured every run by this repo's corpus (`toolvcasearm-*`).
 #
 #   * PARTIALLY CLOSED 2026-09-14 (round 4 finding;
-#     todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md).
+#     todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md).
 #     BRACE RANGE expansion splits a token with NO `$` and NO backtick
 #     anywhere in the command, so no sigil-keyed decline can ever see it. This
 #     is why enumerating `$`-spellings at the fast path can never be
@@ -828,8 +828,27 @@
 #     verb is intact and the brace only follows it — that shape was already
 #     handled before this fix, by `_OUT_POS_SUFFIX` treating `{` as a closer.
 #
-#     VERB-position — the range glued INSIDE the verb, or inside a "pr"
-#     namespace verb — is CLOSED as a solitary construction and against BOTH
+#     VERB-position — CLOSED AT THE FIRST VERB WORD, AND AT `gh pr <verb>`
+#     ONLY. That bound is structural, not incidental: the three trigger arms
+#     below reach (1) a range token in the word immediately after the binary,
+#     (2) `gh pr <word>` — arm 2 spells the literal `pr`, no namespace
+#     alternation — and (3) a range token at command position. A verb in the
+#     THIRD word of any other namespace is unreachable by construction.
+#     MEASURED at this head, each ALLOWs while its brace-free form DENIES:
+#       npm run update:prev{i..i}ew -- --message x    (the OTA-publish path)
+#       gh repo dele{t..t}e o/r
+#       gh release up{l..l}oad v1 f.zip
+#       railway variable se{t..t} K=V
+#     All four also ALLOW on origin/main, so this is PRE-EXISTING and not
+#     opened by this change — which closes the second-word forms that main
+#     allows (`gh pr me{r..r}ge 42` and `eas up{d..d}ate --branch preview` both
+#     go ALLOW on main -> DENY here). It is the owner's Model B ruling residual
+#     (todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md,
+#     RECLASSIFIED 2026-09-07), and it is NOT measured by any row: the corpus's
+#     r4brange-verb-* axis generates from FAM_IDS, which carries no third-word
+#     family. Tracked at
+#     todos/P3-2026-09-15-brace-range-third-word-verb-unreachable.md
+#     Within that bound it is CLOSED as a solitary construction and against BOTH
 #     adversarial decoy shapes found by review: `eas up{d..d}ate --branch
 #     preview` and `gh pr me{r..r}ge 42` DENY on all four paths (a narrow
 #     deny keyed on a bounded brace-range TOKEN class, placed next to the
@@ -1324,7 +1343,7 @@ crude_smells_outward() {
   # else in this function.
   #
   # PLUS a brace RANGE ({X..Y}) alternative (2026-09-14,
-  # todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md).
+  # todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md).
   # A brace range reconstructs a split VERB the identical way `$`/backtick do
   # (`eas up{d..d}ate` — `eas` intact, `{d..d}` follows in the same segment)
   # but carries neither sigil, so it was invisible to this line even after the
@@ -2326,7 +2345,7 @@ if grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKE
 fi
 
 # --- narrow deny: a gated binary/verb glued to a brace RANGE ({X..Y}) --------
-# todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
+# todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
 # (ruled 2026-09-07, model B -- requires deliberate construction, no accident
 # produces it; a documented residual, not a critical). Bash brace RANGE
 # expansion splits a token exactly the way the block above does, but carries
@@ -2440,6 +2459,13 @@ _OUT_BR_RANGE_TOKEN='[^;&|)`{}[:space:]]*\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]
 # the excluded shape" can never license silencing a DIFFERENT occurrence
 # that does not.
 _OUT_BR_RANGE_ALREADY_HANDLED="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment)|api)"'\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\}'"${_OUT_POS_SUFFIX}"
+# LOAD-BEARING COUPLING, stated because it is invisible from here: this exclusion is
+# safe ONLY because `_OUT_POS_SUFFIX` accepts `{` as a closer, which is what keeps the
+# four excluded verbs visible to their own downstream checks. Verified at this head --
+# `gh pr merge{ab..cd} 42`, `gh api{1..3..1} repos/o/r -X POST` and
+# `gh pr create{a..z} --repo other/org` all still DENY with their own reasons. Narrow
+# `_OUT_POS_SUFFIX`'s closer class and this exclusion silently becomes a live bypass with
+# nothing here to catch it, so change the two together or not at all.
 _OUT_BR_OCC=$(
   { grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
     grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"

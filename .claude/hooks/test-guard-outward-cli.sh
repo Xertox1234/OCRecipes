@@ -2734,7 +2734,7 @@ assert_allow "a quoted mention of a gated binary with a variable stays allowed" 
 assert_allow "a read-only eas colon subcommand with a variable stays allowed" \
   "$(json 'eas update:list --branch $B')"
 
-# ---------- 2026-09-14: narrow deny — a gated binary/verb glued to a brace RANGE (todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md) --
+# ---------- 2026-09-14: narrow deny — a gated binary/verb glued to a brace RANGE (todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md) --
 # Bash brace RANGE expansion ({X..Y}) splits a token the same way the
 # expansion-token block above does, but carries NO `$` and NO backtick
 # anywhere -- every positive below measured ALLOW on the pre-fix tree
@@ -2973,7 +2973,7 @@ check "no-jq: line-continuation gh pr merge closed" deny "$(nojq_hook "$LC_GH")"
 # regex here requires (e$'a's has no literal "eas" substring).
 check "no-jq: \$-sigil-split eas update fails closed" deny "$(nojq_hook "$(jsonc "e\$'a's update --branch preview --platform all")")"
 # BRACE-RANGE bypass, degraded mirror (2026-09-14,
-# todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md):
+# todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md):
 # crude_smells_outward's trailing-sigil class ([$`]) grew a brace-range
 # alternative alongside it -- a split VERB (binary name intact) is now caught
 # here too, not just on the precise path.

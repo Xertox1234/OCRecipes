@@ -1447,7 +1447,7 @@ EXPECTED_ROWS=700
 # bumped with
 # EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
 # stale, sitting directly above the constant they describe.
-# BUMPED 2026-09-14 (todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md):
+# BUMPED 2026-09-14 (todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md):
 # 504 -> 511. The 7 `r4brange-verb-*` rows now deny (their own new check, see
 # guard-outward-cli.sh's brace-range narrow-deny block) and moved from the gap
 # bucket below into this one. The 7 `r4brange-tool-*` rows did NOT move --
@@ -2945,7 +2945,7 @@ exit 0
 #       stage-3 decline widened to a brace-range shape, which this todo's Scope
 #       Contract explicitly forbids ("no widening of the fast path's sigil
 #       class"). Tracked at
-#       todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
+#       todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
 #
 #   17  toolvcasearm-* (7), verbvcasearm-* (7), flagvcasearm-* (3 of 4). A `case`
 #       arm's `)` has NO matching opener, so the paren counter that closed the
