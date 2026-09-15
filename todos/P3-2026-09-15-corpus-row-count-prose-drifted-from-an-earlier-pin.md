@@ -62,10 +62,16 @@ Found by the same grep and missing from the original table, all present-tense:
 | 1381               | "the same verdict AND the same reason for all 581 rows"               | live figure is 620 |
 
 DELIBERATELY EXCLUDED as a different class, listed so the next reader does not re-litigate
-them: 768 ("Running all 308 rows across main / pre-fix / post-fix gave") and 2675 ("generated
-272 rows from 5 glue POSITIONS") are past-tense experiment records; 2716 ("both sides see the
-same 427 rows") is a differential record; 1214 ("372, expected 356") is illustrative error
-text, not a live count.
+them. **Quoted, not numbered, and that is deliberate** — an earlier revision gave line numbers
+for these four that belonged to a third revision entirely, neither the anchor above nor the
+head they were written at, which is the same positional-citation defect this todo records one
+level up. Search for the quoted text:
+
+- "Running all 308 rows across main / pre-fix / post-fix gave" — past-tense experiment record
+- "generated 272 rows from 5 glue POSITIONS" — past-tense experiment record
+- "both sides see the same 427 rows" — a differential record, scoped to a named baseline
+  (`origin/main` at a9d77417, PR #930) two lines above it
+- "372, expected 356" — illustrative error-message text inside quotes, not a live count
 
 A SEPARATE COUNT IN THE SAME FAMILY, folded in here because it would otherwise fall between
 todos: line 66 says "none of the current 17 fingerprints does it", while lines 1383 and 2404
@@ -121,3 +127,10 @@ so the `448` predates both.
   same defect this todo exists to record. Three more added, four explicitly excluded with
   reasons, the implied exhaustiveness replaced by the grep that produced the list, and the
   line-66 fingerprint mismatch folded in.
+
+### 2026-09-15 (even later)
+
+- The four exclusions are now quoted rather than numbered. Their line numbers had been taken
+  from a third revision — not the anchor the tables use, and not the head they were written
+  at — so they resolved to unrelated text at both. Quoting the string removes the coordinate
+  system from the citation entirely.

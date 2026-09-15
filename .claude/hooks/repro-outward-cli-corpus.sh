@@ -754,8 +754,9 @@ done
 #               WITHOUT being a closure: it denies from the pre-existing "no REAL
 #               --auto" rule. NOT because the construct breaks the `--auto`
 #               spelling -- this axis splices into --admin (FAM_FLAG_LHS `--ad`
-#               + RHS `min`), so --auto is byte-intact. A literal `$` or `(`
-#               anywhere in the merge CLAUSE masks --auto, so HAS_REAL_AUTO=no
+#               + RHS `min`), so --auto is byte-intact. A literal `$`, or an
+#               UNQUOTED `(`, anywhere in the merge CLAUSE masks --auto, so
+#               HAS_REAL_AUTO=no
 #               and that rule fires before the --admin check ever runs.
 #               NOT BACKTICK, and an earlier revision of this sentence said
 #               backtick because it transcribed the character class at
@@ -763,12 +764,27 @@ done
 #               is built from a rendering in which backtick spans have ALREADY
 #               vanished, so a backtick never reaches that grep. Measured, one
 #               clause each, --auto real in every row:
-#                 `--squash $x`        DENY "without a REAL --auto"
-#                 `--squash (x`        DENY "without a REAL --auto"
-#                 `--squash \`echo hi\`` ALLOW   <- the decisive row
-#                 `--squash` (control) ALLOW
+#                 `--squash $x`         DENY "without a REAL --auto"
+#                 `--squash (x`         DENY "without a REAL --auto"
+#                 `--squash \`echo hi\``  ALLOW   <- backtick does NOT mask
+#                 `--squash` (control)  ALLOW
+#               AND THE TWO SIGILS ARE NOT SYMMETRIC UNDER QUOTING, which three
+#               revisions of this sentence missed for the same reason each time:
+#               every measured set contained only UNQUOTED sigils, so none of
+#               them could see the exception.
+#                 `--body "closes (#41)"` ALLOW    quoted `(` does NOT mask
+#                 `--body 'closes (41)'`  ALLOW
+#                 `--body 'costs $5'`     DENY     quoted `$` still masks
+#                 `--body "costs $5"`     DENY
+#               The guard documents the paren exception where it is implemented:
+#               $CLAUSE is cut from $WORDS, whose neutral() rewrites a QUOTED
+#               separator to the letter `x`. Search guard-outward-cli.sh for
+#               `QUOTED paren cannot reach here` -- WITHOUT a leading "A", which
+#               sits on the previous line: a citation must be a fragment short
+#               enough to survive a comment wrap, and this one was verified to
+#               resolve before being written.
 #               The --admin rows cannot settle this, because --admin denies
-#               either way. guard-outward-cli.sh:894-903 states the rule
+#               either way. guard-outward-cli.sh's ATTRIBUTION RESIDUAL note states the rule
 #               correctly and is the wording to reuse. Read its
 #               ATTRIBUTION, not its verdict -- same lesson as
 #               flagvbareparen-ghadmin and co-mask-c1.
@@ -2871,8 +2887,8 @@ exit 0
 #
 #       THREE, not four, and the fourth is an attribution lesson rather than an
 #       off-by-one: flagvbareparen-ghadmin was ALREADY denying before this change,
-#       from the "no REAL --auto" rule -- because a literal `$` or `(` anywhere in
-#       the merge CLAUSE masks --auto (guard-outward-cli.sh:894-903), NOT because
+#       from the "no REAL --auto" rule -- because a literal `$`, or an UNQUOTED
+#       `(`, anywhere in the merge CLAUSE masks --auto (guard-outward-cli.sh's ATTRIBUTION RESIDUAL note), NOT because
 #       the construct breaks the `--auto` spelling, which stays byte-intact
 #       (the splice target is --admin). A BACKTICK does not mask: those spans are
 #       gone from CLAUSE before the check runs, so a backtick spelling reaches
@@ -2921,8 +2937,8 @@ exit 0
 #
 #       flagvcasearm-ghadmin is the FOURTH flag row and reports `ok` — READ ITS
 #       ATTRIBUTION, NOT ITS VERDICT. It denies from a different check entirely:
-#       a literal `$` or `(` anywhere in the merge CLAUSE masks --auto
-#       (guard-outward-cli.sh:894-903), so the "no REAL --auto" rule fires --
+#       a literal `$`, or an UNQUOTED `(`, anywhere in the merge CLAUSE masks --auto
+#       (guard-outward-cli.sh's ATTRIBUTION RESIDUAL note), so the "no REAL --auto" rule fires --
 #       a BACKTICK does not, since those spans are already gone from CLAUSE and
 #       that spelling reaches the --admin check instead. The
 #       construct does NOT break the `--auto` spelling -- it is spliced into
@@ -2957,8 +2973,8 @@ exit 0
 #   7  verbvcasearm-*   -- same 7 checks, VERB-position spelling.
 #   3  flagvcasearm-easbld/ghapi/ghcomment -- FLAG-position spelling.
 # flagvcasearm-ghadmin (the fourth flag row) is UNCHANGED -- it already
-# reported `ok` before this fix, from a DIFFERENT check (a literal `$` or `(`
-# anywhere in the merge CLAUSE masks --auto, so the "no REAL --auto" rule fires;
+# reported `ok` before this fix, from a DIFFERENT check (a literal `$`, or an
+# UNQUOTED `(`, anywhere in the merge CLAUSE masks --auto, so the "no REAL --auto" rule fires;
 # a backtick does NOT and reaches the --admin check instead -- see the note four
 # screens above this one). Nothing about ITS
 # attribution moved.
