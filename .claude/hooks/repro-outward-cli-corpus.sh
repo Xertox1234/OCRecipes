@@ -1544,14 +1544,29 @@ fi
 #    THAT population against these buckets -- not against the names written here,
 #    which is how the last three misses happened.
 #
-#    DO NOT PIN THE COUNT THE SCAN RETURNS. Two independent runs of it at the
-#    2026-09-15 head returned 43 groups over 20 lines and 42 over 20, and the
-#    difference is the branch-character class each one allowed, not a change in
-#    the file: `_OUT_POS_SUFFIX` (guard-outward-cli.sh:1607) is an alternation of
-#    CHARACTER CLASSES rather than a hand-listed branch list, so whether it
-#    counts depends entirely on where you draw that line. The count is a property
-#    of the scan, exactly as this file says elsewhere about every other number;
-#    the LINE SET is the stable part, and both runs agreed on it.
+#    THE LIST BELOW IS THE TEST OF THE SCAN, NOT THE OTHER WAY ROUND, and that
+#    inversion is the correction. An earlier revision published a group count and
+#    then a LINE SET as "the stable part"; neither survived. THREE independent
+#    runs at the 2026-09-15 head returned 43 groups / 20 lines, 42 / 19 and
+#    39 / 18, disagreeing on membership and not merely on totals -- one included
+#    `_OUT_POS_SUFFIX` (:1607), one included `_OUT_REPO_FLAG_RE` (:944) while
+#    missing GH_MUTATING_RE (:2759) and the gh-api method site (:3219), and no
+#    two agreed. A count is a property of the scan; so, it turns out, is the line
+#    set. What does not move is the MEMBERS, which can be checked one at a time.
+#
+#    So: run a scan to DISCOVER candidates, then check it against the list below.
+#    A scan that cannot return every listed member is too strict and will also
+#    miss the next member written in that shape -- which is the hand-carved-subset
+#    failure NOTE6 exists to prevent, one level up. Three branch shapes occur here
+#    and a usable scan has to admit all three:
+#      bare literal                 update            npm            --repo
+#      literal + boundary group     --repo([^-A-Za-z0-9]|$)
+#      case-folding bracket run     [Pp][Oo][Ss][Tt]      (_GH_API_M needs this)
+#    and it must handle NESTED groups, since GH_MUTATING_RE's branches are
+#    themselves alternations. `_OUT_POS_SUFFIX` (:1607) is NOT a member whichever
+#    way the scan is drawn: its branches are character classes, so narrowing it is
+#    bucket (c)'s territory below ("narrowing a character class inside one
+#    branch"), not a branch deletion. That question is closed, not open.
 #
 #    Known members at that head, with the ones whose coverage is incomplete:
 #      _OUT_GATED_BIN   guard-outward-cli.sh:2274   6 branches
