@@ -84,9 +84,43 @@ definition has no way to escape the loop from the message alone.
 - A careless rewording could itself contain the severity words and make every reviewer that
   quotes the contract trip the gate.
 
+## Observed rate, 2026-09-15
+
+The three-row table above was built by construction. A session dispatching real reviews then
+produced a population measurement, which is a much stronger argument for fixing this than the
+constructed rows were:
+
+**Four async reviewer hand-backs, at four different PR heads, in one session. One produced a
+stamp. Three produced none.**
+
+| PR head    | stamp                                    |
+| ---------- | ---------------------------------------- |
+| `a10355fe` | written, `verdict=findings unresolved=1` |
+| `d8f694f0` | none                                     |
+| `0a06facb` | none                                     |
+| `7aa83701` | none                                     |
+
+All four reports carried a well-formed `REVIEWED-SHA:` block and bracketed severity tags in the
+body, so the body is not what separates them — the one that stamped had findings too. What is
+NOT established is the per-case cause: the wrapper text was not captured at the time, so this is
+a population observation consistent with the mechanism described above, not a proof of it for
+each of the three. Anyone picking this up should capture the delivered wrapper alongside the
+stamp outcome before concluding.
+
+Two things follow either way. The cost is not rare — at the observed rate it is the common case,
+not an edge case, which is the opposite of what "fail-closed, costs a re-dispatch" suggests when
+read quickly. And the recovery is cheap once known: telling reviewers explicitly to keep the
+hand-back wrapper free of the three severity words and of any bracketed tag is a one-paragraph
+addition to the dispatch prompt, which is what this todo asks for.
+
 ## Updates
 
 ### 2026-09-15
 
 - Filed from PR #969's round-5 audit, which measured the three rows above. Residual 6 in the
   hook references this work as filed; this file is that reference.
+
+### 2026-09-15 (later)
+
+- Added the observed-rate section after four real dispatches in one session produced one stamp
+  out of four. Per-case cause not determined; see the caveat in that section.
