@@ -1,6 +1,6 @@
 ---
 title: "THE 64KB SIGPIPE ROW in test-merge-review-guard.sh has no regime precondition, so it can go inert silently"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-15
 updated: 2026-09-15
@@ -42,19 +42,19 @@ Measured while filing (2026-09-15):
 
 ## Acceptance Criteria
 
-- [ ] `THE 64KB SIGPIPE ROW` carries its own PASS/FAIL precondition row asserting the input
+- [x] `THE 64KB SIGPIPE ROW` carries its own PASS/FAIL precondition row asserting the input
       still exceeds 65536 bytes.
-- [ ] The precondition measures **the value that crosses the boundary** — `cmd_bare_deep`
+- [x] The precondition measures **the value that crosses the boundary** — `cmd_bare_deep`
       output, not the raw `$_big` — per part 2 of the convention. The file sources nothing at
       all (no `source` or `.` line anywhere), so the rendering has to be obtained
       deliberately; compute it in a subshell so nothing leaks into the test file's global
       scope. There is no stub to work around: the row runs against the real, unmodified
       library.
-- [ ] `EXPECTED_TOTAL` is updated with a comment explaining the delta (currently 130).
-- [ ] Mutation-verified live: shrink the padding below the buffer and confirm the new row goes
+- [x] `EXPECTED_TOTAL` is updated with a comment explaining the delta (currently 130).
+- [x] Mutation-verified live: shrink the padding below the buffer and confirm the new row goes
       RED while the behaviour row stays green — that is what attributes the protection to the
       precondition rather than to the outcome assertion.
-- [ ] The Related Files section of the solutions doc is updated to drop "Filed, not fixed here."
+- [x] The Related Files section of the solutions doc is updated to drop "Filed, not fixed here."
 
 ## Implementation Notes
 
@@ -89,3 +89,34 @@ than assume.
 ### 2026-09-15
 
 Filed from PR #976's baseline review. Not started.
+
+### 2026-09-15 (closed)
+
+Implemented. `THE 64KB SIGPIPE ROW` now carries a regime precondition, and `EXPECTED_TOTAL`
+went 130 -> 131 with a delta comment.
+
+One finding changed the shape of the fix: **size was the wrong thing to assert.** The two
+sibling pins assert `rendered > 65536` because for them size is the whole regime. Here the
+mechanism is line-structured -- `grep` cannot exit mid-line -- so what decides SIGPIPE is how
+much the writer still has pending at the first moment `grep` can conclude. A byte-offset
+formulation (bytes after the match) passes a shape that never SIGPIPEs: hold the total at
+124,024 and grow line 1 to 99,224 bytes, and only 24,800 remain behind it. The row therefore
+cuts at the FIRST NEWLINE -- the merge must render onto the first line, and >65536 bytes must
+remain behind that line -- which subsumes the size and multi-line checks rather than listing
+them separately.
+
+Separator assertion: **not needed, verified not assumed.** `cmd_gh_pr_ref` needs one because
+it cuts at `${clause_tail%%[;&|]*}`; `cmd_gh_pr_has_merge` greps the rendering whole.
+
+Mutation-verified live, each restored from a checksummed copy. All four leave the deny row
+GREEN and the total pin GREEN (`bad()` increments FAIL, so `PASS + FAIL` is invariant):
+
+| mutation                           | measured               | precondition |
+| ---------------------------------- | ---------------------- | ------------ |
+| padding cut to 20 lines            | 1,240 behind           | RED          |
+| padding folded onto one line       | 0 behind               | RED          |
+| merge moved to the last line       | first-line test clears | RED          |
+| total held, line 1 grown to 99,224 | 24,800 behind          | RED          |
+
+Full hook suite green with the change in place: `bash scripts/run-hook-tests.sh` -> all 38
+test files exit 0.

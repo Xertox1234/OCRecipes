@@ -119,15 +119,19 @@ with an exit code over the one that answers a nearby question with text.
 - `.claude/hooks/test-cmd-detect.sh` — the named convention block, and both pins that follow it:
   the refuse guard (`cmd_gh_pr_write_subcommand`) and the retarget refusal (`cmd_gh_pr_ref`).
 - `.claude/hooks/lib/cmd-detect.sh` — three de-piped SIGPIPE sites. Those two pins cover **two**
-  of them.
-- `.claude/hooks/test-merge-review-guard.sh` — the remaining site (`cmd_gh_pr_has_merge`, the
-  **second** by `lib/cmd-detect.sh`'s own numbering) is pinned here instead, by
-  `THE 64KB SIGPIPE ROW`. That row does **not** yet carry a regime precondition:
-  it builds a 2,000-line `$_big` and asserts the deny directly, with nothing asserting the input
-  still exceeds 65536 bytes. Its own comment notes that no other row in that file is large enough
-  to reach the buffer — so if the padding ever drifts, the row goes green and the whole class is
-  unpinned silently, which is precisely this rule's failure mode. Filed as
-  `todos/P2-2026-09-15-has-merge-sigpipe-pin-has-no-regime-precondition.md`, not fixed here.
+  of them; the third is pinned in the merge-gate suite below, so all three now carry a
+  precondition.
+- `.claude/hooks/test-merge-review-guard.sh` — the remaining site (`cmd_gh_pr_has_merge`) is
+  pinned here instead, by `THE 64KB SIGPIPE ROW`, which carries its own regime precondition as
+  of 2026-09-15. Its shape is worth copying, because size was the *wrong* thing to assert: the
+  mechanism is line-structured (`grep` cannot exit mid-line), so what decides SIGPIPE is how
+  much the writer still has pending at the first moment `grep` can conclude. The row therefore
+  cuts at the first newline — the merge must render onto the first line, and more than a
+  buffer's worth must remain behind that line. Four drifts that each leave the deny row GREEN
+  redden it: padding cut to 20 lines (1,240 bytes behind), padding folded onto one line (0),
+  the merge moved to the last line, and the total held at 124,024 while line 1 grows to 99,224
+  bytes (24,800 behind) — that last one passes a byte-offset-from-the-match formulation and is
+  why the cut is taken at the newline.
 - `docs/AI_WORKFLOW.md` — the reviewer dispatch prompt carries the rule for a reviewer's own
   probes; that is its single home, per the note at `.claude/agents/code-reviewer.md`.
 
