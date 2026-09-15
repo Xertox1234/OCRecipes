@@ -40,13 +40,26 @@ a decoy `--auto` glued to the hidden inner one, and the reverse ordering — all
 they deny on the `without a REAL --auto flag` branch, **not** on the ambiguity branch: the
 second merge is invisible to the **counter**.
 
-The deny itself is **structural**, not accidental — an earlier version of this paragraph said
-otherwise and was measured wrong. The clause does contain a real `--auto`; what refuses is the
-clause **sigil mask**, and it refuses by construction, because the collapse _is_ the span
-absorbing ` <(gh`, so the `(` is necessarily inside the clause. Removing only `(` from that
-mask flips exactly this row to ALLOW. So the exposure is the MISCOUNT, not an imminent grant:
-fixing the count is still right, but do not implement it in a panic about an allow that the
-sigil mask is structurally preventing.
+What refuses is the clause **sigil mask**, by construction: the collapse _is_ the span
+absorbing ` <(gh`, so the `(` is necessarily inside the clause.
+
+**Two earlier versions of this paragraph were wrong, and the second was wrong while correcting
+the first.** Measured:
+
+```
+cmd     gh -a -c <(gh pr merge 7 --auto) pr merge 42 --auto --squash
+CLAUSE  [gh -a -c <(gh pr merge 7 --auto]
+```
+
+The clause **stops at the closing paren** (`_OUT_POS_SUFFIX_MERGE_CLAUSE`'s continuation class
+excludes `)`), so it never reaches the outer merge's arguments. The `--auto` in it is the
+**inner decoy**, and the clause is byte-identical whether or not the real merge carries one.
+
+**This changes what the fix has to do.** The mask is load-bearing for the whole family, not for
+one row: removing `(` from it also allows `gh -a -c <(gh pr merge 7 --auto) pr merge 42`, where
+the executing merge has no authorisation at all. So fixing the COUNT alone is not sufficient —
+**the CLAUSE CAPTURE BOUNDARY must be fixed too**, or any later relaxation of the mask
+reintroduces this class of false ALLOW. Both shapes are pinned in `test-guard-outward-cli.sh`.
 
 ## Mechanism
 
@@ -65,7 +78,7 @@ narrowed the count-only grammar to `_OUT_POS_PREFIX`'s full anchor set (`[;&|(` 
       the ambiguity reason, on every two-token family (`pr merge`, `pr create|comment`,
       `release`, `repo`).
 - [ ] The three tripwire rows in `test-guard-outward-cli.sh` (search `TRIPWIRE: a hidden
-  second pr merge`) are **converted**, not deleted — they currently pin the miscount's
+second pr merge`) are **converted**, not deleted — they currently pin the miscount's
       current DENY and its reason.
 - [ ] Two-sided in the same run: the sanctioned automerge
       (`gh pr merge <n> --auto --squash --delete-branch`) still ALLOWS, and the `;` spelling

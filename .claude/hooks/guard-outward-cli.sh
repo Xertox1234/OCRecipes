@@ -1832,13 +1832,27 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # branch, where the `;` spelling counts two. PRE-EXISTING and identical to main, so this
 # change neither opened nor closed it, and no live ALLOW was found: five variants, including
 # a real `--auto` on the outer merge with a decoy glued to the hidden inner one, all still
-# DENY — and the deny is STRUCTURAL for this family, not accidental. An earlier draft here
-# said the clause cut "happens not to find a real `--auto`". Measured: the clause IS
-# `[gh -a -c <(gh pr merge 7 --auto) pr merge 42 --auto --squash]` and it DOES contain a real
-# `--auto`. What refuses is the clause SIGIL MASK further down, and it refuses BY
-# CONSTRUCTION: the collapse IS the span absorbing ` <(gh`, so the `(` is necessarily inside
-# the clause. Removing only `(` from that mask flips exactly this row to ALLOW and leaves the
-# others untouched. The exposure here is the MISCOUNT, not an imminent grant. Tripwire rows in
+# DENY, and what refuses is the clause SIGIL MASK, by construction: the collapse IS the span
+# absorbing ` <(gh`, so the `(` is necessarily inside the clause. TWO EARLIER DRAFTS OF THIS
+# PARAGRAPH WERE WRONG AND THE SECOND WAS WRONG WHILE CORRECTING THE FIRST, so the measurement
+# is written out rather than summarised. Draft 1 said the cut "happens not to find a real
+# `--auto`" (accidental). Draft 2 said the clause "DOES contain a real `--auto`". Measured:
+#
+#   cmd     gh -a -c <(gh pr merge 7 --auto) pr merge 42 --auto --squash
+#   CLAUSE  [gh -a -c <(gh pr merge 7 --auto]
+#
+# The clause STOPS AT THE CLOSING PAREN — `_OUT_POS_SUFFIX_MERGE_CLAUSE`'s continuation class
+# excludes `)` — so it never reaches the outer merge's arguments at all. The `--auto` inside it
+# is the INNER DECOY on the non-executing `pr merge 7`, and the clause is BYTE-IDENTICAL whether
+# or not the outer, really-executing merge carries one. So draft 2 had the right conclusion
+# about the mask and the wrong subject for `--auto`.
+#
+# THAT MAKES THE MASK LOAD-BEARING IN GENERAL, NOT FOR ONE ROW. Draft 2 also said removing `(`
+# from the mask "flips exactly this row and leaves the others untouched". False: it equally
+# flips `gh -a -c <(gh pr merge 7 --auto) pr merge 42`, where the real merge carries NO
+# authorisation at all and the decoy alone would grant the carve-out. Both are pinned below.
+# The exposure today is the MISCOUNT, not a grant — but whoever fixes the count must fix the
+# CLAUSE CAPTURE BOUNDARY too, or relaxing the mask reintroduces this class. Tripwire rows in
 # test-guard-outward-cli.sh so a flip to ALLOW cannot be silent, and tracked in
 # todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md.
 # Do not read "cannot collapse" as "is counted correctly". Measured on all four

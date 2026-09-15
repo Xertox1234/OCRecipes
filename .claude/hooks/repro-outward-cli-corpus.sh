@@ -2636,7 +2636,11 @@ ACTUAL_EMIT_SITES=$(grep -oE '(deny "|permissionDecisionReason":")guard-outward-
   | LC_ALL=C sed -E 's/^[^g]*guard-outward-cli: //; s/ Bypass:.*//' \
   | LC_ALL=C cut -c1-72 | sed 's/[[:space:]]*$//' | LC_ALL=C sort -u)
 
-# The 5 sites no command text can reach on the PRECISE path, and why each is
+# The 7 sites no command text can reach on the PRECISE path, and why each is
+# (COUNT THE HEREDOC, do not trust this number: it read 5 for two commits after the two
+# DEFINITION-INTEGRITY entries landed -- the root-position shape assertion and the
+# GH_API_RE_SEPSAFE check -- because the paragraph below was extended and this line was not.
+# Found in round-5 review by re-deriving it rather than reading it.)
 # structurally unreachable rather than merely uncovered:
 #   - jq unavailable / lib unsourceable / quote-aware rendering empty
 #       fail-closed fallbacks reached only on the nojq, nolib and noawk paths.

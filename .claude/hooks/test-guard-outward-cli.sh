@@ -3719,9 +3719,12 @@ assert_deny "...opening at !" \
 # substitution is absorbed and `gh -a -c <(gh pr merge 7) pr merge 42` counts ONE occurrence
 # where the `;` spelling counts two. Identical on main, so this is PRE-EXISTING; and it still
 # DENIES, but on the "without a REAL --auto" branch rather than the ambiguity branch — i.e.
-# the second, really-executing merge is invisible to the COUNTER. The deny itself is structural,
-# not accidental: the clause contains a real `--auto`, and the clause sigil mask refuses it
-# necessarily, because the collapse is the span absorbing ` <(gh` and so puts `(` in the clause.
+# the second, really-executing merge is invisible to the COUNTER. What refuses is the clause
+# SIGIL MASK, necessarily, because the collapse is the span absorbing ` <(gh` and so puts `(`
+# in the clause. Note WHICH `--auto` the clause holds: the cut stops at the closing paren, so
+# the clause is `[gh -a -c <(gh pr merge 7 --auto]` and the token is the INNER DECOY — identical
+# whether or not the outer merge carries one. The mask is therefore load-bearing for the whole
+# family, not for one row, which is why the no-authorisation variant is pinned alongside.
 # These rows pin the CURRENT verdict AND its REASON so a flip to ALLOW cannot be silent, and
 # so the eventual fix must come here and convert them. See
 # todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md.
@@ -3730,6 +3733,13 @@ assert_deny "TRIPWIRE: a hidden second pr merge is miscounted but still denies" 
   "without a REAL --auto flag"
 assert_deny "TRIPWIRE: ...and with --auto on the outer merge, still denies" \
   "$(json 'gh -a -c <(gh pr merge 7 --auto) pr merge 42 --auto --squash')" \
+  "without a REAL --auto flag"
+# THE SHAPE THE MASK ACTUALLY PROTECTS, and it was untested until round 5 found it: the outer,
+# really-executing merge carries NO authorisation, and only the inner decoy sits in the clause.
+# If the mask ever stops firing, this is a merge allowed purely on a token inside a process
+# substitution. It denies today on main and on this branch alike.
+assert_deny "TRIPWIRE: decoy --auto inside the psub, NONE on the real merge" \
+  "$(json 'gh -a -c <(gh pr merge 7 --auto) pr merge 42')" \
   "without a REAL --auto flag"
 # CONTROL, so the two rows above cannot pass because the whole block broke: the `;` spelling
 # of the same pair IS counted, and denies on the ambiguity reason instead.
@@ -3935,7 +3945,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=733
+EXPECTED_TOTAL=734
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
