@@ -1,0 +1,136 @@
+---
+title: "Widening a matcher is monotone on a BOOLEAN read and not on a COUNT — a longer match absorbs what would have started a second one"
+track: bug
+category: logic-errors
+tags: [harness, hooks, safety-gate, bash, security, testing]
+module: shared
+applies_to: [".claude/hooks/*.sh", "scripts/**/*.sh"]
+symptoms: ["A guard widened to close a bypass starts ALLOWING a command its previous version denied, on a DENY-shaped consumer", "An occurrence count drops from 2 to 1 after a pattern was made more permissive", "A multi-occurrence ambiguity refusal silently stops firing", "The argument 'widening only ever adds matches, so it can only add denies' was applied to a consumer that counts rather than tests", "Only one member of a needle family regresses and the others are structurally immune"]
+created: 2026-09-14
+severity: critical
+---
+
+# Widening is monotone on a boolean read, not on a count
+
+## Problem
+
+The standard safety argument for widening a matcher is that it **grows the language** — every
+string that matched before still matches — so on a deny gate it can only ever ADD denies. That
+argument is sound, and it is scoped to a kind of read it never names: a **boolean** one.
+
+An **occurrence count** is not a boolean read, and it is not monotone in the language. A longer
+match absorbs text that would otherwise have begun a **second** match, so growing the language
+can **lower** the count. If a check refuses when the count exceeds one, widening switches it off.
+
+Measured 2026-09-13 on `.claude/hooks/guard-outward-cli.sh`. A grammar arm gained an optional
+value token so a root-position flag could consume its argument. The value token excluded only
+whitespace, so it swallowed a separator and the command behind it:
+
+```
+gh -a api -c x;gh api /a/b
+  before  [gh -a api ] [;gh api ]      COUNT=2  -> ambiguity DENY
+  after   [gh -a api -c x;gh api ]     COUNT=1  -> silently ALLOWED   (` -c` ate ` x;gh`)
+```
+
+Five shapes went main-DENY → branch-ALLOW, across all three separators, with in-band controls
+(`echo hello` ALLOW, `gh api /repos/o/r` ALLOW, `gh api -X POST …` DENY) firing correctly. The
+companion "mutating HTTP method" check did not compensate: real `gh` sends POST when `-f` fields
+are present, so `gh -a api -c x;gh api -f a=b /repos/o/r/merges` carries no method token at all.
+
+## Symptoms
+
+- A change argued as "strictly more permissive, therefore safe on a deny gate" produces a
+  deny→allow flip, on a consumer that genuinely does deny.
+- A count-derived refusal (ambiguity, "more than one occurrence", "cannot verify each") stops
+  firing while every boolean needle behaves as intended.
+- Only one member of a needle family regresses. The others look immune, and are — for a reason
+  that is a property of their shape, not of the counter.
+- The regression is invisible to a large generated corpus, because no dimension varied the
+  thing that causes it.
+
+## Root Cause
+
+**The effect of a widening is a property of the CONSUMER, and "deny-shaped vs grant-shaped" is
+not the only way consumers differ.** A sibling lesson in this repo classifies consumers by
+direction — safe at a deny-shaped read, a false grant at an allow-shaped one. That classification
+is correct and incomplete: the counter here IS a deny-shaped read, and widening made it less safe.
+The missing axis is **arity**:
+
+| consumer         | reads                        | monotone in the language? |
+| ---------------- | ---------------------------- | ------------------------- |
+| boolean          | "does any match exist?"      | **yes** — more matches can only satisfy it |
+| count            | "how many matches exist?"    | **no** — a longer match can consume a second one |
+| extraction / cut | "what text did it match?"    | no — the span itself moves |
+
+Why one needle and not the others: `gh api` was the only **single-token** needle in that file.
+Every other family is two-token (`pr merge`, `pr create`, `release …`, `repo …`), and their
+second token is not a dash token, so it can never be consumed as a flag's value. That immunity
+is real but it is a property of **token shape**, not a property of the counter — which is exactly
+the kind of thing that gets over-generalised into "the families are immune".
+
+**A partial flip reads as confirmation.** The first repair narrowed the wrong constant and three
+of seven probe rows flipped to DENY. That looked like the fix working. The four that did not flip
+were the ones that actually execute — a process substitution. Printing the actual matched spans,
+rather than reasoning about which constant was responsible, moved the fix from the wrong constant
+to the right one in one command.
+
+## Solution
+
+**Classify every consumer of a shared matcher by BOTH axes before widening it** — direction
+(deny/grant) and arity (boolean/count/extraction). A widening needs a separate argument for each
+non-boolean consumer; the language-growth argument does not carry.
+
+Where a count must survive a widening, **count under both grammars and take the maximum**:
+
+```sh
+_n_wide=$(count "$NEEDLE_WIDE")
+_n_narrow=$(count "$NEEDLE_NARROW")   # the same needle, boundary characters excluded
+OCCURRENCES=$(( _n_wide > _n_narrow ? _n_wide : _n_narrow ))
+```
+
+Max rather than a swap, and the reason is directional rather than about what either grammar can
+"see": the two disagree wherever the wide form spans a boundary character, and which count is
+higher **depends on what follows**. The narrow count is higher when a second occurrence sits
+behind that boundary, and LOWER when nothing does — so a swap would drop the count to zero on a
+legitimate single command and skip the block entirely. Max takes whichever grammar saw more
+invocations and therefore only ever adds denies, and it requires no claim about either grammar's
+reach, which is the property that makes it safe to state.
+
+**Derive the narrow grammar's excluded set from where a SECOND COMMAND MAY BEGIN, not from the
+separators.** In a shell guard that set is the command-position anchor class — here
+`[;&|(` + backtick + `{!]` — and it is strictly larger than `;&|`. A first attempt excluded only
+the three separators and a process substitution opening at `(` walked straight through, collapsing
+both counts together so the max restored nothing. Narrow the token classes, the redirect arm, AND
+the inter-token separator: the crossing happened in the separator, not in the token arms, so
+narrowing the arms alone flipped the bare openers and left the executing spellings live.
+
+## Prevention
+
+- **Before widening a shared pattern, grep for every consumer and label each `boolean` /
+  `count` / `extraction`.** The count and extraction consumers are where the safety argument
+  has to be rebuilt from scratch.
+- **When a family is claimed immune, name the property that makes it immune** and check it is a
+  property of the family rather than of the mechanism you happened to test. "Two-token needles
+  cannot collapse" was true of one collapse mechanism and false of another.
+- **When a fix flips some probes and not others, stop and print the intermediate value** — the
+  matched span, the count, the captured clause. A partial flip is weaker evidence than no flip,
+  because it reads as progress.
+- **Add the regression axis to the generated corpus keyed on the THREAT, not on the fix.** An
+  axis that varies exactly the characters the fix excludes can only confirm the fix; see the
+  companion note in the See Also below.
+
+## Related Files
+
+- `.claude/hooks/guard-outward-cli.sh` — `_OUT_GH_GLOBALS_SEPSAFE`, `_OUT_SEP_SEPSAFE`, and the
+  `max()` at the `gh api` occurrence count; the header there carries the measurement
+- `.claude/hooks/repro-outward-cli-corpus.sh` — the `apicollapse-*` axis, keyed on
+  command-position openers
+- `.claude/hooks/test-guard-outward-cli.sh` — the process-substitution and anchor-opener rows
+- `todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md`
+  — the same miscount, still open, on the two-token families
+
+## See Also
+
+- [Widening is safe on every deny read and a false grant at the one allow read](widening-is-safe-on-every-deny-read-and-a-false-grant-at-the-one-allow-read-2026-09-13.md) — the sibling axis (direction); this doc is the counter-example to its "every DENY-shaped read" scope
+- [An invented enumeration is not the space — ask the tool](an-invented-enumeration-is-not-the-space-ask-the-tool-2026-09-13.md) — the same change's other defect, and where the corpus-axis prevention comes from
+- [A guard and its mutation test can both be inert while green](../code-quality/a-guard-and-its-mutation-test-can-both-be-inert-while-green-2026-09-13.md) — what happens when the assertion meant to catch this is itself unreachable

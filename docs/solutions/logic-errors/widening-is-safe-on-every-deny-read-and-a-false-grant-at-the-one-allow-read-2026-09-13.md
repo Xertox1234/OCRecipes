@@ -17,6 +17,15 @@ severity: critical
 A text matcher that feeds several checks is widened to close a bypass. The change is
 justified with a sentence that is true of almost every consumer:
 
+> **SCOPE CORRECTION (2026-09-14): "every DENY-shaped read" is too strong, and the
+> counter-example is measured.** The rule below holds for every BOOLEAN deny read. It does NOT
+> hold for a deny read that COUNTS: a longer match absorbs text that would otherwise have begun
+> a second match, so widening can LOWER an occurrence count and switch off a refusal that fires
+> on "more than one". That happened on this same guard the next day, on a consumer that genuinely
+> denies. Classify consumers by DIRECTION (deny/grant) **and** by ARITY (boolean/count/extraction)
+> before relying on the argument below. See
+> [widening is monotone on a boolean read, not on a count](widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md).
+
 > Widening a matcher can only ADD matches, which is the safe direction for every DENY
 > consumer here.
 
