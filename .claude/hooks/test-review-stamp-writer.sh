@@ -630,12 +630,50 @@ async_payload "code-reviewer" "$(async_transcript "$CLEAN_MSG")" | run_hook 26
   && ok "that same clean handback alone does stamp" \
   || bad "that same clean handback alone does stamp"
 
+# --- the objection guard must honour the rendering the ROSTER mandates -------------------
+# Case 23 covers `[CRITICAL]` at column 0, which is what docs/AI_WORKFLOW.md's dispatch
+# prompt asks for. But every agent definition mandates the UNBRACKETED
+# `file:line — issue — concrete fix` tagged with a bare severity word, and the first
+# version of this guard honoured only the bracketed form: measured, four of five objection
+# shapes wrote `verdict: clean` over a real objection. Each row below is a shape a roster
+# reviewer actually produces, paired with the same clean handback as case 23.
+objection_case() {  # $1 = case id, $2 = delivered message, $3 = assertion label
+  local tp; tp=$(async_transcript "$CLEAN_MSG")
+  jq -n --arg t "code-reviewer" --arg m "$2" --arg p "$tp" \
+    '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+      last_assistant_message:$m, agent_transcript_path:$p}' | run_hook "$1"
+  [ ! -f "$ROOT/case-$1/$SHA/code-reviewer.json" ] && ok "$3" || bad "$3"
+}
+objection_case 27 'client/a.ts:74 — missing check — add it. CRITICAL
+Withholding the trailer deliberately.' \
+  "the roster-mandated file:line rendering blocks the substitution"
+objection_case 28 'CRITICAL — client/a.ts:74 — missing check — add it
+Withholding the trailer deliberately.' \
+  "a leading bare severity word with a citation blocks the substitution"
+objection_case 29 '  [CRITICAL] client/a.ts:74 — missing check' \
+  "an indented bracketed finding blocks the substitution"
+objection_case 30 '- [CRITICAL] client/a.ts:74 — missing check' \
+  "a bulleted bracketed finding blocks the substitution"
+# CONTROL, and it is the whole reason the severity arm also demands a `:<digit>` citation:
+# a genuinely CLEAN report whose prose says it found no CRITICAL or WARNING issues carries
+# no file:line, so it must still stamp. Without this, the widened guard would eat clean
+# reviews — and a gate that denies honest work is the failure mode this file's own header
+# warns gets gates switched off.
+CLEAN_PROSE_TP=$(async_transcript "$CLEAN_MSG")
+jq -n --arg t "code-reviewer" --arg p "$CLEAN_PROSE_TP" \
+  --arg m 'Review complete: no CRITICAL or WARNING findings in this diff.' \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 31
+[ -f "$ROOT/case-31/$SHA/code-reviewer.json" ] \
+  && ok "clean prose naming severities WITHOUT a citation still stamps" \
+  || bad "clean prose naming severities WITHOUT a citation still stamps"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=57
+EXPECTED_TOTAL=62
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

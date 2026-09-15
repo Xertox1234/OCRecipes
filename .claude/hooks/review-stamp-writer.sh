@@ -96,7 +96,34 @@ fi
 #       refuse to choose — not substituting leaves $MSG as the wrapper, the sha parse below
 #       finds nothing, and the hook exits without a record. Fail closed.
 if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
-  if grep -qE '^\[(CRITICAL|WARNING|SUGGESTION)\]' <<<"$MSG"; then
+  # Match the marker-tolerant BRACKET form OR the roster's own UNBRACKETED rendering.
+  # Both, because they live in different documents and only one of them is what the
+  # reviewers are actually told to produce: docs/AI_WORKFLOW.md's dispatch prompt asks for
+  # `[CRITICAL] …`, while all five agent definitions (.claude/agents/code-reviewer.md:14,
+  # security-auditor.md:11, server-reviewer.md:14, …) mandate
+  # `file:line — issue — concrete fix` tagged with a bare severity word.
+  #
+  # This file already settled the argument ~100 lines below, where the $CRITICALS detector
+  # unions both renderings for exactly this reason: a bracket-only match "misses the
+  # agent-definition rendering entirely and would record `verdict: clean` on genuine
+  # CRITICAL findings — fail-open". Guard (a) answers the same question, so it has to use
+  # the same union; the first version of it did not, and used the detector this file
+  # rejects. Measured before this fix, one clean handback behind each: of five objection
+  # shapes only the column-0 bracketed one was honoured, and the MANDATED rendering wrote
+  # `verdict: clean` over the objection.
+  #
+  # The severity-word arm additionally demands a `:<digit>` file:line citation, which is
+  # what keeps it from eating a genuinely clean review: prose reading "no CRITICAL or
+  # WARNING findings" carries no citation and still stamps. That shape is the one the
+  # narrower anchor was originally chosen to protect, and it stays protected.
+  #
+  # Captured into a variable rather than piped into `grep -q`: under `pipefail` an
+  # early-exiting reader makes the writer take SIGPIPE and the pipeline reports failure
+  # even though the read succeeded.
+  SEVCITE=$(grep -E '(^|[^A-Za-z0-9_])(CRITICAL|WARNING|SUGGESTION)($|[^A-Za-z0-9_])' <<<"$MSG" \
+            | grep -E ':[0-9]' || true)
+  if grep -qE '^[[:space:]]*(([-*+>#]+|[0-9]+[.)])[[:space:]]*)*\[(CRITICAL|WARNING|SUGGESTION)\]' <<<"$MSG" \
+     || [ -n "$SEVCITE" ]; then
     exit 0
   fi
   NHB=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
