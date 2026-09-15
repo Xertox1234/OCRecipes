@@ -1112,10 +1112,58 @@ assert_allowed "CONTROL: a command that REACHES the existence read with no merge
 # to reach the buffer, so without this one the whole class is unpinned.
 _big=$'gh pr merge 938 --squash'
 for _i in $(seq 1 2000); do _big+=$'\n# padding line to push this command past the 64KB pipe buffer'; done
+# REGIME PRECONDITION -- the convention is named in test-cmd-detect.sh, in the block headed
+# `CONVENTION: REGIME PRECONDITION`, which says to name it when a third pin adopts it. This
+# is that third pin, and the first outside that file. The deny row below does NOT imply it:
+# the 23-byte `gh pr merge 42 --squash` earlier in this file is denied too (the row labelled
+# "control: a readable gh pr merge still denies with no record"), so if seq went missing, the
+# loop bound were edited, or the padding string shortened, the row would go green having
+# exercised a string that never approaches the pipe buffer -- and by this row's own header,
+# no other row here is large enough to reach it.
+#
+# PART 2, MEASURE WHAT CROSSES THE PIPE. cmd_gh_pr_has_merge reads cmd_bare_deep's output, so
+# that rendering -- not the raw command -- is what a regression to the piped form would write.
+# The two coincide today at 124,024 bytes each; an assertion on raw $_big would agree with the
+# coincidence and go inert the moment the rendering changed. This file sources nothing, so the
+# rendering is obtained in a subshell and only its measurements cross back as text.
+#
+# PART 3, ASSERT EVERY PROPERTY THE REGIME NEEDS -- and size alone is the wrong one, because
+# the mechanism is line-structured. grep cannot exit mid-line, so what decides SIGPIPE is how
+# much printf still has pending at the first moment grep can conclude: the merge must sit on
+# the FIRST line, and more than a buffer's worth must remain behind that line. Measured
+# against four drifts that each leave the deny row GREEN: padding cut to 20 lines leaves 1,240
+# bytes behind; folding the padding onto one line leaves 0; moving the merge to the last line
+# clears the first-line test; and holding the total at 124,024 while growing line 1 to 99,224
+# bytes leaves 24,800 behind -- that last one passes a byte-offset-from-the-match formulation
+# and fails this one, which is why the cut is taken at the newline.
+# No separator assertion, unlike the retarget pin in test-cmd-detect.sh: that one needs it
+# because cmd_gh_pr_ref cuts its clause at the first [;&|]
+# (`repo_clause="$full_match${clause_tail%%[;&|]*}"`), while cmd_gh_pr_has_merge greps the
+# rendering whole. Read out of the two function bodies, not assumed from their similarity.
+_mb_probe=$(
+  if . "$HOOKS_DIR/lib/cmd-detect.sh" >/dev/null 2>&1 && declare -F cmd_bare_deep >/dev/null; then
+    _w=$(cmd_bare_deep "$_big")
+    _f="${_w%%$'\n'*}"
+    case "$_f" in *"gh pr merge"*) _on=yes;; *) _on=no;; esac
+    printf '%s %s %s' "$_on" "$(( ${#_w} - ${#_f} ))" "${#_w}"
+  else
+    printf 'unsourceable 0 0'
+  fi
+)
+[ -n "$_mb_probe" ] || _mb_probe='killed 0 0'
+_mb_onfirst="${_mb_probe%% *}"; _mb_rest="${_mb_probe#* }"
+_mb_behind="${_mb_rest%% *}"; _mb_total="${_mb_rest##* }"
+case "$_mb_behind" in ''|*[!0-9]*) _mb_behind=0;; esac
+_mb_lbl="the 64KB SIGPIPE pin still renders a first-line merge with a full buffer behind it"
+if [ "$_mb_onfirst" = yes ] && [ "$_mb_behind" -gt 65536 ]; then
+  ok "$_mb_lbl"
+else
+  bad "$_mb_lbl" "merge on first line: $_mb_onfirst; bytes behind that line: $_mb_behind (need >65536); rendered total: $_mb_total; probe=[$_mb_probe]"
+fi
 _lbl="a >64KB MULTI-LINE command with an early merge still denies (SIGPIPE rc-141 inversion)"
 out=$(bash_payload "$_big" | run)
 denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
-unset _big
+unset _big _mb_probe _mb_onfirst _mb_rest _mb_behind _mb_total _mb_lbl
 
 # GLUED SEPARATORS. `(^|[[:space:]])gh` does not see a binary glued to its separator, so a
 # real merge hid from the one read that routes to ALLOW. Unioned with _CMD_POS_PREFIX.
@@ -1183,7 +1231,9 @@ unset _mrg_src _mrg_conj_line _mrg_conj _mrg_missing _mrg_sym _mrg_lbl
 # widened anchor.
 # 129 -> 130: +1 for the row that derives the preflight's required symbol set from the file
 # instead of trusting the comment that states it.
-EXPECTED_TOTAL=130
+# 130 -> 131: +1 regime precondition for THE 64KB SIGPIPE ROW, which until now asserted its
+# DENY outcome with nothing asserting the input still reached the pipe buffer.
+EXPECTED_TOTAL=131
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
