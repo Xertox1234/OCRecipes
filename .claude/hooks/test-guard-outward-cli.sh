@@ -3681,8 +3681,13 @@ assert_allow "prose naming the newly-closed shape is not denied" \
 #       wide  ->  [gh -a api -c x;gh api ]  COUNT=1  -> silently allowed
 #
 # `gh api` is the ONLY single-token gh needle here; the two-token families (`pr merge`,
-# `release …`, `repo …`) cannot collapse, because their second token is not a dash token and
-# so can never be a flag's value. Closed by counting under BOTH grammars and taking the max.
+# `release …`, `repo …`) cannot collapse, because each globals arm carries at most ONE optional
+# value slot: a needle's FIRST token can be eaten as a value (` -a pr` matches), but its SECOND
+# can then neither open a fresh arm nor be consumed, so no single match absorbs a whole second
+# occurrence (` -a pr merge` refuses; ` -a pr -b merge` matches, which shows the slot is the limit
+# rather than the token's shape). An earlier draft said "the second token is not a dash token
+# and so can never be a flag's value" — backwards: a non-dash token is exactly what qualifies
+# as a value. Closed by counting under BOTH grammars and taking the max.
 assert_deny "two gh api occurrences collapsed by a consumed value: ;" \
   "$(json 'gh -a api -c x;gh api /a/b')" \
   "more than one command-position 'gh api' occurrence"
@@ -3768,7 +3773,10 @@ assert_deny "control: the ; spelling of the same pair is counted as two" \
 # grammar "cannot see these at all". That was FALSE — instrumented, both rows report
 # wide=1 sepsafe=1, because SEPSAFE carries the same optional-value arm. Max is right for a
 # directional reason, not that one: the grammars disagree only where the wide form spans a
-# command boundary, and there the narrow count is HIGHER, so max can only add denies.)
+# command boundary, and WHICH side is higher depends on what follows — higher when a second
+# occurrence sits behind it, LOWER when nothing does (`gh -c a;b api /repos/o/r` gives wide=1
+# sepsafe=0). Max is safe regardless of which side is higher, and that is the only property the
+# code relies on.)
 assert_deny "a root flag on a mutating gh api still denies on the METHOD reason" \
   "$(json 'gh -t x api repos/o/r -X POST')" \
   "with a mutating HTTP method"

@@ -319,7 +319,11 @@ add ghrootv-selfrepo DENY 'gh -t x pr merge 42 -R Xertox1234/OCRecipes'
 #
 # `gh api` is the ONLY single-token gh needle in the guard; the two-token families
 # (`pr merge`, `pr create|comment`, `release ...`, `repo ...`) are structurally immune,
-# because their second token is not a dash token and so can never be a flag's value. That is
+# because each globals arm carries at most ONE optional value slot -- a needle's FIRST token can
+# be eaten as a value (` -a pr` matches) but its SECOND can then neither open a fresh arm nor be
+# consumed, so no single match absorbs a whole second occurrence. An earlier draft said "the
+# second token is not a dash token and so can never be a flag's value", which is backwards: a
+# non-dash token is exactly what qualifies AS a value. That is
 # why this axis varies only the api family -- a deliberate scope, not a hand-picked subset,
 # and the reason is stated so the next reader can check it rather than trust it.
 #

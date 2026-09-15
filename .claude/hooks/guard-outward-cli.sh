@@ -1822,7 +1822,23 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 #
 # `gh api` is the ONLY single-token gh needle in this file; every other family is two-token
 # (`pr merge`, `pr create|comment`, `release …`, `repo …`) and cannot collapse THROUGH THE
-# VALUE ARM, because the second token is not a dash token and so can never be a flag's value.
+# VALUE ARM — but NOT for the reason an earlier draft gave, and the correction matters because the
+# wrong test would mislead anyone adding a needle. That draft said "the second token is not a
+# dash token and so can never be a flag's value", which is BACKWARDS: a non-dash token is
+# exactly what QUALIFIES as a value (` -a pr` matches this grammar).
+#
+# The real immunity is that each globals arm carries at most ONE optional value slot. A
+# two-token needle's FIRST token can be eaten as a value, but its SECOND can then neither open
+# a fresh arm (it is not a dash token) nor be consumed (the slot is spent), so no single match
+# absorbs a whole second occurrence. Measured against the live constant:
+#
+#     ' -a pr'           MATCHES    (the first token IS consumable)
+#     ' -a pr merge'      REFUSES    <- the immunity
+#     ' -a pr -b merge'   MATCHES    <- a dash token restores a slot, so the shape is not the limit
+#
+# Note the immunity is about absorbing a WHOLE second occurrence, not about spans never
+# crossing a separator: `gh -a x;gh pr merge 42` does match as ONE span. It counts 1 because
+# there is only one `pr merge` in it, and a genuine second occurrence still counts 2.
 #
 # THAT SCOPE IS LOAD-BEARING AND WAS MISSING FROM THE FIRST DRAFT, which said only "cannot
 # collapse". The value arm is not the only collapse mechanism: `_OUT_SEP` interpolates the

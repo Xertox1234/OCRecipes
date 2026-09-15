@@ -220,11 +220,12 @@ a "reverts both constants at once" row does.
 ## Related Files
 
 - `.claude/hooks/guard-outward-cli.sh` — the shape assertion beside the two root-position constants
-- `.claude/hooks/test-guard-outward-cli.sh` — `_mut_goc_says_deny` and its four rows, plus the separately-mechanised `_SEP_MUT` check for the sibling structural assertion
+- `.claude/hooks/test-guard-outward-cli.sh` — `_mut_goc_says_deny` / `_mut_goc_denies_with` and their call sites (six at the time of writing — count them rather than trusting this line; it said "four" and was miscounted from the start, which is the sibling doc's own lesson landing on this one), plus the separately-mechanised `_SEP_MUT` check for the sibling structural assertion
 
 ## See Also
 
 - [a clean zero needs its denominator](a-control-that-runs-before-the-work-cannot-validate-it-2026-09-07.md)
 - [a two-sided control can still agree with a broken predicate](a-two-sided-control-can-still-agree-with-a-broken-predicate-2026-09-12.md)
 - [a pin records its value but must also record whether it is correct](a-pin-records-its-value-but-must-also-record-whether-it-is-correct-2026-09-13.md)
+- [widening is monotone on a boolean read, not on a count](../logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md) — the third grammar the two omitted operands guard, and why its count needs a max()
 - [widening is safe on every deny read and a false grant at the one allow read](../logic-errors/widening-is-safe-on-every-deny-read-and-a-false-grant-at-the-one-allow-read-2026-09-13.md)

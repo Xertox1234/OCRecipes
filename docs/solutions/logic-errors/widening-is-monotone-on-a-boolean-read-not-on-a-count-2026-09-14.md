@@ -63,10 +63,18 @@ The missing axis is **arity**:
 | extraction / cut | "what text did it match?"    | no — the span itself moves |
 
 Why one needle and not the others: `gh api` was the only **single-token** needle in that file.
-Every other family is two-token (`pr merge`, `pr create`, `release …`, `repo …`), and their
-second token is not a dash token, so it can never be consumed as a flag's value. That immunity
-is real but it is a property of **token shape**, not a property of the counter — which is exactly
-the kind of thing that gets over-generalised into "the families are immune".
+Every other family is two-token (`pr merge`, `pr create`, `release …`, `repo …`), and they are
+immune because **each globals arm carries at most ONE optional value slot**: a needle's first
+token can be eaten as a value, but its second can then neither open a fresh arm (it is not a
+dash token) nor be consumed (the slot is spent), so no single match absorbs a whole second
+occurrence. Measured: ` -a pr` matches, ` -a pr merge` refuses, and ` -a pr -b merge` matches —
+the slot is the limit, not the token's shape.
+
+An earlier version of this paragraph said the immunity was that "the second token is not a dash
+token and so can never be a flag's value". That is **backwards** — a non-dash token is exactly what
+qualifies as a value — and it is the kind of error that propagates, because a maintainer applying
+the wrong test would widen the value arm or add a needle on a false guarantee. The immunity is
+real; only the reason was wrong.
 
 **A partial flip reads as confirmation.** The first repair narrowed the wrong constant and three
 of seven probe rows flipped to DENY. That looked like the fix working. The four that did not flip
