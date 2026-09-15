@@ -1,5 +1,5 @@
 ---
-title: "Two branches that each add assertions leave the merged tree's count pin too low — git never conflicts because the two sides never textually disagree about the pin line, and with strict:false CI never re-runs"
+title: "Two branches that each add assertions leave the merged tree's count pin too low — the silent cases are where the two sides AGREE on the pin line or never both touch it, and with strict:false CI never re-runs"
 track: bug
 category: code-quality
 tags: [harness, hooks, testing, safety-gate, bash, security]
@@ -42,7 +42,8 @@ no conflict, so nothing in the normal workflow surfaces it until it is on `main`
 
 ## Root Cause
 
-Measured 2026-09-14 across three independent suites, by materialising the simulated merge
+Measured 2026-09-14 across three lanes — two of which have a merged tree to run a suite
+against; the third conflicts, so nothing executed for it — by materialising the simulated merge
 (`git merge-tree --write-tree` -> `git commit-tree` -> `git archive | tar -x`) and running
 each suite's own runner against it. Re-measured at the branch heads quoted below after
 eight repair commits had landed, because the first reading described a tree that no longer
@@ -65,10 +66,19 @@ merged tree's SECOND failure is the real one.
 
 Two details are worth more than the totals:
 
-**The git-safety lane is order-independent.** Both `965 then 956` and `956 then 965`
-produce the identical `220 passed, 1 failed`. There is no competing pin value to choose
-between, so there is no "merge this one first" that saves you — the usual remedy for a
-merge-coupled file does not apply.
+**Both lanes are order-independent, and there is a one-command proof.** Reversing the order
+produces the **byte-identical tree sha** — `8800e1b1…` for git-safety either way,
+`252a41e7…` for merge-review either way. An identical tree necessarily gives an identical
+suite result, so comparing the two `merge-tree` outputs settles order-independence without
+running anything. (Running it anyway: both directions give `220 passed, 1 failed`.) There is
+no competing pin value to choose between, so no "merge this one first" saves you — the usual
+remedy for a merge-coupled file does not apply.
+
+**Read the totals with the runner's own counting order in mind.** The merge-review lane
+prints `109 passed, 2 failed` while its message says `assertion total is 110`. That is not a
+typo: the pin block evaluates `$((PASS + FAIL))` for the message BEFORE incrementing `FAIL`
+for its own failure. On `main`, PASS 79 + FAIL 1 = 80 = the pin, so the line never fires
+there — which is the cross-check that confirms the ordering.
 
 **The merge-review lane fails *because* the branches agreed.** 964 and 957 each added 15
 assertions and each independently arrived at 95. Git merged the byte-identical change with
@@ -101,6 +111,23 @@ Note what this does *not* say. Picking a better order is not a fix: the git-safe
 above fails identically in both directions. Re-verification after the sync is the whole
 remedy; the ordering only decides which branch has to do it.
 
+**The structural alternative, and why it is not the recommendation here.** The root cause
+above is a branch-protection setting, so the setting is the obvious lever: flipping
+`required_status_checks.strict` to `true` (or putting `main` behind a merge queue) forces
+every PR up to date before it merges and would catch this whole class — not just count pins,
+but any merge-coupled state — without anyone remembering to run a combinatorial script. The
+cost is real and is why it is not proposed outright: with 15 concurrent PRs, every merge
+invalidates the other 14, so each one eats a resync and a full CI round, and the queue
+serialises what is currently parallel. Worth revisiting whenever the open-PR count is low.
+If you take the process route instead, it is a standing obligation, not a one-off.
+
+**What does NOT work: deriving the pin at runtime.** The tempting fix is to count assertion
+call sites instead of maintaining an integer. Measured: `grep -oE 'assert_[a-z_]+ '` over
+`test-git-safety.sh` finds 208 call sites against 220 actual assertions on the merged tree,
+because some sites sit inside loops that generate a data-dependent number of rows. A static
+count of a dynamic quantity is its own silent wrong answer, so the hand-maintained pin stays
+— it just has to be re-derived from a run.
+
 Find the lanes combinatorially, not from an overlap table:
 
 ```bash
@@ -129,10 +156,12 @@ the new value is right.
 
 - Treat a pinned total as **merge-coupled state**, like a migration number — two branches
   touching one need an explicit re-verification, not a merge.
-- **Adding a pin to a suite that did not have one is the highest-risk version of this.**
-  Every other open branch touching that suite was written against a base with no pin, so
-  none of them can update it and none of them will conflict with you. Before introducing a
-  pin, check what else is open against that file.
+- **Adding a pin to a suite that did not have one has its own failure path.** Every other
+  open branch touching that suite was written against a base with no pin, so none of them
+  can update it and none will conflict with you. Before introducing a pin, check what else
+  is open against that file. No claim that this is *worse* than the identical-edit case:
+  both measured lanes produced the same outcome — clean merge, wrong pin, loud failure on
+  main's next push — and two instances are not enough to rank them.
 - When adding a suite, add the pin (every sibling has one), and say in its comment that it
   must be re-derived from a clean run, never hand-incremented.
 - A green PR plus a clean `merge-tree` is not evidence the union is green. Under
@@ -148,4 +177,4 @@ the new value is right.
 
 - [A pin records its VALUE but must also record whether it is CORRECT](a-pin-records-its-value-but-must-also-record-whether-it-is-correct-2026-09-13.md) — the same pin, one layer in: this doc is about two branches, that one about one branch's verdict
 - [A measurement belongs to the tree it was taken on](a-measurement-belongs-to-the-tree-it-was-taken-on-2026-09-13.md) — why re-deriving the pin on the MERGED tree is the only valid reading
-- [A clean zero needs its denominator](a-control-that-runs-before-the-work-cannot-validate-it-2026-09-07.md) — why the per-branch controls above are load-bearing
+- [A control that runs BEFORE the work cannot validate the work](a-control-that-runs-before-the-work-cannot-validate-it-2026-09-07.md) — why the per-branch controls above are load-bearing

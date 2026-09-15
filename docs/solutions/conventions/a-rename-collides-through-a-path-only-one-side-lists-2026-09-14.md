@@ -70,8 +70,14 @@ done; done
 ```
 
 `git merge-tree --write-tree` needs no checkout and no working tree, so the whole matrix
-is cheap — 78 pairs across 14 branches ran in seconds. Quote the pair count alongside the
-result so a reader can tell a complete matrix from a sampled one.
+is cheap — **105 pairs across 15 branches** ran in seconds. Quote the pair count alongside
+the result so a reader can tell a complete matrix from a sampled one, **and check it against
+the branch count**: a complete matrix has exactly `C(n,2)` pairs, and `C(15,2) = 105`. An
+earlier revision of this sentence said "78 pairs across 14 branches", which is not a
+possible pair of numbers — `C(14,2)` is 91 and 78 is `C(13,2)`. The sweep really did test
+13 branches at that point; two more PRs were opened during it and the re-run below covers
+15. A pair count that does not reconcile with its own branch count is exactly the
+sampled-looking-complete failure this paragraph warns about, so do the division.
 
 To confirm a rename is a real archive rather than a duplicate add, use
 `git diff --name-status -M main...<branch>` and look for an `R` (with a similarity score);
