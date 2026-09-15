@@ -1,5 +1,5 @@
 ---
-title: "Two branches that each bump the same assertion-count pin merge CLEAN and leave the pin at one side's value — git reports no conflict and, with strict:false, CI never re-runs"
+title: "Two branches that each add assertions leave the merged tree's count pin too low — git never conflicts because the two sides never textually disagree about the pin line, and with strict:false CI never re-runs"
 track: bug
 category: code-quality
 tags: [harness, hooks, testing, safety-gate, bash, security]
@@ -19,12 +19,21 @@ Every hook suite in this repo pins its own assertion total
 catches a silently skipped assertion — without it a `command not found` mid-loop
 subtracts a row and the suite still prints a clean pass/0 fail.
 
-That pin is also a single line holding a **number derived from the whole file**. So when
-two branches each add rows, each correctly bumps the pin **to its own new total**. Git
-sees one line, changed on both sides, and — if the two edits land in different hunks, or
-one side's hunk context differs — resolves it without a conflict by taking one side.
+That pin is also a single line holding a **number derived from the whole file** — so it is
+the one line in the suite whose correct value depends on every *other* line, including
+lines a different branch adds.
 
-The merged tree then has both branches' rows and only one branch's pin.
+The intuition is that two branches bumping one line must conflict. Measured, they do not,
+because in practice **the two sides never textually disagree about the pin line**:
+
+- one side may *introduce* the pin while the other only adds rows, so the second side has
+  no pin line to update and the two edits are disjoint; or
+- both sides may compute the *same* new value and make the byte-identical edit, which git
+  merges silently — agreement is precisely what makes it invisible.
+
+Either way the merged tree carries **both** branches' rows under a pin that was correct for
+only one of them. A pin that genuinely differs on the two sides is the case git *does*
+catch; it is not the dangerous one.
 
 ## Symptoms
 
@@ -35,19 +44,37 @@ no conflict, so nothing in the normal workflow surfaces it until it is on `main`
 
 Measured 2026-09-14 across three independent suites, by materialising the simulated merge
 (`git merge-tree --write-tree` -> `git commit-tree` -> `git archive | tar -x`) and running
-each suite's own runner against it:
+each suite's own runner against it. Re-measured at the branch heads quoted below after
+eight repair commits had landed, because the first reading described a tree that no longer
+existed:
 
-| pair | `merge-tree` verdict | suite on the merged tree |
-| --- | --- | --- |
-| git-safety: 965 then 956 | **clean** | `218 passed, 1 failed` — `assertion total is 218, expected 151` |
-| merge-review-guard: 964 then 957 | **clean** | `109 passed, 2 failed` — `assertion total is 110, expected 95` |
-| outward-CLI corpus: any two of 968/967/966/957 | CONFLICT | n/a — git blocks it |
+| pair | `merge-tree` | suite on the merged tree | why no conflict |
+| --- | --- | --- | --- |
+| git-safety: 965 ⊕ 956, **either order** | **clean** | `220 passed, 1 failed` — `assertion total is 220, expected 153` | **disjoint edits**: 965 *adds* the pin (`main` has none); 956 adds rows only |
+| merge-review-guard: 964 then 957 | **clean** | `109 passed, 2 failed` — `assertion total is 110, expected 95` | **identical edits**: both sides write `EXPECTED_TOTAL=80` -> `95` |
+| outward-CLI corpus: any two of 968/967/966/957 | CONFLICT | n/a — git blocks it | overlapping row blocks |
+
+Heads: 965 `24a40f8b`, 956 `a59100c1`, 964 `042fda74`, 957 `76c035d1`, base `68ac77f1`.
 
 Controls, same sandbox and runner, because a merged-tree failure means nothing without
-them: `test-git-safety.sh` on plain `main` is `126 passed, 0 failed`; 965 alone is
-`151/0`; 956 alone is `193/0`. For the merge-review lane, plain `main` already shows
-exactly 1 failure (a sandbox artifact — the tar-extract has no `.git`), and both branches
-alone show that same 1, so the merged tree's SECOND failure is the real one.
+them: `test-git-safety.sh` on plain `main` is `126 passed, 0 failed` (and carries **no
+pin at all** — 965 is the branch that introduces one); 965 alone is `153/0`; 956 alone is
+`193/0`. For the merge-review lane, plain `main` already shows exactly 1 failure (a sandbox
+artifact — the tar-extract has no `.git`), and both branches alone show that same 1, so the
+merged tree's SECOND failure is the real one.
+
+Two details are worth more than the totals:
+
+**The git-safety lane is order-independent.** Both `965 then 956` and `956 then 965`
+produce the identical `220 passed, 1 failed`. There is no competing pin value to choose
+between, so there is no "merge this one first" that saves you — the usual remedy for a
+merge-coupled file does not apply.
+
+**The merge-review lane fails *because* the branches agreed.** 964 and 957 each added 15
+assertions and each independently arrived at 95. Git merged the byte-identical change with
+nothing to report. Had they disagreed — say 94 and 96 — git would have raised a conflict
+and a human would have looked. The silent case is the one where both sides are individually
+right.
 
 The outward-CLI row is the instructive contrast: that lane conflicts, so **git protects
 it**. The dangerous lanes are the ones git calls clean.
@@ -69,6 +96,10 @@ outright. So "is this suite even in CI?" is not answerable by grepping the workf
 
 **Within a lane, only the FIRST merge may ride its existing green.** Every successor must
 be synced to `main` and re-verified BEFORE merging.
+
+Note what this does *not* say. Picking a better order is not a fix: the git-safety lane
+above fails identically in both directions. Re-verification after the sync is the whole
+remedy; the ordering only decides which branch has to do it.
 
 Find the lanes combinatorially, not from an overlap table:
 
@@ -97,7 +128,11 @@ the new value is right.
 ## Prevention
 
 - Treat a pinned total as **merge-coupled state**, like a migration number — two branches
-  touching one need an explicit order, not a merge.
+  touching one need an explicit re-verification, not a merge.
+- **Adding a pin to a suite that did not have one is the highest-risk version of this.**
+  Every other open branch touching that suite was written against a base with no pin, so
+  none of them can update it and none of them will conflict with you. Before introducing a
+  pin, check what else is open against that file.
 - When adding a suite, add the pin (every sibling has one), and say in its comment that it
   must be re-derived from a clean run, never hand-incremented.
 - A green PR plus a clean `merge-tree` is not evidence the union is green. Under
