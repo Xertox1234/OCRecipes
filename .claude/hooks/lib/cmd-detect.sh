@@ -2734,7 +2734,7 @@ cmd_gh_pr_ref() {
   # is indented before the `#` or carries three spaces after it. A disclosed method exists so
   # the claim can be re-run; one that returns a different number than the sentence is worse
   # than no method, and that is the third time this paragraph's own lesson has caught it.
-  # and the sentence named no method. An asserted figure under prose claiming derivation, in
+  # An asserted figure under prose claiming derivation, in
   # the paragraph fixing exactly that. A corrected number would only re-arm the same drift.
   # The gate classifies the LOCAL pr 42 while the
   # command targets other/org -- a cross-repository merge authorised by a local review
