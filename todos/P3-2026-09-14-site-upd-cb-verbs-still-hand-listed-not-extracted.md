@@ -40,10 +40,11 @@ offered alternative ("name them explicitly as deliberately left hand-listed, or 
 - [ ] `SITE_UPD_VERBS` is generated via `_alt_or_die` from `guard-outward-cli.sh`'s literal
       alternation text, not hand-listed.
 - [ ] `SITE_CB_VERBS` is generated via `_alt_or_die` from `guard-outward-cli.sh`'s literal
-      alternation text — a TWO-GROUP alternation (`(channel|branch):(create|edit|delete|
-    rename)`), so the extraction needs both groups (the `_alt_or_die` pattern used for the
-      railvar site at `repro-outward-cli-corpus.sh` is the template: same two-`(...)`-groups
-      shape, already proven there).
+      alternation text — a TWO-GROUP alternation
+      (`(channel|branch):(create|edit|delete|rename)`), so the extraction needs both
+      groups (the `_alt_or_die` pattern used for the railvar site at
+      `repro-outward-cli-corpus.sh` is the template: same two-`(...)`-groups shape,
+      already proven there).
 - [ ] Generated rows are IDENTICAL in content to the current hand-listed ones (same commands,
       same IDs if practical) — this is a mechanism swap, not a coverage change. Confirm via a
       full corpus run: `EXPECTED_ROWS` and all manifests should need NO changes if the swap is
