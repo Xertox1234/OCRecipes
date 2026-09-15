@@ -221,10 +221,9 @@ begin with.
 
 Measured on `.claude/hooks/repro-outward-cli-corpus.sh`, 2026-09-14: 4 command-position deny
 regexes span 18 alternation branches between them, of which only 5 had a row — `railway up`
-(1 of 9 branches), `eas update` (1 of 3), `railway variable set` **and** `railway variables set`
-(2 of 4 — the `variables` spelling was already covered by the pre-existing
-`c9-ws-railwayvar`/`c9-dig-railwayvar` rows), and `railway service delete` (1 of 2). That leaves
-18 − 5 = 13 branches with no row, including `railway run`, which the gate's own message calls
+(1 of 9 branches), `eas update` (1 of 3), the `railway variable|variables|vars|var set/delete`
+family (**2** of 4), and `railway service delete` (1 of 2). That leaves 18 − 5 = 13 branches
+with no row, including `railway run`, which the gate's own message calls
 as dangerous as `railway up`
 ("executes an arbitrary command with the LIVE service env, incl. the production DATABASE_URL").
 Deleting `run` from that alternation in a scratch guard copy and running the then-current,

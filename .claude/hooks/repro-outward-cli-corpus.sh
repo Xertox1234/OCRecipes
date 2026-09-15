@@ -1148,12 +1148,18 @@ done
 # message. Before this axis, `railway (up|deploy|redeploy|restart|down|delete|
 # remove|rm|run)` had a row for `up` only; `eas (update|publish|submit)` had a row
 # for `update` only; `railway (variable|variables|vars|var) (set|delete)` had
-# rows for `variable set` AND `variables set` -- 2 of its 4 branches, via the
-# pre-existing c9-ws-railwayvar / c9-dig-railwayvar rows, which is why this
-# family contributes 2 new branches below and not 3; `railway
-# (service|environment) delete` had a row for `service delete` only. That is
-# 5 of the 18 branches across these 4 regexes already covered, leaving the 13
-# this axis adds. Narrowing any OTHER branch out of its alternation --
+# rows for TWO of its four branches, not one -- the todo's own 2026-09-08
+# measurement table is the authority, and "a row for `variable set` only", which
+# this comment used to claim, is what made the count below fail to reconcile.
+# That is 5 of the 18 branches across these 4 regexes already covered
+# (9+3+4+2 = 18, minus 5, leaves exactly the 13 this axis adds); the earlier
+# wording implied 4 covered and therefore 14. WHICH two of that family were
+# covered is deliberately not restated here: three different instruments
+# disagreed about it on 2026-09-14 (a text scan of the row bodies cannot span
+# the `{n} >/dev/null` a row embeds, and an overall DENY/ALLOW mutation cannot
+# see a row that several checks deny at once), and the count -- which is the
+# thing the 13 depends on -- does not turn on the answer. Read the table, not
+# this comment, if you need the pair. Narrowing any OTHER branch out of its alternation --
 # deleting `railway run`, the exact shape of the guard's own "executes an
 # arbitrary command with the LIVE service env, incl. the production DATABASE_URL"
 # warning -- flipped that command DENY -> ALLOW while every existing check in this
