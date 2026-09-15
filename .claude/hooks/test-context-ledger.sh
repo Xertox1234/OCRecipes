@@ -455,9 +455,15 @@ else
 fi
 
 # --- Task 5: SessionEnd cleanup ---
-# Drives the REAL hook with a real /tmp path (not CONTEXT_LEDGER_ROOT), because the
-# cleanup line necessarily hardcodes the production path the same way the existing
-# worktree-contract line does.
+# HERMETIC, like every other task in this file. It did NOT used to be: the cleanup line
+# re-derived /tmp/ocrecipes-context-ledger-<sid> inline and so ignored
+# CONTEXT_LEDGER_ROOT, which forced this one task to abandon the hermetic root and
+# assert against a real /tmp path. That divergence was the bug, not a property to test
+# around — with the cleanup now asking context_ledger_dir() for the directory, writer
+# and deleter agree under CONTEXT_LEDGER_ROOT and this task can use it like the rest.
+#
+# Keep it that way. If a future edit makes these two cases need a real /tmp path again,
+# that is the signal that the reader and the writer have diverged a second time.
 #
 # SESSION_COORD_CLAUDE_PID is REQUIRED here: `deregister` falls through to
 # scripts/pg-lab/session-coord.sh's do_deregister(), which removes a PID-keyed bridge
@@ -468,7 +474,7 @@ fi
 COORD="$HOOKS_DIR/session-coord-hook.sh"
 SIDC="sess-cleanup-$$"
 FAKE_PID=$((91000000 + $$))
-REAL_DIR="/tmp/ocrecipes-context-ledger-${SIDC}"
+REAL_DIR="$CONTEXT_LEDGER_ROOT/${SIDC}"
 mkdir -p "$REAL_DIR"; printf 'x\n' > "$REAL_DIR/resume.md"
 
 printf '{"session_id":"%s"}' "$SIDC" | SESSION_COORD_CLAUDE_PID="$FAKE_PID" bash "$COORD" deregister >/dev/null 2>&1
@@ -489,9 +495,16 @@ fi
 ORD_ROOT=$(mktemp -d) || exit 1
 mkdir -p "$ORD_ROOT/a/b"
 cp "$COORD" "$ORD_ROOT/a/b/session-coord-hook.sh"
+# The hook now SOURCES lib/context-ledger-path.sh rather than re-deriving the path, so
+# the relocated copy needs the lib reachable at the ROOT its own path math computes
+# ($ORD_ROOT, two up from a/b). Without this the cleanup silently no-ops and this case
+# passes for the wrong reason — it would be asserting that a hook which cannot find its
+# library still deletes something, which it cannot.
+mkdir -p "$ORD_ROOT/.claude/hooks/lib"
+cp "$HOOKS_DIR/lib/context-ledger-path.sh" "$ORD_ROOT/.claude/hooks/lib/context-ledger-path.sh"
 SIDO="sess-cleanup-ord-$$"
 FAKE_PID_ORD=$((92000000 + $$))
-ORD_DIR="/tmp/ocrecipes-context-ledger-${SIDO}"
+ORD_DIR="$CONTEXT_LEDGER_ROOT/${SIDO}"
 mkdir -p "$ORD_DIR"; printf 'x\n' > "$ORD_DIR/resume.md"
 
 printf '{"session_id":"%s"}' "$SIDO" \
@@ -950,6 +963,21 @@ if assert_fully_redacted "$ROW32"; then
   ok "Bearer + exactly 40 hex: the full token is gone (all four chunks) and exactly one [redacted] marker appears"
 else
   no "Bearer + exactly 40 hex leaked part of the token, or did not produce exactly one marker: [$ROW32]"
+fi
+
+# Pin the assertion TOTAL, matching every sibling hook suite in this repo
+# (test-cmd-detect.sh, test-guard-outward-cli.sh, test-merge-review-guard.sh,
+# test-review-stamp-path.sh, test-review-stamp-writer.sh all carry one). Without it a
+# SKIPPED assertion — a `command not found` mid-loop, an early exit in a helper, a
+# truncated file — subtracts silently and the suite still prints a clean pass/0 fail.
+#
+# Re-derive this from a clean run when adding or removing a case; never hand-increment
+# it. Same caveat as the siblings: this catches a MISSING assertion, not one that never
+# ran because the process died before reaching it.
+EXPECTED_TOTAL=69
+if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
+  echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
+  FAIL=$((FAIL + 1))
 fi
 
 echo ""
