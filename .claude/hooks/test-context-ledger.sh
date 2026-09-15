@@ -1109,6 +1109,57 @@ CLAUDE_CODE_SESSION_ID=exfil CONTEXT_LEDGER_ROOT="$EXFROOT" \
 # every run, local and CI. Nothing read a wrong path (CONTEXT_LEDGER_ROOT is exported from
 # the original value at the top, and every $TMPROOT fixture above is long since consumed),
 # so it leaked rather than corrupted -- which is exactly why it stayed invisible at 79/0.
+# THE CURATED LEAF. The directory guard tests the DIRECTORY and says nothing about this
+# file, and for four review passes a comment claiming otherwise stood here. Measured
+# before the fix: a genuine, non-symlink, we-own-it ledger directory at 0700 with a symlink
+# planted ONLY at curated.md passed every other guard, the digest was written, and the
+# reader emitted the LINKED file's contents into additionalContext. That is attacker-
+# authored text reaching model input through the tier that bypasses redact_secrets.
+#
+# THREE ROWS, because one would not distinguish "refused" from "broken". The control proves
+# the reader still reads a legitimate curated.md; the refusal proves the plant does not
+# reach additionalContext; and the third proves the refusal empties only THAT TIER rather
+# than killing the digest, which is the difference between a guard and a denial of service.
+CURROOT=$(mktemp -d); CURTGT=$(mktemp -d)
+mkdir -p "$CURROOT/legit"; chmod 700 "$CURROOT/legit"
+printf 'VERIFIED | curated-control | cmd\n' > "$CURROOT/legit/curated.md"
+jq -n '{hook_event_name:"PreCompact", session_id:"legit", transcript_path:"/dev/null"}' \
+  | CONTEXT_LEDGER_ROOT="$CURROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
+[ "$(read_ctx "$CURROOT" legit | grep -c 'curated-control')" -ge 1 ] \
+  && ok "CONTROL: a legitimate curated.md is still read into the digest" \
+  || no "control failed: a legitimate curated.md was not read — the refusal below proves nothing"
+
+mkdir -p "$CURROOT/plant"; chmod 700 "$CURROOT/plant"
+printf 'VERIFIED | CURATED-PLANT | cmd\n' > "$CURTGT/attacker.md"
+ln -s "$CURTGT/attacker.md" "$CURROOT/plant/curated.md"
+jq -n '{hook_event_name:"PreCompact", session_id:"plant", transcript_path:"/dev/null"}' \
+  | CONTEXT_LEDGER_ROOT="$CURROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
+[ "$(read_ctx "$CURROOT" plant | grep -c 'CURATED-PLANT')" -eq 0 ] \
+  && ok "a symlinked curated.md is refused and never reaches additionalContext" \
+  || no "a symlinked curated.md leaked into additionalContext"
+
+# The refusal must empty ONLY the curated tier. With a real transcript the mechanical floor
+# has content, so a digest must still be written -- otherwise a planted file would be a
+# denial of the whole ledger rather than a refusal of one tier.
+mkdir -p "$CURROOT/floor"; chmod 700 "$CURROOT/floor"
+ln -s "$CURTGT/attacker.md" "$CURROOT/floor/curated.md"
+jq -n --arg t "$FAKE_TX" '{hook_event_name:"PreCompact", session_id:"floor", transcript_path:$t}' \
+  | CONTEXT_LEDGER_ROOT="$CURROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
+CURFLOOR=$(read_ctx "$CURROOT" floor)
+{ [ -n "$CURFLOOR" ] && [ "$(printf '%s' "$CURFLOOR" | grep -c 'CURATED-PLANT')" -eq 0 ]; } \
+  && ok "refusing curated.md empties that tier only — the mechanical floor still writes" \
+  || no "refusing curated.md dropped the whole digest (denial of the ledger, not a guard)"
+
+# ledger-note's own side of the same leaf. It already refuses; this pins that rather than
+# leaving the two writers asymmetric with only one of them asserted.
+mkdir -p "$CURROOT/note"; chmod 700 "$CURROOT/note"
+ln -s "$CURTGT/attacker.md" "$CURROOT/note/curated.md"
+CLAUDE_CODE_SESSION_ID=note CONTEXT_LEDGER_ROOT="$CURROOT" \
+  bash "$HOOKS_DIR/ledger-note.sh" VERIFIED c e >/dev/null 2>&1
+[ "$(grep -c 'VERIFIED | c | e' "$CURTGT/attacker.md" 2>/dev/null)" -eq 0 ] \
+  && ok "ledger-note refuses a symlinked curated.md and appends nothing through it" \
+  || no "ledger-note appended through a symlinked curated.md"
+
 TMPFIXROOT=$(mktemp -d); TMPTARGET=$(mktemp -d)
 mkdir -p "$TMPFIXROOT/tmpsid"
 printf 'VERIFIED | seed | cmd\n' > "$TMPFIXROOT/tmpsid/curated.md"
@@ -1166,7 +1217,11 @@ guard_line=$(grep -n '^context_ledger_path_ok "\$LEDGER_DIR" || exit 0$' "$PCL" 
 # directory at write time. The anchored pattern matches exactly one line, so head-vs-tail
 # stops mattering, and if that read is ever refactored the variable goes empty and the
 # `[ -n "$read_line" ]` test below reddens the row instead of greening it.
-read_line=$(grep -n '^if \[ -r "\$LEDGER_DIR/curated.md" \]' "$PCL" | cut -d: -f1 | head -1)
+# ANCHOR UPDATED 2026-09-15 when the leaf gained its own guard and the read line became
+# `if context_ledger_path_ok ... && [ -r ... ]`. Both rows correctly went RED on the old
+# anchor the moment that line changed -- which is the behaviour they were given a round
+# earlier, and the reason updating the anchor is a deliberate act rather than a silent one.
+read_line=$(grep -n '^if context_ledger_path_ok "\$LEDGER_DIR/curated.md"' "$PCL" | cut -d: -f1 | head -1)
 mkdir_line=$(grep -n '^(umask 077; mkdir -p "\$LEDGER_DIR")' "$PCL" | cut -d: -f1 | head -1)
 last_guard=$(grep -n '^context_ledger_path_ok "\$LEDGER_DIR" || exit 0$' "$PCL" | cut -d: -f1 | tail -1)
 if [ -n "$guard_line" ] && [ -n "$read_line" ] && [ "$guard_line" -lt "$read_line" ]; then
@@ -1187,7 +1242,7 @@ else
   no "no write-time directory check between the reads and mkdir (last=$last_guard mkdir=$mkdir_line)"
 fi
 
-EXPECTED_TOTAL=83
+EXPECTED_TOTAL=87
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

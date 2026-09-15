@@ -31,7 +31,14 @@ TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/nul
 if [ -z "$TRANSCRIPT" ] || [ ! -r "$TRANSCRIPT" ]; then
   TRANSCRIPT=""
   BEST_MTIME=-1
-  for cand in "$HOME"/.claude/projects/*/"$SID".jsonl; do
+  # `${HOME:-}`, not `"$HOME"`. Under `set -u` a bare expansion ABORTS when HOME is unset,
+  # which is reachable: an absolute XDG_STATE_HOME with no CONTEXT_LEDGER_ROOT lets
+  # context_ledger_dir succeed without ever touching HOME, so control arrives here and the
+  # hook dies with "HOME: unbound variable", exit 1 and stderr out of a PreCompact hook --
+  # breaking this file's own header contract that every failure path exits 0 with no
+  # output. An empty prefix makes the glob match nothing and TRANSCRIPT stays empty, which
+  # is the intended degrade. Same treatment context-ledger-path.sh already gives HOME.
+  for cand in "${HOME:-}"/.claude/projects/*/"$SID".jsonl; do
     [ -r "$cand" ] || continue
     CAND_MTIME=$(stat -f %m "$cand" 2>/dev/null) || CAND_MTIME=$(stat -c %Y "$cand" 2>/dev/null) || CAND_MTIME=0
     case "$CAND_MTIME" in ''|*[!0-9]*) CAND_MTIME=0 ;; esac
@@ -44,10 +51,15 @@ fi
 
 # Refuse a ledger path that is not ours BEFORE reading either tier. curated.md is the
 # entry point that bypasses redact_secrets/entropy_net, so a planted one is folded into
-# the digest verbatim. Nothing escapes today -- the only consumer is the resume.md write
-# the guards below refuse, and this hook writes nothing to stdout -- so this is a footgun
-# rather than a live path, but reading attacker-authored text into a variable one
-# refactor away from an emit is not worth the saving, and the check costs nothing here.
+# the digest verbatim.
+#
+# AN EARLIER VERSION OF THIS COMMENT SAID "Nothing escapes today -- the only consumer is
+# the resume.md write the guards below refuse". THAT WAS FALSE AND IT HID A LIVE LEAK for
+# four review passes. Those guards refuse when the DIRECTORY, resume.md or resume.md.tmp
+# are not ours -- a different set of paths from the one being read. With all three
+# legitimate and a symlink only at curated.md, the digest is written and the reader emits
+# the linked file. The leaf is now guarded at its own read below; do not re-derive a
+# safety claim for one path from checks that cover others.
 # NOT redundant with the write-time checks below: this one is about what we READ.
 #
 # DO NOT DELETE THE WRITE-TIME DIRECTORY CHECK BECAUSE A MUTATION SWEEP CALLS IT DEAD.
@@ -64,7 +76,25 @@ CURATED=""
 # it actually truncates the file it can land mid-line; `tail -n +2` then drops that partial
 # first line. Only applied when the file is actually larger than the window — otherwise a
 # small curated.md would lose its genuine first line for no reason.
-if [ -r "$LEDGER_DIR/curated.md" ]; then
+# GUARD THE LEAF, not just the directory. The directory check above tests the DIRECTORY;
+# it says nothing about this file. Measured: with a genuine, non-symlink, we-own-it ledger
+# directory at mode 0700 and a symlink planted ONLY at curated.md, every other guard in
+# this file passes, the digest is written, and session-resume-ledger.sh emits the LINKED
+# file's contents into additionalContext -- attacker-authored text reaching model input,
+# which is the injection half of the exact defect this file exists to close. Controls in
+# the same run: a regular curated.md carried the marker, a benign one did not, and a
+# symlinked DIRECTORY was refused.
+#
+# WIDER THAN THE DOCUMENTED SAME-UID ANCESTOR RESIDUAL, because context_ledger_path_ok
+# tests `-L` and `-O` but never MODE: a mode-loose-but-ours ledger directory -- a $HOME
+# restored by a backup that dropped modes, or the shared NFS $HOME this repo's own path
+# helper names -- admits a CROSS-uid plant at this leaf. And curated.md is the tier that
+# bypasses redact_secrets/entropy_net.
+#
+# GATED ON THE TIER READ, deliberately, not bolted on as `|| exit 0`: a refused curated.md
+# must empty only THIS tier while the mechanical floor still writes, because dropping the
+# whole digest would turn a planted file into a denial of the ledger.
+if context_ledger_path_ok "$LEDGER_DIR/curated.md" && [ -r "$LEDGER_DIR/curated.md" ]; then
   # `wc -c` pads its number with leading spaces (BSD and GNU both), which the digit-only
   # guard below would otherwise treat as "not a number" and zero out — silently disabling
   # this whole check. Strip whitespace before validating.
