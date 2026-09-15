@@ -768,7 +768,10 @@ assert_allow "advisor: a separator glued to gh with no space (foo;gh) loses the 
 
 # FIFTH residual, and the only one here that BOTH hooks miss. A `--repo`/`-R` retarget
 # placed BETWEEN `pr` and the verb reaches neither this advisor nor guard-outward-cli.sh.
-# Measured at this head AND against origin/main, identical on both, with three controls in
+# Measured at this head, and the FOUR MID-POSITION ROWS are identical on origin/main --
+# scoped deliberately, because the blanket form was false for this table's own control:
+# `gh -R o/r pr close 42` is warn HERE and SILENT on main, and that difference is exactly
+# the root-slot coverage this PR delivers. Three controls in
 # the same run that are all covered:
 #   gh pr close 42                    advisory=warn    guard=DENY   (control)
 #   gh -R o/r pr close 42             advisory=warn    guard=DENY   (control, ROOT slot)
@@ -787,7 +790,15 @@ assert_allow "advisor: a separator glued to gh with no space (foo;gh) loses the 
 # Pinned rather than filed, because guard-outward-cli.sh's own deny text names --repo/-R
 # retargeting as the thing it exists to catch, and a gap that contradicts a guard's stated
 # purpose should be visible on every run rather than living in one reviewer's report.
-assert_allow "advisor: a --repo retarget BETWEEN 'pr' and the verb reaches neither hook — pre-existing, identical on main, surfaced not fixed" \
+# NAME SAYS "advisor", NOT "neither hook", and the gap between those two is the point.
+# This row asserts the ADVISORY half only -- it runs git-safety.sh and nothing else. The
+# guard=allow half is recorded in the comment above and asserted NOWHERE, because this file
+# never executes guard-outward-cli.sh (all eight mentions of it here are comment text). So
+# if that guard is ever taught to cover this slot, NOTHING here goes red and the comment
+# goes stale silently: re-measure it against .claude/hooks/test-guard-outward-cli.sh, which
+# is where that guard's own rows live. The advisory half does stay honest -- teach the
+# advisor this slot and this assert_allow reddens, forcing a deliberate update.
+assert_allow "advisor: a --repo retarget BETWEEN 'pr' and the verb is SILENT here — pre-existing, identical on main, surfaced not fixed" \
   "$(jsonc no-registry-session "$MAIN" 'gh pr --repo o/r close 42')"
 
 # Accepted trade-off (documented in cmd_gh_pr_write_subcommand's own header): a `gh
