@@ -288,7 +288,13 @@ and this file is auto-injected on `.claude/hooks/**` edits, so a wrong figure he
 It does not extend to checks shaped some other way (an interior-redirect scan, a flag-adjacent
 regex, a decoy-clause union) — those genuinely are not branch lists, and
 building a branch-style extractor for each of THEIR shapes is the "enumerate every mechanism x
-every branch" cross product a corpus this size cannot afford. Nor does it cover narrowing that is
+every branch" cross product a corpus this size cannot afford. **A shared building block's OWN literal branch list is in scope too**, not just alternations
+adjacent to one. The census above is scoped to alternations sitting next to
+`${_OUT_SEP}`/`${_OUT_POS_PREFIX}`, which excludes `_OUT_POS_PREFIX`'s own 11 command-prefix
+literals — and those are individually deletable: removing `nohup` alone was measured to open
+four deny families (eas update, railway up, npm publish, gh api -X POST) while the corpus
+stayed byte-identical. A group qualifies if ANY branch is a deletable literal; "every branch
+is a literal" excludes the mixed shape by construction. Nor does it cover narrowing that is
 not branch deletion — tightening `${_OUT_SEP}` itself, or narrowing a character class inside one
 branch rather than removing the branch whole. Name what remains in the pin's own residual prose
 rather than letting the closed instance read as though the whole class closed with it.

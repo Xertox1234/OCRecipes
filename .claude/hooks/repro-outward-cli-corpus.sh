@@ -1469,8 +1469,9 @@ fi
 #    corpus can only report on the axes it varies" is the first thing to read
 #    after this.
 #
-#    NARROWED 2026-09-14 (todos/P2-2026-09-08-corpus-covers-deny-sites-but-not-
-#    their-alternation-branches.md): the most CONCRETE instance of this residual
+#    NARROWED 2026-09-14
+#    (todos/P2-2026-09-08-corpus-covers-deny-sites-but-not-their-alternation-branches.md):
+#    the most CONCRETE instance of this residual
 #    -- deleting one branch out of a MULTI-BRANCH alternation the guard's own
 #    regex already enumerates -- is closed for the four regexes it is shaped
 #    that way for (railway's top-level verb list, eas's top-level verb list, the
@@ -1562,6 +1563,14 @@ fi
 #      bare literal                 update            npm            --repo
 #      literal + boundary group     --repo([^-A-Za-z0-9]|$)
 #      case-folding bracket run     [Pp][Oo][Ss][Tt]      (_GH_API_M needs this)
+#      MIXED                        literal branches alongside NON-literal siblings --
+#                                   e.g. _OUT_POS_PREFIX carries 11 command-prefix words
+#                                   next to a `VAR=` character class and an interpolated
+#                                   $_CMD_REDIR. Added 2026-09-15 because "every branch is
+#                                   a literal" EXCLUDES this shape BY CONSTRUCTION, which
+#                                   is how the scan published here missed an entire bucket
+#                                   while reading as exhaustive. A group qualifies if ANY
+#                                   branch is a deletable literal, not if all of them are.
 #    and it must handle NESTED groups, since GH_MUTATING_RE's branches are
 #    themselves alternations. `_OUT_POS_SUFFIX` (:1607) is NOT a member whichever
 #    way the scan is drawn: its branches are character classes, so narrowing it is
@@ -1573,7 +1582,9 @@ fi
 #      _OUT_GATED_VERB  guard-outward-cli.sh:2275  17 branches
 #      _GH_API_M        guard-outward-cli.sh:3172   4 branches
 #      _OUT_REPO_FLAG_RE guard-outward-cli.sh:944   2 branches
-#      GH_MERGE_VALUE_FLAGS guard-outward-cli.sh:2493  25 branches, 17 with NO row
+#      GH_MERGE_VALUE_FLAGS guard-outward-cli.sh:2493  25 branches, 18 with NO row
+#      _OUT_POS_PREFIX   guard-outward-cli.sh:1606  11 literal branches, 0 with a row
+#                        (env|command|builtin|exec|nohup|setsid|then|do|else|elif|time)
 #      (-X|--method)      guard-outward-cli.sh:3157 and :3219 -- hand-listed but
 #                         COVERED: deleting `--method` moves 3 rows
 #                         (flagadj{glue,sp,fd}-ghapimeth), so an enumeration gap
@@ -1594,8 +1605,17 @@ fi
 #        from DENY to ALLOW, with three controls holding in the same run
 #        (`--title --auto` still DENY, so the mechanism works for a branch left
 #        in place; `--auto` alone still ALLOW, the sanctioned carve-out; no
-#        --auto at all still DENY) -- and 0 of 623 rows move. Seventeen of its
-#        25 branches have no row, so seventeen such deletions are invisible.
+#        --auto at all still DENY) -- and 0 of 623 rows move. THE RESIDUAL IS
+#        WIDER THAN A ROW CENSUS SUGGESTS, in the direction this paragraph twice
+#        calls the worst one. A token-boundary census gives 18 branches with no
+#        row, not 17 (the old figure was a substring artifact -- `-c` matches
+#        only inside `--cwd`). Row-presence is the wrong question anyway: what
+#        matters is exercise IN THE POSITION THIS CHECK READS, adjacent to
+#        `--auto` in a `gh pr merge` clause, and only THREE branches are -- `-b`,
+#        `--body-file`, `-t`. So 22 of the 25 deletions are invisible. Proven on a
+#        branch the census counted as COVERED: deleting `--title` flips
+#        `gh pr merge 42 --title --auto` DENY -> ALLOW, with `-b --auto` still
+#        DENY and bare `--auto` still ALLOW as controls, corpus byte-identical.
 #    Positive control for both, in the same runs: deleting `run` from the
 #    railway alternation moved exactly one row (siterailverb-run), so the
 #    instrument was live.
@@ -1627,7 +1647,17 @@ fi
 #    account for -- a REMAINDER, not a characterisation. Do not restate it as a
 #    property;
 #    (c) narrowing that is not branch DELETION at all -- tightening `_OUT_SEP` or
-#    `_OUT_POS_PREFIX` themselves, or narrowing a character class inside one
+#    themselves, or narrowing a character class inside one
+#    branch rather than removing the branch whole. `_OUT_POS_PREFIX` WAS NAMED
+#    HERE AND IS NOT BUCKET (c) MATERIAL: unlike _OUT_SEP, whose branches carry
+#    no literal, it holds 11 bare literals that are individually deletable.
+#    Measured -- removing ONLY `nohup` flips `nohup eas update --branch preview`,
+#    `nohup railway up`, `nohup npm publish` and `nohup gh api repos/o/r -X POST`
+#    from DENY to ALLOW, with `eas update` and `setsid eas update` holding DENY
+#    as controls in the same run, and the full corpus against that mutant is
+#    BYTE-IDENTICAL to the green baseline. One branch deletion, four deny
+#    families opened including the OTA publish path, zero rows moved. It is an
+#    (a3) member and is listed there.
 #    branch rather than removing the branch whole.
 #    All SIX are real and still invisible to every check in this
 #    block for the same reason the original paragraph gave: this is a question
@@ -3004,8 +3034,9 @@ exit 0
 #
 # The zero on BOTH "opened" axes is the check that matters, and it is a per-ID
 # set difference, not a total. A summary count cannot express a row getting
-# strictly worse (docs/solutions/code-quality/summary-count-cannot-express-a-row-
-# getting-strictly-worse-2026-09-06.md), and an earlier revision of this note was
+# strictly worse
+# (docs/solutions/code-quality/summary-count-cannot-express-a-row-getting-strictly-worse-2026-09-06.md),
+# and an earlier revision of this note was
 # corrected for exactly that arithmetic.
 #
 # THE 60 CLOSED, counted BY ID (21 + 21 + 17 + 1 = 60):
