@@ -1,8 +1,9 @@
 /**
  * Guard: every response schema the client parses with
- * (`<name>Schema.safeParse(` / `.parse(` under client/) has a provider-side
- * assertion — a server test whose code (not its comments) references the
- * same schema name (see
+ * (`<name>Schema.safeParse(` / `.parse(` under client/, including a parse
+ * through a sub-schema such as `<name>Schema.shape.days.safeParse(`) has a
+ * provider-side assertion — a server test whose code (not its comments)
+ * references the same schema name (see
  * test/utils/expect-response-schema.ts).
  *
  * Two halves. (1) A synthetic positive control proving the pure function
@@ -11,9 +12,11 @@
  * names that were uncovered when the guard landed and must reach empty; an
  * entry that has since become covered fails the guard so it gets removed.
  *
- * Walk exclusions are a denylist (like fast-check-property-seed-guard) so a
- * client file dropped somewhere new is still scanned — an allowlist of roots
- * would fail OPEN.
+ * Within each walked root (client/, server/, test/) exclusions are a denylist
+ * (like fast-check-property-seed-guard), so a client file dropped in a new
+ * subdirectory is still scanned. The three roots themselves are a deliberate
+ * scope choice: a parse site outside client/, or a provider assertion outside
+ * server/ + test/ (e.g. shared/schemas/__tests__), is not seen.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -33,6 +36,11 @@ const CONTRACT_ALLOWLIST: ReadonlySet<string> = new Set([
   "tastePickCandidatesResponseSchema",
   "tastePicksResponseSchema",
   "coachBlockSchema",
+  // Ninth entry, found 2026-09-15 by widening the extractor to sub-schema
+  // parses: client/components/coach/coach-chat-utils.ts parses
+  // mealPlanCardSchema.shape.days. Its anchor lands with the coach-blocks
+  // anchor (mealPlanCardSchema is a member of the coachBlockSchema union).
+  "mealPlanCardSchema",
 ]);
 
 /**
@@ -85,9 +93,12 @@ describe("contract-coverage: pure functions (positive control)", () => {
       const b = barSchema.parse(data);
       const c = notAValidator.safeParse(x); // no Schema suffix → ignored
       const d = fooResponseSchema.safeParse(other);
+      const e = bazSchema.shape.days.safeParse(raw); // sub-schema → bazSchema
+      const f = quxSchema.pick({ a: true }).safeParse(y); // method in the chain → ignored
     `;
     expect(extractParsedSchemaNames(src)).toEqual([
       "barSchema",
+      "bazSchema",
       "fooResponseSchema",
     ]);
   });
@@ -190,6 +201,11 @@ describe("contract-coverage: pure functions (positive control)", () => {
   });
 });
 
+// This file lives in scripts/, deliberately OUTSIDE every walked root: its
+// positive-control fixtures contain literal `…Schema.safeParse(` sites and
+// CONTRACT_ALLOWLIST spells every allowlisted name, so a walk that reached it
+// would cover the guard with itself and mark the whole ratchet stale at once.
+// Widening the roots must exclude this file.
 describe("contract-coverage: repo walk", () => {
   const clientFiles = walk("client", isClientSource);
   const serverTestFiles = [

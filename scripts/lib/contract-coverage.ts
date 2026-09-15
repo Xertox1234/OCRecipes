@@ -2,7 +2,15 @@
  * Pure helpers for scripts/__tests__/contract-coverage-guard.test.ts. No I/O
  * here so the guard's positive control can run on synthetic strings.
  */
-export const PARSE_SITE_RE = /\b([A-Za-z0-9_]*Schema)\.(?:safeParse|parse)\(/g;
+/**
+ * A parse site is `<name>Schema`, then zero or more plain property segments,
+ * then `.safeParse(` / `.parse(`, so a parse through a sub-schema
+ * (`mealPlanCardSchema.shape.days.safeParse(raw)`) is attributed to the
+ * schema it was reached from. A method call in the chain
+ * (`fooSchema.pick({ a: true }).safeParse(x)`) is not matched.
+ */
+export const PARSE_SITE_RE =
+  /\b([A-Za-z0-9_]*Schema)(?:\.[A-Za-z0-9_]+)*\.(?:safeParse|parse)\(/g;
 
 export function extractParsedSchemaNames(source: string): string[] {
   const names = new Set<string>();
@@ -26,11 +34,16 @@ function escapeRe(s: string): string {
  * real reference later on the same line. A backslash-escaped character
  * outside a string (the `\/` of a regex literal such as /https?:\/\//) is
  * preserved so an escaped slash pair never reads as a comment start.
- * Deliberately simple, not a tokenizer: a mis-parse can only delete text,
- * so the affected name is reported uncovered (fail closed, loudly). Known
- * limits: a template literal containing a nested backtick pairs wrongly; a
- * regex literal whose body contains an unescaped `//` or `/*` truncates
- * the rest of its line.
+ * Deliberately simple, not a tokenizer, and its mis-parses fail in BOTH
+ * directions. A mis-parse that deletes text — a regex literal whose body
+ * contains an unescaped `//` or `/*` truncates the rest of its line — makes
+ * the affected name read as uncovered (fail closed, loudly). A mis-parse
+ * that preserves text fails open: a quote or backtick inside a regex
+ * character class (`/["]/`) opens the string alternative, which then keeps
+ * everything up to the next matching quote, comment mentions included — a
+ * `"`/`'` span is line-bounded, but the backtick alternative is not, so an
+ * unpaired backtick (or a template literal with a nested backtick) can
+ * preserve an arbitrarily long region.
  */
 const COMMENT_OR_STRING_RE =
   /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\\.)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;

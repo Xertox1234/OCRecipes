@@ -13,6 +13,15 @@ describe("expectResponseToMatch", () => {
     expect(expectResponseToMatch(body, schema)).toEqual(body);
   });
 
+  // The helper must hand back Zod's OUTPUT, not the input it was given: a
+  // downstream anchor that reads the return value would otherwise assert
+  // against unparsed data with nothing red. A schema with a default makes
+  // the two observably different.
+  it("returns the coerced output, not the input body", () => {
+    const withDefault = z.object({ n: z.number().default(7) });
+    expect(expectResponseToMatch({}, withDefault)).toEqual({ n: 7 });
+  });
+
   // Floor rule: the helper must be observed red on a bad body, and the
   // failure must name the exact path so a contract break reads like one.
   it("throws naming the path of a mistyped nested field", () => {
