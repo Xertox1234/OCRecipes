@@ -57,6 +57,12 @@ existed:
 
 Heads: 965 `24a40f8b`, 956 `a59100c1`, 964 `042fda74`, 957 `76c035d1`, base `68ac77f1`.
 
+957 moved four times during the sweep. Re-simulated later the same day at `6e5c8114`,
+the merge-review lane gives the identical `109 passed, 2 failed` / `total is 110,
+expected 95` — the finding is a property of the two branches' relationship to the pin,
+not of any one head. Quote the head anyway: it is what lets the next reader tell a
+re-measurement from a restatement.
+
 Controls, same sandbox and runner, because a merged-tree failure means nothing without
 them: `test-git-safety.sh` on plain `main` is `126 passed, 0 failed` (and carries **no
 pin at all** — 965 is the branch that introduces one); 965 alone is `153/0`; 956 alone is
