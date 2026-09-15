@@ -13,8 +13,7 @@ github_issue:
 
 ## Summary
 
-The pin protecting the third de-piped SIGPIPE site (`cmd_gh_pr_has_merge`) asserts its DENY
-outcome directly, with nothing asserting that its input still exceeds the 64 KB pipe buffer.
+The pin protecting `cmd_gh_pr_has_merge` asserts its DENY outcome directly, with nothing asserting that its input still exceeds the 64 KB pipe buffer.
 If the padding ever drifts below the buffer the row goes green having tested nothing — and
 its own comment states that no other row in that file is large enough to reach the buffer, so
 the entire class would be unpinned with no signal anywhere.
@@ -23,8 +22,13 @@ the entire class would be unpinned with no signal anywhere.
 
 Surfaced by the baseline reviewer on PR #976, which named and documented the **regime
 precondition** convention (`docs/solutions/code-quality/a-probe-can-run-and-never-enter-the-regime-2026-09-15.md`).
-Two of the three de-piped SIGPIPE sites are pinned in `.claude/hooks/test-cmd-detect.sh` and
-both carry a precondition row. The third is pinned in a different file and does not.
+Of the three de-piped SIGPIPE sites, the refuse guard (`cmd_gh_pr_write_subcommand`) and the
+retarget refusal (`cmd_gh_pr_ref`) are pinned in `.claude/hooks/test-cmd-detect.sh` and both
+carry a precondition row. `cmd_gh_pr_has_merge` is pinned in a different file and does not.
+(Anchored on function names deliberately: by `lib/cmd-detect.sh`'s own numbering — stated in
+the retarget refusal's header, "the THIRD site of the same SIGPIPE family, after the refuse
+guard and cmd_gh_pr_has_merge" — the uncovered one is the SECOND, and an earlier draft of this
+todo called it the third.)
 
 Deliberately **not** fixed in #976: that PR was documentation plus comments with no behavioural
 change, and adding an assertion to a security gate's test file is a different kind of change
@@ -56,8 +60,8 @@ Measured while filing (2026-09-15):
 
 The two existing implementations to copy are in `.claude/hooks/test-cmd-detect.sh`: the SIGPIPE
 pin's `_rg_words` / `_rg_lbl` block and the retarget pin's `_rr_words` / `_rr_sep` block. The
-second also asserts the padding carries no `[;&|]` separator; check whether the third site's
-read has an equivalent clause cut that would need the same treatment — `cmd_gh_pr_has_merge`
+second also asserts the padding carries no `[;&|]` separator; check whether
+`cmd_gh_pr_has_merge`'s read has an equivalent clause cut that would need the same treatment — it
 greps `cmd_bare_deep` output directly with no clause cut, so probably not, but verify rather
 than assume.
 

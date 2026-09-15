@@ -120,8 +120,9 @@ with an exit code over the one that answers a nearby question with text.
   the refuse guard (`cmd_gh_pr_write_subcommand`) and the retarget refusal (`cmd_gh_pr_ref`).
 - `.claude/hooks/lib/cmd-detect.sh` — three de-piped SIGPIPE sites. Those two pins cover **two**
   of them.
-- `.claude/hooks/test-merge-review-guard.sh` — the third site (`cmd_gh_pr_has_merge`) is pinned
-  here instead, by `THE 64KB SIGPIPE ROW`. That row does **not** yet carry a regime precondition:
+- `.claude/hooks/test-merge-review-guard.sh` — the remaining site (`cmd_gh_pr_has_merge`, the
+  **second** by `lib/cmd-detect.sh`'s own numbering) is pinned here instead, by
+  `THE 64KB SIGPIPE ROW`. That row does **not** yet carry a regime precondition:
   it builds a 2,000-line `$_big` and asserts the deny directly, with nothing asserting the input
   still exceeds 65536 bytes. Its own comment notes that no other row in that file is large enough
   to reach the buffer — so if the padding ever drifts, the row goes green and the whole class is
