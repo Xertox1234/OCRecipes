@@ -176,6 +176,18 @@ describe("contract-coverage: pure functions (positive control)", () => {
     });
     expect(report.uncovered).toEqual([]);
   });
+
+  it("keeps a reference after a regex literal with escaped slashes on the same line", () => {
+    const report = computeCoverage({
+      clientSites: new Map([["fooResponseSchema", ["client/hooks/useFoo.ts"]]]),
+      serverTestSources: [
+        "const re = /https?:\\/\\//; expectResponseToMatch(res.body, fooResponseSchema);",
+      ],
+      allowlist: new Set(),
+      nonResponse: new Set(),
+    });
+    expect(report.uncovered).toEqual([]);
+  });
 });
 
 describe("contract-coverage: repo walk", () => {

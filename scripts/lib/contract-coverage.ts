@@ -23,13 +23,17 @@ function escapeRe(s: string): string {
  * Strip `//` and block comments while keeping string and template literals,
  * so a schema name mentioned only in prose ("pins the example to fooSchema")
  * does not count as coverage, and a `//` inside a string does not hide a
- * real reference later on the same line. Deliberately simple, not a
- * tokenizer: a mis-parse can only delete text, so the affected name is
- * reported uncovered (fail closed, loudly). Known limit: a template literal
- * containing a nested backtick pairs wrongly.
+ * real reference later on the same line. A backslash-escaped character
+ * outside a string (the `\/` of a regex literal such as /https?:\/\//) is
+ * preserved so an escaped slash pair never reads as a comment start.
+ * Deliberately simple, not a tokenizer: a mis-parse can only delete text,
+ * so the affected name is reported uncovered (fail closed, loudly). Known
+ * limits: a template literal containing a nested backtick pairs wrongly; a
+ * regex literal whose body contains an unescaped `//` or `/*` truncates
+ * the rest of its line.
  */
 const COMMENT_OR_STRING_RE =
-  /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
+  /("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\\.)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g;
 
 export function stripComments(source: string): string {
   // "$1" substitutes the empty string when a comment alternative matched.
