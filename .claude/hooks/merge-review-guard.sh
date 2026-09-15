@@ -368,7 +368,20 @@ case "$TOOL" in
           # also resolved, its ref is deliberately DISCARDED rather than classified, since
           # classifying it would allow the api merge riding alongside it.
           PR=""
-        elif [ "$SUB" != "merge" ]; then
+        elif ! cmd_gh_pr_has_merge "$CMD"; then
+          # EXISTENCE, NOT FIRST-OCCURRENCE -- this is the one ALLOW-shaped read in this
+          # file, so it must be monotone under a widening of the shared grammar. It used to
+          # ask `[ "$SUB" != "merge" ]`, i.e. "is the FIRST gh-pr clause a merge", and $SUB
+          # comes from a `grep -oE ... | head -1`. Widening _CMD_GH_GLOBALS to admit a
+          # separate-arg root flag made a LEADING `gh <flag> <value> pr close ...` clause
+          # match where it previously did not; it then won head -1, $SUB read "close", and
+          # this branch exited 0 -- allowing the real `gh pr merge` later in the same
+          # command through with no review record. Measured DENY -> ALLOW on three flag
+          # families, including the ALLOW_OUTWARD_CLI=1-prefixed shape this repo merges
+          # with. Asking whether a merge occurrence EXISTS cannot regress that way: a wider
+          # grammar finds more occurrences, never fewer.
+          # $SUB is still read above -- its rc 1 refuse is handled before this point -- and
+          # is still the right value for the advisory consumers; only this gate changed.
           exit 0
         else
           PR=$(cmd_gh_pr_ref "$CMD") || PR=""

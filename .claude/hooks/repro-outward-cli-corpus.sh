@@ -2116,17 +2116,33 @@ fi
 EXPECTED_ROWS=876
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 646 of the 739 rows deny on the precise path; the other 93 are ALLOW there: 69
-# rows EXPECTED to allow, plus the 24 precise-path gaps. Those 69 span SIXTEEN id
-# families, not the eight this sentence named until 2026-09-15 -- fp-* (16),
-# c2-* (9), c1g-* (7), fautodigfp-* (6), sitefp-* (5), vft-* (5), flagadjfp-* (4),
-# decoyfp-* (3), ghrootfp-* (3), c9-* (2), fautogrant-* (2), fautocutsp-* (2),
+# 761 of the 876 rows deny on the precise path; the other 115 are ALLOW there: 91
+# rows EXPECTED to allow, plus the 24 precise-path gaps. Those 91 span NINETEEN id
+# families -- fp-* (16), ghrootv-* (16), c2-* (9), c1g-* (7), fautodigfp-* (6),
+# sitefp-* (5), vft-* (5), flagadjfp-* (4), apicolfp-* (3), decoyfp-* (3),
+# ghrootfp-* (3), ghrootvfp-* (3), c9-* (2), fautocutsp-* (2), fautogrant-* (2),
 # siterailfp-* (2), plus the singletons co-nested-brace, fautobrace-pre and
 # fautodigctrl-bb. COUNTED, not recalled: select every row whose EXPECTED and
-# PRECISE verdicts are both ALLOW, group on the id prefix. 69 + 24 = 93 and
-# 739 - 646 = 93, so the decomposition closes. RE-DERIVED 2026-09-15 after the
-# case-arm merge and unchanged by it: the sixteen families and their counts are
-# identical, because that merge moved only rows that DENY or that are gaps. Corrected 2026-09-13: this was the FIFTH stale copy of a
+# PRECISE verdicts are both ALLOW, group on the id prefix. 91 + 24 = 115 and
+# 876 - 761 = 115, so the decomposition closes.
+#
+# THIS PARAGRAPH WAS ITSELF THE SIXTH STALE COPY, and it went stale in the way this
+# file keeps documenting one level down. It read "646 of the 739 ... 69 ... SIXTEEN
+# families" -- every figure correct, and correct about MAIN, whose copy of these
+# lines is byte-identical. A merge brought main's prose into a tree with 876 rows
+# and 761 attributions, and prose has no gate: no pin reddens, no suite fails, and
+# the five count pins right above were all caught precisely because something DID
+# redden for them. It was found by review, by re-running the decomposition rather
+# than reading the sentence.
+# The worst line was the one asserting its own freshness -- "RE-DERIVED 2026-09-15
+# after the case-arm merge and unchanged by it: the sixteen families and their
+# counts are identical, because that merge moved only rows that DENY or that are
+# gaps". True of the case-arm merge it named, false of the merge the file now sits
+# in: 22 rows entered that are ALLOW on both EXPECTED and PRECISE and are not gaps
+# -- ghrootv-* (16), ghrootvfp-* (3) and apicolfp-* (3) -- so 69 + 22 = 91 and
+# sixteen families became nineteen. A claim of having been re-derived is not
+# evidence of having been re-derived, and it is worse than no claim, because it
+# stops the next reader checking. Re-derive it or delete it; do not carry it. Corrected 2026-09-13: this was the FIFTH stale copy of a
 # count in this file, found by review after four others were repaired -- and it
 # sits five lines above its own warning about exactly that. These numbers are
 # bumped with

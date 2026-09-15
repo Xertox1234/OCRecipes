@@ -2332,6 +2332,43 @@ cmd_gh_pr_write_subcommand() {
     | sed -nE 's/.*[[:space:]]pr[[:space:]]+(create|merge|close|edit).*/\1/p'
 }
 
+# cmd_gh_pr_has_merge <command>  → rc 0 if ANY `gh pr merge` occurrence is present,
+# rc 1 if none is. Echoes nothing.
+#
+# A BOOLEAN EXISTENCE READ, AND THAT IS THE WHOLE POINT OF IT EXISTING. Its consumer,
+# merge-review-guard.sh, routes a NEGATIVE answer straight to an early-exit ALLOW, and an
+# ALLOW keyed on an EXTRACTION is not monotone when the grammar widens: a wider
+# _CMD_GH_GLOBALS makes a NEW clause match, and because cmd_gh_pr_write_subcommand takes
+# `head -1`, that new clause can WIN the selection and rename the verb. Measured
+# 2026-09-15, main vs this branch, with an empty stamp root and a risk-classified diff:
+#   gh -t x pr close 1 ; gh pr merge 42 --squash   main DENY -> branch ALLOW
+#   gh -Z somevalue pr close 1 ; gh pr merge 42    main DENY -> branch ALLOW
+#   gh --match-head-commit abc pr close 1 ; gh pr merge 42  main DENY -> branch ALLOW
+# with `gh pr merge 42 --squash` denying and `npm run lint` allowing on both as controls.
+# The leading close-clause won `head -1`, the verb read `close`, and an unreviewed merge of
+# a risk-classified PR was allowed through -- in the `ALLOW_OUTWARD_CLI=1 `-prefixed shape
+# this repo actually merges with.
+#
+# Existence is monotone under exactly this widening: a wider grammar can only find MORE
+# `pr merge` occurrences, never fewer, so the deny set can only grow. That is the
+# distinction docs/solutions/logic-errors/widening-is-safe-on-every-deny-read-and-a-false-grant-at-the-one-allow-read-2026-09-13.md
+# and .../widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md both name, and
+# it is why the fix is a new READ rather than a change to the shared grammar: the grammar is
+# right, the arity of the question asked of it was wrong.
+#
+# DELIBERATELY NOT the create-vs-rest refuse: that lives in cmd_gh_pr_write_subcommand and
+# merge-review-guard.sh already routes its rc 1 to a deny BEFORE reaching this call, so
+# duplicating it here would add nothing and would couple two consumers with different needs.
+# Same input rendering as its sibling (cmd_bare_deep) and the same shared ${_CMD_GH_GLOBALS}
+# -- re-deriving the needle locally in the consumer is the defect a previous fix had to
+# remove from git-safety.sh, and it is not reintroduced here.
+cmd_gh_pr_has_merge() {
+  local words
+  words=$(cmd_bare_deep "$1")
+  printf '%s' "$words" \
+    | grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+merge([[:space:]]|\$)"
+}
+
 # cmd_gh_pr_ref <command>  → echo the PR ref (number, branch name, or URL) that
 # FOLLOWS `gh pr <merge|close|edit>`, skipping flag tokens (and, for a known
 # value-taking long-form flag, its value token too) along the way — not the

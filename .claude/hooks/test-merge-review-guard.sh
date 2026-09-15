@@ -1021,12 +1021,50 @@ else
 fi
 rm -rf "$NOJQ_BIN"
 
+# ---------------------------------------------------------------------------------------
+# MERGE-GATE MIS-SELECTION (2026-09-15). A leading `gh <root flag> <value> pr close` clause
+# used to win cmd_gh_pr_write_subcommand's `head -1`, so the gate read the verb as "close"
+# and early-exited ALLOW while a real merge sat later in the same command. Every row here
+# was MEASURED flipping main-DENY to branch-ALLOW before the fix; they are pinned as a
+# FAMILY, not a single spelling, because the bug is a property of the flag CLASS (any
+# unnamed separate-arg root flag), not of any one flag.
+export FAKE_FILES="$FILES_ONE"
+
+for _mrgflag in '-t x' '-Z somevalue' '--match-head-commit abc' '--no-color' '-R o/r'; do
+  _lbl="a leading pr close clause carrying [$_mrgflag] cannot mask a later merge"
+  out=$(bash_payload "gh $_mrgflag pr close 1 ; gh pr merge 938 --squash --delete-branch" | run)
+  denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
+done
+
+# The prefixed spelling matters on its own: guard-outward-cli.sh honours the inline
+# ALLOW_OUTWARD_CLI=1 escape and this file deliberately does not, so before the fix this
+# exact shape was ALLOW through BOTH hooks -- an unreviewed merge with nothing in its way.
+_lbl="the ALLOW_OUTWARD_CLI=1-prefixed masking shape still reaches this gate"
+out=$(bash_payload "ALLOW_OUTWARD_CLI=1 gh -t x pr close 1 ; gh pr merge 938 --squash --delete-branch" | run)
+denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
+
+# CONTROLS, in the same block, because a gate that denied everything would also turn the
+# six rows above green.
+_lbl="CONTROL: a bare merge on a risky diff still denies"
+out=$(bash_payload 'gh pr merge 938 --squash --delete-branch' | run)
+denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
+
+out=$(bash_payload 'npm run lint' | run)
+assert_allowed "CONTROL: a non-gh command is untouched by the existence read" "$out"
+
+# A close with NO merge anywhere must still early-exit ALLOW -- the existence read must not
+# become "deny anything mentioning gh pr".
+out=$(bash_payload 'gh -t x pr close 1' | run)
+assert_allowed "CONTROL: a lone pr close clause still allows (no merge present)" "$out"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=114
+# 114 -> 123 (2026-09-15): +9 for the merge-gate mis-selection family above -- 5 flag
+# spellings x the masking shape, plus the prefixed spelling, plus three controls.
+EXPECTED_TOTAL=123
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

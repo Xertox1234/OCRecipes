@@ -705,39 +705,53 @@ assert_allow "advisor: a quote-glued gh binary (g\"h\") is a known, unfixed dete
 assert_allow "advisor: quote-splicing the verb (gh pr clo\"\"se) is a known, pre-existing detection gap" \
   "$(jsonc no-registry-session "$MAIN" 'gh pr clo""se 42')"
 
-# THIRD residual in the same family, previously undisclosed. A root-position `-R`/`--repo`
-# on its own lands correctly on the SKIP_REASON path (covered by the four spelling rows
-# above). ONE separate-arg global is already enough — measured, `gh --hostname github.com
-# pr close 42` with no `-R` present at all goes SILENT — because `_CMD_GH_GLOBALS` admits
-# `-R v`, `--repo v` and glued `-x`, but no other flag-plus-value pair. An earlier version
-# of this comment said to "stack a SECOND", which understates it. Stack it with `-R` and
-# `cmd_gh_pr_write_subcommand`'s regex stops matching the command at all, so this advisor
-# goes ENTIRELY silent: no warning and no SKIP_REASON either. Measured under bash 5.3.15,
-# with the bare and single-flag forms as controls:
-#   gh pr close 42                                    -> advisory fires
-#   gh -R other/org pr close 42                       -> "Fresh PR check skipped"
-#   gh --hostname github.com -R other/org pr close 42 -> no output at all
-#   gh -R other/org --hostname github.com pr close 42 -> no output at all
-# Inherited from the UNMODIFIED `_CMD_GH_GLOBALS` grammar in lib/cmd-detect.sh, whose own
-# comments already track this shape as an open residual for its other consumers — so this
-# is not introduced by the port, and total silence is within this hook's advisory-only
-# design. WHAT BOUNDS IT IS gh ITSELF, NOT A DENY BACKSTOP. An earlier version of this
-# comment said "guard-outward-cli.sh's independent DENY still covers the destructive
-# action"; measured, that is false for exactly these two shapes — both return BYTE-EMPTY
-# from guard-outward-cli.sh, indistinguishable from the `echo hello` negative control,
-# while `gh pr close 42` returns a full deny. What bounds THESE TWO INPUTS is gh's own
-# parser, and the scope matters: gh 2.100.0 refuses a global in the ROOT slot, before `pr`
-# — its root FLAGS are only --help and --version, and `gh --hostname github.com --version`
-# returns "unknown flag: --hostname" — so these two annotated inputs cannot execute.
+# THIRD residual in the same family -- AND IT IS NO LONGER A RESIDUAL. Everything this
+# paragraph used to assert was measured, was correct on the tree it was written against,
+# and is false on this one. It is rewritten rather than patched because the claim it got
+# wrong is the one that matters most: whether a deny backstop exists.
 #
-# THAT BOUND IS ABOUT THE ROOT SLOT ONLY. An earlier version of this comment generalised it
-# to "gh REFUSES a pre-verb global" and added "a reader should not file a bypass todo off
-# it". Both were wrong, and the second would have suppressed the investigation that finds
-# the counter-example: gh accepts `--repo`/`-R` BETWEEN `pr` and the verb (measured,
-# `gh pr --repo cli/cli view --help` resolves and prints `gh pr view`'s help, while
-# `gh pr --bogus x view --help` errors), and that position is NOT covered here — see the
-# SEPARATE residual below. Do not read this paragraph as clearing any shape other than the
-# two it annotates.
+# WHAT IT SAID: that `_CMD_GH_GLOBALS` admitted `-R v`, `--repo v` and glued `-x` but no
+# other flag-plus-value pair, so one separate-arg global was enough to make
+# `cmd_gh_pr_write_subcommand` stop matching -- silently, with no SKIP_REASON -- and that
+# `guard-outward-cli.sh` did NOT cover the shape either: both stacked forms returned
+# BYTE-EMPTY from the deny gate, indistinguishable from an `echo hello` control, so what
+# bounded them was gh's own parser refusing a global in the root slot, not a backstop.
+#
+# WHAT IS TRUE NOW. The root-position-flag-PROPERTY branch gave that alternation a
+# separate-arg value arm, so the extractor walks past `--hostname github.com`. Re-measured
+# under bash 5.3.15 on BOTH trees in one run, with controls, classifying git-safety output
+# as SILENT / SKIP-REASON / RESOLVED-ADVISORY and the deny gate as BYTE-EMPTY / DENY:
+#
+#   input                                                 main                merged
+#   gh --hostname github.com pr close 42             SILENT / EMPTY      RESOLVED / DENY
+#   gh --hostname github.com -R other/org pr close 42  SILENT / EMPTY      SKIP-REASON / DENY
+#   gh -R other/org --hostname github.com pr close 42  SILENT / EMPTY      SKIP-REASON / DENY
+#   gh pr close 42                                       RESOLVED / DENY     RESOLVED / DENY   (+ctl)
+#   echo hello                                            SILENT / EMPTY      SILENT / EMPTY    (-ctl)
+#
+# So the inversion is total and in the SAFE direction: three shapes that reached a mutating
+# cross-repo close BYTE-EMPTY at the deny gate on main now DENY. THERE IS NOW A DENY
+# BACKSTOP, and the sentence claiming there is not was the single most load-bearing wrong
+# line in this file -- it told a reader the hook's silence was bounded by gh's parser, which
+# is a much weaker guarantee than a deny.
+#
+# "Inherited from the UNMODIFIED _CMD_GH_GLOBALS grammar" is also retired: this branch
+# MODIFIES that grammar, which is exactly why the behaviour moved. Neither this file nor
+# git-safety.sh is touched by the change that moved it -- the grammar is in lib/cmd-detect.sh
+# and the consumer was pointed at it by a separate fix on main -- so only the MERGE of the
+# two produces this. Widen a detector and its consumers in one change, and when a gap
+# CLOSES, name it.
+#
+# THE ROOT-SLOT BOUND STILL STANDS AND IS STILL NARROW. gh 2.100.0 refuses a global in the
+# ROOT slot before `pr` (its root flags are only --help and --version; `gh --hostname
+# github.com --version` returns "unknown flag: --hostname"), so the annotated inputs above
+# cannot execute as written. Do NOT generalise that to "gh refuses a pre-verb global": gh
+# accepts `--repo`/`-R` BETWEEN `pr` and the verb (measured, `gh pr --repo cli/cli view
+# --help` resolves while `gh pr --bogus x view --help` errors), and that position is covered
+# by the SEPARATE residual below, not here.
+#
+# The residual's genuinely EXECUTABLE siblings do get a deny, verified in the same run:
+# `g"h" pr close 42`, `gh pr clo""se 42` and `gh pr create -t x && gh pr close 42` all DENY.
 #
 # The residual's genuinely EXECUTABLE siblings do get a deny, verified in the same run:
 # `g"h" pr close 42`, `gh pr clo""se 42` and `gh pr create -t x && gh pr close 42` all DENY.
@@ -755,15 +769,31 @@ assert_allow "advisor: quote-splicing the verb (gh pr clo\"\"se) is a known, pre
 # widen a detector and its consumers in one change, and the reason a gap that CLOSES still
 # has to be named rather than quietly re-pinned.
 # MEASURED on the merged tree, with controls in the SAME run, before this pin was flipped:
-#   gh --hostname github.com -R other/org pr close 42   -> ADVISORY  (this row)
-#   gh -R other/org pr close 42                         -> ADVISORY  (positive control)
-#   gh --hostname github.com pr view 42                 -> silent    (negative control)
-#   gh pr view 42                                       -> silent    (negative control)
-# The negative controls are the load-bearing half: an advisory that fired on everything
-# would also have turned this row green, and would be a regression wearing a passing
-# test's clothes.
+#   gh --hostname github.com -R other/org pr close 42   -> SKIP-REASON advisory (this row)
+#   gh -R other/org --hostname github.com pr close 42   -> SKIP-REASON advisory (sibling, pinned below)
+#   gh --hostname github.com pr close 42                -> RESOLVED advisory, NOT skip-reason
+#   gh -R other/org pr close 42                         -> SKIP-REASON advisory (positive control)
+#   gh --hostname github.com pr view 42                 -> silent (verb-scope control)
+#   gh pr view 42                                       -> silent (verb-scope control)
+# THE THIRD ROW IS THE ONE THAT DISCRIMINATES, and an earlier version of this note did not
+# have it. It called the two `pr view` rows "the load-bearing half", which they are not:
+# git-safety.sh gates the whole advisory on the verb being `close`, so a `pr view` stays
+# silent under ANY extractor -- including a broken one that fired the skip-reason on every
+# close. They bound the verb scope and nothing else. The row that separates "the extractor
+# walked past --hostname and then reached the -R" from "any root global now forces a
+# refusal" is the single-global close, which must come back RESOLVED rather than
+# SKIP-REASON -- measured, it does. A control validates only the path it actually runs
+# through.
 assert_warn_contains "advisor: a root-position -R stacked with another separate-arg global (--hostname) is now SEEN — inherited gap CLOSED by the shared extractor's value arm" \
   "$(jsonc no-registry-session "$MAIN" 'gh --hostname github.com -R other/org pr close 42')" \
+  "could not resolve the PR ref via the shared extractor"
+
+# ...and the -R-FIRST sibling, which moved in the same merge with no assertion on it at
+# all. Ordering is the whole point: the extractor has to walk past a separate-arg global in
+# either position, so pinning only the --hostname-first spelling leaves half the behaviour
+# unguarded while the comment above describes both.
+assert_warn_contains "advisor: the -R-FIRST ordering of the same stacked pair is SEEN too — both orderings pinned, not one" \
+  "$(jsonc no-registry-session "$MAIN" 'gh -R other/org --hostname github.com pr close 42')" \
   "could not resolve the PR ref via the shared extractor"
 
 # FOURTH residual in the same family, and the only one this port INTRODUCES rather than
@@ -967,7 +997,12 @@ fi
 # Without it a row that is silently skipped (a helper that dies mid-pipeline,
 # incrementing neither PASS nor FAIL) makes N/0 look identical to (N+1)/0. Update
 # the number DELIBERATELY when adding assertions.
-EXPECTED_TOTAL=158
+# 158 -> 159 (2026-09-15): +1 for the -R-FIRST sibling of the stacked root-global pair.
+# The --hostname-first spelling was already pinned; its sibling moved in the same merge
+# with no assertion on it at all, so the pair was half-covered while the comment above it
+# described both orderings. Ordering is the whole point of that row -- the extractor has to
+# walk past a separate-arg global in either position.
+EXPECTED_TOTAL=159
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
