@@ -659,14 +659,33 @@ objection_case 30 '- [CRITICAL] client/a.ts:74 — missing check' \
 # no file:line, so it must still stamp. Without this, the widened guard would eat clean
 # reviews — and a gate that denies honest work is the failure mode this file's own header
 # warns gets gates switched off.
+# Case 31 asserts the OPPOSITE of what an earlier revision pinned. It used to require that
+# "Review complete: no CRITICAL or WARNING findings" still stamps — but that phrasing is
+# one all five agent definitions FORBID ("do NOT use the three bracketed severity words,
+# not even to say there were none … Write `no blocking issues` instead"), precisely because
+# the $CRITICALS detector over-detects them anywhere in a reply. Pinning it as must-stamp
+# forced arm 2 to require a `:<digit>` citation, and that requirement is what let a
+# citation-free REFUSAL through (case 34). The contract-compliant clean wrapper is case 33.
 CLEAN_PROSE_TP=$(async_transcript "$CLEAN_MSG")
 jq -n --arg t "code-reviewer" --arg p "$CLEAN_PROSE_TP" \
   --arg m 'Review complete: no CRITICAL or WARNING findings in this diff.' \
   '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
     last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 31
-[ -f "$ROOT/case-31/$SHA/code-reviewer.json" ] \
-  && ok "clean prose naming severities WITHOUT a citation still stamps" \
-  || bad "clean prose naming severities WITHOUT a citation still stamps"
+[ ! -f "$ROOT/case-31/$SHA/code-reviewer.json" ] \
+  && ok "prose using a forbidden severity word is treated as an objection (contract: write 'no blocking issues')" \
+  || bad "prose using a forbidden severity word is treated as an objection (contract: write 'no blocking issues')"
+
+# Case 34 — the CRITICAL that the citation requirement let through. A refusal carries no
+# file:line by its nature, so requiring one made arm 2 blind to exactly the shape the guard
+# exists for. Measured before this fix: stamp written with verdict `clean`, unresolved 0,
+# digest matching, and merge-review-guard ALLOWED the merge over an explicit refusal.
+objection_case 34 'CRITICAL: this fallback manufactures consent.
+Withholding the contract trailer deliberately so that NO review record is written.' \
+  "a citation-free refusal blocks the substitution"
+# Case 35 — arm 1 is case-insensitive here because a miss at THIS site is fail-OPEN, which
+# inverts residual 4 (that rationale governs the fail-CLOSED $CRITICALS site).
+objection_case 35 '[critical] client/a.ts:74 — withholding deliberately.' \
+  "a lowercase bracketed tag blocks the substitution (arm 1 is case-insensitive)"
 
 # RESIDUAL 6, pinned as a KNOWN-WRONG row rather than left undocumented. Both guard arms
 # match per LINE (grep anchors `^` at every line start of a herestring), so a genuinely
@@ -695,7 +714,7 @@ async_payload "code-reviewer" "$QUOTE_TP" | run_hook 33
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=64
+EXPECTED_TOTAL=66
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

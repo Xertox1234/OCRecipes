@@ -83,11 +83,18 @@ fi
 #       a withheld review into `verdict: clean` on a fail-closed gate. Demonstrated: a
 #       final text reading "[CRITICAL] ... I am deliberately withholding the contract
 #       trailer" plus an earlier clean handback wrote a clean stamp. Write nothing instead.
-#       Anchored on the BRACKET form deliberately. Unioning the broader CRITICAL scan used
-#       further down would false-deny a genuinely clean review whose prose says "no CRITICAL
-#       or WARNING findings" — measured: 1 false deny in 17 real transcripts, versus 0 for
-#       the bracket form, on a gate whose own header warns that restrictive failures are
-#       what get gates switched off.
+#       CORRECTED twice, and the history is the point. Round 1 anchored on the BRACKET form
+#       alone, citing "1 false deny in 17 real transcripts" against the broader scan. That
+#       measurement was real but settled the wrong question: it compared against an
+#       unanchored prose scan, not against the anchored union this now uses, and it ignored
+#       that the roster MANDATES the unbracketed rendering — so the guard honoured the one
+#       shape reviewers are not told to write. Round 2 added the severity-word arm but
+#       required a `:<digit>` citation on the same line, which made it blind to a
+#       citation-free REFUSAL and let a clean handback be substituted over one, measured
+#       through to an ALLOWED merge. The shape both rounds were protecting is one the
+#       contract FORBIDS (all five agent definitions: do not use the severity words in
+#       clean prose, "write `no blocking issues` instead`), so there was nothing to protect.
+#       Residual 6 carries the cost in both directions.
 #
 #   (b) EXACTLY ONE HANDBACK. `last` silently drops an earlier objection: a transcript with
 #       handback #1 = findings and #2 = clean stamped `verdict: clean`. Nothing enforces
@@ -120,10 +127,35 @@ if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
   # Captured into a variable rather than piped into `grep -q`: under `pipefail` an
   # early-exiting reader makes the writer take SIGPIPE and the pipeline reports failure
   # even though the read succeeded.
-  SEVCITE=$(grep -E '(^|[^A-Za-z0-9_])(CRITICAL|WARNING|SUGGESTION)($|[^A-Za-z0-9_])' <<<"$MSG" \
-            | grep -E ':[0-9]' || true)
-  if grep -qE '^[[:space:]]*(([-*+>#]+|[0-9]+[.)])[[:space:]]*)*\[(CRITICAL|WARNING|SUGGESTION)\]' <<<"$MSG" \
-     || [ -n "$SEVCITE" ]; then
+  # Arm 2 takes ANY standalone severity word. An earlier revision also required a
+  # `:<digit>` on the same line, reasoning that it protected a clean review whose prose
+  # said "no CRITICAL or WARNING findings". That was wrong in the one direction that
+  # matters here: an OBJECTION need not cite a file at all. A refusal —
+  #     CRITICAL: this fallback manufactures consent.
+  #     Withholding the contract trailer deliberately so NO record is written.
+  # carries no citation, matched neither arm, and the clean handback was substituted over
+  # it: measured `verdict: clean`, `unresolved: 0`, digest matching, and
+  # merge-review-guard.sh then ALLOWED the merge. A DENY->ALLOW conversion against main,
+  # in exactly the class this guard exists to close.
+  #
+  # The shape it was protecting is one the contract FORBIDS: all five agent definitions
+  # say "do NOT use the three bracketed severity words, not even to say there were none …
+  # Write `no blocking issues` instead", because the $CRITICALS detector below already
+  # over-detects them anywhere in a reply. So a clean review that trips arm 2 was already
+  # going to be recorded `findings` by that detector. There is nothing to protect.
+  #
+  # Arm 1 is case-INSENSITIVE, and that does not contradict residual 4. Residual 4 forbids
+  # `-i` at the $CRITICALS site, where a miss is fail-CLOSED (no stamp). Here a miss is
+  # fail-OPEN (substitute a clean handback over an objection), so the direction inverts and
+  # the rationale does not transfer. Arm 1 is anchored to a bracketed tag at line start
+  # after optional markers, so residual 4's prose false-positives cannot reach it —
+  # measured: "this is critical for correctness", "the fix is critical; nothing to flag"
+  # and "a critical path in the reducer" all NOMATCH, while `[critical]` and `- [Critical]`
+  # both match. Arm 2 stays case-SENSITIVE: unanchored, it is exactly where residual 4's
+  # prose problem lives.
+  SEV=$(grep -E '(^|[^A-Za-z0-9_])(CRITICAL|WARNING|SUGGESTION)($|[^A-Za-z0-9_])' <<<"$MSG" || true)
+  if grep -qiE '^[[:space:]]*(([-*+>#]+|[0-9]+[.)])[[:space:]]*)*\[(CRITICAL|WARNING|SUGGESTION)\]' <<<"$MSG" \
+     || [ -n "$SEV" ]; then
     exit 0
   fi
   NHB=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
@@ -373,29 +405,6 @@ fi
 #    parser is deliberately left permissive — tightening it to a positive bare-path shape
 #    would trade this for a false-deny on legitimate paths.
 #
-# 6. Objection-guard false-DENY class (fail-closed; introduced by the async handback
-#    fallback, widened by its roster-rendering fix, named here rather than narrowed).
-#    Guard (a) above scans the DELIVERED message for an objection before it will let a
-#    transcript handback stand in. Both of its arms match PER LINE, not per message —
-#    `grep`'s `^` anchors at every line start of a herestring — so a genuinely CLEAN
-#    dispatch whose wrapper text merely QUOTES the contract on a later line writes no
-#    stamp. Both shapes were constructed and run:
-#        line 2 begins with a severity tag:
-#            "Review complete and handed back to the caller."
-#            "[CRITICAL]/[WARNING]/[SUGGESTION] tags are used for findings, per the contract."
-#        one line carries a severity word AND a file:line citation:
-#            "I reviewed client/a.ts:98 and found no CRITICAL issues."
-#    Controls, same runs: the plain single-line wrapper stamps; a MID-line, unanchored
-#    mention of a bracketed tag stamps; and clean prose naming severities with NO citation
-#    stamps (pinned as case 31), which is the shape the citation requirement exists to
-#    protect.
-#
-#    NOT narrowed to the first non-empty line, deliberately. That would close this class
-#    but reopen the one the guard exists for: an objection that follows a preamble. The
-#    two directions are not equally costly here — a missed objection manufactures consent
-#    on a fail-closed gate, while this costs a re-dispatch — so the guard keeps the wider
-#    read and the cost is named instead. Same reasoning as item 4: a deliberate narrowing
-#    that is NOT to be "fixed" without re-deriving which direction is cheaper.
 #
 #    Do NOT restate the inverse ("a changed-file path that CONTAINS whitespace truncates
 #    the list") as a live residual: `git ls-files | grep -c ' '` is 0 in this repo, so
@@ -410,6 +419,41 @@ fi
 #    containing a space" on its own is the OLD, pre-round-5 boundary, and a reviewer who
 #    leaves a space-only separator and infers from that shorter wording that the block
 #    already ended reaches every row of the table above with a `clean` verdict.
+
+# 6. Objection-guard false-DENY class (fail-closed; introduced by the async handback
+#    fallback, widened by its roster-rendering fix, named here rather than narrowed).
+#    Guard (a) above scans the DELIVERED message for an objection before it will let a
+#    transcript handback stand in. Both arms match PER LINE, not per message — `grep`'s `^`
+#    anchors at every line start of a herestring — so ANY reply containing a standalone
+#    severity word, or a line that begins (after optional markers) with a bracketed tag,
+#    is read as an objection and writes no stamp.
+#
+#    The cost runs in BOTH directions and the earlier version of this item named only one.
+#      FAIL-CLOSED (this item): a genuinely clean dispatch that merely QUOTES the contract
+#        writes no stamp — e.g. a wrapper whose second line reads
+#        "[CRITICAL]/[WARNING]/[SUGGESTION] tags are used for findings". Pinned as
+#        KNOWN-WRONG case 32 with case 33 as its control.
+#      FAIL-OPEN, now CLOSED, recorded because the fix is what this item is for: an earlier
+#        revision required a `:<digit>` on the severity line, which made arm 2 blind to a
+#        citation-free REFUSAL and let a clean handback be substituted over it — measured
+#        through merge-review-guard.sh to an ALLOWED merge. Case 34 pins it.
+#
+#    The marker class arm 1 tolerates is wide, and naming one example understated it:
+#    indentation, `-`/`*`/`+` bullets, `>` blockquotes, `#`/`##` headings, `1.`/`1)`
+#    numbering, and combinations, all before the bracket.
+#
+#    NOT narrowed to the first non-empty line, deliberately. That would close the
+#    fail-closed half but reopen the fail-open one for an objection following a preamble.
+#    The two directions are not equally costly — a missed objection manufactures consent on
+#    a fail-closed gate, while a false deny costs a re-dispatch — so the guard keeps the
+#    wider read and the cost is named here instead. Like item 4, a deliberate narrowing NOT
+#    to be "fixed" without re-deriving which direction is cheaper; unlike item 4, arm 1 IS
+#    case-insensitive, because at THIS site a miss is fail-open and that inverts item 4's
+#    reasoning.
+#
+#    The clean shapes this does NOT eat are the contract-compliant ones: all five agent
+#    definitions forbid the three severity words in clean prose ("write `no blocking
+#    issues` instead"), so a reviewer following the contract never trips either arm.
 
 # --- write -------------------------------------------------------------------
 case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
