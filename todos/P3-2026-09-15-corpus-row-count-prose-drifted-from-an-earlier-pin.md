@@ -33,6 +33,18 @@ comments you have not re-measured is how this drift started.
 
 ## Known instances
 
+**This table is NOT a partition, and an earlier revision of it implied otherwise.** It listed
+five rows; an exhaustive grep at the same anchor found three more of the same class, and the
+count of what remains is a property of the grep below, not of this list. Re-run it rather than
+trusting the table:
+
+```
+grep -nE '\b(448|372|581|359|281)\b' .claude/hooks/repro-outward-cli-corpus.sh
+```
+
+Then adjudicate each hit by TENSE, which is the whole difficulty — some are correct historical
+records and must not be "corrected".
+
 | line (at 0a06facb) | text                                                  | note                               |
 | ------------------ | ----------------------------------------------------- | ---------------------------------- |
 | 1196               | "Capturing here deletes all 448 of those guard"       | present tense                      |
@@ -40,6 +52,27 @@ comments you have not re-measured is how this drift started.
 | 1356               | "all 448 rows x 4 verdict columns came back"          | past tense, historical measurement |
 | 1369               | "372 DENY rows), so nothing is currently colliding"   | "currently"                        |
 | 2810               | "the corpus is now 448 rows against `origin/main` at" | "is now", tied to a named baseline |
+
+Found by the same grep and missing from the original table, all present-tense:
+
+| line (at 0a06facb) | text                                                                  | note               |
+| ------------------ | --------------------------------------------------------------------- | ------------------ |
+| 58                 | "Three of the 372 pinned reasons contain an em-dash before column 72" | live figure is 522 |
+| 82                 | "`cut` lands mid-sentence for 41 of the 372"                          | live figure is 522 |
+| 1381               | "the same verdict AND the same reason for all 581 rows"               | live figure is 620 |
+
+DELIBERATELY EXCLUDED as a different class, listed so the next reader does not re-litigate
+them: 768 ("Running all 308 rows across main / pre-fix / post-fix gave") and 2675 ("generated
+272 rows from 5 glue POSITIONS") are past-tense experiment records; 2716 ("both sides see the
+same 427 rows") is a differential record; 1214 ("372, expected 356") is illustrative error
+text, not a live count.
+
+A SEPARATE COUNT IN THE SAME FAMILY, folded in here because it would otherwise fall between
+todos: line 66 says "none of the current 17 fingerprints does it", while lines 1383 and 2404
+both say 20, and a run reported 20. It is a fingerprint count rather than a row count, so it
+is outside this todo's title, but it is the same present-tense-number-from-an-earlier-state
+defect and a reader should not have to pick between two figures three thousand lines apart.
+Re-derive it from a run before changing it.
 
 The live figures at that sha are `rows=620`, `precise-path gaps=31`, `all-path gaps=250`,
 `EXPECTED_DENY_ATTRIB_ROWS=522`. On `origin/main` they were `602` / `31` / `243` / `504`,
@@ -81,3 +114,10 @@ so the `448` predates both.
 
 - Filed from the verification pass on PR #966. Scoped out of that PR because it is a
   different class from the case-arm comments that PR corrects.
+
+### 2026-09-15 (later)
+
+- Table corrected after review: it listed five instances and implied completeness, which is the
+  same defect this todo exists to record. Three more added, four explicitly excluded with
+  reasons, the implied exhaustiveness replaced by the grep that produced the list, and the
+  line-66 fingerprint mismatch folded in.
