@@ -1963,7 +1963,19 @@ fi
 ghref "$_rr_multi"  - "a >64KB MULTI-line --repo retarget still REFUSES (pins the SIGPIPE fail-open)"
 ghref "$_rr_single" - "a >64KB SIZE-MATCHED single-line --repo retarget still REFUSES (control: green under the piped form)"
 ghref "$_rr_base"   - "the small retarget still refuses (positive control)"
-unset _rr_base _rr_multi _rr_single _rr_i _rr_lbl
+
+# THE ROW THAT MUST RESOLVE. Every row above wants a REFUSAL, so a future change that made
+# cmd_gh_pr_ref refuse every large multi-line input would leave all of them green while
+# silently no longer testing the retarget at all. This one is the same size and shape with
+# the retarget REMOVED, and it must still resolve 42 -- which is what attributes the
+# refusals above to the `--repo` flag rather than to length or line count. Measured on this
+# tree: 3,201 lines, >64KB, resolves 42. It was measured when the pin was written and only
+# recorded in prose; a control that lives in a commit message does not fail when it stops
+# being true.
+_rr_noretarget='gh pr merge 42'
+for _rr_i in $(seq 1 3200); do _rr_noretarget+=$'\n# padding line for size'; done
+ghref "$_rr_noretarget" 42 "a >64KB MULTI-line merge with NO retarget still RESOLVES (control: the refusals above are the retarget's, not the size's)"
+unset _rr_base _rr_multi _rr_single _rr_noretarget _rr_i _rr_lbl
 unset _rg_decoy _rg_multi _rg_single _rg_i _rg_row _rg_shape _rg_cmd _rg_label _rg_got _rg_rc
 
 # NOTE ON WHAT EACH ROW BELOW PROVES. The `ghsub ... "subcommand is SEEN"` rows are the
@@ -2135,7 +2147,10 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # 654 -> 658: +4 for the third SIGPIPE site (cmd_gh_pr_ref's retarget refusal) -- a
 # precondition row, a >64KB multi-line pin, its size-matched single-line control, and a small
 # positive control. Via ghref, which unlike ghsub leaves pipefail ON.
-EXPECTED_TOTAL=658
+# 658 -> 659: +1 for the no-retarget row that must RESOLVE, making the retarget family
+# two-sided. Without it every row in that family wants a refusal, and a change that refused
+# everything large would keep them all green.
+EXPECTED_TOTAL=659
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

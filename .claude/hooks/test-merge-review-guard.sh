@@ -1131,6 +1131,45 @@ done
 out=$(bash_payload 'git commit -m "gh pr merge 42"' | run)
 assert_allowed "CONTROL: a QUOTED merge mention is still not a merge" "$out"
 
+# ---------------------------------------------------------------------------------------
+# THE PREFLIGHT INVARIANT, ENFORCED RATHER THAN ASSERTED. merge-review-guard.sh's loader
+# checks `declare -F` for each cmd_* function and `-n` for each _CMD_* constant it uses, and
+# routes a miss to a deny -- because an undefined callee returns 127 and the gate below
+# inverts that to an allow, and an unset constant kills the hook under `set -u` without
+# emitting JSON, which for a PreToolUse hook is non-blocking. The invariant was written as a
+# comment and was ALREADY FALSE ONCE: cmd_words_deep was called below the line and missing
+# from the conjunction. A hand-maintained invariant with no test is a comment, not a guard.
+# This derives both sets from the file and fails if anything used below the conjunction is
+# unchecked -- so adding a callee without wiring it reddens here instead of silently
+# disarming the gate.
+_mrg_src="$HOOK"
+_mrg_conj_line=$(grep -n 'declare -F cmd_gh_pr_write_subcommand' "$_mrg_src" | head -1 | cut -d: -f1)
+_mrg_conj=$(sed -n "$((_mrg_conj_line-2)),$((_mrg_conj_line+8))p" "$_mrg_src")
+_mrg_missing=""
+# FULL-LINE COMMENTS ARE STRIPPED FIRST, and only those. The first version of this check
+# scanned the raw file and reported cmd_bare/cmd_bare_deep as unchecked -- six occurrences,
+# every one of them PROSE explaining what those helpers do. A check that cannot tell a call
+# from a sentence about a call reports the file's documentation as a defect. Trailing
+# comments on code lines are deliberately NOT stripped: a call followed by `# note` must
+# stay visible, and erring toward MORE matches is the safe direction for a guard whose job
+# is to notice an unwired callee.
+for _mrg_sym in $(sed -n "$((_mrg_conj_line+8)),\$p" "$_mrg_src" | grep -vE '^[[:space:]]*#' \
+                   | grep -oE '(^|[^_A-Za-z])cmd_[a-z_]+' | grep -oE 'cmd_[a-z_]+' | sort -u); do
+  case "$_mrg_sym" in cmd_fastpath_has) continue;; esac
+  printf '%s' "$_mrg_conj" | grep -q "declare -F $_mrg_sym" || _mrg_missing="$_mrg_missing $_mrg_sym"
+done
+for _mrg_sym in $(sed -n "$((_mrg_conj_line+8)),\$p" "$_mrg_src" | grep -vE '^[[:space:]]*#' \
+                   | grep -oE '_CMD_[A-Z_]+' | sort -u); do
+  printf '%s' "$_mrg_conj" | grep -q "$_mrg_sym" || _mrg_missing="$_mrg_missing $_mrg_sym"
+done
+_mrg_lbl="every cmd_*/_CMD_* used below the preflight is checked BY the preflight"
+if [ -z "$_mrg_missing" ]; then
+  ok "$_mrg_lbl"
+else
+  bad "$_mrg_lbl" "unchecked:$_mrg_missing"
+fi
+unset _mrg_src _mrg_conj_line _mrg_conj _mrg_missing _mrg_sym _mrg_lbl
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -1142,7 +1181,9 @@ assert_allowed "CONTROL: a QUOTED merge mention is still not a merge" "$out"
 # it exit at the fast path and cannot redden).
 # 124 -> 129: +1 SIGPIPE row, +3 glued-separator rows, +1 quoted-mention control for the
 # widened anchor.
-EXPECTED_TOTAL=129
+# 129 -> 130: +1 for the row that derives the preflight's required symbol set from the file
+# instead of trusting the comment that states it.
+EXPECTED_TOTAL=130
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
