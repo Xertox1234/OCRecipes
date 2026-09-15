@@ -1041,32 +1041,76 @@ BIGLEN=$(read_ctx "$SYMROOT" big | wc -c | tr -d '[:space:]')
 # EXFILTRATION, the other direction of the same defect: `mkdir -p` succeeds on an existing
 # symlink, so without a guard the writers deposit this session's digest inside the
 # attacker's directory.
+#
+# BOTH ROWS BELOW USED TO PASS WITHOUT REACHING A GUARD, which is the failure mode this
+# whole block is about: `[ ! -e target ]` is satisfied just as cleanly by a hook that
+# exited early as by one the guard refused, so a vacuous row is indistinguishable from a
+# working one. Proven by deletion at the time -- with BOTH context_ledger_path_ok lines
+# stripped from the writers, both rows stayed green. Each now carries the one input that
+# makes the hook actually arrive at its guard, and those inputs are load-bearing:
+#   precompact  needs a NON-EMPTY tier. With transcript_path:/dev/null the floor is empty
+#               and curated.md absent, so `[ -z "$CURATED" ] && [ -z "$FLOOR" ] -> exit 0`
+#               fires ABOVE the guard. Seeding curated.md at the symlink TARGET is what
+#               gets past it -- and it must be removed again before the next row, or the
+#               seed file itself trips that row's `[ ! -e .../curated.md ]` check.
+#   ledger-note reads its sid from the AMBIENT CLAUDE_CODE_SESSION_ID only, never from an
+#               argument. Unset (every CI runner) it exits 1 before creating anything; set
+#               to this session's own uuid it writes to $EXFROOT/<that-uuid>/ and never
+#               touches the plant. `exfil` SPECIFICALLY is what aims it at the symlink;
+#               any other value leaves the row vacuous in a new way.
 EXFROOT=$(mktemp -d); EXFTARGET=$(mktemp -d)
 ln -s "$EXFTARGET" "$EXFROOT/exfil"
+printf 'VERIFIED | seed | cmd\n' > "$EXFTARGET/curated.md"
 jq -n '{hook_event_name:"PreCompact", session_id:"exfil", transcript_path:"/dev/null"}' \
   | CONTEXT_LEDGER_ROOT="$EXFROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
 [ ! -e "$EXFTARGET/resume.md" ] \
   && ok "the digest writer refuses a symlinked ledger directory" \
   || no "the digest writer deposited into a symlinked directory"
-CONTEXT_LEDGER_ROOT="$EXFROOT" bash "$HOOKS_DIR/ledger-note.sh" VERIFIED c e >/dev/null 2>&1
+rm -f "$EXFTARGET/curated.md"
+CLAUDE_CODE_SESSION_ID=exfil CONTEXT_LEDGER_ROOT="$EXFROOT" \
+  bash "$HOOKS_DIR/ledger-note.sh" VERIFIED c e >/dev/null 2>&1
 [ ! -e "$EXFTARGET/curated.md" ] \
   && ok "ledger-note refuses a symlinked ledger directory" \
   || no "ledger-note deposited into a symlinked directory"
 
+# The temp file is the one the writer creates FIRST, so it needs its own guard and its own
+# row. The fixture makes the DIRECTORY and the final resume.md both legitimate -- a real
+# directory we own, and no resume.md at all, which the guard accepts as absent -- so the
+# only check that can produce a refusal here is the resume.md.tmp one. Without it the
+# digest writes through the link and `mv` renames the link into place.
+TMPROOT=$(mktemp -d); TMPTARGET=$(mktemp -d)
+mkdir -p "$TMPROOT/tmpsid"
+printf 'VERIFIED | seed | cmd\n' > "$TMPROOT/tmpsid/curated.md"
+ln -s "$TMPTARGET/stolen.md" "$TMPROOT/tmpsid/resume.md.tmp"
+jq -n '{hook_event_name:"PreCompact", session_id:"tmpsid", transcript_path:"/dev/null"}' \
+  | CONTEXT_LEDGER_ROOT="$TMPROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
+[ ! -e "$TMPTARGET/stolen.md" ] \
+  && ok "the digest writer refuses a symlinked resume.md.tmp" \
+  || no "the digest writer wrote through a symlinked resume.md.tmp"
+
 # Restrictive creation. curated.md is the entry point that bypasses redact_secrets, so its
 # mode is the one that matters most.
+# Same ambient-sid trap as the exfiltration row above, and here it was not merely vacuous
+# but RED on every GitHub runner: with CLAUDE_CODE_SESSION_ID unset the hook exits 1, the
+# glob matches nothing, PERMDIR is the empty string and the case falls to `no`. Measured
+# under `env -u CLAUDE_CODE_SESSION_ID`: "ledger directory mode is [], expected drwx------".
+# The path is pinned LITERALLY rather than globbed for the same reason -- a glob that
+# matches nothing and a directory with the wrong mode both arrive here as "", and only one
+# of them is a real failure. context_ledger_dir's CONTEXT_LEDGER_ROOT branch composes
+# "$ROOT/$sid" verbatim, so `permsid` is exactly the directory name to expect.
 PERMROOT=$(mktemp -d)
-CONTEXT_LEDGER_ROOT="$PERMROOT" bash "$HOOKS_DIR/ledger-note.sh" VERIFIED c e >/dev/null 2>&1
-PERMDIR=$(ls -ld "$PERMROOT/"* 2>/dev/null | awk '{print $1}' | head -1)
+CLAUDE_CODE_SESSION_ID=permsid CONTEXT_LEDGER_ROOT="$PERMROOT" \
+  bash "$HOOKS_DIR/ledger-note.sh" VERIFIED c e >/dev/null 2>&1
+PERMDIR=$(ls -ld "$PERMROOT/permsid" 2>/dev/null | awk '{print $1}')
 case "$PERMDIR" in
   drwx------*) ok "ledger directory is created mode 0700" ;;
   *) no "ledger directory mode is [$PERMDIR], expected drwx------" ;;
 esac
 
 rm -f "$SYMROOT/dirlink" "$SYMROOT/filelink/resume.md" 2>/dev/null
-rm -f "$EXFROOT/exfil" 2>/dev/null
+rm -f "$EXFROOT/exfil" "$TMPROOT/tmpsid/resume.md.tmp" 2>/dev/null
 
-EXPECTED_TOTAL=78
+EXPECTED_TOTAL=79
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

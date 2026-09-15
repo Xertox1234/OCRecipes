@@ -49,13 +49,41 @@ context_ledger_dir() {
   # the fix silently becomes a no-op in exactly the environment least likely to be noticed.
   # XDG_STATE_HOME is the right variable for state that must survive a reboot but is not
   # config: https://specifications.freedesktop.org/basedir-spec/latest/
-  printf '%s\n' "${XDG_STATE_HOME:-$HOME/.local/state}/ocrecipes/context-ledger/${sid}"
+  # A RELATIVE XDG_STATE_HOME is IGNORED, which the basedir spec requires ("If an
+  # implementation encounters a relative path it MUST be ignored"). Honouring one would
+  # make the ledger cwd-relative -- the writers would create it under whatever directory
+  # the hook happened to be invoked from, and the reader, invoked from another, would
+  # find nothing. That is the same silent-vanish failure the shared-definition rationale
+  # at the top of this file exists to remove, arriving by a different route.
+  #
+  # HOME is read through `${HOME:-}` and refused when empty rather than left to `set -u`:
+  # callers run under it, so an unset HOME aborted the function mid-expansion and the
+  # error surfaced as ledger-note's "no usable CLAUDE_CODE_SESSION_ID", blaming an input
+  # that was fine. A refusal here fails the readers open and gives the writers an
+  # accurate message.
+  local base="${XDG_STATE_HOME:-}"
+  case "$base" in
+    /*) ;;
+    *) base="${HOME:-}"
+       [ -n "$base" ] || return 1
+       base="$base/.local/state" ;;
+  esac
+  printf '%s\n' "${base}/ocrecipes/context-ledger/${sid}"
 }
 
 # Is this ledger path one we may read from or write to? Defence in depth behind the $HOME
 # root above — that root is what removes the plant; this is what refuses a plant that got
 # there some other way (a stale world-writable root from an older build, a shared NFS
 # $HOME, CONTEXT_LEDGER_ROOT aimed somewhere loose).
+#
+# SCOPE, AND IT IS NARROWER THAN THE LINE ABOVE READS. This checks THE PATH IT IS GIVEN,
+# never that path's ancestors. Measured: with CONTEXT_LEDGER_ROOT itself a symlink to an
+# attacker directory -- equally, a symlink at .../ocrecipes/context-ledger under the
+# production root -- the leaf directory and the resume.md inside it are both real and
+# both owned by us, every check here returns 0, and a planted resume.md is read into
+# additionalContext in full. So "CONTEXT_LEDGER_ROOT aimed somewhere loose" above means a
+# loose DIRECTORY, not a symlinked one. Closing the ancestor case needs a component walk,
+# which this function deliberately does not do -- do not read it as covered.
 #
 # Absent is OK: the writers create the directory, and a first run must not be refused.
 # Present must be BOTH not-a-symlink AND owned by us. Nothing in this repo ever creates a

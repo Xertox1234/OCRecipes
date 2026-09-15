@@ -42,6 +42,22 @@ if [ -z "$TRANSCRIPT" ] || [ ! -r "$TRANSCRIPT" ]; then
   done
 fi
 
+# Refuse a ledger path that is not ours BEFORE reading either tier. curated.md is the
+# entry point that bypasses redact_secrets/entropy_net, so a planted one is folded into
+# the digest verbatim. Nothing escapes today -- the only consumer is the resume.md write
+# the guards below refuse, and this hook writes nothing to stdout -- so this is a footgun
+# rather than a live path, but reading attacker-authored text into a variable one
+# refactor away from an emit is not worth the saving, and the check costs nothing here.
+# NOT redundant with the write-time checks below: this one is about what we READ.
+#
+# DO NOT DELETE THE WRITE-TIME DIRECTORY CHECK BECAUSE A MUTATION SWEEP CALLS IT DEAD.
+# Measured after this line was added: dropping the write-time one alone leaves the suite
+# at 79/0, because this one already refused; dropping this one alone likewise. Only
+# dropping BOTH reddens "the digest writer deposited into a symlinked directory". They are
+# deliberate defence in depth across the read/write split, not one guard written twice --
+# a single test row cannot distinguish that from redundancy, so the note has to.
+context_ledger_path_ok "$LEDGER_DIR" || exit 0
+
 CURATED=""
 # Bounded at 2048 bytes, keeping the MOST RECENT entries. The curated tier grows one line
 # per ledger-note.sh call and is otherwise unbounded. `tail -c 2048` is a byte cut, so when
@@ -356,6 +372,15 @@ done
 context_ledger_path_ok "$LEDGER_DIR" || exit 0
 (umask 077; mkdir -p "$LEDGER_DIR") 2>/dev/null || exit 0
 context_ledger_path_ok "$LEDGER_DIR/resume.md" || exit 0
+# EVERY path this writer creates needs its own check, and resume.md.tmp is the one it
+# creates FIRST. Guarding only the final name left the real target open: measured, with a
+# symlink planted at resume.md.tmp inside a genuine, non-symlink, we-own-it ledger
+# directory -- so both checks above pass -- the digest wrote straight THROUGH the link,
+# and `mv` then renamed the SYMLINK into place. resume.md became attacker-controlled, the
+# reader's own `-L` check refused it from then on, and this session's real digest was
+# lost permanently. Checking the name a file ends up under is not checking the file the
+# code opens.
+context_ledger_path_ok "$LEDGER_DIR/resume.md.tmp" || exit 0
 # Write to a temp file and rename into place: a kill mid-write (e.g. a timeout) cannot
 # leave a truncated resume.md that the reader's `[ -s ]` check would accept as whole.
 printf '%s\n' "$DIGEST" > "$LEDGER_DIR/resume.md.tmp" 2>/dev/null || exit 0

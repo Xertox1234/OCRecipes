@@ -50,7 +50,10 @@ fi
 
 SID="${CLAUDE_CODE_SESSION_ID:-}"
 LEDGER_DIR=$(context_ledger_dir "$SID") || {
-  echo "ledger-note: no usable CLAUDE_CODE_SESSION_ID; refusing to guess a ledger key" >&2
+  # TWO causes now, and naming only the first sent a reader after an input that was fine:
+  # either the sid is unusable (empty, `.`/`..`, or outside [A-Za-z0-9._-]), or no ledger
+  # ROOT is derivable because neither an absolute XDG_STATE_HOME nor a HOME is set.
+  echo "ledger-note: cannot derive a ledger path -- either CLAUDE_CODE_SESSION_ID is empty or outside [A-Za-z0-9._-], or neither an absolute XDG_STATE_HOME nor HOME is set. Refusing to guess a ledger key." >&2
   exit 1
 }
 
