@@ -759,9 +759,14 @@ done
 #               HAS_REAL_AUTO=no
 #               and that rule fires before the --admin check ever runs.
 #               NOT BACKTICK, and an earlier revision of this sentence said
-#               backtick because it transcribed the character class at
-#               guard-outward-cli.sh:2760 instead of running the shapes: CLAUSE
-#               is built from a rendering in which backtick spans have ALREADY
+#               backtick because it transcribed that test's character class
+#               instead of running the shapes. (Cited by FRAGMENT, not by line:
+#               grep guard-outward-cli.sh for `sits mid-clause and would still
+#               mask`, which is unique on every branch and verified to resolve.
+#               A line number here was wrong twice already -- it is measured on
+#               whichever branch you happen to be standing in, and the sibling
+#               brace-range branch numbers this file differently.) CLAUSE is
+#               built from a rendering in which backtick spans have ALREADY
 #               vanished, so a backtick never reaches that grep. Measured, one
 #               clause each, --auto real in every row:
 #                 `--squash $x`         DENY "without a REAL --auto"
@@ -1540,7 +1545,9 @@ EXPECTED_PRECISE_GAPS=31
 # crude mirror "does not model a `{name}` fd prefix at all". Measured, that is
 # false: the same command degrades identically with NO BRACE ANYWHERE (rows
 # c9-crude-*). The real cause is `crude_smells_outward`'s binary->verb separator
-# `[^a-zA-Z]+` (guard-outward-cli.sh:1313), which cannot cross ANY redirect
+# `[^a-zA-Z]+` -- the sentence already names the function, and the line number that
+# used to sit here resolved to unrelated text on the sibling brace-range branch, so it
+# is dropped rather than corrected -- which cannot cross ANY redirect
 # whose target contains letters -- `/dev/null`, `/tmp/l`. The family is
 # therefore much broader than a brace prefix, and was entirely unpinned.
 #
