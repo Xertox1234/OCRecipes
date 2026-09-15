@@ -29,11 +29,19 @@ no record.
 
 Measured, each behind a fully contract-compliant clean hand-back:
 
-| delivered wrapper                                                                                                        | outcome               |
-| ------------------------------------------------------------------------------------------------------------------------ | --------------------- |
-| a one-line wrapper naming two of the three severity words as bare tokens                                                 | **no record** (arm 2) |
-| the two-line wrapper of `test-review-stamp-writer.sh` case 32, whose SECOND line begins with the bracketed tags verbatim | **no record** (arm 1) |
-| `Review complete and handed back to the caller. No blocking issues.`                                                     | record, verdict clean |
+| delivered wrapper                                                                                                               | outcome               |
+| ------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `Review complete and handed back to the caller. No CRITICAL or WARNING findings.` — one line, two severity words as bare tokens | **no record** (arm 2) |
+| the two-line wrapper of `test-review-stamp-writer.sh` case 32, whose SECOND line begins with the bracketed tags verbatim        | **no record** (arm 1) |
+| `Review complete and handed back to the caller. No blocking issues.`                                                            | record, verdict clean |
+
+Row 1 carries its literal string for the same reason. An intermediate revision generalised it
+to "a one-line wrapper naming two of the three severity words as bare tokens" — TRUE as a
+class (three independently-worded uppercase instantiations each measured to write no record)
+but not reproducible from the table, which is exactly the standard row 2 was corrected to
+meet. One boundary worth keeping if that description is ever restored: arm 2 is
+case-SENSITIVE, so a lowercase `no critical or warning findings` wrapper STAMPS. The severity
+words the contract means are the uppercase tags.
 
 Row 2 is quoted from the suite's own case-32 fixture rather than paraphrased. An earlier
 revision of this table wrote it as `Review complete and handed back. See the hand-back for the
@@ -152,3 +160,10 @@ addition to the dispatch prompt, which is what this todo asks for.
   under this fix, since the guard is untouched; what changes is whether a reviewer emits them.
 - The observed-rate conclusion rescoped to no-stamp outcomes in general, which is what the count
   supports, rather than to this mechanism's share of them, which nothing here establishes.
+
+### 2026-09-15 (fourth)
+
+- Row 1 restored to its literal string. Generalising it put a non-reproducible entry under a
+  "Measured" header — the standard row 2 had just been corrected to meet, applied
+  inconsistently one row above. The class claim measured true; its case-sensitivity boundary
+  is now recorded alongside.
