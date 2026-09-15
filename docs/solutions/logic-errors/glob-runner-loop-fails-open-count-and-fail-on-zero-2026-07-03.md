@@ -220,9 +220,12 @@ they observe the SET OF ROWS THAT EXIST, and a branch with no row is not a membe
 begin with.
 
 Measured on `.claude/hooks/repro-outward-cli-corpus.sh`, 2026-09-14: 4 command-position deny
-regexes had a row for exactly one alternation branch each (`railway up` of 9 branches, `eas
-update` of 3, `railway variable set` of 4, `railway service delete` of 2) — 13 branches with no
-row, including `railway run`, which the gate's own message calls as dangerous as `railway up`
+regexes span 18 alternation branches between them, of which only 5 had a row — `railway up`
+(1 of 9 branches), `eas update` (1 of 3), `railway variable set` **and** `railway variables set`
+(2 of 4 — the `variables` spelling was already covered by the pre-existing
+`c9-ws-railwayvar`/`c9-dig-railwayvar` rows), and `railway service delete` (1 of 2). That leaves
+18 − 5 = 13 branches with no row, including `railway run`, which the gate's own message calls
+as dangerous as `railway up`
 ("executes an arbitrary command with the LIVE service env, incl. the production DATABASE_URL").
 Deleting `run` from that alternation in a scratch guard copy and running the then-current,
 602-row corpus against it: **0 of the 602 rows moved on any of the 4 execution paths** — the

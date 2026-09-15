@@ -1147,9 +1147,13 @@ done
 # `_pin_sites` is satisfied the moment ANY sibling branch still reaches the same
 # message. Before this axis, `railway (up|deploy|redeploy|restart|down|delete|
 # remove|rm|run)` had a row for `up` only; `eas (update|publish|submit)` had a row
-# for `update` only; `railway (variable|variables|vars|var) (set|delete)` had a
-# row for `variable set` only; `railway (service|environment) delete` had a row
-# for `service delete` only. Narrowing any OTHER branch out of its alternation --
+# for `update` only; `railway (variable|variables|vars|var) (set|delete)` had
+# rows for `variable set` AND `variables set` -- 2 of its 4 branches, via the
+# pre-existing c9-ws-railwayvar / c9-dig-railwayvar rows, which is why this
+# family contributes 2 new branches below and not 3; `railway
+# (service|environment) delete` had a row for `service delete` only. That is
+# 5 of the 18 branches across these 4 regexes already covered, leaving the 13
+# this axis adds. Narrowing any OTHER branch out of its alternation --
 # deleting `railway run`, the exact shape of the guard's own "executes an
 # arbitrary command with the LIVE service env, incl. the production DATABASE_URL"
 # warning -- flipped that command DENY -> ALLOW while every existing check in this

@@ -70,11 +70,11 @@ OTA publish, i.e. the 2026-08-16 incident class.
 - [x] **Mutation-verified per regex, not per row.** For each of the 4 regexes, a scratch mutant
       guard with one previously-uncovered branch deleted was built and probed directly (not
       assumed): `railway run`, `eas publish`, `railway vars set K=V`, `railway environment delete
-    svc` each measured `real=DENY mutant=ALLOW`. One regex (`railway` top verb, deleting `run`)
+  svc` each measured `real=DENY mutant=ALLOW`. One regex (`railway` top verb, deleting `run`)
       was additionally run through the FULL, re-pinned corpus two different ways against that
       mutant, because the first way understated what it proved: (1) mutant used for BOTH row
       generation and verdict-testing (ordinary same-commit shape) — exit 1, `rows is 622,
-    expected 623`, `-siterailverb-run` removed from the membership manifest. This is a real,
+  expected 623`, `-siterailverb-run` removed from the membership manifest. This is a real,
       required, un-silenceable pin failure, but it is a ROW-COUNT signal (the row never gets
       evaluated at all), not proof the row-based mechanism itself catches a verdict change. (2)
       DECOUPLED — row generation held on the real/unmutated guard (so `siterailverb-run` still
@@ -85,9 +85,17 @@ OTA publish, i.e. the 2026-08-16 incident class.
       with the row-count form correctly characterized as the weaker of the two (see the pin
       comment and the extended solution doc) rather than overclaimed.
 - [x] A negative control: confirmed **green** before the new rows — probed each of the 4 mutant
-      guards against all 602 pre-existing rows containing `railway`/`eas` (32 railway rows × 3
-      railway mutants + 86 eas rows × 1 eas mutant = 434 checks, precise path): 0 mismatches on
-      every one, i.e. none of the 4 deletions were visible to the corpus before this change.
+      guards against every pre-existing row that invokes the affected tool: 32 railway rows × 3
+      railway mutants + 80 `eas` rows × 1 eas mutant = **176** precise-path checks, 0 mismatches
+      on every one, i.e. none of the 4 deletions were visible to the corpus before this change.
+      Row populations re-derived 2026-09-14 by building the corpus `ROWS` array from `main` and
+      counting per-row (the build reproduces main's published `rows=602` exactly, which is the
+      denominator that makes these counts meaningful). Two earlier figures in this line were
+      wrong and are corrected here: the product read `434`, which does not follow from any
+      reading of the operands, and the eas operand read `86`, which came from a loose `eas`
+      substring match — 6 of those 86 are `gh release …` rows that contain `eas` inside
+      `release` and that the eas mutant cannot affect. Counting `eas` as a standalone token
+      gives 80. Do not "restore" 86 without re-running the per-row count.
 - [x] The residual paragraph in the pin block is updated. The alternation-branch instance of the
       "scope narrowing inside a check" residual is now named CLOSED for these 4 regexes (with a
       pointer to the new axis); the paragraph is narrowed to what remains — non-alternation-shaped
