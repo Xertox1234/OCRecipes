@@ -41,11 +41,11 @@ Measured while filing (2026-09-15):
 - [ ] `THE 64KB SIGPIPE ROW` carries its own PASS/FAIL precondition row asserting the input
       still exceeds 65536 bytes.
 - [ ] The precondition measures **the value that crosses the boundary** — `cmd_bare_deep`
-      output, not the raw `$_big` — per part 2 of the convention. Note the file does not
-      currently source `lib/cmd-detect.sh`, and deliberately replaces it with a stub earlier
-      in the run (`cp lib/fastpath-filter.sh lib/cmd-detect.sh`); confirm whether it is
-      restored before this row, and compute the rendering in a subshell so nothing leaks into
-      the test file's global scope.
+      output, not the raw `$_big` — per part 2 of the convention. The file does not source
+      `lib/cmd-detect.sh` (both mentions of the name in code are inside a `cp`, and the rest
+      are comments), so the rendering has to be obtained deliberately; compute it in a
+      subshell so nothing leaks into the test file's global scope. There is no stub to work
+      around: the row runs against the real, unmodified library.
 - [ ] `EXPECTED_TOTAL` is updated with a comment explaining the delta (currently 130).
 - [ ] Mutation-verified live: shrink the padding below the buffer and confirm the new row goes
       RED while the behaviour row stays green — that is what attributes the protection to the
@@ -71,9 +71,12 @@ than assume.
 
 ## Risks
 
-- `test-merge-review-guard.sh` stubs `lib/cmd-detect.sh` partway through the run. Sourcing the
-  real library for the rendering must not disturb that, and must not run while the stub is in
-  place — otherwise the precondition measures the wrong renderer and is itself out of regime.
+- Sourcing `lib/cmd-detect.sh` into the test file's global scope could collide with the
+  hook-under-test, which is invoked as a subprocess by `run()`. Use a subshell. (An earlier
+  draft of this todo claimed the file stubs `lib/cmd-detect.sh` partway through the run — it
+  does not. Line 953 is `cp A B C "$BROKEN/lib/"`, a multi-file copy of the REAL libraries
+  INTO a sandbox for test 38, and `$BROKEN` is removed at line 962, well before this row at 1104. The misreading came from stopping at the line's trailing backslash and taking the
+  second argument for the destination.)
 - This is a security gate's test file; a careless edit wedges the required Outward-CLI guard
   corpus check on every open PR.
 
