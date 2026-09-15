@@ -625,12 +625,26 @@ add "fautoog-multi" DENY 'gh pr merge 42 --auto>log ; gh pr merge 7'
 # HAVE SINCE DIVERGED, and the split is the point rather than an inconsistency:
 #   vbareparen  CLOSED 2026-09-06 by a per-level paren counter in both shared
 #               scanners. These rows now report `ok`.
-#   vcasearm    STILL OPEN. That `)` has no matching opener, so no depth
-#               arithmetic can reach it, and the obvious keyword tracker is a
-#               deny->ALLOW regression generator. Tracked at
+#   vcasearm    CLOSED ON THE PRECISE PATH 2026-09-13. The text here read "STILL
+#               OPEN ... a live bypass" for a revision after that stopped being
+#               true, which is the more dangerous direction for a comment to
+#               drift: it invites the next reader to re-fix something already
+#               fixed, or to cite a live bypass that is not live.
+#               Measured, and pinned two constants below: the seven
+#               toolvcasearm-* rows report `p=DENY j=ALLOW l=ALLOW a=ALLOW` and
+#               `ok`, and NONE appears in EXPECTED_PRECISE_GAP_IDS.
+#               They are still in EXPECTED_ALLPATH_DIRTY_IDS because the three
+#               DEGRADED paths allow -- "closed" here means closed on the path
+#               that runs, not on all four, and that distinction is exactly why
+#               the all-path manifest pins per-path verdicts instead of a count.
+#               The mechanism note stands: that `)` has no matching opener, so no
+#               depth arithmetic reaches it, and the obvious case/esac keyword
+#               tracker is a deny->ALLOW regression generator -- the fix went a
+#               different way. Tracked at
 #               todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
-#               Deliberately left as a visible gap: it keeps pointing at a live
-#               bypass.
+#               NOT the whole case-arm axis: a case arm inside a BARE PAREN
+#               SUBSHELL still allows on every path, tracked at
+#               todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
 # vcomment: a `(` inside a shell COMMENT. Inert to bash (a comment runs to
 # end-of-line), so the substitution's real closer is the `)` on the NEXT line --
 # but a paren-counting scanner counts it and the level never closes. This
@@ -728,8 +742,20 @@ done
 #   vbareparen  a bare `(` subshell -- CLOSED by the per-level paren counter now
 #               in lib/cmd-detect.sh's two scanners. Expected `ok`.
 #   vcasearm    a `case` arm's `)` -- an unmatched closer with NO opener, which
-#               no depth arithmetic can reach. Still a GAP by design; see NOTE6
-#               and todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#               no depth arithmetic can reach. "Still a GAP by design" stood here
+#               after the fix landed and was flatly wrong AT THESE TWO POSITIONS,
+#               not merely stale: verbvcasearm-* (7) and
+#               flagvcasearm-easbld/ghapi/ghcomment (3) CLOSED 2026-09-13 and are
+#               absent from BOTH manifests -- they deny on all four paths, so
+#               they are a gap nowhere. Only the TOOL position still allows on
+#               the three degraded paths (toolvcasearm-*; see the entry above it
+#               and EXPECTED_ALLPATH_DIRTY_IDS).
+#               flagvcasearm-ghadmin is the FOURTH flag row and reports `ok`
+#               WITHOUT being a closure: it denies from the pre-existing "no REAL
+#               --auto" rule, because the construct breaks the `--auto` spelling
+#               in `gh pr merge 42 --auto --admin`. Read its ATTRIBUTION, not its
+#               verdict -- same lesson as flagvbareparen-ghadmin and co-mask-c1.
+#               todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 # varithsep / varithdecoy: added 2026-09-07 because this corpus was BLIND to the
 # entire class the arithmetic-arm removal closes. Running all 308 rows across
 # main / pre-fix / post-fix gave `head_DENY - base_DENY = {}` — no losses, but no
@@ -2831,17 +2857,31 @@ exit 0
 #       mutating-method branch matches. Its own entry below is updated.
 #       Confirmed by ID in the before/after diff, not predicted in advance.
 #
-# FULL ATTRIBUTION of the remaining precise-path gaps. Was 14 + 17 + 2 = 33;
-# the `2` bucket closed on 2026-09-07, so it is now 14 + 17 = 31. Each has an
-# OPEN todo — none is a defect this change introduced, and every one allows on
-# `main` too:
+# FULL ATTRIBUTION of the remaining precise-path gaps, AS OF THIS NOTE'S OWN DATE.
+# Was 14 + 17 + 2 = 33; the `2` bucket closed on 2026-09-07, giving 14 + 17 = 31.
+#
+# *** THE 17 BELOW IS NO LONGER THE 17 IN THAT TOTAL. *** The case-arm bucket
+# closed on the precise path 2026-09-13 and a DIFFERENT 17 (the vcasecomment
+# rows) took its place, so the total is unchanged at 31 while its composition is
+# not. Two buckets landing on the same number is precisely the coincidence that
+# makes a restated count rot unnoticed -- the same trap the 165-vs-167 paragraph
+# above warns about, which is why this text is now a POINTER and not a second
+# copy. THE LIVE COMPOSITION IS MAINTAINED IN ONE PLACE, at the EXPECTED_PRECISE_
+# GAPS constant; read it there and do not re-derive it here. What follows is a
+# historical record of what the 33 -> 31 movement was made of, kept because the
+# per-ID attribution is the evidence for "0 OPENED" and is not reconstructible
+# from totals. Each bucket had an OPEN todo at the time — none was a defect this
+# change introduced, and every one allowed on `main` too:
 #
 #   14  r4brange-tool-* and r4brange-verb-*. A brace RANGE carries no `$` and no
 #       backtick anywhere, so no sigil-keyed decline can see it and no deleting
 #       rendering can reach it. Needs a narrow guard-side deny. Tracked at
 #       todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
 #
-#   17  toolvcasearm-* (7), verbvcasearm-* (7), flagvcasearm-* (3 of 4). A `case`
+#   17  toolvcasearm-* (7), verbvcasearm-* (7), flagvcasearm-* (3 of 4) — CLOSED
+#       ON THE PRECISE PATH 2026-09-13, so this bucket is HISTORY, not a current
+#       gap. toolvcasearm-* still allow on the three DEGRADED paths; the verb and
+#       flag rows deny on all four. A `case`
 #       arm's `)` has NO matching opener, so the paren counter that closed the
 #       bare-paren rows cannot reach it, and the obvious `case`/`esac` keyword
 #       tracker is a deny->ALLOW regression generator (`e$(echo case)as update`
