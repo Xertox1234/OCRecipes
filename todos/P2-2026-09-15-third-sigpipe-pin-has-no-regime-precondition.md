@@ -41,11 +41,11 @@ Measured while filing (2026-09-15):
 - [ ] `THE 64KB SIGPIPE ROW` carries its own PASS/FAIL precondition row asserting the input
       still exceeds 65536 bytes.
 - [ ] The precondition measures **the value that crosses the boundary** — `cmd_bare_deep`
-      output, not the raw `$_big` — per part 2 of the convention. The file does not source
-      `lib/cmd-detect.sh` (both mentions of the name in code are inside a `cp`, and the rest
-      are comments), so the rendering has to be obtained deliberately; compute it in a
-      subshell so nothing leaks into the test file's global scope. There is no stub to work
-      around: the row runs against the real, unmodified library.
+      output, not the raw `$_big` — per part 2 of the convention. The file sources nothing at
+      all (no `source` or `.` line anywhere), so the rendering has to be obtained
+      deliberately; compute it in a subshell so nothing leaks into the test file's global
+      scope. There is no stub to work around: the row runs against the real, unmodified
+      library.
 - [ ] `EXPECTED_TOTAL` is updated with a comment explaining the delta (currently 130).
 - [ ] Mutation-verified live: shrink the padding below the buffer and confirm the new row goes
       RED while the behaviour row stays green — that is what attributes the protection to the
