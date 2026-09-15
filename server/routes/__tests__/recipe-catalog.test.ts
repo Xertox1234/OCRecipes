@@ -27,6 +27,11 @@ import {
 } from "../../services/recipe-catalog";
 import { storage } from "../../storage";
 import { createMockMealPlanRecipe } from "../../__tests__/factories";
+import {
+  catalogConfigResponseSchema,
+  catalogSearchResponseSchema,
+} from "@shared/types/recipe-catalog";
+import { expectResponseToMatch } from "../../../test/utils/expect-response-schema";
 
 vi.mock("../../services/recipe-catalog", async () => {
   const actual = await vi.importActual<
@@ -129,6 +134,7 @@ describe("recipe-catalog routes", () => {
         results: expect.any(Array),
         totalResults: 0,
       });
+      expectResponseToMatch(res.body, catalogSearchResponseSchema);
     });
 
     it("forwards user allergies as Spoonacular intolerances", async () => {
@@ -261,6 +267,7 @@ describe("recipe-catalog routes", () => {
 
         expect(res.status).toBe(200);
         expect(res.body).toEqual({ enabled: true });
+        expectResponseToMatch(res.body, catalogConfigResponseSchema);
       } finally {
         if (prev === undefined) {
           delete process.env.SPOONACULAR_API_KEY;
