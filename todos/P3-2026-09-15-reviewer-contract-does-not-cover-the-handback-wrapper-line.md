@@ -29,11 +29,20 @@ no record.
 
 Measured, each behind a fully contract-compliant clean hand-back:
 
-| delivered wrapper                                                                 | outcome               |
-| --------------------------------------------------------------------------------- | --------------------- |
-| `Review complete and handed back to the caller. No CRITICAL or WARNING findings.` | **no record**         |
-| `Review complete and handed back. See the hand-back for the tag format.`          | **no record**         |
-| `Review complete and handed back to the caller. No blocking issues.`              | record, verdict clean |
+| delivered wrapper                                                                                                        | outcome               |
+| ------------------------------------------------------------------------------------------------------------------------ | --------------------- |
+| a one-line wrapper naming two of the three severity words as bare tokens                                                 | **no record** (arm 2) |
+| the two-line wrapper of `test-review-stamp-writer.sh` case 32, whose SECOND line begins with the bracketed tags verbatim | **no record** (arm 1) |
+| `Review complete and handed back to the caller. No blocking issues.`                                                     | record, verdict clean |
+
+Row 2 is quoted from the suite's own case-32 fixture rather than paraphrased. An earlier
+revision of this table wrote it as `Review complete and handed back. See the hand-back for the
+tag format.` — a paraphrase of residual 6's narrative description, which had dropped every
+bracket and every severity word. **That string stamps.** Constructed and run against the hook
+with a compliant single-handback transcript: `SEV` is empty, neither arm fires, and a clean
+record is written. Putting an unmeasured string into a table headed "Measured" is the same
+defect this todo exists to record, so the row now carries the fixture the description was
+actually derived from.
 
 The scoping is the issue, and it is consistent across all five files:
 `server-reviewer.md:16`, `mobile-reviewer.md:14`, `ai-reviewer.md:14`,
@@ -53,8 +62,11 @@ definition has no way to escape the loop from the message alone.
 - [ ] The wording does not itself trip the detector — `code-reviewer.md` already solves this
       by deliberately not spelling the three words in that paragraph ("quoting it back must
       not be able to trip the gate"). Match that treatment.
-- [ ] Re-measure the three rows above afterwards: the first two should be shapes a
-      contract-following reviewer no longer writes, and the third must still stamp.
+- [ ] Re-measure the three rows above afterwards. Rows 1 and 2 are shapes a contract-following
+      reviewer should no longer write; row 3 must still stamp. NOTE the asymmetry: neither row 1
+      nor row 2 changes BEHAVIOUR under this fix — the guard is untouched, so both still suppress
+      the stamp. What the fix changes is whether a compliant reviewer ever EMITS them. So the
+      test is "does the contract now forbid these wrappers", not "do these wrappers now stamp".
 - [ ] Consider whether `merge-review-guard.sh`'s denial text should name this cause. It
       currently lists reasons a record may be missing; "the reply's wrapper named a severity
       word" is a real one and is invisible from the message.
@@ -107,9 +119,16 @@ a population observation consistent with the mechanism described above, not a pr
 each of the three. Anyone picking this up should capture the delivered wrapper alongside the
 stamp outcome before concluding.
 
-Two things follow either way. The cost is not rare — at the observed rate it is the common case,
-not an edge case, which is the opposite of what "fail-closed, costs a re-dispatch" suggests when
-read quickly. And the recovery is cheap once known: telling reviewers explicitly to keep the
+Two things follow either way, and the first has to be scoped carefully. **What the 3-of-4 rate
+measures is no-stamp outcomes FOR ANY REASON, not this mechanism's share of them.** The hook
+documents at least one other real cause of a missing record for a review that ran perfectly:
+residual 3 — a reviewer whose findings are all WARNING or SUGGESTION writes no stamp either, and
+`merge-review-guard.sh`'s own denial message names that as a cause it warns readers about. Since
+none of the three no-stamp cases had its delivered wrapper captured, the rate cannot be
+attributed to the wrapper. What it does support is that missing records are common enough to be
+worth an explicit fix — which is a weaker claim than "this mechanism is the common case", and is
+the one to carry until the wrapper-capture follow-up above is actually done. And the recovery is
+cheap once known: telling reviewers explicitly to keep the
 hand-back wrapper free of the three severity words and of any bracketed tag is a one-paragraph
 addition to the dispatch prompt, which is what this todo asks for.
 
@@ -124,3 +143,12 @@ addition to the dispatch prompt, which is what this todo asks for.
 
 - Added the observed-rate section after four real dispatches in one session produced one stamp
   out of four. Per-case cause not determined; see the caveat in that section.
+
+### 2026-09-15 (third)
+
+- Row 2 of the Background table replaced with the case-32 fixture it was derived from: the
+  paraphrase in the earlier revision had no brackets and no severity words, and measurement
+  shows it stamps. Acceptance criterion 3 corrected — neither row 1 nor row 2 changes behaviour
+  under this fix, since the guard is untouched; what changes is whether a reviewer emits them.
+- The observed-rate conclusion rescoped to no-stamp outcomes in general, which is what the count
+  supports, rather than to this mechanism's share of them, which nothing here establishes.
