@@ -135,6 +135,26 @@ root position; it is the reason to port rather than patch.
   detection gap", "quote-splicing the verb... is a known, pre-existing detection gap") —
   documented and verified, not silently dropped. The old raw needle never detected either
   shape either (verified directly), so this is not a regression versus `main`.
+- **THIRD residual, found in review and previously undisclosed — AC #2's "all four
+  root-position spellings" is true only for the BARE forms.** Stack a SECOND separate-arg
+  global onto the retarget flag and `cmd_gh_pr_write_subcommand`'s regex stops matching the
+  command at all, so the advisor goes entirely silent — no warning and no `SKIP_REASON`.
+  Measured under bash 5.3.15, with the bare and single-flag forms as controls:
+
+  | command                                             | result                   |
+  | --------------------------------------------------- | ------------------------ |
+  | `gh pr close 42`                                    | advisory fires           |
+  | `gh -R other/org pr close 42`                       | "Fresh PR check skipped" |
+  | `gh --hostname github.com -R other/org pr close 42` | no output at all         |
+  | `gh -R other/org --hostname github.com pr close 42` | no output at all         |
+
+  Inherited from the UNMODIFIED `_CMD_GH_GLOBALS` grammar in `lib/cmd-detect.sh`, whose own
+  comments already track this shape as an open residual for its other consumers — so it is
+  not introduced by this port, and total silence is within this hook's advisory-only design
+  (`guard-outward-cli.sh`'s independent DENY still covers the destructive action). Now
+  pinned as a test alongside the other two, because without it "all four root-position
+  spellings" reads as full globals-slot coverage, which it is not.
+
 - **Unplanned CRITICAL found and fixed during review** (code-reviewer, round 1):
   `cmd_gh_pr_ref` can return a URL, not just a number or branch name — the reused extractor
   pair's own header comment in `lib/cmd-detect.sh` explicitly warns that reusing it without

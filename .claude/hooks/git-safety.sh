@@ -574,6 +574,19 @@ fi
 KIND=""
 REF=""
 SKIP_REASON=""
+# Wording for the SHARED guidance clauses further down. All five arms below set
+# KIND="delete", so KIND cannot say whether the thing being acted on is a branch or a
+# PR — these two carry that, and default to the branch-deletion case because four of
+# the five arms are branch deletions. The `gh pr close` arm overrides them.
+#
+# Why this is not cosmetic: the shared block is reached by every arm, so a hardcoded
+# noun is wrong for whichever arms it was not written for. Measured before this change,
+# `git branch -D https://exfil.example.test/o/r/pull/1` produced "confirm this PR's
+# state manually before closing" — no PR is involved in a branch deletion — while the
+# three sibling clauses said "branch" and were wrong in the mirror direction for
+# `gh pr close`. Fixing only the reported instance would have left its mirror live.
+SUBJ="this branch's merge state"
+VERB="deleting"
 if printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+branch[[:space:]]+-[a-zA-Z]*D[a-zA-Z]*[[:space:]]+'; then
   KIND="delete"
   REF=$(printf '%s' "$CMD" | sed -nE 's/.*git[[:space:]]+branch[[:space:]]+-[a-zA-Z]*D[a-zA-Z]*[[:space:]]+([^[:space:];&|]+).*/\1/p')
@@ -596,6 +609,8 @@ elif [ -n "$_CMD_DETECT_OK" ] && [ "$(cmd_gh_pr_write_subcommand "$CMD")" = "clo
   # raw needle did (see test-git-safety.sh). Safe direction: a missed warning,
   # never a wrong one — this hook is advisory only.
   KIND="delete"
+  SUBJ="this PR's state"
+  VERB="closing"
   # cmd_gh_pr_ref REFUSES (empty output, rc!=0) on a --repo/-R retarget, more
   # than one gh-pr mention, or an ambiguous flag — that means "cannot name the
   # branch/PR", not "no ref". Route it to the SAME SKIP_REASON path the other
@@ -645,11 +660,11 @@ if [ "$KIND" = "delete" ] && { [ -n "$REF" ] || [ -n "$SKIP_REASON" ]; }; then
   # confident "MERGED — deletion is safe" about a branch that has nothing to
   # do with the one actually being deleted. That is worse than the honest
   # "no PR found" this hook used to (accidentally) produce for a garbled ref.
-  [ -n "$SKIP_REASON" ] || [ -n "$REF" ] || SKIP_REASON="the extracted ref is empty after normalization — confirm this branch's merge state manually before deleting."
+  [ -n "$SKIP_REASON" ] || [ -n "$REF" ] || SKIP_REASON="the extracted ref is empty after normalization — confirm ${SUBJ} manually before ${VERB}."
   # A flag-like extraction must not reach gh in argument position.
   if [ -z "$SKIP_REASON" ]; then
     case "$REF" in
-      -*) SKIP_REASON="extracted ref '${REF}' looks like a flag — verify the branch's PR state manually before deleting." ;;
+      -*) SKIP_REASON="extracted ref '${REF}' looks like a flag — verify ${SUBJ} manually before ${VERB}." ;;
     esac
   fi
   if [ -z "$SKIP_REASON" ]; then
@@ -662,7 +677,7 @@ if [ "$KIND" = "delete" ] && { [ -n "$REF" ] || [ -n "$SKIP_REASON" ]; }; then
     # beats a confidently wrong one on the common quoted-variable case. Do
     # not "fix" this back to a real lookup for `$`/backtick-containing refs.
     case "$REF" in
-      *'$'*|*'`'*) SKIP_REASON="could not resolve a literal branch name from '${REF}' (looks like an unexpanded shell variable or command substitution) — confirm this branch's merge state manually before deleting." ;;
+      *'$'*|*'`'*) SKIP_REASON="could not resolve a literal branch name from '${REF}' (looks like an unexpanded shell variable or command substitution) — confirm ${SUBJ} manually before ${VERB}." ;;
     esac
   fi
   if [ -z "$SKIP_REASON" ]; then
@@ -695,7 +710,7 @@ if [ "$KIND" = "delete" ] && { [ -n "$REF" ] || [ -n "$SKIP_REASON" ]; }; then
     GH_ALLOWED_HOST="${GH_HOST:-github.com}"
     case "$REF" in
       "https://$GH_ALLOWED_HOST/"*) ;;
-      //*|*://*|*:*) SKIP_REASON="extracted ref '${REF}' is a URL outside the configured GitHub host — refusing to look it up (this hook never contacts a host other than https://${GH_ALLOWED_HOST}/) — confirm this PR's state manually before closing." ;;
+      //*|*://*|*:*) SKIP_REASON="extracted ref '${REF}' is a URL outside the configured GitHub host — refusing to look it up (this hook never contacts a host other than https://${GH_ALLOWED_HOST}/) — confirm ${SUBJ} manually before ${VERB}." ;;
     esac
   fi
   if [ -n "$SKIP_REASON" ]; then

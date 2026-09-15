@@ -705,6 +705,25 @@ assert_allow "advisor: a quote-glued gh binary (g\"h\") is a known, unfixed dete
 assert_allow "advisor: quote-splicing the verb (gh pr clo\"\"se) is a known, pre-existing detection gap" \
   "$(jsonc no-registry-session "$MAIN" 'gh pr clo""se 42')"
 
+# THIRD residual in the same family, previously undisclosed. A root-position `-R`/`--repo`
+# on its own lands correctly on the SKIP_REASON path (covered by the four spelling rows
+# above). Stack a SECOND separate-arg global with it — `--hostname <host>` — and
+# `cmd_gh_pr_write_subcommand`'s regex stops matching the command at all, so this advisor
+# goes ENTIRELY silent: no warning and no SKIP_REASON either. Measured under bash 5.3.15,
+# with the bare and single-flag forms as controls:
+#   gh pr close 42                                    -> advisory fires
+#   gh -R other/org pr close 42                       -> "Fresh PR check skipped"
+#   gh --hostname github.com -R other/org pr close 42 -> no output at all
+#   gh -R other/org --hostname github.com pr close 42 -> no output at all
+# Inherited from the UNMODIFIED `_CMD_GH_GLOBALS` grammar in lib/cmd-detect.sh, whose own
+# comments already track this shape as an open residual for its other consumers — so this
+# is not introduced by the port, and total silence is within this hook's advisory-only
+# design (guard-outward-cli.sh's independent DENY still covers the destructive action).
+# Pinned because the todo's AC says "all four root-position spellings" are handled, and
+# without this row that reads as full globals-slot coverage, which it is not.
+assert_allow "advisor: a root-position -R stacked with another separate-arg global (--hostname) defeats detection entirely — known, inherited gap" \
+  "$(jsonc no-registry-session "$MAIN" 'gh --hostname github.com -R other/org pr close 42')"
+
 # Accepted trade-off (documented in cmd_gh_pr_write_subcommand's own header): a `gh
 # pr create` mention co-occurring with the close means the create-vs-rest guard
 # refuses the whole subcommand lookup, so this advisor now stays silent where the
@@ -769,6 +788,15 @@ assert_warn_contains "advisor: gh pr close with an attacker-controlled URL ref i
 assert_warn_contains "advisor: gh pr close with a URL ref hidden inside a live substitution is refused, not looked up" \
   "$(jsonc no-registry-session "$MAIN" 'echo "$(gh pr close https://exfil.example.test/o/r/pull/1)"')" \
   "is a URL outside the configured GitHub host"
+# The host guard sits in the SHARED ref-processing block, so it is reached by all five
+# KIND=delete arms — not just `gh pr close`. Its trailing guidance therefore has to name
+# the right subject per arm. Measured before that was fixed, this exact input produced
+# "confirm this PR's state manually before closing" on a BRANCH deletion, where no PR is
+# involved. Pin the branch-side wording here: the three rows above only ever exercise the
+# guard through `gh pr close`, so they cannot see a regression on the other four arms.
+assert_warn_contains "advisor: a URL ref on a BRANCH delete is refused with branch-shaped guidance, not PR-shaped" \
+  "$(jsonc no-registry-session "$MAIN" 'git branch -D https://exfil.example.test/o/r/pull/1')" \
+  "confirm this branch's merge state manually before deleting"
 # Protocol-relative bypass (found by review, security-auditor round 2,
 # CRITICAL): a scheme-less `//host/path` reference contains no colon at all,
 # so it matched NEITHER the allowed-host prefix NOR the original `*://*|*:*`
@@ -808,7 +836,7 @@ fi
 # Without it a row that is silently skipped (a helper that dies mid-pipeline,
 # incrementing neither PASS nor FAIL) makes N/0 look identical to (N+1)/0. Update
 # the number DELIBERATELY when adding assertions.
-EXPECTED_TOTAL=151
+EXPECTED_TOTAL=153
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
