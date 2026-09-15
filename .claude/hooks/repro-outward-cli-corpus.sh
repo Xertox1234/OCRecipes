@@ -752,9 +752,17 @@ done
 #               and EXPECTED_ALLPATH_DIRTY_IDS).
 #               flagvcasearm-ghadmin is the FOURTH flag row and reports `ok`
 #               WITHOUT being a closure: it denies from the pre-existing "no REAL
-#               --auto" rule, because the construct breaks the `--auto` spelling
-#               in `gh pr merge 42 --auto --admin`. Read its ATTRIBUTION, not its
-#               verdict -- same lesson as flagvbareparen-ghadmin and co-mask-c1.
+#               --auto" rule. NOT because the construct breaks the `--auto`
+#               spelling -- this axis splices into --admin (FAM_FLAG_LHS `--ad`
+#               + RHS `min`), so --auto is byte-intact. The guard masks --auto on
+#               ANY `$`, `(` or backtick anywhere in the merge clause
+#               (guard-outward-cli.sh:2760), so HAS_REAL_AUTO=no and that rule
+#               fires first. Measured with controls in the same run: the same row
+#               with NOTHING split but a bare `$x` present denies identically,
+#               while the backtick spelling reaches the --admin check instead --
+#               so the deny tracks the SIGIL, not any broken spelling. Read its
+#               ATTRIBUTION, not its verdict -- same lesson as
+#               flagvbareparen-ghadmin and co-mask-c1.
 #               todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 # varithsep / varithdecoy: added 2026-09-07 because this corpus was BLIND to the
 # entire class the arithmetic-arm removal closes. Running all 308 rows across
@@ -1327,12 +1335,19 @@ fi
 #    because a bare id records one OR-collapsed bit ("dirty on some path") and
 #    NOTE6's round-3 correction below is precisely the movement that bit cannot
 #    see: those rows were ALREADY all-path-dirty on both sides and went from ONE
-#    failing degraded path to THREE. Measured on this tree, 10 rows sit at
-#    `p=ALLOW j=DENY l=DENY a=DENY` (verbvcasearm-* x7, flagvcasearm-* x3). A
-#    guard change flipping their three degraded DENYs to ALLOW would strip the
-#    fail-closed fallback from seven gated families and move NOTHING an id-only
-#    pin observes. The 281 all-clean rows stay covered by ABSENCE -- any of them
-#    going dirty appears as a `+` line.
+#    failing degraded path to THREE.
+#
+#    THE EXAMPLE HERE WAS RE-MEASURED 2026-09-14 AND ITS IDS CHANGED. It named
+#    verbvcasearm-*/flagvcasearm-*, which was true when written and was falsified
+#    by this todo's OWN implementation commits -- those rows now deny on all four
+#    paths and appear in neither manifest. The illustration survives with different
+#    occupants: 57 rows sit at `p=ALLOW j=DENY l=DENY a=DENY`, and the 10 that make
+#    the point are verbvcasecomment-* (7) + flagvcasecomment-* (3), a case arm
+#    composed with a comment hiding a decoy `esac`. A guard change flipping their
+#    three degraded DENYs to ALLOW would strip the fail-closed fallback from seven
+#    gated families and move NOTHING an id-only pin observes. The 370 rows clean on
+#    all four paths (620 - 250) stay covered by ABSENCE -- any of them going dirty
+#    appears as a `+` line.
 #
 # 4. ATTRIBUTION catches a row that keeps its verdict and changes WHICH CHECK
 #    produced it, ON THE PRECISE PATH. The other three read only DENY/ALLOW, so a
@@ -2847,8 +2862,10 @@ exit 0
 #
 #       THREE, not four, and the fourth is an attribution lesson rather than an
 #       off-by-one: flagvbareparen-ghadmin was ALREADY denying before this change,
-#       from the "gh pr merge without a REAL --auto" rule, because the construct
-#       breaks the `--auto` spelling in its base command. It reports `ok` on both
+#       from the "no REAL --auto" rule -- because any `$`, `(` or backtick anywhere
+#       in the merge clause masks --auto (guard-outward-cli.sh:2760), NOT because
+#       the construct breaks the `--auto` spelling, which stays byte-intact
+#       (the splice target is --admin). It reports `ok` on both
 #       sides and so is not a closure. A verdict is not evidence the intended
 #       check fired.
 #    1  c2-ansic-hex, as a SIDE EFFECT of the ANSI-C decoding rather than by a
@@ -2866,8 +2883,10 @@ exit 0
 # not. Two buckets landing on the same number is precisely the coincidence that
 # makes a restated count rot unnoticed -- the same trap the 165-vs-167 paragraph
 # above warns about, which is why this text is now a POINTER and not a second
-# copy. THE LIVE COMPOSITION IS MAINTAINED IN ONE PLACE, at the EXPECTED_PRECISE_
-# GAPS constant; read it there and do not re-derive it here. What follows is a
+# copy. THE LIVE COMPOSITION IS MAINTAINED IN ONE PLACE, at the
+# EXPECTED_PRECISE_GAPS constant -- kept on one line deliberately, because a
+# pointer an exact-string grep cannot resolve is not a pointer; read it there and
+# do not re-derive it here. What follows is a
 # historical record of what the 33 -> 31 movement was made of, kept because the
 # per-ID attribution is the evidence for "0 OPENED" and is not reconstructible
 # from totals. Each bucket had an OPEN todo at the time — none was a defect this
@@ -2891,8 +2910,10 @@ exit 0
 #
 #       flagvcasearm-ghadmin is the FOURTH flag row and reports `ok` — READ ITS
 #       ATTRIBUTION, NOT ITS VERDICT. It denies from a different check entirely:
-#       the construct breaks the `--auto` spelling in `gh pr merge 42 --auto
-#       --admin`, so the "no REAL --auto" rule fires. Same rule as co-mask-c1.
+#       any `$`, `(` or backtick anywhere in the merge clause masks --auto
+#       (guard-outward-cli.sh:2760), so the "no REAL --auto" rule fires. The
+#       construct does NOT break the `--auto` spelling -- it is spliced into
+#       --admin and --auto stays byte-intact. Same rule as co-mask-c1.
 #
 #    0  (was 2) nssufx-ghmerge and nssufx-ghcomment — an INTERIOR redirect, a
 #       different mechanism with its own entry below and its own todo. CLOSED
@@ -2903,7 +2924,10 @@ exit 0
 # SUPERSEDED 2026-09-13 -- MARKER ADDED (cmd-detect-case-arm todo). The "17"
 # bucket immediately above ("toolvcasearm-* (7), verbvcasearm-* (7),
 # flagvcasearm-* (3 of 4) ... Deliberately deferred") is CLOSED on the precise
-# path, so `was 14 + 17 = 31` is now `14`. Kept in place rather than rewritten,
+# path, so `14 + 17 = 31` became `14` AT THAT MOMENT. Deliberately past tense:
+# the live total is 31 again via a DIFFERENT 17 (the vcasecomment rows), so a
+# present-tense "is now 14" here would contradict both EXPECTED_PRECISE_GAPS and
+# the composition note this file keeps in one place. Kept in place rather than rewritten,
 # per this note's own convention -- the reasoning it records (why a naive
 # case/esac tracker is a deny->ALLOW regression generator) is exactly what the
 # fix had to satisfy, not a stale claim.
@@ -2920,9 +2944,9 @@ exit 0
 #   7  verbvcasearm-*   -- same 7 checks, VERB-position spelling.
 #   3  flagvcasearm-easbld/ghapi/ghcomment -- FLAG-position spelling.
 # flagvcasearm-ghadmin (the fourth flag row) is UNCHANGED -- it already
-# reported `ok` before this fix, from a DIFFERENT check (the construct breaks
-# the `--auto` spelling in its base command, so the "no REAL --auto" rule
-# fires; see the note four screens above this one). Nothing about ITS
+# reported `ok` before this fix, from a DIFFERENT check (any `$`, `(` or
+# backtick anywhere in the merge clause masks --auto, so the "no REAL --auto"
+# rule fires; see the note four screens above this one). Nothing about ITS
 # attribution moved.
 #
 # ALL-PATH GAPS moved LESS than precise-path, and that is the disclosure, not
