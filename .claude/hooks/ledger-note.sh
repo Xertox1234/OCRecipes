@@ -54,5 +54,16 @@ LEDGER_DIR=$(context_ledger_dir "$SID") || {
   exit 1
 }
 
-mkdir -p "$LEDGER_DIR" || exit 1
+# Refuse a path that is not ours before creating or appending. curated.md is the SECOND
+# injection entry point, and the more permissive of the two: precompact-ledger.sh folds it
+# into the digest WITHOUT passing it through redact_secrets/entropy_net — only the
+# mechanical FLOOR tier is filtered — so a planted curated.md reaches additionalContext
+# essentially verbatim. The field validations above (tier whitelist, single-line rule,
+# 500-byte cap) are write-time hygiene for THIS writer, not a boundary: they do nothing
+# about a file someone else wrote directly.
+context_ledger_path_ok "$LEDGER_DIR" || exit 1
+# umask 077, so the directory and every file under it are ours alone. Scoped to a subshell
+# so the caller's umask is untouched.
+(umask 077; mkdir -p "$LEDGER_DIR") || exit 1
+context_ledger_path_ok "$LEDGER_DIR/curated.md" || exit 1
 printf '%s | %s | %s\n' "$TIER" "$CLAIM" "$EVIDENCE" >> "$LEDGER_DIR/curated.md" || exit 1

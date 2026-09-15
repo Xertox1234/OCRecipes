@@ -348,7 +348,14 @@ while [ "$DSIZE" -gt 4096 ]; do
   case "$DSIZE" in ''|*[!0-9]*) DSIZE=0 ;; esac
 done
 
-mkdir -p "$LEDGER_DIR" 2>/dev/null || exit 0
+# Refuse a path that is not ours before creating or writing. Without this, a symlinked
+# ledger directory made `mkdir -p` a no-op (it succeeds on the existing link) and this
+# writer deposited the session's digest INSIDE the attacker's directory — a VERIFIED claim
+# and a mechanical-floor row carrying a command and its output tail. That is the
+# exfiltration half of the same defect the reader's guards close on the injection half.
+context_ledger_path_ok "$LEDGER_DIR" || exit 0
+(umask 077; mkdir -p "$LEDGER_DIR") 2>/dev/null || exit 0
+context_ledger_path_ok "$LEDGER_DIR/resume.md" || exit 0
 # Write to a temp file and rename into place: a kill mid-write (e.g. a timeout) cannot
 # leave a truncated resume.md that the reader's `[ -s ]` check would accept as whole.
 printf '%s\n' "$DIGEST" > "$LEDGER_DIR/resume.md.tmp" 2>/dev/null || exit 0

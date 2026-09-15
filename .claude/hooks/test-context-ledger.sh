@@ -36,14 +36,33 @@ for bad in "" "../etc" "a/b" 'a;rm -rf /' '$(whoami)' ".." "."; do
 done
 
 # Production default path (spec §8): pin the real, non-test branch so a later task's
-# hardcoded reference to this exact string can't drift silently. Unset in a subshell so
-# the hermetic CONTEXT_LEDGER_ROOT export above is untouched for every other case.
-out=$( unset CONTEXT_LEDGER_ROOT; context_ledger_dir "abc-123" 2>/dev/null )
-if [ "$out" = "/tmp/ocrecipes-context-ledger-abc-123" ]; then
+# hardcoded reference can't drift silently. Unset in a subshell so the hermetic
+# CONTEXT_LEDGER_ROOT export above is untouched for every other case.
+out=$( unset CONTEXT_LEDGER_ROOT; HOME=/home/pinned XDG_STATE_HOME= context_ledger_dir "abc-123" 2>/dev/null )
+if [ "$out" = "/home/pinned/.local/state/ocrecipes/context-ledger/abc-123" ]; then
   ok "production default path pinned"
 else
   no "production default path drifted: [$out]"
 fi
+# XDG_STATE_HOME wins when set — the spec's own precedence, pinned so a later edit cannot
+# quietly hardcode $HOME and strip a user's configured state dir.
+out=$( unset CONTEXT_LEDGER_ROOT; HOME=/home/pinned XDG_STATE_HOME=/xdg/state context_ledger_dir "abc-123" 2>/dev/null )
+if [ "$out" = "/xdg/state/ocrecipes/context-ledger/abc-123" ]; then
+  ok "XDG_STATE_HOME takes precedence over \$HOME"
+else
+  no "XDG_STATE_HOME precedence drifted: [$out]"
+fi
+# THE SECURITY PROPERTY, asserted rather than implied by the two literals above: the
+# production default must not live under a world-writable directory. Its contents are read
+# back into additionalContext, so anyone who can write there can write model input. A
+# future edit to ${TMPDIR:-/tmp} would satisfy neither literal pin above AND would trip
+# this one — which is the point, because TMPDIR is unset on the CI runner and that spelling
+# collapses straight back to /tmp exactly where nobody would notice.
+out=$( unset CONTEXT_LEDGER_ROOT; context_ledger_dir "abc-123" 2>/dev/null )
+case "$out" in
+  /tmp/*|/var/tmp/*|/private/tmp/*) no "production default path is under a world-writable root: [$out]" ;;
+  *) ok "production default path is not under a world-writable root" ;;
+esac
 
 # --- Task 2: PreCompact digest builder ---
 
@@ -974,7 +993,80 @@ fi
 # Re-derive this from a clean run when adding or removing a case; never hand-increment
 # it. Same caveat as the siblings: this catches a MISSING assertion, not one that never
 # ran because the process died before reaching it.
-EXPECTED_TOTAL=69
+
+# --- Task 7: the ledger path must be OURS before it is read or written ------------------
+# This block exists because the suite passed 69/69 while carrying ZERO symlink, ownership
+# or permission assertions — green against a hook that would read an attacker's file
+# straight into additionalContext. A clean total is not evidence about a threat the suite
+# never asks about.
+SYMROOT=$(mktemp -d)
+read_ctx() {  # $1=root $2=sid -> additionalContext, or empty
+  jq -n --arg s "$2" '{hook_event_name:"SessionStart", source:"compact", session_id:$s}' \
+    | CONTEXT_LEDGER_ROOT="$1" bash "$HOOKS_DIR/session-resume-ledger.sh" 2>/dev/null \
+    | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null
+}
+
+# CONTROL first, and it is load-bearing: every negative below is "no output", which a
+# totally broken reader also produces. This proves the reader still reads what it should.
+mkdir -p "$SYMROOT/legit"; printf 'LEGIT-MARKER\n' > "$SYMROOT/legit/resume.md"
+[ "$(read_ctx "$SYMROOT" legit)" = "LEGIT-MARKER" ] \
+  && ok "a ledger we own is still read (control for the refusals below)" \
+  || no "control failed: legitimate ledger not read — the refusals below prove nothing"
+
+# The DIRECTORY is the symlink. `-L` on the file inside would be FALSE here (it is a real
+# file at the resolved target), so a file-only check passes and the whole directory
+# belongs to someone else. This is why the directory is checked first.
+SYMTARGET=$(mktemp -d); printf 'PLANTED-DIR-SYMLINK\n' > "$SYMTARGET/resume.md"
+ln -s "$SYMTARGET" "$SYMROOT/dirlink"
+[ -z "$(read_ctx "$SYMROOT" dirlink)" ] \
+  && ok "a symlinked ledger DIRECTORY writes nothing into additionalContext" \
+  || no "symlinked ledger directory still reached additionalContext"
+
+# The FILE is the symlink, inside a directory we really own.
+mkdir -p "$SYMROOT/filelink"; ln -s "$SYMTARGET/resume.md" "$SYMROOT/filelink/resume.md"
+[ -z "$(read_ctx "$SYMROOT" filelink)" ] \
+  && ok "a symlinked resume.md writes nothing into additionalContext" \
+  || no "symlinked resume.md still reached additionalContext"
+
+# Read-side clamp. The writer's own cap bounds what THIS repo produces and says nothing
+# about what it consumes: pre-fix, a 200 KB plant reached additionalContext in full, and
+# a 3 MB one emitted zero while exiting 0 (jq --arg hit ARG_MAX) — an accidental OS limit
+# that fails silently rather than degrading.
+mkdir -p "$SYMROOT/big"; head -c 200000 /dev/zero | tr '\0' 'A' > "$SYMROOT/big/resume.md"
+BIGLEN=$(read_ctx "$SYMROOT" big | wc -c | tr -d '[:space:]')
+[ "${BIGLEN:-0}" -le 8200 ] \
+  && ok "an oversized resume.md is clamped on read (got $BIGLEN bytes)" \
+  || no "read-side clamp missing: emitted $BIGLEN bytes"
+
+# EXFILTRATION, the other direction of the same defect: `mkdir -p` succeeds on an existing
+# symlink, so without a guard the writers deposit this session's digest inside the
+# attacker's directory.
+EXFROOT=$(mktemp -d); EXFTARGET=$(mktemp -d)
+ln -s "$EXFTARGET" "$EXFROOT/exfil"
+jq -n '{hook_event_name:"PreCompact", session_id:"exfil", transcript_path:"/dev/null"}' \
+  | CONTEXT_LEDGER_ROOT="$EXFROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
+[ ! -e "$EXFTARGET/resume.md" ] \
+  && ok "the digest writer refuses a symlinked ledger directory" \
+  || no "the digest writer deposited into a symlinked directory"
+CONTEXT_LEDGER_ROOT="$EXFROOT" bash "$HOOKS_DIR/ledger-note.sh" VERIFIED c e >/dev/null 2>&1
+[ ! -e "$EXFTARGET/curated.md" ] \
+  && ok "ledger-note refuses a symlinked ledger directory" \
+  || no "ledger-note deposited into a symlinked directory"
+
+# Restrictive creation. curated.md is the entry point that bypasses redact_secrets, so its
+# mode is the one that matters most.
+PERMROOT=$(mktemp -d)
+CONTEXT_LEDGER_ROOT="$PERMROOT" bash "$HOOKS_DIR/ledger-note.sh" VERIFIED c e >/dev/null 2>&1
+PERMDIR=$(ls -ld "$PERMROOT/"* 2>/dev/null | awk '{print $1}' | head -1)
+case "$PERMDIR" in
+  drwx------*) ok "ledger directory is created mode 0700" ;;
+  *) no "ledger directory mode is [$PERMDIR], expected drwx------" ;;
+esac
+
+rm -f "$SYMROOT/dirlink" "$SYMROOT/filelink/resume.md" 2>/dev/null
+rm -f "$EXFROOT/exfil" 2>/dev/null
+
+EXPECTED_TOTAL=78
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
