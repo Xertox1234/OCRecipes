@@ -654,13 +654,19 @@ objection_case 29 '  [CRITICAL] client/a.ts:74 — missing check' \
   "an indented bracketed finding blocks the substitution"
 objection_case 30 '- [CRITICAL] client/a.ts:74 — missing check' \
   "a bulleted bracketed finding blocks the substitution"
-# Case 31 asserts the OPPOSITE of what an earlier revision pinned. It used to require that
-# "Review complete: no CRITICAL or WARNING findings" still stamps — but that phrasing is
-# one all five agent definitions FORBID ("do NOT use the three bracketed severity words,
-# not even to say there were none … Write `no blocking issues` instead"), precisely because
-# the $CRITICALS detector over-detects them anywhere in a reply. Pinning it as must-stamp
-# forced arm 2 to require a `:<digit>` citation, and that requirement is what let a
-# citation-free REFUSAL through (case 34). The contract-compliant clean wrapper is case 33.
+# Case 31 asserts the OPPOSITE of what an earlier revision pinned, and the reason is worth
+# stating precisely because an earlier version of THIS comment got it wrong. It used to
+# require that "Review complete: no CRITICAL or WARNING findings" still stamps. Pinning
+# that as must-stamp is what forced arm 2 to demand a `:<digit>` citation, and that demand
+# is what let a citation-free REFUSAL through (case 34) — a fail-open on the merge gate.
+#
+# The justification is NOT that the contract forbids this phrasing "because $CRITICALS
+# over-detects it": $CRITICALS never sees this message at all, and the outcome asserted
+# below is NO RECORD, not a `findings` record. What actually justifies it is parity — the
+# SYNC path records `findings` for this same sentence via $CRITICALS, so before the flip
+# the async path was strictly more permissive than sync for one shape. The flip removes
+# that asymmetry. The cost is a re-dispatch for a reviewer who has not read the agent
+# definition; residual 6 in the hook carries it. Contract-compliant clean wrapper: case 33.
 CLEAN_PROSE_TP=$(async_transcript "$CLEAN_MSG")
 jq -n --arg t "code-reviewer" --arg p "$CLEAN_PROSE_TP" \
   --arg m 'Review complete: no CRITICAL or WARNING findings in this diff.' \

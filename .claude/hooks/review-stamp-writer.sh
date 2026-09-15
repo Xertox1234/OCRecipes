@@ -91,10 +91,10 @@ fi
 #       shape reviewers are not told to write. Round 2 added the severity-word arm but
 #       required a `:<digit>` citation on the same line, which made it blind to a
 #       citation-free REFUSAL and let a clean handback be substituted over one, measured
-#       through to an ALLOWED merge. The shape both rounds were protecting is one the
-#       contract FORBIDS (all five agent definitions: do not use the severity words in
-#       clean prose, "write `no blocking issues` instead`), so there was nothing to protect.
-#       Residual 6 carries the cost in both directions.
+#       through to an ALLOWED merge. What makes removing that citation safe is STRUCTURAL,
+#       not contractual: this block only runs when $MSG lacks `^REVIEWED-SHA:`, so a clean
+#       report that CARRIES the contract never reaches either arm. Residual 6 carries the
+#       real cost — a clean async WRAPPER can trip arm 2, and the outcome is NO RECORD.
 #
 #   (b) EXACTLY ONE HANDBACK. `last` silently drops an earlier objection: a transcript with
 #       handback #1 = findings and #2 = clean stamped `verdict: clean`. Nothing enforces
@@ -133,11 +133,21 @@ if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
   # merge-review-guard.sh then ALLOWED the merge. A DENY->ALLOW conversion against main,
   # in exactly the class this guard exists to close.
   #
-  # The shape it was protecting is one the contract FORBIDS: all five agent definitions
-  # say "do NOT use the three bracketed severity words, not even to say there were none …
-  # Write `no blocking issues` instead", because the $CRITICALS detector below already
-  # over-detects them anywhere in a reply. So a clean review that trips arm 2 was already
-  # going to be recorded `findings` by that detector. There is nothing to protect.
+  # What makes the removal safe is STRUCTURAL, and it is the only argument that survives
+  # measurement: this block runs only when $MSG lacks `^REVIEWED-SHA:`, so a clean report
+  # that CARRIES the contract cannot reach either arm. That set is empty by construction.
+  #
+  # An earlier revision of this comment argued instead that the contract forbids the
+  # severity words in clean prose, so "a clean review that trips arm 2 was already going to
+  # be recorded `findings` anyway". BOTH halves were wrong, and the second was wrong about
+  # this file's own control flow — which is why it is recorded here rather than deleted.
+  # The contract's imperative is scoped to the report BODY ("in that prose"), not to the
+  # async wrapper that $MSG actually holds here. And tripping arm 2 does NOT produce a
+  # `findings` record: the hook `exit 0`s below before any stamp exists, so the outcome is
+  # NO RECORD. ($CRITICALS never sees the wrapper either way — if arm 2 does not fire,
+  # $MSG has already been replaced by the handback.) Measured, behind a contract-compliant
+  # clean handback: a wrapper naming the severity words writes nothing, while the control
+  # wrapper saying "no blocking issues" stamps clean. Residual 6 carries that cost.
   #
   # Arm 1 is case-INSENSITIVE, and that does not contradict residual 4. Residual 4 forbids
   # `-i` at the $CRITICALS site, where a miss is fail-CLOSED (no stamp). Here a miss is
