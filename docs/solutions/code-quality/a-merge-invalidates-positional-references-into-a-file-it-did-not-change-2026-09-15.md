@@ -5,7 +5,7 @@ category: code-quality
 tags: [harness, hooks, bash, git, code-review]
 module: shared
 applies_to: [".claude/hooks/*.sh", "scripts/**/*.sh", "todos/**/*.md", "docs/solutions/**/*.md"]
-symptoms: ["A comment cites other-file.sh:NNNN and the symbol is 90-250 lines away", "Citations were correct when written, nobody edited the cited file, and they are all wrong now", "git diff shows the cited file is byte-identical between your branch and main", "A todo's Acceptance Criteria points an executor into an unrelated comment", "Two long-lived branches each cite the same third file at different line numbers"]
+symptoms: ["A comment cites other-file.sh:NNNN and the symbol is 78-249 lines away", "Citations were correct when written, nobody edited the cited file, and they are all wrong now", "git diff shows the cited file is byte-identical between your branch and main", "A todo's Acceptance Criteria points an executor into an unrelated comment", "Two long-lived branches each cite the same third file at different line numbers"]
 created: 2026-09-15
 severity: medium
 ---
@@ -18,12 +18,22 @@ A comment block in `.claude/hooks/repro-outward-cli-corpus.sh` cited eleven symb
 in `.claude/hooks/guard-outward-cli.sh` by `path:line`. Every one was correct when
 written and every one was wrong at review time:
 
-| cited | actual |
+| symbol | how far the merge moved it |
 | --- | --- |
-| `_OUT_POS_PREFIX` :1606 | :1698 |
-| `GH_MERGE_VALUE_FLAGS` :2493 | :2742 |
-| `GH_MUTATING_RE` :2759 | :3008 |
-| `_OUT_REPO_FLAG_RE` :944 | :1022 |
+| `_OUT_REPO_FLAG_RE` | +78 |
+| `_OUT_POS_PREFIX` | +92 |
+| `GH_MERGE_VALUE_FLAGS` | +249 |
+| `GH_MUTATING_RE` | +249 |
+
+The shifts are recorded, the destinations are not, and that is deliberate — see
+below. **This table originally gave both.** It listed each symbol's new absolute
+line, measured correctly at the time of writing, and review found all four wrong
+before this file had even merged: the commit that landed immediately before it
+added 130 lines to `guard-outward-cli.sh` while being titled about a different
+file entirely, so every destination was off by exactly +130. A document about
+merge-delivered positional staleness had its own evidence invalidated by a merge,
+one commit before it shipped. Nothing better argues for the rule it is here to
+state, so the incident is kept rather than quietly corrected.
 
 The confusing part, and the reason it survived a review round: **`guard-outward-cli.sh`
 was byte-identical between `origin/main` and the branch.**
@@ -37,8 +47,9 @@ Nothing that was cited had changed. The citations were wrong anyway.
 ## Symptoms
 
 - A comment cites `other-file.sh:NNNN`; the named symbol is there, just not at that line.
-- The offsets are large (90-250 lines) and roughly monotonic — a sign of insertion
-  above, not of the symbol moving.
+- The offsets are large (78-249 lines here) and cluster on a few values rather than
+  varying smoothly — a sign of insertion above, not of the symbol moving. Three
+  distinct deltas means three insertion points upstream of the citations.
 - `git diff main...HEAD -- <cited file>` is EMPTY, which makes the citations look
   like they cannot have decayed.
 - A todo's Acceptance Criteria names a line number and a future executor lands in
@@ -112,8 +123,8 @@ grep -cE 'cited-file\.sh:[0-9]+' path/to/citing-file
 
 - `.claude/hooks/repro-outward-cli-corpus.sh` — carried the eleven stale citations
 - `.claude/hooks/guard-outward-cli.sh` — the cited file, byte-identical throughout
-- `todos/P3-2026-09-14-site-upd-cb-verbs-still-hand-listed-not-extracted.md` — its
-  Acceptance Criteria cited two line numbers that a future executor would have followed
+- `.claude/hooks/repro-outward-cli-corpus.sh` — carries the surviving note, "WHY THIS
+  BLOCK CITES NAMES AND NOT LINE NUMBERS", written when the citations were stripped
 
 ## See Also
 
