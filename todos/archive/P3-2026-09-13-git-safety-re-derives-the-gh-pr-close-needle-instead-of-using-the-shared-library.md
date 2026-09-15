@@ -22,7 +22,7 @@ unmerged-branch advisory. The destructive action itself is **denied** by
 ## Background
 
 Found while closing
-`todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md`.
+`todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md`.
 That P0 widened `lib/cmd-detect.sh` and `guard-outward-cli.sh` so a flag sitting between
 the binary and its namespace no longer hides the invocation. `git-safety.sh` inherited
 nothing, because it never sourced the library:
