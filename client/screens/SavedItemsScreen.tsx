@@ -106,7 +106,8 @@ export default function SavedItemsScreen() {
   const { reducedMotion } = useAccessibility();
   const { isPremium, features } = usePremiumContext();
 
-  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
   const { mutate: deleteItem } = useDeleteSavedItem();
 
   const {
@@ -247,6 +248,7 @@ export default function SavedItemsScreen() {
         }
         showsVerticalScrollIndicator={false}
         {...FLATLIST_DEFAULTS}
+        {...behindContentA11yProps}
       />
       <ConfirmationModal />
     </ThemedView>

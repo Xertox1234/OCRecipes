@@ -5,7 +5,7 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { batchSaveRequestSchema } from "@shared/types/batch-scan";
 import { isValidBarcode } from "@shared/constants/classification";
-import { formatZodError, handleRouteError } from "./_helpers";
+import { formatZodError, handleRouteError, parseTimezone } from "./_helpers";
 import { createRateLimiter } from "./_rate-limiters";
 
 const batchSaveRateLimit = createRateLimiter({
@@ -71,9 +71,11 @@ export function register(app: Express): void {
           }
           case "grocery_list": {
             try {
+              const tz = parseTimezone(req.headers["x-timezone"]);
               const result = await storage.batchCreateGroceryItems(
                 items,
                 userId,
+                tz,
                 groceryListId,
               );
               return res.json({

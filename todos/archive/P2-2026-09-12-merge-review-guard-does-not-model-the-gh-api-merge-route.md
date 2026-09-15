@@ -1,9 +1,9 @@
 ---
 title: "merge-review-guard.sh does not model `gh api` against the merge endpoint — a third merge route the gate never sees"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-12
-updated: 2026-09-12
+updated: 2026-09-14
 assignee:
 labels: [deferred, harness, security]
 github_issue:

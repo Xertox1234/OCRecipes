@@ -101,3 +101,18 @@ describe("BeveragePickerSheet — error announce gating (H4)", () => {
     expect(announceSpy).not.toHaveBeenCalledWith(CALORIE_ERROR);
   });
 });
+
+describe("BeveragePickerSheet — iOS a11y-leaf fix", () => {
+  it("passes accessible={false} to the sheet (prevents the iOS a11y-leaf collapse; jsdom cannot verify the native effect)", () => {
+    // On new-arch iOS, @gorhom/bottom-sheet's default accessible=true makes the
+    // wrapper an accessibility LEAF, hiding this sheet's content from
+    // VoiceOver AND Maestro (jsdom renders children plainly and cannot see
+    // the native leaf-collapse — this only pins that the prop is passed). See
+    // docs/solutions/logic-errors/
+    // gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
+    renderSheet();
+    expect(
+      screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible"),
+    ).toBe("false");
+  });
+});
