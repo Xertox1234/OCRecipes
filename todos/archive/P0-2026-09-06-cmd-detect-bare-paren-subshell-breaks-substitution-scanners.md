@@ -452,7 +452,7 @@ and unmarked ones to both.
 - `todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — a
   separate, also-open critical gap in the same guard. Different mechanism (an interior
   redirect, not a substitution scanner); do not fold them.
-- `todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md` — the
+- `todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md` — the
   round-4 sibling. Same review round and the same "a token is split and the guard cannot see
   it" symptom, but a brace range carries no `$` at all, so the fix is a **guard-side narrow
   deny**, not a lib scanner change. Deliberately not folded here. Both todos edit

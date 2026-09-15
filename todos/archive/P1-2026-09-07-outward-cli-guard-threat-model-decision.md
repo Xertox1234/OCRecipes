@@ -173,7 +173,7 @@ emptied. Listed only so the ruling does not have to rediscover why it is closed.
 
 - `todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md` — model C,
   and the re-measurement that reclassified it.
-- `todos/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md`,
+- `todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md`,
   `todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md` — model B.
 - `todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md`
   — the change whose review produced findings 8 and 9.
