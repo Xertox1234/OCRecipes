@@ -2726,8 +2726,13 @@ cmd_gh_pr_ref() {
   # with the two no-retarget rows resolving 42 at both sizes as negative controls. The
   # consequence reaches the same end state this function's ACCEPTED RESIDUALS block records
   # for the clause-cut -- by a NEW route (SIGPIPE) that entry does not cover, and which is
-  # not fail-closed the way that entry is. Naming the property rather than an ordinal: four
-  # numbered lists in this file each have a '2.'. The gate classifies the LOCAL pr 42 while the
+  # not fail-closed the way that entry is. Naming the property rather than an ordinal: this
+  # file carries several numbered lists and more than one has a '2.', so an ordinal does not
+  # locate anything. NO COUNT HERE ON PURPOSE -- an earlier version said "four", which is
+  # wrong under every counting method: 3 by `^#  2.`, 5 if parenthesised enumerations count,
+  # and the sentence named no method. An asserted figure under prose claiming derivation, in
+  # the paragraph fixing exactly that. A corrected number would only re-arm the same drift.
+  # The gate classifies the LOCAL pr 42 while the
   # command targets other/org -- a cross-repository merge authorised by a local review
   # record, which is the P0 this branch closed by another route.
   # NOT A REGRESSION: origin/main carries a byte-identical construction and an A/B of both
