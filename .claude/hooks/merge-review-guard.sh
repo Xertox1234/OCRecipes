@@ -117,8 +117,20 @@ case "$TOOL" in
     # "$1"` sees an empty command, SUBCOMMAND comes back empty, and the `!= merge` early
     # exit below turns EVERY merge into a silent allow. Measured 2026-09-09: piped form
     # returns "" for `gh pr merge 938 --auto --squash`; argument form returns "merge"/938.
+    # THE THIRD CONJUNCT IS NOT OPTIONAL, and it was missing for one commit. This preflight
+    # exists because an undefined callee returns rc 127, and the gate below is written
+    # `if ! cmd_gh_pr_has_merge ...; then exit 0` -- so `!` inverts 127 to true and a lib
+    # that sources without defining the function becomes a SILENT ALLOW at the one
+    # ALLOW-shaped read in this file. Measured under bash 5.3.15: a defined function
+    # returning 1 takes the allow branch (correct, no merge present), a MISSING function
+    # takes the same allow branch (wrong), and a defined function returning 0 takes the
+    # deny branch. Version skew is the realistic trigger -- this hook cherry-picked without
+    # lib/cmd-detect.sh, a partially-merged tree, a stale .claude/ copy. Every function
+    # called below this line must appear in this conjunction; the `else` arm's deny is the
+    # only correct outcome when one does not.
     if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
        && declare -F cmd_gh_pr_write_subcommand >/dev/null \
+       && declare -F cmd_gh_pr_has_merge >/dev/null \
        && declare -F cmd_gh_pr_ref >/dev/null; then
       # PIPEFAIL MUST BE OFF FOR THIS CALL. cmd_gh_pr_write_subcommand signals REFUSE with
       # an explicit `return 1`, but signals NO MATCH through the rc of its trailing

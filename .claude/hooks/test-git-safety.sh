@@ -752,9 +752,6 @@ assert_allow "advisor: quote-splicing the verb (gh pr clo\"\"se) is a known, pre
 #
 # The residual's genuinely EXECUTABLE siblings do get a deny, verified in the same run:
 # `g"h" pr close 42`, `gh pr clo""se 42` and `gh pr create -t x && gh pr close 42` all DENY.
-#
-# The residual's genuinely EXECUTABLE siblings do get a deny, verified in the same run:
-# `g"h" pr close 42`, `gh pr clo""se 42` and `gh pr create -t x && gh pr close 42` all DENY.
 # Pinned because the todo's AC says "all four root-position spellings" are handled, and
 # without this row that reads as full globals-slot coverage, which it is not.
 # THIS RESIDUAL CLOSED 2026-09-15, and it closed from files this suite does not test.
@@ -795,6 +792,22 @@ assert_warn_contains "advisor: a root-position -R stacked with another separate-
 assert_warn_contains "advisor: the -R-FIRST ordering of the same stacked pair is SEEN too — both orderings pinned, not one" \
   "$(jsonc no-registry-session "$MAIN" 'gh -R other/org --hostname github.com pr close 42')" \
   "could not resolve the PR ref via the shared extractor"
+
+# THE DISCRIMINATING ROW, which until now existed only in the comment table above -- the
+# commit that flipped this residual said it had been "added" when it had only been
+# WRITTEN DOWN. Both rows above assert the SKIP-REASON string, and the two `pr view` rows
+# below are gated to silence by the verb check, so an extractor that returned the
+# skip-reason for EVERY close would keep this entire suite green. Nothing would redden.
+# This row is the one that separates "the extractor walked past --hostname and then
+# reached the -R" from "any root global now forces a refusal": a SINGLE root global with
+# no -R behind it must RESOLVE the ref, not skip it. Measured on this tree --
+# `Fresh PR check: PR #520 ... is MERGED` (520 is what this file's fake gh returns; the
+# ref in the command is 42, and the two differing is itself the evidence that the hook
+# LOOKED THE REF UP rather than echoing it back) -- where the stacked pair returns
+# `Fresh PR check skipped: could not resolve ...` instead.
+FAKE_GH_STATE=MERGED assert_warn_contains "advisor: a SINGLE root-position global still RESOLVES the ref — the discriminating row, not another skip-reason" \
+  "$(jsonc no-registry-session "$MAIN" 'gh --hostname github.com pr close 42')" \
+  "Fresh PR check: PR #520"
 
 # FOURTH residual in the same family, and the only one this port INTRODUCES rather than
 # inherits. The retired needle matched `(^|[;&|[:space:]])gh`; the shared
@@ -1002,7 +1015,9 @@ fi
 # with no assertion on it at all, so the pair was half-covered while the comment above it
 # described both orderings. Ordering is the whole point of that row -- the extractor has to
 # walk past a separate-arg global in either position.
-EXPECTED_TOTAL=159
+# 159 -> 160: +1 for the discriminating single-global row, which the previous commit
+# described as added while only adding it to a comment.
+EXPECTED_TOTAL=160
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

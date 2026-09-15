@@ -1024,10 +1024,22 @@ rm -rf "$NOJQ_BIN"
 # ---------------------------------------------------------------------------------------
 # MERGE-GATE MIS-SELECTION (2026-09-15). A leading `gh <root flag> <value> pr close` clause
 # used to win cmd_gh_pr_write_subcommand's `head -1`, so the gate read the verb as "close"
-# and early-exited ALLOW while a real merge sat later in the same command. Every row here
-# was MEASURED flipping main-DENY to branch-ALLOW before the fix; they are pinned as a
+# and early-exited ALLOW while a real merge sat later in the same command. Pinned as a
 # FAMILY, not a single spelling, because the bug is a property of the flag CLASS (any
 # unnamed separate-arg root flag), not of any one flag.
+#
+# THE FIVE LOOP SPELLINGS ARE NOT ALL THE SAME KIND OF ROW, and an earlier version of this
+# header said they were ("every row here was MEASURED flipping main-DENY to branch-ALLOW"),
+# which this suite's own measured table contradicts. They split:
+#   REGRESSION PINS (3) -- main DENY, pre-fix ALLOW, post-fix DENY:
+#       -t x, -Z somevalue, --match-head-commit abc
+#   NET-NEW COVERAGE (2) -- main ALLOW, pre-fix ALLOW, post-fix DENY, i.e. a hole main has
+#   today and this branch closes:
+#       --no-color, -R o/r
+# The distinction is load-bearing in one direction: a later reader "restoring main's
+# behaviour" would read the old header as licence to delete the two rows main never
+# covered. Describing a filtered set as if it were the whole set is the defect this PR's
+# own solution docs are about.
 export FAKE_FILES="$FILES_ONE"
 
 for _mrgflag in '-t x' '-Z somevalue' '--match-head-commit abc' '--no-color' '-R o/r'; do
@@ -1057,6 +1069,22 @@ assert_allowed "CONTROL: a non-gh command is untouched by the existence read" "$
 out=$(bash_payload 'gh -t x pr close 1' | run)
 assert_allowed "CONTROL: a lone pr close clause still allows (no merge present)" "$out"
 
+# THE ROW ABOVE CANNOT FAIL, AND NEITHER CAN THE `npm run lint` ONE -- which is why this
+# third control exists. merge-review-guard.sh:108 runs
+# `cmd_fastpath_has "$CMD" '*gh*pr*merge*' '*gh*api*merge*' || exit 0`, and BOTH globs
+# require a literal `merge` substring. A lone close clause has none, so the hook exits at
+# :108 and never reaches cmd_gh_pr_has_merge at all; a gate that denied everything arriving
+# at the existence read would leave both rows green. Measured: `gh -t x pr close 1` and
+# `npm run lint` both exit at the fast path, while the row below and a real
+# `gh pr merge 938` both reach the gate.
+# This row clears `*gh*pr*merge*` on substrings alone -- `gh` inside "highlight", then `pr`,
+# then `merge` -- while containing no `gh <globals> pr merge` clause at all, so it
+# reaches the existence read and MUST still allow. It is the only one of the three that
+# would redden if the read inverted. The shape is borrowed from this file's own earlier
+# fast-path documentation rather than invented.
+out=$(bash_payload 'git commit -m "fix highlight for pr merge"' | run)
+assert_allowed "CONTROL: a command that REACHES the existence read with no merge still allows" "$out"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -1064,7 +1092,9 @@ assert_allowed "CONTROL: a lone pr close clause still allows (no merge present)"
 # never ran because the process died before reaching it.
 # 114 -> 123 (2026-09-15): +9 for the merge-gate mis-selection family above -- 5 flag
 # spellings x the masking shape, plus the prefixed spelling, plus three controls.
-EXPECTED_TOTAL=123
+# 123 -> 124: +1 for the control that actually REACHES the existence read (the two beside
+# it exit at the fast path and cannot redden).
+EXPECTED_TOTAL=124
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
