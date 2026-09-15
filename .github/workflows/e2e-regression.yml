@@ -397,6 +397,16 @@ jobs:
       # the case for keeping a generous bound. Re-measure the genuine
       # Pods-only-warm case on the next real dispatch and revisit this bound
       # then rather than trusting this extrapolation indefinitely.
+      #
+      # WHEN YOU DO: raising this bound is NOT a local decision. The job's own
+      # `timeout-minutes: 160` (see its comment above) is built around a ~10m
+      # margin over the decomposition setup ~6m + build + pre-warm ~10m +
+      # flows ~64m. Taking this step to the ~78m its own 2x formula computes
+      # against the 39m03s cold baseline leaves 6 + 78 + 10 + 64 = 158m against
+      # a 160m job bound — about 2m of margin, not the 10m that comment says it
+      # is deliberately preserving. So the two numbers move together: re-derive
+      # the job bound in the same change, or the margin is silently spent.
+      # Keeping 70m here is what makes the 160m job bound's arithmetic hold.
       - name: Build and install iOS app
         id: build-ios
         timeout-minutes: 70
