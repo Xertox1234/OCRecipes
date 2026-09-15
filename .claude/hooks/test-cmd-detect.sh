@@ -1878,6 +1878,38 @@ ghref 'gh pr merge --repo other/org 42' - \
 ghsub 'cp -R src dst && gh pr create --title t' create \
   "a cp -R decoy in an earlier clause does not become the verb"
 
+# =======================================================================================
+# CONVENTION: REGIME PRECONDITION. The two pins below follow it; name it when you add a
+# third. A pin whose behaviour depends on a THRESHOLD asserts, as its own PASS/FAIL row,
+# that its input still reaches the regime the pin exists to exercise -- so that when the
+# input drifts out of the regime the suite goes RED, instead of going green having tested
+# nothing. Without it the failure is silent in the worst direction: the behaviour row still
+# passes (a 39-byte decoy is also refused), so the pin reads as protecting a fail-open it
+# has stopped touching.
+#
+# Five parts, each of which was a real mistake here before it was a rule:
+#   1. It is a ROW, not a comment. A measurement recorded in prose or a commit message does
+#      not fail when it stops being true. The sibling convention for threshold tests says to
+#      pick a wide-margin fixture and, where none exists, to COMMENT the fragility; for a pin
+#      this supersedes that remedy -- assert it instead. That doc is
+#      docs/solutions/best-practices/test-budget-margin-must-clear-threshold-with-headroom-2026-07-05.md
+#   2. Measure THE VALUE THAT CROSSES THE BOUNDARY, not the input you constructed. The
+#      retarget pin measures `cmd_bare_deep` output, because that is what reaches the pipe;
+#      an assertion on the raw command coincided with it and would have gone inert silently.
+#   3. Assert EVERY property the regime depends on, not just the obvious one. The retarget
+#      pin also asserts the padding carries no clause separator, because a `[;&|]` would cut
+#      the clause below the buffer while the size row and the behaviour row both stayed green.
+#   4. SIZE-MATCH the discriminator control by loop, never by iteration count. An earlier
+#      version padded the control the same 6000 times and called it "same size"; it was
+#      30,000 bytes smaller, so every length-threshold hypothesis between the two survived it.
+#   5. Keep a row that must resolve the OTHER way, so the family is two-sided. Every row here
+#      wants a refusal; without the no-retarget row, a change that refused all large input
+#      would leave them all green while testing the retarget not at all.
+#
+# Rule and the three probes that motivated it:
+#   docs/solutions/code-quality/a-probe-can-run-and-never-enter-the-regime-2026-09-15.md
+# =======================================================================================
+
 # --- the refuse guard's SIGPIPE pin, and it deliberately does NOT go through ghsub ---
 # ghsub brackets its call with `set +o pipefail`. With pipefail OFF a pipeline reports only
 # its LAST command's status, so a SIGPIPE in the writer is invisible -- meaning a row written
@@ -1954,6 +1986,7 @@ _rr_base='gh pr merge 42 --repo other/org'
 _rr_multi="$_rr_base"; _rr_single="$_rr_base"
 for _rr_i in $(seq 1 3200); do _rr_multi+=$'\n# padding line for size'; done
 while [ "${#_rr_single}" -lt "${#_rr_multi}" ]; do _rr_single+=' # padding for size'; done
+# REGIME PRECONDITION part 2 (see the convention block at the first SIGPIPE pin above).
 # MEASURE WHAT CROSSES THE PIPE, not the raw command. cmd_gh_pr_ref pipes `repo_clause` --
 # the input after cmd_bare_deep, then cut at the first [;&|] -- so a rendering change or a
 # separator in the padding could shrink it below the buffer while this row stayed green and
