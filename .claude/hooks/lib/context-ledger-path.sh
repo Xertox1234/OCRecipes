@@ -85,6 +85,11 @@ context_ledger_dir() {
 # loose DIRECTORY, not a symlinked one. Closing the ancestor case needs a component walk,
 # which this function deliberately does not do -- do not read it as covered.
 #
+# Reachable only from a SAME-UID position, and that bound is part of the residual rather
+# than a softening of it: the read succeeds because the planted resume.md is owned by our
+# uid, so a cross-uid plant still fails the `-O` check below. Same boundary as the $HOME
+# root above -- which is why that root, not this function, is what removes the plant.
+#
 # Absent is OK: the writers create the directory, and a first run must not be refused.
 # Present must be BOTH not-a-symlink AND owned by us. Nothing in this repo ever creates a
 # symlink at a ledger position, so one existing there means something else made it.

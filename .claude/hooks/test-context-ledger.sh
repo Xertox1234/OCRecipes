@@ -52,6 +52,30 @@ if [ "$out" = "/xdg/state/ocrecipes/context-ledger/abc-123" ]; then
 else
   no "XDG_STATE_HOME precedence drifted: [$out]"
 fi
+# A RELATIVE XDG_STATE_HOME is IGNORED, not honoured. The basedir spec requires it ("If an
+# implementation encounters a relative path it MUST be ignored"), and the reason it matters
+# here is sharper than compliance: a cwd-relative ledger would be CREATED by the writers
+# under whatever directory the hook was invoked from and then looked for by the reader from
+# a different one, so the digest silently vanishes -- the exact failure the shared-definition
+# rationale at the top of context-ledger-path.sh exists to remove, arriving by another route.
+out=$( unset CONTEXT_LEDGER_ROOT; HOME=/home/pinned XDG_STATE_HOME=relstate context_ledger_dir "abc-123" 2>/dev/null )
+if [ "$out" = "/home/pinned/.local/state/ocrecipes/context-ledger/abc-123" ]; then
+  ok "a relative XDG_STATE_HOME is ignored and \$HOME is used"
+else
+  no "relative XDG_STATE_HOME was honoured or mishandled: [$out]"
+fi
+# No derivable root -> REFUSE, quietly. Before this, an unset HOME tripped `set -u` inside
+# the function, and the abort surfaced through ledger-note.sh as "no usable
+# CLAUDE_CODE_SESSION_ID" -- blaming an input that was fine. Both halves are asserted: a
+# non-zero return AND no stderr, since the misleading message was itself the bug.
+err=$( unset CONTEXT_LEDGER_ROOT; env -u HOME -u XDG_STATE_HOME bash -c \
+        ". \"$HOOKS_DIR/lib/context-ledger-path.sh\"; set -u; context_ledger_dir abc-123" 2>&1 )
+rc=$?
+if [ "$rc" -ne 0 ] && [ -z "$err" ]; then
+  ok "no derivable ledger root refuses with a non-zero return and no stderr"
+else
+  no "unset HOME/XDG_STATE_HOME: expected rc!=0 and silence, got rc=$rc err=[$err]"
+fi
 # THE SECURITY PROPERTY, asserted rather than implied by the two literals above: the
 # production default must not live under a world-writable directory. Its contents are read
 # back into additionalContext, so anyone who can write there can write model input. A
@@ -1078,12 +1102,19 @@ CLAUDE_CODE_SESSION_ID=exfil CONTEXT_LEDGER_ROOT="$EXFROOT" \
 # directory we own, and no resume.md at all, which the guard accepts as absent -- so the
 # only check that can produce a refusal here is the resume.md.tmp one. Without it the
 # digest writes through the link and `mv` renames the link into place.
-TMPROOT=$(mktemp -d); TMPTARGET=$(mktemp -d)
-mkdir -p "$TMPROOT/tmpsid"
-printf 'VERIFIED | seed | cmd\n' > "$TMPROOT/tmpsid/curated.md"
-ln -s "$TMPTARGET/stolen.md" "$TMPROOT/tmpsid/resume.md.tmp"
+# NOT named TMPROOT. That is the suite-global hermetic root created at the top of this
+# file, and the EXIT trap is single-quoted -- it expands at exit, so reassigning the name
+# here made the trap delete THIS fixture and leak the real root instead. Measured before
+# the rename: trap removed a different path than it created and left 67 files behind on
+# every run, local and CI. Nothing read a wrong path (CONTEXT_LEDGER_ROOT is exported from
+# the original value at the top, and every $TMPROOT fixture above is long since consumed),
+# so it leaked rather than corrupted -- which is exactly why it stayed invisible at 79/0.
+TMPFIXROOT=$(mktemp -d); TMPTARGET=$(mktemp -d)
+mkdir -p "$TMPFIXROOT/tmpsid"
+printf 'VERIFIED | seed | cmd\n' > "$TMPFIXROOT/tmpsid/curated.md"
+ln -s "$TMPTARGET/stolen.md" "$TMPFIXROOT/tmpsid/resume.md.tmp"
 jq -n '{hook_event_name:"PreCompact", session_id:"tmpsid", transcript_path:"/dev/null"}' \
-  | CONTEXT_LEDGER_ROOT="$TMPROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
+  | CONTEXT_LEDGER_ROOT="$TMPFIXROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
 [ ! -e "$TMPTARGET/stolen.md" ] \
   && ok "the digest writer refuses a symlinked resume.md.tmp" \
   || no "the digest writer wrote through a symlinked resume.md.tmp"
@@ -1108,9 +1139,35 @@ case "$PERMDIR" in
 esac
 
 rm -f "$SYMROOT/dirlink" "$SYMROOT/filelink/resume.md" 2>/dev/null
-rm -f "$EXFROOT/exfil" "$TMPROOT/tmpsid/resume.md.tmp" 2>/dev/null
+rm -f "$EXFROOT/exfil" "$TMPFIXROOT/tmpsid/resume.md.tmp" 2>/dev/null
 
-EXPECTED_TOTAL=79
+# THE TWO PRECOMPACT DIRECTORY GUARDS, asserted POSITIONALLY because no behavioural row
+# can tell them apart. Both evaluate the same predicate on the same $LEDGER_DIR with
+# nothing mutating it in between, so dropping either one alone leaves the suite at 79/0 and
+# only dropping BOTH reddens "the digest writer deposited into a symlinked directory" --
+# measured. That makes each look like dead code to a per-guard mutation sweep, and the
+# repo's own standard is that a measurement written in a comment is not a guard. These two
+# rows ARE the guard: delete either check and exactly one row reddens. Source-scanning
+# assertions have precedent in this suite family -- test-assert-needle-dash.sh greps the
+# source of every test-*.sh and guards the population size the same way.
+PCL="$HOOKS_DIR/precompact-ledger.sh"
+guard_line=$(grep -n '^context_ledger_path_ok "\$LEDGER_DIR" || exit 0$' "$PCL" | cut -d: -f1 | head -1)
+read_line=$(grep -n 'LEDGER_DIR/curated.md' "$PCL" | cut -d: -f1 | head -1)
+mkdir_line=$(grep -n '^(umask 077; mkdir -p "\$LEDGER_DIR")' "$PCL" | cut -d: -f1 | head -1)
+last_guard=$(grep -n '^context_ledger_path_ok "\$LEDGER_DIR" || exit 0$' "$PCL" | cut -d: -f1 | tail -1)
+if [ -n "$guard_line" ] && [ -n "$read_line" ] && [ "$guard_line" -lt "$read_line" ]; then
+  ok "precompact checks the ledger directory BEFORE reading curated.md"
+else
+  no "no directory check precedes the curated.md read (guard=$guard_line read=$read_line)"
+fi
+if [ -n "$last_guard" ] && [ -n "$mkdir_line" ] && [ "$last_guard" -lt "$mkdir_line" ] \
+   && [ "$last_guard" -gt "${read_line:-0}" ]; then
+  ok "precompact re-checks the ledger directory at WRITE time, after the tier reads"
+else
+  no "no write-time directory check between the reads and mkdir (last=$last_guard mkdir=$mkdir_line)"
+fi
+
+EXPECTED_TOTAL=83
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
