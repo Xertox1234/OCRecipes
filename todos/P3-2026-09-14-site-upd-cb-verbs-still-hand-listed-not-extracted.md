@@ -1,7 +1,4 @@
-<!-- Filename: P{0-3}-YYYY-MM-DD-short-description.md  (P0=critical … P3=low) -->
-
 ---
-
 title: "SITE_UPD_VERBS / SITE_CB_VERBS are hand-listed alternation branches, not extracted like the newer DENY-SITE ALTERNATION BRANCHES axis"
 status: backlog
 priority: low
@@ -10,7 +7,6 @@ updated: 2026-09-14
 assignee:
 labels: [deferred, harness, testing]
 github_issue:
-
 ---
 
 # Two eas colon-verb families predate the source-extraction mechanism and were not retrofitted
@@ -45,7 +41,7 @@ offered alternative ("name them explicitly as deliberately left hand-listed, or 
       alternation text, not hand-listed.
 - [ ] `SITE_CB_VERBS` is generated via `_alt_or_die` from `guard-outward-cli.sh:2124`'s literal
       alternation text — a TWO-GROUP alternation (`(channel|branch):(create|edit|delete|
-    rename)`), so the extraction needs both groups (the `_alt_or_die` pattern used for the
+  rename)`), so the extraction needs both groups (the `_alt_or_die` pattern used for the
       railvar site at `repro-outward-cli-corpus.sh` is the template: same two-`(...)`-groups
       shape, already proven there).
 - [ ] Generated rows are IDENTICAL in content to the current hand-listed ones (same commands,

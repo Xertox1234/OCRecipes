@@ -1183,6 +1183,14 @@ done
 # A branch REMOVED is caught too, but by a DIFFERENT and WEAKER mechanism than the
 # rows above it, and the difference matters enough to say plainly rather than
 # overclaim. Because extraction and verdict-testing both read the SAME guard file
+# LIMIT OF THE CLAIM BELOW, measured: this holds for branches matching the
+# extraction character class. That class is widened to `[a-z0-9|-]+` as of
+# 2026-09-15 -- it was `[a-z|]+`, under which adding a HYPHENATED branch (and
+# hyphens are already normal in this guard: update-branch, delete-asset,
+# revert-update-rollout, roll-back-to-embedded) made `_alt_or_die` match 0 lines
+# and abort the whole generation with a FATAL rather than growing ROWS. Fail-
+# closed, so never a silent miss, but "caught automatically, no row to write by
+# hand" was not what happened -- the fix was to widen the class, not bump a pin.
 # in ordinary same-commit operation, a branch deleted from the guard also
 # disappears from THIS file's own generated row set: `rows` shrinks, `EXPECTED_ROWS`
 # reds, and the attribution manifest loses that branch's line -- a real, required,
@@ -1213,13 +1221,13 @@ _alt_or_die() {  # $1=grep -E pattern, must match EXACTLY one line of $HOOK
   _ALT_HIT="$hit"
 }
 
-_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z|]+\)\$\{_OUT_POS_SUFFIX\}'
+_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_POS_SUFFIX\}'
 RAILWAY_VERB_ALT=$(sed -E 's/^railway\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
-_alt_or_die 'eas\$\{_OUT_SEP\}\([a-z|]+\)\$\{_OUT_POS_SUFFIX\}'
+_alt_or_die 'eas\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_POS_SUFFIX\}'
 EAS_VERB_ALT=$(sed -E 's/^eas\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
-_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z|]+\)\$\{_OUT_SEP\}\(set\|delete\)\$\{_OUT_POS_SUFFIX\}'
+_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_SEP\}\(set\|delete\)\$\{_OUT_POS_SUFFIX\}'
 RAILVAR_ALT=$(sed -E 's/^railway\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_SEP\}\(set\|delete\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
-_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z|]+\)\$\{_OUT_SEP\}delete\$\{_OUT_POS_SUFFIX\}'
+_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_SEP\}delete\$\{_OUT_POS_SUFFIX\}'
 RAILSVC_ALT=$(sed -E 's/^railway\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_SEP\}delete\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
 
 IFS='|' read -ra SITERAILVERB_BR <<< "$RAILWAY_VERB_ALT"
@@ -1478,7 +1486,7 @@ fi
 #    naming it here rather than only in the residual is the same "a list that
 #    discloses only the residual it has already closed is worse than no list"
 #    discipline this whole paragraph is about):
-#    (a) the SITE_UPD_VERBS / SITE_CB_VERBS families a few hundred lines above
+#    (a1) the SITE_UPD_VERBS / SITE_CB_VERBS families a few hundred lines above
 #    (`eas update:(delete|edit|republish|...)`, `eas (channel|branch):(create|
 #    edit|delete|rename)`) are the EXACT SAME alternation-of-literal-branches
 #    shape `_alt_or_die` already handles -- SITE_CB_VERBS is even a two-group
@@ -1491,16 +1499,44 @@ fi
 #    scope rather than folded in under time pressure. A branch added to either
 #    regex later needs a human to remember to extend the hand-list, exactly the
 #    "hand-carved subset" failure NOTE6 exists to prevent.
+#    (a2) TWO MORE ALTERNATION-SHAPED SITES THAT ARE HAND-LISTED *AND*
+#    INCOMPLETELY COVERED. Added 2026-09-15 after a review pointed out that (a1)
+#    discloses only a family whose coverage is COMPLETE while these two, with
+#    ~26 zero-row branches between them, were in no bucket at all -- which is
+#    precisely the "a list that discloses only the residual it has already
+#    closed" failure this paragraph invokes twice. Both are live, measured here,
+#    not theoretical:
+#      GH_MUTATING_RE (guard-outward-cli.sh:2759) spans 22 literal branches
+#      across three namespaces. EXACTLY TWO have a row -- `release create` and
+#      `repo delete`. All NINE `pr` branches (close, edit, ready, reopen, review,
+#      lock, unlock, update-branch, revert) are at zero rows, as are 4 of 5
+#      release and 7 of 8 repo branches. Deleting `close` from the alternation
+#      makes that command ALLOW while moving 0 of this file`s rows.
+#      THE OTA-SCRIPT SITES (guard-outward-cli.sh:2239 and :2240) span
+#      (npm|pnpm|yarn) x (run-script|run) x (preview|production) and
+#      (yarn|pnpm) x (preview|production). Corpus census: `pnpm` appears 0 times
+#      and `run-script` 0 times anywhere in this file, and the only shapes
+#      generated are npm+run+preview and the yarn-form production row -- so the
+#      preview/production cross is unexercised for npm. Deleting the
+#      `production` branch was measured to flip THIS REPO`S OWN DOCUMENTED OTA
+#      PUBLISH COMMAND from DENY to ALLOW (control: the preview form stayed
+#      DENY in the same run). That is the 2026-08-16 incident class, so this is
+#      the one to close first. Extending the P3 follow-up below, not folded in
+#      here, because retrofitting them is the same shipped-mechanism retrofit
+#      (a1) was scoped out for.
 #    (b) any OTHER deny check in the file that does not take the alternation
-#    shape at all -- the interior-redirect, flag-adjacent, forged/masked --auto,
+#    shape -- the interior-redirect, flag-adjacent, forged/masked --auto,
 #    decoy-clause and root-position-flag families are each their own bespoke
 #    regex, not a branch list, and adding a branch-style row generator for them
 #    is exactly the "enumerate every mechanism x every branch" cross product
-#    this todo's own scope note declines;
+#    this todo's own scope note declines. NOTE the narrowing: this bucket used to
+#    say the remaining checks "do not take the alternation shape at all", which
+#    was wrong -- (a2) above is the counter-example, and it is a branch list a
+#    source-grep CAN enumerate;
 #    (c) narrowing that is not branch DELETION at all -- tightening `_OUT_SEP` or
 #    `_OUT_POS_PREFIX` themselves, or narrowing a character class inside one
 #    branch rather than removing the branch whole.
-#    All three are real, unmeasured, and still invisible to every check in this
+#    All FOUR are real and still invisible to every check in this
 #    block for the same reason the original paragraph gave: this is a question
 #    about which rows exist, not one a fixed pin can answer without a new axis
 #    (or, for (a), the same axis extended) for each shape.

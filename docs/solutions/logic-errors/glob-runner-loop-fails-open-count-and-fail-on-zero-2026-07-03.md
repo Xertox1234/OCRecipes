@@ -279,9 +279,14 @@ Two things about this shape are worth being deliberate about:
   incident used.
 
 **Scope this closes, and scope it does not.** This closes exactly the branches enumerable as a
-flat `(a|b|c)` alternation next to `${_OUT_SEP}`/`${_OUT_POS_PREFIX}` — four such regexes here.
+flat `(a|b|c)` alternation next to `${_OUT_SEP}`/`${_OUT_POS_PREFIX}`. Counted at the source
+rather than estimated: **ten such regex lines here, of which four are extracted** — the six left
+hand-listed are the two `eas` site-verb regexes, the two OTA-script regexes, `GH_MUTATING_RE` and
+`GH_PR_CREATE_RE`. An earlier revision of this sentence read "four such regexes here", which
+silently equated _extracted_ with _extractable_ and hid six candidates from every future reader —
+and this file is auto-injected on `.claude/hooks/**` edits, so a wrong figure here propagates.
 It does not extend to checks shaped some other way (an interior-redirect scan, a flag-adjacent
-regex, a decoy-clause union) — those are not alternations a source-grep can enumerate, and
+regex, a decoy-clause union) — those genuinely are not branch lists, and
 building a branch-style extractor for each of THEIR shapes is the "enumerate every mechanism x
 every branch" cross product a corpus this size cannot afford. Nor does it cover narrowing that is
 not branch deletion — tightening `${_OUT_SEP}` itself, or narrowing a character class inside one
