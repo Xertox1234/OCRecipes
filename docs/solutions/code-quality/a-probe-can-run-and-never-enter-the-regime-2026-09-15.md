@@ -127,7 +127,7 @@ with an exit code over the one that answers a nearby question with text.
   still exceeds 65536 bytes. Its own comment notes that no other row in that file is large enough
   to reach the buffer — so if the padding ever drifts, the row goes green and the whole class is
   unpinned silently, which is precisely this rule's failure mode. Filed as
-  `todos/P2-2026-09-15-third-sigpipe-pin-has-no-regime-precondition.md`, not fixed here.
+  `todos/P2-2026-09-15-has-merge-sigpipe-pin-has-no-regime-precondition.md`, not fixed here.
 - `docs/AI_WORKFLOW.md` — the reviewer dispatch prompt carries the rule for a reviewer's own
   probes; that is its single home, per the note at `.claude/agents/code-reviewer.md`.
 
