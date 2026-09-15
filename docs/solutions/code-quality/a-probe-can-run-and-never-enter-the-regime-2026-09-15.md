@@ -116,8 +116,17 @@ with an exit code over the one that answers a nearby question with text.
 
 ## Related Files
 
-- `.claude/hooks/test-cmd-detect.sh` — the named convention block, and both pins that follow it.
-- `.claude/hooks/lib/cmd-detect.sh` — the three de-piped SIGPIPE sites the pins protect.
+- `.claude/hooks/test-cmd-detect.sh` — the named convention block, and both pins that follow it:
+  the refuse guard (`cmd_gh_pr_write_subcommand`) and the retarget refusal (`cmd_gh_pr_ref`).
+- `.claude/hooks/lib/cmd-detect.sh` — three de-piped SIGPIPE sites. Those two pins cover **two**
+  of them.
+- `.claude/hooks/test-merge-review-guard.sh` — the third site (`cmd_gh_pr_has_merge`) is pinned
+  here instead, by `THE 64KB SIGPIPE ROW`. That row does **not** yet carry a regime precondition:
+  it builds a 2,000-line `$_big` and asserts the deny directly, with nothing asserting the input
+  still exceeds 65536 bytes. Its own comment notes that no other row in that file is large enough
+  to reach the buffer — so if the padding ever drifts, the row goes green and the whole class is
+  unpinned silently, which is precisely this rule's failure mode. Filed as
+  `todos/P2-2026-09-15-third-sigpipe-pin-has-no-regime-precondition.md`, not fixed here.
 - `docs/AI_WORKFLOW.md` — the reviewer dispatch prompt carries the rule for a reviewer's own
   probes; that is its single home, per the note at `.claude/agents/code-reviewer.md`.
 
