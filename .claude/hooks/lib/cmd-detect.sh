@@ -2729,7 +2729,11 @@ cmd_gh_pr_ref() {
   # not fail-closed the way that entry is. Naming the property rather than an ordinal: this
   # file carries several numbered lists and more than one has a '2.', so an ordinal does not
   # locate anything. NO COUNT HERE ON PURPOSE -- an earlier version said "four", which is
-  # wrong under every counting method: 3 by `^#  2.`, 5 if parenthesised enumerations count,
+  # wrong under every counting method: 3 by `^ *# +2\.`, 5 if parenthesised enumerations
+  # count. The first version of THIS line cited `^#  2.`, which matches 0 -- every real item
+  # is indented before the `#` or carries three spaces after it. A disclosed method exists so
+  # the claim can be re-run; one that returns a different number than the sentence is worse
+  # than no method, and that is the third time this paragraph's own lesson has caught it.
   # and the sentence named no method. An asserted figure under prose claiming derivation, in
   # the paragraph fixing exactly that. A corrected number would only re-arm the same drift.
   # The gate classifies the LOCAL pr 42 while the
