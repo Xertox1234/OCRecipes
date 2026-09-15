@@ -70,11 +70,11 @@ OTA publish, i.e. the 2026-08-16 incident class.
 - [x] **Mutation-verified per regex, not per row.** For each of the 4 regexes, a scratch mutant
       guard with one previously-uncovered branch deleted was built and probed directly (not
       assumed): `railway run`, `eas publish`, `railway vars set K=V`, `railway environment delete
-  svc` each measured `real=DENY mutant=ALLOW`. One regex (`railway` top verb, deleting `run`)
+svc` each measured `real=DENY mutant=ALLOW`. One regex (`railway` top verb, deleting `run`)
       was additionally run through the FULL, re-pinned corpus two different ways against that
       mutant, because the first way understated what it proved: (1) mutant used for BOTH row
       generation and verdict-testing (ordinary same-commit shape) — exit 1, `rows is 622,
-  expected 623`, `-siterailverb-run` removed from the membership manifest. This is a real,
+expected 623`, `-siterailverb-run` removed from the membership manifest. This is a real,
       required, un-silenceable pin failure, but it is a ROW-COUNT signal (the row never gets
       evaluated at all), not proof the row-based mechanism itself catches a verdict change. (2)
       DECOUPLED — row generation held on the real/unmutated guard (so `siterailverb-run` still

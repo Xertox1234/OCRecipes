@@ -3242,13 +3242,20 @@ assert_allow "R3 bound: same expansion NOT in command position stays allowed" \
   "$(json 'echo ${TOOL} run build')"
 assert_allow "R3 bound: command-position expansion with a NON-gated verb stays allowed" \
   "$(json '${TOOL} test')"
-# The bare-paren and case-arm spellings are NOT pinned as denies: they are still
-# ALLOWED, and the cause is one level down in lib/cmd-detect.sh's scanner, which
-# desynchronises on a bare `(` (measured: cmd_words_vanished renders
-# `e$( (:) )as update` as `e )as update`). Filed as
-# todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md.
-# Asserting the ALLOW here would encode the bypass as acceptable; the corpus
-# carries them with a DENY expectation so they report as gaps instead.
+# The bare-paren and case-arm SPELLINGS APPLIED TO THIS R3-SWEEP CONSTRUCTION
+# specifically are not pinned here either way -- this note originally said they
+# were still ALLOWED because of a scanner desync one level down in
+# lib/cmd-detect.sh. UPDATED 2026-09-13: that desync is now fixed for BOTH
+# mechanisms (bare-paren closed 2026-09-06, archived at
+# todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md;
+# case-arm closed on the precise path 2026-09-13, see the dedicated section
+# below), so the reasoning that justified NOT pinning a deny here no longer
+# holds in general -- see the "2026-09-06: bare-paren subshell" and
+# "2026-09-13: case-arm" sections further down in this file for the pinned
+# denies on the `eas`/`gh`/`npm`/`railway` families this corpus actually
+# generates. This specific `${TOOL} run build`-shaped combination was never
+# separately constructed or measured and stays untested here; asserting an
+# ALLOW or a DENY for a shape nobody built would be a guess, not a pin.
 # The second, independent trigger: a fixed 200-iteration cap was a decision
 # boundary with a sharp edge — 199 leading spans denied, 200 allowed. The bound
 # is now derived from the input length, so it cannot be reached by well-formed
@@ -3376,6 +3383,88 @@ assert_deny "bare-paren subshell splits gh's binary name" \
   "gh pr merge"
 assert_deny "bare-paren subshell splits the verb" \
   "$(json 'eas up$( (:) )date --branch preview')" \
+  "eas update/publish/submit"
+
+# ---------- 2026-09-13: case-arm `)` -- the sibling the paren counter cannot
+# reach (todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md)
+# ---------------------------------------------------------------------------
+# A case arm pattern's `)` has NO matching opener, so no depth arithmetic can
+# tell it apart from the substitution's real closer. Ground-truthed with a
+# PATH-stubbed `eas` before this fix landed: real bash invokes `eas update
+# --branch preview` for the decoy below, identically to the plain control.
+assert_deny "a case arm terminator does not close the substitution early" \
+  "$(json 'e$(case x in a) : ;; esac)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a case arm terminator splits gh's binary name too" \
+  "$(json 'g$(case x in a) : ;; esac)h pr merge 42')" \
+  "gh pr merge"
+assert_deny "the optional leading-paren arm form is balanced by the EXISTING bare-paren counter" \
+  "$(json 'e$(case x in (a) : ;; esac)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "multiple arms all stay open until the real esac" \
+  "$(json 'e$(case x in a) : ;; b) : ;; esac)as update --branch preview')" \
+  "eas update/publish/submit"
+# TWO-SIDED REGRESSION CONTROL: `case` must be recognised ONLY at a genuine
+# command-word start, never as a plain argument -- an unconditional tracker
+# would open a depth nothing ever closes here and silently lose this DENY.
+assert_deny "case as a plain ARGUMENT (echo case) must still deny" \
+  "$(json 'e$(echo case)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "case mid-word (casexyz) must not open anything" \
+  "$(json 'e$(echo casexyz)as update --branch preview')" \
+  "eas update/publish/submit"
+# UNION-PRESERVING CONTROL: case-tracking is gated to the COUNTING pass only
+# (cmd_words_vanished), never the blind one (cmd_words_vanished_blind) -- an
+# unterminated case is exactly the shape that would collapse BOTH renderings
+# to empty if it were tracked in both. The blind pass, which never tracks
+# case, still closes at the first unquoted `)` and denies here.
+assert_deny "an unterminated case still denies via the blind-pass union" \
+  "$(json 'e$(: ;case)as update --branch preview')" \
+  "eas update/publish/submit"
+# POST-IMPLEMENTATION REVIEW CRITICALs, both confirmed live via a PATH-stubbed
+# binary before the fix landed.
+# CRITICAL 1: kwbound() originally treated ANY non-identifier character as a
+# bash word boundary, but `=` is not one -- `case=2` is ONE bash word, never
+# the keyword `case` followed by `=2`. The old kwbound let this spuriously
+# re-open casedepth, permanently suppressing the substitution close.
+assert_deny "an embedded case=NN inside the arm body must not re-open casedepth" \
+  "$(json 'e$(case x in a) : ; case=2 ;; esac)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "the esac=NN mirror must not spuriously decrement casedepth either" \
+  "$(json 'e$(case x in a) : ; esac=1 ;; b) : ;; esac)as update --branch preview')" \
+  "eas update/publish/submit"
+# CRITICAL 3 (found by ROUND-2 review of the CRITICAL 1 fix itself): the
+# round-1 kwbound() fix also wrongly included `\r` (carriage return) as a
+# word-terminator. This file already carries a mutation-confirmed precedent
+# in lib/cmd-detect.sh (search "THE BOUNDARY WHITESPACE MUST BE") that
+# bash's tokenizer does NOT treat CR (or VT/FF) as word-separating -- glued
+# between two halves of a word they fuse into ONE token, the same shape as
+# `=` above. Reintroduced the exact CRITICAL 1 regression class through a
+# different decoy byte one round later. Uses jsonc (jq-encoded), not json
+# (plain printf %s), because a raw CR byte inside a plain-printf JSON string
+# is not valid JSON -- jq's --arg does the escaping correctly.
+assert_deny "an embedded CR byte inside the arm body must not re-open casedepth either" \
+  "$(jsonc "$(printf 'e$(case x in a) : ; case\r2 ;; esac)as update --branch preview')")" \
+  "eas update/publish/submit"
+# CRITICAL 2: `atcmd` only recognised PUNCTUATION command-position openers, so
+# a `case` nested directly after a reserved word that opens a position with NO
+# operator before it (then/do/else/elif/time) was never recognised. Scoped to
+# match guard-outward-cli.sh's own existing _OUT_POS_PREFIX, which already
+# absorbs exactly this five-word set as runner words.
+assert_deny "a case nested directly after then opens command position" \
+  "$(json 'e$(if true; then case x in a) : ;; esac; fi)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a case nested directly after do opens command position" \
+  "$(json 'e$(for x in y; do case x in a) : ;; esac; done)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a case nested directly after else opens command position" \
+  "$(json 'e$(if false; then :; else case x in a) : ;; esac; fi)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a case nested directly after elif opens command position" \
+  "$(json 'e$(if false; then :; elif true; then case x in a) : ;; esac; fi)as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "a case nested directly after time opens command position" \
+  "$(json 'e$(time case x in a) : ;; esac)as update --branch preview')" \
   "eas update/publish/submit"
 # ARITHMETIC is never empty, so the paren counter must not start deleting it --
 # `f$((1+2))oo` is really `f3oo`. Two-sided: the gated shape must NOT deny.
@@ -3859,7 +3948,14 @@ _PIN_RAN=1
 # round-2 anchoring fix closed the inert-prose decoy but not this) and its
 # fix (the exclusion made per-OCCURRENCE via `grep -oE` extraction instead
 # of a second whole-command existence check).
-EXPECTED_TOTAL=724
+# 724 -> 739 (2026-09-15, merge of the case-arm branch
+# todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+# into a main that had meanwhile reached 724): +15 for the case-arm assertions.
+# That branch was at 705 on its own base of 690, i.e. the same +15 -- the two
+# branches added DISJOINT assertions, so the totals compose. Stated only because
+# the suite was re-run on the resolved tree and reported the 739 itself; the
+# arithmetic is a check on the measurement, not a substitute for it.
+EXPECTED_TOTAL=739
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

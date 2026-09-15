@@ -402,8 +402,9 @@
 #     for the method branch — that reasoning was right about the RENDERING and
 #     wrong about the DECISION, because a different branch catches it.
 #
-#   * CLOSED 2026-09-07 (todos/archive/P0-2026-09-06-outward-cli-guard-interior-
-#     redirect-defeats-every-family.md). Kept in full, amended rather than
+#   * CLOSED 2026-09-07
+#     (todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md).
+#     Kept in full, amended rather than
 #     deleted, because the entry's own history is the lesson: it was rescoped
 #     TWICE while open, and one of its measurements was wrong.
 #
@@ -697,13 +698,70 @@
 #     own header names as its dominant defect. Corpus rows toolvbareparen-* now
 #     report `ok`.
 #
-#     THE `case`-ARM HALF IS STILL OPEN and unchanged:
-#         e$(case x in a) : ;; esac)as update --branch preview   -> ALLOW
-#     That `)` has no matching opener, so no depth arithmetic reaches it. Corpus
-#     rows toolvcasearm-*/verbvcasearm-*/flagvcasearm-* stay GAPs by design. Filed:
-#     todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
-#     The bare-paren todo is archived at
-#     todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
+#     THE `case`-ARM HALF IS CLOSED ON THE PRECISE PATH FOR A BARE OR
+#     BRACE-GROUPED ARM (2026-09-13,
+#     todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md)
+#     -- named narrowly on purpose, see the NOT-closed shape immediately below:
+#         e$(case x in a) : ;; esac)as update --branch preview
+#           precise=DENY   nojq/nolib/noawk=ALLOW
+#     The lib now recognises `case`/`esac` at a genuine command-word start (per
+#     level, same shape as the bare-paren counter), so that `)` no longer closes
+#     the enclosing $(...) early on the path that sources the lib. The three
+#     degraded paths never read the lib at all, so they are UNCHANGED and stay a
+#     documented residual, same as every other lib-only fix in this file.
+#
+#     STILL OPEN #1, EVEN ON PRECISE (post-implementation review, 2026-09-14):
+#     a case arm wrapped in a BARE-PAREN SUBSHELL. The subshell's own `(` takes the
+#     paren credit, so its `)` closes the substitution early — the same mechanism
+#     the sibling bare-paren counter exists for, composed with this one:
+#         e$( ( case x in a) : ;; esac ) )as update --branch preview
+#           precise=ALLOW  (all four paths)
+#     CONTROL, and it is what isolates the mechanism: swap the subshell for a
+#     BRACE GROUP, which does not consume `parens[d]`, and the identical live
+#     invocation is caught:
+#         e$({ case x in a) : ;; esac; })as update --branch preview
+#           precise=DENY
+#     Both reconstruct `eas update --branch preview` in real argv; only `(` vs `{`
+#     differs. PRE-EXISTING, not opened by this fix — measured ALLOW on the parent
+#     commit and on main too, while the plain and brace-grouped forms both moved
+#     ALLOW -> DENY here. This entry exists because the heading above previously
+#     read "COMMENT-FREE ARM", and THIS SHAPE IS COMMENT-FREE: the wording asserted
+#     a property of a whole class from the one form that had been tested, which is
+#     the exact failure `one-form-property-asserted-of-whole-syntax-class` in this
+#     same diff is named after. Not yet carried by a corpus row — filed as
+#     todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
+#     so it stays measured rather than only described.
+#     RECORDED HERE ONLY. The CLOSED entry further down documents the case-arm
+#     mechanism and STILL OPEN #2, but has no counterpart for THIS residual, so
+#     the pointer at the end of #2 ("the CLOSED entry is the authority for the
+#     mechanism") is true of #2's mechanism and must not be read as covering the
+#     residual list. Deliberately NOT mirrored into that entry: two copies of a
+#     residual is how the drift this file's own header names as its dominant
+#     defect gets started, and this very block already contradicted the CLOSED
+#     entry for one review round. One home per residual; this is #1's.
+#
+#     STILL OPEN #2, EVEN ON PRECISE (post-implementation review, 2026-09-13):
+#     COMPOSING a case arm with a shell COMMENT that itself contains a `;`
+#     followed by a decoy `esac` -- the comment is inert to real bash (it runs
+#     to end-of-line), but this scanner has no comment-state tracking at all
+#     (by established design -- see the BARE-PAREN DEPTH comment in
+#     lib/cmd-detect.sh and cmd_words_vanished_blind's own header, both of
+#     which already document that comment-tracking was considered and
+#     rejected as "a fifth grammar bet"), so the `;` inside the comment is
+#     misread as a real separator and the decoy `esac` right after it closes
+#     `casedepth` one arm early:
+#         e$(case x in a) : ;; #x;esac
+#         b) : ;; esac)as update --branch preview
+#           precise=ALLOW  (all four paths)
+#     PRE-EXISTING, not opened by this fix -- ALLOW on the parent commit too,
+#     confirmed by sourcing that commit's lib directly. Same composition class
+#     this file's own `vcomment`/`co-mask-c1` rows already carry for the
+#     sibling bare-paren mechanism: the union covers each mechanism in
+#     isolation, not their composition with an independently-documented
+#     residual. Measured by `toolvcasecomment-*`/`verbvcasecomment-*` in the
+#     corpus (EXPECTED-DENY, reported as gaps by design).
+#     The CLOSED entry ~90 lines below is the authority for the mechanism; this is
+#     the recap.
 #
 #   * SIDE EFFECT OF DECLINING, and it is a CORRECTNESS GAIN, not just a cost
 #     (2026-09-06, round 3): the 2026-09-03 narrow-deny rule denies an expansion
@@ -762,8 +820,9 @@
 #     "degraded is the fail-closed direction" is not a safe default here. Second,
 #     the TOOL rows allow on all four, which is a live outward-CLI bypass.
 #
-#     CLOSED 2026-09-06 (todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-
-#     breaks-substitution-scanners.md). Every construction in the table above now
+#     CLOSED 2026-09-06
+#     (todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md).
+#     Every construction in the table above now
 #     DENIES on the precise path, each attributed to the intended
 #     command-position check rather than to an ambiguity fallback.
 #
@@ -807,16 +866,87 @@
 #     number, so deleting it manufactures `foo` from `f$((1+2))oo`, whose real
 #     argv is `f3oo`. It is copied verbatim instead, exactly like `${#x}`.
 #
-#   * A `case` ARM'S `)` IS THE SAME SYMPTOM AND IS STILL OPEN.
-#     `e$(case x in a) : ;; esac)as update --branch preview` ALLOWS on all four.
-#     A paren counter cannot reach it: that `)` has no matching opener, so no
-#     depth arithmetic can distinguish it from the construct's real closer.
-#     Deliberately NOT fixed by tracking the `case`/`esac` keywords — a naive
-#     tracker is a deny→ALLOW regression generator, because `e$(echo case)as
-#     update` DENIES today and would leave the depth permanently open, emptying
-#     the rendering and silently losing that coverage. Tracked at
-#     todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
-#     and measured every run by this repo's corpus (`toolvcasearm-*`).
+#   * A `case` ARM'S `)` WAS THE SAME SYMPTOM. CLOSED 2026-09-13 ON THE PRECISE
+#     PATH FOR THE MEASURED SHAPES
+#     (todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md)
+#     -- named narrowly on purpose, see the still-open composition below:
+#         e$(case x in a) : ;; esac)as update --branch preview
+#           precise=DENY (command-position 'eas update/publish/submit')
+#           nojq=ALLOW  nolib=ALLOW  noawk=ALLOW  (documented residual, unchanged
+#           -- none of the three degraded paths sources the lib)
+#     A bare paren counter cannot reach this `)`: it has no matching opener, so
+#     no depth arithmetic can distinguish it from the construct's real closer,
+#     and tracking the literal words `case`/`esac` unconditionally would be a
+#     deny->ALLOW regression generator on its own -- `e$(echo case)as update`
+#     denies today and a naive tracker would leave that depth permanently open,
+#     emptying the rendering and silently losing that coverage. The fix instead
+#     recognises `case`/`esac` ONLY at a genuine command-word start (the same
+#     command-position discipline `_CMD_POS_PREFIX` above uses for verbs), so an
+#     argument, a quoted mention, or a mid-word occurrence (`casexyz`,
+#     `lowercase`) never opens anything; `e$(echo case)as update` is pinned as a
+#     named two-sided regression control in test-cmd-detect.sh. The tracking
+#     lives ONLY in the counting pass (`cmd_words_vanished`, not
+#     `cmd_words_vanished_blind`) so an adversarial unterminated `case` cannot
+#     collapse both unioned renderings at once -- the blind pass stays
+#     case-blind by design and still closes at the first unquoted `)`, which is
+#     exactly what keeps that construction denying. Measured every run by this
+#     repo's corpus: ALL 17 `*vcasearm-*` rows flip to `ok` on the precise path,
+#     and this change deletes every one of them from `EXPECTED_PRECISE_GAP_IDS`
+#     (that manifest now contains zero `vcasearm` entries -- check it rather than
+#     this sentence). The seven `toolvcasearm-*` rows remain a DEGRADED-path
+#     (all-path) residual: precise denies, the three degraded paths allow,
+#     because none of them sources the lib. They therefore appear in the corpus's
+#     "precise-clean, degraded-dirty" section, not in the precise-gap manifest.
+#     An earlier revision of this sentence called them "a documented precise-path
+#     gap by design", which measurement contradicts and which also contradicted
+#     repro-outward-cli-corpus.sh's own description in this same diff.
+#
+#     THREE FURTHER LIVE GAPS IN THE FIRST DRAFT, found by post-implementation
+#     review across two rounds and closed in the SAME change: `kwbound` (the
+#     word-terminator test) originally treated any non-identifier byte as a
+#     boundary, so an embedded `case=2`/`esac=1` inside an arm's own action
+#     spuriously re-toggled `casedepth` (`=` is not a real bash word-terminator
+#     -- `case=2` is ONE word, ground-truthed live); the command-position
+#     anchor (`atcmd`) only recognised PUNCTUATION openers, so a `case` nested
+#     directly after `then`/`do`/`else`/`elif`/`time` (which open a fresh
+#     command position with no operator before them) was invisible; and the
+#     ROUND-1 FIX FOR THE FIRST GAP ITSELF ALSO WRONGLY INCLUDED `\r`
+#     (carriage return) as a word-terminator (both in `kwbound` and in the
+#     separate `cmdpos` reset set that decides `atcmd`), reintroducing the
+#     exact `case=2`-shaped regression through a different decoy byte one
+#     round later -- CR does not separate in real bash (this file already
+#     carried a mutation-confirmed precedent for that, for a different
+#     function, before this todo). All three fixed: `kwbound` narrowed to
+#     bash's real word-terminator set (blank/tab/newline/EOF plus `; & | ( )
+#     < >`, no CR), the five-word reserved-word set recognised the same way
+#     this file's own `_OUT_POS_PREFIX` already does, and `\r` removed from
+#     both places that had wrongly treated it as inert. Pinned as named
+#     regression controls in test-cmd-detect.sh and test-guard-outward-cli.sh.
+#
+#     STILL OPEN (found live by round-2 review, NOT fixed -- an owner
+#     decision, not overlooked): `if`/`while`/`until` are not in the five-word
+#     reserved-word set above, so a `case` nested directly after one of them
+#     is still invisible -- `e$(if case x in a) : ;; esac; then :; fi)as
+#     update --branch preview` (and the `while`/`until` equivalents)
+#     ground-truthed live to really invoke `eas update --branch preview`.
+#     `_OUT_POS_PREFIX` does not cover these three either, so this is a
+#     genuine pre-existing sibling gap, not a regression this change opened.
+#
+#     STILL OPEN, EVEN ON PRECISE: a case arm COMPOSED with a shell COMMENT
+#     containing a `;` followed by a decoy `esac` closes `casedepth` one arm
+#     early, because this scanner has no comment-state tracking at all (by
+#     established design -- comment-tracking was already considered and
+#     rejected elsewhere in this file as "a fifth grammar bet"):
+#         e$(case x in a) : ;; #x;esac
+#         b) : ;; esac)as update --branch preview
+#           precise=ALLOW (all four paths)
+#     PRE-EXISTING, not opened by this fix (ALLOW on the parent commit too).
+#     Same composition class this file's `vcomment`/`co-mask-c1` rows already
+#     carry for the sibling bare-paren mechanism -- the union covers each
+#     mechanism in isolation, not their composition with an independently-
+#     documented residual. Measured by `toolvcasecomment-*`/
+#     `verbvcasecomment-*` in the corpus (EXPECTED-DENY, reported as gaps by
+#     design).
 #
 #   * PARTIALLY CLOSED 2026-09-14 (round 4 finding;
 #     todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md).

@@ -625,23 +625,46 @@ add "fautoog-multi" DENY 'gh pr merge 42 --auto>log ; gh pr merge 7'
 # HAVE SINCE DIVERGED, and the split is the point rather than an inconsistency:
 #   vbareparen  CLOSED 2026-09-06 by a per-level paren counter in both shared
 #               scanners. These rows now report `ok`.
-#   vcasearm    STILL OPEN. That `)` has no matching opener, so no depth
-#               arithmetic can reach it, and the obvious keyword tracker is a
-#               deny->ALLOW regression generator. Tracked at
-#               todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
-#               Deliberately left as a visible gap: it keeps pointing at a live
-#               bypass.
+#   vcasearm    CLOSED ON THE PRECISE PATH 2026-09-13. The text here read "STILL
+#               OPEN ... a live bypass" for a revision after that stopped being
+#               true, which is the more dangerous direction for a comment to
+#               drift: it invites the next reader to re-fix something already
+#               fixed, or to cite a live bypass that is not live.
+#               Measured, and pinned two constants below: the seven
+#               toolvcasearm-* rows report `p=DENY j=ALLOW l=ALLOW a=ALLOW` and
+#               `ok`, and NONE appears in EXPECTED_PRECISE_GAP_IDS.
+#               They are still in EXPECTED_ALLPATH_DIRTY_IDS because the three
+#               DEGRADED paths allow -- "closed" here means closed on the path
+#               that runs, not on all four, and that distinction is exactly why
+#               the all-path manifest pins per-path verdicts instead of a count.
+#               The mechanism note stands: that `)` has no matching opener, so no
+#               depth arithmetic reaches it, and the obvious case/esac keyword
+#               tracker is a deny->ALLOW regression generator -- the fix went a
+#               different way. Tracked at
+#               todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#               NOT the whole case-arm axis: a case arm inside a BARE PAREN
+#               SUBSHELL still allows on every path, tracked at
+#               todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
 # vcomment: a `(` inside a shell COMMENT. Inert to bash (a comment runs to
 # end-of-line), so the substitution's real closer is the `)` on the NEXT line --
 # but a paren-counting scanner counts it and the level never closes. This
 # mechanism was a live DENY->ALLOW regression that this corpus could not see,
 # because every row was single-line and a comment needs a newline to terminate
 # (the row parser is newline-safe as of the same change). ADDED 2026-09-06.
+# vcasecomment (added 2026-09-13, post-implementation review of the case-arm
+# fix): a case arm COMPOSED with a shell COMMENT that itself contains a `;`
+# followed by a decoy `esac` -- the comment is inert to real bash, but the
+# scanner has no comment-state tracking (by established design, same as the
+# vcomment mechanism above), so the `;` inside it is misread as a real
+# separator and the decoy `esac` closes casedepth one arm early. PRE-EXISTING
+# (ALLOW on the parent commit too, before the case-arm fix landed) -- see
+# guard-outward-cli.sh's DOCUMENTED RESIDUALS entry for the full account.
 TOOL_MECHS=('$()' '${UNSET}' '``' '$(: $(:))' '$(: "x)y")' "\$(: 'a)b')" \
             "\$(: '\"' \"a)b\" )" '$( (:) )' '$(case x in a) : ;; esac)' \
             "\$(: # (
-)" '$((:)|(:))')
-TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep)
+)" '$((:)|(:))' '$(case x in a) : ;; #x;esac
+b) : ;; esac)')
+TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep vcasecomment)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
   for m in "${!TOOL_MECHS[@]}"; do
@@ -793,8 +816,58 @@ done
 #   vbareparen  a bare `(` subshell -- CLOSED by the per-level paren counter now
 #               in lib/cmd-detect.sh's two scanners. Expected `ok`.
 #   vcasearm    a `case` arm's `)` -- an unmatched closer with NO opener, which
-#               no depth arithmetic can reach. Still a GAP by design; see NOTE6
-#               and todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#               no depth arithmetic can reach. "Still a GAP by design" stood here
+#               after the fix landed and was flatly wrong AT THESE TWO POSITIONS,
+#               not merely stale: verbvcasearm-* (7) and
+#               flagvcasearm-easbld/ghapi/ghcomment (3) CLOSED 2026-09-13 and are
+#               absent from BOTH manifests -- they deny on all four paths, so
+#               they are a gap nowhere. Only the TOOL position still allows on
+#               the three degraded paths (toolvcasearm-*; see the entry above it
+#               and EXPECTED_ALLPATH_DIRTY_IDS).
+#               flagvcasearm-ghadmin is the FOURTH flag row and reports `ok`
+#               WITHOUT being a closure: it denies from the pre-existing "no REAL
+#               --auto" rule. NOT because the construct breaks the `--auto`
+#               spelling -- this axis splices into --admin (FAM_FLAG_LHS `--ad`
+#               + RHS `min`), so --auto is byte-intact. A literal `$`, or an
+#               UNQUOTED `(`, anywhere in the merge CLAUSE masks --auto, so
+#               HAS_REAL_AUTO=no
+#               and that rule fires before the --admin check ever runs.
+#               NOT BACKTICK, and an earlier revision of this sentence said
+#               backtick because it transcribed that test's character class
+#               instead of running the shapes. (Cited by FRAGMENT, not by line:
+#               grep guard-outward-cli.sh for `sits mid-clause and would still
+#               mask`, which is unique on every branch and verified to resolve.
+#               A line number here was wrong twice already -- it is measured on
+#               whichever branch you happen to be standing in, and the sibling
+#               brace-range branch numbers this file differently.) CLAUSE is
+#               built from a rendering in which backtick spans have ALREADY
+#               vanished, so a backtick never reaches that grep. Measured, one
+#               clause each, --auto real in every row:
+#                 `--squash $x`         DENY "without a REAL --auto"
+#                 `--squash (x`         DENY "without a REAL --auto"
+#                 `--squash \`echo hi\``  ALLOW   <- backtick does NOT mask
+#                 `--squash` (control)  ALLOW
+#               AND THE TWO SIGILS ARE NOT SYMMETRIC UNDER QUOTING, which three
+#               revisions of this sentence missed for the same reason each time:
+#               every measured set contained only UNQUOTED sigils, so none of
+#               them could see the exception.
+#                 `--body "closes (#41)"` ALLOW    quoted `(` does NOT mask
+#                 `--body 'closes (41)'`  ALLOW
+#                 `--body 'costs $5'`     DENY     quoted `$` still masks
+#                 `--body "costs $5"`     DENY
+#               The guard documents the paren exception where it is implemented:
+#               $CLAUSE is cut from $WORDS, whose neutral() rewrites a QUOTED
+#               separator to the letter `x`. Search guard-outward-cli.sh for
+#               `QUOTED paren cannot reach here` -- WITHOUT a leading "A", which
+#               sits on the previous line: a citation must be a fragment short
+#               enough to survive a comment wrap, and this one was verified to
+#               resolve before being written.
+#               The --admin rows cannot settle this, because --admin denies
+#               either way. guard-outward-cli.sh's ATTRIBUTION RESIDUAL note states the rule
+#               correctly and is the wording to reuse. Read its
+#               ATTRIBUTION, not its verdict -- same lesson as
+#               flagvbareparen-ghadmin and co-mask-c1.
+#               todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 # varithsep / varithdecoy: added 2026-09-07 because this corpus was BLIND to the
 # entire class the arithmetic-arm removal closes. Running all 308 rows across
 # main / pre-fix / post-fix gave `head_DENY - base_DENY = {}` — no losses, but no
@@ -810,8 +883,9 @@ done
 #                The decoy is a PREFIX, so this row also pins that the corruption
 #                does not travel forward.
 SPAN2_MECHS=('$( (:) )' '$(case x in a) : ;; esac)' "\$(: # (
-)" '$((:)|(:))')
-SPAN2_IDS=(vbareparen vcasearm vcomment varithsep)
+)" '$((:)|(:))' '$(case x in a) : ;; #x;esac
+b) : ;; esac)')
+SPAN2_IDS=(vbareparen vcasearm vcomment varithsep vcasecomment)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
   lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
@@ -1482,12 +1556,19 @@ fi
 #    because a bare id records one OR-collapsed bit ("dirty on some path") and
 #    NOTE6's round-3 correction below is precisely the movement that bit cannot
 #    see: those rows were ALREADY all-path-dirty on both sides and went from ONE
-#    failing degraded path to THREE. Measured on this tree, 10 rows sit at
-#    `p=ALLOW j=DENY l=DENY a=DENY` (verbvcasearm-* x7, flagvcasearm-* x3). A
-#    guard change flipping their three degraded DENYs to ALLOW would strip the
-#    fail-closed fallback from seven gated families and move NOTHING an id-only
-#    pin observes. The 281 all-clean rows stay covered by ABSENCE -- any of them
-#    going dirty appears as a `+` line.
+#    failing degraded path to THREE.
+#
+#    THE EXAMPLE HERE WAS RE-MEASURED 2026-09-14 AND ITS IDS CHANGED. It named
+#    verbvcasearm-*/flagvcasearm-*, which was true when written and was falsified
+#    by this todo's OWN implementation commits -- those rows now deny on all four
+#    paths and appear in neither manifest. The illustration survives with different
+#    occupants: 57 rows sit at `p=ALLOW j=DENY l=DENY a=DENY`, and the 10 that make
+#    the point are verbvcasecomment-* (7) + flagvcasecomment-* (3), a case arm
+#    composed with a comment hiding a decoy `esac`. A guard change flipping their
+#    three degraded DENYs to ALLOW would strip the fail-closed fallback from seven
+#    gated families and move NOTHING an id-only pin observes. The 370 rows clean on
+#    all four paths (620 - 250) stay covered by ABSENCE -- any of them going dirty
+#    appears as a `+` line.
 #
 # 4. ATTRIBUTION catches a row that keeps its verdict and changes WHICH CHECK
 #    produced it, ON THE PRECISE PATH. The other three read only DENY/ALLOW, so a
@@ -1787,10 +1868,10 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=721
+EXPECTED_ROWS=739
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 628 of the 721 rows deny on the precise path; the other 93 are ALLOW there: 69
+# 646 of the 739 rows deny on the precise path; the other 93 are ALLOW there: 69
 # rows EXPECTED to allow, plus the 24 precise-path gaps. Those 69 span SIXTEEN id
 # families, not the eight this sentence named until 2026-09-15 -- fp-* (16),
 # c2-* (9), c1g-* (7), fautodigfp-* (6), sitefp-* (5), vft-* (5), flagadjfp-* (4),
@@ -1798,7 +1879,9 @@ EXPECTED_ROWS=721
 # siterailfp-* (2), plus the singletons co-nested-brace, fautobrace-pre and
 # fautodigctrl-bb. COUNTED, not recalled: select every row whose EXPECTED and
 # PRECISE verdicts are both ALLOW, group on the id prefix. 69 + 24 = 93 and
-# 721 - 628 = 93, so the decomposition closes. Corrected 2026-09-13: this was the FIFTH stale copy of a
+# 739 - 646 = 93, so the decomposition closes. RE-DERIVED 2026-09-15 after the
+# case-arm merge and unchanged by it: the sixteen families and their counts are
+# identical, because that merge moved only rows that DENY or that are gaps. Corrected 2026-09-13: this was the FIFTH stale copy of a
 # count in this file, found by review after four others were repaired -- and it
 # sits five lines above its own warning about exactly that. These numbers are
 # bumped with
@@ -1857,7 +1940,33 @@ EXPECTED_ROWS=721
 # named member EXISTS is a positive check, and says nothing about whether the list
 # is EXHAUSTIVE. Exhaustiveness is a negative claim and needs the full enumeration,
 # which is cheap here -- the run already prints every row.
-EXPECTED_DENY_ATTRIB_ROWS=628
+# BUMPED 2026-09-15 by the case-arm merge, and the PRECISE-GAP TOTAL IS THE
+# DANGEROUS ONE HERE: it did not move. See
+# todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+# for that branch. It closes the `case`-arm bypass on the precise path, so its 14
+# `toolvcasearm-*`/`verbvcasearm-*` gaps and the 3 `flagvcasearm-*` gaps LEAVE the
+# precise-gap set, and it adds 17 `*vcasecomment-*` rows for the still-open
+# comment-composition residual, which ENTER it. 24 - 17 + 17 = 24. The count is
+# identical before and after while SEVENTEEN of its twenty-four members changed,
+# which is exactly what EXPECTED_PRECISE_GAP_IDS exists to catch and what a
+# count-only pin would have waved through. Both manifests below were regenerated
+# from the run, not hand-merged -- hand-merging them is how the first attempt at
+# this resolution silently dropped `flagvcasearm-*` and produced a 21-member pin
+# that still looked plausible.
+# The other three moved as the two branches compose: rows 721 -> 739 (+18),
+# attribution 628 -> 646 (+18), all-path gaps 236 -> 243 (+7). MEASURED on the
+# resolved tree: `rows=739  precise-path gaps=24  all-path gaps=243`.
+# THE 17 INCOMING ROWS DO NOT SHARE ONE SHAPE, which is why they are listed by
+# family and not summarised. Re-measured on this tree, not carried across the
+# merge from the branch that wrote them:
+#     7  toolvcasecomment-*   p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+#     7  verbvcasecomment-*   p=ALLOW j=DENY  l=DENY  a=DENY
+#     3  flagvcasecomment-*   p=ALLOW j=DENY  l=DENY  a=DENY
+# All 17 miss on the PRECISE path, which is what makes every one of them a gap;
+# only the first seven are ALLOW on all four. An earlier revision on the branch
+# said all of them were "ALLOW on all four paths" -- one FORM's property asserted
+# of the whole CLASS, the defect that branch's own solution doc is named after.
+EXPECTED_DENY_ATTRIB_ROWS=646
 
 # 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -1910,7 +2019,9 @@ EXPECTED_PRECISE_GAPS=24
 # crude mirror "does not model a `{name}` fd prefix at all". Measured, that is
 # false: the same command degrades identically with NO BRACE ANYWHERE (rows
 # c9-crude-*). The real cause is `crude_smells_outward`'s binary->verb separator
-# `[^a-zA-Z]+` (guard-outward-cli.sh:1313), which cannot cross ANY redirect
+# `[^a-zA-Z]+` -- the sentence already names the function, and the line number that
+# used to sit here resolved to unrelated text on the sibling brace-range branch, so it
+# is dropped rather than corrected -- which cannot cross ANY redirect
 # whose target contains letters -- `/dev/null`, `/tmp/l`. The family is
 # therefore much broader than a brace prefix, and was entirely unpinned.
 #
@@ -1921,39 +2032,57 @@ EXPECTED_PRECISE_GAPS=24
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=236
+EXPECTED_ALLPATH_GAPS=243
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
-flagvcasearm-easbld
-flagvcasearm-ghapi
-flagvcasearm-ghcomment
-r4brange-tool-easbld
+toolvcasecomment-easupd
+toolvcasecomment-easbld
+toolvcasecomment-npmpub
+toolvcasecomment-railup
+toolvcasecomment-ghmerge
+toolvcasecomment-ghcomment
+toolvcasecomment-ghapi
 r4brange-tool-easupd
-r4brange-tool-ghapi
-r4brange-tool-ghcomment
-r4brange-tool-ghmerge
+r4brange-tool-easbld
 r4brange-tool-npmpub
 r4brange-tool-railup
-toolvcasearm-easbld
-toolvcasearm-easupd
-toolvcasearm-ghapi
-toolvcasearm-ghcomment
-toolvcasearm-ghmerge
-toolvcasearm-npmpub
-toolvcasearm-railup
-verbvcasearm-easbld
-verbvcasearm-easupd
-verbvcasearm-ghapi
-verbvcasearm-ghcomment
-verbvcasearm-ghmerge
-verbvcasearm-npmpub
-verbvcasearm-railup
+r4brange-tool-ghmerge
+r4brange-tool-ghcomment
+r4brange-tool-ghapi
+verbvcasecomment-easupd
+verbvcasecomment-easbld
+verbvcasecomment-npmpub
+verbvcasecomment-railup
+verbvcasecomment-ghmerge
+verbvcasecomment-ghcomment
+verbvcasecomment-ghapi
+flagvcasecomment-easbld
+flagvcasecomment-ghcomment
+flagvcasecomment-ghapi
 PIN_PRECISE_EOF
 )
 
 EXPECTED_ALLPATH_DIRTY_IDS=$(cat <<'PIN_ALLPATH_EOF'
 nssufx-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 nssufx-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rsep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-reposep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-repoeq-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rglued-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rsep-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-reposep-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-repoeq-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rglued-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rsep-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-reposep-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-repoeq-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rglued-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rsep-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-reposep-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-repoeq-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-Rglued-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-selfrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
+ghroot-vs-auto p=DENY j=ALLOW l=ALLOW a=ALLOW
 intrtoolglue-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 intrtoolsp-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 intrtoolglue-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
@@ -1996,55 +2125,100 @@ flagadjsp-yarncwd p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagadjfp-andand p=ALLOW j=DENY l=DENY a=DENY
 flagadjfp-semi p=ALLOW j=DENY l=DENY a=DENY
 flagadjfp-roredir p=ALLOW j=DENY l=DENY a=DENY
+fautogt-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautogt-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautofd-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautofd-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoapp-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoapp-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoamp-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoamp-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoampl-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoampl-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoclob-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoclob-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautobang-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautobang-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautonfd-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautonfd-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautonfddig-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautonfddig-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoin-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautoin-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
+fauto-cooccur p=DENY j=ALLOW l=ALLOW a=ALLOW
+fautogrant-glue p=ALLOW j=DENY l=DENY a=DENY
+fautogrant-amp p=ALLOW j=DENY l=DENY a=DENY
+vft-gt p=ALLOW j=DENY l=DENY a=DENY
+vft-fd p=ALLOW j=DENY l=DENY a=DENY
+vft-app p=ALLOW j=DENY l=DENY a=DENY
+vft-bang p=ALLOW j=DENY l=DENY a=DENY
+vft-in p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-lead p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-sp p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-val p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-b2 p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-bf2 p=ALLOW j=DENY l=DENY a=DENY
+fautodigfp-t2 p=ALLOW j=DENY l=DENY a=DENY
+fautodigctrl-bb p=ALLOW j=DENY l=DENY a=DENY
+fautobrace-pre p=ALLOW j=DENY l=DENY a=DENY
+fautocutsp-fddup p=ALLOW j=DENY l=DENY a=DENY
+fautocutsp-clob p=ALLOW j=DENY l=DENY a=DENY
 toolvnest-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvdqclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvsqclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvmixq-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvbareparen-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvarithsep-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvnest-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvdqclose-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvsqclose-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvmixq-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvbareparen-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvarithsep-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvnest-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvdqclose-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvsqclose-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvmixq-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvbareparen-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvarithsep-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvnest-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvdqclose-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvsqclose-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvmixq-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvbareparen-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvarithsep-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvnest-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvdqclose-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvsqclose-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvmixq-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvbareparen-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvarithsep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvnest-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvdqclose-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvsqclose-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvmixq-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvbareparen-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvarithsep-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvnest-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvdqclose-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvsqclose-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvmixq-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvbareparen-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-toolvcasearm-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcasearm-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvarithsep-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasecomment-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4spec-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
@@ -2073,19 +2247,19 @@ r4spec-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
-verbvcasearm-easupd p=ALLOW j=DENY l=DENY a=DENY
-verbvcasearm-easbld p=ALLOW j=DENY l=DENY a=DENY
-verbvcasearm-npmpub p=ALLOW j=DENY l=DENY a=DENY
-verbvcasearm-railup p=ALLOW j=DENY l=DENY a=DENY
-verbvcasearm-ghmerge p=ALLOW j=DENY l=DENY a=DENY
-verbvcasearm-ghcomment p=ALLOW j=DENY l=DENY a=DENY
-verbvcasearm-ghapi p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-easupd p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-easbld p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-npmpub p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-railup p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+verbvcasecomment-ghapi p=ALLOW j=DENY l=DENY a=DENY
 trailclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 trailclose-ctl p=DENY j=ALLOW l=ALLOW a=ALLOW
 trailclose-ghmrg p=DENY j=ALLOW l=ALLOW a=ALLOW
-flagvcasearm-easbld p=ALLOW j=DENY l=DENY a=DENY
-flagvcasearm-ghcomment p=ALLOW j=DENY l=DENY a=DENY
-flagvcasearm-ghapi p=ALLOW j=DENY l=DENY a=DENY
+flagvcasecomment-easbld p=ALLOW j=DENY l=DENY a=DENY
+flagvcasecomment-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+flagvcasecomment-ghapi p=ALLOW j=DENY l=DENY a=DENY
 c1g-pos1-3dash p=ALLOW j=DENY l=DENY a=DENY
 c1g-ind-3dash p=ALLOW j=DENY l=DENY a=DENY
 c1g-arrelem-3dash p=ALLOW j=DENY l=DENY a=DENY
@@ -2102,6 +2276,28 @@ c2-fp-getf p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-header p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-methodology p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-backtick p=ALLOW j=DENY l=DENY a=DENY
+c9-nfd-bind p=ALLOW j=DENY l=DENY a=DENY
+c9-ws-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-easamp p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-easclob p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-npm p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-railway p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-railwayvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-ws-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-numfd-bind p=ALLOW j=DENY l=DENY a=DENY
+c9-dig-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-easamp p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-easclob p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-npm p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-railway p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-railwayvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-dig-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-crude-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
+c9-crude-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
 fp-c2-noflag p=ALLOW j=DENY l=DENY a=DENY
 fp-easread p=ALLOW j=DENY l=DENY a=DENY
 sitefp-updatelist p=ALLOW j=DENY l=DENY a=DENY
@@ -2110,84 +2306,6 @@ sitefp-updateinsights p=ALLOW j=DENY l=DENY a=DENY
 fp-mention p=ALLOW j=DENY l=DENY a=DENY
 fp-quotedall p=ALLOW j=DENY l=DENY a=DENY
 fp-automerge p=ALLOW j=DENY l=DENY a=DENY
-c9-nfd-bind p=ALLOW j=DENY l=DENY a=DENY
-c9-numfd-bind p=ALLOW j=DENY l=DENY a=DENY
-c9-ws-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-ws-easamp p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-ws-easclob p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-ws-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-ws-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-ws-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-ws-npm p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-ws-railway p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-ws-railwayvar p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-crude-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-crude-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-dig-eas p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-dig-easamp p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-dig-easclob p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-dig-ghadmin p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-dig-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-dig-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-dig-npm p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-dig-railway p=DENY j=ALLOW l=ALLOW a=ALLOW
-c9-dig-railwayvar p=DENY j=ALLOW l=ALLOW a=ALLOW
-fauto-cooccur p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautoamp-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautoamp-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautoapp-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautoapp-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautoclob-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautoclob-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautocutsp-clob p=ALLOW j=DENY l=DENY a=DENY
-fautocutsp-fddup p=ALLOW j=DENY l=DENY a=DENY
-fautofd-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautofd-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautogrant-amp p=ALLOW j=DENY l=DENY a=DENY
-fautogrant-glue p=ALLOW j=DENY l=DENY a=DENY
-vft-gt p=ALLOW j=DENY l=DENY a=DENY
-vft-fd p=ALLOW j=DENY l=DENY a=DENY
-vft-app p=ALLOW j=DENY l=DENY a=DENY
-vft-bang p=ALLOW j=DENY l=DENY a=DENY
-vft-in p=ALLOW j=DENY l=DENY a=DENY
-fautogt-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautogt-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautonfd-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautonfd-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautoampl-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautoampl-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautobang-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautobang-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautobrace-pre p=ALLOW j=DENY l=DENY a=DENY
-fautodigctrl-bb p=ALLOW j=DENY l=DENY a=DENY
-fautodigfp-b2 p=ALLOW j=DENY l=DENY a=DENY
-fautodigfp-bf2 p=ALLOW j=DENY l=DENY a=DENY
-fautodigfp-lead p=ALLOW j=DENY l=DENY a=DENY
-fautodigfp-sp p=ALLOW j=DENY l=DENY a=DENY
-fautodigfp-t2 p=ALLOW j=DENY l=DENY a=DENY
-fautodigfp-val p=ALLOW j=DENY l=DENY a=DENY
-fautoin-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautoin-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautonfddig-ns p=DENY j=ALLOW l=ALLOW a=ALLOW
-fautonfddig-tool p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-Rglued-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-Rglued-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-Rglued-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-Rglued-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-Rsep-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-Rsep-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-Rsep-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-Rsep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-repoeq-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-repoeq-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-repoeq-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-repoeq-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-reposep-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-reposep-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-reposep-ghcreate p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-reposep-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-selfrepo p=DENY j=ALLOW l=ALLOW a=ALLOW
-ghroot-vs-auto p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -2415,6 +2533,7 @@ toolvdqclose-easupd : command-position 'eas update/publish/submit' publishes an 
 toolvsqclose-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
 toolvmixq-easupd   : command-position 'eas update/publish/submit' publishes an OTA update or
 toolvbareparen-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvcasearm-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
 toolvcomment-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
 toolvarithsep-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
 toolvsub-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
@@ -2425,6 +2544,7 @@ toolvdqclose-easbld : command-position 'eas build --auto-submit' submits the fin
 toolvsqclose-easbld : command-position 'eas build --auto-submit' submits the finished binary t
 toolvmixq-easbld   : command-position 'eas build --auto-submit' submits the finished binary t
 toolvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvcasearm-easbld : command-position 'eas build --auto-submit' submits the finished binary t
 toolvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
 toolvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
 toolvsub-npmpub    : command-position 'npm publish' pushes a package to the registry.
@@ -2435,6 +2555,7 @@ toolvdqclose-npmpub : command-position 'npm publish' pushes a package to the reg
 toolvsqclose-npmpub : command-position 'npm publish' pushes a package to the registry.
 toolvmixq-npmpub   : command-position 'npm publish' pushes a package to the registry.
 toolvbareparen-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvcasearm-npmpub : command-position 'npm publish' pushes a package to the registry.
 toolvcomment-npmpub : command-position 'npm publish' pushes a package to the registry.
 toolvarithsep-npmpub : command-position 'npm publish' pushes a package to the registry.
 toolvsub-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
@@ -2445,6 +2566,7 @@ toolvdqclose-railup : command-position 'railway up/deploy/redeploy/restart/down/
 toolvsqclose-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 toolvmixq-railup   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 toolvbareparen-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvcasearm-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 toolvcomment-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 toolvarithsep-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 toolvsub-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
@@ -2455,6 +2577,7 @@ toolvdqclose-ghmerge : command-position 'gh pr merge' without a REAL --auto flag
 toolvsqclose-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 toolvmixq-ghmerge  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 toolvbareparen-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvcasearm-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 toolvcomment-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 toolvarithsep-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 toolvsub-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
@@ -2465,6 +2588,7 @@ toolvdqclose-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFE
 toolvsqclose-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 toolvmixq-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 toolvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvcasearm-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 toolvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 toolvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 toolvsub-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
@@ -2475,6 +2599,7 @@ toolvdqclose-ghapi : command-position 'gh api' with a method flag (-X/--method) 
 toolvsqclose-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 toolvmixq-ghapi    : command-position 'gh api' with a method flag (-X/--method) whose value i
 toolvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvcasearm-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 toolvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 toolvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 r4spec-tool-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
@@ -2520,24 +2645,31 @@ r4dig-verb-ghapi   : command-position 'gh api' with a method flag (-X/--method) 
 r4ansic-tool-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 r4ansic-verb-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 verbvbareparen-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvcasearm-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
 verbvcomment-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
 verbvarithsep-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
 verbvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvcasearm-easbld : command-position 'eas build --auto-submit' submits the finished binary t
 verbvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
 verbvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
 verbvbareparen-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvcasearm-npmpub : command-position 'npm publish' pushes a package to the registry.
 verbvcomment-npmpub : command-position 'npm publish' pushes a package to the registry.
 verbvarithsep-npmpub : command-position 'npm publish' pushes a package to the registry.
 verbvbareparen-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvcasearm-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 verbvcomment-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 verbvarithsep-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 verbvbareparen-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvcasearm-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 verbvcomment-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 verbvarithsep-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 verbvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvcasearm-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 verbvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 verbvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 verbvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvcasearm-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 verbvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 verbvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 cap-199-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
@@ -2551,18 +2683,21 @@ flagvsub-easbld    : command-position 'eas build --auto-submit' submits the fini
 flagvvar-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
 flagvbt-easbld     : command-position 'eas build --auto-submit' submits the finished binary t
 flagvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvcasearm-easbld : command-position 'eas build --auto-submit' submits the finished binary t
 flagvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
 flagvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
 flagvsub-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 flagvvar-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 flagvbt-ghcomment  : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 flagvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvcasearm-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 flagvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 flagvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 flagvsub-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
 flagvvar-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
 flagvbt-ghapi      : command-position 'gh api' with a method flag (-X/--method) whose value i
 flagvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvcasearm-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 flagvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 flagvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
 flagvsub-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
@@ -2570,6 +2705,7 @@ flagvvar-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag m
 flagvbt-ghadmin    : command-position 'gh pr merge --admin' uses administrator privileges to
 flagvbareparen-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 flagvcasearm-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcasecomment-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 flagvcomment-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 flagvarithsep-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 c1-submit-lit      : command-position 'eas build --auto-submit' submits the finished binary t
@@ -3124,6 +3260,31 @@ exit 0
 # the `--admin` boundary check has started to matter. Read its ATTRIBUTION
 # line, never its verdict alone -- same rule as co-mask-c1.
 #
+# CITATION HYGIENE, mechanical. A path broken across a comment wrap is invisible to
+# `grep -F` for the whole path, which has produced a confident false "0 remaining" in
+# this repo six times. The sweep that finds the class, and the one to run before
+# claiming a path sweep is complete:
+#     awk '/todos\/|docs\// && !/\.md/ {print FILENAME":"NR}' <file>
+# Every line citing a todos/ or docs/ path must carry the `.md` on that SAME line.
+# Run it, not a full-path grep.
+# IT OVER-MATCHES, AND THE RESIDUE IS NOT ZERO (recorded 2026-09-15). The sweep keys
+# on the two bare path-prefix strings in the pattern above, so it also flags lines
+# that are not citations at all and can never carry a `.md`. Across the files this
+# change touches there are exactly two, both deliberate and neither to be "fixed":
+#   lib/cmd-detect.sh           a bare DIRECTORY mention (the legacy-patterns dir)
+#   test-guard-outward-cli.sh   a TEST FIXTURE whose payload is a `grep -rn` command
+#                               string ending in a bare directory argument
+# So "the sweep returns empty" is the WRONG success condition. It was written that way
+# once in this change's own history, before all five touched files had been checked,
+# and it is unreachable while those two lines exist. The checkable claim is: every
+# sweep hit is either a wrapped citation to repair, or one of the two above.
+# ENUMERATE AND CLASSIFY the hits; do not count them.
+# THIS PARAGRAPH IS WHY IT IS WORDED WITHOUT SPELLING THE PREFIXES. The first draft
+# named both literally and so added three more hits to the very residue it was
+# describing -- prose about a text sweep tends to contain what the sweep matches, and
+# a note that inflates its own count is worse than no note. Same reason the reviewer
+# dispatch prompt refuses to spell the severity words it warns about.
+#
 # NOTE6 -- THE THREE ROWS THAT ARE STILL GAPS, AND WHY THEY STAY GAPS
 # (2026-09-06, outward-CLI-guard-folded-repair, Tasks 7-9 complete).
 #
@@ -3322,8 +3483,12 @@ exit 0
 #
 #       THREE, not four, and the fourth is an attribution lesson rather than an
 #       off-by-one: flagvbareparen-ghadmin was ALREADY denying before this change,
-#       from the "gh pr merge without a REAL --auto" rule, because the construct
-#       breaks the `--auto` spelling in its base command. It reports `ok` on both
+#       from the "no REAL --auto" rule -- because a literal `$`, or an UNQUOTED
+#       `(`, anywhere in the merge CLAUSE masks --auto (guard-outward-cli.sh's ATTRIBUTION RESIDUAL note), NOT because
+#       the construct breaks the `--auto` spelling, which stays byte-intact
+#       (the splice target is --admin). A BACKTICK does not mask: those spans are
+#       gone from CLAUSE before the check runs, so a backtick spelling reaches
+#       the --admin check and reports the --admin reason. It reports `ok` on both
 #       sides and so is not a closure. A verdict is not evidence the intended
 #       check fired.
 #    1  c2-ansic-hex, as a SIDE EFFECT of the ANSI-C decoding rather than by a
@@ -3348,24 +3513,89 @@ exit 0
 #       class"). Tracked at
 #       todos/archive/P2-2026-09-06-outward-cli-guard-brace-range-splits-token-with-no-sigil.md
 #
-#   17  toolvcasearm-* (7), verbvcasearm-* (7), flagvcasearm-* (3 of 4). A `case`
+#   17  toolvcasearm-* (7), verbvcasearm-* (7), flagvcasearm-* (3 of 4) — CLOSED
+#       ON THE PRECISE PATH 2026-09-13, so this bucket is HISTORY, not a current
+#       gap. toolvcasearm-* still allow on the three DEGRADED paths; the verb and
+#       flag rows deny on all four. A `case`
 #       arm's `)` has NO matching opener, so the paren counter that closed the
 #       bare-paren rows cannot reach it, and the obvious `case`/`esac` keyword
 #       tracker is a deny->ALLOW regression generator (`e$(echo case)as update`
 #       DENIES today and would render EMPTY under it). Deliberately deferred with
 #       its reasoning, not overlooked. Tracked at
-#       todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#       todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #
 #       flagvcasearm-ghadmin is the FOURTH flag row and reports `ok` — READ ITS
 #       ATTRIBUTION, NOT ITS VERDICT. It denies from a different check entirely:
-#       the construct breaks the `--auto` spelling in `gh pr merge 42 --auto
-#       --admin`, so the "no REAL --auto" rule fires. Same rule as co-mask-c1.
+#       a literal `$`, or an UNQUOTED `(`, anywhere in the merge CLAUSE masks --auto
+#       (guard-outward-cli.sh's ATTRIBUTION RESIDUAL note), so the "no REAL --auto" rule fires --
+#       a BACKTICK does not, since those spans are already gone from CLAUSE and
+#       that spelling reaches the --admin check instead. The
+#       construct does NOT break the `--auto` spelling -- it is spliced into
+#       --admin and --auto stays byte-intact. Same rule as co-mask-c1.
 #
 #    0  (was 2) nssufx-ghmerge and nssufx-ghcomment — an INTERIOR redirect, a
 #       different mechanism with its own entry below and its own todo. CLOSED
 #       2026-09-07 by `_OUT_SEP`, together with the 51 generated intrtool-*/
 #       intrns-* rows added in the same change. The bucket is kept at zero rather
 #       than deleted: the entry below records what the two rows could NOT see.
+#
+# SUPERSEDED 2026-09-13 -- MARKER ADDED (cmd-detect-case-arm todo). The "17"
+# bucket immediately above ("toolvcasearm-* (7), verbvcasearm-* (7),
+# flagvcasearm-* (3 of 4) ... Deliberately deferred") is CLOSED on the precise
+# path, so `14 + 17 = 31` became `14` AT THAT MOMENT. Deliberately past tense:
+# the live total is 31 again via a DIFFERENT 17 (the vcasecomment rows), so a
+# present-tense "is now 14" here would contradict both EXPECTED_PRECISE_GAPS and
+# the composition note this file keeps in one place. Kept in place rather than rewritten,
+# per this note's own convention -- the reasoning it records (why a naive
+# case/esac tracker is a deny->ALLOW regression generator) is exactly what the
+# fix had to satisfy, not a stale claim.
+#
+# Attributed BY ID (`comm` of the two precise-gap-membership sets), not by
+# subtracting totals:
+#
+#   precise-path gaps  31 -> 14   17 CLOSED, **0 OPENED**
+#
+# The 17, by family (all now `ok` on the precise path, attributed to their OWN
+# family's check -- see EXPECTED_DENY_ATTRIB, not a fallback ambiguity deny):
+#   7  toolvcasearm-*   -- `command-position '<verb>' ...` for each of the 7
+#                          gated families (the TOOL-position spelling).
+#   7  verbvcasearm-*   -- same 7 checks, VERB-position spelling.
+#   3  flagvcasearm-easbld/ghapi/ghcomment -- FLAG-position spelling.
+# flagvcasearm-ghadmin (the fourth flag row) is UNCHANGED -- it already
+# reported `ok` before this fix, from a DIFFERENT check (a literal `$`, or an
+# UNQUOTED `(`, anywhere in the merge CLAUSE masks --auto, so the "no REAL --auto" rule fires;
+# a backtick does NOT and reaches the --admin check instead -- see the note four
+# screens above this one). Nothing about ITS
+# attribution moved.
+#
+# ALL-PATH GAPS moved LESS than precise-path, and that is the disclosure, not
+# a miss: the fix is lib/cmd-detect.sh only, so none of the three degraded
+# paths (which never source the lib) changed at all.
+#
+#   all-path dirty  243 -> 233 (10 CLOSED, 0 newly dirty -- read the SHAPE,
+#                               not just the total; a count alone would hide
+#                               that 7 rows changed shape without closing)
+#     -17  removed (their OLD, now-stale tuple): flagvcasearm-easbld/ghapi/
+#          ghcomment (3) and verbvcasearm-* (7) go COMPLETELY clean -- their
+#          degraded paths already denied, only precise was wrong, and p=DENY
+#          now matches on all four.
+#     +7   re-added, SAME id, NEW tuple: toolvcasearm-* (7) were ALLOW on all
+#          four before and stay dirty after (p flips ALLOW -> DENY; j/l/a stay
+#          ALLOW, unreachable from a lib-only fix) -- these are the "0 newly
+#          dirty" the count above asserts: no row went from clean to dirty,
+#          one field of an already-dirty row's tuple changed.
+#   -17 + 7 = net -10 = 243 -> 233. See EXPECTED_ALLPATH_DIRTY_IDS.
+#
+# WHY THE FIX CANNOT BE READ AS "CLOSING case-arm": it recognises `case`/
+# `esac` ONLY at a genuine command-word start (never an argument, a quote, or
+# mid-word), and ONLY in the counting pass (cmd_words_vanished), never the
+# blind one (cmd_words_vanished_blind) -- an unterminated `case` would
+# otherwise collapse BOTH unioned renderings at once, the exact regression
+# class this file's own `vcomment`/`varithsep` entries above already document
+# for a different pair of mechanisms. `e$(echo case)as update --branch
+# preview` is pinned as a named two-sided regression control in
+# test-cmd-detect.sh precisely so a future "simplify this" pass cannot
+# reintroduce the unconditional tracker this note already ruled out.
 #
 # SUPERSEDED INVENTORY, KEPT FOR ITS ARITHMETIC LESSON ONLY (round 4, gaps=73).
 # The counts below describe the tree BEFORE the bare-paren + vanishing-allow-list
