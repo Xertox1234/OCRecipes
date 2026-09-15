@@ -857,9 +857,9 @@
 #     argv is `f3oo`. It is copied verbatim instead, exactly like `${#x}`.
 #
 #   * A `case` ARM'S `)` WAS THE SAME SYMPTOM. CLOSED 2026-09-13 ON THE PRECISE
-#     PATH FOR THE MEASURED SHAPES (todos/P2-2026-09-06-cmd-detect-case-arm-
-#     paren-closes-substitution-early.md; archived once merged) -- named
-#     narrowly on purpose, see the still-open composition below:
+#     PATH FOR THE MEASURED SHAPES
+#     (todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md)
+#     -- named narrowly on purpose, see the still-open composition below:
 #         e$(case x in a) : ;; esac)as update --branch preview
 #           precise=DENY (command-position 'eas update/publish/submit')
 #           nojq=ALLOW  nolib=ALLOW  noawk=ALLOW  (documented residual, unchanged
@@ -880,10 +880,16 @@
 #     collapse both unioned renderings at once -- the blind pass stays
 #     case-blind by design and still closes at the first unquoted `)`, which is
 #     exactly what keeps that construction denying. Measured every run by this
-#     repo's corpus (`toolvcasearm-*` stay a documented precise-path gap by
-#     design -- they exercise the TOOL position, which every family in this file
-#     already treats as a degraded-path residual; `verbvcasearm-*` and
-#     `flagvcasearm-*` flip to `ok`).
+#     repo's corpus: ALL 17 `*vcasearm-*` rows flip to `ok` on the precise path,
+#     and this change deletes every one of them from `EXPECTED_PRECISE_GAP_IDS`
+#     (that manifest now contains zero `vcasearm` entries -- check it rather than
+#     this sentence). The seven `toolvcasearm-*` rows remain a DEGRADED-path
+#     (all-path) residual: precise denies, the three degraded paths allow,
+#     because none of them sources the lib. They therefore appear in the corpus's
+#     "precise-clean, degraded-dirty" section, not in the precise-gap manifest.
+#     An earlier revision of this sentence called them "a documented precise-path
+#     gap by design", which measurement contradicts and which also contradicted
+#     repro-outward-cli-corpus.sh's own description in this same diff.
 #
 #     THREE FURTHER LIVE GAPS IN THE FIRST DRAFT, found by post-implementation
 #     review across two rounds and closed in the SAME change: `kwbound` (the
@@ -901,8 +907,8 @@
 #     round later -- CR does not separate in real bash (this file already
 #     carried a mutation-confirmed precedent for that, for a different
 #     function, before this todo). All three fixed: `kwbound` narrowed to
-#     bash's real word-terminator set (blank/tab/newline/EOF plus `; &amp; | ( )
-#     &lt; &gt;`, no CR), the five-word reserved-word set recognised the same way
+#     bash's real word-terminator set (blank/tab/newline/EOF plus `; & | ( )
+#     < >`, no CR), the five-word reserved-word set recognised the same way
 #     this file's own `_OUT_POS_PREFIX` already does, and `\r` removed from
 #     both places that had wrongly treated it as inert. Pinned as named
 #     regression controls in test-cmd-detect.sh and test-guard-outward-cli.sh.

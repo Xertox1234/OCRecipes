@@ -1413,7 +1413,11 @@ EXPECTED_DENY_ATTRIB_ROWS=522
 #       in this file as "a fifth grammar bet"). See guard-outward-cli.sh's
 #       DOCUMENTED RESIDUALS entry for the full account.
 # The ORIGINAL 17-row bucket (toolvcasearm-*/verbvcasearm-*/flagvcasearm-*,
-# the unterminated/comment-free case-arm shape) is CLOSED on the precise path
+# the BARE and BRACE-GROUPED case-arm shape -- NOT "comment-free", which an
+# earlier wording claimed and which the bare-paren-subshell composition
+# falsifies: that shape is comment-free and still allows, see the DOCUMENTED
+# RESIDUALS entry and todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-
+# steals-the-paren-credit.md) is CLOSED on the precise path
 # and no longer contributes here -- lib/cmd-detect.sh now recognises
 # `case`/`esac` at a genuine command-word start, so that `)` no longer closes
 # the enclosing $(...) early for THAT shape. Pinning 0 here would make this
