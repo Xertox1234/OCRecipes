@@ -8,7 +8,7 @@ tags: [harness, ci, shell, bash, github-actions, pipefail, sigpipe, grep, head, 
 symptoms: [A self-scoping CI gate green-lights a PR that DID change the guarded files, A change-detection `if cmd | grep -q ...` step takes the wrong branch only on large inputs, 'Works for small PRs, silently fails open for PRs that touch thousands of files', A script under set -euo pipefail dies with exit 141 outside its documented exit-code contract, 'A test assert_contains helper intermittently reports a needle as missing when the captured output DOES contain it, with `printf: write error: Broken pipe` nearby', 'An assert_not_contains / must-not-appear check reports PASS without ever searching because the needle began with a dash and grep parsed it as an option — loudly with `grep: unrecognized option`/`usage: grep` beside it, or SILENTLY when the needle is a valid flag (-n, -v) AND a trailing file operand is present for grep to consume as the pattern instead']
 applies_to: [.github/workflows/*.yml, .husky/**, scripts/*.sh, .claude/hooks/test-*.sh]
 created: '2026-06-27'
-last_updated: '2026-08-16'
+last_updated: '2026-09-15'
 ---
 
 # A `cmd | grep -q` shell condition under `set -o pipefail` fails open via SIGPIPE
@@ -155,6 +155,37 @@ Two things that guard got wrong first, both worth stealing:
   correctly (`grepb` is rejected, `foo-bar` matches `foo\b`). The real first-run bug was having
   no LEADING boundary at all, which matched `pgrep -P "$PID"`; `\bgrep\b` would have fixed that
   too. Reach for the portability argument, which is true, not the mis-parse one, which is not.
+
+### 2026-09-15 recurrence: on a SECURITY GATE, in a helper written to be monotone
+
+The 2026-06-27 instances were CI gates and test helpers. This one is a merge gate, and the
+path it took there is the part worth keeping.
+
+A widened grammar had turned that gate's verb EXTRACTION into a wrong answer, so the fix
+replaced "which verb is first" with "does a merge occurrence EXIST" — a deliberately
+MONOTONE question, chosen precisely because a wider grammar finds more occurrences and never
+fewer, so the deny set can only grow. Correct reasoning. The helper then answered it through
+`printf '%s' "$words" | grep -qE ...`, at a call site running under `pipefail`, behind a `!`.
+
+`grep -q` short-circuits on the first match and closes the pipe; past the buffer the producer
+takes SIGPIPE, the pipeline is 141, and `!` inverts that into `exit 0`. Measured: helper rc=141
+on a 102,023-byte command with the match on an early line, and end-to-end `main=DENY
+branch=ALLOW` on a real unreviewed merge against a risk-classified diff. Threshold bracketed at
+61,223 bytes detected / 102,023 missed.
+
+**`grep -q` has TWO ways to return non-zero — no match, and death by SIGPIPE — and under
+`pipefail` they are indistinguishable at an ALLOW-shaped read.** The monotonicity argument was
+about the MATCH channel and said nothing about the rc channel, so a correct argument for the
+question's shape carried no weight at all for how the question was asked.
+
+Two things generalise:
+
+- **A fix that is right about WHAT to ask can still be wrong about HOW to ask it.** The
+  monotone-question reasoning was sound and the implementation defeated it one line later.
+- **No test row in that suite was large enough to reach the buffer**, so the regression was
+  invisible to a green suite. The Prevention bullet below about large synthetic inputs is not
+  a CI-only concern: a security gate needs one too, or the next pipe reintroduced there ships
+  green.
 
 ## Prevention
 
