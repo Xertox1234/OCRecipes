@@ -1085,8 +1085,8 @@ assert_bare_here() {
   # <<< (here-string), not `printf | grep -q` — grep -q is an early-exiting reader (it stops
   # at the first match) and $trace here is a full multi-line -x trace; piped through printf,
   # grep's early exit can SIGPIPE the still-writing printf, and pipefail then reports the
-  # WRITER's non-zero status even though the READ already found its match (docs/rules/
-  # harness.md: "Early-exiting readers fail OPEN under pipefail" — reproduced here for real on
+  # WRITER's non-zero status even though the READ already found its match
+  # (docs/rules/harness.md: "Early-exiting readers fail OPEN under pipefail" — reproduced here for real on
   # branch-preflight.sh, whose trace is long enough to exceed one pipe write).
   if grep -qE '^\+ HERE=\.$' <<< "$trace"; then
     echo "PASS: $hook resolves HERE=. for a bare-filename (no-slash) invocation"; PASS=$((PASS+1))

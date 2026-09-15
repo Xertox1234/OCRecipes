@@ -162,8 +162,9 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # invocation, not a parse error (measured against the real binary, 2026-09-13). It reached
 # merge-review-guard.sh's `[ "$SUB" = "merge" ] || exit 0` check as "not a merge" — a silent allow of an unreviewed merge,
 # including one retargeted at THIS repository, and it skipped pr-preflight-guard.sh's stamp
-# gate as well. See todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-
-# merge-guards.md; the redirect arm additionally closes mechanism (b) of
+# gate as well. See
+# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md;
+# the redirect arm additionally closes mechanism (b) of
 # todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
 #
 # Grammar mirrors _CMD_GIT_GLOBALS deliberately, arm for arm, INCLUDING its residual: the
@@ -1866,8 +1867,9 @@ EOF
 # state is already gone by the time these run, so it cannot be recovered here.
 #
 # THE EXTRACTION MUST REQUIRE A REAL WORD BOUNDARY BEFORE `checkout`/`switch`, not just the
-# literal text (fixed 2026-09-02, todos/P3-2026-08-28-branch-create-segment-decoy-substring-
-# false-negative.md). Before this fix `grep -oE '(checkout|switch)[[:space:]]+…'` matched the
+# literal text (fixed 2026-09-02,
+# todos/P3-2026-08-28-branch-create-segment-decoy-substring-false-negative.md).
+# Before this fix `grep -oE '(checkout|switch)[[:space:]]+…'` matched the
 # literal substring ANYWHERE it occurred, including glued to a preceding word: `gcheckout -b
 # decoy origin/main` contains `checkout` starting one byte after the `g`, immediately followed
 # by whitespace, so it satisfied the pattern exactly like a real `git checkout` would. In a

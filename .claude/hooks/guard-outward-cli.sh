@@ -402,8 +402,9 @@
 #     for the method branch — that reasoning was right about the RENDERING and
 #     wrong about the DECISION, because a different branch catches it.
 #
-#   * CLOSED 2026-09-07 (todos/archive/P0-2026-09-06-outward-cli-guard-interior-
-#     redirect-defeats-every-family.md). Kept in full, amended rather than
+#   * CLOSED 2026-09-07
+#     (todos/archive/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md).
+#     Kept in full, amended rather than
 #     deleted, because the entry's own history is the lesson: it was rescoped
 #     TWICE while open, and one of its measurements was wrong.
 #
@@ -730,6 +731,14 @@
 #     same diff is named after. Not yet carried by a corpus row — filed as
 #     todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
 #     so it stays measured rather than only described.
+#     RECORDED HERE ONLY. The CLOSED entry further down documents the case-arm
+#     mechanism and STILL OPEN #2, but has no counterpart for THIS residual, so
+#     the pointer at the end of #2 ("the CLOSED entry is the authority for the
+#     mechanism") is true of #2's mechanism and must not be read as covering the
+#     residual list. Deliberately NOT mirrored into that entry: two copies of a
+#     residual is how the drift this file's own header names as its dominant
+#     defect gets started, and this very block already contradicted the CLOSED
+#     entry for one review round. One home per residual; this is #1's.
 #
 #     STILL OPEN #2, EVEN ON PRECISE (post-implementation review, 2026-09-13):
 #     COMPOSING a case arm with a shell COMMENT that itself contains a `;`
@@ -811,8 +820,9 @@
 #     "degraded is the fail-closed direction" is not a safe default here. Second,
 #     the TOOL rows allow on all four, which is a live outward-CLI bypass.
 #
-#     CLOSED 2026-09-06 (todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-
-#     breaks-substitution-scanners.md). Every construction in the table above now
+#     CLOSED 2026-09-06
+#     (todos/archive/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md).
+#     Every construction in the table above now
 #     DENIES on the precise path, each attributed to the intended
 #     command-position check rather than to an ambiguity fallback.
 #

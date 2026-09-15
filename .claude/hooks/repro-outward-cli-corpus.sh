@@ -2714,6 +2714,23 @@ exit 0
 #     awk '/todos\/|docs\// && !/\.md/ {print FILENAME":"NR}' <file>
 # Every line citing a todos/ or docs/ path must carry the `.md` on that SAME line.
 # Run it, not a full-path grep.
+# IT OVER-MATCHES, AND THE RESIDUE IS NOT ZERO (recorded 2026-09-15). The sweep keys
+# on the two bare path-prefix strings in the pattern above, so it also flags lines
+# that are not citations at all and can never carry a `.md`. Across the files this
+# change touches there are exactly two, both deliberate and neither to be "fixed":
+#   lib/cmd-detect.sh           a bare DIRECTORY mention (the legacy-patterns dir)
+#   test-guard-outward-cli.sh   a TEST FIXTURE whose payload is a `grep -rn` command
+#                               string ending in a bare directory argument
+# So "the sweep returns empty" is the WRONG success condition. It was written that way
+# once in this change's own history, before all five touched files had been checked,
+# and it is unreachable while those two lines exist. The checkable claim is: every
+# sweep hit is either a wrapped citation to repair, or one of the two above.
+# ENUMERATE AND CLASSIFY the hits; do not count them.
+# THIS PARAGRAPH IS WHY IT IS WORDED WITHOUT SPELLING THE PREFIXES. The first draft
+# named both literally and so added three more hits to the very residue it was
+# describing -- prose about a text sweep tends to contain what the sweep matches, and
+# a note that inflates its own count is worse than no note. Same reason the reviewer
+# dispatch prompt refuses to spell the severity words it warns about.
 #
 # NOTE6 -- THE THREE ROWS THAT ARE STILL GAPS, AND WHY THEY STAY GAPS
 # (2026-09-06, outward-CLI-guard-folded-repair, Tasks 7-9 complete).
