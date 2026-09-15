@@ -668,12 +668,34 @@ jq -n --arg t "code-reviewer" --arg p "$CLEAN_PROSE_TP" \
   && ok "clean prose naming severities WITHOUT a citation still stamps" \
   || bad "clean prose naming severities WITHOUT a citation still stamps"
 
+# RESIDUAL 6, pinned as a KNOWN-WRONG row rather than left undocumented. Both guard arms
+# match per LINE (grep anchors `^` at every line start of a herestring), so a genuinely
+# clean wrapper that QUOTES the contract on a later line writes no stamp. This assertion
+# records the current behaviour deliberately: if someone narrows the guard to the first
+# non-empty line, this row flips and they are forced to read residual 6 and re-derive
+# which direction is cheaper, instead of silently reopening the manufactured-consent hole.
+QUOTE_TP=$(async_transcript "$CLEAN_MSG")
+jq -n --arg t "code-reviewer" --arg p "$QUOTE_TP" \
+  --arg m 'Review complete and handed back to the caller.
+[CRITICAL]/[WARNING]/[SUGGESTION] tags are used for findings, per the reviewer contract.' \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 32
+[ ! -f "$ROOT/case-32/$SHA/code-reviewer.json" ] \
+  && ok "KNOWN-WRONG (residual 6): a clean wrapper quoting the tags on line 2 is denied" \
+  || bad "KNOWN-WRONG (residual 6): a clean wrapper quoting the tags on line 2 is denied"
+# CONTROL for case 32: the SAME transcript behind a plain one-line wrapper stamps, so the
+# denial above is caused by the quoted second line and not by an unusable fixture.
+async_payload "code-reviewer" "$QUOTE_TP" | run_hook 33
+[ -f "$ROOT/case-33/$SHA/code-reviewer.json" ] \
+  && ok "the same transcript stamps behind a one-line wrapper (residual 6 control)" \
+  || bad "the same transcript stamps behind a one-line wrapper (residual 6 control)"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=62
+EXPECTED_TOTAL=64
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

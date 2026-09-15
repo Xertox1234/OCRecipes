@@ -373,6 +373,30 @@ fi
 #    parser is deliberately left permissive — tightening it to a positive bare-path shape
 #    would trade this for a false-deny on legitimate paths.
 #
+# 6. Objection-guard false-DENY class (fail-closed; introduced by the async handback
+#    fallback, widened by its roster-rendering fix, named here rather than narrowed).
+#    Guard (a) above scans the DELIVERED message for an objection before it will let a
+#    transcript handback stand in. Both of its arms match PER LINE, not per message —
+#    `grep`'s `^` anchors at every line start of a herestring — so a genuinely CLEAN
+#    dispatch whose wrapper text merely QUOTES the contract on a later line writes no
+#    stamp. Both shapes were constructed and run:
+#        line 2 begins with a severity tag:
+#            "Review complete and handed back to the caller."
+#            "[CRITICAL]/[WARNING]/[SUGGESTION] tags are used for findings, per the contract."
+#        one line carries a severity word AND a file:line citation:
+#            "I reviewed client/a.ts:98 and found no CRITICAL issues."
+#    Controls, same runs: the plain single-line wrapper stamps; a MID-line, unanchored
+#    mention of a bracketed tag stamps; and clean prose naming severities with NO citation
+#    stamps (pinned as case 31), which is the shape the citation requirement exists to
+#    protect.
+#
+#    NOT narrowed to the first non-empty line, deliberately. That would close this class
+#    but reopen the one the guard exists for: an objection that follows a preamble. The
+#    two directions are not equally costly here — a missed objection manufactures consent
+#    on a fail-closed gate, while this costs a re-dispatch — so the guard keeps the wider
+#    read and the cost is named instead. Same reasoning as item 4: a deliberate narrowing
+#    that is NOT to be "fixed" without re-deriving which direction is cheaper.
+#
 #    Do NOT restate the inverse ("a changed-file path that CONTAINS whitespace truncates
 #    the list") as a live residual: `git ls-files | grep -c ' '` is 0 in this repo, so
 #    that half is unreachable, and naming it instead of the shapes above is what made this
