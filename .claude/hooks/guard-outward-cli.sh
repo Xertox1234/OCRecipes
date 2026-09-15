@@ -1911,7 +1911,8 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # failure mode. Max needs no claim about what either form can or cannot see, which is the
 # property that makes it safe to state.
 # The token classes below exclude whitespace plus EVERY character in _OUT_POS_PREFIX's
-# command-position anchor set, and the redirect arm is a LOCAL narrowing of _CMD_REDIR for the
+# command-position anchor set, and the redirect arm is a LOCAL variant of _CMD_REDIR (narrower
+# on the anchor bytes, WIDER on `)`; the two classes are incomparable, not nested) for the
 # same reason — see the header's "ANCHORS, NOT SEPARATORS" paragraph.
 _OUT_SEPSAFE_TOK='[^[:space:];&|(`{!]'
 _OUT_SEPSAFE_REDIR='([0-9]*|[{]([A-Za-z_][A-Za-z0-9_]*|[0-9]+)[}][[:space:]]*)?&?[<>]+&?[|!]?[[:space:]]*'"$_OUT_SEPSAFE_TOK"'+'

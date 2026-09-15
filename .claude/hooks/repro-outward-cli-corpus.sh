@@ -2669,7 +2669,10 @@ PIN_EXEMPT_EOF
 # edited so the count-only needle stops reading the separator-safe grammar. It is therefore
 # exempt from _pin_sites rather than given a row. Its coverage is two mutation rows in
 # test-guard-outward-cli.sh -- search `GH_API_RE_SEPSAFE is no longer built from BOTH` -- one
-# per constant the check guards.
+# reverting BOTH constants, then one per `case` arm. The per-arm rows matter: the both-at-once
+# row denies under either single-arm weakening, so on its own it pins neither. Round 5 measured
+# the GLOBALS arm deletable with the suite fully green while this paragraph said "one per
+# constant" -- the same false-coverage shape the paragraph below self-corrects.
 #
 # THAT SENTENCE WAS FALSE WHEN FIRST WRITTEN, which is the reason it now names the rows. It
 # claimed the coverage existed; it did not, and it could not have: the mutation helper at the

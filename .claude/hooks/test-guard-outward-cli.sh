@@ -2472,9 +2472,16 @@ _mut_goc_denies_with() {  # $1 = sed program  $2 = expected deny-reason substrin
   printf '%s' "$out" | grep -q '"permissionDecision": "deny"' \
     && printf '%s' "$out" | grep -qF -- "$2"
 }
-# THE GH_API_RE_SEPSAFE INTEGRITY CHECK, one row per constant it guards. Both are expressed as
-# a whole-line replacement of the needle definition, which is why the sed LHS is anchored and
-# bracket-free.
+# THE GH_API_RE_SEPSAFE INTEGRITY CHECK. THREE rows: one reverting BOTH constants, then one
+# per `case` arm. Expressed as whole-line replacements of the needle definition, which is why
+# each sed LHS is anchored and bracket-free.
+#
+# THE PER-ARM ROWS ARE THE POINT, and the block shipped without one of them. The both-at-once
+# row denies under EITHER single-arm weakening, so it pins neither arm specifically. Measured
+# in round-5 review: deleting the SEP arm from the `case` failed exactly one row, and deleting
+# the GLOBALS arm left the suite FULLY GREEN — the comment here claimed "one row per constant"
+# while one constant had no row at all. That is the same false-coverage shape the corpus
+# exemption paragraph next to it self-corrects, one level down.
 if _mut_goc_denies_with 's#^GH_API_RE_SEPSAFE=.*#GH_API_RE_SEPSAFE="$GH_API_RE"#' \
      'GH_API_RE_SEPSAFE is no longer built from BOTH'; then
   echo "PASS: swapping the count-only needle to the wide one fails closed"; PASS=$((PASS+1))
@@ -2487,6 +2494,15 @@ if _mut_goc_denies_with 's#^GH_API_RE_SEPSAFE=.*#GH_API_RE_SEPSAFE="${_OUT_POS_P
   echo "PASS: reverting only the SEPARATOR half of the count-only needle fails closed"; PASS=$((PASS+1))
 else
   echo "FAIL: the separator half of GH_API_RE_SEPSAFE could be reverted without the integrity check firing — the four process-substitution rows would go back to ALLOW"
+  FAIL=$((FAIL+1))
+fi
+# The GLOBALS half, which had no row until round 5 measured that its `case` arm could be
+# deleted with the suite staying fully green.
+if _mut_goc_denies_with 's#^GH_API_RE_SEPSAFE=.*#GH_API_RE_SEPSAFE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP_SEPSAFE}api${_OUT_POS_SUFFIX}"#' \
+     'GH_API_RE_SEPSAFE is no longer built from BOTH'; then
+  echo "PASS: reverting only the GLOBALS half of the count-only needle fails closed"; PASS=$((PASS+1))
+else
+  echo "FAIL: the globals half of GH_API_RE_SEPSAFE could be reverted without the integrity check firing " — " the count would lose the anchor-safe token classes"
   FAIL=$((FAIL+1))
 fi
 # Operand 5, BOTH directions. The WIDE form must span a separate-arg flag it does not name;
@@ -3945,7 +3961,7 @@ _PIN_RAN=1
 #         gates that never depended on --auto -- `--admin`, `--repo`, the
 #         `$`-sigil mask, and the multi-occurrence refusal.
 #         4 + 8 + 6 + 4 + 1 + 4 + 5 + 1 + 11 + 4 + 4 = 52.
-EXPECTED_TOTAL=734
+EXPECTED_TOTAL=735
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
