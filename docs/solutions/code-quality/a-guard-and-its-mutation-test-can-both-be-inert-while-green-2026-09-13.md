@@ -72,7 +72,8 @@ for _p in ' -x;y' ' -x&y' ' -x|y' ' -R a;y' ' -R a&y' ' -R a|y' \
 done
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
    || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
-   || printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '|-[^[:space:]]+)' \
+   || [ "$_OUT_WIDE_TAKES_VALUE" != yes ] \
+   || [ "$_OUT_GRANT_TAKES_VALUE" != no ] \
    || [ "$_OUT_GRANT_SPANS" = yes ] \
    || [ -z "${_CMD_REDIR:-}" ]; then
   deny "…lost its shape…"
@@ -80,9 +81,16 @@ fi
 ```
 
 Each operand names a property that a real degradation removes: the wide form still carries its
-`--repo` arm; the narrow form is **not** the wide form; the narrow form does **not** contain the
-wide generic arm; the narrow form **cannot span a separator**; and `$_CMD_REDIR` is non-empty
-(which costs the redirect arm — say that, not "every needle").
+`--repo` arm; the narrow form is **not** the wide form; the two forms **DISAGREE** about a
+separate-arg flag neither names (the wide one spans ` -t x`, the narrow one must not); the narrow
+form **cannot span a separator**; and `$_CMD_REDIR` is non-empty (which costs the redirect arm —
+say that, not "every needle").
+
+A fourth operand once sat between the second and the fourth — a fixed-string test that the narrow
+form does not contain the wide generic arm. It is **gone, and its removal is the fourth recurrence
+below**: the literal it matched was the wide arm's spelling on the day it was written, and the next
+change to that arm left the literal in NEITHER form, so it could not fire against any input. Do not
+reinstate it in that shape. Every operand above is a PROBE.
 
 **THE OBVIOUS SPELLING OF OPERAND 2 AND 3 IS THE ONE THAT DOES NOT WORK**, and it is worth
 writing down because it survived a review round before being caught. Requiring the narrow class
@@ -152,6 +160,20 @@ axis that exists to prove every deny is reachable, justified by "its mutation co
 the suite". No such row existed, and none COULD: the mutation helper hard-coded a DIFFERENT
 check's reason string, so a row aimed at this one could never have passed. The site ended up
 covered nowhere, and the justification is what would stop the next reader looking.
+
+**4. This document's own exemplar went inert, and it took a review round to notice.** The
+`## Solution` block above prescribed the fixed-string operand as one of five. The change that
+added the value arm respelled the wide generic arm from `-[^[:space:]]+` to
+`-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?`, so the pinned literal occurred in
+neither constant and the operand could never fire — measured per build: live on main
+(`wide-contains-needle=yes`), dead at the branch tip (`wide-contains-needle=no`,
+`grant-contains-needle=no`). The guard itself already recorded the retirement; the doc teaching
+the lesson did not, and it is injected on every `.claude/hooks/*.sh` edit, so the stale exemplar
+travelled further than the stale code would have.
+
+> **A solution doc is code.** It goes stale the same way, it is read with more authority than a
+> comment, and nothing runs it. When a change invalidates the thing a doc prescribes, the doc is
+> part of the change's blast radius.
 
 ### The discriminator: delete the thing and watch the row go red
 
