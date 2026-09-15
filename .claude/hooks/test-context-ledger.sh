@@ -1120,6 +1120,74 @@ CLAUDE_CODE_SESSION_ID=exfil CONTEXT_LEDGER_ROOT="$EXFROOT" \
 # the reader still reads a legitimate curated.md; the refusal proves the plant does not
 # reach additionalContext; and the third proves the refusal empties only THAT TIER rather
 # than killing the digest, which is the difference between a guard and a denial of service.
+# THE TRANSCRIPT LEAF. Until 2026-09-15 it was the one path this file read with no check
+# of any kind, which made it strictly weaker than the ledger leaves: at curated.md an
+# attacker-OWNED file is refused by `-O`, while here an attacker-owned file was read, and
+# its contents reach additionalContext through the mechanical floor. redact_secrets and
+# entropy_net scrub secret SHAPES, not instructions, so a planted directive survives.
+#
+# FOUR ROWS, and the fourth is the one that keeps the guard honest about its own limits.
+TXROOT=$(mktemp -d); TXHOME=$(mktemp -d); TXATT=$(mktemp -d)
+tx_write() { printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"echo %s","description":"%s"}}]}}\n' "$2" "$2" > "$1"; }
+
+# CONTROL: a legitimate glob-found transcript is still read. Every row below is "the plant
+# did not appear", which a totally broken reader also produces.
+mkdir -p "$TXROOT/legit" "$TXHOME/.claude/projects/real"
+tx_write "$TXHOME/.claude/projects/real/legit.jsonl" LEGIT-TX
+jq -n '{hook_event_name:"PreCompact", session_id:"legit", transcript_path:""}' \
+  | HOME="$TXHOME" CONTEXT_LEDGER_ROOT="$TXROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
+[ "$(read_ctx "$TXROOT" legit | grep -c 'LEGIT-TX')" -ge 1 ] \
+  && ok "CONTROL: a legitimate glob-found transcript is still read into the floor" \
+  || no "control failed: the legitimate transcript was not read — the refusals prove nothing"
+
+# REFUSAL: a symlink at the glob target must not reach additionalContext.
+TXHOME2=$(mktemp -d); mkdir -p "$TXROOT/sym" "$TXHOME2/.claude/projects/real"
+tx_write "$TXATT/attacker.jsonl" PLANTED-TX
+ln -s "$TXATT/attacker.jsonl" "$TXHOME2/.claude/projects/real/sym.jsonl"
+jq -n '{hook_event_name:"PreCompact", session_id:"sym", transcript_path:""}' \
+  | HOME="$TXHOME2" CONTEXT_LEDGER_ROOT="$TXROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
+[ "$(read_ctx "$TXROOT" sym | grep -c 'PLANTED-TX')" -eq 0 ] \
+  && ok "a symlinked transcript is refused and never reaches additionalContext" \
+  || no "a symlinked transcript leaked into additionalContext"
+
+# SCOPE: refusing the transcript must empty the FLOOR only, leaving the curated tier.
+TXHOME3=$(mktemp -d); mkdir -p "$TXROOT/scope" "$TXHOME3/.claude/projects/real"
+ln -s "$TXATT/attacker.jsonl" "$TXHOME3/.claude/projects/real/scope.jsonl"
+printf 'VERIFIED | tx-scope-row | cmd\n' > "$TXROOT/scope/curated.md"
+jq -n '{hook_event_name:"PreCompact", session_id:"scope", transcript_path:""}' \
+  | HOME="$TXHOME3" CONTEXT_LEDGER_ROOT="$TXROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
+TXSCOPE=$(read_ctx "$TXROOT" scope)
+{ [ "$(printf '%s' "$TXSCOPE" | grep -c 'tx-scope-row')" -ge 1 ] \
+  && [ "$(printf '%s' "$TXSCOPE" | grep -c 'PLANTED-TX')" -eq 0 ]; } \
+  && ok "refusing the transcript empties the floor only — the curated tier still writes" \
+  || no "refusing the transcript dropped the curated tier too (denial, not a guard)"
+
+# THE LIMIT, asserted rather than only described. Ownership cannot refuse a SAME-UID plain
+# file, and the glob is `*/`, so any sibling project dir competes on mtime. This row pins
+# that the residual is real and unclosed, so nobody reads the three rows above as covering
+# it. If the glob is ever narrowed to this project's own directory, this row reddens and
+# forces the comment to be updated with it.
+TXHOME4=$(mktemp -d); mkdir -p "$TXROOT/mtime" "$TXHOME4/.claude/projects/real" "$TXHOME4/.claude/projects/evil"
+tx_write "$TXHOME4/.claude/projects/real/mtime.jsonl" LEGIT-TX
+tx_write "$TXHOME4/.claude/projects/evil/mtime.jsonl" PLANTED-TX
+touch "$TXHOME4/.claude/projects/evil/mtime.jsonl"
+jq -n '{hook_event_name:"PreCompact", session_id:"mtime", transcript_path:""}' \
+  | HOME="$TXHOME4" CONTEXT_LEDGER_ROOT="$TXROOT" bash "$HOOKS_DIR/precompact-ledger.sh" >/dev/null 2>&1
+[ "$(read_ctx "$TXROOT" mtime | grep -c 'PLANTED-TX')" -ge 1 ] \
+  && ok "KNOWN RESIDUAL: a same-uid sibling transcript still wins the mtime race (ownership cannot see it)" \
+  || no "the same-uid mtime residual changed — re-measure and update the comment at the transcript guard"
+
+# FILE MODE, not just directory mode. The umask subshells cover only what they enclose, and
+# an earlier revision enclosed only the mkdir while claiming every file was ours alone.
+MODEROOT=$(mktemp -d)
+( umask 022; CLAUDE_CODE_SESSION_ID=modesid CONTEXT_LEDGER_ROOT="$MODEROOT" \
+    bash "$HOOKS_DIR/ledger-note.sh" VERIFIED c e >/dev/null 2>&1 )
+CURMODE=$(ls -l "$MODEROOT/modesid/curated.md" 2>/dev/null | awk '{print $1}')
+case "$CURMODE" in
+  -rw-------*) ok "curated.md is created 0600 even under a permissive caller umask" ;;
+  *) no "curated.md mode is [$CURMODE] under umask 022, expected -rw-------" ;;
+esac
+
 CURROOT=$(mktemp -d); CURTGT=$(mktemp -d)
 mkdir -p "$CURROOT/legit"; chmod 700 "$CURROOT/legit"
 printf 'VERIFIED | curated-control | cmd\n' > "$CURROOT/legit/curated.md"
@@ -1242,7 +1310,7 @@ else
   no "no write-time directory check between the reads and mkdir (last=$last_guard mkdir=$mkdir_line)"
 fi
 
-EXPECTED_TOTAL=87
+EXPECTED_TOTAL=92
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -65,8 +65,13 @@ LEDGER_DIR=$(context_ledger_dir "$SID") || {
 # 500-byte cap) are write-time hygiene for THIS writer, not a boundary: they do nothing
 # about a file someone else wrote directly.
 context_ledger_path_ok "$LEDGER_DIR" || exit 1
-# umask 077, so the directory and every file under it are ours alone. Scoped to a subshell
-# so the caller's umask is untouched.
+# umask 077 on the DIRECTORY and on the append below. An earlier version of this comment
+# said "the directory and every file under it are ours alone" while the subshell contained
+# only the mkdir -- measured, curated.md landed 0644 under umask 022 and 0664 under 002
+# against a directory that was 0700 in all three. That is the same
+# comment-claims-what-the-code-lacks pattern this change retired one file over, so the
+# append is now inside its own umask scope and the sentence says only what is enforced.
+# Both are subshell-scoped so the caller's umask is untouched.
 (umask 077; mkdir -p "$LEDGER_DIR") || exit 1
 context_ledger_path_ok "$LEDGER_DIR/curated.md" || exit 1
-printf '%s | %s | %s\n' "$TIER" "$CLAIM" "$EVIDENCE" >> "$LEDGER_DIR/curated.md" || exit 1
+(umask 077; printf '%s | %s | %s\n' "$TIER" "$CLAIM" "$EVIDENCE" >> "$LEDGER_DIR/curated.md") || exit 1

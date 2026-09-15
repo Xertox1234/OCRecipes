@@ -115,6 +115,31 @@ if context_ledger_path_ok "$LEDGER_DIR/curated.md" && [ -r "$LEDGER_DIR/curated.
 fi
 
 FLOOR=""
+# THE TRANSCRIPT IS A LEAF LIKE ANY OTHER, and until 2026-09-15 it was the one path in
+# this file with no check at all -- not `-L`, not `-O`, nothing. That made it STRICTLY
+# WEAKER than the ledger leaves: at curated.md an attacker-OWNED file is refused by `-O`,
+# while here an attacker-owned file was simply read. Measured at the previous head, with a
+# legitimate transcript as control (read correctly in the same run):
+#   symlink at the glob target -> attacker .jsonl   its canary reached additionalContext
+#   a sibling project dir winning the newest-mtime race, NO SYMLINK AT ALL, same result --
+#   the glob is `*/`, so any `<sid>.jsonl` under ~/.claude/projects/*/ competes on mtime.
+# The filters do not help: redact_secrets/entropy_net scrub secret SHAPES, not
+# instructions, so a planted system-reminder block and a forged VERIFIED row both survive
+# into model input verbatim.
+#
+# TIER-SCOPED, not `|| exit 0`: a refused transcript must empty only the mechanical FLOOR
+# while the curated tier still writes, for the same reason the curated.md guard is scoped
+# that way -- otherwise a plant becomes a denial of the whole ledger.
+#
+# WHAT THIS DOES NOT CLOSE, named because the leaf above was lost to an unnamed gap: this
+# refuses a symlink and anything not owned by us, so it closes the cross-uid plant and the
+# symlink form. A SAME-UID plain file that wins the mtime race still passes -- that is the
+# same same-uid residual context-ledger-path.sh already documents, not a new one, and it is
+# not closable by ownership alone.
+if [ -n "$TRANSCRIPT" ] && ! context_ledger_path_ok "$TRANSCRIPT"; then
+  TRANSCRIPT=""
+fi
+
 if [ -n "$TRANSCRIPT" ]; then
   # One row per Bash call: description, command, AND a short tail of what the command
   # RETURNED. `tool_use` (id) and `tool_result` (tool_use_id) records are the same string,
@@ -413,7 +438,12 @@ context_ledger_path_ok "$LEDGER_DIR/resume.md" || exit 0
 context_ledger_path_ok "$LEDGER_DIR/resume.md.tmp" || exit 0
 # Write to a temp file and rename into place: a kill mid-write (e.g. a timeout) cannot
 # leave a truncated resume.md that the reader's `[ -s ]` check would accept as whole.
-printf '%s\n' "$DIGEST" > "$LEDGER_DIR/resume.md.tmp" 2>/dev/null || exit 0
+# INSIDE the umask scope. `(umask 077; mkdir -p ...)` above covers only the DIRECTORY --
+# measured, a digest written outside it lands 0644 under umask 022 and 0664 under 002,
+# while the directory is 0700 in all three. Inert while the directory is 0700, but the
+# mode-loose directory is exactly this PR's stated threat model, and a 0644 resume.md there
+# is a plain cross-uid read of the digest -- simpler than any symlink path the guards cover.
+(umask 077; printf '%s\n' "$DIGEST" > "$LEDGER_DIR/resume.md.tmp") 2>/dev/null || exit 0
 mv "$LEDGER_DIR/resume.md.tmp" "$LEDGER_DIR/resume.md" 2>/dev/null || exit 0
 
 exit 0
