@@ -188,6 +188,38 @@ out=$(bash_payload 'gh api -X PUT /repos/Xertox1234/OCRecipes/pulls/938/merge' |
 denied "$out" && ok "gh api -X PUT against pulls/N/merge denies" \
               || bad "gh api -X PUT against pulls/N/merge denies" "$out"
 
+# 3b-i..iv. THE PIGGYBACK. A `gh pr merge` anywhere in the same command used to make the
+#     gh-api scan unreachable: the detector was nested inside `if [ "$SUB" != "merge" ]`,
+#     so a resolved `gh pr merge` took the else, only that first PR was classified, and the
+#     api merge rode through unexamined.
+#
+#     FILES_SAFE IS LOAD-BEARING HERE, and the first version of this block omitted it and
+#     therefore tested nothing. With a RISKY diff the leading `gh pr merge 938` denies on
+#     its own for want of a stamp, so all three rows below pass whether or not the api
+#     merge is ever seen — measured: the bug reinstated still gave 98/0. A safe diff makes
+#     the leading clause legitimately ALLOW, so a deny can only come from the api merge.
+#     Case 3b-i is that control and must stay first: without it these are three assertions
+#     that cannot fail.
+MRG_PIGGY_FILES_SAVE="$FAKE_FILES"
+export FAKE_FILES="$FILES_SAFE"
+
+out=$(bash_payload 'gh pr merge 938 --auto --squash' | run)
+assert_allowed "CONTROL: the leading pr-merge clause alone allows on a safe diff" "$out"
+
+out=$(bash_payload 'gh pr merge 938 --auto --squash; gh api -X PUT repos/Xertox1234/OCRecipes/pulls/999/merge' | run)
+denied "$out" && ok "a gh-api merge piggybacked after pr merge (;) still denies" \
+              || bad "a gh-api merge piggybacked after pr merge (;) still denies" "$out"
+
+out=$(bash_payload 'gh pr merge 938 --auto --squash && gh api -X PUT repos/Xertox1234/OCRecipes/pulls/999/merge' | run)
+denied "$out" && ok "a gh-api merge piggybacked after pr merge (&&) still denies" \
+              || bad "a gh-api merge piggybacked after pr merge (&&) still denies" "$out"
+
+out=$(bash_payload 'gh api -X PUT repos/Xertox1234/OCRecipes/pulls/999/merge; gh pr merge 938 --auto --squash' | run)
+denied "$out" && ok "a gh-api merge BEFORE pr merge still denies" \
+              || bad "a gh-api merge BEFORE pr merge still denies" "$out"
+
+export FAKE_FILES="$MRG_PIGGY_FILES_SAVE"
+
 # 3c. DENY. The ALLOW_OUTWARD_CLI=1 escape belongs to the SIBLING guard
 #     (guard-outward-cli.sh) and must not be inherited here — this gate never reads
 #     that variable at all (grep it: zero hits).
@@ -940,7 +972,7 @@ rm -rf "$NOJQ_BIN"
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=95
+EXPECTED_TOTAL=99
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

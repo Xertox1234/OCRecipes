@@ -205,7 +205,19 @@ case "$TOOL" in
       # `gh pr` extractors were never asked to cover, so the fix lives here, in
       # merge-review-guard.sh, rather than widening lib/cmd-detect.sh's `gh pr` matchers
       # for an unrelated command. See the detector immediately below.
-      if [ "$SUB" != "merge" ]; then
+      # RUNS UNCONDITIONALLY, and that is the whole point of this line. An earlier revision
+      # nested this scan inside `if [ "$SUB" != "merge" ]`, which made it unreachable in
+      # exactly the case that matters: when a `gh pr merge` resolves ANYWHERE in the same
+      # command, control took the `else` below, classified only that first PR, and the
+      # `gh api` merge rode through unexamined. The matcher was never the problem — it
+      # never ran. Measured (security review, 2026-09-14), no stamp, docs-only diff so the
+      # leading clause legitimately allows:
+      #     gh pr merge 938 --auto --squash; gh api -X PUT repos/o/r/pulls/999/merge  -> ALLOW
+      #     gh pr merge 938 --auto --squash && gh api -X PUT .../pulls/999/merge      -> ALLOW
+      #     gh api -X PUT .../pulls/999/merge; gh pr merge 938 --auto --squash        -> ALLOW
+      # and with both PreToolUse guards in sequence the whole chain permitted an unreviewed
+      # merge. The no-jq crude fallback still denied it (it greps the raw envelope), so the
+      # hole was specific to the normal, jq-present path — the one that actually runs.
         # `gh api` against the REST merge route (`PUT /repos/{owner}/{repo}/pulls/{n}/merge`)
         # is a merge this gate must also see. Detected independently of
         # cmd_gh_pr_write_subcommand/cmd_gh_pr_ref (both scoped to `gh pr <verb>`), reusing
@@ -256,19 +268,27 @@ case "$TOOL" in
         # A THIRD shape is likewise unhandled and belongs in this list: `gh api
         # repos/o/r/pulls/42/merge --input body.json` reaches neither conjunct
         # (probe-confirmed silent ALLOW, no `-X`/`--method` and no field flag present).
-        # Be precise about WHY, because the obvious justification does NOT hold: `gh api
-        # --help` ties the implicit-POST switch to FIELD PARAMETERS specifically — "the
-        # default HTTP request method is GET normally and POST if any parameters were
-        # added", restated in the `-f/--raw-field` paragraph as "adding request parameters
-        # will automatically switch the request method to POST" — while `--input` is
-        # documented only as supplying a request body ("a request body may be read from
-        # file specified by --input"), with no statement that it changes the method. So
-        # whether `--input` ALONE produces a mutating request is UNVERIFIED here, and was
-        # deliberately not settled empirically: this is a merge endpoint, and constructing
-        # the call to find out is the exact act this guard exists to prevent. It is named
-        # because an unhandled shape belongs in a STILL-OPEN list either way — not because
-        # its mechanism is established. Settle it against gh's source, not its manual,
-        # before relying on either answer.
+        # SETTLED 2026-09-15 against gh's SOURCE, which is what an earlier revision of this
+        # comment asked for and then did not do. `gh api --help` ties the implicit-POST
+        # switch to FIELD PARAMETERS specifically ("the default HTTP request method is GET
+        # normally and POST if any parameters were added"), and documents `--input` only as
+        # a body source — so the manual alone left the method question open, and this
+        # comment recorded it as UNVERIFIED. The source does not leave it open.
+        # cli/cli `pkg/cmd/api/api.go:329-330`:
+        #     if !opts.RequestMethodPassed && (len(params) > 0 || opts.RequestInputFile != "") {
+        #         method = "POST"
+        #     }
+        # `RequestInputFile` IS `--input` (api.go:301) and `RequestMethodPassed` is
+        # `c.Flags().Changed("method")` (api.go:236). So `--input` alone flips the default
+        # to POST exactly like a field parameter — it is a confirmed mutating shape, not an
+        # unverified one, and todos/P1-2026-09-07-outward-cli-path-wrapper.md:387 already
+        # classifies it that way for the same reason.
+        #
+        # What remains genuinely open is narrower and worth stating precisely so nobody
+        # re-litigates the settled half: the EFFECT of a POST on /pulls/{n}/merge, which
+        # GitHub documents as PUT-only. That was deliberately not settled empirically —
+        # this is a merge endpoint, and constructing the call to find out is the exact act
+        # this guard exists to prevent.
         #
         # Confirmed zero-delta from main:
         # guard-outward-cli.sh (untouched by this change) allows the graphql construction
@@ -320,20 +340,26 @@ case "$TOOL" in
             break
           fi
         done <<< "$MRG_API_CLAUSES"
+        # ORDER MATTERS: the api hit is checked FIRST, before $SUB is consulted at all.
+        # A command carrying BOTH a `gh pr merge` and a `gh api` merge names two different
+        # merges, and this gate classifies exactly one PR — so there is no answer it could
+        # give that covers both. Denying is the only correct response, and it matches the
+        # multi-write-subcommand refuse above, which declines for the same reason.
         if [ -n "$MRG_API_HIT" ]; then
           # No new extraction: this raw REST path is not something cmd_gh_pr_ref can
           # resolve a PR number from (it is built for `gh pr <verb> <ref>`, not a URL
           # path), so route through the SAME ref-less deny every other unresolvable-ref
           # cause below already uses — fail closed, uniformly, rather than hand-rolling a
           # second URL parser in a file whose own header already warns against
-          # re-deriving positional extraction.
+          # re-deriving positional extraction. Set unconditionally: when a `gh pr merge`
+          # also resolved, its ref is deliberately DISCARDED rather than classified, since
+          # classifying it would allow the api merge riding alongside it.
           PR=""
-        else
+        elif [ "$SUB" != "merge" ]; then
           exit 0
+        else
+          PR=$(cmd_gh_pr_ref "$CMD") || PR=""
         fi
-      else
-        PR=$(cmd_gh_pr_ref "$CMD") || PR=""
-      fi
     else
       deny "Blocked: merge-review-guard could not load .claude/hooks/lib/cmd-detect.sh, so it cannot tell which PR this merges. Fail-closed. $BYPASS"
     fi
