@@ -1816,7 +1816,7 @@ van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
 #       `gh -R owner/repo pr merge 42` resolved NO subcommand at all. That
 #       reached merge-review-guard.sh's `[ "$SUB" = "merge" ] || exit 0` check as "not a merge" — a silent allow of
 #       an unreviewed merge, including one retargeted at THIS repository.
-#       todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+#       todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
 #   (B) A redirect in the same slot did the same thing (`gh 2>/dev/null pr
 #       merge 42`) — P1 mechanism (b), the shared-library half of
 #       todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md
@@ -1878,6 +1878,114 @@ ghref 'gh pr merge --repo other/org 42' - \
 ghsub 'cp -R src dst && gh pr create --title t' create \
   "a cp -R decoy in an earlier clause does not become the verb"
 
+# --- the refuse guard's SIGPIPE pin, and it deliberately does NOT go through ghsub ---
+# ghsub brackets its call with `set +o pipefail`. With pipefail OFF a pipeline reports only
+# its LAST command's status, so a SIGPIPE in the writer is invisible -- meaning a row written
+# through ghsub CANNOT observe this defect and would be an inert pin. The callers that matter
+# (pr-verify.sh, git-safety.sh) run with pipefail ON and do not disable it around the call,
+# so these two rows reproduce THAT state on purpose.
+#
+# Until 2026-09-15 the co-occurrence refuse guard used `printf | grep -qE` on both legs of an
+# `&&`. `grep -q` exits on first match and closes the pipe; past the 64KB pipe buffer with the
+# match on an early LINE the writer took SIGPIPE, the leg returned 141, the `&&` was false, and
+# the refusal never fired -- so a real hidden merge carrying a decoy create resolved as
+# "create", the "SILENTLY WRONG PR reported as verified" this function's header warns about.
+# Measured before the fix: 39 bytes refused, a single-line input refused at every size tried,
+# and 144,039 bytes MULTI-line returned "create". The single-line row is the DISCRIMINATOR and
+# is now grown to the multi-line row's byte length, so the two differ ONLY in line structure --
+# which is what lets this pair distinguish SIGPIPE from a length threshold. An earlier version
+# padded it a fixed 6000 times, leaving it 30,000 bytes smaller, and called that "same size";
+# it was not, and a length-threshold hypothesis between the two sizes survived it untouched.
+_rg_decoy=$'echo "$(gh pr merge 42)" # gh pr create'
+_rg_multi="$_rg_decoy"; _rg_single="$_rg_decoy"
+for _rg_i in $(seq 1 6000); do _rg_multi+=$'\n# padding line for size'; done
+# SIZE-MATCH THE CONTROL, do not pad it a fixed number of times. An earlier version built
+# this with the same 6000 iterations as the multi-line row and called it a "same size"
+# discriminator; it was 30,000 bytes SMALLER (114,039 vs 144,039), so every length-threshold
+# hypothesis between the two survived it and the control excluded nothing it claimed to.
+# Grown to at least the multi-line row's length, it does: same bytes, one line, opposite
+# outcome under the piped-form mutation.
+while [ "${#_rg_single}" -lt "${#_rg_multi}" ]; do _rg_single+=' # padding for size'; done
+
+# ASSERT THE PRECONDITION, because the refusal assertion alone does not imply it. A 39-byte
+# decoy also satisfies "empty and rc != 0" -- so if seq were missing, the loop bound edited,
+# or the padding string changed, both rows below would go green having exercised a string
+# that never approaches the 64KB pipe buffer, and the row that pins a fail-open would pin
+# nothing. This is the same check the probe prints; a pin that does not carry it is a pin
+# that can quietly stop testing its own subject.
+_rg_words=$(cmd_bare_deep "$_rg_multi")
+_rg_lbl="the SIGPIPE pin's own input really exceeds the 64KB pipe buffer"
+if [ "${#_rg_words}" -gt 65536 ]; then
+  echo "PASS: $_rg_lbl"; PASS=$((PASS+1))
+else
+  echo "FAIL: $_rg_lbl (rendered ${#_rg_words} bytes, need >65536)"; FAIL=$((FAIL+1))
+fi
+
+for _rg_row in "multi:$_rg_multi" "single:$_rg_single"; do
+  _rg_shape="${_rg_row%%:*}"; _rg_cmd="${_rg_row#*:}"
+  # The two rows carry DIFFERENT meanings and so different labels: the multi-line row is the
+  # regression pin (it returns 141 under the piped form), the single-line row is the control
+  # that must stay GREEN under that same mutation -- SIGPIPE does not occur there, because
+  # grep cannot exit mid-line. Labelling both "(SIGPIPE rc-141)" told a future reader the
+  # control asserts the mechanism it exists to exclude.
+  if [ "$_rg_shape" = multi ]; then
+    _rg_label="a >64KB multi-line decoy still REFUSES with pipefail ON (pins the SIGPIPE rc-141 fail-open)"
+  else
+    _rg_label="a >64KB SIZE-MATCHED single-line decoy still REFUSES (control: stays green under the piped-form mutation)"
+  fi
+  _rg_got=$(cmd_gh_pr_write_subcommand "$_rg_cmd"); _rg_rc=$?
+  if [ -z "$_rg_got" ] && [ "$_rg_rc" -ne 0 ]; then
+    echo "PASS: $_rg_label"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $_rg_label (got '$_rg_got' rc=$_rg_rc, want a refusal)"; FAIL=$((FAIL+1))
+  fi
+done
+unset _rg_words _rg_lbl
+
+# --- the THIRD SIGPIPE site: cmd_gh_pr_ref's retarget refusal ---
+# Same family as the pin above, different function, and this one is the most exposed: the
+# repo_clause it reads is deliberately allowed to run past newlines, and multi-line is the
+# only shape that SIGPIPEs. Before the fix, a retarget padded past the 64KB buffer over many
+# lines RESOLVED the local ref instead of refusing -- which is a cross-repository merge
+# authorised by a local review record.
+# ghref is used on purpose: unlike ghsub it does NOT bracket its call with `set +o pipefail`,
+# so it reproduces the real consumer state and the pin cannot be inert.
+_rr_base='gh pr merge 42 --repo other/org'
+_rr_multi="$_rr_base"; _rr_single="$_rr_base"
+for _rr_i in $(seq 1 3200); do _rr_multi+=$'\n# padding line for size'; done
+while [ "${#_rr_single}" -lt "${#_rr_multi}" ]; do _rr_single+=' # padding for size'; done
+# MEASURE WHAT CROSSES THE PIPE, not the raw command. cmd_gh_pr_ref pipes `repo_clause` --
+# the input after cmd_bare_deep, then cut at the first [;&|] -- so a rendering change or a
+# separator in the padding could shrink it below the buffer while this row stayed green and
+# the refusal row still passed (the retarget sits at the front, so a collapsed clause still
+# refuses). The pin would go inert silently: the same defect fixed for the sibling pin. The
+# padding is asserted separator-free for the second half of that.
+_rr_words=$(cmd_bare_deep "$_rr_multi")
+case "$_rr_words" in *[';&|']*) _rr_sep=yes;; *) _rr_sep=no;; esac
+_rr_lbl="the retarget pin's rendered input exceeds the 64KB buffer and carries no clause separator"
+if [ "${#_rr_words}" -gt 65536 ] && [ "$_rr_sep" = no ]; then
+  echo "PASS: $_rr_lbl"; PASS=$((PASS+1))
+else
+  echo "FAIL: $_rr_lbl (rendered ${#_rr_words} bytes, need >65536; separator present: $_rr_sep)"; FAIL=$((FAIL+1))
+fi
+ghref "$_rr_multi"  - "a >64KB MULTI-line --repo retarget still REFUSES (pins the SIGPIPE fail-open)"
+ghref "$_rr_single" - "a >64KB SIZE-MATCHED single-line --repo retarget still REFUSES (control: green under the piped form)"
+ghref "$_rr_base"   - "the small retarget still refuses (positive control)"
+
+# THE ROW THAT MUST RESOLVE. Every row above wants a REFUSAL, so a future change that made
+# cmd_gh_pr_ref refuse every large multi-line input would leave all of them green while
+# silently no longer testing the retarget at all. This one is the same size and shape with
+# the retarget REMOVED, and it must still resolve 42 -- which is what attributes the
+# refusals above to the `--repo` flag rather than to length or line count. Measured on this
+# tree: 3,201 lines, >64KB, resolves 42. It was measured when the pin was written and only
+# recorded in prose; a control that lives in a commit message does not fail when it stops
+# being true.
+_rr_noretarget='gh pr merge 42'
+for _rr_i in $(seq 1 3200); do _rr_noretarget+=$'\n# padding line for size'; done
+ghref "$_rr_noretarget" 42 "a >64KB MULTI-line merge with NO retarget still RESOLVES (control: the refusals above are the retarget's, not the size's)"
+unset _rr_base _rr_multi _rr_single _rr_noretarget _rr_i _rr_lbl _rr_words _rr_sep
+unset _rg_decoy _rg_multi _rg_single _rg_i _rg_row _rg_shape _rg_cmd _rg_label _rg_got _rg_rc
+
 # NOTE ON WHAT EACH ROW BELOW PROVES. The `ghsub ... "subcommand is SEEN"` rows are the
 # discriminating ones: emptying _CMD_GH_GLOBALS reddens them. The `ghref ... "retarget
 # REFUSED"` rows do NOT discriminate on their own - cmd_gh_pr_ref bails at
@@ -1898,30 +2006,79 @@ ghref 'gh --repo=other/org pr merge 42'   -     "--repo=v in root position: reta
 ghref 'gh -Rother/org pr merge 42'        -     "-Rv in root position: retarget REFUSED"
 ghref 'gh -R Xertox1234/OCRecipes pr merge 42 --squash' - \
   "a root-position retarget at THIS repository is REFUSED, not resolved"
+ghref 'gh -t x pr merge 42 -R other/org'   -     "an unnamed root flag no longer hides a TRAILING retarget"
+ghref 'gh -Z v pr merge 42 -R other/org'   -     "...including behind a flag that does not exist"
+ghref 'gh -t x pr merge 42'                42    "but an ordinary root flag still RESOLVES the ref"
+ghref 'gh -Z v pr merge 42'                42    "...likewise for an unknown one"
+ghref 'gh --no-color pr merge 42'          42    "and a no-arg root flag does not eat the ref"
 
-# STILL OPEN, PINNED AS A TRIPWIRE — the P0's headline shape in a spelling the four closed
-# ones do not cover. `-R`/`--repo` are NOT the only root flags taking a separate argument:
-# cobra accepts any flag of the TARGET subcommand in root position, and `gh help pr merge`
-# lists five more (`-A/--author-email`, `-b/--body`, `-F/--body-file`, `--match-head-commit`,
-# `-t/--subject`). An unnamed one leaves its VALUE as a non-dash token, the globals run stops
-# there, and the needle never reaches the namespace — so the subcommand comes back empty and
-# merge-review-guard.sh reads that as "not a merge".
+# CONVERTED 2026-09-13 — these four rows were the tripwire pinning this gap as OPEN, and the
+# comment that stood here said "WHEN IT IS CLOSED THESE ROWS WILL FAIL, which is the point:
+# the fix must come here and convert them." They are converted, not deleted, so the suite
+# still shows what the shape was.
 #
-# Measured 2026-09-13 on BOTH layers: `gh -t x pr merge 42 -R other/org` is ALLOWED by both,
-# which is a cross-repository retarget defeating both merge guards. PRE-EXISTING — main
-# behaves identically — so this branch did not open it. These rows assert the CURRENT,
-# known-incomplete behaviour so the gap is visible in the suite instead of invisible. WHEN IT
-# IS CLOSED THESE ROWS WILL FAIL, which is the point: the fix must come here and convert them.
-# Generate that corpus from `gh help pr <verb>`, not from spellings you thought of — that is
-# precisely how the four closed spellings came to look like the whole problem.
-ghsub 'gh -b x pr merge 42'            - "KNOWN GAP: an unnamed separate-arg root flag hides the namespace"
-ghsub 'gh -t x pr merge 42'            - "KNOWN GAP: same, --subject short form"
-ghsub 'gh --body x pr merge 42'        - "KNOWN GAP: same, long form"
-ghsub 'gh -t x pr merge 42 -R o/org'   - "KNOWN GAP: and it carries a retarget through"
+# The gap: `-R`/`--repo` are NOT the only root flags taking a separate argument. cobra accepts
+# any flag of the TARGET subcommand in root position, so an unnamed one left its VALUE as a
+# non-dash token, the globals run stopped there, and the needle never reached the namespace —
+# the subcommand came back empty and merge-review-guard.sh read that as "not a merge".
+# `gh -t x pr merge 42 -R other/org`, a cross-repository retarget, was ALLOWED by BOTH layers.
+#
+# Closed by modelling the PROPERTY (a dash token may consume a following non-dash token)
+# rather than by lengthening the list of named flags — which is why the `-Z` rows below,
+# testing a flag that does not exist, are the load-bearing ones. If this block ever contains
+# only flags that appear in `gh help pr merge`, the corpus has gone back to being an
+# enumeration of what someone thought of.
+ghsub 'gh -b x pr merge 42'            merge "an unnamed separate-arg root flag no longer hides the namespace"
+ghsub 'gh -t x pr merge 42'            merge "same, --subject short form"
+ghsub 'gh --body x pr merge 42'        merge "same, long form"
+ghsub 'gh -t x pr merge 42 -R o/org'   merge "and the retarget it carries is now SEEN"
+ghsub 'gh -A a@b.c pr merge 42'        merge "--author-email, short form"
+ghsub 'gh -F notes.md pr merge 42'     merge "--body-file, short form"
+ghsub 'gh --match-head-commit abc pr merge 42' merge "--match-head-commit, no short alias"
+# THE PROPERTY ROWS. Neither flag exists in any `gh` version; they pass only because the
+# grammar models "consumes the next token", not a membership list. Deleting these turns this
+# block back into the enumeration that made the four -R/--repo spellings look complete.
+ghsub 'gh -Z somevalue pr merge 42'    merge "an UNKNOWN separate-arg short flag is covered too"
+ghsub 'gh --not-a-real-flag v pr merge 42' merge "an UNKNOWN separate-arg long flag likewise"
 # CONTROL, so the rows above cannot pass because the whole predicate broke: the GLUED form of
 # the same flag has no separate value, so the generic arm consumes it and the namespace is
 # still reached.
 ghsub 'gh --body=x pr merge 42'        merge "a GLUED unnamed flag does not hide the namespace"
+# TWO-SIDED, the direction the value arm could have BROKEN: when the flag takes NO value the
+# namespace is the very next token, so the engine must DECLINE the optional group. POSIX
+# requires that, but "POSIX requires it" is not a measurement — these rows are.
+ghsub 'gh --no-color pr merge 42'      merge "a NO-ARG flag sitting immediately before the namespace"
+ghsub 'gh -q -v --no-color pr close 42' close "a RUN of no-arg flags, still reaching the namespace"
+ghsub 'gh --repo=o/r pr merge 42'      merge "the glued retarget form still resolves"
+# ADVERSARIAL VALUES: the verb comes from the SLOT. A value that is itself a verb, or itself
+# the namespace token, must not be read as either. Only the value arm makes a span able to
+# contain two ` pr ` tokens, so these rows became reachable with this change.
+ghsub 'gh -t merge pr create 42'       create "a global's value that IS a verb does not become the verb"
+ghsub 'gh -t pr pr close 42'          close  "a global's value that IS the namespace token"
+# NEGATIVE: the globals slot binds immediately after the BINARY. A flag after some other
+# namespace is not a root global, and must not drag `pr merge` into a match.
+ghsub 'gh issue create -t pr merge x'  - "a flag after a DIFFERENT namespace is not a root global"
+# OPEN RESIDUAL, PINNED AS A TRIPWIRE, and it is this grammar's own headline class wearing a
+# different VALUE. The value token must not begin with `-` — that is what lets a NO-ARG flag
+# sit immediately before the namespace (`gh --no-color pr merge 42`, pinned above). The cost is
+# that a value which IS a dash stops the run: a bare `-` matches neither the value arm nor a
+# fresh flag arm, so the globals end and the needle never reaches `pr`.
+#
+# `man gh-pr-merge` documents `-F, --body-file <file>` as 'use "-" to read from standard input',
+# so this is a gh-AUTHORED value, not an invented spelling. PRE-EXISTING: main resolves these
+# to "" as well, so the value arm narrowed this family without opening this member. The
+# ORDINARY-value row directly below is the isolating control — same flag, same position, only
+# the value differs — and it resolves, which is what makes this the VALUE SHAPE and not the arm.
+#
+# WHEN THIS IS CLOSED THESE ROWS WILL FAIL. That is the point; the fix must come here and
+# convert them. Closing it needs the tool's FLAG TABLE (a regex cannot tell "no-arg flag then
+# another flag" from "value-taking flag whose value starts with a dash"), so it is a design
+# call rather than an oversight.
+ghsub 'gh -F - pr merge 42'            - "KNOWN GAP: a documented stdin value `-` stops the globals run"
+ghsub 'gh --body-file - pr merge 42'   - "KNOWN GAP: same, long form"
+ghsub 'gh -F - pr merge 42 -R o/org'   - "KNOWN GAP: and it carries a cross-repo retarget through"
+# CONTROL, so the three rows above cannot pass because the whole predicate broke.
+ghsub 'gh -F notes.md pr merge 42'     merge "an ORDINARY value on the SAME flag still resolves"
 
 echo "--- cmd_gh_pr_*: a redirect between binary and namespace (B) ---"
 ghsub 'gh 2>/dev/null pr merge 42 --squash'  merge "redirect, glued: subcommand is SEEN"
@@ -1976,7 +2133,32 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
 # assertion in a run that otherwise completed. It cannot catch an early
 # `return`/`exit` or a truncated file, because those terminate before this line.
-EXPECTED_TOTAL=631
+# BUMPED 2026-09-15 BY A MERGE, AND THIS LINE DID NOT CONFLICT -- which is the
+# whole reason it is worth a comment. Both sides of this merge carried the
+# literal `631`, so git had nothing to reconcile and kept it. But they reached
+# 631 by DIFFERENT routes from a common base of 611: main added 20 assertions,
+# the root-position-flag-property branch added a disjoint 20. The merged tree
+# therefore runs 611 + 20 + 20 = 651.
+# MEASURED, NOT COMPUTED: the suite on the resolved tree reported
+# `Results: 651 passed, 1 failed`, the single failure being this pin refusing a
+# total it had not been told about. Every one of the 651 assertions passes. The
+# arithmetic above is a CHECK on that measurement, not a substitute for it.
+# The general shape -- two branches that each add assertions, agree on the pin
+# literal, and so merge it silently -- is
+# docs/solutions/code-quality/a-clean-merge-leaves-a-stale-count-pin-2026-09-14.md.
+# A pin that both sides agree on is the one a merge cannot protect.
+# 651 -> 654: +2 for the refuse guard's SIGPIPE pin (a multi-line row past the 64KB pipe
+# buffer and its SIZE-MATCHED single-line control), both run with pipefail ON because ghsub's
+# `set +o pipefail` would make them inert, +1 for the precondition row that asserts the pin's
+# input actually exceeds the buffer -- without it the refusal assertion is satisfied by a
+# 39-byte string and the pin can silently stop testing its subject.
+# 654 -> 658: +4 for the third SIGPIPE site (cmd_gh_pr_ref's retarget refusal) -- a
+# precondition row, a >64KB multi-line pin, its size-matched single-line control, and a small
+# positive control. Via ghref, which unlike ghsub leaves pipefail ON.
+# 658 -> 659: +1 for the no-retarget row that must RESOLVE, making the retarget family
+# two-sided. Without it every row in that family wants a refusal, and a change that refused
+# everything large would keep them all green.
+EXPECTED_TOTAL=659
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

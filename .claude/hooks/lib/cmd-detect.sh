@@ -162,36 +162,123 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # invocation, not a parse error (measured against the real binary, 2026-09-13). It reached
 # merge-review-guard.sh's `[ "$SUB" = "merge" ] || exit 0` check as "not a merge" — a silent allow of an unreviewed merge,
 # including one retargeted at THIS repository, and it skipped pr-preflight-guard.sh's stamp
-# gate as well. See
-# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md;
-# the redirect arm additionally closes mechanism (b) of
+# gate as well. See todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-
+# both-merge-guards.md; the redirect arm additionally closes mechanism (b) of
 # todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
 #
-# Grammar mirrors _CMD_GIT_GLOBALS deliberately, arm for arm, INCLUDING its residual: the
-# arg-taking flags named explicitly (`-R`/`--repo`), then a generic single-token `-…` catch-all that covers the glued and
-# no-arg forms (`--repo=v`, `-Rv`, `--no-color`), then the redirect alternative at
-# `[[:space:]]*`. Do NOT "tighten" the generic arm to exclude `;&|`: that is the PERMISSIVE
-# direction — `gh -R=a;b pr merge 42` would stop matching and go back to a silent allow.
+# Grammar follows _CMD_GIT_GLOBALS arm for arm, with ONE deliberate divergence: the
+# arg-taking flags named explicitly (`-R`/`--repo`), then a generic `-…` arm that covers the
+# glued and no-arg forms (`--repo=v`, `-Rv`, `--no-color`) AND OPTIONALLY CONSUMES A
+# FOLLOWING NON-DASH TOKEN, then the redirect alternative at `[[:space:]]*`. Do NOT "tighten"
+# the generic arm to exclude `;&|`: that is the PERMISSIVE direction — `gh -R=a;b pr merge 42`
+# would stop matching and go back to a silent allow.
 #
-# OPEN RESIDUAL — A BYPASS, NOT A SAFE DIRECTION. An unmodeled SEPARATE-arg root flag has its
-# VALUE mis-read as the namespace, so the needle never reaches `pr` and the match is lost. An
-# earlier version of this block called that "a false NEGATIVE, never a false positive" and
-# called `-R`/`--repo` "the only two gh root flags that take a separate argument". Both were
-# wrong, and the first is the more dangerous error: on a DENY gate a false negative IS the
-# bypass.
+# THE OPTIONAL VALUE TOKEN IS WHY THIS IS NOT A COPY OF _CMD_GIT_GLOBALS (2026-09-13, the
+# second half of the P0). It models the PROPERTY that makes a root flag dangerous — that it
+# consumes the next token — instead of naming the flags that have it. Naming them cannot
+# work here: cobra accepts any flag valid for the TARGET subcommand in root position, so the
+# set is not a property of `gh` at all, it is whatever the following verb defines, and it
+# changes when `gh` ships a new flag. The named `-R`/`--repo` arms are now SUBSUMED by the
+# generic one and are kept only because guard-outward-cli.sh's fail-closed assertion greps
+# the wide form for `--repo`; deleting them denies every command, including the shell needed
+# to put them back.
 #
-# cobra accepts any flag valid for the TARGET subcommand in root position, so the set is not
-# two flags — it is every separate-arg flag of whichever verb follows. `gh help pr merge` lists
-# five besides `-R`: `-A/--author-email`, `-b/--body`, `-F/--body-file`, `--match-head-commit`,
-# `-t/--subject`. Measured 2026-09-13 on BOTH layers, with `gh pr merge 42` and
-# `gh -R other/org pr merge 42` denying as controls: `gh -b x pr merge 42` and
-# `gh -t x pr merge 42 -R other/org` are ALLOWED by both. The second is the P0's own headline
-# shape in a different spelling. PRE-EXISTING — main allows them too — so widening this
-# grammar did not open it, and the P0 stays OPEN for it. Whoever closes it: generate the
-# corpus from `gh help pr <verb>` rather than from spellings you thought of, which is exactly
-# how the four closed spellings came to look complete; and note that widening this constant
-# also widens what reaches the GRANT-shaped clause cut in guard-outward-cli.sh, where two live
-# false grants were found in review.
+# SCOPE OF THAT CLAIM, because "models the PROPERTY" reads wider than it is. The value token
+# models consuming ONE WHITESPACE-FREE TOKEN. A value that is itself several words still
+# leaves the namespace hidden, and that residual is PRE-EXISTING — this arm narrows the
+# family rather than closing it. Measured 2026-09-14 against main's guard paired with main's
+# own lib, written as outward-guard/merge-review PAIRS:
+#
+#   gh -t x pr merge 42               main ALLOW/ALLOW  ->  branch DENY/DENY
+#   gh -t x >/dev/null pr merge 42    main ALLOW/ALLOW  ->  branch DENY/DENY
+#   gh -t "a b" pr merge 42           main ALLOW/DENY   ->  branch DENY/DENY   (outward only)
+#   gh -t 'a b' pr merge 42           main ALLOW/DENY   ->  branch DENY/DENY   (outward only)
+#   gh -t <(echo x) pr merge 42       main ALLOW/ALLOW  ->  branch ALLOW/ALLOW (UNCHANGED)
+#   gh -t $(echo x) pr merge 42       main DENY/ALLOW   ->  branch DENY/ALLOW  (UNCHANGED)
+#
+# NAMING THE LAYER IS THE POINT. The quoted rows move on the OUTWARD guard only — merge-review
+# already denied them on main — and the substitution rows are denied by the outward guard on
+# both revisions while merge-review allows them on both. An earlier draft of this paragraph
+# said the quoted forms flipped "on both layers" and that the substitution forms "were already
+# denied on both"; neither was true of the pair, and both were written before the pair was
+# measured. Tracked with P1's binary-rendering families; do not read "property" as "closed".
+#
+# The value token is `[^-[:space:]][^[:space:]]*` — it must NOT begin with `-`, so a dash
+# token always starts a fresh arm rather than being eaten as the previous flag's value.
+#
+# That is also what lets a NO-ARG flag sit immediately before the namespace: `gh --no-color pr
+# merge 42` needs the engine to DECLINE the optional group, which POSIX requires it to do
+# when a parse exists. Measured under BSD grep 2.6.0-FreeBSD and bash 5.3.15, together with
+# `--repo=o/r`, `-Ro/r` and a run of three no-arg flags. Timing was measured against main on
+# the same inputs at 5/20/40 flag-value pairs and at 10/16/20 dash tokens with no match
+# (the worst case for a backtracking engine): within noise of main at every size, because
+# the ~14 ms cost of this helper is three forked processes, not the regex.
+#
+# OPEN RESIDUAL, AND IT IS THE HEADLINE CLASS WEARING A DIFFERENT VALUE. That same refusal --
+# the one that makes the no-arg spelling resolve, two paragraphs up -- has a cost: a value
+# which IS a dash stops the run:
+# a bare `-` matches neither the value arm (leading dash) nor a fresh flag arm (`-[^[:space:]]+`
+# needs a character after the dash), so the globals end and the needle never reaches `pr`.
+#
+# That is not a hypothetical spelling. `man gh-pr-merge` documents `-F, --body-file <file>` as
+# 'Read body text from file (use "-" to read from standard input)', so `-` is a gh-AUTHORED
+# value that begins with a dash. Measured 2026-09-14 on both layers, with the ORDINARY value as
+# the isolating control — same flag, same position, only the value differs:
+#
+#   gh -F notes.md pr merge 42          main ALLOW/ALLOW  ->  branch DENY/DENY
+#   gh -F - pr merge 42                 main ALLOW/ALLOW  ->  branch ALLOW/ALLOW  (UNCHANGED)
+#   gh -F - pr merge 42 -R other/org    main ALLOW/ALLOW  ->  branch ALLOW/ALLOW  (UNCHANGED)
+#
+# The third row is a cross-repository merge both guards allow. PRE-EXISTING — main behaves
+# identically, so the value arm narrowed this family without opening this member — but it is
+# disclosed here because every other residual in this file is, and an undisclosed one in the
+# very class this grammar exists to close is the "residual list naming ONE residual reads as
+# completeness" failure this repo already records.
+#
+# CLOSING IT IS A DESIGN CALL, NOT AN OVERSIGHT: distinguishing "no-arg flag followed by another
+# flag" from "value-taking flag whose value starts with a dash" requires the tool's FLAG TABLE,
+# which a regex does not have. Naming the separate-arg flags again would re-import the
+# enumeration this arm exists to avoid. Surfaced to the user rather than filed, per the repo's
+# never-auto-file bar for high-severity findings.
+#
+# WHY THIS ONE IS DISCLOSURE-ONLY WHILE ITS THREE SIBLINGS HAVE TODO FILES. The other residuals
+# disclosed alongside it (P1's binary renderings, the post-verb enumeration P2, the two-token
+# miscount P2) were each filed at MEDIUM or below, which this repo auto-files. This one is
+# HIGH — a live cross-repository merge both layers allow — and the repo's bar is that high and
+# critical findings are NEVER auto-filed: they are surfaced for a human to rule on. So the
+# asymmetry is the rule working, not an omission. If the ruling is to track it, it becomes the
+# fourth todo; until then the disclosure plus the tripwire rows in test-cmd-detect.sh are what
+# keep it from being invisible.
+#
+# CLOSED 2026-09-13 (the value arm above), and the history is kept because the WAY it was
+# missed is more reusable than the fix. This block previously read "an unmodeled SEPARATE-arg
+# root flag has its VALUE mis-read as the namespace, so the needle never reaches `pr`" and
+# classed that as "a false NEGATIVE, never a false positive". Both halves were wrong: on a
+# DENY gate a false negative IS the bypass, and the flag set was never enumerable in the
+# first place. `gh help pr merge` lists five separate-arg flags besides `-R`
+# (`-A/--author-email`, `-b/--body`, `-F/--body-file`, `--match-head-commit`, `-t/--subject`)
+# and cobra takes any flag of the TARGET subcommand, so the set is per-verb and open-ended.
+#
+# Measured 2026-09-13 on BOTH layers, controls in the same run (`echo hello` ALLOW/ALLOW,
+# `gh pr merge 42` DENY/DENY): `gh -t x pr merge 42 -R other/org` — a cross-repository retarget,
+# the P0's own headline shape — was ALLOW/ALLOW before the value arm and is DENY/DENY after,
+# on the retarget reason specifically, not the generic one. So are `-b`, `-A`, `-F`,
+# `--match-head-commit`, and `-Z` — a flag that does not exist, which is the row that proves
+# this models the property rather than a longer list. Read-only root-position usage
+# (`gh -R o/r pr list`, `gh -t x pr view 42`) stays ALLOWED.
+#
+# DO NOT "SIMPLIFY" THIS BY ENUMERATING THE FLAGS FROM `gh help`. A list is correct only
+# against the gh version it was read from, and the whole defect was that a list LOOKS
+# complete. The property does not go stale.
+# docs/solutions/logic-errors/an-invented-enumeration-is-not-the-space-ask-the-tool-2026-09-13.md
+#
+# THE SAME CONSTRUCT IS STILL LIVE ONE SLOT OVER, and this pointer is here so the fixed slot
+# is not read as "the file is done". cmd_gh_pr_ref's POST-verb walker (`local value_flags=`)
+# is a named enumeration, duplicated in the `case "$prev" in` below it, and `--attach` is
+# missing from both. The property trick above does NOT transfer there: making that walker's
+# bare-dash arm consume a following token would swallow the REF, so `gh pr merge --squash 42`
+# would refuse. The ambiguity is genuine and needs its own design.
+# todos/P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list.md
 #
 # Naming `-R`/`--repo` explicitly is what keeps THOSE TWO retarget flags out of the residual —
 # BUT ONLY IN THE UNQUOTED RENDERING, and the scope of that sentence is load-bearing.
@@ -208,7 +295,7 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # characters) rather than `cmd_bare` (which blanks the span). Tracked with P1's other
 # binary-rendering families; do not read the list here or in merge-review-guard.sh as
 # closed just because the unquoted slot is.
-_CMD_GH_GLOBALS='(([[:space:]]+(-R[[:space:]]+[^[:space:]]+|--repo[[:space:]]+[^[:space:]]+|-[^[:space:]]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
+_CMD_GH_GLOBALS='(([[:space:]]+(-R[[:space:]]+[^[:space:]]+|--repo[[:space:]]+[^[:space:]]+|-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?))|([[:space:]]*'"$_CMD_REDIR"'))*'
 
 # Verb alternations, named ONCE. cmd_git_repo_dir (below) must be called with the SAME verb
 # set as the predicate whose match it is qualifying — passing a wider set re-opens the
@@ -2156,12 +2243,28 @@ cmd_is_git_branch_create() {
 # this fix) — this is the exact same latent-risk shape `cmd_gh_pr_ref`'s own
 # established `full_match=$(printf ... | grep -oE ... | head -1)` line
 # already carries (see below), not something this fix introduces or worsens.
-# Left as-is rather than restructured to avoid the trailing pipe entirely
-# (e.g. onto `<<<`), because no caller of either function checks `$?` today
-# (`pr-verify.sh` reads only the captured stdout value), and a "capture
-# first" pass already closes the concrete bug this WARNING was about — a
-# wrong VALUE reaching the caller. Note this if that residual risk is ever
-# revisited: fix both functions together, since they share it.
+# THE REFUSE GUARD'S TWO LEGS MOVED TO `<<<` 2026-09-15. SCOPE FIRST, because an earlier
+# version of this note claimed more than it did: the TRAILING pipe this paragraph is about is
+# UNCHANGED and still returns 141 from this function past the buffer (measured: a merge-only
+# input of 80,013 bytes with 5001 occurrences yields value='merge' rc=141, with a small merge
+# rc 0 and a no-gh input rc 1 as controls). cmd_gh_pr_ref's `full_match=$(printf ... | grep
+# -oE ... | head -1)` is likewise untouched. So the residual below is STILL LIVE, and the
+# instruction "fix both functions together" is NOT yet carried out -- only the refuse guard,
+# whose failure direction is OPEN, was fixed.
+# THE REASON RECORDED HERE WAS ALSO FALSE, and that half stands corrected.
+# It read: "Left as-is rather than restructured to avoid the trailing pipe
+# entirely (e.g. onto `<<<`), because no caller of either function checks `$?`
+# today (`pr-verify.sh` reads only the captured stdout value)". A caller does:
+# merge-review-guard.sh reads `SUB=$(cmd_gh_pr_write_subcommand "$CMD"); SUB_RC=$?`
+# and routes `-ne 0` to a deny.
+# NOTE THE DIRECTION before correcting this the other way — a stray 141 reaching
+# THAT caller denies, which is the safe side. So the defect was the
+# justification, not the caller's behaviour: a load-bearing reason that licensed
+# leaving a hazard in place, and was no longer true of the tree it sat in. That
+# is worse than no reason at all, because it stops the next reader looking.
+# The refuse guard below was fixed because its failure direction is OPEN, which is
+# what made it urgent; this trailing pipe's is not, and it stays as a disclosed
+# residual rather than being quietly folded in.
 cmd_gh_pr_write_subcommand() {
   local words
   words=$(cmd_bare_deep "$1")
@@ -2215,10 +2318,30 @@ cmd_gh_pr_write_subcommand() {
   # single-line compound with both keywords would misreport 1) — see
   # cmd_gh_pr_ref's own occurrence guard's header comment for that exact
   # documented gotcha; `grep -q` sidesteps it by not counting at all.
-  if printf '%s' "$words" \
-       | grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+create([[:space:]]|\$)" \
-     && printf '%s' "$words" \
-       | grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]|\$)"; then
+  # NO PIPES HERE EITHER. This refuse guard is the twin of cmd_gh_pr_has_merge's read and
+  # failed open by the same mechanism until 2026-09-15. Both legs were
+  # `printf '%s' "$words" | grep -qE ...` used as `&&` conditions. `grep -q` exits on its
+  # first match and closes the pipe; past the 64KB pipe buffer with the match on an early
+  # LINE the writer takes SIGPIPE, the leg returns 141 under the `pipefail` its callers set
+  # (pr-verify.sh and git-safety.sh both set it and neither disables it around the call), the
+  # `&&` is therefore false, and THE REFUSAL NEVER FIRES.
+  # Measured with this function's OWN documented CRITICAL input -- a real hidden merge
+  # carrying a decoy create:
+  #        39 bytes             -> rc 1, refused    (positive control)
+  #   114,039 bytes SINGLE-line -> rc 1, refused    (over the buffer, but grep cannot exit
+  #                                                  mid-line so the writer never blocks)
+  #   144,039 bytes MULTI-line  -> rc 0, "create"   <- the decoy wins head -1 over the real
+  #                                                  hidden merge
+  # with merge-only inputs resolving "merge" at both sizes and a no-gh input refusing, as
+  # controls in the same run. The single-line row is the discriminator: same size, opposite
+  # outcome once the single-line control is grown to the same byte length, so the cause is
+# SIGPIPE and not length. A "create" answer here is precisely the
+  # "SILENTLY WRONG PR reported as verified" this function's header warns about.
+  # An earlier probe of this exact claim came back clean because its padding produced only
+  # 48KB and never crossed the buffer. A negative from a probe that never traverses the path
+  # is not evidence about the path.
+  if grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+create([[:space:]]|\$)" <<< "$words" \
+     && grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]|\$)" <<< "$words"; then
     return 1
   fi
   # THE VERB COMES FROM THE VERB SLOT, NOT FROM A RE-SCAN OF THE SPAN (2026-09-13).
@@ -2228,8 +2351,14 @@ cmd_gh_pr_write_subcommand() {
   # the root-position flags INSIDE the span, `gh -R owner/merge pr create` matched stage one
   # and the re-scan returned `merge` — read out of the repo name — so a create was reported
   # as a merge. The `sed` below instead captures the alternation that actually sits in the
-  # slot after `pr`: the greedy `.*` runs to the LAST ` pr `, which is the namespace (a
-  # global's value cannot supply one, since it carries no leading whitespace).
+  # slot after `pr`: the greedy `.*` runs to the LAST ` pr <verb>` in the span, which is the
+  # namespace-and-verb slot BY CONSTRUCTION — stage one's pattern ends at
+  # `pr[[:space:]]+<verb>([[:space:]]|$)`, so no later occurrence can exist inside the span.
+  # That argument is structural and holds whatever the globals contain, which matters because
+  # the justification written here on 2026-09-13 ("a global's value cannot supply one, since
+  # it carries no leading whitespace") was falsified the same day by the value arm: a value
+  # CAN now be ` pr `. Both adversarial orderings are pinned — `gh -t merge pr create 42`
+  # resolves `create`, and `gh -t pr pr close 42` resolves `close`.
   # `head -1` stays BEFORE the sed so first-occurrence semantics are unchanged — a leading
   # greedy `.*` applied across all lines would silently become last-occurrence — and `-n…p`
   # emits nothing rather than echoing the line back when the capture does not match.
@@ -2237,6 +2366,75 @@ cmd_gh_pr_write_subcommand() {
     | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(create|merge|close|edit)([[:space:]]|\$)" \
     | head -1 \
     | sed -nE 's/.*[[:space:]]pr[[:space:]]+(create|merge|close|edit).*/\1/p'
+}
+
+# cmd_gh_pr_has_merge <command>  → rc 0 if ANY `gh pr merge` occurrence is present,
+# rc 1 if none is. Echoes nothing.
+#
+# A BOOLEAN EXISTENCE READ, AND THAT IS THE WHOLE POINT OF IT EXISTING. Its consumer,
+# merge-review-guard.sh, routes a NEGATIVE answer straight to an early-exit ALLOW, and an
+# ALLOW keyed on an EXTRACTION is not monotone when the grammar widens: a wider
+# _CMD_GH_GLOBALS makes a NEW clause match, and because cmd_gh_pr_write_subcommand takes
+# `head -1`, that new clause can WIN the selection and rename the verb. Measured
+# 2026-09-15, main vs this branch, with an empty stamp root and a risk-classified diff:
+#   gh -t x pr close 1 ; gh pr merge 42 --squash   main DENY -> branch ALLOW
+#   gh -Z somevalue pr close 1 ; gh pr merge 42    main DENY -> branch ALLOW
+#   gh --match-head-commit abc pr close 1 ; gh pr merge 42  main DENY -> branch ALLOW
+# with `gh pr merge 42 --squash` denying and `npm run lint` allowing on both as controls.
+# The leading close-clause won `head -1`, the verb read `close`, and an unreviewed merge of
+# a risk-classified PR was allowed through -- in the `ALLOW_OUTWARD_CLI=1 `-prefixed shape
+# this repo actually merges with.
+#
+# Existence is monotone under exactly this widening: a wider grammar can only find MORE
+# `pr merge` occurrences, never fewer, so the deny set can only grow. That is the
+# distinction docs/solutions/logic-errors/widening-is-safe-on-every-deny-read-and-a-false-grant-at-the-one-allow-read-2026-09-13.md
+# and .../widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md both name, and
+# it is why the fix is a new READ rather than a change to the shared grammar: the grammar is
+# right, the arity of the question asked of it was wrong.
+#
+# DELIBERATELY NOT the create-vs-rest refuse: that lives in cmd_gh_pr_write_subcommand and
+# merge-review-guard.sh already routes its rc 1 to a deny BEFORE reaching this call, so
+# duplicating it here would add nothing and would couple two consumers with different needs.
+# Same input rendering as its sibling (cmd_bare_deep) and the same shared ${_CMD_GH_GLOBALS}
+# -- re-deriving the needle locally in the consumer is the defect a previous fix had to
+# remove from git-safety.sh, and it is not reintroduced here.
+# NO PIPE, AND THE ANCHOR IS A UNION. Both halves of this one line were wrong in the
+# commit that introduced this function, and both failed in the ALLOW direction at the one
+# ALLOW-shaped read in merge-review-guard.sh.
+#
+# (1) NOT `printf | grep -q`. `grep -q` exits on its first match and closes the pipe. Once
+# the rendered command exceeds the 64KB pipe buffer AND the match is on an early LINE, the
+# writer takes SIGPIPE, the pipeline rc is 141 under `pipefail` (which the consumer sets),
+# and `if ! cmd_gh_pr_has_merge` inverts 141 into exit 0. Measured on this tree, bash
+# 5.3.15, pipefail on, with `npm run lint` as the negative control returning 1 throughout:
+#     multi-line  57,713 bytes -> rc 0   (detected)
+#     multi-line  96,913 bytes -> rc 141 (ALLOW -- a real merge, unreviewed)
+#     SINGLE line 86,913 bytes -> rc 0   (detected)
+# The single-line row is why an earlier review called this shape a measured non-issue: grep
+# cannot exit mid-line, so it drains the whole input and the writer never sees SIGPIPE. Only
+# the multi-line shape trips it, and it is trivially authorable. The herestring form below
+# returns 0 on that same 96,913-byte input. This file already uses `<<<` at cmd_is_gh_pr_create
+# and its siblings for the same reason.
+#
+# (2) UNION THE ANCHOR, DO NOT SUBSTITUTE IT. `(^|[[:space:]])gh` does not see a binary glued
+# to its separator, which _CMD_POS_PREFIX exists to model. Measured: `gh pr close 1;gh pr merge 42`,
+# the `&&`-glued-subshell form and the pipe-glued form were all MISSED and are all detected
+# with the union, while `npm run lint`, `git commit -m "gh pr merge 42"` (cmd_bare blanks
+# the quoted span) and a lone close gained nothing. Widening a DENY-direction read cannot
+# subtract denies, which is what makes the union safe here and would not make a substitution
+# safe. The residual extractor-miss class is still tracked in
+# todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md; this closes the
+# glued-separator part of it AT THIS CALL SITE, AND ONLY FOR THE OPENERS
+# _CMD_POS_PREFIX MODELS. `)` is not in that class, so a case-arm spelling still slips both
+# layers: `case 1 in 1)gh pr merge 42 --squash;; esac` delivers argv
+# <pr> <merge> <42> <--squash> under bash AND zsh (measured with an argv-dumping stub and a
+# non-matching pattern as the control), and both merge-review-guard.sh and
+# guard-outward-cli.sh ALLOW it -- on this branch and identically on main, so it is
+# pre-existing and not a regression here. Do not read "closed" as covering it.
+cmd_gh_pr_has_merge() {
+  local words
+  words=$(cmd_bare_deep "$1")
+  grep -qE "(${_CMD_POS_PREFIX}|(^|[[:space:]]))gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+merge([[:space:]]|\$)" <<< "$words"
 }
 
 # cmd_gh_pr_ref <command>  → echo the PR ref (number, branch name, or URL) that
@@ -2487,9 +2685,11 @@ cmd_gh_pr_ref() {
   # ONLY THE TAIL IS TRUNCATED, and the distinction is the whole correctness of this block.
   # An earlier revision cut the CONCATENATION, justified by the sentence "$full_match cannot
   # itself contain `;`/`&`/`|` (its classes exclude them)". That was asserted, not traversed,
-  # and it is false: _CMD_GH_GLOBALS's generic arm is `-[^[:space:]]+`, which admits all
+  # and it is false: _CMD_GH_GLOBALS's generic arm excludes only whitespace, so it admits all
   # three — and the header above says not to tighten it, because doing so is the PERMISSIVE
-  # direction. So the cut landed INSIDE $full_match and threw away the merge clause carrying
+  # direction. (Cited by the PROPERTY, not the spelling: that arm gained an optional value
+  # token on 2026-09-13, whose class excludes whitespace too, so the sentence survived the
+  # re-spelling where a quoted literal would have gone quietly stale.) So the cut landed INSIDE $full_match and threw away the merge clause carrying
   # the retarget. Measured on `gh --version;gh pr merge 42 --repo other/org`:
   #     full_match [gh --version;gh pr merge 42]
   #     concatenated, then cut  ->  [gh --version]      <- the --repo is gone
@@ -2507,7 +2707,43 @@ cmd_gh_pr_ref() {
   # and a merge hidden inside a substitution still resolves 42.
   clause_tail=${bare#*"$full_match"}
   repo_clause="$full_match${clause_tail%%[;&|]*}"
-  if printf '%s' "$repo_clause" | grep -qE '(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'; then
+  # NO PIPE. This is the THIRD site of the same SIGPIPE family, after the refuse guard and
+  # cmd_gh_pr_has_merge, and it is the one MOST exposed to it: the line above deliberately
+  # lets $clause_tail run past newlines, and multi-line is the only shape that SIGPIPEs.
+  # `grep -q` exits on its first match and closes the pipe; past the 64KB buffer the writer
+  # takes SIGPIPE, the condition returns 141 under the `pipefail` its consumers have on, the
+  # `if` is false, AND THE RETARGET REFUSAL NEVER FIRES. Measured on this tree with
+  # `set -uo pipefail`, mirroring merge-review-guard.sh's call site:
+  #        31 bytes,     1 line   -> rc 1, refused          (positive control)
+  #    76,848 bytes,     1 line   -> rc 1, refused          (size-matched discriminator)
+  #    76,831 bytes, 3,201 lines  -> rc 0, RESOLVES ref 42  <- refusal lost
+  # THESE ARE THE COMMITTED PIN'S OWN BYTES (31 + 3200 x 24), re-derived from the rows in
+  # test-cmd-detect.sh. An earlier version of this table said 156,831/156,832, carried over
+  # from a review probe that padded with a 49-byte string existing nowhere in this tree --
+  # under a sentence claiming "measured on this tree". The LINE counts matched exactly, which
+  # is what made the row look reconciled and stopped it being checked. Same defect this file
+  # keeps recording, in the comment describing the fix for it.
+  # with the two no-retarget rows resolving 42 at both sizes as negative controls. The
+  # consequence reaches the same end state this function's ACCEPTED RESIDUALS block records
+  # for the clause-cut -- by a NEW route (SIGPIPE) that entry does not cover, and which is
+  # not fail-closed the way that entry is. Naming the property rather than an ordinal: this
+  # file carries several numbered lists and more than one has a '2.', so an ordinal does not
+  # locate anything. NO COUNT HERE ON PURPOSE -- an earlier version said "four", which is
+  # wrong under every counting method: 3 by `^ *# +2\.`, 5 if parenthesised enumerations
+  # count. The first version of THIS line cited `^#  2.`, which matches 0 -- every real item
+  # is indented before the `#` or carries three spaces after it. A disclosed method exists so
+  # the claim can be re-run; one that returns a different number than the sentence is worse
+  # than no method, and that is the third time this paragraph's own lesson has caught it.
+  # An asserted figure under prose claiming derivation, in
+  # the paragraph fixing exactly that. A corrected number would only re-arm the same drift.
+  # The gate classifies the LOCAL pr 42 while the
+  # command targets other/org -- a cross-repository merge authorised by a local review
+  # record, which is the P0 this branch closed by another route.
+  # NOT A REGRESSION: origin/main carries a byte-identical construction and an A/B of both
+  # libraries on the same three inputs gives identical results. A herestring preserves the
+  # multi-line clause byte-for-byte, so this can only ADD refusals lost to SIGPIPE and cannot
+  # subtract one -- the "crossing extends the clause" argument above is untouched.
+  if grep -qE '(^|[[:space:]])(--repo([=[:space:]]|$)|-R)' <<< "$repo_clause"; then
     return 1
   fi
   ref=$(printf '%s' "$full_match" | awk '{print $NF}')

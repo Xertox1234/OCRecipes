@@ -1988,7 +1988,7 @@ _OUT_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
 # deny together — a total bypass, not a narrowed one. `merge` is also absent from
 # GH_MUTATING_RE by design, so nothing downstream re-caught it. Measured live on
 # origin/main 2026-09-13, including with the retarget pointed at THIS repository.
-# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+# todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
 _OUT_GH_GLOBALS="$_CMD_GH_GLOBALS"
 
 # _OUT_GH_GLOBALS_GRANT — the SAME slot, but separator-safe, for the ONE read in this file
@@ -2027,6 +2027,148 @@ _OUT_GH_GLOBALS="$_CMD_GH_GLOBALS"
 # direction is a property of the consumer, not of the pattern.
 _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:space:]]+[^[:space:];&|]+|-[^[:space:];&|]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
 
+# _OUT_GH_GLOBALS_SEPSAFE — the wide grammar with `;&|` excluded from EVERY class, value
+# token included. Used at exactly one site: counting `gh api` occurrences.
+#
+# WHY A COUNT NEEDS ITS OWN GRAMMAR (CRITICAL, found in round-2 security review of the change
+# that added the value arm). Adding `(...)?` to an arm strictly GROWS the language each needle
+# matches, and on every boolean read that is monotone — a string that matched before still
+# matches. An OCCURRENCE COUNT is not a boolean read and is not monotone: a longer match
+# absorbs text that would otherwise have started a SECOND match, so growing the language can
+# LOWER the count. The wide value token excludes only whitespace, so it swallows a separator
+# and the command after it:
+#
+#     gh -a api -c x;gh api /a/b
+#       main  ->  [gh -a api ] [;gh api ]        COUNT=2  -> ambiguity DENY
+#       wide  ->  [gh -a api -c x;gh api ]       COUNT=1  -> no deny      (` -c` ate ` x;gh`)
+#
+# `gh api` is the ONLY single-token gh needle in this file; every other family is two-token
+# (`pr merge`, `pr create|comment`, `release …`, `repo …`) and cannot collapse THROUGH THE
+# VALUE ARM — but NOT for the reason an earlier draft gave, and the correction matters because the
+# wrong test would mislead anyone adding a needle. That draft said "the second token is not a
+# dash token and so can never be a flag's value", which is BACKWARDS: a non-dash token is
+# exactly what QUALIFIES as a value (` -a pr` matches this grammar).
+#
+# The real immunity is that each globals arm carries at most ONE optional value slot. A
+# two-token needle's FIRST token can be eaten as a value, but its SECOND can then neither open
+# a fresh arm (it is not a dash token) nor be consumed (the slot is spent), so no single match
+# absorbs a whole second occurrence. Measured against the live constant:
+#
+#     ' -a pr'           MATCHES    (the first token IS consumable)
+#     ' -a pr merge'      REFUSES    <- the immunity
+#     ' -a pr -b merge'   MATCHES    <- a dash token restores a slot, so the shape is not the limit
+#
+# Note the immunity is about absorbing a WHOLE second occurrence, not about spans never
+# crossing a separator: `gh -a x;gh pr merge 42` does match as ONE span. It counts 1 because
+# there is only one `pr merge` in it, and a genuine second occurrence still counts 2.
+#
+# THAT SCOPE IS LOAD-BEARING AND WAS MISSING FROM THE FIRST DRAFT, which said only "cannot
+# collapse". The value arm is not the only collapse mechanism: `_OUT_SEP` interpolates the
+# shared `_CMD_REDIR`, whose target class admits `(`, so a process substitution collapses the
+# TWO-token families too. Measured on both revisions —
+# `gh -a -c <(gh pr merge 7) pr merge 42` counts ONE merge occurrence on main AND on this
+# branch, where the `;` spelling counts two. PRE-EXISTING and identical to main, so this
+# change neither opened nor closed it, and no live ALLOW was found: five variants, including
+# a real `--auto` on the outer merge with a decoy glued to the hidden inner one, all still
+# DENY, and what refuses is the clause SIGIL MASK, by construction: the collapse IS the span
+# absorbing ` <(gh`, so the `(` is necessarily inside the clause. TWO EARLIER DRAFTS OF THIS
+# PARAGRAPH WERE WRONG AND THE SECOND WAS WRONG WHILE CORRECTING THE FIRST, so the measurement
+# is written out rather than summarised. Draft 1 said the cut "happens not to find a real
+# `--auto`" (accidental). Draft 2 said the clause "DOES contain a real `--auto`". Measured:
+#
+#   cmd     gh -a -c <(gh pr merge 7 --auto) pr merge 42 --auto --squash
+#   CLAUSE  [gh -a -c <(gh pr merge 7 --auto]
+#
+# The clause STOPS AT THE CLOSING PAREN — `_OUT_POS_SUFFIX_MERGE_CLAUSE`'s continuation class
+# excludes `)` — so it never reaches the outer merge's arguments at all. The `--auto` inside it
+# is the INNER DECOY on the non-executing `pr merge 7`, and the clause is BYTE-IDENTICAL whether
+# or not the outer, really-executing merge carries one. So draft 2 had the right conclusion
+# about the mask and the wrong subject for `--auto`.
+#
+# THAT MAKES THE MASK LOAD-BEARING IN GENERAL, NOT FOR ONE ROW. Draft 2 also said removing `(`
+# from the mask "flips exactly this row and leaves the others untouched". False: it equally
+# flips `gh -a -c <(gh pr merge 7 --auto) pr merge 42`, where the real merge carries NO
+# authorisation at all and the decoy alone would grant the carve-out. Both are pinned below.
+# The exposure today is the MISCOUNT, not a grant — but whoever fixes the count must fix the
+# CLAUSE CAPTURE BOUNDARY too, or relaxing the mask reintroduces this class. Tripwire rows in
+# test-guard-outward-cli.sh so a flip to ALLOW cannot be silent, and tracked in
+# todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md.
+# Do not read "cannot collapse" as "is counted correctly". Measured on all four
+# separators, glued and spaced, with `gh api /repos/o/r` ALLOW and `gh api -X POST …` DENY as
+# in-band controls.
+#
+# The `-X`/`--method` check is NOT a sufficient compensating control. It does still fire on the
+# collapsed clause, but the ambiguity refusal also covered mutations carrying no `-X` at all:
+# `gh -a api -c x;gh api -f a=b /repos/o/r/merges` (real gh sends POST when fields are present)
+# and the `--input -` form were main-DENY / branch-ALLOW.
+#
+# ANCHORS, NOT SEPARATORS — and getting this wrong is how the first version of this constant
+# shipped with the bypass still live (round-3 review, 2026-09-14). What matters is not "can a
+# token contain a separator" but "can a token contain a character at which a SECOND COMMAND
+# MAY BEGIN". That set is _OUT_POS_PREFIX's own anchor class, `[;&|(` + backtick + `{!]`, and
+# it is strictly larger than `;&|`. The first version excluded only the three separators, so
+# a PROCESS SUBSTITUTION — a genuinely executing second command opening at `(` — still
+# collapsed both counts and max() restored nothing:
+#
+#     gh -a api -c <(gh api -f merge_method=squash /repos/o/r/pulls/42/merge)
+#       main    ->  COUNT=2  -> ambiguity DENY
+#       fix v1  ->  COUNT=1  -> silently ALLOWED, both counts collapsed together
+#
+# Measured against main's guard paired with main's own lib, with `gh api repos/o/r` allowing
+# and the `;` spelling denying on both as in-band controls. `{` and `!` flipped the same way.
+# The inner command really runs — `head -c 0 <(touch marker)` creates the marker under bash
+# and zsh alike — so this is two real invocations, the inner one a field-bearing POST at a
+# pulls/merge endpoint, and the `-X`/`--method` check cannot see it because `-f` carries no
+# method token.
+#
+# The redirect arm is narrowed LOCALLY rather than by touching `_CMD_REDIR`, whose target
+# class deliberately admits `(` (the GRANT header above already records that a process
+# substitution reads there as "a redirect to a file named `(gh`"). Narrowing the shared lib
+# constant would change every consumer of the library; narrowing a copy used at ONE counting
+# site changes nothing else. The direction is safe here for the same reason the whole
+# constant is: the count is a MAX, so a narrower grammar can only ever RAISE it and add denies.
+#
+# The count is therefore the MAX of the two grammars, never one or the other: the wide form is
+# what the downstream clause cut actually reads, so it must keep its say, while this form
+# restores the second occurrence.
+#
+# WHY MAX AND NOT A SWAP — corrected 2026-09-14, because the first answer given here was
+# FALSE and a reader could have "simplified" the code on the strength of it. It claimed this
+# grammar "cannot see `gh -t x api …` at all". It sees it perfectly well: SEPSAFE carries the
+# same optional-value arm as the wide form, so it parses `-t x` as flag-plus-value and reaches
+# `api` exactly as the wide form does. Instrumented at the two count sites,
+# `gh -t x api repos/o/r -X POST` and `gh -Z v api repos/o/r --method PUT` both report
+# wide=1 sepsafe=1, not sepsafe=0 — and the fail-closed operand `_OUT_SEPSAFE_TAKES_VALUE`
+# exists precisely to REQUIRE that, so the false prose
+# contradicted a true assertion in its own file.
+#
+# The real reason is that MAX IS SAFE REGARDLESS OF WHICH SIDE IS HIGHER, and that is the whole
+# claim — no directional invariant is needed or asserted. An earlier draft said "the two
+# grammars disagree only where the WIDE form spans a command boundary the narrow one refuses,
+# and there the narrow count is the HIGHER one". Measured false: the narrow grammar's stricter
+# classes can make the WHOLE anchored match fail where the wide one parses, so sepsafe can be
+# strictly LOWER, including zero — `gh -c a;b api /repos/o/r` gives wide=1 sepsafe=0, as do
+# `gh -x a(b api …` and `gh -x ; api …`.
+#
+# THAT FALSE INVARIANT WAS THE DANGEROUS PART, not the wording: a maintainer who believed
+# "narrow is always higher" could drop the WIDE side of the max as redundant, which would
+# silently undercount any real `gh api` whose flag value carries a boundary character. Max
+# needs no claim about what either form can or cannot see; that is the property that makes it
+# safe to state, and it is the only property the code relies on.
+# The token classes below exclude whitespace plus EVERY character in _OUT_POS_PREFIX's
+# command-position anchor set, and the redirect arm is a LOCAL variant of _CMD_REDIR (narrower
+# on the anchor bytes, WIDER on `)`; the two classes are incomparable, not nested) for the
+# same reason — see the header's "ANCHORS, NOT SEPARATORS" paragraph.
+_OUT_SEPSAFE_TOK='[^[:space:];&|(`{!]'
+_OUT_SEPSAFE_REDIR='([0-9]*|[{]([A-Za-z_][A-Za-z0-9_]*|[0-9]+)[}][[:space:]]*)?&?[<>]+&?[|!]?[[:space:]]*'"$_OUT_SEPSAFE_TOK"'+'
+# _OUT_SEP interpolates the SHARED _CMD_REDIR, whose target class admits `(` — so the
+# globals-to-namespace separator absorbs ` <(gh` even when the globals arms cannot. Measured:
+# narrowing only this constant's own arms flipped the bare `(`/`{`/`!` openers but left the
+# process substitution matching as ONE span, because the crossing happened in _OUT_SEP. The
+# count-only needle therefore needs a separator-safe SEP as well as separator-safe globals.
+_OUT_SEP_SEPSAFE='([[:space:]]*'"$_OUT_SEPSAFE_REDIR"')*[[:space:]]+'
+_OUT_GH_GLOBALS_SEPSAFE='(([[:space:]]+(-R[[:space:]]+'"$_OUT_SEPSAFE_TOK"'+|--repo[[:space:]]+'"$_OUT_SEPSAFE_TOK"'+|-'"$_OUT_SEPSAFE_TOK"'+([[:space:]]+'"$_OUT_SEPSAFE_TOK"''"$_OUT_SEPSAFE_TOK"'*)?))|([[:space:]]*'"$_OUT_SEPSAFE_REDIR"'))*'
+
 # Fail closed if either form lost its shape. NOT an emptiness test: both are single-quoted
 # literals concatenated with "$_CMD_REDIR", so each is ~100 bytes even when _CMD_REDIR is
 # empty — a `-z` test on them is structurally unreachable and asserts nothing (review, and
@@ -2047,8 +2189,17 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # assertion and denied every gated command until the assertion itself was edited.
 #   1. the wide form still carries its --repo arm;
 #   2. the grant form is NOT the wide form (catches a wholesale swap);
-#   3. the grant form does NOT contain the WIDE generic arm (catches reverting that one arm,
-#      and stays true under any FURTHER narrowing);
+#   3. RETIRED 2026-09-13, and retired rather than repaired because the repair is the same
+#      class of mistake. It was `grep -qF -- '|-[^[:space:]]+)'` on the grant form: a fixed
+#      string naming the wide form's generic arm AS IT WAS SPELLED THAT DAY. Adding the
+#      separate-arg value arm to that arm changed its spelling to
+#      `-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?`, so the pinned literal now
+#      occurs in NEITHER form and the operand could not fire against any input — INERT while
+#      green, which is the defect this file already records twice (the `grep -c` line count
+#      and the `grep -o | wc -l` class count). Re-pinning the new spelling would only reset
+#      the clock. Operand 3b already asks the same question behaviourally, per arm, per
+#      separator, and it CAUGHT the mutant operand 3 was meant to catch (measured: a grant
+#      form whose generic arm is widened to the new wide spelling spans ` -x;y`);
 #   3b. the separator-safe class occurs at least ONCE PER `-`-ARM (three of them). Operand 3
 #      is a fixed-string test, so review measured it silent under two degradations its
 #      wording implied it covered: REORDERING the alternation so the generic arm comes first
@@ -2063,7 +2214,17 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 #      reddened on the wrong reason and the run looked plausible. A count here would be the
 #      fourth guess. If you need one, isolate the rows FIRST and prove the isolation with an
 #      unmutated control that reddens zero;
-#   4. $_CMD_REDIR is non-empty — which costs the REDIRECT arm, not "every needle".
+#   4. $_CMD_REDIR is non-empty — which costs the REDIRECT arm, not "every needle";
+#   5. the two forms DISAGREE about a separate-arg flag they do not name — the wide form
+#      spans ` -t x`, the grant form does not. This is the 2026-09-13 value arm, and it is
+#      asserted because its absence is a silent, green BYPASS, not an inaccuracy: cobra takes
+#      any flag of the TARGET subcommand in root position, so an unnamed separate-arg flag
+#      leaves its VALUE where the namespace belongs and the needle never reaches `pr`.
+#      `gh -t x pr merge 42 -R other/org` — a cross-repository retarget — was ALLOWED by BOTH
+#      layers until that arm landed. The same probe pinned from the other side keeps the
+#      grant form narrow, because widening THAT one is a false grant rather than a deny (see
+#      this constant's header). One operand, both directions, so "harmonise the two
+#      constants" cannot pass.
 # Operand 3b asks the grammar a BEHAVIOURAL question instead of counting a literal: fed a
 # span that crosses a separator, does the grant form match it WHOLE? The wide form does; a
 # correct grant form cannot. NINE probes: one per `-`-arm per separator, so the coverage is
@@ -2081,15 +2242,57 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # count is also gameable: padding one arm with extra classes reaches the threshold while the
 # other arms stay wide.
 _OUT_GRANT_SPANS=no
+_OUT_SEPSAFE_SPANS=no
 for _out_gp in ' -x;y' ' -x&y' ' -x|y' ' -R a;y' ' -R a&y' ' -R a|y' ' --repo a;y' ' --repo a&y' ' --repo a|y'; do
-  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_SPANS=yes; break; fi
+  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_SPANS=yes; fi
+  # The SEPSAFE form must refuse the same spans, INCLUDING with a value token in play — that
+  # is the whole reason it exists, and ' -x y;z' is the probe the grant rows cannot make.
+  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$"; then _OUT_SEPSAFE_SPANS=yes; fi
+done
+# ONE PROBE PER ANCHOR CHARACTER, with and without a value token in play. Keying these on
+# `;&|` alone is exactly how the first version of this constant passed its own assertion while
+# a process substitution walked through it.
+for _out_gp in ' -x y;z' ' -x y&z' ' -x y|z' ' -R a b;z' ' --repo a b|z' \
+               ' -x y(z' ' -x y`z' ' -x y{z' ' -x y!z' \
+               ' -a b -c <(z' ' -a b -c >(z' ' -a b -c<(z' \
+               ' -x (z' ' -x `z' ' -x {z' ' -x !z'; do
+  if printf '%s' "$_out_gp" | grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$"; then _OUT_SEPSAFE_SPANS=yes; fi
+done
+# Operand 5: a SEPARATE-ARG flag neither form names. The wide form must span it whole; the
+# grant form must not. Probed rather than pattern-matched, so the assertion survives a
+# re-spelling of either arm — which is exactly how operand 3 went inert.
+#
+# PROBE $_OUT_GH_GLOBALS, NOT $_CMD_GH_GLOBALS, and the difference is not cosmetic even though
+# the two are equal today. Every gh needle in THIS file is built from `$_OUT_GH_GLOBALS`; the
+# lib constant reaches them only through the one-line `_OUT_GH_GLOBALS="$_CMD_GH_GLOBALS"`
+# above — an assignment whose own header invites a future editor to reassign it
+# ("A future guard-local widening can still reassign this after the fact"). The first version
+# of this operand probed the LIB constant, so reassigning _OUT_GH_GLOBALS to the pre-value-arm
+# spelling left the assertion SILENT (operand 1 still sees `--repo`, operand 2 still sees two
+# different strings) while every needle in this file reverted and the P0's headline bypass
+# reopened. Measured in security review: on that mutant `gh -t x pr merge 42` and
+# `gh -t x pr merge 42 -R other/org` both went ALLOW where the unmutated copy denies, with
+# `gh pr merge 42` still denying to prove the hook had not merely crashed. ASSERT THE
+# CONSTANT THE CONSUMERS READ, not the one it happens to be copied from.
+_OUT_WIDE_TAKES_VALUE=yes
+_OUT_GRANT_TAKES_VALUE=no
+_OUT_SEPSAFE_TAKES_VALUE=yes
+for _out_vp in ' -t x' ' -Z somevalue' ' --match-head-commit abc123'; do
+  if ! printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS}\$"; then _OUT_WIDE_TAKES_VALUE=no; fi
+  if printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS_GRANT}\$"; then _OUT_GRANT_TAKES_VALUE=yes; fi
+  # SEPSAFE must take a value like the wide form; without it the gh api count would MISS
+  # `gh -t x api …` entirely and the max would silently fall back to the wide count alone.
+  if ! printf '%s' "$_out_vp" | grep -qE "^${_OUT_GH_GLOBALS_SEPSAFE}\$"; then _OUT_SEPSAFE_TAKES_VALUE=no; fi
 done
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
    || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
-   || printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '|-[^[:space:]]+)' \
+   || [ "$_OUT_WIDE_TAKES_VALUE" != yes ] \
+   || [ "$_OUT_GRANT_TAKES_VALUE" != no ] \
    || [ "$_OUT_GRANT_SPANS" = yes ] \
+   || [ "$_OUT_SEPSAFE_TAKES_VALUE" != yes ] \
+   || [ "$_OUT_SEPSAFE_SPANS" = yes ] \
    || [ -z "${_CMD_REDIR:-}" ]; then
-  deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has had its generic arm widened back to it, or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  deny "guard-outward-cli: the root-position flag grammar lost its shape — _OUT_GH_GLOBALS is missing its --repo arm, _OUT_GH_GLOBALS_GRANT is identical to the wide form or has been widened to span a separator, the wide form has lost the separate-arg value arm that closes unnamed root flags (or the grant form has gained it), _OUT_GH_GLOBALS_SEPSAFE has lost its value arm or gained the ability to span a separator (which silently un-does the gh api occurrence refusal), or \$_CMD_REDIR came back empty (which costs the redirect arm). Any of these silently weakens the gh needles while leaving the suite green, so this fails closed instead. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 BARE=$(printf '%s' "$CMD" | cmd_bare)
@@ -3196,6 +3399,28 @@ fi
 # ALLOWED). Deny on >1, mirroring the identical multi-occurrence safe
 # direction the `gh pr merge` check above already takes.
 GH_API_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX}"
+# The same needle under the separator-safe grammar, for the occurrence COUNT only. Every other
+# consumer (the clause cut, the method check) keeps reading GH_API_RE.
+GH_API_RE_SEPSAFE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS_SEPSAFE}${_OUT_SEP_SEPSAFE}api${_OUT_POS_SUFFIX}"
+# BOTH CONSTANTS, not one. The fix needs a separator-safe GLOBALS run AND a separator-safe
+# SEP — the crossing that defeated the first attempt happened in the SEP, not the globals —
+# so asserting only the globals leaves half the repair revertible. Measured in round-4 review:
+# putting `${_OUT_SEP}` back in this needle and changing nothing else flips the four
+# process-substitution rows from DENY to ALLOW while this `case` stays quiet and no operand
+# above fires. The suite does go red on it, so it was silent-but-RED rather than
+# silent-and-green — but this file's stated bar is that a degradation must not be silent
+# HERE, and the P2 filed by the previous commit names this exact criterion.
+#
+# ASSERT THE CONSUMER, NOT ONLY THE CONSTANT. The shape assertion far above checks
+# _OUT_GH_GLOBALS_SEPSAFE, but it runs before this line, so swapping THIS needle back to the
+# wide form — or reassigning the constant after the assertion — leaves every operand silent
+# while the count collapses again. That operand/consumer split is verbatim the round-1 finding
+# at the wide form, and it is asserted here rather than left to the test rows because a
+# silent-and-green degradation is this file's stated bar for adding an operand.
+case "$GH_API_RE_SEPSAFE" in
+  *"$_OUT_GH_GLOBALS_SEPSAFE"*"$_OUT_SEP_SEPSAFE"*) : ;;
+  *) deny "guard-outward-cli: GH_API_RE_SEPSAFE is no longer built from BOTH _OUT_GH_GLOBALS_SEPSAFE and _OUT_SEP_SEPSAFE, so the gh api occurrence count has lost part of the separator-safe grammar that keeps a consumed value from swallowing a command boundary. Failing closed. Bypass: ALLOW_OUTWARD_CLI=1 (one command)." ;;
+esac
 # Counted AND clause-scoped on $WORDS_DEEP (unlike the `gh pr merge` block
 # above, whose CLAUSE stays shallow — see that block's own comment for why).
 # This check ALLOWS by default (a read-only `gh api` is fine) and only denies
@@ -3204,7 +3429,14 @@ GH_API_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX
 # Reading $WORDS_DEEP makes the quoted spellings AND a live-substitution-hidden
 # occurrence visible, without resorting to raw $CMD, which would lose the
 # command-position anchor and the separator neutralisation with it.
-GH_API_OCCURRENCES=$(_out_max_count "$GH_API_RE")
+# MAX OF TWO GRAMMARS, not one. See _OUT_GH_GLOBALS_SEPSAFE's header: an occurrence COUNT is
+# the one read in this file that is not monotone in the grammar's language, so the value arm
+# that closed the root-position bypass could LOWER this count by letting a single match absorb
+# a separator and the command after it. The wide count keeps its say because the clause cut
+# below reads the wide form; the separator-safe count restores the second occurrence.
+_gh_api_n_wide=$(_out_max_count "$GH_API_RE")
+_gh_api_n_sepsafe=$(_out_max_count "$GH_API_RE_SEPSAFE")
+GH_API_OCCURRENCES=$(( ${_gh_api_n_wide:-0} > ${_gh_api_n_sepsafe:-0} ? ${_gh_api_n_wide:-0} : ${_gh_api_n_sepsafe:-0} ))
 if [ "${GH_API_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then

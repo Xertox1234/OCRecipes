@@ -117,9 +117,36 @@ case "$TOOL" in
     # "$1"` sees an empty command, SUBCOMMAND comes back empty, and the `!= merge` early
     # exit below turns EVERY merge into a silent allow. Measured 2026-09-09: piped form
     # returns "" for `gh pr merge 938 --auto --squash`; argument form returns "merge"/938.
+    # THE THIRD CONJUNCT IS NOT OPTIONAL, and it was missing for one commit. This preflight
+    # exists because an undefined callee returns rc 127, and the gate below is written
+    # `if ! cmd_gh_pr_has_merge ...; then exit 0` -- so `!` inverts 127 to true and a lib
+    # that sources without defining the function becomes a SILENT ALLOW at the one
+    # ALLOW-shaped read in this file. Measured under bash 5.3.15: a defined function
+    # returning 1 takes the allow branch (correct, no merge present), a MISSING function
+    # takes the same allow branch (wrong), and a defined function returning 0 takes the
+    # deny branch. Version skew is the realistic trigger -- this hook cherry-picked without
+    # lib/cmd-detect.sh, a partially-merged tree, a stale .claude/ copy. Every function
+    # called below this line must appear in this conjunction; the `else` arm's deny is the
+    # only correct outcome when one does not. cmd_words_deep -- used by the gh-api route
+    # below -- was NOT in it when that sentence was first written, which made the sentence
+    # false about its own file. Unreachable in practice (it is defined far above
+    # cmd_gh_pr_ref, so any source defining the last necessarily defined it), but an
+    # invariant a file does not satisfy is worse than no invariant.
+    # THE CONSTANTS ARE CHECKED TOO, and documenting that they were not was not good enough.
+    # All four are interpolated unguarded below; under `set -u` an unset one kills the hook
+    # before it emits JSON, and a PreToolUse hook that exits without JSON is NON-BLOCKING --
+    # i.e. the blocking gate silently disarms, in the one direction that matters. The trigger
+    # is the same lib/consumer skew that justified the function checks. Routing them through
+    # the same conjunction sends a missing constant to the `else` deny instead of to an
+    # unguarded abort. They are tested with -n rather than declare -F because they are
+    # assignments, not functions.
     if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
        && declare -F cmd_gh_pr_write_subcommand >/dev/null \
-       && declare -F cmd_gh_pr_ref >/dev/null; then
+       && declare -F cmd_gh_pr_has_merge >/dev/null \
+       && declare -F cmd_words_deep >/dev/null \
+       && declare -F cmd_gh_pr_ref >/dev/null \
+       && [ -n "${_CMD_POS_PREFIX:-}" ] && [ -n "${_CMD_GH_GLOBALS:-}" ] \
+       && [ -n "${_CMD_POS_SUFFIX:-}" ] && [ -n "${_CMD_REDIR:-}" ]; then
       # PIPEFAIL MUST BE OFF FOR THIS CALL. cmd_gh_pr_write_subcommand signals REFUSE with
       # an explicit `return 1`, but signals NO MATCH through the rc of its trailing
       # `grep -oE … | head -1` pipeline. Under `set -o pipefail` a no-match grep makes that
@@ -166,7 +193,14 @@ case "$TOOL" in
       # redirect in BOTH slots. The same change closed a
       # separate P0: a repo-retarget flag in ROOT position (`gh -R owner/repo pr <verb> 42`)
       # sat in that same slot and reached this line as "not a merge", including with the
-      # retarget pointed at THIS repository.
+      # retarget pointed at THIS repository. That P0 was closed in TWO steps and only the
+      # first landed then: naming `-R`/`--repo` covered four spellings, but cobra takes any
+      # flag of the TARGET subcommand in root position, so ANY OTHER separate-arg flag still
+      # left its value where the namespace belongs -- `gh -t x pr merge 42 -R other/org`, a
+      # cross-repository retarget, reached this line as "not a merge" too. Closed 2026-09-13 by
+      # giving _CMD_GH_GLOBALS's generic arm an optional non-dash value token, i.e. by modelling
+      # the PROPERTY rather than naming more flags; `-Z somevalue` and `--not-a-real-flag v`
+      # are pinned in the suite precisely because neither is a real gh flag.
       # STILL OPEN, re-measured against the widened extractor and still pinned ALLOW: the
       # path-qualified binary, the glued metacharacter, and the quoted substitution. Those
       # three defeat the detector before the slot is ever reached - they are about how the
@@ -179,7 +213,13 @@ case "$TOOL" in
       # `gh      o/r pr merge 42` and the VALUE lands where the namespace belongs - SUB
       # comes back empty and this line allows. Isolating control measured the same day:
       # `gh "--no-color" pr merge 42` still resolves, so the cause is the separate value,
-      # not quoting as such. Not a regression (main behaves identically), and
+      # not quoting as such. RE-MEASURED 2026-09-13 against the value arm, which does NOT
+      # help here and was not expected to: the arm anchors on a DASH token, and blanking
+      # removes the only one, so there is nothing left for it to attach a value to. The
+      # family GREW with that change rather than shrinking -- every newly-covered flag has a
+      # quoted spelling too, e.g. `gh "-t" x pr merge 42`, measured ALLOW here and DENY in
+      # guard-outward-cli.sh. Closing it means making cmd_bare's blanking preserve token
+      # boundaries, which is a lib-wide change and P1's, not this one's. Not a regression (main behaves identically), and
       # guard-outward-cli.sh still denies it because that hook reads cmd_words, which
       # DELETES quote characters, rather than cmd_bare, which blanks the span.
       #
@@ -355,9 +395,45 @@ case "$TOOL" in
           # also resolved, its ref is deliberately DISCARDED rather than classified, since
           # classifying it would allow the api merge riding alongside it.
           PR=""
-        elif [ "$SUB" != "merge" ]; then
-          exit 0
         else
+          # ANY rc THAT IS NEITHER 0 NOR 1 FAILS CLOSED. `if ! <cmd>` collapses every
+          # non-zero status into one answer, and this read -- the only ALLOW-shaped one in
+          # the file -- has been bitten by that twice: rc 127 when the function was undefined
+          # under lib/consumer skew, and rc 141 when SIGPIPE hit past the 64KB pipe buffer.
+          # Both were fixed one spelling at a time. This handles the CLASS: grep's own rc 2,
+          # reachable by corrupting a shared constant, inverted to ALLOW under the old shape
+          # too. "I could not tell" is not "there is no merge here", and only one of those is
+          # safe to answer with exit 0.
+          MRG_HAS_RC=0
+          cmd_gh_pr_has_merge "$CMD" || MRG_HAS_RC=$?
+          if [ "$MRG_HAS_RC" -ne 0 ] && [ "$MRG_HAS_RC" -ne 1 ]; then
+            deny "Blocked: merge-review-guard could not determine whether this command contains a \`gh pr merge\`. The existence check returned $MRG_HAS_RC, which is neither \"found\" (0) nor \"absent\" (1) -- so this fails closed rather than guessing. $BYPASS"
+          fi
+          if [ "$MRG_HAS_RC" -eq 1 ]; then
+          # EXISTENCE, NOT FIRST-OCCURRENCE -- this is the one ALLOW-shaped read in this
+          # file, so it must be monotone under a widening of the shared grammar. It used to
+          # ask `[ "$SUB" != "merge" ]`, i.e. "is the FIRST gh-pr clause a merge", and $SUB
+          # comes from a `grep -oE ... | head -1`. Widening _CMD_GH_GLOBALS to admit a
+          # separate-arg root flag made a LEADING `gh <flag> <value> pr close ...` clause
+          # match where it previously did not; it then won head -1, $SUB read "close", and
+          # this branch exited 0 -- allowing the real `gh pr merge` later in the same
+          # command through with no review record. Measured DENY -> ALLOW on three flag
+          # families, including the ALLOW_OUTWARD_CLI=1-prefixed shape this repo merges
+          # with. Asking whether a merge occurrence EXISTS cannot regress that way: a wider
+          # grammar finds more occurrences, never fewer.
+          # $SUB is still read above -- its rc 1 refuse is handled before this point -- and
+          # is still the right value for the advisory consumers; only this gate changed.
+          # ACCEPTED COST, so the next reader does not re-litigate it as a bug: a TRAILING
+          # comment decoy -- `gh pr close 1 # gh pr merge 42` -- now denies where it
+          # previously allowed, because cmd_bare does not strip comments and the mention is
+          # real text. The operator sees the ref-less "cannot tell which PR" deny and splits
+          # the command. That is the restrictive direction, and it is the identical tradeoff
+          # cmd_gh_pr_write_subcommand already accepts and documents for its own trailing
+          # create decoy. A QUOTED mention is unaffected -- `git commit -m "gh pr merge 42"`
+          # still allows, because cmd_bare blanks the quoted span -- which is the row that
+          # would matter if this were over-denying in practice.
+            exit 0
+          fi
           PR=$(cmd_gh_pr_ref "$CMD") || PR=""
         fi
     else

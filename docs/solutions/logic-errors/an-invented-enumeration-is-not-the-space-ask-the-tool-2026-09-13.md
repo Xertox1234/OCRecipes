@@ -94,8 +94,13 @@ token. That property belongs to the tool's flag table, not to the author's model
 ## Related Files
 
 - `.claude/hooks/lib/cmd-detect.sh` — `_CMD_GH_GLOBALS` and its OPEN RESIDUAL note
-- `.claude/hooks/test-cmd-detect.sh` — the five tripwire rows pinning the live shape
-- `todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md` — re-scoped to partial for this reason
+- `.claude/hooks/test-cmd-detect.sh` — the `ghsub` block under `CONVERTED 2026-09-13`, where
+  the rows that pinned this shape as OPEN were converted when it closed, plus the `-Z` /
+  `--not-a-real-flag` property rows that keep the fix from reverting to an enumeration.
+  (Cited by anchor, not by count: this line said "the five tripwire rows pinning the live
+  shape" and was wrong twice over once the gap closed — the rows are no longer tripwires and
+  there were never five. See the positional-reference sibling doc.)
+- `todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md` — re-scoped to partial for this reason, then CLOSED 2026-09-13 by modelling the property instead of lengthening the list
 
 ## See Also
 

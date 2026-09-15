@@ -5,7 +5,7 @@ category: code-quality
 tags: [harness, hooks, testing, bash, safety-gate]
 module: shared
 applies_to: [".claude/hooks/*.sh", ".claude/hooks/test-*.sh", "scripts/**/*.sh"]
-symptoms: ["A -z / -n assertion on a constant built by concatenation never fires", "A mutation probe returns empty output and is read as a pass", "A guard's self-test is green but the production operand it exercises is dead", "The mutation input exits at a fast-path filter before reaching the code under test"]
+symptoms: ["A -z / -n assertion on a constant built by concatenation never fires", "A mutation probe returns empty output and is read as a pass", "A guard's self-test is green but the production operand it exercises is dead", "The mutation input exits at a fast-path filter before reaching the code under test", "An assertion probes a constant the consumers do not read (an alias assigned from it) so reassigning the real one is silent", "A justification says coverage lives elsewhere and the row it names does not exist", "A mutation row stays GREEN when the check it claims to pin is deleted"]
 created: 2026-09-13
 severity: medium
 ---
@@ -72,7 +72,8 @@ for _p in ' -x;y' ' -x&y' ' -x|y' ' -R a;y' ' -R a&y' ' -R a|y' \
 done
 if ! printf '%s' "$_OUT_GH_GLOBALS" | grep -qF -- '--repo' \
    || [ "$_OUT_GH_GLOBALS_GRANT" = "$_OUT_GH_GLOBALS" ] \
-   || printf '%s' "$_OUT_GH_GLOBALS_GRANT" | grep -qF -- '|-[^[:space:]]+)' \
+   || [ "$_OUT_WIDE_TAKES_VALUE" != yes ] \
+   || [ "$_OUT_GRANT_TAKES_VALUE" != no ] \
    || [ "$_OUT_GRANT_SPANS" = yes ] \
    || [ -z "${_CMD_REDIR:-}" ]; then
   deny "…lost its shape…"
@@ -80,9 +81,25 @@ fi
 ```
 
 Each operand names a property that a real degradation removes: the wide form still carries its
-`--repo` arm; the narrow form is **not** the wide form; the narrow form does **not** contain the
-wide generic arm; the narrow form **cannot span a separator**; and `$_CMD_REDIR` is non-empty
-(which costs the redirect arm — say that, not "every needle").
+`--repo` arm; the narrow form is **not** the wide form; the two forms **DISAGREE** about a
+separate-arg flag neither names (the wide one spans ` -t x`, the narrow one must not); the narrow
+form **cannot span a separator**; and `$_CMD_REDIR` is non-empty (which costs the redirect arm —
+say that, not "every needle").
+
+**THE EXCERPT IS A POINT-IN-TIME SNAPSHOT AND THE REAL ASSERTION HAS SINCE GROWN.** It shows six
+conditions; the shipped check now enforces eight — the two omitted are
+`_OUT_SEPSAFE_TAKES_VALUE != yes` and `_OUT_SEPSAFE_SPANS = yes`, guarding a third grammar added
+later for an occurrence COUNT (see the monotonicity doc in See Also). They are named here rather
+than reproduced, because the lesson is the SHAPE of an operand, not the roster. Saying so is the
+point: this is the same "doc exemplar drifts from the guard it documents" defect as recurrence 4
+below, found in the same review that fixed the first instance, and a caveat that is checked beats
+a roster that silently falls behind.
+
+A fourth operand once sat between the second and the fourth — a fixed-string test that the narrow
+form does not contain the wide generic arm. It is **gone, and its removal is the fourth recurrence
+below**: the literal it matched was the wide arm's spelling on the day it was written, and the next
+change to that arm left the literal in NEITHER form, so it could not fire against any input. Do not
+reinstate it in that shape. Every operand above is a PROBE.
 
 **THE OBVIOUS SPELLING OF OPERAND 2 AND 3 IS THE ONE THAT DOES NOT WORK**, and it is worth
 writing down because it survived a review round before being caught. Requiring the narrow class
@@ -121,7 +138,76 @@ For the mutation row:
 3. Require a **specific** deny (match the reason text), so an unrelated fail-closed path
    cannot satisfy the row.
 
+## Three ways the SAME defect recurred, and the discriminator for each
+
+Codified after four more review rounds on the same change surfaced three further instances.
+Each looked like coverage and was not, and none is visible by reading.
+
+**1. The assertion probed an ALIAS.** The operand tested `$_CMD_GH_GLOBALS`, the library
+constant. Every needle in the guard is built from `$_OUT_GH_GLOBALS`, which is assigned from it
+on one line — and whose own header invites a future editor to reassign it. Reassigning it
+left the operand silent while the needles reverted and the bypass reopened. Measured on three
+builds with `gh pr merge 42` denying throughout as the did-the-hook-crash control:
+
+```
+clean                         gh -t x pr merge 42 = DENY
+old assertion + reassignment  gh -t x pr merge 42 = ALLOW   <- silent, bypass reopened
+repaired      + reassignment  ASSERT-FIRES
+```
+
+> **Assert the constant the CONSUMERS read, not the one it is copied from.** An assertion on a
+> value that merely equals the load-bearing one is coupled by an assignment somebody is
+> explicitly invited to change.
+
+**2. The assertion covered ONE of the two constants its consumer needs.** The repair required a
+separator-safe globals run AND a separator-safe separator — the crossing that defeated the
+first attempt happened in the separator — but the check matched only the globals half.
+Reverting the separator half flipped four rows DENY->ALLOW with the check quiet.
+
+**3. The exemption named coverage that did not exist.** A deny site was exempted from the corpus
+axis that exists to prove every deny is reachable, justified by "its mutation coverage lives in
+the suite". No such row existed, and none COULD: the mutation helper hard-coded a DIFFERENT
+check's reason string, so a row aimed at this one could never have passed. The site ended up
+covered nowhere, and the justification is what would stop the next reader looking.
+
+**4. This document's own exemplar went inert, and it took a review round to notice.** The
+`## Solution` block above prescribed the fixed-string operand as one of five. The change that
+added the value arm respelled the wide generic arm from `-[^[:space:]]+` to
+`-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?`, so the pinned literal occurred in
+neither constant and the operand could never fire — measured per build: live on main
+(`wide-contains-needle=yes`), dead at the branch tip (`wide-contains-needle=no`,
+`grant-contains-needle=no`). The guard itself already recorded the retirement; the doc teaching
+the lesson did not, and it is injected on every `.claude/hooks/*.sh` edit, so the stale exemplar
+travelled further than the stale code would have.
+
+> **A solution doc is code.** It goes stale the same way, it is read with more authority than a
+> comment, and nothing runs it. When a change invalidates the thing a doc prescribes, the doc is
+> part of the change's blast radius.
+
+### The discriminator: delete the thing and watch the row go red
+
+A row only pins a check if REMOVING that check makes the row fail. Asserting coverage is not
+having it. The 2x2 that settles it, measured:
+
+| mutation                              | that arm's row      | the other arm's row |
+| ------------------------------------- | ------------------- | ------------------- |
+| check intact                           | fires (row passes)  | fires (row passes)  |
+| arm A deleted + arm A's half reverted  | **silent (FAILS)**  | fires               |
+| arm B deleted + arm B's half reverted  | fires               | **silent (FAILS)**  |
+
+Both diagonals are required. Without the off-diagonal, a single row that happens to fail under
+any weakening reads as per-arm coverage while pinning nothing specific — which is exactly what
+a "reverts both constants at once" row does.
+
 ## Prevention
+
+- **A row that stays green when you delete what it claims to pin is not coverage.** Verify by
+  deletion, per check, and require the off-diagonal too.
+- **Parameterise a mutation helper's expected reason string.** A helper that hard-codes one
+  check's wording silently makes every row for every OTHER check unpassable, and the rows look
+  ordinary.
+- **Treat "coverage lives elsewhere" as a claim to follow, not to accept** — especially in an
+  exemption, where it removes the site from the axis that would otherwise prove reachability.
 
 - A `-z` test on a variable whose assignment contains literal characters is almost always
   dead. Assert a property the value must *have*, not a length it cannot lose.
@@ -134,11 +220,12 @@ For the mutation row:
 ## Related Files
 
 - `.claude/hooks/guard-outward-cli.sh` — the shape assertion beside the two root-position constants
-- `.claude/hooks/test-guard-outward-cli.sh` — `_mut_goc_says_deny` and its four rows, plus the separately-mechanised `_SEP_MUT` check for the sibling structural assertion
+- `.claude/hooks/test-guard-outward-cli.sh` — `_mut_goc_says_deny` / `_mut_goc_denies_with` and their call sites (six at the time of writing — count them rather than trusting this line; it said "four" and was miscounted from the start, which is the sibling doc's own lesson landing on this one), plus the separately-mechanised `_SEP_MUT` check for the sibling structural assertion
 
 ## See Also
 
 - [a clean zero needs its denominator](a-control-that-runs-before-the-work-cannot-validate-it-2026-09-07.md)
 - [a two-sided control can still agree with a broken predicate](a-two-sided-control-can-still-agree-with-a-broken-predicate-2026-09-12.md)
 - [a pin records its value but must also record whether it is correct](a-pin-records-its-value-but-must-also-record-whether-it-is-correct-2026-09-13.md)
+- [widening is monotone on a boolean read, not on a count](../logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md) — the third grammar the two omitted operands guard, and why its count needs a max()
 - [widening is safe on every deny read and a false grant at the one allow read](../logic-errors/widening-is-safe-on-every-deny-read-and-a-false-grant-at-the-one-allow-read-2026-09-13.md)
