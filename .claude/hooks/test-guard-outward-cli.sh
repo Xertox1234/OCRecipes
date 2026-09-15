@@ -2767,6 +2767,34 @@ assert_deny "gh api with a brace-range-split verb denies" \
 # unconditional boundary" conservatism for the closer-only case.
 assert_deny "a MULTI-value brace range glued to a verb denies the same as a single-value one" \
   "$(json 'eas up{a..z}ate --branch preview')" "glued to a brace RANGE"
+# 2026-09-14: bash's THREE-FIELD increment form {X..Y..N}. Not a second mechanism --
+# the same range grammar with an increment clause, which bash ignores when X==Y
+# because a single-value range has nothing to step. The token pattern hardcoded the
+# two-field spelling, so this walked past it; found by construct-and-run, not review.
+#
+# REACHABILITY, because the grade depends on it and the two shells disagree:
+#     form              bash      zsh (this agent's shell)
+#     me{r..r}ge        merge     merge
+#     me{r..r..2}ge     merge     me{r..r..2}ge   <- left literal
+# zsh expands numeric {1..9..2} but NOT a glued CHARACTER range carrying an
+# increment, so the bare form typed into the Bash tool runs literally and the CLI
+# rejects it. It reconstructs under bash -- a script, a hook, or `bash -c`, and that
+# wrapper is its own accepted residual (see this file's header) tracked by
+# todos/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md.
+# So these pins are grammar completeness and defense in depth, not a live bypass.
+assert_deny "a three-field increment brace range glued to a verb denies (gh)" \
+  "$(json 'gh pr me{r..r..2}ge 42')" "glued to a brace RANGE"
+assert_deny "a three-field increment brace range glued to a verb denies (eas)" \
+  "$(json 'eas up{d..d..3}ate --branch preview')" "glued to a brace RANGE"
+assert_deny "a three-field increment range with a signed step denies" \
+  "$(json 'npm pub{l..l..-1}ish')" "glued to a brace RANGE"
+# CONTROLS for the widening -- the increment clause is OPTIONAL, so every ordinary
+# brace range and every benign use must be untouched. Without these, the three pins
+# above would pass just as happily on a pattern that denied any command with braces.
+assert_allow "a benign numeric increment range is untouched" \
+  "$(json 'echo {1..9..2}')"
+assert_allow "a benign increment range driving a loop is untouched" \
+  "$(json 'for i in {0..10..2}; do echo $i; done')"
 # CONTROL, already documented and pre-existing: a brace RANGE that follows an
 # INTACT, complete verb (not glued INSIDE it) must keep denying via the
 # EXISTING boundary check (_OUT_POS_SUFFIX already treats `{` as a closer) --
@@ -3830,7 +3858,7 @@ _PIN_RAN=1
 # round-2 anchoring fix closed the inert-prose decoy but not this) and its
 # fix (the exclusion made per-OCCURRENCE via `grep -oE` extraction instead
 # of a second whole-command existence check).
-EXPECTED_TOTAL=719
+EXPECTED_TOTAL=724
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

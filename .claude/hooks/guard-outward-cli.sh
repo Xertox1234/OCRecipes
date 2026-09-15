@@ -1336,7 +1336,7 @@ crude_smells_outward() {
   # the deleting-rendering this todo's Scope Contract forbids adding. NEVER
   # EVALUATES the range (single- or multi-value denied identically), same
   # ruling as the precise path.
-  grep -Eq '(^|[^a-zA-Z])(eas|railway|npm|pnpm|yarn|gh)[^;&|]*([$`]|\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+\})' <<< "$t" && return 0
+  grep -Eq '(^|[^a-zA-Z])(eas|railway|npm|pnpm|yarn|gh)[^;&|]*([$`]|\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\})' <<< "$t" && return 0
   # ADDED 2026-09-06 (security review of PR #926, finding C1 — the DEGRADED
   # half). The mirror just above requires the gated binary NAME to survive
   # intact, with a sigil somewhere after it. That covers a split VERB
@@ -2376,7 +2376,7 @@ fi
 # this point via some OTHER trigger (e.g. an unrelated `$(...)` elsewhere in
 # the same command) even though it is TOOL-position-shaped — not a claim that
 # the 7 `r4brange-tool-*` corpus rows are closed by this change.
-_OUT_BR_RANGE_TOKEN='[^;&|)`{}[:space:]]*\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+\}[^;&|)`{}[:space:]]*'
+_OUT_BR_RANGE_TOKEN='[^;&|)`{}[:space:]]*\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\}[^;&|)`{}[:space:]]*'
 # EXCLUSION, found by construct-and-run before this shipped (2026-09-14): the
 # claim in this block's own deny message below -- "a range glued only AFTER an
 # intact literal verb is unaffected, that already denies via the existing
@@ -2439,7 +2439,7 @@ _OUT_BR_RANGE_TOKEN='[^;&|)`{}[:space:]]*\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+\}[^;&|)`
 # boolean exclusion instead of a count: "some text elsewhere also matches
 # the excluded shape" can never license silencing a DIFFERENT occurrence
 # that does not.
-_OUT_BR_RANGE_ALREADY_HANDLED="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment)|api)"'\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+\}'"${_OUT_POS_SUFFIX}"
+_OUT_BR_RANGE_ALREADY_HANDLED="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment)|api)"'\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\}'"${_OUT_POS_SUFFIX}"
 _OUT_BR_OCC=$(
   { grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
     grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
