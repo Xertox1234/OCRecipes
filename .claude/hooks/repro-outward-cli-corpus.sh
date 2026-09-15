@@ -1486,7 +1486,11 @@ fi
 #    naming it here rather than only in the residual is the same "a list that
 #    discloses only the residual it has already closed is worse than no list"
 #    discipline this whole paragraph is about):
-#    (a1) the SITE_UPD_VERBS / SITE_CB_VERBS families a few hundred lines above
+#    (a1) the SITE_UPD_VERBS / SITE_CB_VERBS families a few hundred lines above,
+#    and GH_PR_CREATE_RE (guard-outward-cli.sh:2778, `gh pr (create|comment)`) --
+#    added 2026-09-15 so this bucket matches the companion solution doc, which
+#    already counted it among the six left hand-listed. Its coverage is likewise
+#    COMPLETE (19 rows for `create`, 49 for `comment` across the 623),
 #    (`eas update:(delete|edit|republish|...)`, `eas (channel|branch):(create|
 #    edit|delete|rename)`) are the EXACT SAME alternation-of-literal-branches
 #    shape `_alt_or_die` already handles -- SITE_CB_VERBS is even a two-group
@@ -1511,35 +1515,64 @@ fi
 #      `repo delete`. All NINE `pr` branches (close, edit, ready, reopen, review,
 #      lock, unlock, update-branch, revert) are at zero rows, as are 4 of 5
 #      release and 7 of 8 repo branches. Deleting `close` from the alternation
-#      makes that command ALLOW while moving 0 of this file`s rows.
+#      makes that command ALLOW while moving 0 of this file's rows.
 #      THE OTA-SCRIPT SITES (guard-outward-cli.sh:2239 and :2240) span
 #      (npm|pnpm|yarn) x (run-script|run) x (preview|production) and
-#      (yarn|pnpm) x (preview|production). Corpus census: `pnpm` appears 0 times
-#      and `run-script` 0 times anywhere in this file, and the only shapes
-#      generated are npm+run+preview and the yarn-form production row -- so the
+#      (yarn|pnpm) x (preview|production). Census over the GENERATED ROWS -- and
+#      the scope matters, because an earlier wording said "appears 0 times
+#      anywhere in this file", which counted the sentence itself and so refuted
+#      itself under `grep -c`: of the 623 generated rows, ZERO contain `pnpm`
+#      and ZERO contain `run-script`, and the only shapes generated are
+#      npm+run+preview and the yarn-form production rows -- so the
 #      preview/production cross is unexercised for npm. Deleting the
-#      `production` branch was measured to flip THIS REPO`S OWN DOCUMENTED OTA
-#      PUBLISH COMMAND from DENY to ALLOW (control: the preview form stayed
-#      DENY in the same run). That is the 2026-08-16 incident class, so this is
-#      the one to close first. Extending the P3 follow-up below, not folded in
+#      `production` branch was measured to flip this repo's own documented OTA
+#      publish command from DENY to ALLOW, run verbatim
+#      (`npm run update:production -- --message "ship it"`), with the preview
+#      form holding DENY as control in the same run. That is the 2026-08-16
+#      incident class, so this is the one to close first. Extending the P3 follow-up below, not folded in
 #      here, because retrofitting them is the same shipped-mechanism retrofit
 #      (a1) was scoped out for.
-#    (b) any OTHER deny check in the file that does not take the alternation
-#    shape -- the interior-redirect, flag-adjacent, forged/masked --auto,
+#    (a3) FLAG-, VERB- AND METHOD-POSITION BRANCH LISTS, hand-listed and
+#    incompletely covered. Added 2026-09-15: the (a1)/(a2) split still was not a
+#    partition, because it only looked at alternations sitting next to
+#    `${_OUT_SEP}` in a command-position SITE regex. These four are literal
+#    branch lists a source-grep can enumerate just as easily, and they feed deny
+#    decisions from other positions:
+#      _OUT_GATED_BIN   guard-outward-cli.sh:2274   6 branches
+#      _OUT_GATED_VERB  guard-outward-cli.sh:2275  18 branches
+#      _GH_API_M        guard-outward-cli.sh:3172   4 branches
+#      _OUT_REPO_FLAG_RE guard-outward-cli.sh:944   2 branches
+#    Two of their branches are measurably uncovered, constructed and run rather
+#    than inferred:
+#      _GH_API_M: deleting the PATCH branch makes `gh api repos/o/r -X PATCH`
+#        ALLOW (control: -X POST still DENY) and moves 0 of 623 rows. A row
+#        census agrees -- POST and DELETE and PUT all have rows, PATCH has NONE.
+#        An arbitrary GitHub REST mutation is exactly the egress class this
+#        guard exists for.
+#      _OUT_GATED_BIN: deleting `pnpm` makes a pnpm invocation ALLOW (control:
+#        the yarn form still DENY) and moves 0 of 623 rows.
+#    Positive control for both, in the same runs: deleting `run` from the
+#    railway alternation moved exactly one row (siterailverb-run), so the
+#    instrument was live.
+#    (b) any OTHER deny check in the file that is GENUINELY not a branch list --
+#    narrowed twice now, because it twice asserted a universal that measurement
+#    broke: the interior-redirect, flag-adjacent, forged/masked --auto,
 #    decoy-clause and root-position-flag families are each their own bespoke
 #    regex, not a branch list, and adding a branch-style row generator for them
 #    is exactly the "enumerate every mechanism x every branch" cross product
-#    this todo's own scope note declines. NOTE the narrowing: this bucket used to
-#    say the remaining checks "do not take the alternation shape at all", which
-#    was wrong -- (a2) above is the counter-example, and it is a branch list a
-#    source-grep CAN enumerate;
+#    this todo's own scope note declines. TWO NARROWINGS RECORDED, because the
+#    same sentence was wrong twice: it first said the remaining checks "do not
+#    take the alternation shape at all" ((a2) refuted that), then still implied
+#    the remainder were bespoke regexes ((a3) refuted that). What is left here
+#    really is bespoke -- but treat that as a claim awaiting its next
+#    counter-example, not as a closed set;
 #    (c) narrowing that is not branch DELETION at all -- tightening `_OUT_SEP` or
 #    `_OUT_POS_PREFIX` themselves, or narrowing a character class inside one
 #    branch rather than removing the branch whole.
-#    All FOUR are real and still invisible to every check in this
+#    All FIVE are real and still invisible to every check in this
 #    block for the same reason the original paragraph gave: this is a question
 #    about which rows exist, not one a fixed pin can answer without a new axis
-#    (or, for (a), the same axis extended) for each shape.
+#    (or, for (a1)/(a2)/(a3), the same axis extended) for each shape.
 #
 #    The residual this list USED to name second -- a deny site no row reaches, so
 #    deleting it is invisible -- was live when it was written and is closed now:
