@@ -1212,6 +1212,123 @@ for r in update:list update:view update:insights channel:list branch:view; do
   add "sitefp-${r//:/}" ALLOW "eas $r"
 done
 
+# axis: DENY-SITE COVERAGE, ALTERNATION BRANCHES (added 2026-09-14, security review
+# finding todos/P2-2026-09-08-corpus-covers-deny-sites-but-not-their-alternation-branches.md).
+#
+# _pin_sites (below) proves every deny SITE the guard can emit is reached by some
+# row. It cannot see one level deeper: a deny regex is usually an alternation, and
+# only ONE branch of it needs a row for the whole site to stay attributed --
+# `_pin_sites` is satisfied the moment ANY sibling branch still reaches the same
+# message. Before this axis, `railway (up|deploy|redeploy|restart|down|delete|
+# remove|rm|run)` had a row for `up` only; `eas (update|publish|submit)` had a row
+# for `update` only; `railway (variable|variables|vars|var) (set|delete)` had
+# rows for TWO of its four branches, not one -- the todo's own 2026-09-08
+# measurement table is the authority, and "a row for `variable set` only", which
+# this comment used to claim, is what made the count below fail to reconcile.
+# That is 5 of the 18 branches across these 4 regexes already covered
+# (9+3+4+2 = 18, minus 5, leaves exactly the 13 this axis adds); the earlier
+# wording implied 4 covered and therefore 14. WHICH two of that family were
+# covered is deliberately not restated here: three different instruments
+# disagreed about it on 2026-09-14 (a text scan of the row bodies cannot span
+# the `{n} >/dev/null` a row embeds, and an overall DENY/ALLOW mutation cannot
+# see a row that several checks deny at once), and the count -- which is the
+# thing the 13 depends on -- does not turn on the answer. Read the table, not
+# this comment, if you need the pair. Narrowing any OTHER branch out of its alternation --
+# deleting `railway run`, the exact shape of the guard's own "executes an
+# arbitrary command with the LIVE service env, incl. the production DATABASE_URL"
+# warning -- flipped that command DENY -> ALLOW while every existing check in this
+# file's pin stayed green, measured by mutating a scratch copy of the guard and
+# running the (then-current) corpus against it: 0 of the 602 pre-existing rows
+# moved on any of the 4 paths.
+#
+# EXTRACTED from the guard's OWN alternations, not hand-listed (NOTE6: a
+# hand-carved subset is how the tool position went missing in the first place).
+# `_alt_or_die` greps the literal regex text out of guard-outward-cli.sh and
+# aborts the WHOLE run if a pattern does not match EXACTLY one line -- the same
+# denominator discipline `EXPECTED_ROWS` already gives a generation loop that runs
+# dry. It is called as a plain statement, never inside `$(...)`, specifically so
+# its `exit 1` reaches the top level: wrapping it in a command substitution would
+# let the failure print to stderr and vanish, leaving the family silently empty
+# and the corpus reporting a clean run on zero rows -- exactly the hole this whole
+# file exists to close. A branch ADDED to one of these four regexes later grows
+# the extracted list and grows ROWS, redding `EXPECTED_ROWS` until the pin is
+# bumped -- caught automatically, with no row to write by hand.
+#
+# A branch REMOVED is caught too, but by a DIFFERENT and WEAKER mechanism than the
+# rows above it, and the difference matters enough to say plainly rather than
+# overclaim. Because extraction and verdict-testing both read the SAME guard file
+# LIMIT OF THE CLAIM BELOW, measured: this holds for branches matching the
+# extraction character class. That class is widened to `[a-z0-9|-]+` as of
+# 2026-09-15 -- it was `[a-z|]+`, under which adding a HYPHENATED branch (and
+# hyphens are already normal in this guard: update-branch, delete-asset,
+# revert-update-rollout, roll-back-to-embedded) made `_alt_or_die` match 0 lines
+# and abort the whole generation with a FATAL rather than growing ROWS. Fail-
+# closed, so never a silent miss, but "caught automatically, no row to write by
+# hand" was not what happened -- the fix was to widen the class, not bump a pin.
+# in ordinary same-commit operation, a branch deleted from the guard also
+# disappears from THIS file's own generated row set: `rows` shrinks, `EXPECTED_ROWS`
+# reds, and the attribution manifest loses that branch's line -- a real, required,
+# un-silenceable pin failure, but a row-COUNT signal, not a semantic one. It is the
+# SAME signal a typo in an extraction pattern would produce, and "the count moved,
+# bump the pin" is a more attractive rubber-stamp than "this specific DENY became
+# an ALLOW." MUTATION-VERIFIED both ways, 2026-09-14 (see the todo below): running
+# this file, unmodified, against a guard copy with `run` deleted from the railway
+# alternation produced `rows is 622, expected 623` and `-siterailverb-run` removed
+# from attribution -- the row vanished; it was never evaluated. A SEPARATE run that
+# held row GENERATION on the real (unmutated) guard while pointing only
+# verdict-testing at that same mutant -- so `siterailverb-run` still exists as a
+# row -- produced the semantic form instead: `precise-path gaps is 32, expected 31`
+# with `+siterailverb-run` (want DENY, got ALLOW) in the gap manifest. That second
+# shape is what actually happens if this file's OWN reference commit lags the
+# guard's (a stale rebase, a hand-maintained row) rather than moving with it; in
+# ordinary same-commit CI it does not arise, which is exactly why the row-count
+# form is the one to expect and not to wave through without reading why it moved.
+_alt_or_die() {  # $1=grep -E pattern, must match EXACTLY one line of $HOOK
+  local pat="$1"
+  local hit n
+  hit=$(grep -oE "$pat" "$HOOK")
+  n=$(grep -c . <<< "$hit")
+  if [ "$n" -ne 1 ]; then
+    echo "FATAL: alternation-extraction pattern matched $n lines in guard-outward-cli.sh, expected exactly 1: $pat" >&2
+    exit 1
+  fi
+  _ALT_HIT="$hit"
+}
+
+_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_POS_SUFFIX\}'
+RAILWAY_VERB_ALT=$(sed -E 's/^railway\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
+_alt_or_die 'eas\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_POS_SUFFIX\}'
+EAS_VERB_ALT=$(sed -E 's/^eas\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
+_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_SEP\}\(set\|delete\)\$\{_OUT_POS_SUFFIX\}'
+RAILVAR_ALT=$(sed -E 's/^railway\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_SEP\}\(set\|delete\)\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
+_alt_or_die 'railway\$\{_OUT_SEP\}\([a-z0-9|-]+\)\$\{_OUT_SEP\}delete\$\{_OUT_POS_SUFFIX\}'
+RAILSVC_ALT=$(sed -E 's/^railway\$\{_OUT_SEP\}\(//; s/\)\$\{_OUT_SEP\}delete\$\{_OUT_POS_SUFFIX\}$//' <<< "$_ALT_HIT")
+
+IFS='|' read -ra SITERAILVERB_BR <<< "$RAILWAY_VERB_ALT"
+IFS='|' read -ra SITEEASVERB_BR  <<< "$EAS_VERB_ALT"
+IFS='|' read -ra SITERAILVAR_BR  <<< "$RAILVAR_ALT"
+IFS='|' read -ra SITERAILSVC_BR  <<< "$RAILSVC_ALT"
+
+for v in "${SITERAILVERB_BR[@]}"; do add "siterailverb-$v" DENY "railway $v"; done
+for v in "${SITEEASVERB_BR[@]}";  do add "siteeasverb-$v"  DENY "eas $v"; done
+for v in "${SITERAILVAR_BR[@]}";  do add "siterailvarset-$v" DENY "railway $v set K=V"; done
+# The SECOND alternation group of the railvar site -- (set|delete) -- is not one
+# of the 13 branches this todo measured, and cross-producting it against the four
+# branches above belongs to the wider mechanism-x-branch sweep this axis's own
+# header explicitly declines (see "Scope discipline" in the todo). One row keeps
+# it from being an entirely unexercised dimension without that cross product.
+add siterailvardelete DENY "railway ${SITERAILVAR_BR[0]} delete K"
+for v in "${SITERAILSVC_BR[@]}";  do add "siterailsvc-$v" DENY "railway $v delete svc"; done
+
+# FALSE-POSITIVE CONTROLS. The top-level-verb deny message above names these
+# read-only forms as unaffected ("railway status, railway logs, railway whoami");
+# without a row here nothing would catch a widened match swallowing them (the
+# exact role `sitefp-*` plays for the eas colon-verb families above). Neither
+# `railway status` nor `railway logs` had an ALLOW row anywhere in the file
+# before this diff, so both are new, load-bearing controls, not decoration.
+add siterailfp-status ALLOW 'railway status'
+add siterailfp-logs   ALLOW 'railway logs'
+
 add fp-mention       ALLOW 'git commit -m "chore: mentions eas update and gh pr merge"'
 add fp-quotedall     ALLOW 'echo "gh pr merge 42"'
 add fp-automerge     ALLOW 'gh pr merge 42 --auto'
@@ -1416,14 +1533,248 @@ fi
 #    AND THE ONE THAT IS STILL OPEN, named because a residual list that discloses
 #    only the residual it has already closed is worse than no list. A scope
 #    NARROWING INSIDE a check that still fires first for every corpus row: the
-#    check keeps producing the same verdict AND the same reason for all 581 rows
-#    while commands outside the corpus flip. Nothing in this block can see that --
-#    not attribution, not the per-path tuples, not `_pin_sites`, which asks whether
-#    a check is reached, never whether it is reached by everything it should be.
-#    That is a question about which ROWS EXIST, and the only answers are new axes
-#    and adversarial construction. It is the honest boundary of what a per-row pin
-#    asserts, and the reason NOTE6's "a corpus can only report on the axes it
-#    varies" is the first thing to read after this.
+#    check keeps producing the same verdict AND the same reason for all 721 rows
+#    (the corpus's current size -- see EXPECTED_ROWS) while commands outside the
+#    corpus flip. Nothing in this block can see that -- not attribution, not the
+#    per-path tuples, not `_pin_sites`, which asks whether a check is reached, never whether it is
+#    reached by everything it should be. That is a question about which ROWS
+#    EXIST, and the only answers are new axes and adversarial construction. It is
+#    the honest boundary of what a per-row pin asserts, and the reason NOTE6's "a
+#    corpus can only report on the axes it varies" is the first thing to read
+#    after this.
+#
+#    NARROWED 2026-09-14
+#    (todos/P2-2026-09-08-corpus-covers-deny-sites-but-not-their-alternation-branches.md):
+#    the most CONCRETE instance of this residual
+#    -- deleting one branch out of a MULTI-BRANCH alternation the guard's own
+#    regex already enumerates -- is closed for the four regexes it is shaped
+#    that way for (railway's top-level verb list, eas's top-level verb list, the
+#    railway variable/vars/var alternation, and the railway service/environment
+#    alternation). See the "DENY-SITE COVERAGE, ALTERNATION BRANCHES" axis above:
+#    it extracts each alternation from the guard's own source, so a branch ADDED
+#    to one of those four regexes later grows this file's own row count until the
+#    pin is bumped, rather than sitting invisible the way the 13 measured here
+#    2026-09-08 did.
+#
+#    WHAT REMAINS is everything this instance's method does not reach, and one
+#    thing it COULD reach but does not yet (review round 1 caught this omission --
+#    naming it here rather than only in the residual is the same "a list that
+#    discloses only the residual it has already closed is worse than no list"
+#    discipline this whole paragraph is about):
+#    (a1) the SITE_UPD_VERBS / SITE_CB_VERBS families a few hundred lines above
+#    (`eas update:(delete|edit|republish|...)`, `eas (channel|branch):(create|
+#    edit|delete|rename)`) are the EXACT SAME alternation-of-literal-branches
+#    shape `_alt_or_die` already handles -- SITE_CB_VERBS is even a two-group
+#    alternation, like the railvar site -- but they PRE-DATE this axis (PR #935)
+#    and are still hand-listed, not extracted. Their coverage is COMPLETE today
+#    (every branch of both alternations has a row), so this is not a live gap the
+#    way the 13 measured branches were; it is the same class of latent risk this
+#    todo closed for four OTHER regexes, left open for these two because
+#    retrofitting a shipped, working mechanism was judged out of THIS todo's
+#    scope rather than folded in under time pressure. A branch added to either
+#    regex later needs a human to remember to extend the hand-list, exactly the
+#    "hand-carved subset" failure NOTE6 exists to prevent.
+#    GH_PR_CREATE_RE (guard-outward-cli.sh, `gh pr (create|comment)`) belongs
+#    in this bucket too -- added 2026-09-15 so the corpus and the companion
+#    solution doc stop disagreeing about the same list. Hand-listed, and coverage
+#    COMPLETE -- and the row counts are deliberately NOT pinned in this sentence,
+#    because a count here has now been wrong twice in two different ways. "19 rows
+#    for `create`, 49 for `comment` across the 623" was this branch's own pre-merge
+#    measurement, never re-derived after absorbing main's rows. Its 2026-09-15
+#    replacement said 33 and 60 across the 721 and did NOT say how they were
+#    counted; review counting a plain `pr create` substring got 37 and 82 and could
+#    not reproduce it. Both numbers are correct FOR THEIR OWN SHAPE -- 33/60
+#    requires single spaces (`gh pr create`), 37/82 accepts any `pr create`
+#    substring -- and neither said which, which is the whole defect. A count over a
+#    corpus is a property of the matcher as much as of the corpus. Count it when
+#    you need it, against a dump of ROWS, and name the shape you counted:
+#      grep -cE 'gh pr create' <rows-dump>   # single-space form
+#      grep -cE 'pr create'    <rows-dump>   # substring form, counts strictly more
+#    WHY THIS BLOCK CITES NAMES AND NOT LINE NUMBERS (2026-09-15). It used to do
+#    both. Every `guard-outward-cli.sh:NNNN` here was computed while this branch
+#    still sat on a 602-row base, and the merge that brought main to 721 also
+#    brought in main's LONGER copy of the guard -- shifting every cited line by 78
+#    to 249 (measured: 944->1022, 1606->1698, 2493->2742, 2759->3008) while
+#    guard-outward-cli.sh itself stayed BYTE-IDENTICAL between the two trees. The
+#    first version of this sentence said "90 to 250", which its own first example
+#    (a shift of 78) falsifies -- a rounded range asserted in the very paragraph
+#    arguing for measurement, caught by review.
+#    Nothing that was cited changed; the citations still all became wrong.
+#    A positional reference decays under any edit ABOVE it, including one made by
+#    somebody else in a file you did not touch, and a merge is exactly the
+#    operation that delivers those edits silently. The name survives, so grep the
+#    name. See docs/solutions/code-quality/a-positional-reference-decays-anchor-instead-2026-09-13.md
+#    (a2) TWO MORE ALTERNATION-SHAPED SITES THAT ARE HAND-LISTED *AND*
+#    INCOMPLETELY COVERED. Added 2026-09-15 after a review pointed out that (a1)
+#    discloses only a family whose coverage is COMPLETE while these two, with
+#    ~26 zero-row branches between them, were in no bucket at all -- which is
+#    precisely the "a list that discloses only the residual it has already
+#    closed" failure this paragraph invokes twice. Both are live, measured here,
+#    not theoretical:
+#      GH_MUTATING_RE (guard-outward-cli.sh) spans 22 literal branches
+#      across three namespaces. EXACTLY TWO have a row -- `release create` and
+#      `repo delete`. All NINE `pr` branches (close, edit, ready, reopen, review,
+#      lock, unlock, update-branch, revert) are at zero rows, as are 4 of 5
+#      release and 7 of 8 repo branches. Deleting `close` from the alternation
+#      makes that command ALLOW while moving 0 of this file's rows.
+#      THE OTA-SCRIPT SITES (two deny sites in guard-outward-cli.sh) span
+#      (npm|pnpm|yarn) x (run-script|run) x (preview|production) and
+#      (yarn|pnpm) x (preview|production). Census over the GENERATED ROWS -- and
+#      the scope matters, because an earlier wording said "appears 0 times
+#      anywhere in this file", which counted the sentence itself and so refuted
+#      itself under `grep -c`: of the 721 generated rows, ZERO contain `pnpm`
+#      and ZERO contain `run-script`, and the only shapes generated are
+#      npm+run+preview and the yarn-form production rows -- so the
+#      preview/production cross is unexercised for npm. Deleting the
+#      `production` branch was measured to flip this repo's own documented OTA
+#      publish command from DENY to ALLOW, run verbatim
+#      (`npm run update:production -- --message "ship it"`), with the preview
+#      form holding DENY as control in the same run. That is the 2026-08-16
+#      incident class, so this is the one to close first. Extending the P3 follow-up below, not folded in
+#      here, because retrofitting them is the same shipped-mechanism retrofit
+#      (a1) was scoped out for.
+#    (a3) FLAG-, VERB- AND METHOD-POSITION BRANCH LISTS, hand-listed and
+#    incompletely covered.
+#
+#    *** DERIVE THIS BUCKET, DO NOT READ IT AS A LIST. *** Three successive
+#    revisions of this paragraph each added a bucket the previous one had called
+#    exhaustive, so the enumeration itself is the defect and the list below is a
+#    SNAPSHOT of a scan, not a closed set. THE SCAN, which is the durable part:
+#    take every NON-COMMENT line of guard-outward-cli.sh and pull each flat
+#    `(a|b|c)` alternation whose branches are all literals out of it. Compare
+#    THAT population against these buckets -- not against the names written here,
+#    which is how the last three misses happened.
+#
+#    THE LIST BELOW IS THE TEST OF THE SCAN, NOT THE OTHER WAY ROUND, and that
+#    inversion is the correction. An earlier revision published a group count and
+#    then a LINE SET as "the stable part"; neither survived. THREE independent
+#    runs at the 2026-09-15 head returned 43 groups / 20 lines, 42 / 19 and
+#    39 / 18, disagreeing on membership and not merely on totals -- one included
+#    `_OUT_POS_SUFFIX`, one included `_OUT_REPO_FLAG_RE` while
+#    missing GH_MUTATING_RE and the gh-api method site, and no
+#    two agreed. A count is a property of the scan; so, it turns out, is the line
+#    set. What does not move is the MEMBERS, which can be checked one at a time.
+#
+#    So: run a scan to DISCOVER candidates, then check it against the list below.
+#    A scan that cannot return every listed member is too strict and will also
+#    miss the next member written in that shape -- which is the hand-carved-subset
+#    failure NOTE6 exists to prevent, one level up. Three branch shapes occur here
+#    and a usable scan has to admit all three:
+#      bare literal                 update            npm            --repo
+#      literal + boundary group     --repo([^-A-Za-z0-9]|$)
+#      case-folding bracket run     [Pp][Oo][Ss][Tt]      (_GH_API_M needs this)
+#      MIXED                        literal branches alongside NON-literal siblings --
+#                                   e.g. _OUT_POS_PREFIX carries 11 command-prefix words
+#                                   next to a `VAR=` character class and an interpolated
+#                                   $_CMD_REDIR. Added 2026-09-15 because "every branch is
+#                                   a literal" EXCLUDES this shape BY CONSTRUCTION, which
+#                                   is how the scan published here missed an entire bucket
+#                                   while reading as exhaustive. A group qualifies if ANY
+#                                   branch is a deletable literal, not if all of them are.
+#    and it must handle NESTED groups, since GH_MUTATING_RE's branches are
+#    themselves alternations. `_OUT_POS_SUFFIX` is NOT a member whichever
+#    way the scan is drawn: its branches are character classes, so narrowing it is
+#    bucket (c)'s territory below ("narrowing a character class inside one
+#    branch"), not a branch deletion. That question is closed, not open.
+#
+#    Known members at that head, with the ones whose coverage is incomplete:
+#      All of these live in guard-outward-cli.sh. They are cited BY NAME and not by
+#      line number on purpose -- see the note at the end of this block.
+#      _OUT_GATED_BIN            6 branches
+#      _OUT_GATED_VERB          17 branches
+#      _GH_API_M                 4 branches
+#      _OUT_REPO_FLAG_RE         2 branches
+#      GH_MERGE_VALUE_FLAGS     25 branches, 18 with NO row
+#      _OUT_POS_PREFIX          11 literal branches, 0 with a row
+#                               (env|command|builtin|exec|nohup|setsid|then|do|else|elif|time)
+#      the (-X|--method) sites   hand-listed but
+#                         COVERED: deleting `--method` moves 3 rows
+#                         (flagadj{glue,sp,fd}-ghapimeth), so an enumeration gap
+#                         rather than a hole.
+#    DENOMINATOR PROVENANCE (added 2026-09-15): every "moves 0 of 623 rows" figure
+#    below was measured on THIS BRANCH BEFORE it merged main, when the corpus held
+#    623 rows. The merged corpus holds 721. Those mutations were NOT re-run
+#    afterwards, so read each `623` as naming the tree the experiment ran on, not
+#    this one. What each experiment established -- that the mutation moved no row
+#    the corpus then contained -- stands for that tree. Whether it also moves none
+#    of the 98 rows main added is UNMEASURED, and saying "0 of 721" here would be
+#    asserting a measurement nobody took.
+#    Two of their branches are measurably uncovered, constructed and run rather
+#    than inferred:
+#      _GH_API_M: deleting the PATCH branch makes `gh api repos/o/r -X PATCH`
+#        ALLOW (control: -X POST still DENY) and moves 0 of 623 rows. A row
+#        census agrees -- POST and DELETE and PUT all have rows, PATCH has NONE.
+#        An arbitrary GitHub REST mutation is exactly the egress class this
+#        guard exists for.
+#      _OUT_GATED_BIN: deleting `pnpm` makes a pnpm invocation ALLOW (control:
+#        the yarn form still DENY) and moves 0 of 623 rows.
+#      GH_MERGE_VALUE_FLAGS is the FORGED-`--auto` DEFENCE and the most costly of
+#        these: it rejects an --auto match whose preceding token is a value-taking
+#        flag, so `--add-label --auto` must not count as a real --auto. Deleting
+#        that ONE branch was measured to flip `gh pr merge 42 --add-label --auto`
+#        from DENY to ALLOW, with three controls holding in the same run
+#        (`--title --auto` still DENY, so the mechanism works for a branch left
+#        in place; `--auto` alone still ALLOW, the sanctioned carve-out; no
+#        --auto at all still DENY) -- and 0 of 623 rows move. THE RESIDUAL IS
+#        WIDER THAN A ROW CENSUS SUGGESTS, in the direction this paragraph twice
+#        calls the worst one. A token-boundary census gives 18 branches with no
+#        row, not 17 (the old figure was a substring artifact -- `-c` matches
+#        only inside `--cwd`). Row-presence is the wrong question anyway: what
+#        matters is exercise IN THE POSITION THIS CHECK READS, adjacent to
+#        `--auto` in a `gh pr merge` clause, and only THREE branches are -- `-b`,
+#        `--body-file`, `-t`. So 22 of the 25 deletions are invisible. Proven on a
+#        branch the census counted as COVERED: deleting `--title` flips
+#        `gh pr merge 42 --title --auto` DENY -> ALLOW, with `-b --auto` still
+#        DENY and bare `--auto` still ALLOW as controls, corpus byte-identical.
+#    Positive control for both, in the same runs: deleting `run` from the
+#    railway alternation moved exactly one row (siterailverb-run), so the
+#    instrument was live.
+#    (a4) THE CRUDE DEGRADED MIRROR'S OWN COPIES. Added 2026-09-15. The mirror --
+#    the fail-closed function that runs only when jq, awk or the lib is already
+#    broken -- carries its own hand-listed branch lists in guard-outward-cli.sh:
+#    the degraded-path binary list `(eas|railway|npm|pnpm|yarn|gh)`, the degraded
+#    verb mega-alternation (sixteen alternation groups mirroring essentially every
+#    command-position site regex) and the degraded gh-flag list (`(create|comment)`
+#    and `(--repo|-R)`): 19 groups, in none of (a1)/(a2)/(a3).
+#    They are NOT redundant with the precise-path lists -- they are a PARALLEL
+#    COPY governing the three degraded paths this corpus tests and pins per-path,
+#    so covering the precise list does not cover them, and the two must be kept
+#    in step BY HAND. Measured: deleting `pnpm` from the degraded-path binary
+#    list alone, leaving
+#    _OUT_GATED_BIN intact, keeps the precise verdict at DENY and flips the
+#    DEGRADED verdict DENY->ALLOW, control `yarn` holding DENY on both paths, and
+#    0 of 623 rows move when precise AND degraded verdicts are compared per row.
+#    (b) any OTHER deny check in the file that is GENUINELY not a branch list --
+#    narrowed twice now, because it twice asserted a universal that measurement
+#    broke: the interior-redirect, flag-adjacent, forged/masked --auto,
+#    decoy-clause and root-position-flag families are each their own bespoke
+#    regex, not a branch list, and adding a branch-style row generator for them
+#    is exactly the "enumerate every mechanism x every branch" cross product
+#    this todo's own scope note declines. THREE NARROWINGS RECORDED, because the
+#    same sentence has now been wrong three times: it first said the remaining
+#    checks "do not take the alternation shape at all" ((a2) refuted that), then
+#    implied the remainder were bespoke regexes ((a3) refuted that), then still
+#    missed the degraded mirror's parallel copies ((a4) refuted that). The
+#    honest reading is that this bucket is whatever the scan in (a3) does not
+#    account for -- a REMAINDER, not a characterisation. Do not restate it as a
+#    property;
+#    (c) narrowing that is not branch DELETION at all -- tightening `_OUT_SEP` or
+#    themselves, or narrowing a character class inside one
+#    branch rather than removing the branch whole. `_OUT_POS_PREFIX` WAS NAMED
+#    HERE AND IS NOT BUCKET (c) MATERIAL: unlike _OUT_SEP, whose branches carry
+#    no literal, it holds 11 bare literals that are individually deletable.
+#    Measured -- removing ONLY `nohup` flips `nohup eas update --branch preview`,
+#    `nohup railway up`, `nohup npm publish` and `nohup gh api repos/o/r -X POST`
+#    from DENY to ALLOW, with `eas update` and `setsid eas update` holding DENY
+#    as controls in the same run, and the full corpus against that mutant is
+#    BYTE-IDENTICAL to the green baseline. One branch deletion, four deny
+#    families opened including the OTA publish path, zero rows moved. It is an
+#    (a3) member and is listed there.
+#    branch rather than removing the branch whole.
+#    All SIX are real and still invisible to every check in this
+#    block for the same reason the original paragraph gave: this is a question
+#    about which rows exist, not one a fixed pin can answer without a new axis
+#    (or, for (a1)/(a2)/(a3)/(a4), the same axis extended) for each shape.
 #
 #    The residual this list USED to name second -- a deny site no row reaches, so
 #    deleting it is invisible -- was live when it was written and is closed now:
@@ -1436,12 +1787,18 @@ fi
 # Never bump a pin to turn a red gate green without that sentence -- that is the
 # failure mode this whole block exists to prevent.
 
-EXPECTED_ROWS=700
+EXPECTED_ROWS=721
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 609 of the 700 rows deny on the precise path; the other 91 are ALLOW there
-# (the fp-*/c1g-*/sitefp-*/fautogrant-*/fautocutsp-*/vft-*/ghrootfp-* controls, plus the 24
-# precise-path gaps). Corrected 2026-09-13: this was the FIFTH stale copy of a
+# 628 of the 721 rows deny on the precise path; the other 93 are ALLOW there: 69
+# rows EXPECTED to allow, plus the 24 precise-path gaps. Those 69 span SIXTEEN id
+# families, not the eight this sentence named until 2026-09-15 -- fp-* (16),
+# c2-* (9), c1g-* (7), fautodigfp-* (6), sitefp-* (5), vft-* (5), flagadjfp-* (4),
+# decoyfp-* (3), ghrootfp-* (3), c9-* (2), fautogrant-* (2), fautocutsp-* (2),
+# siterailfp-* (2), plus the singletons co-nested-brace, fautobrace-pre and
+# fautodigctrl-bb. COUNTED, not recalled: select every row whose EXPECTED and
+# PRECISE verdicts are both ALLOW, group on the id prefix. 69 + 24 = 93 and
+# 721 - 628 = 93, so the decomposition closes. Corrected 2026-09-13: this was the FIFTH stale copy of a
 # count in this file, found by review after four others were repaired -- and it
 # sits five lines above its own warning about exactly that. These numbers are
 # bumped with
@@ -1476,7 +1833,31 @@ EXPECTED_ROWS=700
 # per-OCCURRENCE (`grep -oE` extraction) instead of a second whole-command
 # check. All 42 rows deny (EXPECTED_ROWS bumped 658 -> 700 too) -- none are
 # gaps.
-EXPECTED_DENY_ATTRIB_ROWS=609
+# BUMPED A FOURTH TIME 2026-09-15, and this one is NOT a guard behaviour change --
+# it is the arithmetic of two branches that each grew the same corpus, reconciled
+# at merge. See todos/archive/P2-2026-09-08-corpus-covers-deny-sites-but-not-their-alternation-branches.md
+# for the branch side: it added 21 rows on a base of 602 (19 of them denying on the
+# precise path), covering every alternation BRANCH at a deny site instead of one row
+# per site. main meanwhile went 602 -> 700 for the brace-range work described above.
+# Merged, that is 700 + 21 = 721 rows and 609 + 19 = 628 attributions.
+# MEASURED, NOT COMPUTED: the arithmetic above is stated only because re-running this
+# file on the resolved tree independently reported `rows=721  precise-path gaps=24
+# all-path gaps=236`, with NO id in either +/- drift list -- so nothing opened,
+# nothing closed, and no row was rerouted to a different check. Had the two figures
+# disagreed, the measurement would be the one that counts.
+# EXPECTED_PRECISE_GAPS/EXPECTED_ALLPATH_GAPS are unaffected (24/236, main's values):
+# every added row denies, so none of them lands in a gap bucket.
+# The `siterailfp-*` control family was ALSO restored to the ALLOW decomposition
+# above, because main's copy of that sentence predates those 2 rows.
+# CORRECTED THE SAME DAY, BY REVIEW: restoring it did NOT make that list complete,
+# and the first version of this paragraph asserted that it did. Enumerating the
+# ALLOW set showed the eight named families covered only 42 of the 69 rows -- five
+# more families and three singletons were missing. The list above is now the
+# measured sixteen. The lesson is one this file keeps relearning: confirming that a
+# named member EXISTS is a positive check, and says nothing about whether the list
+# is EXHAUSTIVE. Exhaustiveness is a negative claim and needs the full enumeration,
+# which is cheap here -- the run already prints every row.
+EXPECTED_DENY_ATTRIB_ROWS=628
 
 # 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -2311,6 +2692,25 @@ sitebranch-delete  : command-position 'eas channel:/branch: create/edit/delete/r
 sitebranch-rename  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
 sitedup-ghcreate   : more than one command-position 'gh pr create/comment' occurrence — amb
 sitedup-ghcomment  : more than one command-position 'gh pr create/comment' occurrence — amb
+siterailverb-up    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-deploy : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-redeploy : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-restart : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-down  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-delete : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-remove : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-rm    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-run   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siteeasverb-update : command-position 'eas update/publish/submit' publishes an OTA update or
+siteeasverb-publish : command-position 'eas update/publish/submit' publishes an OTA update or
+siteeasverb-submit : command-position 'eas update/publish/submit' publishes an OTA update or
+siterailvarset-variable : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvarset-variables : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvarset-vars : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvarset-var : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvardelete  : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailsvc-service : command-position 'railway service/environment delete' deletes a live Rai
+siterailsvc-environment : command-position 'railway service/environment delete' deletes a live Rai
 ghroot-Rglued-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 ghroot-Rglued-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 ghroot-Rglued-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
@@ -2903,8 +3303,9 @@ exit 0
 #
 # The zero on BOTH "opened" axes is the check that matters, and it is a per-ID
 # set difference, not a total. A summary count cannot express a row getting
-# strictly worse (docs/solutions/code-quality/summary-count-cannot-express-a-row-
-# getting-strictly-worse-2026-09-06.md), and an earlier revision of this note was
+# strictly worse
+# (docs/solutions/code-quality/summary-count-cannot-express-a-row-getting-strictly-worse-2026-09-06.md),
+# and an earlier revision of this note was
 # corrected for exactly that arithmetic.
 #
 # THE 60 CLOSED, counted BY ID (21 + 21 + 17 + 1 = 60):

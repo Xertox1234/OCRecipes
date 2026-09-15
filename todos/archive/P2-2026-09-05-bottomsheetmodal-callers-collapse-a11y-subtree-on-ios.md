@@ -65,7 +65,7 @@ address this leaf-collapse of the sheet's OWN content.
       gesture handler, per the #924 finding — but confirm per site).
       Confirmed library-wide rather than per site, which is stronger:
       `grep -rn "onAccessibilityAction\|accessibilityActions"
-    node_modules/@gorhom/bottom-sheet/src/` returns no matches, so the default
+  node_modules/@gorhom/bottom-sheet/src/` returns no matches, so the default
       `accessibilityRole="adjustable"` on that wrapper has no backing handler
       anywhere in the library and nothing could have depended on the grouping.
 
