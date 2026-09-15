@@ -26,6 +26,8 @@ import { register } from "../recipe-search";
 import { searchRecipes } from "../../services/recipe-search";
 import { storage } from "../../storage";
 import { createMockMealPlanRecipe } from "../../__tests__/factories";
+import { recipeSearchResponseSchema } from "@shared/types/recipe-search";
+import { expectResponseToMatch } from "../../../test/utils/expect-response-schema";
 
 vi.mock("../../services/recipe-search", () => ({
   searchRecipes: vi.fn().mockResolvedValue({
@@ -107,6 +109,54 @@ describe("GET /api/recipes/search", () => {
       results: expect.any(Array),
       total: 0,
     });
+    expectResponseToMatch(res.body, recipeSearchResponseSchema);
+  });
+
+  // Contract anchor: a populated result must satisfy the schema the client
+  // parses with (shared/types/recipe-search.ts). The route passes the service
+  // result through unchanged, so this pins the wire shape end to end.
+  it("returns a populated result that matches recipeSearchResponseSchema", async () => {
+    vi.mocked(searchRecipes).mockResolvedValueOnce({
+      results: [
+        {
+          id: "r-1",
+          source: "community",
+          userId: "u-1",
+          title: "Chicken Salad",
+          description: null,
+          ingredients: ["chicken", "lettuce"],
+          cuisine: null,
+          dietTags: [],
+          mealTypes: ["lunch"],
+          difficulty: "easy",
+          prepTimeMinutes: 10,
+          cookTimeMinutes: 0,
+          totalTimeMinutes: 10,
+          caloriesPerServing: 320,
+          proteinPerServing: 30,
+          carbsPerServing: 8,
+          fatPerServing: 12,
+          servings: 2,
+          imageUrl: null,
+          sourceUrl: null,
+          createdAt: "2026-09-14T00:00:00.000Z",
+          isCanonical: false,
+          allergens: null,
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 20,
+      query: { q: "chicken", filters: {}, sort: "relevance" },
+    });
+
+    const res = await request(app)
+      .get("/api/recipes/search?q=chicken")
+      .set("Authorization", "Bearer token");
+
+    expect(res.status).toBe(200);
+    const parsed = expectResponseToMatch(res.body, recipeSearchResponseSchema);
+    expect(parsed.results[0].title).toBe("Chicken Salad");
   });
 
   it("forwards coerced numeric filters to the service", async () => {

@@ -28,7 +28,6 @@ import {
 
 /** Ratchet — remove an entry as soon as its provider-side assertion lands. */
 const CONTRACT_ALLOWLIST: ReadonlySet<string> = new Set([
-  "recipeSearchResponseSchema",
   "catalogSearchResponseSchema",
   "catalogConfigResponseSchema",
   "receiptAnalysisResultSchema",
@@ -227,7 +226,11 @@ describe("contract-coverage: repo walk", () => {
 
   it("scans a non-empty client tree (denominator)", () => {
     expect(clientFiles.length).toBeGreaterThan(50);
-    expect(clientSites.size).toBeGreaterThan(0);
+    // 9 client parse-site names measured 2026-09-15 (A0 final review, after the
+    // extractor learned sub-schema parses). Fewer means the extractor or the walk
+    // regressed, not that the client stopped parsing — the allowlist does not
+    // affect this count.
+    expect(clientSites.size).toBeGreaterThanOrEqual(9);
   });
 
   it("every client-parsed response schema has a provider-side assertion", () => {
