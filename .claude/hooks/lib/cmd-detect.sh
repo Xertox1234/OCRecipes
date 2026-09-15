@@ -2243,7 +2243,15 @@ cmd_is_git_branch_create() {
 # this fix) — this is the exact same latent-risk shape `cmd_gh_pr_ref`'s own
 # established `full_match=$(printf ... | grep -oE ... | head -1)` line
 # already carries (see below), not something this fix introduces or worsens.
-# RESTRUCTURED ONTO `<<<` 2026-09-15, AND THE REASON RECORDED HERE WAS FALSE.
+# THE REFUSE GUARD'S TWO LEGS MOVED TO `<<<` 2026-09-15. SCOPE FIRST, because an earlier
+# version of this note claimed more than it did: the TRAILING pipe this paragraph is about is
+# UNCHANGED and still returns 141 from this function past the buffer (measured: a merge-only
+# input of 80,013 bytes with 5001 occurrences yields value='merge' rc=141, with a small merge
+# rc 0 and a no-gh input rc 1 as controls). cmd_gh_pr_ref's `full_match=$(printf ... | grep
+# -oE ... | head -1)` is likewise untouched. So the residual below is STILL LIVE, and the
+# instruction "fix both functions together" is NOT yet carried out -- only the refuse guard,
+# whose failure direction is OPEN, was fixed.
+# THE REASON RECORDED HERE WAS ALSO FALSE, and that half stands corrected.
 # It read: "Left as-is rather than restructured to avoid the trailing pipe
 # entirely (e.g. onto `<<<`), because no caller of either function checks `$?`
 # today (`pr-verify.sh` reads only the captured stdout value)". A caller does:
@@ -2254,10 +2262,9 @@ cmd_is_git_branch_create() {
 # justification, not the caller's behaviour: a load-bearing reason that licensed
 # leaving a hazard in place, and was no longer true of the tree it sat in. That
 # is worse than no reason at all, because it stops the next reader looking.
-# The hazard was removed anyway — not for that caller, but because the refuse
-# guard below fails OPEN on the same rc, which is the direction that matters.
-# Its own closing instruction ("fix both functions together, since they share
-# it") is what this change finally carries out.
+# The refuse guard below was fixed because its failure direction is OPEN, which is
+# what made it urgent; this trailing pipe's is not, and it stays as a disclosed
+# residual rather than being quietly folded in.
 cmd_gh_pr_write_subcommand() {
   local words
   words=$(cmd_bare_deep "$1")
@@ -2327,7 +2334,8 @@ cmd_gh_pr_write_subcommand() {
   #                                                  hidden merge
   # with merge-only inputs resolving "merge" at both sizes and a no-gh input refusing, as
   # controls in the same run. The single-line row is the discriminator: same size, opposite
-  # outcome, so the cause is SIGPIPE and not length. A "create" answer here is precisely the
+  # outcome once the single-line control is grown to the same byte length, so the cause is
+# SIGPIPE and not length. A "create" answer here is precisely the
   # "SILENTLY WRONG PR reported as verified" this function's header warns about.
   # An earlier probe of this exact claim came back clean because its padding produced only
   # 48KB and never crossed the buffer. A negative from a probe that never traverses the path

@@ -1890,16 +1890,49 @@ ghsub 'cp -R src dst && gh pr create --title t' create \
 # match on an early LINE the writer took SIGPIPE, the leg returned 141, the `&&` was false, and
 # the refusal never fired -- so a real hidden merge carrying a decoy create resolved as
 # "create", the "SILENTLY WRONG PR reported as verified" this function's header warns about.
-# Measured before the fix: 39 bytes refused, 114,039 bytes SINGLE-line refused, 144,039 bytes
-# MULTI-line returned "create". The single-line row is the DISCRIMINATOR -- same size, opposite
-# outcome -- which is what proves the cause is SIGPIPE and not length. Keep both rows: without
-# the single-line one, a future reader cannot tell this pin from a plain size limit.
+# Measured before the fix: 39 bytes refused, a single-line input refused at every size tried,
+# and 144,039 bytes MULTI-line returned "create". The single-line row is the DISCRIMINATOR and
+# is now grown to the multi-line row's byte length, so the two differ ONLY in line structure --
+# which is what lets this pair distinguish SIGPIPE from a length threshold. An earlier version
+# padded it a fixed 6000 times, leaving it 30,000 bytes smaller, and called that "same size";
+# it was not, and a length-threshold hypothesis between the two sizes survived it untouched.
 _rg_decoy=$'echo "$(gh pr merge 42)" # gh pr create'
 _rg_multi="$_rg_decoy"; _rg_single="$_rg_decoy"
-for _rg_i in $(seq 1 6000); do _rg_multi+=$'\n# padding line for size'; _rg_single+=' # padding for size'; done
+for _rg_i in $(seq 1 6000); do _rg_multi+=$'\n# padding line for size'; done
+# SIZE-MATCH THE CONTROL, do not pad it a fixed number of times. An earlier version built
+# this with the same 6000 iterations as the multi-line row and called it a "same size"
+# discriminator; it was 30,000 bytes SMALLER (114,039 vs 144,039), so every length-threshold
+# hypothesis between the two survived it and the control excluded nothing it claimed to.
+# Grown to at least the multi-line row's length, it does: same bytes, one line, opposite
+# outcome under the piped-form mutation.
+while [ "${#_rg_single}" -lt "${#_rg_multi}" ]; do _rg_single+=' # padding for size'; done
+
+# ASSERT THE PRECONDITION, because the refusal assertion alone does not imply it. A 39-byte
+# decoy also satisfies "empty and rc != 0" -- so if seq were missing, the loop bound edited,
+# or the padding string changed, both rows below would go green having exercised a string
+# that never approaches the 64KB pipe buffer, and the row that pins a fail-open would pin
+# nothing. This is the same check the probe prints; a pin that does not carry it is a pin
+# that can quietly stop testing its own subject.
+_rg_words=$(cmd_bare_deep "$_rg_multi")
+_rg_lbl="the SIGPIPE pin's own input really exceeds the 64KB pipe buffer"
+if [ "${#_rg_words}" -gt 65536 ]; then
+  echo "PASS: $_rg_lbl"; PASS=$((PASS+1))
+else
+  echo "FAIL: $_rg_lbl (rendered ${#_rg_words} bytes, need >65536)"; FAIL=$((FAIL+1))
+fi
+
 for _rg_row in "multi:$_rg_multi" "single:$_rg_single"; do
   _rg_shape="${_rg_row%%:*}"; _rg_cmd="${_rg_row#*:}"
-  _rg_label="a >64KB ${_rg_shape}-line decoy still REFUSES with pipefail ON (SIGPIPE rc-141)"
+  # The two rows carry DIFFERENT meanings and so different labels: the multi-line row is the
+  # regression pin (it returns 141 under the piped form), the single-line row is the control
+  # that must stay GREEN under that same mutation -- SIGPIPE does not occur there, because
+  # grep cannot exit mid-line. Labelling both "(SIGPIPE rc-141)" told a future reader the
+  # control asserts the mechanism it exists to exclude.
+  if [ "$_rg_shape" = multi ]; then
+    _rg_label="a >64KB multi-line decoy still REFUSES with pipefail ON (pins the SIGPIPE rc-141 fail-open)"
+  else
+    _rg_label="a >64KB SIZE-MATCHED single-line decoy still REFUSES (control: stays green under the piped-form mutation)"
+  fi
   _rg_got=$(cmd_gh_pr_write_subcommand "$_rg_cmd"); _rg_rc=$?
   if [ -z "$_rg_got" ] && [ "$_rg_rc" -ne 0 ]; then
     echo "PASS: $_rg_label"; PASS=$((PASS+1))
@@ -1907,6 +1940,7 @@ for _rg_row in "multi:$_rg_multi" "single:$_rg_single"; do
     echo "FAIL: $_rg_label (got '$_rg_got' rc=$_rg_rc, want a refusal)"; FAIL=$((FAIL+1))
   fi
 done
+unset _rg_words _rg_lbl
 unset _rg_decoy _rg_multi _rg_single _rg_i _rg_row _rg_shape _rg_cmd _rg_label _rg_got _rg_rc
 
 # NOTE ON WHAT EACH ROW BELOW PROVES. The `ghsub ... "subcommand is SEEN"` rows are the
@@ -2070,10 +2104,12 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # literal, and so merge it silently -- is
 # docs/solutions/code-quality/a-clean-merge-leaves-a-stale-count-pin-2026-09-14.md.
 # A pin that both sides agree on is the one a merge cannot protect.
-# 651 -> 653: +2 for the refuse guard's SIGPIPE pin (a multi-line row past the 64KB pipe
-# buffer and its same-size single-line discriminator), both run with pipefail ON because
-# ghsub's `set +o pipefail` would make them inert.
-EXPECTED_TOTAL=653
+# 651 -> 654: +2 for the refuse guard's SIGPIPE pin (a multi-line row past the 64KB pipe
+# buffer and its SIZE-MATCHED single-line control), both run with pipefail ON because ghsub's
+# `set +o pipefail` would make them inert, +1 for the precondition row that asserts the pin's
+# input actually exceeds the buffer -- without it the refusal assertion is satisfied by a
+# 39-byte string and the pin can silently stop testing its subject.
+EXPECTED_TOTAL=654
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

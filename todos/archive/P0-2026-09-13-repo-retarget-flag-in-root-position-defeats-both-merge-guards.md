@@ -82,7 +82,7 @@ EMPTY stamp root, so "the gate engaged" and "the gate denied" are the same event
 ## Acceptance Criteria
 
 - [x] A merge carrying a repo-retarget flag in root position is DENIED by
-      `guard-outward-cli.sh`, for every spelling matched by `_OUT_REPO_FLAG_RE` (`.claude/hooks/guard-outward-cli.sh:944` — the todo originally cited `:899`, which is inside a comment block)
+      `guard-outward-cli.sh`, for every spelling matched by `_OUT_REPO_FLAG_RE` (`.claude/hooks/guard-outward-cli.sh (anchor: `\_OUT_REPO_FLAG_RE`)` — the todo originally cited `:899`, which is inside a comment block)
       — `-R`, `--repo`,
       `--repo=x`, `-Rx`).
 - [x] The same spellings are SEEN by `merge-review-guard.sh` — i.e. they reach the
