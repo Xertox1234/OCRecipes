@@ -1174,8 +1174,14 @@ if [ -n "$guard_line" ] && [ -n "$read_line" ] && [ "$guard_line" -lt "$read_lin
 else
   no "no directory check precedes the curated.md read (guard=$guard_line read=$read_line)"
 fi
-if [ -n "$last_guard" ] && [ -n "$mkdir_line" ] && [ "$last_guard" -lt "$mkdir_line" ] \
-   && [ "$last_guard" -gt "${read_line:-0}" ]; then
+# `[ -n "$read_line" ]` here, NOT `${read_line:-0}`. The default was the asymmetry: row 1
+# tests presence, so an anchor MISS reddens it, while row 2 substituted 0 and its "after the
+# tier reads" half became `-gt 0`, trivially true. Measured -- reformat the read line to
+# brace style AND delete the write-time guard, and only row 1 fired while row 2 reported
+# green over an unguarded write. Both rows now fail on a miss, which is the only safe
+# direction for an assertion whose whole job is to notice an absence.
+if [ -n "$last_guard" ] && [ -n "$mkdir_line" ] && [ -n "$read_line" ] \
+   && [ "$last_guard" -lt "$mkdir_line" ] && [ "$last_guard" -gt "$read_line" ]; then
   ok "precompact re-checks the ledger directory at WRITE time, after the tier reads"
 else
   no "no write-time directory check between the reads and mkdir (last=$last_guard mkdir=$mkdir_line)"
