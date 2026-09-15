@@ -1847,6 +1847,27 @@ ghsub 'gh -t pr pr close 42'          close  "a global's value that IS the names
 # NEGATIVE: the globals slot binds immediately after the BINARY. A flag after some other
 # namespace is not a root global, and must not drag `pr merge` into a match.
 ghsub 'gh issue create -t pr merge x'  - "a flag after a DIFFERENT namespace is not a root global"
+# OPEN RESIDUAL, PINNED AS A TRIPWIRE, and it is this grammar's own headline class wearing a
+# different VALUE. The value token must not begin with `-` — that is what lets a NO-ARG flag
+# sit immediately before the namespace (`gh --no-color pr merge 42`, pinned above). The cost is
+# that a value which IS a dash stops the run: a bare `-` matches neither the value arm nor a
+# fresh flag arm, so the globals end and the needle never reaches `pr`.
+#
+# `man gh-pr-merge` documents `-F, --body-file <file>` as 'use "-" to read from standard input',
+# so this is a gh-AUTHORED value, not an invented spelling. PRE-EXISTING: main resolves these
+# to "" as well, so the value arm narrowed this family without opening this member. The
+# ORDINARY-value row directly below is the isolating control — same flag, same position, only
+# the value differs — and it resolves, which is what makes this the VALUE SHAPE and not the arm.
+#
+# WHEN THIS IS CLOSED THESE ROWS WILL FAIL. That is the point; the fix must come here and
+# convert them. Closing it needs the tool's FLAG TABLE (a regex cannot tell "no-arg flag then
+# another flag" from "value-taking flag whose value starts with a dash"), so it is a design
+# call rather than an oversight.
+ghsub 'gh -F - pr merge 42'            - "KNOWN GAP: a documented stdin value `-` stops the globals run"
+ghsub 'gh --body-file - pr merge 42'   - "KNOWN GAP: same, long form"
+ghsub 'gh -F - pr merge 42 -R o/org'   - "KNOWN GAP: and it carries a cross-repo retarget through"
+# CONTROL, so the three rows above cannot pass because the whole predicate broke.
+ghsub 'gh -F notes.md pr merge 42'     merge "an ORDINARY value on the SAME flag still resolves"
 
 echo "--- cmd_gh_pr_*: a redirect between binary and namespace (B) ---"
 ghsub 'gh 2>/dev/null pr merge 42 --squash'  merge "redirect, glued: subcommand is SEEN"
@@ -1901,7 +1922,7 @@ ghref 'gh pr merge 42 -Rother/org'      - "ref BEFORE -Rv: REFUSED"
 # LIMITS, stated so this is not over-trusted: it catches a DELETED or SKIPPED
 # assertion in a run that otherwise completed. It cannot catch an early
 # `return`/`exit` or a truncated file, because those terminate before this line.
-EXPECTED_TOTAL=627
+EXPECTED_TOTAL=631
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

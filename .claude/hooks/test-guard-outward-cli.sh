@@ -2502,7 +2502,7 @@ if _mut_goc_denies_with 's#^GH_API_RE_SEPSAFE=.*#GH_API_RE_SEPSAFE="${_OUT_POS_P
      'GH_API_RE_SEPSAFE is no longer built from BOTH'; then
   echo "PASS: reverting only the GLOBALS half of the count-only needle fails closed"; PASS=$((PASS+1))
 else
-  echo "FAIL: the globals half of GH_API_RE_SEPSAFE could be reverted without the integrity check firing " — " the count would lose the anchor-safe token classes"
+  echo "FAIL: the globals half of GH_API_RE_SEPSAFE could be reverted without the integrity check firing — the count would lose the anchor-safe token classes"
   FAIL=$((FAIL+1))
 fi
 # Operand 5, BOTH directions. The WIDE form must span a separate-arg flag it does not name;

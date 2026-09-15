@@ -204,7 +204,34 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:s
 # measured. Tracked with P1's binary-rendering families; do not read "property" as "closed".
 #
 # The value token is `[^-[:space:]][^[:space:]]*` — it must NOT begin with `-`, so a dash
-# token always starts a fresh arm rather than being eaten as the previous flag's value. That
+# token always starts a fresh arm rather than being eaten as the previous flag's value.
+#
+# OPEN RESIDUAL, AND IT IS THE HEADLINE CLASS WEARING A DIFFERENT VALUE. Refusing a leading
+# dash is what lets a NO-ARG flag sit immediately before the namespace, and it is why
+# `gh --no-color pr merge 42` resolves. The cost is that a value which IS a dash stops the run:
+# a bare `-` matches neither the value arm (leading dash) nor a fresh flag arm (`-[^[:space:]]+`
+# needs a character after the dash), so the globals end and the needle never reaches `pr`.
+#
+# That is not a hypothetical spelling. `man gh-pr-merge` documents `-F, --body-file <file>` as
+# 'Read body text from file (use "-" to read from standard input)', so `-` is a gh-AUTHORED
+# value that begins with a dash. Measured 2026-09-14 on both layers, with the ORDINARY value as
+# the isolating control — same flag, same position, only the value differs:
+#
+#   gh -F notes.md pr merge 42          main ALLOW/ALLOW  ->  branch DENY/DENY
+#   gh -F - pr merge 42                 main ALLOW/ALLOW  ->  branch ALLOW/ALLOW  (UNCHANGED)
+#   gh -F - pr merge 42 -R other/org    main ALLOW/ALLOW  ->  branch ALLOW/ALLOW  (UNCHANGED)
+#
+# The third row is a cross-repository merge both guards allow. PRE-EXISTING — main behaves
+# identically, so the value arm narrowed this family without opening this member — but it is
+# disclosed here because every other residual in this file is, and an undisclosed one in the
+# very class this grammar exists to close is the "residual list naming ONE residual reads as
+# completeness" failure this repo already records.
+#
+# CLOSING IT IS A DESIGN CALL, NOT AN OVERSIGHT: distinguishing "no-arg flag followed by another
+# flag" from "value-taking flag whose value starts with a dash" requires the tool's FLAG TABLE,
+# which a regex does not have. Naming the separate-arg flags again would re-import the
+# enumeration this arm exists to avoid. Surfaced to the user rather than filed, per the repo's
+# never-auto-file bar for high-severity findings. That
 # is also what lets a NO-ARG flag sit immediately before the namespace: `gh --no-color pr
 # merge 42` needs the engine to DECLINE the optional group, which POSIX requires it to do
 # when a parse exists. Measured under BSD grep 2.6.0-FreeBSD and bash 5.3.15, together with
