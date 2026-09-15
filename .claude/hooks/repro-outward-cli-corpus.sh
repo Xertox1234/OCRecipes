@@ -1577,16 +1577,29 @@ fi
 #    GH_PR_CREATE_RE (guard-outward-cli.sh, `gh pr (create|comment)`) belongs
 #    in this bucket too -- added 2026-09-15 so the corpus and the companion
 #    solution doc stop disagreeing about the same list. Hand-listed, and coverage
-#    COMPLETE. Re-counted 2026-09-15 over the merged corpus's generated row set:
-#    33 rows carry the `create` shape and 60 carry the `comment` shape, across the
-#    721. The previous figures (19 and 49 across 623) were this branch's own
-#    pre-merge counts and were never re-derived after absorbing main's rows.
+#    COMPLETE -- and the row counts are deliberately NOT pinned in this sentence,
+#    because a count here has now been wrong twice in two different ways. "19 rows
+#    for `create`, 49 for `comment` across the 623" was this branch's own pre-merge
+#    measurement, never re-derived after absorbing main's rows. Its 2026-09-15
+#    replacement said 33 and 60 across the 721 and did NOT say how they were
+#    counted; review counting a plain `pr create` substring got 37 and 82 and could
+#    not reproduce it. Both numbers are correct FOR THEIR OWN SHAPE -- 33/60
+#    requires single spaces (`gh pr create`), 37/82 accepts any `pr create`
+#    substring -- and neither said which, which is the whole defect. A count over a
+#    corpus is a property of the matcher as much as of the corpus. Count it when
+#    you need it, against a dump of ROWS, and name the shape you counted:
+#      grep -cE 'gh pr create' <rows-dump>   # single-space form
+#      grep -cE 'pr create'    <rows-dump>   # substring form, counts strictly more
 #    WHY THIS BLOCK CITES NAMES AND NOT LINE NUMBERS (2026-09-15). It used to do
 #    both. Every `guard-outward-cli.sh:NNNN` here was computed while this branch
 #    still sat on a 602-row base, and the merge that brought main to 721 also
-#    brought in main's LONGER copy of the guard -- shifting every cited line by 90
-#    to 250 while guard-outward-cli.sh itself stayed BYTE-IDENTICAL between the two
-#    trees. Nothing that was cited changed; the citations still all became wrong.
+#    brought in main's LONGER copy of the guard -- shifting every cited line by 78
+#    to 249 (measured: 944->1022, 1606->1698, 2493->2742, 2759->3008) while
+#    guard-outward-cli.sh itself stayed BYTE-IDENTICAL between the two trees. The
+#    first version of this sentence said "90 to 250", which its own first example
+#    (a shift of 78) falsifies -- a rounded range asserted in the very paragraph
+#    arguing for measurement, caught by review.
+#    Nothing that was cited changed; the citations still all became wrong.
 #    A positional reference decays under any edit ABOVE it, including one made by
 #    somebody else in a file you did not touch, and a merge is exactly the
 #    operation that delivers those edits silently. The name survives, so grep the
