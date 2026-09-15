@@ -654,11 +654,6 @@ objection_case 29 '  [CRITICAL] client/a.ts:74 — missing check' \
   "an indented bracketed finding blocks the substitution"
 objection_case 30 '- [CRITICAL] client/a.ts:74 — missing check' \
   "a bulleted bracketed finding blocks the substitution"
-# CONTROL, and it is the whole reason the severity arm also demands a `:<digit>` citation:
-# a genuinely CLEAN report whose prose says it found no CRITICAL or WARNING issues carries
-# no file:line, so it must still stamp. Without this, the widened guard would eat clean
-# reviews — and a gate that denies honest work is the failure mode this file's own header
-# warns gets gates switched off.
 # Case 31 asserts the OPPOSITE of what an earlier revision pinned. It used to require that
 # "Review complete: no CRITICAL or WARNING findings" still stamps — but that phrasing is
 # one all five agent definitions FORBID ("do NOT use the three bracketed severity words,

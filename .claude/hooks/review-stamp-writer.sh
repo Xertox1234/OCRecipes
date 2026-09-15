@@ -119,11 +119,6 @@ if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
   # shapes only the column-0 bracketed one was honoured, and the MANDATED rendering wrote
   # `verdict: clean` over the objection.
   #
-  # The severity-word arm additionally demands a `:<digit>` file:line citation, which is
-  # what keeps it from eating a genuinely clean review: prose reading "no CRITICAL or
-  # WARNING findings" carries no citation and still stamps. That shape is the one the
-  # narrower anchor was originally chosen to protect, and it stays protected.
-  #
   # Captured into a variable rather than piped into `grep -q`: under `pipefail` an
   # early-exiting reader makes the writer take SIGPIPE and the pipeline reports failure
   # even though the read succeeded.
@@ -433,10 +428,16 @@ fi
 #        writes no stamp — e.g. a wrapper whose second line reads
 #        "[CRITICAL]/[WARNING]/[SUGGESTION] tags are used for findings". Pinned as
 #        KNOWN-WRONG case 32 with case 33 as its control.
-#      FAIL-OPEN, now CLOSED, recorded because the fix is what this item is for: an earlier
-#        revision required a `:<digit>` on the severity line, which made arm 2 blind to a
-#        citation-free REFUSAL and let a clean handback be substituted over it — measured
-#        through merge-review-guard.sh to an ALLOWED merge. Case 34 pins it.
+#      FAIL-OPEN, closed for renderings that carry an UPPERCASE severity token — not
+#        closed absolutely, and the difference matters: an earlier revision required a
+#        `:<digit>` on the severity line, which made arm 2 blind to a citation-free REFUSAL
+#        and let a clean handback be substituted over it, measured through
+#        merge-review-guard.sh to an ALLOWED merge. Case 34 pins that. What remains open,
+#        measured at this head: `critical:` / `Critical:` (arm 2 is case-SENSITIVE, per the
+#        note below), and a refusal carrying NO severity word at all. The second of those
+#        is unclosable by any severity-word predicate, so this guard is a best-effort FLOOR
+#        on manufactured consent, not a proof of its absence. Do not read "closed" as more
+#        than that.
 #
 #    The marker class arm 1 tolerates is wide, and naming one example understated it:
 #    indentation, `-`/`*`/`+` bullets, `>` blockquotes, `#`/`##` headings, `1.`/`1)`
@@ -451,9 +452,31 @@ fi
 #    case-insensitive, because at THIS site a miss is fail-open and that inverts item 4's
 #    reasoning.
 #
-#    The clean shapes this does NOT eat are the contract-compliant ones: all five agent
-#    definitions forbid the three severity words in clean prose ("write `no blocking
-#    issues` instead"), so a reviewer following the contract never trips either arm.
+#    What is genuinely safe is STRUCTURAL, not contractual: this whole block is gated on
+#    `$MSG` lacking `^REVIEWED-SHA:`, so a clean report that CARRIES the contract never
+#    reaches either arm. The set of contract-shaped clean reports arm 2 can eat is empty by
+#    construction.
+#
+#    An earlier version of this item claimed more than that — that all five agent
+#    definitions forbid the severity words in clean prose, so "a reviewer following the
+#    contract never trips either arm". Checked, and the imperative does not reach this far:
+#    every one of the five scopes it to "that prose", meaning the patterns/notes list in the
+#    report BODY. Nothing governs the async WRAPPER line, which is exactly what `$MSG` holds
+#    whenever this guard runs. Measured at this head, each behind a fully contract-compliant
+#    clean handback: "Review complete and handed back to the caller. No CRITICAL or WARNING
+#    findings." denies, and so does a wrapper that merely names the tag format. The control
+#    in the same run — "Review complete and handed back to the caller. No blocking issues."
+#    — stamps. So a legitimately clean reviewer CAN trip arm 2 on its wrapper. Fail-closed,
+#    costing a re-dispatch, and not a removal against main; but the guarantee was wrong and
+#    stating it invited the next reader to skip the check.
+#
+#    Making that sentence true needs a CONTRACT edit, not a code edit: the five agent
+#    definitions and docs/AI_WORKFLOW.md's dispatch prompt would have to say the rule covers
+#    the entire reply including any hand-back wrapper. Worth doing — it would also fix the
+#    deny loop for a reviewer who has not read the agent definition, since the gate's
+#    message says only "no review record exists" and never mentions wrapper wording, so a
+#    re-dispatch reproduces it. Filed rather than done here: it edits five agent definitions
+#    and the dispatch prompt, which is outside this PR's two files.
 
 # --- write -------------------------------------------------------------------
 case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
