@@ -394,6 +394,15 @@ case "$TOOL" in
           # grammar finds more occurrences, never fewer.
           # $SUB is still read above -- its rc 1 refuse is handled before this point -- and
           # is still the right value for the advisory consumers; only this gate changed.
+          # ACCEPTED COST, so the next reader does not re-litigate it as a bug: a TRAILING
+          # comment decoy -- `gh pr close 1 # gh pr merge 42` -- now denies where it
+          # previously allowed, because cmd_bare does not strip comments and the mention is
+          # real text. The operator sees the ref-less "cannot tell which PR" deny and splits
+          # the command. That is the restrictive direction, and it is the identical tradeoff
+          # cmd_gh_pr_write_subcommand already accepts and documents for its own trailing
+          # create decoy. A QUOTED mention is unaffected -- `git commit -m "gh pr merge 42"`
+          # still allows, because cmd_bare blanks the quoted span -- which is the row that
+          # would matter if this were over-denying in practice.
           exit 0
         else
           PR=$(cmd_gh_pr_ref "$CMD") || PR=""

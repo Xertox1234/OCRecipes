@@ -725,19 +725,35 @@ for spelling in \
   assert_allowed "KNOWN GAP, namespace->verb slot (see P1 todo): [$spelling]" "$out"
 done
 
-# STILL OPEN, and deliberately still pinned as ALLOW. The 2026-09-13 change closed the
-# binary-to-namespace SLOT; it did not touch how the BINARY ITSELF is rendered. These three
-# are P1 mechanism (a) (glued metacharacter) and (c) (quoted substitution), plus the
-# path-qualified spelling — all of which defeat the detector before the slot is ever
-# reached. Converting them is P1's remaining work, not this change's.
-# Re-measured 2026-09-13 against the widened extractor: all three still ALLOW.
+# TWO STILL OPEN, ONE CLOSED 2026-09-15 -- and the split is the point of this block. The
+# 2026-09-13 change closed the binary-to-namespace SLOT; it did not touch how the BINARY
+# ITSELF is rendered. Three spellings defeated the detector before the slot was reached:
+# the path-qualified binary, P1 mechanism (a) (glued metacharacter) and P1 mechanism (c)
+# (quoted substitution).
+#
+# Mechanism (a) is now CLOSED AT THIS CALL SITE ONLY, as a side effect of unioning
+# _CMD_POS_PREFIX into cmd_gh_pr_has_merge's anchor -- that union exists because a merge
+# glued to its separator was invisible to the one read that routes to ALLOW. Measured on
+# this tree through the helper, with `gh pr merge 42 --squash` SEEN and `npm run lint`
+# missed as controls in the same run:
+#   /opt/homebrew/bin/gh ...   missed   (still open -- "/" is not a _CMD_POS_PREFIX opener)
+#   echo x;gh ...              SEEN     (CLOSED, moved to the deny pin below)
+#   "$(which gh)" ...          missed   (still open -- cmd_bare blanks the quoted span)
+# The other two remain P1's work. Do NOT read this as the extractor-miss class being fixed:
+# it is closed for one mechanism, at one consumer, and the todo stays open.
 for spelling in \
   '/opt/homebrew/bin/gh pr merge 42 --squash' \
-  'echo x;gh pr merge 42 --squash' \
   '"$(which gh)" pr merge 42 --squash' ; do
   out=$(bash_payload "$spelling" | run)
-  assert_allowed "KNOWN GAP (see P1 todo): [$spelling]" "$out"
+  assert_allowed "KNOWN GAP, still open (see P1 todo): [$spelling]" "$out"
 done
+
+# The closed one, pinned in its new direction rather than deleted -- a gap that closes has
+# to be named, and a row that silently changes sides is how a later reader concludes the
+# class was never real.
+_lbl="P1 mechanism (a) CLOSED: a merge glued to a metacharacter is now seen [echo x;gh ...]"
+out=$(bash_payload 'echo x;gh pr merge 42 --squash' | run)
+denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
 
 # ── The P0's own family: a repo-retarget flag in ROOT POSITION ────────────────
 # `gh -R owner/repo pr merge 42` is a FUNCTIONAL invocation (cobra strips flags while
@@ -1085,6 +1101,36 @@ assert_allowed "CONTROL: a lone pr close clause still allows (no merge present)"
 out=$(bash_payload 'git commit -m "fix highlight for pr merge"' | run)
 assert_allowed "CONTROL: a command that REACHES the existence read with no merge still allows" "$out"
 
+# THE 64KB SIGPIPE ROW. The existence helper used to answer through `printf | grep -q`, and
+# `grep -q` closes the pipe on its first match. Past the 64KB pipe buffer, with the match on
+# an early LINE, the writer took SIGPIPE, the pipeline returned 141 under the pipefail this
+# hook sets, and `if ! ...` inverted 141 into a silent ALLOW. Measured before the fix:
+# 57,713 bytes detected, 96,913 bytes MISSED, and the same 96,913 bytes detected once the
+# pipe was replaced with a herestring. SINGLE-LINE input of the same size never trips it --
+# grep cannot exit mid-line, so the writer never blocks -- which is exactly why an earlier
+# review measured this shape and called it safe. No other row in this file is large enough
+# to reach the buffer, so without this one the whole class is unpinned.
+_big=$'gh pr merge 938 --squash'
+for _i in $(seq 1 2000); do _big+=$'\n# padding line to push this command past the 64KB pipe buffer'; done
+_lbl="a >64KB MULTI-LINE command with an early merge still denies (SIGPIPE rc-141 inversion)"
+out=$(bash_payload "$_big" | run)
+denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
+unset _big
+
+# GLUED SEPARATORS. `(^|[[:space:]])gh` does not see a binary glued to its separator, so a
+# real merge hid from the one read that routes to ALLOW. Unioned with _CMD_POS_PREFIX.
+# Measured as MISSED before and detected after, with the negative controls above unchanged.
+for _glue in ';' '&&' '|'; do
+  _lbl="a merge glued to [$_glue] is still seen by the existence read"
+  out=$(bash_payload "gh -t x pr close 1${_glue}gh pr merge 938 --squash" | run)
+  denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
+done
+
+# NEGATIVE CONTROL FOR THE UNION, in the same block: widening the anchor must not start
+# denying a quoted mention. cmd_bare blanks the quoted span, so this stays ALLOW.
+out=$(bash_payload 'git commit -m "gh pr merge 42"' | run)
+assert_allowed "CONTROL: a QUOTED merge mention is still not a merge" "$out"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -1094,7 +1140,9 @@ assert_allowed "CONTROL: a command that REACHES the existence read with no merge
 # spellings x the masking shape, plus the prefixed spelling, plus three controls.
 # 123 -> 124: +1 for the control that actually REACHES the existence read (the two beside
 # it exit at the fast path and cannot redden).
-EXPECTED_TOTAL=124
+# 124 -> 129: +1 SIGPIPE row, +3 glued-separator rows, +1 quoted-mention control for the
+# widened anchor.
+EXPECTED_TOTAL=129
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

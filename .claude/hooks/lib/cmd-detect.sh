@@ -2362,11 +2362,37 @@ cmd_gh_pr_write_subcommand() {
 # Same input rendering as its sibling (cmd_bare_deep) and the same shared ${_CMD_GH_GLOBALS}
 # -- re-deriving the needle locally in the consumer is the defect a previous fix had to
 # remove from git-safety.sh, and it is not reintroduced here.
+# NO PIPE, AND THE ANCHOR IS A UNION. Both halves of this one line were wrong in the
+# commit that introduced this function, and both failed in the ALLOW direction at the one
+# ALLOW-shaped read in merge-review-guard.sh.
+#
+# (1) NOT `printf | grep -q`. `grep -q` exits on its first match and closes the pipe. Once
+# the rendered command exceeds the 64KB pipe buffer AND the match is on an early LINE, the
+# writer takes SIGPIPE, the pipeline rc is 141 under `pipefail` (which the consumer sets),
+# and `if ! cmd_gh_pr_has_merge` inverts 141 into exit 0. Measured on this tree, bash
+# 5.3.15, pipefail on, with `npm run lint` as the negative control returning 1 throughout:
+#     multi-line  57,713 bytes -> rc 0   (detected)
+#     multi-line  96,913 bytes -> rc 141 (ALLOW -- a real merge, unreviewed)
+#     SINGLE line 86,913 bytes -> rc 0   (detected)
+# The single-line row is why an earlier review called this shape a measured non-issue: grep
+# cannot exit mid-line, so it drains the whole input and the writer never sees SIGPIPE. Only
+# the multi-line shape trips it, and it is trivially authorable. The herestring form below
+# returns 0 on that same 96,913-byte input. This file already uses `<<<` at cmd_is_gh_pr_create
+# and its siblings for the same reason.
+#
+# (2) UNION THE ANCHOR, DO NOT SUBSTITUTE IT. `(^|[[:space:]])gh` does not see a binary glued
+# to its separator, which _CMD_POS_PREFIX exists to model. Measured: `gh pr close 1;gh pr merge 42`,
+# the `&&`-glued-subshell form and the pipe-glued form were all MISSED and are all detected
+# with the union, while `npm run lint`, `git commit -m "gh pr merge 42"` (cmd_bare blanks
+# the quoted span) and a lone close gained nothing. Widening a DENY-direction read cannot
+# subtract denies, which is what makes the union safe here and would not make a substitution
+# safe. The residual extractor-miss class is still tracked in
+# todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md; this closes the
+# glued-separator part of it at this call site only.
 cmd_gh_pr_has_merge() {
   local words
   words=$(cmd_bare_deep "$1")
-  printf '%s' "$words" \
-    | grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+merge([[:space:]]|\$)"
+  grep -qE "(${_CMD_POS_PREFIX}|(^|[[:space:]]))gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+merge([[:space:]]|\$)" <<< "$words"
 }
 
 # cmd_gh_pr_ref <command>  → echo the PR ref (number, branch name, or URL) that
