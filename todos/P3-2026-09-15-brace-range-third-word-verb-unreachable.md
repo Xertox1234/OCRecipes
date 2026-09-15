@@ -86,6 +86,12 @@ Separate from the gap above, both fail-closed, both currently invisible to every
   `gh pr list && kubectl{1..2} delete pod x` both went ALLOW->DENY. Bypassable with
   `ALLOW_OUTWARD_CLI=1`, and the arm's own comment calls it defense-in-depth — but no row
   pins the cost, so a developer meets it mid-task instead of reading it here.
+- **A brace in the FIRST-WORD flag slot over-denies a read-only command.** Arm 1 reaches a
+  flag when it is the first word after the binary, and does not check whether the command is
+  mutating. Measured: `gh --repo other/org pr list` ALLOWs, while
+  `gh --re{p..p}o other/org pr list` DENYs — `gh pr list` is read-only, so the brace alone
+  turns an allowed command into a denied one. Fail-closed and bypassable with
+  `ALLOW_OUTWARD_CLI=1`, same class as the arm-3 over-deny above, and equally unpinned.
 - **Degraded mirror is not glue-anchored.** A benign range anywhere in the same segment
   after a gated binary now denies on all three degraded paths:
   `npm run build -- --out dist/file{1..3}.js` and `yarn test spec/a{a..c}.ts` both went

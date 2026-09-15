@@ -833,8 +833,20 @@
 #     below reach (1) a range token in the word immediately after the binary,
 #     (2) `gh pr <word>` — arm 2 spells the literal `pr`, no namespace
 #     alternation — and (3) a range token at command position. A verb in the
-#     THIRD word of any other namespace is unreachable by construction, AND SO
-#     ARE FLAG-NAME AND FLAG-VALUE POSITIONS, which the three arms never look at.
+#     THIRD word of any other namespace is unreachable by construction. FLAG
+#     POSITIONS ARE REACHED ONLY IN THE FIRST WORD AFTER THE BINARY (arm 1);
+#     later flag-name and flag-value positions are not. An earlier revision said
+#     the arms "never look at" flag positions, which understated the coverage --
+#     measured, these DENY while their brace-free forms ALLOW:
+#       gh --re{p..p}o other/org pr list
+#       gh -{R..R} other/org pr list
+#       eas --pro{f..f}ile production update --branch preview
+#     and `gh pr create --re{p..p}o other/org --title t` ALLOWs, because that
+#     flag is not the first word. Note the POLARITY of that error, since it
+#     decides how hard to look: this one understated coverage, so a reader
+#     concludes less is protected than truly is -- it can waste a fixer's time,
+#     it cannot hide a hole. The earlier defect in this same entry ran the other
+#     way and is the one to fear.
 #
 #     THE FLAG-VALUE CASE IS THE ONE TO READ, because that position has its own
 #     DEDICATED check and this is this file's own solution-doc thesis reappearing
