@@ -1494,7 +1494,7 @@ sub_eq 'extractor yields the WHOLE subshell body, not a truncation' \
   'f$( (:) )oo bar' ' (:) '
 
 # ---------- 2026-09-13: case-arm `)` -- the sibling the paren counter cannot
-# reach (todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md) ----
+# reach (todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md) ----
 # A case arm pattern (`a)`) has no matching opener, so no depth arithmetic can
 # tell its `)` apart from the substitution's real closer. Fixed by recognising
 # `case`/`esac` at a genuine command-word start (never as an argument, inside a

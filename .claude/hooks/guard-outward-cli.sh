@@ -697,9 +697,9 @@
 #     own header names as its dominant defect. Corpus rows toolvbareparen-* now
 #     report `ok`.
 #
-#     THE `case`-ARM HALF IS CLOSED ON THE PRECISE PATH FOR AN UNTERMINATED OR
-#     COMMENT-FREE ARM (2026-09-13,
-#     todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md)
+#     THE `case`-ARM HALF IS CLOSED ON THE PRECISE PATH FOR A BARE OR
+#     BRACE-GROUPED ARM (2026-09-13,
+#     todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md)
 #     -- named narrowly on purpose, see the NOT-closed shape immediately below:
 #         e$(case x in a) : ;; esac)as update --branch preview
 #           precise=DENY   nojq/nolib/noawk=ALLOW
@@ -709,7 +709,29 @@
 #     degraded paths never read the lib at all, so they are UNCHANGED and stay a
 #     documented residual, same as every other lib-only fix in this file.
 #
-#     STILL OPEN, EVEN ON PRECISE (post-implementation review, 2026-09-13):
+#     STILL OPEN #1, EVEN ON PRECISE (post-implementation review, 2026-09-14):
+#     a case arm wrapped in a BARE-PAREN SUBSHELL. The subshell's own `(` takes the
+#     paren credit, so its `)` closes the substitution early — the same mechanism
+#     the sibling bare-paren counter exists for, composed with this one:
+#         e$( ( case x in a) : ;; esac ) )as update --branch preview
+#           precise=ALLOW  (all four paths)
+#     CONTROL, and it is what isolates the mechanism: swap the subshell for a
+#     BRACE GROUP, which does not consume `parens[d]`, and the identical live
+#     invocation is caught:
+#         e$({ case x in a) : ;; esac; })as update --branch preview
+#           precise=DENY
+#     Both reconstruct `eas update --branch preview` in real argv; only `(` vs `{`
+#     differs. PRE-EXISTING, not opened by this fix — measured ALLOW on the parent
+#     commit and on main too, while the plain and brace-grouped forms both moved
+#     ALLOW -> DENY here. This entry exists because the heading above previously
+#     read "COMMENT-FREE ARM", and THIS SHAPE IS COMMENT-FREE: the wording asserted
+#     a property of a whole class from the one form that had been tested, which is
+#     the exact failure `one-form-property-asserted-of-whole-syntax-class` in this
+#     same diff is named after. Not yet carried by a corpus row — filed as
+#     todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
+#     so it stays measured rather than only described.
+#
+#     STILL OPEN #2, EVEN ON PRECISE (post-implementation review, 2026-09-13):
 #     COMPOSING a case arm with a shell COMMENT that itself contains a `;`
 #     followed by a decoy `esac` -- the comment is inert to real bash (it runs
 #     to end-of-line), but this scanner has no comment-state tracking at all

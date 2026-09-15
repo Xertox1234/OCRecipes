@@ -598,6 +598,24 @@ cmd_extract_substitutions() {
         # is the over-DENY / safe direction, not a missed deny), but it is
         # the same category error kwbound had, and removing `\r` can only
         # narrow what preserves command position -- the safe direction.
+        # WHY THIS IS NOT GATED ON s == 0, stated as an invariant rather than left for
+        # the next reader to re-derive: it runs for quoted bytes too, and that is safe
+        # because every quote-CLOSING delimiter -- single, double, and the ANSI-C form
+        # -- is itself a non-blank, non-operator byte, so it falls into the else-if and
+        # forces cmdpos[d] = 0 at the instant the quote closes. That happens to match
+        # real bash: a word glued onto a closed quote is never at a fresh command-word
+        # start, so "e"as update is one word. Checked against the boundary shapes that
+        # could break it -- an operator byte inside a quote immediately before the
+        # close, and an empty quote followed by a glued keyword -- neither produces a
+        # false open or a false close. The mirrored placement in _cmd_vanish_pass is
+        # REQUIRED there by its continue-based control flow; here it is kept identical
+        # so the two scanners share one shape, and the invariant above is what makes
+        # that safe rather than merely symmetrical.
+        #
+        # NOTE FOR EDITORS: this whole awk program is inside a single-quoted shell
+        # string, so a literal apostrophe anywhere in these comments TERMINATES it and
+        # the file stops parsing. Write "single-quote" in words. (Learned the direct
+        # way while adding this very comment.)
         atcmd = cmdpos[d]
         if (c == ";" || c == "&" || c == "|" || c == "(" || c == "{" || c == "!" || c == "\n") cmdpos[d] = 1
         else if (c != " " && c != "\t") cmdpos[d] = 0

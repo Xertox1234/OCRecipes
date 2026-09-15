@@ -628,7 +628,7 @@ add "fautoog-multi" DENY 'gh pr merge 42 --auto>log ; gh pr merge 7'
 #   vcasearm    STILL OPEN. That `)` has no matching opener, so no depth
 #               arithmetic can reach it, and the obvious keyword tracker is a
 #               deny->ALLOW regression generator. Tracked at
-#               todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#               todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #               Deliberately left as a visible gap: it keeps pointing at a live
 #               bypass.
 # vcomment: a `(` inside a shell COMMENT. Inert to bash (a comment runs to
@@ -729,7 +729,7 @@ done
 #               in lib/cmd-detect.sh's two scanners. Expected `ok`.
 #   vcasearm    a `case` arm's `)` -- an unmatched closer with NO opener, which
 #               no depth arithmetic can reach. Still a GAP by design; see NOTE6
-#               and todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#               and todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 # varithsep / varithdecoy: added 2026-09-07 because this corpus was BLIND to the
 # entire class the arithmetic-arm removal closes. Running all 308 rows across
 # main / pre-fix / post-fix gave `head_DENY - base_DENY = {}` — no losses, but no
@@ -1384,7 +1384,7 @@ EXPECTED_ROWS=620
 # EXPECTED_DENY_ATTRIB_ROWS below -- a round-4 review found them two revisions
 # stale, sitting directly above the constant they describe.
 #
-# BUMPED 2026-09-13 (todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md):
+# BUMPED 2026-09-13 (todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md):
 # 504 -> 521, +17. The `case`-arm bucket (toolvcasearm-*/verbvcasearm-*/
 # flagvcasearm-easbld/ghapi/ghcomment) now denies on the precise path, each
 # attributed to its own family's check -- see EXPECTED_DENY_ATTRIB below.
@@ -1398,7 +1398,7 @@ EXPECTED_ROWS=620
 EXPECTED_DENY_ATTRIB_ROWS=522
 
 # This was "14 + 17 = 31" before the case-arm fix landed (2026-09-13,
-# todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md),
+# todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md),
 # THEN "14" for one revision (the 17-row case-arm bucket CLOSED), and is now
 # "14 + 17 = 31" AGAIN via a DIFFERENT 17 -- read that as two different
 # buckets landing at the same total, not as the fix being reverted:
@@ -2843,7 +2843,7 @@ exit 0
 #       tracker is a deny->ALLOW regression generator (`e$(echo case)as update`
 #       DENIES today and would render EMPTY under it). Deliberately deferred with
 #       its reasoning, not overlooked. Tracked at
-#       todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#       todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #
 #       flagvcasearm-ghadmin is the FOURTH flag row and reports `ok` — READ ITS
 #       ATTRIBUTION, NOT ITS VERDICT. It denies from a different check entirely:

@@ -3228,7 +3228,7 @@ assert_deny "bare-paren subshell splits the verb" \
   "eas update/publish/submit"
 
 # ---------- 2026-09-13: case-arm `)` -- the sibling the paren counter cannot
-# reach (todos/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md)
+# reach (todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md)
 # ---------------------------------------------------------------------------
 # A case arm pattern's `)` has NO matching opener, so no depth arithmetic can
 # tell it apart from the substitution's real closer. Ground-truthed with a
