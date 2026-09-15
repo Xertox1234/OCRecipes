@@ -2715,10 +2715,19 @@ cmd_gh_pr_ref() {
   # `if` is false, AND THE RETARGET REFUSAL NEVER FIRES. Measured on this tree with
   # `set -uo pipefail`, mirroring merge-review-guard.sh's call site:
   #        31 bytes,     1 line   -> rc 1, refused          (positive control)
-  #   156,832 bytes,     1 line   -> rc 1, refused          (size-matched discriminator)
-  #   156,831 bytes, 3,201 lines  -> rc 0, RESOLVES ref 42  <- refusal lost
+  #    76,848 bytes,     1 line   -> rc 1, refused          (size-matched discriminator)
+  #    76,831 bytes, 3,201 lines  -> rc 0, RESOLVES ref 42  <- refusal lost
+  # THESE ARE THE COMMITTED PIN'S OWN BYTES (31 + 3200 x 24), re-derived from the rows in
+  # test-cmd-detect.sh. An earlier version of this table said 156,831/156,832, carried over
+  # from a review probe that padded with a 49-byte string existing nowhere in this tree --
+  # under a sentence claiming "measured on this tree". The LINE counts matched exactly, which
+  # is what made the row look reconciled and stopped it being checked. Same defect this file
+  # keeps recording, in the comment describing the fix for it.
   # with the two no-retarget rows resolving 42 at both sizes as negative controls. The
-  # consequence is this file's own residual #2: the gate classifies the LOCAL pr 42 while the
+  # consequence reaches the same end state this function's ACCEPTED RESIDUALS block records
+  # for the clause-cut -- by a NEW route (SIGPIPE) that entry does not cover, and which is
+  # not fail-closed the way that entry is. Naming the property rather than an ordinal: four
+  # numbered lists in this file each have a '2.'. The gate classifies the LOCAL pr 42 while the
   # command targets other/org -- a cross-repository merge authorised by a local review
   # record, which is the P0 this branch closed by another route.
   # NOT A REGRESSION: origin/main carries a byte-identical construction and an A/B of both

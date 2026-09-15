@@ -212,7 +212,7 @@ model the slot between the binary and its namespace. Both guards DENY all four e
 
 **Four corrections to this todo, established by reading the files:**
 
-1. `_OUT_REPO_FLAG_RE` is at `:944`, not `:899` (corrected in AC 1 above).
+1. `_OUT_REPO_FLAG_RE` is cited by ANCHOR, not by line number -- both `:944` and `:899` were comment lines and neither located it (the symbol is well below both).
 2. _"Both guards read through that library"_ is **false**. `merge-review-guard.sh` does;
    `guard-outward-cli.sh` is a deliberate **fork** with its own `_OUT_*` vocabulary
    (`:25`, `:61`), so it inherits nothing. Both files had to be widened separately. The

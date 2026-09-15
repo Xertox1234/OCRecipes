@@ -1954,11 +1954,19 @@ _rr_base='gh pr merge 42 --repo other/org'
 _rr_multi="$_rr_base"; _rr_single="$_rr_base"
 for _rr_i in $(seq 1 3200); do _rr_multi+=$'\n# padding line for size'; done
 while [ "${#_rr_single}" -lt "${#_rr_multi}" ]; do _rr_single+=' # padding for size'; done
-_rr_lbl="the retarget pin's own input really exceeds the 64KB pipe buffer"
-if [ "${#_rr_multi}" -gt 65536 ]; then
+# MEASURE WHAT CROSSES THE PIPE, not the raw command. cmd_gh_pr_ref pipes `repo_clause` --
+# the input after cmd_bare_deep, then cut at the first [;&|] -- so a rendering change or a
+# separator in the padding could shrink it below the buffer while this row stayed green and
+# the refusal row still passed (the retarget sits at the front, so a collapsed clause still
+# refuses). The pin would go inert silently: the same defect fixed for the sibling pin. The
+# padding is asserted separator-free for the second half of that.
+_rr_words=$(cmd_bare_deep "$_rr_multi")
+case "$_rr_words" in *[';&|']*) _rr_sep=yes;; *) _rr_sep=no;; esac
+_rr_lbl="the retarget pin's rendered input exceeds the 64KB buffer and carries no clause separator"
+if [ "${#_rr_words}" -gt 65536 ] && [ "$_rr_sep" = no ]; then
   echo "PASS: $_rr_lbl"; PASS=$((PASS+1))
 else
-  echo "FAIL: $_rr_lbl (${#_rr_multi} bytes, need >65536)"; FAIL=$((FAIL+1))
+  echo "FAIL: $_rr_lbl (rendered ${#_rr_words} bytes, need >65536; separator present: $_rr_sep)"; FAIL=$((FAIL+1))
 fi
 ghref "$_rr_multi"  - "a >64KB MULTI-line --repo retarget still REFUSES (pins the SIGPIPE fail-open)"
 ghref "$_rr_single" - "a >64KB SIZE-MATCHED single-line --repo retarget still REFUSES (control: green under the piped form)"
@@ -1975,7 +1983,7 @@ ghref "$_rr_base"   - "the small retarget still refuses (positive control)"
 _rr_noretarget='gh pr merge 42'
 for _rr_i in $(seq 1 3200); do _rr_noretarget+=$'\n# padding line for size'; done
 ghref "$_rr_noretarget" 42 "a >64KB MULTI-line merge with NO retarget still RESOLVES (control: the refusals above are the retarget's, not the size's)"
-unset _rr_base _rr_multi _rr_single _rr_noretarget _rr_i _rr_lbl
+unset _rr_base _rr_multi _rr_single _rr_noretarget _rr_i _rr_lbl _rr_words _rr_sep
 unset _rg_decoy _rg_multi _rg_single _rg_i _rg_row _rg_shape _rg_cmd _rg_label _rg_got _rg_rc
 
 # NOTE ON WHAT EACH ROW BELOW PROVES. The `ghsub ... "subcommand is SEEN"` rows are the

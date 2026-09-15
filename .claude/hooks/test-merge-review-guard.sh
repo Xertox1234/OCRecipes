@@ -1156,11 +1156,11 @@ _mrg_missing=""
 for _mrg_sym in $(sed -n "$((_mrg_conj_line+8)),\$p" "$_mrg_src" | grep -vE '^[[:space:]]*#' \
                    | grep -oE '(^|[^_A-Za-z])cmd_[a-z_]+' | grep -oE 'cmd_[a-z_]+' | sort -u); do
   case "$_mrg_sym" in cmd_fastpath_has) continue;; esac
-  printf '%s' "$_mrg_conj" | grep -q "declare -F $_mrg_sym" || _mrg_missing="$_mrg_missing $_mrg_sym"
+  printf '%s' "$_mrg_conj" | grep -q -- "declare -F $_mrg_sym" || _mrg_missing="$_mrg_missing $_mrg_sym"
 done
 for _mrg_sym in $(sed -n "$((_mrg_conj_line+8)),\$p" "$_mrg_src" | grep -vE '^[[:space:]]*#' \
                    | grep -oE '_CMD_[A-Z_]+' | sort -u); do
-  printf '%s' "$_mrg_conj" | grep -q "$_mrg_sym" || _mrg_missing="$_mrg_missing $_mrg_sym"
+  printf '%s' "$_mrg_conj" | grep -q -- "$_mrg_sym" || _mrg_missing="$_mrg_missing $_mrg_sym"
 done
 _mrg_lbl="every cmd_*/_CMD_* used below the preflight is checked BY the preflight"
 if [ -z "$_mrg_missing" ]; then
