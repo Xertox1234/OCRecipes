@@ -2436,11 +2436,26 @@ _OUT_BR_RANGE_TOKEN='[^;&|)`{}[:space:]]*\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]
 # exactly the deny-reason-assertion-goes-stale defect this repo has a named
 # solution for. Measured: all four flipped from "without a REAL --auto
 # flag"/"--repo/-R writes to a DIFFERENT..."/"mutating HTTP method" to this
-# block's own reason before this exclusion existed. eas/railway/npm/pnpm/yarn
-# never reach this line for the equivalent shape (`eas update{1..3}`, `npm
-# publish{1..3}`, `railway up{1..3}`) -- their own checks run BEFORE this
-# block and exit first, verified the same way -- so the exclusion only needs
-# to name the gh verbs actually reachable here.
+# block's own reason before this exclusion existed. EAS, NPM AND RAILWAY never
+# reach this line for the equivalent shape (`eas update{1..3}`, `npm
+# publish{1..3}`, `railway up{1..3}`) -- their own checks run BEFORE this block
+# and exit first, verified the same way -- so the exclusion only needs to name
+# the gh verbs actually reachable here.
+#
+# PNPM AND YARN DO REACH THIS LINE, and an earlier version of this sentence
+# listed them with the other three. Measured: `pnpm publish{1..3}` and
+# `yarn publish{1..3}` go ALLOW on main -> DENY WITH THIS BLOCK'S OWN REASON
+# here, so they arrive with no prior check having fired. The reason is not that
+# they are handled earlier -- it is that THERE IS NO pnpm/yarn PUBLISH CHECK
+# ANYWHERE: bare `pnpm publish`, `yarn publish` and `pnpm publish --access
+# public` all ALLOW on main AND here, while `npm publish` denies.
+#
+# DO NOT "FIX" THE ATTRIBUTION BY ADDING THEM TO THE EXCLUSION. The sentence
+# above used to invite exactly that, and it is the one edit that turns a
+# fail-closed deny into an ALLOW with nothing behind it. The brace-range deny is
+# currently the ONLY thing standing between `pnpm publish{1..3}` and a registry
+# push. The pre-existing pnpm/yarn gap is a separate matter and is surfaced as
+# its own question, not papered over here.
 #
 # ANCHORED TO COMMAND POSITION (CRITICAL, found by code-reviewer construct-
 # and-run during this fix's own review, fixed same round): the first shipped

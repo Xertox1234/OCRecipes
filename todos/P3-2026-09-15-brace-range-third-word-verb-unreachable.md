@@ -50,7 +50,7 @@ this repo's own documented OTA publish command, which is the 2026-08-16 incident
 
 **The scope is wider than this todo's title says, and the `-X` row is why.** The last three
 rows are not third-word verbs at all — they are FLAG-NAME and FLAG-VALUE positions, which the
-three arms never look at. The `-X` one is the sharpest, because that position has its own
+three arms reach only in limited positions (see below). The `-X` one is the sharpest, because that position has its own
 dedicated check: measured, it denies the literal `POST` **and all three sigil spellings of
 it** — `${M}`, `$M`, and the ANSI-C form — while letting `POS{T..T}` through. That is exactly
 the thesis of `docs/solutions/conventions/brace-range-is-a-second-expansion-mechanism-not-a-sigil-spelling-2026-09-14.md`
@@ -122,3 +122,24 @@ Both want one EXPECTED row each so the cost shows on every run.
 - Three flag-position rows added after review: the class is not limited to third-word verbs.
   The `gh api -X` row matters most — that position has a dedicated check which denies every
   sigil spelling of the value and misses the brace-range one.
+
+### 2026-09-15 (third)
+
+Three bounds in this file were widened by measurement and are corrected here, so it stops
+contradicting the hook header it accompanies:
+
+- **Flag positions are reached in TWO places, not one.** Arm 1 reaches the first word after
+  the binary, and arm 2 reaches the word after `gh pr`. Measured:
+  `gh pr --re{p..p}o other/org list` DENYs while the literal `gh pr --repo other/org list`
+  ALLOWs. An earlier revision here said the arms "never look at" flag positions, which the
+  hook header has already retracted.
+- **The over-deny class is wider than a flag slot.** It is any range in the first word after
+  any gated binary, verb or flag, including read-only commands: `gh workflow{1..3} list`,
+  `eas whoami{1..3}`, `eas update:list{1..3}`, `railway status{1..3}` and `npm ci{1..3}` all
+  go ALLOW -> DENY.
+- **`FAM_IDS` does carry third-word families.** `FAM_VERB_PREFIX` spells `gh pr merge` and
+  `gh pr comment`, so the accurate bound is "no third-word family OUTSIDE the `pr` namespace".
+
+All three err the safe way — they understate coverage or cost, so they could waste a fixer's
+time but could not hide a hole. Recorded rather than quietly amended because the polarity is
+the thing worth knowing when re-measuring.
