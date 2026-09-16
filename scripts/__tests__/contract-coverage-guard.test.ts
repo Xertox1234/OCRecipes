@@ -28,8 +28,6 @@ import {
 
 /** Ratchet — remove an entry as soon as its provider-side assertion lands. */
 const CONTRACT_ALLOWLIST: ReadonlySet<string> = new Set([
-  "tastePickCandidatesResponseSchema",
-  "tastePicksResponseSchema",
   "coachBlockSchema",
   // Added 2026-09-15 (A0 final review) after widening the extractor to
   // sub-schema parses: client/components/coach/coach-chat-utils.ts parses
