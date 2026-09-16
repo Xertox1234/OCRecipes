@@ -1,63 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { z } from "zod";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
 import { ApiError } from "@/lib/api-error";
+import {
+  receiptAnalysisResultSchema,
+  receiptConfirmResultSchema,
+  type ReceiptAnalysisResult,
+  type ReceiptConfirmResult,
+  type ReceiptItem,
+} from "@shared/schemas/receipt";
 
-/**
- * Runtime schemas for the receipt endpoints, validated at the network boundary
- * so server contract drift surfaces as a structured error instead of a silent
- * bad cast. Shapes mirror the JSON wire format, not the Drizzle/server types
- * (see the per-field notes on `pantryItemSchema` for the decimal/timestamp →
- * string serialization). On the scan response below, `category` is kept as a
- * plain string (the server enum is validated server-side) for forward-compat
- * with new categories.
- */
-const receiptItemSchema = z.object({
-  name: z.string(),
-  originalName: z.string(),
-  quantity: z.number(),
-  unit: z.string().optional(),
-  category: z.string(),
-  isFood: z.boolean(),
-  estimatedShelfLifeDays: z.number(),
-  confidence: z.number(),
-});
-
-const receiptAnalysisResultSchema = z.object({
-  items: z.array(receiptItemSchema),
-  storeName: z.string().optional(),
-  purchaseDate: z.string().optional(),
-  totalAmount: z.string().optional(),
-  isPartialExtraction: z.boolean(),
-  overallConfidence: z.number(),
-});
-
-// Wire shape of a `PantryItem` (shared/schema). The Drizzle row types the
-// timestamps as `Date` and `quantity` as `string`, but JSON serialization sends
-// timestamps as ISO strings — this schema matches what actually arrives.
-const pantryItemSchema = z.object({
-  id: z.number(),
-  userId: z.string(),
-  name: z.string(),
-  quantity: z.string().nullable(),
-  unit: z.string().nullable(),
-  category: z.string().nullable(),
-  expiresAt: z.string().nullable(),
-  addedAt: z.string(),
-  updatedAt: z.string(),
-});
-
-const receiptConfirmResultSchema = z.object({
-  added: z.number(),
-  items: z.array(pantryItemSchema),
-});
-
-export type ReceiptItem = z.infer<typeof receiptItemSchema>;
-export type ReceiptAnalysisResult = z.infer<typeof receiptAnalysisResultSchema>;
-export type ReceiptConfirmResult = z.infer<typeof receiptConfirmResultSchema>;
+export type { ReceiptAnalysisResult, ReceiptConfirmResult, ReceiptItem };
 
 export interface ReceiptScanCount {
   count: number;

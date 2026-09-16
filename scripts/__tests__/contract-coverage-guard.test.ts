@@ -28,8 +28,6 @@ import {
 
 /** Ratchet — remove an entry as soon as its provider-side assertion lands. */
 const CONTRACT_ALLOWLIST: ReadonlySet<string> = new Set([
-  "receiptAnalysisResultSchema",
-  "receiptConfirmResultSchema",
   "tastePickCandidatesResponseSchema",
   "tastePicksResponseSchema",
   "coachBlockSchema",
