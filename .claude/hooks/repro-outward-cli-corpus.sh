@@ -2395,7 +2395,20 @@ fi
 # the main grid's four shared targets do not reach (search the DENY-SITE
 # COVERAGE axis comment above for the list). 208+5+7+3+6 = 229. MEASURED,
 # NOT COMPUTED: the run on this tree reported `rows=1105`.
-EXPECTED_ROWS=1105
+#
+# BUMPED 2026-09-16 (same todo, round-2 security review, two review passes):
+# 1105 -> 1180, +75. GENERATED, not hand-listed, each with its own
+# short-iteration FATAL guard: 24 ambiguous-launcher-flag rows (3 launcher
+# forms x 8 flag-forms), 10 package-directory-path rows (2 packages x 4
+# interpreter forms, incl. 2 explicit read-only-verb ALLOW controls), 24
+# launcher-flag-run-generalization rows (12 launcher forms x 2 flag shapes).
+# Explicit (DENY-SITE COVERAGE style, not generated): 11 version-pin rows
+# (one per modified grep clause, incl. the gh clause added in the second
+# review pass), 1 flag-run gh-family scenario, 1 flag-run false-positive
+# control, 1 documented-residual control, 2 fast-path-needle-gap rows, 1
+# GAP-1 --package/-p discriminating row. 24+10+24+11+1+1+1+2+1 = 75.
+# MEASURED, NOT COMPUTED: the run on this tree reported `rows=1180`.
+EXPECTED_ROWS=1180
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 761 of the 876 rows deny on the precise path; the other 115 are ALLOW there: 91
@@ -2515,7 +2528,28 @@ EXPECTED_ROWS=1105
 # EXPECTED_PRECISE_GAPS below, unchanged at 24. MEASURED: the run reported
 # `deny-reason attribution rows is 980`. The manifest below is the run's own
 # printed attribution section, pasted verbatim, not hand-derived.
-EXPECTED_DENY_ATTRIB_ROWS=980
+# BUMPED 2026-09-16, same todo, round-2 security review (both passes): 980 ->
+# 1051, +71. 71 of the 75 new rows (see EXPECTED_ROWS above) deny on the
+# precise path -- the 4 that don't are the 4 new ALLOW controls (2
+# read-only-verb pkgdir controls, 1 flag-run false-positive control, 1
+# documented-residual control). ZERO new precise-path gaps -- EXPECTED_PRECISE_GAPS
+# stays unchanged at 24 (verified: no membership drift either, not just the
+# count). Also several PRE-EXISTING precise-path DENY rows (`r1`/`r2`-shaped:
+# a launcher combined with --package/-p landing directly on a literal gated
+# binary name, e.g. `npx --package=eas-cli -- eas update`) now attribute to a
+# DIFFERENT check than before this round -- the round-2 `_OUT_LAUNCHER`
+# flag-run widening lets the earlier, more general per-binary check
+# (`_OUT_POS_PREFIX_LP` + literal binary name) match these rows directly, and
+# `deny()` exits on the first match, which is textually earlier in the file
+# than GAP-1's own check. This is a verdict-preserving REROUTE (the row still
+# denies), not a new gap -- the same class test-guard-outward-cli.sh's own
+# `lp-af-*`-adjacent assertions were corrected for (see that file's "via
+# check #1, redundant launcher-axis coverage" comment) -- captured here
+# because the attribution list is exactly what exists to surface a reroute
+# like this. MEASURED: the run reported `deny-reason attribution rows is
+# 1051`. The manifest below is the run's own printed attribution section,
+# pasted verbatim, not hand-derived.
+EXPECTED_DENY_ATTRIB_ROWS=1051
 
 # 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -2593,7 +2627,27 @@ EXPECTED_PRECISE_GAPS=24
 # notion of "eas-cli"/"@railway/cli" as gated words). MEASURED: the run
 # reported `all-path gaps is 285`. The manifest below is the prior 279-line
 # pin plus these 6, LC_ALL=C sorted -- not hand-merged.
-EXPECTED_ALLPATH_GAPS=285
+# BUMPED 2026-09-16, same todo, round-2 security review (both passes): 285 ->
+# 306, +21. All 21 of the round-2 additions' new checks live on the PRECISE
+# path only (same reasoning as the +6 bump above), so every new row that
+# denies via a NEW round-2 check (lp-fpneedle-*, lp-gap1-discriminating,
+# lp-pd-*, lp-verpin-*) newly disagrees with the degraded crude-smell
+# fallback -- 20 precise-DENY rows the fallback under-denies (no notion of
+# --package/-c/-p, a version-pin suffix, or a package-directory path
+# segment), plus 1 precise-ALLOW row (lp-lflag-residual-interior) the
+# fallback over-denies the OTHER direction (p=ALLOW j=DENY l=DENY a=DENY --
+# the degraded crude-smell test still recognizes "npm"/"exec"/"eas"/"update"
+# as substrings regardless of the interior flag this precise check
+# deliberately leaves unwidened, so it denies where the precise path,
+# correctly, does not). The 24 ambiguous-flag (lp-af-*) and 24
+# flag-run-generalization (lp-lflag-*, minus the residual row above) rows do
+# NOT newly disagree -- their DENY reasons still contain enough of the
+# original gated-word text for the crude fallback to already catch them by
+# coincidence, the same "most new DENY rows already agree by coincidence"
+# pattern the +6 bump above describes. MEASURED: the run reported `all-path
+# gaps is 306`. The manifest below is the prior 285-line pin plus these 21,
+# LC_ALL=C sorted -- not hand-merged.
+EXPECTED_ALLPATH_GAPS=306
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -2801,10 +2855,31 @@ intrtoolsp-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 intrtoolsp-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-fp-prose p=ALLOW j=DENY l=DENY a=DENY
 lp-fp-quotedpath p=ALLOW j=DENY l=DENY a=DENY
+lp-fpneedle-callnoNeedle p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-fpneedle-pkgnoNeedle p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-gap1-discriminating p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-ghmerge-auto-bare p=ALLOW j=DENY l=DENY a=DENY
+lp-lflag-residual-interior p=ALLOW j=DENY l=DENY a=DENY
+lp-pd-eascli-bun p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-eascli-deno p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-eascli-node p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-eascli-none p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-railwaycli-bun p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-railwaycli-deno p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-railwaycli-node p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-railwaycli-none p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-pkg-eascli-npmexec p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-pkg-eascli-npx p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-pkg-railwaycli-npx p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-easbuild p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-easchannel p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-easupdcolon p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-railsvcdel p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-yarnbare p=DENY j=ALLOW l=ALLOW a=ALLOW
 nssufx-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 nssufx-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
@@ -3907,6 +3982,77 @@ lp-site-easchannel : 'eas channel:/branch: create/edit/delete/rename' reached th
 lp-site-npmrunota  : 'npm run update:preview/update:production' (and the yarn/pnpm bare-scrip
 lp-site-railvar    : 'railway variable/vars/var set/delete' reached through a launcher or a p
 lp-site-railsvcdel : 'railway service/environment delete' reached through a launcher or a pat
+lp-af-npx-pkgeq    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npx-pkgsp    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npx-peq      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npx-psp      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npx-calleq   : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npx-callsp   : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npx-ceq      : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npx-csp      : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npmexec-pkgeq : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npmexec-pkgsp : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npmexec-peq  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npmexec-psp  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npmexec-calleq : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npmexec-callsp : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npmexec-ceq  : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npmexec-csp  : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-bunx-pkgeq   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-bunx-pkgsp   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-bunx-peq     : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-bunx-psp     : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-bunx-calleq  : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-bunx-callsp  : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-bunx-ceq     : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-bunx-csp     : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-verpin-easupd   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-verpin-easupdcolon : 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-emb
+lp-verpin-easchannel : 'eas channel:/branch: create/edit/delete/rename' reached through a launc
+lp-verpin-easbuild : 'eas build --auto-submit' reached through a launcher or a path-qualified
+lp-verpin-railup   : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-verpin-railvar  : 'railway variable/vars/var set/delete' reached through a launcher or a p
+lp-verpin-railsvcdel : 'railway service/environment delete' reached through a launcher or a pat
+lp-verpin-npmpub   : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-verpin-npmrunota : 'npm run update:preview/update:production' (and the yarn/pnpm bare-scrip
+lp-verpin-yarnbare : 'npm run update:preview/update:production' (and the yarn/pnpm bare-scrip
+lp-verpin-ghmerge  : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-pd-eascli-none  : a direct path invocation of a script INSIDE the eas-cli npm package dire
+lp-pd-eascli-node  : a direct path invocation of a script INSIDE the eas-cli npm package dire
+lp-pd-eascli-bun   : a direct path invocation of a script INSIDE the eas-cli npm package dire
+lp-pd-eascli-deno  : a direct path invocation of a script INSIDE the eas-cli npm package dire
+lp-pd-railwaycli-none : a direct path invocation of a script INSIDE the @railway/cli npm package
+lp-pd-railwaycli-node : a direct path invocation of a script INSIDE the @railway/cli npm package
+lp-pd-railwaycli-bun : a direct path invocation of a script INSIDE the @railway/cli npm package
+lp-pd-railwaycli-deno : a direct path invocation of a script INSIDE the @railway/cli npm package
+lp-lflag-npx-bool  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npx-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npxy-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npxy-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npxyes-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npxyes-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmexec-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmexec-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmexecdd-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmexecdd-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunx-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunx-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunx2-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunx2-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunrun-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunrun-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-pnpmdlx-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-pnpmdlx-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-pnpmexec-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-pnpmexec-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-yarndlx-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-yarndlx-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-yarnexec-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-yarnexec-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-ghmerge   : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-fpneedle-callnoNeedle : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-fpneedle-pkgnoNeedle : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-gap1-discriminating : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
@@ -4007,7 +4153,17 @@ PIN_EXEMPT_EOF
 # NO corpus row at all -- are covered by the new DENY-SITE COVERAGE axis
 # above. MEASURED: the run reported `guard deny-emit sites is 38`, with no
 # remaining "guard can emit a deny no corpus row reaches" line.
-EXPECTED_EMIT_SITES=38
+# BUMPED 2026-09-16, same todo, round-2 security review, first pass: 38 -> 41,
+# +3 for the three new deny() call sites GAP-1/GAP-2a/GAP-2b add (the
+# ambiguous-flag fail-closed check, and the two eas-cli/@railway/cli
+# package-directory path checks). The round-2 second pass (fast-path
+# needle-list fix, the gh clause's version-pin splice) added ZERO new
+# deny() call sites -- both fixes widen what TEXT reaches an EXISTING check,
+# not a new check. MEASURED: the run reported `guard deny-emit sites is 41`,
+# with no remaining "guard can emit a deny no corpus row reaches" line --
+# every one of the three new sites, including GAP-1's, is confirmed
+# reachable.
+EXPECTED_EMIT_SITES=41
 
 PIN_FAIL=0
 
