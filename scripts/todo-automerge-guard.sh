@@ -231,16 +231,54 @@ SENSITIVE_INTENT_KEYWORDS='auth|jwt|login|password|admin|premium|subscription|ia
 # reviewer checklist out of a protected directory.
 #
 # `pulls/{n}/files` carries `previous_filename` on a rename, so emitting it alongside
-# `filename` gates the SOURCE path too. `--paginate` because that endpoint pages at 30 and a
-# truncated file list is a silent under-read on a fail-closed gate. Error handling is
-# unchanged: gh failure exits 2, empty output exits 2.
+# `filename` gates the SOURCE path too.
+#
+# `--paginate` closes the PER-PAGE truncation only (this endpoint pages at 30). It does NOT lift
+# the endpoint's server-side maximum file count, so pagination alone is not a completeness
+# guarantee and the comment must not claim one. Under-reporting is the dangerous direction here
+# because of the CONSUMER, not because of this gate: merge-review-guard.sh treats this script's
+# exit 0 as "no review record required", so a short list is a MERGE-GATE bypass rather than
+# merely a missed auto-merge HOLD. The count check below is the actual completeness detector.
+# Error handling is unchanged: gh failure exits 2, empty output exits 2.
 files="$(gh api "repos/{owner}/{repo}/pulls/$PR/files" --paginate \
-  --jq '.[].filename, (.[] | select(.previous_filename) | .previous_filename)')" || {
+  --jq '.[].filename, (.[] | select(.previous_filename) | .previous_filename), (.[] | select(.status == "renamed" and (.previous_filename | not)) | "__RENAME_SOURCE_MISSING__")')" || {
   echo "guard: ERROR PR #$PR — could not read changed files (gh error). Fail-closed."
   exit 2
 }
 if [ -z "$files" ]; then
   echo "guard: ERROR PR #$PR — no file changes (nothing to evaluate)"
+  exit 2
+fi
+
+# A row the API calls a rename but gives no previous_filename would have its SOURCE path
+# silently dropped -- the exact blind spot reading this endpoint was meant to close. Refuse
+# rather than gate a list known to be missing a path.
+case "$files" in
+  *__RENAME_SOURCE_MISSING__*)
+    echo "guard: ERROR PR #$PR — a changed file is reported as renamed with no previous_filename, so its SOURCE path cannot be gated. Fail-closed."
+    exit 2
+    ;;
+esac
+
+# COMPLETENESS. Rename sources only ever ADD lines to the list above, never remove them, so the
+# line count is >= the PR's declared changed-file count, with equality when nothing was renamed.
+# A count BELOW the declared total therefore means the list was truncated -- by the endpoint's
+# server-side cap, or by a pagination run that ended early -- and that is precisely the
+# under-read that turns this gate's exit 0 into a merge-gate bypass. One comparison covers both
+# causes, and it cannot false-positive on renames because they only push the count up.
+declared_files="$(gh pr view "$PR" --json changedFiles --jq .changedFiles)" || {
+  echo "guard: ERROR PR #$PR — could not read the declared changed-file count. Fail-closed."
+  exit 2
+}
+seen_files="$(printf '%s\n' "$files" | grep -c . || true)"
+case "$declared_files" in
+  ''|*[!0-9]*)
+    echo "guard: ERROR PR #$PR — declared changed-file count is not a number ('$declared_files'). Fail-closed."
+    exit 2
+    ;;
+esac
+if [ "$seen_files" -lt "$declared_files" ]; then
+  echo "guard: ERROR PR #$PR — read $seen_files changed paths but the PR declares $declared_files changed files, so the list is truncated and some paths were never gated. Fail-closed."
   exit 2
 fi
 
@@ -269,7 +307,7 @@ while IFS= read -r tf; do
   # the frontmatter awk below only reads lines between the first pair of --- markers.
   if ! raw="$(gh api -H "Accept: application/vnd.github.raw" "repos/{owner}/{repo}/contents/${tf}?ref=refs/pull/${PR}/head" 2>&1)"; then
     if grep -qE '\bHTTP 404\b|"status": *"404"' <<< "$raw"; then
-      echo "guard: HOLD PR #$PR — ${tf} is listed in the diff but absent from the PR head (deleted?); cannot verify frontmatter"
+      echo "guard: HOLD PR #$PR — ${tf} is listed in the diff but absent from the PR head (deleted, or renamed away — this path may be a rename SOURCE, which this gate now reads deliberately); cannot verify frontmatter"
       echo "Needs individual review; exclude from the batch-merge."
       exit 1
     fi

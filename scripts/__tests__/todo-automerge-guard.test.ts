@@ -16,20 +16,26 @@ const ARCHIVE_PATH = "todos/archive/P3-2026-07-08-example.md";
 
 const FAKE_GH_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
-if [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
-  if [ "\${FAKE_GH_DIFF_EXIT:-0}" != "0" ]; then
-    echo "fake-gh: simulated gh pr diff failure" >&2
-    exit "$FAKE_GH_DIFF_EXIT"
-  fi
-  printf '%s\\n' "$FAKE_GH_DIFF_FILES"
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  # The guard compares its file-list read against the PR's DECLARED changed-file count so it can
+  # refuse a truncated list. Default to the number of lines this test supplied, keeping the
+  # completeness check a no-op unless a row sets FAKE_GH_CHANGED_FILES to model truncation.
+  printf '%s\\n' "\${FAKE_GH_CHANGED_FILES:-$(printf '%s\\n' "$FAKE_GH_DIFF_FILES" | grep -c . || true)}"
   exit 0
 fi
 if [ "$1" = "api" ]; then
   # The guard now reads its file list from pulls/{n}/files (so a rename's previous_filename is
   # gated too), which is also a \`gh api\` call — so this stub must dispatch on the endpoint or
   # it would answer the file-list request with frontmatter.
-  case "\${2:-}" in
-    */pulls/*/files)
+  # Scan ALL arguments rather than matching \$2: the contents call puts -H at \$2 and reaches the
+  # frontmatter branch only by falling off the end of a positional case, so a later reordering of
+  # the file-list call would misroute it silently.
+  _ep=""
+  for a in "$@"; do
+    case "$a" in */pulls/*/files) _ep="files" ;; esac
+  done
+  case "\$_ep" in
+    files)
       if [ "\${FAKE_GH_DIFF_EXIT:-0}" != "0" ]; then
         echo "fake-gh: simulated pulls/files failure" >&2
         exit "$FAKE_GH_DIFF_EXIT"
@@ -1019,8 +1025,18 @@ describe("todo-automerge-guard.sh (drift guard: STRUCTURAL_SENSITIVE stays a sub
   // doc-path entries, which admit a trailing `/` for a future split-into-a-directory) must be
   // mirrored. A shape test, not a corpus test, so it cannot go quiet as the tree changes.
   it("every whole-directory and exact-doc-path SENSITIVE_OVERRIDE alternative is mirrored in STRUCTURAL_SENSITIVE (the direction that actually reopens the markdown bypass)", () => {
+    // Predicate on "this alternative NAMES A PATH", not on one spelling of one. The first
+    // version required the `(^|/)...` + trailing-slash form, so it policed only the shape I
+    // happened to probe with: measured, `|^docs/legacy-patterns/` and
+    // `|(^|/)docs/REVIEW_POLICY\\.md$` both stayed green while being equally exploitable. Both
+    // are the ambient idiom here - 9 of SAFE_ALLOWLIST's 14 alternatives use bare `^dir/`, and
+    // 11 of SENSITIVE_OVERRIDE's use the `(^|/)x\\.ts$` exact-file form.
+    // `\\.ts$` entries are excluded deliberately: a TypeScript path can never be the markdown
+    // that SAFE_ALLOWLIST's `\\.md$` tail auto-exempts, so they need no structural mirror.
     const isStructuralShape = (alt: string) =>
-      alt.startsWith("(^|/)") && (alt.endsWith("/") || alt.endsWith("/)"));
+      (alt.startsWith("(^|/)") || alt.startsWith("^")) &&
+      (alt.endsWith("/") || alt.endsWith("/)") || alt.endsWith("$")) &&
+      !alt.endsWith("\\.ts$");
     const structural = new Set(
       splitAlternatives(extractConstant("STRUCTURAL_SENSITIVE")),
     );
@@ -1125,5 +1141,43 @@ describe("todo-automerge-guard.sh (rename source paths are gated, not just desti
       FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
     });
     expect(status).toBe(0);
+  });
+});
+
+describe("todo-automerge-guard.sh (a truncated file list is refused, not gated)", () => {
+  // `--paginate` closes the per-page truncation only; it cannot page past the endpoint's
+  // server-side maximum file count. Under-reporting is the dangerous direction because of the
+  // CONSUMER: merge-review-guard.sh reads this guard's exit 0 as "no review record required",
+  // so a short list is a merge-gate bypass rather than a missed auto-merge HOLD. Rename sources
+  // only ever ADD lines, so a count BELOW the PR's declared total can only mean truncation.
+  it("ERRORs (exit 2) when fewer paths come back than the PR declares changed", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, "client/a.ts"].join("\n"),
+      FAKE_GH_CHANGED_FILES: "9",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("truncated");
+  });
+
+  it("control — the same paths with an agreeing declared count are gated normally, so the ERROR above is attributable to the mismatch alone", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, "client/a.ts"].join("\n"),
+      FAKE_GH_CHANGED_FILES: "2",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).not.toBe(2);
+  });
+
+  it("control — a rename SOURCE pushing the count ABOVE the declared total is not mistaken for truncation", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: "client/a.ts", previous_filename: "client/old.ts" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "2",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).not.toBe(2);
   });
 });

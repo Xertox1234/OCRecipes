@@ -67,6 +67,18 @@ printf '%s\n' "$*" >> "$GH_LOG"
 # would look identical to one that anchors itself.
 if [ -n "${FAKE_PIN_PWD:-}" ] && [ "$PWD" != "$FAKE_PIN_PWD" ]; then exit 1; fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "view" ]; then
+  # todo-automerge-guard.sh asks this endpoint for the PR's DECLARED changed-file count, so it
+  # can refuse a truncated file list. Answer that query with a count that agrees with FAKE_FILES
+  # by default, keeping the completeness check a no-op here so only the merge-gate behaviour
+  # under test can move.
+  for a in "$@"; do
+    case "$a" in
+      changedFiles)
+        printf '%s\n' "${FAKE_CHANGED_FILES:-$(printf '%s\n' "${FAKE_FILES}" | grep -c . || true)}"
+        exit 0
+        ;;
+    esac
+  done
   printf '%s\n' "${FAKE_VIEW_JSON}"; exit 0
 fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "diff" ]; then
@@ -80,12 +92,19 @@ if [ "${1:-}" = "api" ]; then
   # read is answered with todo frontmatter, and under this harness's DEFAULT FAKE_API_FAIL=1
   # -- which models only the TODO GATE being unable to read the archived todo -- it fails
   # closed and every safe-paths ALLOW row turns into an exit-2 ERROR.
-  case "${2:-}" in
-    */pulls/*/files)
-      [ -n "${FAKE_DIFF_FAIL:-}" ] && exit 1
-      printf '%s\n' "${FAKE_FILES}"; exit 0
-      ;;
-  esac
+  # Scan ALL arguments rather than matching $2: the contents call puts -H at $2 and reaches the
+  # frontmatter branch only by falling off the end of a positional case, so a later reordering
+  # of the file-list call would misroute it into the frontmatter branch silently -- which under
+  # this harness's default FAKE_API_FAIL=1 is exactly the seven-row exit-2 storm this stub was
+  # widened to repair.
+  _ep=""
+  for a in "$@"; do
+    case "$a" in */pulls/*/files) _ep="files" ;; esac
+  done
+  if [ "$_ep" = "files" ]; then
+    [ -n "${FAKE_DIFF_FAIL:-}" ] && exit 1
+    printf '%s\n' "${FAKE_FILES}"; exit 0
+  fi
   [ -n "${FAKE_API_FAIL:-}" ] && exit 1
   printf '%s\n' "${FAKE_TODO_MD:-}"; exit 0
 fi

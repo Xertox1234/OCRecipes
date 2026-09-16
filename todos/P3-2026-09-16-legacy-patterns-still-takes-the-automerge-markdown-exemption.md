@@ -23,9 +23,13 @@ checklists point AT, and it still takes the markdown exemption.
 Raised in the PR #978 security review and deliberately deferred rather than folded in, so the PR
 stayed inside its Scope Contract.
 
-The citing relationships are measured, not assumed: `.claude/agents/code-reviewer.md` cites
-`docs/legacy-patterns/` at 6 line positions, `mobile-reviewer.md` at 5, and the security-auditor
-reference list names `docs/legacy-patterns/security.md` as the full security pattern documentation.
+The citing relationships are real, and stated so a reader can check them with the obvious command:
+`grep -c 'docs/legacy-patterns' .claude/agents/code-reviewer.md` returns 7 and the same over
+`mobile-reviewer.md` returns 11 (both counts include each file's closing reference list as well as
+its inline checklist citations). The security-auditor reference list names
+`docs/legacy-patterns/security.md` as the full security pattern documentation. The decision here
+does not turn on the exact figure — only on the fact that the newly-held checklists point at this
+body — so no narrower hand-filtered count is quoted.
 
 **Why this is low and not high.** It is a frozen archive with no producer:
 `.claude/agents/code-reviewer.md` explicitly forbids writing there ("frozen archives, retired as
