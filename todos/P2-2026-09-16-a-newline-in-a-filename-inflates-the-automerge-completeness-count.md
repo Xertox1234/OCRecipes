@@ -1,5 +1,5 @@
 ---
-title: "A newline inside a filename forges an extra destination row, inflating todo-automerge-guard's completeness count and masking a truncated file"
+title: "A newline inside a filename forges an extra destination row in todo-automerge-guard — it inflates the completeness count AND satisfies the TODO GATE with an archive file that is not in the diff"
 status: backlog
 priority: medium
 created: 2026-09-16
@@ -33,14 +33,35 @@ The pair differs only by the injected line, so the pass is attributable to the f
 to the counts.
 
 Note the direction split, which is what keeps this at medium: the injected path is still **gated
-normally** (it lands in `files` and goes through the PATH GATE), so this is not a route to
-sneaking a protected path through. The damage is only to the completeness count.
+normally** by the PATH GATE, so this is not a route to sneaking a protected path past path
+classification.
+
+But `files` has a **second consumer**, and the damage is NOT confined to the completeness count.
+The TODO GATE discovers the archived todo by grepping `files` for `^todos/archive/.+\.md$`. A
+forged `F todos/archive/<path>` line therefore satisfies the "no `todos/archive/*.md` in the diff"
+HOLD using any archive file that merely exists in the PR's **head tree** — the frontmatter read is
+`contents/<path>?ref=refs/pull/N/head`, which resolves from the head tree, not from the diff.
+Measured three-way with a head-tree-aware shim: one plain changed file, no archive in the diff,
+declared 1 → **rc=1** "no todos/archive/\*.md in the diff"; the same run with a forged archive tail
+and that path present in the head tree → **rc=0** `guard: OK`; attribution control, identical
+forgery with the archive path absent from the head tree → **rc=1** via the 404 arm.
+
+Containment: the PATH GATE still gates every segment, and `merge-review-guard.sh` records that
+stage 1's ALLOW set is a strict subset of stage 2's, so this cannot widen the merge gate's ALLOW
+set. The consequence is confined to auto-merge arming by the executor.
 
 ## Background
 
-Reaching it needs BOTH a tracked filename carrying a literal newline AND simultaneous server-side
-truncation of the `pulls/{n}/files` endpoint. Neither is reachable in ordinary use, which is why
-this is hardening rather than a live bypass. It matters because of the consumer:
+Preconditions differ per consequence, and conflating them is how this gets deprioritised wrongly:
+
+- **Completeness inflation** needs BOTH a tracked filename carrying a literal newline AND
+  simultaneous server-side truncation of the `pulls/{n}/files` endpoint.
+- **The TODO-GATE flip needs the newline ALONE.** The probe that flipped rc 1 → 0 ran with
+  declared 1 and seen 2, so the truncation arm was not merely quiet — the count was ABOVE the
+  declared total and the arm correctly did not fire.
+
+Neither is reachable without a committed filename containing a literal newline, which is why this
+stays medium rather than high. It matters because of the consumer:
 `merge-review-guard.sh` treats this guard's exit 0 as "no review record required", so a masked
 truncation is a merge-gate bypass rather than merely a missed auto-merge hold.
 
@@ -56,7 +77,11 @@ truncation is a merge-gate bypass rather than merely a missed auto-merge hold.
       exit 2, so a bare status check cannot attribute the failure.
 - [ ] A must-still-pass control in the same run: ordinary rows with an agreeing declared count are
       gated normally, so the ERROR is attributable to the forged row.
-- [ ] Mutation-verified: with the fix reverted, the new row goes RED. An arm that cannot fail pins
+- [ ] **The TODO GATE's read of `files` is covered too.** The preferred fix above (a jq-emitted
+      count row compared against the distinct-`F` count) closes the completeness inflation and does
+      NOTHING about the forged-archive flip, so this todo worked as originally written would have
+      been closed with the measured rc 1 → 0 still live. Pin that flip with a row of its own.
+- [ ] Mutation-verified: with the fix reverted, the new rows go RED. An arm that cannot fail pins
       nothing.
 
 ## Implementation Notes

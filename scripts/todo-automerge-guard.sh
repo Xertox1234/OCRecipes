@@ -259,7 +259,13 @@ raw_files="$(gh api "repos/{owner}/{repo}/pulls/$PR/files" --paginate \
 # specific diagnostic below becomes unreachable.
 # `-n` first: a here-string of an EMPTY value still yields one empty line, which is not a valid
 # class, so an empty read would trip this arm and mask the clearer "no file changes" error below.
-if [ -n "$raw_files" ] && grep -qvE '^([FP] |X$)' <<< "$raw_files"; then
+# rc captured explicitly rather than tested inline: a broken regex exits 2, and a bare `if` reads
+# ANY nonzero as "every row classed" and skips this refusal entirely. Only rc 1 means "all rows
+# matched". Mirrors the rc_struct/rc_sens idiom the PATH GATE already uses for the same reason —
+# the fail-closed direction should be structural, not incidental.
+rc_class=0
+grep -qvE '^([FP] |X$)' <<< "$raw_files" || rc_class=$?
+if [ -n "$raw_files" ] && [ "$rc_class" -ne 1 ]; then
   echo "guard: ERROR PR #$PR — a changed-file row came back without a recognisable class, so the file list cannot be gated reliably. Fail-closed."
   exit 2
 fi
