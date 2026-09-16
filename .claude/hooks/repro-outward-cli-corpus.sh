@@ -1744,6 +1744,11 @@ add lp-verpin-railsvcdel DENY 'npx @railway/cli@latest service delete foo'
 add lp-verpin-npmpub     DENY 'npx npm@10 publish'
 add lp-verpin-npmrunota  DENY 'npx npm@10 run update:preview'
 add lp-verpin-yarnbare   DENY 'npx yarn@latest update:preview'
+# 11th row, ADDED 2026-09-16 (round-2 review's own findings, second pass):
+# the `gh` clause was the one of the original ten GAP-3 clauses that missed
+# the `_OUT_PKG_VERSION_PIN` splice -- `npx gh@latest pr merge 42 --auto`
+# measured ALLOW pre-fix, reaching an unreviewed admin merge.
+add lp-verpin-ghmerge    DENY 'npx gh@latest pr merge 42 --auto'
 
 # axis: PACKAGE-DIRECTORY PATH INVOCATION (2026-09-16, round-2 security
 # review). eas-cli's own package.json declares bin: {"eas": "./bin/run"} --
@@ -1832,6 +1837,24 @@ add lp-lflag-fp-tsc      ALLOW 'npx -q tsc --noEmit'
 # future accidental fix of this slot is a visible pin change, not a silent
 # one.
 add lp-lflag-residual-interior ALLOW 'npm --loglevel=silent exec eas update --branch preview'
+
+# axis: FAST-PATH NEEDLE-LIST GAP (2026-09-16, round-2 review's own findings,
+# second pass). `cmd_fastpath_has`'s needle list gated EVERY launcher-family
+# check (incl. GAP-1's "denies UNCONDITIONALLY" claim) behind
+# eas/railway/npm/yarn/gh -- `npx`/`bunx`/`bun x`/`bun run` are launcher
+# WORDS, not gated binary names, so a command naming neither the launcher's
+# own needle nor a gated binary anywhere in its text never reached the slow
+# path at all. Measured ALLOW pre-fix: `npx --package=my-tool -c '...'`,
+# `npx -p my-tool -- update --branch preview`. Also: a discriminating row for
+# GAP-1's `--package`/`-p` arm specifically -- the round-2 `_OUT_LAUNCHER`
+# flag-run widening made the earlier `lp-af-*`/`lp-verpin-*` `--package`/`-p`
+# rows redundant with check #1 (they now deny via "reached through a
+# launcher", not GAP-1's own message), so this row uses an apparently-ungated
+# verb (`tsc --version`) behind `--package` to force GAP-1's OWN branch,
+# matching test-guard-outward-cli.sh's identical discriminating assertion.
+add lp-fpneedle-callnoNeedle DENY "npx --package=my-tool -c 'update --branch preview'"
+add lp-fpneedle-pkgnoNeedle  DENY 'npx -p my-tool -- update --branch preview'
+add lp-gap1-discriminating   DENY 'npx --package=eas-cli -- tsc --version'
 
 printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' \
   ID EXPECT PRECISE NOJQ NOLIB NOAWK NOTE

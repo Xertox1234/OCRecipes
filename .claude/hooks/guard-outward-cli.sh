@@ -169,6 +169,29 @@
 #     (rather than the one slot actually found bypassed) would be the same
 #     invented-enumeration risk in the other direction. Measured: still
 #     ALLOWS.
+#   * ROUND-2 CLOSED, 2026-09-16 (same todo, security review, second pass).
+#     The `cmd_fastpath_has` pre-filter gating every check in this file
+#     needed `npx`/`bun` in its needle list — `npx`/`bunx`/`bun x`/`bun run`
+#     are launcher WORDS, not gated binary names, so a command like `npx
+#     --package=my-tool -c '...'` never contained any of the original five
+#     needles (eas/railway/npm/yarn/gh) anywhere in its text, and the whole
+#     hook exited at the fast-path stage before GAP-1's "denies
+#     UNCONDITIONALLY" check (or any other launcher-family check) was ever
+#     evaluated. Also, the `gh` blanket-deny clause was the one clause of ten
+#     that GAP 3's version-pin splice missed (`npx gh@latest pr merge 42
+#     --auto` reached an unreviewed admin merge). Both now closed — see
+#     `_OUT_LAUNCHER_AMBIG_FLAG`'s call site and the version-pin splice on the
+#     `gh` clause.
+#   * REMAINING, DELIBERATELY OUT OF SCOPE (same round): a RELOCATED, RENAMED,
+#     COPIED, or PACKAGE-ALIAS-INSTALLED (`npm install <alias>@npm:eas-cli@
+#     latest`) copy of the real script defeats `_OUT_PKGDIR_EASCLI`/
+#     `_OUT_PKGDIR_RAILWAYCLI` (both literal "eas-cli/"/"@railway/cli/"
+#     substring matches) the same way GAP-2 itself exists because the
+#     on-disk script name differs from the binary name — this is the direct,
+#     foreseeable extension of that same weakness, one level further. Not
+#     closeable by a name-based matcher without the same invented-enumeration
+#     risk already declined above; `cp node_modules/eas-cli/bin/run /tmp/x &&
+#     node /tmp/x update --branch preview` measured ALLOW.
 #   * `eas publish` does not exist in the installed eas-cli (20.1.0 at time of
 #     writing) — the pattern is kept anyway per the acceptance criteria's
 #     literal wording and to catch an older/different CLI version; a no-op
@@ -1696,7 +1719,21 @@ case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esa
 # case-SENSITIVE fast path would exit 0 on `EAS update` before any of them ran. The shopt
 # bracketing stays tightly scoped to just this call — lib/fastpath-filter.sh's
 # cmd_fastpath_has does not (and, in bash 3.2, cannot) toggle it itself. (`pnpm` needs no
-# entry of its own — it contains `npm`.)
+# entry of its own — it contains `npm`. `bunx` needs no entry of its own — it contains `bun`.)
+#
+# `*npx*`/`*bun*` ADDED 2026-09-16 (round-2 security review of the launcher-family axis
+# below). Every launcher-family/path-qualified deny() check — INCLUDING GAP-1's
+# ambiguous-flag check, whose own deny message claims it fires "UNCONDITIONALLY" — sits
+# entirely behind this pre-filter. `npx`/`bunx`/`bun x`/`bun run` are launcher WORDS, not
+# gated BINARY names, so a command like `npx --package=eas-cli -c 'eas update --branch
+# preview'` never contains any of the five original needles anywhere in its text — the
+# whole hook exited here, before GAP-1's regex (or any other launcher-family check) was
+# ever evaluated. Measured ALLOW pre-fix for exactly the launcher forms and target names
+# the launcher-family axis exists to cover: `npx --package=my-tool -c '...'`, `npx -p
+# my-tool -- update --branch preview`, `bunx --package=my-tool -c '...'`. This is a
+# DIFFERENT layer than the other GAP fixes below — those are regex-coverage gaps in the
+# slow path; this is the slow path never being REACHED at all for two of the axis's own
+# launcher forms.
 #
 # If the helper is unsourceable, do NOT exit here — fall through to the lib/cmd-detect.sh
 # check below, which already has its own tested fail-closed handling (crude_smells_outward);
@@ -1704,7 +1741,7 @@ case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esa
 # decision.
 if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
   shopt -s nocasematch
-  cmd_fastpath_has "$CMD" '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*'
+  cmd_fastpath_has "$CMD" '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*' '*npx*' '*bun*'
   # _OUT_FP_RC is an EXIT-STATUS capture (0 = matched), not a boolean "found" flag — code
   # review, 2026-09-02: the old inline filter's `_OUT_FASTPATH=1` meant "matched"; this is
   # `$?` from cmd_fastpath_has, where 0 means "matched" — same polarity as the check below,
@@ -4105,7 +4142,20 @@ if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_
    || grep -Eqi "${_OUT_POS_PREFIX_LP}(yarn|pnpm)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release${_OUT_SEP}(create|delete|delete-asset|edit|upload)|repo${_OUT_SEP}(create|delete|archive|unarchive|edit|rename|sync|fork)|api)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+# VERSION-PIN on `gh` itself (2026-09-16, round-2 review correction): the
+# header comment at GAP 3's definition above originally reasoned "no
+# npm-distributed package provides a `gh` binary, so a version-pin axis on gh
+# is not a real vector" — that reasoning is about ALIASED PACKAGE names
+# (`npx <alias>@version`, where alias resolves to a DIFFERENT binary), and is
+# irrelevant here: `gh@latest` pins the version on `gh`'s OWN literal launcher
+# spelling (`npx gh@latest ...`), the identical syntax slot `eas@latest`/
+# `railway@latest` already cover on the other nine clauses, regardless of
+# whether `gh` itself is npm-distributed — npx/npm's version-pin grammar
+# applies to ANY token in that position. Measured ALLOW pre-fix: `npx
+# gh@latest pr merge 42 --auto`, `npx gh@1.0.0 pr merge 42 --auto`, `npx
+# gh@latest api repos/o/r -X POST` — reaching the single highest-value sink
+# in this file (an unreviewed, branch-protection-bypassing admin merge).
+if grep -Eqi "${_OUT_POS_PREFIX_LP}gh${_OUT_PKG_VERSION_PIN}${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release${_OUT_SEP}(create|delete|delete-asset|edit|upload)|repo${_OUT_SEP}(create|delete|archive|unarchive|edit|rename|sync|fork)|api)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a gated 'gh' subcommand reached through a launcher or a path-qualified invocation denies UNCONDITIONALLY — including a shape that carries a carve-out flag (--auto with no --admin/--repo, or pr create/comment with no --repo) in bare command position. This repo's own sanctioned gh usage (the /todo automerge pipeline, and PR creation via the GitHub MCP tools) never goes through a launcher or a path, so this is a deliberate over-denial, not an attempt to re-derive the bare-position carve-out logic against a second grammar. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 

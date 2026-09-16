@@ -4169,13 +4169,22 @@ assert_allow "a /-bearing quoted mention stays allowed" \
 # flags, package-directory path aliasing, version-pin spelling) and the
 # flag-run generalization (CRITICAL: closed per-launcher flag enumeration
 # defeated every launcher-family check, incl. the gh-family blanket-deny) --
-assert_deny "npx --package=eas-cli -- eas update denies (ambiguous target, fail-closed)" \
+# NOTE: these first two rows deny via check #1 ("reached through a
+# launcher"), NOT GAP-1's own message -- the round-2 _OUT_LAUNCHER flag-run
+# widening (below) makes _OUT_LAUNCHER itself absorb "--package=eas-cli --"
+# as ordinary flags, so check #1 independently reaches "eas update" too, and
+# deny() exits on the FIRST match, which is textually earlier in the file.
+# Redundant-but-correct defense in depth, not a regression -- GAP-1's OWN
+# dedicated coverage (the case check #1 CANNOT reach) is the -c/--call row
+# right below, where the target is blanked as quoted prose before check #1
+# ever sees it.
+assert_deny "npx --package=eas-cli -- eas update denies (via check #1, redundant launcher-axis coverage)" \
   "$(json 'npx --package=eas-cli -- eas update --branch preview')" \
-  "combined with --package/-p/-c/--call"
-assert_deny "npm exec --package=eas-cli -- eas update denies (same GAP-1 shape)" \
+  "reached through a launcher"
+assert_deny "npm exec --package=eas-cli -- eas update denies (via check #1, same redundant coverage)" \
   "$(json 'npm exec --package=eas-cli -- eas update --branch preview')" \
-  "combined with --package/-p/-c/--call"
-assert_deny "npx --package=eas-cli -c '...' denies (the -c/--call value is BLANKED prose, cannot be scoped)" \
+  "reached through a launcher"
+assert_deny "npx --package=eas-cli -c '...' denies (GAP-1's OWN coverage: the -c/--call value is BLANKED prose, check #1 cannot see it)" \
   "$(json "npx --package=eas-cli -c 'eas update --branch preview'")" \
   "combined with --package/-p/-c/--call"
 assert_deny "npx @railway/cli@latest up denies (version-pin spelling, npx --help's own synopsis form)" \
@@ -4213,6 +4222,23 @@ assert_allow "npm --loglevel=silent exec eas update stays allowed (DOCUMENTED RE
 assert_deny "bare-form eas update still denies (negative control has a positive in this same block)" \
   "$(json 'eas update --branch preview')" \
   "command-position 'eas update/publish/submit'"
+
+# -- round-2 review's OWN findings, second pass (2026-09-16): the fast-path
+# pre-filter gated every launcher-family check behind a needle list missing
+# npx/bun, and the gh clause was the one of ten GAP-3 clauses missing the
+# version-pin splice --
+assert_deny "npx --package=my-tool -c '...' denies (fast-path fix: no eas/railway/npm/yarn/gh needle, npx/bun previously invisible)" \
+  "$(json "npx --package=my-tool -c 'update --branch preview'")" \
+  "combined with --package/-p/-c/--call"
+assert_deny "npx -p my-tool -- update denies (same fast-path fix, --package/-p arm)" \
+  "$(json 'npx -p my-tool -- update --branch preview')" \
+  "combined with --package/-p/-c/--call"
+assert_deny "npx gh@latest pr merge --auto denies (gh clause was the one of ten clauses missing the version-pin splice)" \
+  "$(json 'npx gh@latest pr merge 42 --auto')" \
+  "gated 'gh' subcommand"
+assert_deny "npx --package=eas-cli -- tsc --version denies via GAP-1 (discriminates the --package/-p arm from check #1's now-redundant coverage)" \
+  "$(json 'npx --package=eas-cli -- tsc --version')" \
+  "combined with --package/-p/-c/--call"
 
 _PIN_RAN=1
 # 462 -> 491 on 2026-09-06/07: +27 across three rounds, itemised because the
@@ -4472,7 +4498,14 @@ _PIN_RAN=1
 # npm->exec flag slot, deliberately out of scope), 1 bare-form DENY control.
 # 6+5+2+1+1+1 = 16. MEASURED, NOT COMPUTED below -- if the run disagrees, the
 # run wins.
-EXPECTED_TOTAL=837
+# 837 -> 841 (2026-09-16, same todo, round-2 review's OWN findings second
+# pass): +4 for the fast-path needle-list fix (npx/bun previously invisible
+# to every launcher-family check unless the text also happened to contain
+# eas/railway/npm/yarn/gh), the gh clause's missing version-pin splice, and
+# one discriminating row for GAP-1's --package/-p arm (the round-2 flag-run
+# widening made the existing --package/-p test rows redundant with check #1,
+# per code-reviewer's WARNING). MEASURED, NOT COMPUTED below.
+EXPECTED_TOTAL=841
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
