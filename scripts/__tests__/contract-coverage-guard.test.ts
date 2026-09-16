@@ -27,14 +27,7 @@ import {
 } from "../lib/contract-coverage";
 
 /** Ratchet — remove an entry as soon as its provider-side assertion lands. */
-const CONTRACT_ALLOWLIST: ReadonlySet<string> = new Set([
-  "coachBlockSchema",
-  // Added 2026-09-15 (A0 final review) after widening the extractor to
-  // sub-schema parses: client/components/coach/coach-chat-utils.ts parses
-  // mealPlanCardSchema.shape.days. Its anchor lands with the coach-blocks
-  // anchor (mealPlanCardSchema is a member of the coachBlockSchema union).
-  "mealPlanCardSchema",
-]);
+const CONTRACT_ALLOWLIST: ReadonlySet<string> = new Set<string>([]);
 
 /**
  * Permanent: schemas the client parses that are NOT server responses (form
