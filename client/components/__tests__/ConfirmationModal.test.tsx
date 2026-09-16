@@ -246,7 +246,7 @@ describe("ConfirmationModal", () => {
     // header is rendered by React Navigation (a sibling
     // `behindContentA11yProps` structurally cannot reach) can drive
     // `navigation.setOptions()` from it — see
-    // todos/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md
+    // todos/archive/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md
     // and the 5 screens that consume it that way (Settings, SavedItems,
     // GroceryLists, Pantry, CookSessionReview). This only pins that the
     // signal flips true/false on presented/dismissed, the same jsdom-visible
@@ -256,8 +256,12 @@ describe("ConfirmationModal", () => {
     // client/screens/meal-plan/__tests__/CookbookCreateScreen.test.tsx for
     // the in-repo pattern that asserts a `setOptions` call's payload
     // directly), not something only a device pass could ever verify —
-    // closing it needs the 5 screens' own test files, deliberately outside
-    // this todo's Scope Contract.
+    // closing it needs the 5 screens' own test files. TWO of the five now
+    // exist: GroceryListsScreen.header.test.tsx and
+    // PantryScreen.header.test.tsx (same directory as the CookbookCreate
+    // precedent above) assert that payload for both dual-mounted screens.
+    // The gap remains open only for Settings, SavedItems and
+    // CookSessionReview.
     it("is false before the sheet is presented", () => {
       renderComponent(<TestHarness options={defaultOptions} />);
       expect(screen.getByTestId("is-open").textContent).toBe("false");

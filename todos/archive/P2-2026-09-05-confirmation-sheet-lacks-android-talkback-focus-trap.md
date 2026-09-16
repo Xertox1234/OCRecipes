@@ -51,7 +51,7 @@ the fix touches the shared hook's API and all 8 call sites.
       screens its back/close control stays reachable, so this criterion is not
       met end to end. `behindContentA11yProps` structurally cannot reach a
       sibling the navigator renders. Tracked by
-      `todos/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`.
+      `todos/archive/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`.
 - [x] The mechanism covers all 8 existing `useConfirmationModal()` callers
       (CookSessionCapture, CookSessionReview, SavedItems, ChatList, BatchScan,
       GroceryLists, Pantry, Settings) without per-screen bespoke wiring where
@@ -116,7 +116,7 @@ the fix touches the shared hook's API and all 8 call sites.
 ### 2026-09-16
 
 - Residual 1 (navigator-rendered header stays reachable on 5 screens) closed
-  by `todos/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`:
+  by `todos/archive/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`:
   `useConfirmationModal()` now also returns `isOpen`, and Settings,
   SavedItems, GroceryLists, Pantry, and CookSessionReview each drive
   `navigation.setOptions()` from it (`headerBackVisible` for the native
@@ -161,7 +161,7 @@ importantForAccessibility}` pair derived from internal `isOpen` state
      cannot hide a sibling rendered by the navigator. The flagship case of
      this todo — Settings → Sign Out — is one of the 5, so the escape route
      it was written to close is still open at that surface. Now tracked by
-     `todos/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`.
+     `todos/archive/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`.
   2. `CookSessionCaptureScreen`'s bare `<CameraView>` is the only sibling in
      that return block without the spread. DEFERRED, with the reason:
      `CameraViewProps` (`client/camera/types.ts:36`) is a closed interface

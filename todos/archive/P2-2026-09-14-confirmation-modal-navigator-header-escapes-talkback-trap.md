@@ -140,11 +140,16 @@ Also note `focusable={false}` does NOT exclude a node from the TalkBack tree —
   back-button and custom-close-X mechanisms interact.
 - `DEFERRED_WARNINGS` from code review (not fixed, out of Scope Contract's file list or
   judged non-trivial to fix safely):
-  1. No test asserts the actual `navigation.setOptions()` payload for any of the 5 screens.
-     `SettingsScreen.test.tsx`'s wholesale `ConfirmationModal` mock has no `isOpen` field
-     (permanently `undefined`), and `GroceryListsScreen.test.tsx`'s `else`/RootStack-modal
-     branch — the one carrying both native-interaction bugs above — has zero test coverage
-     in the repo. In-repo precedent for asserting a `setOptions` payload directly:
+  1. PARTIALLY CLOSED in this same PR (commits be2cbbd5, 22b64511), after review. The
+     `else`/RootStack-modal branch — the one carrying both native-interaction bugs above —
+     had zero test coverage in the repo when this was written. It is now covered for BOTH
+     dual-mounted screens by `GroceryListsScreen.header.test.tsx` and
+     `PantryScreen.header.test.tsx`, which assert the `setOptions` payload directly and
+     were mutation-verified (reverting the three-state value to a plain `!isOpen` fails
+     exactly the closed-state modal case in each file, and nothing else).
+     STILL OPEN for the other three screens: `SettingsScreen.test.tsx`'s wholesale
+     `ConfirmationModal` mock has no `isOpen` field (permanently `undefined`), and
+     SavedItems and CookSessionReview have no payload assertion either. In-repo precedent:
      `client/screens/meal-plan/__tests__/CookbookCreateScreen.test.tsx:139-163`.
   2. The close-button Pressable JSX in `GroceryListsScreen.tsx`/`PantryScreen.tsx` duplicates
      `RootStackNavigator.tsx`'s inline `headerLeft` and permanently shadows it from mount
