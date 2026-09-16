@@ -2132,7 +2132,7 @@ fi
 # All three manifests below were REGENERATED FROM THE RUN, not hand-merged. Hand-merging
 # them is how an earlier resolution in this same file silently dropped flagvcasearm-*
 # and produced a 21-member pin that still looked plausible.
-EXPECTED_ROWS=876
+EXPECTED_ROWS=912
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 761 of the 876 rows deny on the precise path; the other 115 are ALLOW there: 91
@@ -2246,7 +2246,7 @@ EXPECTED_ROWS=876
 # only the first seven are ALLOW on all four. An earlier revision on the branch
 # said all of them were "ALLOW on all four paths" -- one FORM's property asserted
 # of the whole CLASS, the defect that branch's own solution doc is named after.
-EXPECTED_DENY_ATTRIB_ROWS=761
+EXPECTED_DENY_ATTRIB_ROWS=780
 
 # 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -2265,7 +2265,7 @@ EXPECTED_DENY_ATTRIB_ROWS=761
 # failures. Pinning 0 here would make this gate permanently red, and a
 # permanently red gate gets disabled -- which is how the corpus ended up
 # unguarded in the first place.
-EXPECTED_PRECISE_GAPS=24
+EXPECTED_PRECISE_GAPS=41
 
 # PRE-EXISTING STALENESS, found incidentally while bumping this pin for the
 # brace-range fix (2026-09-14) and left AS FOUND rather than silently
@@ -2312,7 +2312,7 @@ EXPECTED_PRECISE_GAPS=24
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=279
+EXPECTED_ALLPATH_GAPS=303
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -2339,6 +2339,23 @@ verbvcasecomment-ghcomment
 verbvcasecomment-ghmerge
 verbvcasecomment-npmpub
 verbvcasecomment-railup
+flagvcaseparen-easbld
+flagvcaseparen-ghapi
+flagvcaseparen-ghcomment
+toolvcaseparen-easbld
+toolvcaseparen-easupd
+toolvcaseparen-ghapi
+toolvcaseparen-ghcomment
+toolvcaseparen-ghmerge
+toolvcaseparen-npmpub
+toolvcaseparen-railup
+verbvcaseparen-easbld
+verbvcaseparen-easupd
+verbvcaseparen-ghapi
+verbvcaseparen-ghcomment
+verbvcaseparen-ghmerge
+verbvcaseparen-npmpub
+verbvcaseparen-railup
 PIN_PRECISE_EOF
 )
 
@@ -2622,6 +2639,30 @@ vft-bang p=ALLOW j=DENY l=DENY a=DENY
 vft-fd p=ALLOW j=DENY l=DENY a=DENY
 vft-gt p=ALLOW j=DENY l=DENY a=DENY
 vft-in p=ALLOW j=DENY l=DENY a=DENY
+flagvcaseparen-easbld p=ALLOW j=DENY l=DENY a=DENY
+flagvcaseparen-ghapi p=ALLOW j=DENY l=DENY a=DENY
+flagvcaseparen-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+toolvcasebrace-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+verbvcaseparen-easbld p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-easupd p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-ghapi p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-npmpub p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-railup p=ALLOW j=DENY l=DENY a=DENY
 PIN_ALLPATH_EOF
 )
 
@@ -3401,6 +3442,25 @@ vvar-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT
 vvar-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 vvar-npmpub        : command-position 'npm publish' pushes a package to the registry.
 vvar-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+flagvcasebrace-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvcasebrace-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcasebrace-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvcasebrace-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvcaseparen-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvcasebrace-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvcasebrace-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvcasebrace-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvcasebrace-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvcasebrace-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvcasebrace-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvcasebrace-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvcasebrace-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvcasebrace-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvcasebrace-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvcasebrace-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvcasebrace-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvcasebrace-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvcasebrace-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
