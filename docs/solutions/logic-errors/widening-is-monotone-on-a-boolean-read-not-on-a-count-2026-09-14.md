@@ -7,6 +7,7 @@ module: shared
 applies_to: [".claude/hooks/*.sh", "scripts/**/*.sh"]
 symptoms: ["A guard widened to close a bypass starts ALLOWING a command its previous version denied, on a DENY-shaped consumer", "An occurrence count drops from 2 to 1 after a pattern was made more permissive", "A multi-occurrence ambiguity refusal silently stops firing", "The argument 'widening only ever adds matches, so it can only add denies' was applied to a consumer that counts rather than tests", "Only one member of a needle family regresses and the others are structurally immune"]
 created: 2026-09-14
+last_updated: '2026-09-16'
 severity: critical
 ---
 
@@ -127,6 +128,73 @@ narrowing the arms alone flipped the bare openers and left the executing spellin
   axis that varies exactly the characters the fix excludes can only confirm the fix; see the
   companion note in the See Also below.
 
+### The ordering axis: psub-after-verb is countable, psub-before-verb is not (2026-09-16)
+
+Measured while attempting the follow-on todo for the two-token families
+(`pr merge`/`pr create|comment`). The SEPSAFE template (a separator-safe grammar, max()'d
+against the wide count) is **not a general fix for "a process substitution defeats the
+count"** — it only works when the FIRST occurrence can complete as a short, self-contained
+match BEFORE the separator reaches the psub:
+
+- **Psub AFTER a complete first occurrence** (`gh -a api -c <(gh api ...)`, or the two-token
+  analogue `gh pr merge 7 -c <(gh pr merge 42)`): the first match ends cleanly right at its
+  own verb, the psub becomes unconsumed trailing text, and a FRESH match starts at the `(`
+  opener. Both the wide grammar and SEPSAFE correctly count 2 here (measured: the two-token
+  case counts 2 under the **wide grammar alone** — SEPSAFE adds nothing, because a two-token
+  verb's globals arm has only one value slot and cannot also swallow past the psub the way a
+  single-token verb's can; see this doc's own Root Cause).
+- **Psub BEFORE the verb** (`gh -a -c <(gh pr merge 7) pr merge 42`, and — newly measured —
+  the single-token analogue `gh -a -c <(gh api /x) api ...`): the outer "gh" cannot reach its
+  OWN verb tokens without first passing through the nested invocation's text, and grep -o's
+  non-overlapping matching commits to using that outer "gh" for whichever match it finds
+  first. **This is unfixable by narrowing the separator grammar** — both the wide and the
+  separator-safe grammar land on the SAME nested tokens (measured on the two-token case:
+  wide=1, sepsafe=1, both matching only the inner decoy's own "gh pr merge 7"; the outer,
+  really-executing verb has no separate "gh" of its own to anchor a second match under any
+  grammar). **This is true of `gh api` too, not just the two-token families** — the earlier
+  "closed" fix only handled the psub-AFTER-verb ordering; psub-BEFORE-verb was never tested
+  against `gh api` before this finding.
+
+**A follow-on "does the matched span cross a command-position boundary" check was also tried
+and rejected.** The idea: if the separator run absorbed one of `_OUT_POS_PREFIX`'s own anchor
+characters (`;&|(` backtick `{!`) anywhere in its middle, treat that as evidence a second
+command's text was folded in. Measured against the full test suite: **it reddened 23
+unrelated, already-correct assertions**, because those same anchor bytes appear in ordinary,
+non-hostile constructs the guard already handles correctly through OTHER mechanisms —
+`&` inside an fd-duplication redirect (`gh pr 2>&1 merge 42`), `|` inside `>|`, and `;`/`&&`/
+`||` gluing an UNRELATED, verb-less preceding `gh` invocation (`gh --auto -x;gh pr merge 42`,
+where the swallowed `;gh` never contains a competing `pr`/`merge` pair at all — it is
+correctly denied today via the separate --auto-carve-out clause check, not via occurrence
+count, and the new check could not tell that apart from the genuinely nested case). **A
+"contains an anchor byte" test cannot distinguish "swallowed a nested SECOND invocation of
+the same needle" from "swallowed ordinary redirect syntax or an unrelated command" — the
+byte alone is not the signal.** No narrower, still-general signal was found; the shape is
+denied today for a coincidental reason (the `--auto`/`--repo` carve-out finds no
+authorisation in the inner decoy's clause) and is pinned as a tripwire rather than closed.
+
+### An UNFIXED, more severe residual found while testing this (2026-09-16)
+
+`gh -a -c <(gh api /x) api -f merge_method=squash /repos/o/r/pulls/42/merge` is **ALLOWED**
+by the unmodified guard, measured in its own directory (a `/tmp` copy breaks `$HERE`-relative
+`lib/` sourcing and gives a false ALLOW for the wrong reason — see the process note below).
+This is a field-based (`-f`, no `-X` token) mutating `gh api` call at a merge endpoint,
+hidden by the SAME psub-before-verb ordering as this doc's own two-token finding, on a family
+this repo's records describe as "closed" (2026-09-13/14). It was found, not fixed — out of
+scope for the todo that surfaced it (which covered only the two-token families) and touching
+`guard-outward-cli.sh` again risked colliding with concurrent PRs on the same file. Flagged
+for human triage rather than auto-filed (Critical/High severity per this repo's own
+deferred-item policy).
+
+### Process note: compare against a prior hook revision from inside its own directory
+
+Copying a hook script to `/tmp` for an A/B comparison silently breaks `$HERE`-relative
+`lib/*` sourcing (`$HERE` resolves to `/tmp`, which has no sibling `lib/`), so the copy takes
+the "lib is unsourceable" fallback path instead of running the real logic — producing a
+plausible-looking but WRONG verdict for the wrong reason. A "regression" measured this way
+(`gh -t x pr merge 42 --auto --squash` appeared to newly deny) evaporated once the comparison
+copy was placed at `.claude/hooks/guard-outward-cli.ORIGINAL.sh` (a real sibling of `lib/`)
+instead. Any before/after comparison of a hook must run from inside `.claude/hooks/`.
+
 ## Related Files
 
 - `.claude/hooks/guard-outward-cli.sh` — `_OUT_GH_GLOBALS_SEPSAFE`, `_OUT_SEP_SEPSAFE`, and the
@@ -135,7 +203,10 @@ narrowing the arms alone flipped the bare openers and left the executing spellin
   command-position openers
 - `.claude/hooks/test-guard-outward-cli.sh` — the process-substitution and anchor-opener rows
 - `todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md`
-  — the same miscount, still open, on the two-token families
+  — status: blocked (not archived): the two-token families' psub-before-verb miscount is
+  proved unfixable via occurrence counting (both the SEPSAFE template and a boundary-crossing
+  check were tried and rejected, per the sections above), and it also surfaced an unfixed,
+  more severe `gh api` residual on the SAME ordering — a human decision is needed
 
 ## See Also
 

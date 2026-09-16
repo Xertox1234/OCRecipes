@@ -318,14 +318,26 @@ add ghrootv-selfrepo DENY 'gh -t x pr merge 42 -R Xertox1234/OCRecipes'
 #       wide  ->  [gh -a api -c x;gh api ]  COUNT=1  -> silently ALLOWED
 #
 # `gh api` is the ONLY single-token gh needle in the guard; the two-token families
-# (`pr merge`, `pr create|comment`, `release ...`, `repo ...`) are structurally immune,
-# because each globals arm carries at most ONE optional value slot -- a needle's FIRST token can
-# be eaten as a value (` -a pr` matches) but its SECOND can then neither open a fresh arm nor be
-# consumed, so no single match absorbs a whole second occurrence. An earlier draft said "the
-# second token is not a dash token and so can never be a flag's value", which is backwards: a
-# non-dash token is exactly what qualifies AS a value. That is
-# why this axis varies only the api family -- a deliberate scope, not a hand-picked subset,
-# and the reason is stated so the next reader can check it rather than trust it.
+# (`pr merge`, `pr create|comment`, `release ...`, `repo ...`) are structurally immune
+# TO THIS COLLAPSE, because each globals arm carries at most ONE optional value slot -- a
+# needle's FIRST token can be eaten as a value (` -a pr` matches) but its SECOND can then
+# neither open a fresh arm nor be consumed, so no single match absorbs a whole second
+# occurrence. An earlier draft said "the second token is not a dash token and so can never be
+# a flag's value", which is backwards: a non-dash token is exactly what qualifies AS a value.
+# That is why this axis varies only the api family -- a deliberate scope, not a hand-picked
+# subset, and the reason is stated so the next reader can check it rather than trust it.
+#
+# THE IMMUNITY IS SCOPED TO THIS ONE MECHANISM, NOT TO EVERY COLLAPSE THE SEPARATOR CAN
+# CAUSE, and a later finding corrected an earlier draft of this file that read "cannot
+# collapse" as "is counted correctly". `_OUT_SEP` interpolates the shared `_CMD_REDIR`, whose
+# target class admits `(`, so a process substitution PRECEDING the verb (`gh -a -c
+# <(gh pr merge 7) pr merge 42`) also collapses the two-token families' count to 1 -- proved
+# unfixable via occurrence counting (the outer, really-executing verb has no separate "gh" of
+# its own to anchor a second match once the nested invocation's "gh" completes its own), and
+# left open as a documented, denied-for-a-different-reason residual. See
+# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md
+# and the TRIPWIRE rows in test-guard-outward-cli.sh (search "TRIPWIRE: a hidden second pr
+# merge").
 #
 # EXPECTED=DENY on the AMBIGUITY reason, not the method reason. The `-X`/`--method` check is
 # not a sufficient compensating control: real `gh` sends POST when `-f` fields are present, so

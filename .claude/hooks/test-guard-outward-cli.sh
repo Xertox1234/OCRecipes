@@ -4008,8 +4008,9 @@ assert_deny "...opening at !" \
 # syntax, not as evidence of a second command. See
 # docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md
 # for the full mechanism and both rejected approaches, and
-# todos/archive/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md
-# (closed as blocked/documentation — AC1 is unreachable as worded for this ordering).
+# todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md
+# (status: blocked, not archived — AC1 is unreachable as worded for this ordering; a human
+# decision is needed given the more severe residual that finding surfaced).
 assert_deny "TRIPWIRE: a hidden second pr merge is miscounted but still denies" \
   "$(json 'gh -a -c <(gh pr merge 7) pr merge 42')" \
   "without a REAL --auto flag"
