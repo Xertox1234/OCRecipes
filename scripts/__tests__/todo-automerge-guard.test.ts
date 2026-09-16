@@ -52,7 +52,9 @@ if [ "$1" = "api" ]; then
         printf '%s' "$FAKE_GH_PR_FILES_JSON" | jq -r "\${jqexpr:-.}"
         exit 0
       fi
-      printf '%s\\n' "$FAKE_GH_DIFF_FILES"
+      # Emit the destination CLASS the guard now reads, so its completeness check counts FILES.
+      # Tests keep supplying plain paths; the prefix is added here rather than in every row.
+      printf '%s\\n' "$FAKE_GH_DIFF_FILES" | sed -e '/^$/d' -e 's/^/F /'
       exit 0
       ;;
   esac
@@ -1179,5 +1181,43 @@ describe("todo-automerge-guard.sh (a truncated file list is refused, not gated)"
       FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
     });
     expect(status).not.toBe(2);
+  });
+});
+
+describe("todo-automerge-guard.sh (rename sources cannot MASK a truncated file list)", () => {
+  // The first version of the completeness check counted LINES against a FILE count. Because a
+  // rename source is an extra line, R renames masked R files truncated away — measured: declared
+  // 3 with two destinations plus one rename source reached 3 lines and returned OK, so a
+  // protected .claude/agents/ markdown truncated out of the page went from HOLD to a merge-gate
+  // pass. Counting destination rows against declared files is what closes it, and this row is
+  // the regression pin: it is GREEN only while the two sides measure the same unit.
+  it("ERRORs (exit 2) when a rename source pads the line count up to the declared total", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: "client/a.ts", previous_filename: "client/old.ts" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "3",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("truncated");
+  });
+
+  // A rename whose source is reported as an EMPTY STRING rather than absent: jq truthiness makes
+  // "" TRUE, so the original sentinel predicate skipped it and emitted a blank path that both
+  // the count and the gating loop then dropped silently. GitHub does not emit this today; the
+  // predicate is hardened rather than relying on that.
+  it("ERRORs (exit 2) on a renamed row whose previous_filename is an empty string", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: "client/a.ts", status: "renamed", previous_filename: "" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "2",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("previous_filename");
   });
 });

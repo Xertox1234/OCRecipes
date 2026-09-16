@@ -240,11 +240,17 @@ SENSITIVE_INTENT_KEYWORDS='auth|jwt|login|password|admin|premium|subscription|ia
 # exit 0 as "no review record required", so a short list is a MERGE-GATE bypass rather than
 # merely a missed auto-merge HOLD. The count check below is the actual completeness detector.
 # Error handling is unchanged: gh failure exits 2, empty output exits 2.
-files="$(gh api "repos/{owner}/{repo}/pulls/$PR/files" --paginate \
-  --jq '.[].filename, (.[] | select(.previous_filename) | .previous_filename), (.[] | select(.status == "renamed" and (.previous_filename | not)) | "__RENAME_SOURCE_MISSING__")')" || {
+# Rows are CLASSED on the way out: `F ` a destination (one per changed FILE), `P ` a rename
+# SOURCE, `X` a rename whose source is missing. The class is what lets the completeness check
+# below count FILES rather than LINES -- see the note there for why that distinction is the
+# whole point. `// ""` on previous_filename because jq truthiness treats "" as TRUE, so a
+# present-but-empty value would otherwise emit a blank path and skip the X arm.
+raw_files="$(gh api "repos/{owner}/{repo}/pulls/$PR/files" --paginate \
+  --jq '.[] | ("F " + .filename), (select((.previous_filename // "") != "") | "P " + .previous_filename), (select(.status == "renamed" and ((.previous_filename // "") == "")) | "X")')" || {
   echo "guard: ERROR PR #$PR — could not read changed files (gh error). Fail-closed."
   exit 2
 }
+files="$(printf '%s\n' "$raw_files" | sed -n 's/^[FP] //p')"
 if [ -z "$files" ]; then
   echo "guard: ERROR PR #$PR — no file changes (nothing to evaluate)"
   exit 2
@@ -253,24 +259,28 @@ fi
 # A row the API calls a rename but gives no previous_filename would have its SOURCE path
 # silently dropped -- the exact blind spot reading this endpoint was meant to close. Refuse
 # rather than gate a list known to be missing a path.
-case "$files" in
-  *__RENAME_SOURCE_MISSING__*)
-    echo "guard: ERROR PR #$PR — a changed file is reported as renamed with no previous_filename, so its SOURCE path cannot be gated. Fail-closed."
-    exit 2
-    ;;
-esac
+if printf '%s\n' "$raw_files" | grep -qx 'X'; then
+  echo "guard: ERROR PR #$PR — a changed file is reported as renamed with no previous_filename, so its SOURCE path cannot be gated. Fail-closed."
+  exit 2
+fi
 
-# COMPLETENESS. Rename sources only ever ADD lines to the list above, never remove them, so the
-# line count is >= the PR's declared changed-file count, with equality when nothing was renamed.
-# A count BELOW the declared total therefore means the list was truncated -- by the endpoint's
-# server-side cap, or by a pagination run that ended early -- and that is precisely the
-# under-read that turns this gate's exit 0 into a merge-gate bypass. One comparison covers both
-# causes, and it cannot false-positive on renames because they only push the count up.
+# COMPLETENESS. Count DESTINATION rows only (`F `) and compare against the PR's declared
+# changed-FILE count: the two sides must measure the same unit.
+#
+# An earlier version of this check counted LINES, on the reasoning that rename sources only ever
+# ADD lines so the count can never fall below the declared total spuriously. That reasoning is
+# sound in one direction and the code depends on the OTHER: `seen < declared` really does imply
+# truncation, but the check acts on the converse, `seen >= declared` implying complete, and that
+# is false. Every rename source is an extra line, so R renames MASK R files truncated away.
+# Measured before the fix: declared 3, rows [archive, a renamed file, a .claude/agents/ markdown];
+# drop the third row to model truncation and 2 destinations + 1 rename source = 3 lines >= 3
+# declared, so the guard returned OK and the protected markdown went from HOLD to a merge-gate
+# pass -- the exact bypass this detector exists to prevent.
 declared_files="$(gh pr view "$PR" --json changedFiles --jq .changedFiles)" || {
   echo "guard: ERROR PR #$PR — could not read the declared changed-file count. Fail-closed."
   exit 2
 }
-seen_files="$(printf '%s\n' "$files" | grep -c . || true)"
+seen_files="$(printf '%s\n' "$raw_files" | grep -c '^F ' || true)"
 case "$declared_files" in
   ''|*[!0-9]*)
     echo "guard: ERROR PR #$PR — declared changed-file count is not a number ('$declared_files'). Fail-closed."

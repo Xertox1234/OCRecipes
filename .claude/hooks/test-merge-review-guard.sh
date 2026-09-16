@@ -103,7 +103,10 @@ if [ "${1:-}" = "api" ]; then
   done
   if [ "$_ep" = "files" ]; then
     [ -n "${FAKE_DIFF_FAIL:-}" ] && exit 1
-    printf '%s\n' "${FAKE_FILES}"; exit 0
+    # Destination CLASS, matching what the guard's own jq emits, so its completeness check
+    # counts FILES rather than lines. The `pr diff` branch above is deliberately NOT classed:
+    # merge-review-guard.sh consumes that one directly for its own changed-file digest.
+    printf '%s\n' "${FAKE_FILES}" | sed -e '/^$/d' -e 's/^/F /'; exit 0
   fi
   [ -n "${FAKE_API_FAIL:-}" ] && exit 1
   printf '%s\n' "${FAKE_TODO_MD:-}"; exit 0
