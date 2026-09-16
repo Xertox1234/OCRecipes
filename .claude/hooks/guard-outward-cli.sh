@@ -144,9 +144,31 @@
 #   * A global flag before the verb (`npm --registry=x publish`, `eas
 #     --non-interactive update`) defeats command-position anchoring — same
 #     documented class as cmd-detect.sh's own arg-taking-wrapper residual.
-#   * `npx eas update` / `npx gh pr merge` are not recognized: `npx` takes an
-#     argument, so it is not a zero-arg runner word _OUT_POS_PREFIX skips (by
-#     design — see lib/cmd-detect.sh's header). `bunx`/`bun run` likewise.
+#   * CLOSED 2026-09-16
+#     (todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md).
+#     `npx eas update`, `npx gh pr merge`, `npm exec`, `bunx`, `bun x`/`bun run`,
+#     `pnpm dlx`/`pnpm exec`, `yarn dlx`/`yarn exec` — and the `eas-cli`/
+#     `@railway/cli` PACKAGE spellings a launcher can also resolve — now deny
+#     via the SEPARATE `_OUT_POS_PREFIX_LP`-gated checks at the end of this
+#     file (search "launcher-family / path-qualified invocation"), which is
+#     why `_OUT_POS_PREFIX` itself was deliberately left unwidened — see that
+#     constant's own header comment. PRECISE PATH ONLY: the degraded
+#     (nojq/nolib/noawk) fallbacks do not model this axis, a residual tracked
+#     in repro-outward-cli-corpus.sh's all-path gap count for the `lp-*` rows.
+#   * ROUND-2 CLOSED, 2026-09-16 (same todo, security review). `_OUT_LAUNCHER`
+#     originally modeled flag tolerance as a closed per-launcher enumeration
+#     (`npx` got `-y`/`--yes`, `npm exec` got an optional `--`, every other
+#     launcher got none); ANY other real flag between the launcher phrase and
+#     the binary defeated every `_OUT_POS_PREFIX_LP`-gated check, including
+#     the gh-family blanket-deny (`npx -q gh pr merge 42 --auto` reached an
+#     unreviewed admin merge). Now closed with `_OUT_FLAG_RUN` (this file's
+#     own general flag-absorber idiom). REMAINING, DELIBERATELY OUT OF SCOPE:
+#     a flag BETWEEN the two words of a multi-word launcher (`npm
+#     --loglevel=silent exec eas update`) — no bypass through that specific
+#     slot was measured, and widening every interior word-to-word gap on spec
+#     (rather than the one slot actually found bypassed) would be the same
+#     invented-enumeration risk in the other direction. Measured: still
+#     ALLOWS.
 #   * `eas publish` does not exist in the installed eas-cli (20.1.0 at time of
 #     writing) — the pattern is kept anyway per the acceptance criteria's
 #     literal wording and to catch an older/different CLI version; a no-op
@@ -176,9 +198,11 @@
 #     from "the blanking primitive failed" — it therefore routes to the crude
 #     smell test and DENIES. Over-denial on a shape no real caller writes; the
 #     safe direction.
-#   * Absolute/relative-path invocation (`/usr/local/bin/eas update`,
-#     `./node_modules/.bin/eas update`) does not match the literal
-#     `eas`/`railway`/`npm`/`gh` command word.
+#   * CLOSED 2026-09-16, same todo as the launcher-family bullet above.
+#     Absolute/relative-path invocation (`/opt/homebrew/bin/eas update`,
+#     `./node_modules/.bin/eas update`, `../eas update`) now denies via the
+#     same `_OUT_POS_PREFIX_LP` checks, PRECISE PATH ONLY (see that bullet
+#     for the degraded-path caveat, which applies identically here).
 #   * `gh workflow run`, `gh secret set`, `gh variable set` and other gh
 #     namespaces beyond `pr`/`release`/`repo`/`api` are not covered — the
 #     todo scoped this to "verb-scoped, not exhaustive"; `gh api` itself IS
@@ -1969,6 +1993,169 @@ _OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
 # DOCUMENTED RESIDUALS rather than papered over.
 _OUT_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
 
+# `_OUT_FLAG_RUN` — MOVED HERE (2026-09-16, round-2 security review of
+# todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md)
+# from its original position, immediately above the `npm run`/OTA-script
+# check further down, so `_OUT_LAUNCHER` below can reuse it — `set -uo
+# pipefail` is active, so a forward reference to a not-yet-assigned variable
+# would be a hard error, not silently empty. The assignment is the single
+# canonical copy; the extensive design rationale for WHY this grammar looks
+# the way it does (flag-value absorption, interior-redirect slots, the
+# `npm run --silent`-class bypass this closes) still lives at the original
+# site, right above its primary use site, with a pointer back here — see
+# "MOVED to _OUT_SEP's definition" in that comment. Two literal copies of one
+# grammar is exactly what this file's `_OUT_GH_GLOBALS` (taken by reference,
+# not re-spelled) already avoids elsewhere; this follows the same rule.
+_OUT_FLAG_RUN='('"$_OUT_SEP"'-{1,2}[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?)*'"$_OUT_SEP"
+
+# LAUNCHER/PATH AXIS (todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md).
+# Defined HERE, after `_OUT_SEP`, not beside `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX`
+# above, because every internal word-to-word gap below (`npm`->`exec`,
+# `pnpm`->`dlx`/`exec`, `yarn`->`dlx`/`exec`, `bun`->`x`/`run`) is spelled with
+# `$_OUT_SEP`, not a hardcoded `[[:space:]]+` — the SAME "interior redirect can
+# sit in this exact slot" reasoning `_OUT_SEP` itself exists for
+# (`npm 2>&1 exec eas update` must be caught the same way `npm 2>&1 publish`
+# already is), and the ONLY way to avoid re-deriving that absorber a second
+# time. A first draft of this block used a literal `[[:space:]]+` here and was
+# caught by this file's own structural drift-detection assertion in
+# test-guard-outward-cli.sh (search "hardcoded \[\[:space:\]\]\+ separator") —
+# it flags exactly this shape (a gated word — `npm`/`pnpm`/`yarn` are already
+# on its list — glued to a literal `[[:space:]]+` on a non-comment line) as a
+# family the interior-redirect absorber missed. It was right twice over: both
+# a false alarm on the SCANNER's own terms (this launcher-syntax gap is not
+# the tool->verb gap the pin was written for) and a genuine, independently
+# real gap (the redirect WOULD have slipped through) — fixed by the same edit.
+#
+# `_OUT_POS_PREFIX` is NOT widened for this axis — it feeds 24 call sites, and
+# not all of them are safe to widen: `_OUT_BR_RANGE_ALREADY_HANDLED` (an
+# EXCLUSION — widening it REMOVES denies), the `gh pr merge` --auto CLAUSE=
+# cut (an ALLOW-deciding extraction — widening moves what `head -1` picks),
+# and the `gh pr merge`/`gh pr create`/`gh api` OCCURRENCE COUNTERS (widening
+# a matcher is monotone on a boolean read and NOT on a count — see
+# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md;
+# a longer prefix match can absorb text that would have started a second,
+# separate occurrence, silently lowering a count an ambiguity-refusal depends
+# on). Composing a SEPARATE, narrowly-scoped detector instead — reusing this
+# anchor's own primitives, per
+# docs/solutions/conventions/compose-precise-detector-from-shared-primitives-without-widening-extractor-2026-09-14.md
+# — leaves every one of those 24 sites byte-for-byte untouched.
+#
+# `_OUT_LAUNCHER` — the measured, non-exhaustive set of launcher forms that
+# hand their first argument to `exec`/spawn without ever consulting PATH:
+# `npx`, `npm exec`, `bunx`, `bun x`, `bun run`, `pnpm dlx`, `pnpm exec`,
+# `yarn dlx`, `yarn exec`. `npm exec` resolves via `libnpmexec`'s
+# `needPackageCommandSwap` — a local package bin, then `node_modules/.bin`,
+# then npm's global bin — never `PATH`, so a PATH-only wrapper (the sibling
+# P1 todo's mitigation) does not reach this axis; see the todo's own Summary
+# for the read-the-resolution-code account.
+#
+# FLAG SLOT (round-2 security review, 2026-09-16): the first revision of this
+# constant modeled flag tolerance as a CLOSED per-launcher enumeration — `npx`
+# got exactly `(-y|--yes)`, `npm exec` got exactly an optional `--`, every
+# other launcher got none. Any OTHER real flag defeated every check built on
+# this constant, INCLUDING the gh-family blanket-deny below. Measured ALLOW
+# pre-fix: `npm exec --yes eas update`, `npm exec -y eas update`, `bunx --bun
+# eas update`, `npx -q eas update`, and — reaching an unreviewed,
+# branch-protection-bypassing admin merge — `npx -q gh pr merge 42 --auto`.
+# `_OUT_FLAG_RUN` (defined just above, moved here from its original site next
+# to the `npm run`/OTA-script check for exactly this reuse) is this file's
+# own established idiom for "an arbitrary run of flags between two
+# required-adjacent words" — already used for the `npm run`/`run-script`
+# boundary. Trailing `$_OUT_FLAG_RUN` replaces the old bare trailing
+# `$_OUT_SEP` and the two closed per-launcher optional-flag sub-groups it
+# rendered redundant. This is a pure WIDENING of what `_OUT_LAUNCHER` matches
+# (`_OUT_FLAG_RUN` at zero iterations is byte-identical to the `_OUT_SEP` it
+# replaces — the same "deny-shaped, so widening is monotone" property that
+# constant's own header comment documents), and `_OUT_LAUNCHER` has exactly
+# two consumers, both boolean `grep -Eqi` reads (`_OUT_POS_PREFIX_LP` above,
+# and the GAP-1 ambiguous-flag check below) — neither a count nor an
+# extraction — so widening it here is safe per
+# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md.
+# Scoped to the flag slot AFTER the complete launcher phrase, before the
+# binary/path — the only slot measured bypassed; the interior word-to-word
+# gaps (`npm`->`exec`, `bun`->`x`/`run`, `pnpm`->`dlx`/`exec`,
+# `yarn`->`dlx`/`exec`) keep plain `$_OUT_SEP`, unchanged, since no bypass was
+# measured through them and widening every gap on spec would be the same
+# invented-enumeration risk in the other direction.
+_OUT_LAUNCHER='(npx|npm'"$_OUT_SEP"'exec|bunx|bun'"$_OUT_SEP"'(x|run)|pnpm'"$_OUT_SEP"'(dlx|exec)|yarn'"$_OUT_SEP"'(dlx|exec))'"$_OUT_FLAG_RUN"
+# `_OUT_PATH_PREFIX` — an absolute or relative path segment immediately
+# before the binary literal (`/opt/homebrew/bin/eas`, `./node_modules/.bin/eas`,
+# `../eas`). The excluded-character class is deliberately the SAME set this
+# file already treats as command-position boundaries (whitespace, `;&|(){}<>`,
+# backtick) — the exact "derive the excluded set from where a second command
+# may begin" prevention the monotone-on-a-count doc above prescribes for a
+# narrow grammar — so this group can never itself absorb a real separator.
+_OUT_PATH_PREFIX='[^[:space:];&|()`{}<>]*/'
+# Combined: existing prefix (opener + optional wrapper words) unchanged, THEN
+# MANDATORILY at least one of launcher/path — but NOT a plain alternation
+# (`launcher|path`), because the two COMPOSE (`npx /opt/homebrew/bin/eas
+# update` is a launcher handed a path argument, and is part of the todo's own
+# measured 13-launcher x 4-path grid). The group is (launcher, optionally
+# followed by path) OR (a bare path with no launcher) — this admits all three
+# non-bare combinations (launcher-only, launcher+path, path-only) and
+# excludes the fourth (neither), which is what keeps this constant from ever
+# matching a bare-command-position shape the checks above already handle.
+# `_OUT_POS_PREFIX_LP` is a NEW, independent constant; it is never assigned
+# into `_OUT_POS_PREFIX` and no existing call site references it.
+_OUT_POS_PREFIX_LP="${_OUT_POS_PREFIX}((${_OUT_LAUNCHER})(${_OUT_PATH_PREFIX})?|${_OUT_PATH_PREFIX})"
+
+# --- Security-review round-1 additions (2026-09-16) --------------------------
+# Two further gaps in the launcher/path axis above, both found by
+# CONSTRUCTING and RUNNING the adversarial command through the guard (never
+# by reading the regex), per this file's own evidence-discipline convention.
+#
+# GAP 1 — ambiguous-target launcher flags. `_OUT_LAUNCHER` requires the
+# binary literal immediately after the launcher word (mod `_OUT_SEP`), but
+# npx/npm exec's own --help documents a second invocation form:
+# `npm exec --package=<pkg>[@<version>] -- <cmd> [args...]` (also `-p`), and a
+# THIRD, `-c`/`--call '<cmd>'`, which puts the target INSIDE a shell-quoted
+# string — a string this file's own quote-blanking (`cmd_words`/`cmd_bare`)
+# already treats as non-command prose everywhere else (the mechanism that
+# correctly keeps `git commit -m "... npx eas update ..."` allowed). That
+# same mechanism means the guard CANNOT read what `-c`/`--call` actually runs
+# from text at all — measured: `npx --package=eas-cli -- eas update --branch
+# preview`, `npm exec --package=eas-cli -- eas update --branch preview`, and
+# `npx --package=eas-cli -c 'eas update --branch preview'` all ALLOWed
+# pre-fix. Rather than parse `--package`'s value (many equivalent spellings,
+# and no way to parse `-c`'s value at all once it is blanked), this follows
+# the file's own established idiom for "the true target can't be read from
+# text": fail closed. ANY recognized launcher word combined with one of these
+# four flags denies UNCONDITIONALLY, regardless of what package/command is
+# named — same "deliberate, documented over-denial, no re-derived nuance"
+# choice as the gh-family block below, not an attempt to special-case only
+# the gated packages (impossible for `-c`/`--call`, since the guard cannot
+# see inside the quoted string it blanked).
+_OUT_LAUNCHER_AMBIG_FLAG='(--package|-p|--call|-c)(=|'"$_OUT_SEP"')'
+#
+# GAP 2 — the on-disk script name != the binary name. eas-cli's own
+# package.json declares `bin: {"eas": "./bin/run"}` — the real installed
+# script's TERMINAL path component is "run", not "eas"/"eas-cli", so a direct
+# path invocation of that real file never matches the literal-binary-name
+# path check in the 10 checks below (which require the binary NAME as the
+# terminal component). Measured pre-fix: `node ./node_modules/eas-cli/bin/run
+# update --branch preview` and the bare `./node_modules/eas-cli/bin/run
+# update --branch preview` (no interpreter at all) both ALLOWed.
+# `_OUT_INTERP_WORD` is intentionally OPTIONAL in the two new checks that use
+# it below: the bare path alone is already the reachable exploit (an
+# executable script with a shebang needs no interpreter word on the command
+# line), and requiring one would just reopen the gap via any interpreter this
+# file does not enumerate (`bun`, `deno`, a future one).
+# `_OUT_PKGDIR_EASCLI`/`_OUT_PKGDIR_RAILWAYCLI` match the package's OWN npm
+# directory name appearing anywhere in the path (not just as the terminal
+# component), so the check no longer depends on what the package's bin field
+# happens to name the script.
+_OUT_INTERP_WORD='(node|bun|deno)'"$_OUT_SEP"
+_OUT_PKGDIR_EASCLI='[^[:space:];&|()`{}<>]*eas-cli/[^[:space:];&|()`{}<>]*/[^[:space:];&|()`{}<>]+'
+_OUT_PKGDIR_RAILWAYCLI='[^[:space:];&|()`{}<>]*@railway/cli/[^[:space:];&|()`{}<>]*/[^[:space:];&|()`{}<>]+'
+#
+# GAP 3 — version-pin spelling (`<pkg>@<version>`, e.g. `npx
+# @railway/cli@latest up`, the FIRST alternative synopsis line in this
+# machine's own `npx --help`) sits directly after the package token with no
+# `_OUT_SEP` between them (no whitespace/redirect — `@` is neither), so it
+# was invisible to the 10 checks below without this optional suffix.
+# Measured pre-fix: `npx @railway/cli@latest up` ALLOWed.
+_OUT_PKG_VERSION_PIN='(@[^[:space:];&|()`{}<>]*)?'
+
 # _OUT_GH_GLOBALS — the ROOT-POSITION flag slot, between `gh` and its namespace.
 #
 # TAKEN BY REFERENCE from lib/cmd-detect.sh's _CMD_GH_GLOBALS, NOT re-spelled here. The lib
@@ -2660,7 +2847,13 @@ fi
 # pattern: each occurrence is expanded at assignment time and spliced between the
 # single-quoted fragments. It is defined above (below the lib source), which is
 # what makes that legal here.
-_OUT_FLAG_RUN='('"$_OUT_SEP"'-{1,2}[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?)*'"$_OUT_SEP"
+#
+# MOVED to `_OUT_SEP`'s definition (2026-09-16, round-2 security review): the
+# assignment itself now lives right after `_OUT_SEP`, so `_OUT_LAUNCHER` (also
+# defined there) can reuse this exact absorber instead of a closed
+# per-launcher flag enumeration — see that comment for why. This comment
+# block, documenting every historical bypass this grammar closes, stays here
+# at its original site, right above its primary use site.
 if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
@@ -3831,6 +4024,114 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
     deny "guard-outward-cli: command-position 'gh api' with a mutating HTTP method (-X/--method POST/PUT/PATCH/DELETE, spaced/=/glued) can invoke an arbitrary GitHub REST mutation — including a PR merge via a different subcommand than the dedicated 'gh pr merge' check above. Read-only 'gh api' (GET, the default with no -X/--method) is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
   done
+fi
+
+# --- launcher-family / path-qualified invocation (all gated binaries) -------
+# todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md.
+# Every check above anchors on the LITERAL binary word in command position.
+# `npx eas update`, `npm exec eas update`, `bunx railway up`,
+# `/opt/homebrew/bin/eas update` and `./node_modules/.bin/eas update` all
+# reach the real CLI (see the todo's Summary for why npm's own resolution
+# never consults PATH) but were invisible to every pattern above, because
+# none of them puts the gated binary in the boundary positions
+# `_OUT_POS_PREFIX` recognizes. This section is a SEPARATE, additive layer
+# using `_OUT_POS_PREFIX_LP` (defined next to `_OUT_POS_PREFIX` above — see
+# its own header comment for why it is a new constant rather than a widening
+# of the existing one). It changes no existing regex, occurrence count,
+# clause-cut, or exclusion above, and can only ever ADD a deny:
+# `_OUT_POS_PREFIX_LP` MUST match one of the 12 launcher forms or a path
+# segment — grammar no check above recognizes at all — so it can never match
+# a bare-command-position shape the checks above already handle.
+#
+# PACKAGE SPELLING (`eas-cli`, `@railway/cli`): `npm exec`/`npx` resolve a
+# package NAME, not necessarily the binary name — `eas-cli`'s own
+# `package.json` declares `bin: {"eas": "./bin/run"}`, so `npx eas-cli update`
+# reaches the identical real CLI as `npx eas update`. Gating only the bin
+# spelling on the launcher axis leaves this open (measured pre-fix: both
+# ALLOW). Checked for a `gh` npm-package equivalent: this repo's
+# package.json/package-lock.json carry no `eas-cli`/`@railway/cli`/`gh`-named
+# dependency (checked offline — grep, no network lookup), and there is no
+# canonical npm-distributed package providing a `gh` binary (the real GitHub
+# CLI ships via Homebrew/apt/direct download, not npm) — nothing to gate for
+# that axis. Carve-out stays on the read-only VERB, never the package token:
+# `npx eas-cli --version`/`npx eas-cli update:list` match no verb alternation
+# below and stay allowed, by construction — no special-casing needed.
+#
+# GH FAMILY IS A DELIBERATE, DOCUMENTED OVER-DENIAL, not carve-out parity.
+# The bare-position gh checks above carry real nuance (the `gh pr merge
+# --auto` carve-out, the `gh pr create/comment` --repo-only gate, the
+# `gh api` mutating-method-only gate) built on machinery (CLAUSE=, occurrence
+# counters, _out_max_count) this section deliberately does not touch — see
+# the `_OUT_POS_PREFIX_LP` header comment for why. Replicating that nuance
+# here would mean re-deriving it against a second prefix grammar: exactly the
+# occurrence-ambiguity-guard-applied-selectively and
+# widening-is-monotone-on-a-boolean-read-not-on-a-count failure modes this
+# file has already paid for once each. Instead: ANY gated gh subcommand
+# reached through a launcher or a path — INCLUDING an otherwise-carved-out
+# `--auto`/no-`--repo` shape — DENIES unconditionally. This repo's own
+# sanctioned gh usage (the /todo automerge pipeline's own
+# `gh pr merge <n> --auto --squash --delete-branch`, and PR creation, which
+# this project's CLAUDE.md directs through the GitHub MCP tools rather than a
+# raw `gh` invocation) never goes through a launcher or a path, so the
+# over-denial has no reachable cost. Pinned as a deliberate choice, not a
+# residual: `gh pr merge --auto` reached via `npx`/`npm exec`/a path DENIES,
+# where the bare-position form ALLOWS.
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: 'eas update/publish/submit' reached through a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) or a path-qualified invocation (incl. the 'eas-cli' package spelling) — npm's own resolution for 'npm exec'/'npx' never consults PATH, so a PATH-only wrapper cannot stop this. Same OTA-publish incident class as the bare-command check above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: 'eas channel:/branch: create/edit/delete/rename' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   && scan_renderings "${_OUT_FLAG_LEAD}"'--auto-submit'; then
+  deny "guard-outward-cli: 'eas build --auto-submit' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached through a launcher or a path-qualified invocation (incl. the '@railway/cli' package spelling). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(variable|variables|vars|var)${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: 'railway variable/vars/var set/delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(service|environment)${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: 'railway service/environment delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: 'npm publish' reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_POS_PREFIX_LP}(yarn|pnpm)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
+fi
+if grep -Eqi "${_OUT_POS_PREFIX_LP}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release${_OUT_SEP}(create|delete|delete-asset|edit|upload)|repo${_OUT_SEP}(create|delete|archive|unarchive|edit|rename|sync|fork)|api)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: a gated 'gh' subcommand reached through a launcher or a path-qualified invocation denies UNCONDITIONALLY — including a shape that carries a carve-out flag (--auto with no --admin/--repo, or pr create/comment with no --repo) in bare command position. This repo's own sanctioned gh usage (the /todo automerge pipeline, and PR creation via the GitHub MCP tools) never goes through a launcher or a path, so this is a deliberate over-denial, not an attempt to re-derive the bare-position carve-out logic against a second grammar. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+
+# --- Security-review round-1: ambiguous-target launcher flags (GAP 1) -------
+# ANY recognized launcher combined with --package/-p/-c/--call denies
+# unconditionally — see the _OUT_LAUNCHER_AMBIG_FLAG header comment above for
+# why this cannot be scoped to only the gated packages (the -c/--call value
+# is inside a quoted string this guard already blanked as prose elsewhere).
+if grep -Eqi "${_OUT_POS_PREFIX}(${_OUT_LAUNCHER})${_OUT_LAUNCHER_AMBIG_FLAG}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) combined with --package/-p/-c/--call denies UNCONDITIONALLY — the guard cannot verify the true target from text: --package/-p's value can name any gated package, and -c/--call's argument sits inside a quoted string this guard's own quote-blanking already treats as non-command prose everywhere else. Fail-closed, same as an unparseable .tool_input.command. This also over-denies a benign use (e.g. 'npx -p typescript tsc --version') — checked offline (grep, no network) for this repo's own usage of any of these four flags under a launcher: none found, so no reachable cost here, same 'deliberate, documented over-denial' choice as the gh-family block below. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+
+# --- Security-review round-1: package-directory path invocation (GAP 2) -----
+# A direct path invocation of a file INSIDE the gated package's own npm
+# directory, regardless of the terminal filename (see _OUT_PKGDIR_EASCLI's
+# header comment: eas-cli's package.json maps bin: {"eas": "./bin/run"}, so
+# the real installed script is named "run", not "eas"/"eas-cli"). No
+# _OUT_POS_PREFIX_LP here on purpose — presence of the package directory
+# anywhere in the path is what matters, not launcher-or-path composition; an
+# optional bare interpreter word (node/bun/deno) is absorbed for free, but is
+# NOT required — the bare path alone is already the reachable exploit.
+if grep -Eqi "${_OUT_POS_PREFIX}(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_EASCLI}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: a direct path invocation of a script INSIDE the eas-cli npm package directory (e.g. node_modules/eas-cli/bin/run) reached 'update/publish/submit' — eas-cli's own package.json maps bin: {\"eas\": \"./bin/run\"}, so the real installed script's filename is 'run', never 'eas'/'eas-cli', and can't match a literal-binary-name path check. Same OTA-publish incident class as the checks above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+if grep -Eqi "${_OUT_POS_PREFIX}(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_RAILWAYCLI}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: a direct path invocation of a script INSIDE the @railway/cli npm package directory reached a gated railway verb, by the same package.json-bin-mapping gap as eas-cli above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 exit 0

@@ -4040,6 +4040,180 @@ assert_allow "a single read-only gh api behind a root flag stays allowed" \
 assert_allow "the ONE-command -f mutation is allowed here, as it is on main (pre-existing)" \
   "$(json 'gh api -f a=b /repos/o/r/merges')"
 
+# ---------- launcher-family / path-qualified invocation (2026-09-16) ----------
+# todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md
+# Representative rows for direct developer feedback; the full GENERATED
+# launcher-form x path-form x binary+verb combinatorial grid (208 rows, per
+# the todo's own measured PR #952 reviewer methodology) lives in
+# repro-outward-cli-corpus.sh, the REQUIRED-check corpus this file complements.
+
+# -- launcher axis: one row per of the 12 measured forms, same target (eas update) --
+assert_deny "npx eas update denies" \
+  "$(json 'npx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npx -y eas update denies" \
+  "$(json 'npx -y eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npx --yes eas update denies" \
+  "$(json 'npx --yes eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npm exec eas update denies (the todo's headline measured row)" \
+  "$(json 'npm exec eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npm exec -- eas update denies" \
+  "$(json 'npm exec -- eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "bunx eas update denies" \
+  "$(json 'bunx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "bun x eas update denies" \
+  "$(json 'bun x eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "bun run eas update denies" \
+  "$(json 'bun run eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "pnpm dlx eas update denies" \
+  "$(json 'pnpm dlx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "pnpm exec eas update denies" \
+  "$(json 'pnpm exec eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "yarn dlx eas update denies" \
+  "$(json 'yarn dlx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "yarn exec eas update denies" \
+  "$(json 'yarn exec eas update --branch preview')" \
+  "reached through a launcher"
+
+# -- launcher axis, other binaries; an interior redirect inside the launcher's
+# own syntax must be absorbed too (the structural drift-detection assertion
+# above is what caught the first draft of this fix missing it) --
+assert_deny "npx railway up denies" \
+  "$(json 'npx railway up')" \
+  "reached through a launcher"
+assert_deny "npm exec npm publish denies" \
+  "$(json 'npm exec npm publish')" \
+  "reached through a launcher"
+assert_deny "an interior redirect inside 'npm exec' is still absorbed" \
+  "$(json 'npm 2>&1 exec eas update --branch preview')" \
+  "reached through a launcher"
+
+# -- path axis, incl. the launcher+path COMPOSED shape (npx handed a path) --
+assert_deny "absolute-path eas update denies" \
+  "$(json '/opt/homebrew/bin/eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "./node_modules/.bin path eas update denies" \
+  "$(json './node_modules/.bin/eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "../ relative-path eas update denies" \
+  "$(json '../eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "absolute-path railway up denies" \
+  "$(json '/usr/local/bin/railway up')" \
+  "reached through a launcher"
+assert_deny "npx handed an absolute path denies (launcher+path COMPOSE)" \
+  "$(json 'npx /opt/homebrew/bin/eas update --branch preview')" \
+  "reached through a launcher"
+
+# -- gh family: blanket over-denial (deliberate, see the guard's own comment) --
+assert_deny "npx gh pr merge denies" \
+  "$(json 'npx gh pr merge 42')" \
+  "gated 'gh' subcommand reached through a launcher"
+assert_deny "npx gh pr merge --auto STILL denies (deliberate over-denial vs. the bare carve-out)" \
+  "$(json 'npx gh pr merge 42 --auto')" \
+  "gated 'gh' subcommand reached through a launcher"
+assert_allow "the BARE form of the same command is unaffected (--auto carve-out intact)" \
+  "$(json 'gh pr merge 42 --auto')"
+assert_deny "absolute-path gh pr merge denies" \
+  "$(json '/opt/homebrew/bin/gh pr merge 42')" \
+  "gated 'gh' subcommand reached through a launcher"
+assert_deny "npm exec gh api mutating denies" \
+  "$(json 'npm exec gh api repos/o/r -X POST')" \
+  "gated 'gh' subcommand reached through a launcher"
+
+# -- package spelling axis (eas-cli / @railway/cli) --
+assert_deny "npx eas-cli update denies (package spelling)" \
+  "$(json 'npx eas-cli update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npm exec eas-cli update denies (the todo's second measured row)" \
+  "$(json 'npm exec eas-cli update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npx @railway/cli up denies (package spelling)" \
+  "$(json 'npx @railway/cli up')" \
+  "reached through a launcher"
+# Carve-out on the READ-ONLY VERB, never the package token -- exempting the
+# whole package spelling on a read-only-shaped rule would leave
+# 'npx eas-cli update' open, per the todo's own explicit warning.
+assert_allow "npx eas-cli --version stays allowed (read-only verb, not the package token)" \
+  "$(json 'npx eas-cli --version')"
+assert_allow "npx eas-cli update:list stays allowed (read-only colon verb)" \
+  "$(json 'npx eas-cli update:list')"
+
+# -- false-positive sweep on the newly-widened surface --
+assert_allow "npx tsc stays allowed" \
+  "$(json 'npx tsc')"
+assert_allow "npx prettier --write stays allowed" \
+  "$(json 'npx prettier --write')"
+assert_allow "npm exec vitest stays allowed" \
+  "$(json 'npm exec vitest')"
+assert_allow "/usr/bin/git status stays allowed (path form, ungated binary)" \
+  "$(json '/usr/bin/git status')"
+assert_allow "path form + read-only verb stays allowed" \
+  "$(json './node_modules/.bin/eas --version')"
+assert_allow "prose mentioning the launcher/path shapes stays allowed" \
+  "$(jsonc 'git commit -m "chore: mentions npx eas update and /usr/bin/gh pr merge"')"
+assert_allow "a /-bearing quoted mention stays allowed" \
+  "$(jsonc 'git commit -m "see docs/eas update"')"
+
+# -- round-2 security review (2026-09-16): GAP 1/2/3 (ambiguous launcher
+# flags, package-directory path aliasing, version-pin spelling) and the
+# flag-run generalization (CRITICAL: closed per-launcher flag enumeration
+# defeated every launcher-family check, incl. the gh-family blanket-deny) --
+assert_deny "npx --package=eas-cli -- eas update denies (ambiguous target, fail-closed)" \
+  "$(json 'npx --package=eas-cli -- eas update --branch preview')" \
+  "combined with --package/-p/-c/--call"
+assert_deny "npm exec --package=eas-cli -- eas update denies (same GAP-1 shape)" \
+  "$(json 'npm exec --package=eas-cli -- eas update --branch preview')" \
+  "combined with --package/-p/-c/--call"
+assert_deny "npx --package=eas-cli -c '...' denies (the -c/--call value is BLANKED prose, cannot be scoped)" \
+  "$(json "npx --package=eas-cli -c 'eas update --branch preview'")" \
+  "combined with --package/-p/-c/--call"
+assert_deny "npx @railway/cli@latest up denies (version-pin spelling, npx --help's own synopsis form)" \
+  "$(json 'npx @railway/cli@latest up')" \
+  "railway up/deploy"
+assert_deny "node ./node_modules/eas-cli/bin/run update denies (package.json bin maps eas -> ./bin/run)" \
+  "$(json 'node ./node_modules/eas-cli/bin/run update --branch preview')" \
+  "INSIDE the eas-cli npm package directory"
+assert_deny "bare ./node_modules/eas-cli/bin/run update denies (no interpreter needed -- an executable script)" \
+  "$(json './node_modules/eas-cli/bin/run update --branch preview')" \
+  "INSIDE the eas-cli npm package directory"
+assert_deny "npm exec --yes eas update denies (npx's OWN --yes flag, unrecognized on npm exec pre-fix)" \
+  "$(json 'npm exec --yes eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npm exec -y eas update denies (short form of the same flag)" \
+  "$(json 'npm exec -y eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "bunx --bun eas update denies (a real bun flag, unmodeled for any launcher pre-fix)" \
+  "$(json 'bunx --bun eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npx -q eas update denies (an unrecognized flag on npx itself)" \
+  "$(json 'npx -q eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npx -q gh pr merge --auto denies (CRITICAL: the SAME gap defeated the gh-family blanket-deny)" \
+  "$(json 'npx -q gh pr merge 42 --auto')" \
+  "gated 'gh' subcommand"
+assert_allow "./node_modules/eas-cli/bin/run --version stays allowed (verb-gated, not path-gated)" \
+  "$(json './node_modules/eas-cli/bin/run --version')"
+assert_allow "./node_modules/@railway/cli/bin/run --help stays allowed (same verb-gating, railway package)" \
+  "$(json './node_modules/@railway/cli/bin/run --help')"
+assert_allow "npx -q tsc --noEmit stays allowed (unrecognized flag, but an UNGATED binary -- not blanket over-denial)" \
+  "$(json 'npx -q tsc --noEmit')"
+assert_allow "npm --loglevel=silent exec eas update stays allowed (DOCUMENTED RESIDUAL: interior npm->exec flag slot, deliberately out of scope)" \
+  "$(json 'npm --loglevel=silent exec eas update --branch preview')"
+assert_deny "bare-form eas update still denies (negative control has a positive in this same block)" \
+  "$(json 'eas update --branch preview')" \
+  "command-position 'eas update/publish/submit'"
+
 _PIN_RAN=1
 # 462 -> 491 on 2026-09-06/07: +27 across three rounds, itemised because the
 # breakdown was WRONG once (it said "+21" beside a total of 488 -- 462+21=483, so
@@ -4261,7 +4435,44 @@ _PIN_RAN=1
 # `Results: 784 passed, 1 failed`, the lone failure being this pin refusing a
 # total it had not been told about. The arithmetic is a check on the
 # measurement, not a substitute for it -- had they disagreed, the run wins.
-EXPECTED_TOTAL=784
+#
+# 784 -> 821 (2026-09-16,
+# todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md):
+# +37 for the launcher-family/path-qualified-invocation rows --
+#   12  launcher axis, one row per of the 12 measured forms (npx, npx -y,
+#        npx --yes, npm exec, npm exec --, bunx, bun x, bun run, pnpm dlx,
+#        pnpm exec, yarn dlx, yarn exec), same target (eas update)
+#    3  launcher axis, other binaries + an interior-redirect-inside-the-
+#        launcher-syntax regression pin (the shape the structural
+#        hardcoded-[[:space:]]+ drift-detection assertion above caught in
+#        this fix's own first draft)
+#    5  path axis (absolute, ./node_modules/.bin, ../, a second binary, and
+#        the launcher+path COMPOSED shape -- npx handed a path argument)
+#    5  gh family: the blanket over-denial, its --auto-carve-out-still-denies
+#        pin, the paired BARE-form control proving the carve-out itself is
+#        untouched, a path-form row, and a launcher-form gh api row
+#    5  package-spelling axis (eas-cli x2 launchers, @railway/cli, plus the
+#        two read-only-verb carve-out controls -- --version and update:list)
+#    7  false-positive sweep (npx tsc/prettier, npm exec vitest, an absolute
+#        path to an ungated binary, a path form on a read-only verb, and two
+#        prose/quoted mentions)
+# 12+3+5+5+5+7 = 37. MEASURED, NOT COMPUTED: the suite on this tree reported
+# `Results: 821 passed, 1 failed`, the lone failure again being this pin
+# refusing a total it had not yet been told about.
+#
+# 821 -> 837 (2026-09-16, same todo, round-2 security review): +16 for GAP
+# 1/2/3 (ambiguous launcher flags, package-directory path aliasing,
+# version-pin spelling) and the flag-run generalization (the CRITICAL finding
+# that the closed per-launcher flag enumeration defeated every
+# launcher-family check, incl. the gh-family blanket-deny) -- 6 round-1-style
+# adversarial DENYs (the todo's own r1-r6 probes), 5 flag-tolerance DENYs
+# (npm exec --yes/-y, bunx --bun, npx -q, and the CRITICAL npx -q gh pr merge
+# --auto), 2 verb-gated-not-path-gated ALLOW controls, 1 ungated-binary
+# false-positive ALLOW control, 1 documented-residual ALLOW (the interior
+# npm->exec flag slot, deliberately out of scope), 1 bare-form DENY control.
+# 6+5+2+1+1+1 = 16. MEASURED, NOT COMPUTED below -- if the run disagrees, the
+# run wins.
+EXPECTED_TOTAL=837
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
