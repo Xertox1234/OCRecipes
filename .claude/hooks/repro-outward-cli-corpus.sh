@@ -2135,15 +2135,20 @@ fi
 EXPECTED_ROWS=912
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 761 of the 876 rows deny on the precise path; the other 115 are ALLOW there: 91
-# rows EXPECTED to allow, plus the 24 precise-path gaps. Those 91 span NINETEEN id
+# 780 of the 912 rows deny on the precise path; the other 132 are ALLOW there: 91
+# rows EXPECTED to allow, plus the 41 precise-path gaps. Those 91 span NINETEEN id
 # families -- fp-* (16), ghrootv-* (16), c2-* (9), c1g-* (7), fautodigfp-* (6),
 # sitefp-* (5), vft-* (5), flagadjfp-* (4), apicolfp-* (3), decoyfp-* (3),
 # ghrootfp-* (3), ghrootvfp-* (3), c9-* (2), fautocutsp-* (2), fautogrant-* (2),
 # siterailfp-* (2), plus the singletons co-nested-brace, fautobrace-pre and
 # fautodigctrl-bb. COUNTED, not recalled: select every row whose EXPECTED and
-# PRECISE verdicts are both ALLOW, group on the id prefix. 91 + 24 = 115 and
-# 876 - 761 = 115, so the decomposition closes.
+# PRECISE verdicts are both ALLOW, group on the id prefix. 91 + 41 = 132 and
+# 912 - 780 = 132, so the decomposition closes. BUMPED 2026-09-14 (this todo,
+# case-arm-in-bare-paren-subshell): 876 -> 912, 761 -> 780, 24 -> 41. The 91/
+# NINETEEN-families side is UNCHANGED by this bump -- the 36 new rows split into
+# 17 newly-gapped (vcaseparen, EXPECTED=DENY/PRECISE=ALLOW) and 19 newly-denying
+# (vcasebrace + flagvcaseparen-ghadmin, EXPECTED=DENY/PRECISE=DENY), and neither
+# bucket is EXPECTED=ALLOW/PRECISE=ALLOW, which is what the 91 counts.
 #
 # THIS PARAGRAPH WAS ITSELF THE SIXTH STALE COPY, and it went stale in the way this
 # file keeps documenting one level down. It read "646 of the 739 ... 69 ... SIXTEEN
