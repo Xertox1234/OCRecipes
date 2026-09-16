@@ -1303,3 +1303,36 @@ describe("todo-automerge-guard.sh (a row that cannot be classed is refused, not 
     expect(status).toBe(0);
   });
 });
+
+describe("todo-automerge-guard.sh (a duplicate destination cannot MASK a truncated file list)", () => {
+  // Sibling of the rename-source masking above, one layer down: there the padding line was a
+  // SOURCE, here it is the same DESTINATION returned twice — possible across a `--paginate` page
+  // boundary. A raw `grep -c '^F '` counts it twice, so D duplicates mask D files truncated away
+  // and the short list is gated as if complete. Counting DISTINCT destinations is what closes it.
+  it("ERRORs (exit 2) when a repeated destination pads the count up to the declared total", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: "client/a.ts" },
+        { filename: "client/a.ts" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "3",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("truncated");
+  });
+
+  it("control — three DISTINCT destinations against the same declared total are gated normally, so the ERROR above is attributable to the duplicate", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: "client/a.ts" },
+        { filename: "client/b.ts" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "3",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).not.toBe(2);
+  });
+});
