@@ -708,9 +708,15 @@ assert_allow "KNOWN-WRONG (filed): brace-fd in the --git-dir VALUE SLOT — real
   "$(json "$SESSION" "$WT_A" "git --git-dir {fd} >o $MAIN/.git commit -m x")"
 assert_allow "KNOWN-WRONG (filed): brace-fd in the --work-tree VALUE SLOT — real <main> mutation MISSED" \
   "$(json "$SESSION" "$WT_A" "git --work-tree {fd} >o $MAIN reset --hard")"
+# (vi) The coarse pre-filter skips a bare brace decoy ahead of a second brace-fd redirect, so
+#     the tokenizer never runs. ALLOW here is safe ONLY because real git treats the undigested
+#     brace word as the subcommand and errors out -- git CLI grammar, not this guard. Pinned so
+#     that if the pre-filter ever widens to match this segment, the change is noticed here.
+assert_allow "KNOWN-UNENFORCED: brace decoy + brace-fd redirect skipped by the coarse filter (safe via git grammar)" \
+  "$(json "$SESSION" "$WT_A" "git {fd} {9}>o -C $MAIN commit -m x")"
 # Positive discriminator: assert_allow passes on EMPTY output, so a crashed hook would satisfy
 # the two rows above exactly as a correct ALLOW does. This row proves the hook is alive.
-assert_deny "discriminator for the seven rows above: the hook is alive and still denying" \
+assert_deny "discriminator for the eight rows above: the hook is alive and still denying" \
   "$(json "$SESSION" "$WT_A" "git -C $MAIN commit -m x")"
 
 # Inherited over-DENIAL, pinned in the other direction: a DIGIT glued to the binary is SEEN,
@@ -1452,7 +1458,9 @@ fi
 # hook-level row named for it was a MATCHER miss and left the arm unpinned -- proven by
 # mutation), +3 brace-fd-in-value-slot KNOWN-WRONG rows. The existing liveness discriminator
 # was relabelled to cover them rather than duplicated -- which is why this is +4, not +5.
-EXPECTED_TOTAL=244
+# 244 -> 245: +1 KNOWN-UNENFORCED row for the coarse-filter brace-decoy skip (residual 6),
+# whose ALLOW is safe only via real git CLI grammar rather than via this guard.
+EXPECTED_TOTAL=245
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -598,7 +598,7 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #     main, not something this adoption introduces; near-miss binaries generally (`gitk`,
     #     `gitk>out`, `git-foo`, `digit`, `legit`) all stay MISSED.
     #
-    # NOT CLOSED — FIVE residual classes, listed together because a residual list naming only
+    # NOT CLOSED — SIX residual classes, listed together because a residual list naming only
     # one reads as completeness and the omitted one is the live route:
     #   1. A redirect BEFORE the `git` token (`2>/dev/null git commit -m x`) is a real
     #      invocation and is still MISSED: the segment anchor never reaches `git` when a
@@ -658,6 +658,21 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #      regression. Folded into
     #      todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
     #      and pinned in test-git-safety.sh as KNOWN-WRONG rows.
+    #
+    #   6. A bare brace DECOY word ahead of a second brace-fd redirect
+    #      (`git {fd} {9}>o -C <main> commit`). This one fails at the COARSE PRE-FILTER, before
+    #      git_c_target is invoked at all: the segment matches no arm of MUTATING_GIT_SEG_RE and
+    #      takes its `|| continue`. Handed the same string directly, the tokenizer resolves it
+    #      CORRECTLY (`c <main>`) -- the resolution is right and simply never runs.
+    #      NOT a live bypass, and the reason matters: real git stops global-option scanning at
+    #      the first non-dash argument, so the undigested leading brace word becomes the
+    #      subcommand and git errors out with no mutation. The safety of this row therefore
+    #      rests on GIT CLI GRAMMAR, not on anything this guard enforces -- an unenforced
+    #      cross-consumer assumption, written down here because it stops holding the moment the
+    #      pre-filter widens enough to match the segment without the tokenizer being reached.
+    #      Six variants were tried against it (double-brace glued and spaced, quoted-brace glued
+    #      to a redirect, brace before --work-tree with and without a redirect, and the
+    #      predir x pendbrace combinations); none produced a real mutation.
     #
     # So: three spellings closed across two mechanisms; the redirect bypass is NARROWED, not
     # eliminated. Measured through the real two-stage pipeline (split_segments then the regex),
