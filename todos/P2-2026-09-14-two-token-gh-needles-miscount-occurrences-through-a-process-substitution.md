@@ -1,6 +1,6 @@
 ---
 title: "The two-token gh needles miscount occurrences through a process substitution, so a hidden second merge is invisible to the ambiguity refusal"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-14
 updated: 2026-09-14

@@ -3993,9 +3993,23 @@ assert_deny "...opening at !" \
 # the clause is `[gh -a -c <(gh pr merge 7 --auto]` and the token is the INNER DECOY — identical
 # whether or not the outer merge carries one. The mask is therefore load-bearing for the whole
 # family, not for one row, which is why the no-authorisation variant is pinned alongside.
-# These rows pin the CURRENT verdict AND its REASON so a flip to ALLOW cannot be silent, and
-# so the eventual fix must come here and convert them. See
-# todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md.
+# These rows pin the CURRENT verdict AND its REASON so a flip to ALLOW cannot be silent.
+#
+# NOT CONVERTED — proved unfixable via occurrence counting, not merely left. The gh-api
+# SEPSAFE template (a separator-safe grammar, max()'d against the wide count) was tried here
+# and MEASURED INERT: `gh -a -c <(gh pr merge 7) pr merge 42` returns count=1 under BOTH the
+# wide AND the separator-safe grammar, because the nested invocation's own "gh" is the ONLY
+# "gh" reachable to complete ITS OWN match — the outer, really-executing "pr merge 42" has no
+# separate "gh" of its own to anchor a second, non-overlapping match, under any grammar
+# narrowing. A follow-up "does the matched span cross a command-position boundary" check was
+# also tried and rejected: it reddened 23 unrelated, already-correct assertions (interior
+# redirects like `gh pr 2>&1 merge`, and glued `;`/`&&`/`||` before an UNRELATED preceding `gh`
+# command) because those legitimately contain anchor-class bytes as ordinary redirect/glue
+# syntax, not as evidence of a second command. See
+# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md
+# for the full mechanism and both rejected approaches, and
+# todos/archive/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md
+# (closed as blocked/documentation — AC1 is unreachable as worded for this ordering).
 assert_deny "TRIPWIRE: a hidden second pr merge is miscounted but still denies" \
   "$(json 'gh -a -c <(gh pr merge 7) pr merge 42')" \
   "without a REAL --auto flag"
