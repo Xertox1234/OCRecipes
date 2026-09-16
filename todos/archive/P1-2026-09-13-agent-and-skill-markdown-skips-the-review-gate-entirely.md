@@ -1,6 +1,6 @@
 ---
 title: "Agent, skill and AI_WORKFLOW markdown takes the batch-merge doc exemption, so the files that DEFINE review can be merged without any review"
-status: backlog
+status: done
 priority: high
 created: 2026-09-13
 updated: 2026-09-13

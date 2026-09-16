@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -490,6 +496,41 @@ describe("todo-automerge-guard.sh (xhigh review: case-sensitivity and anchoring 
 // consumers of already-captured profile data (recipe personalization, AI coach context)
 // that are core product logic, not new chokepoints — see the guard script's
 // SENSITIVE_OVERRIDE comment for why those stay hand-named instead.
+
+// Shells a `grep -m1 '^NAME=' "$GUARD_SCRIPT" | cut -d= -f2- | tr -d "'"` against the
+// REAL script file — the exact same extraction idiom todo-executor.md's research-
+// delegation skip-gate uses at runtime, so a test built on it validates the actual
+// consumer contract, not a reimplementation. Module-scoped so every describe block that
+// needs a constant's live value (SENSITIVE_OVERRIDE, SAFE_ALLOWLIST, STRUCTURAL_SENSITIVE, …)
+// shares one implementation.
+function extractConstant(name: string): string {
+  return execFileSync(
+    "bash",
+    [
+      "-c",
+      `grep -m1 '^${name}=' "$1" | cut -d= -f2- | tr -d "'"`,
+      "_",
+      GUARD_SCRIPT,
+    ],
+    { encoding: "utf-8" },
+  ).trim();
+}
+
+// Generates a file list via `git ls-files` — the corpus is the real tracked tree, not a
+// hand-listed fixture (docs/solutions/code-quality/a-sampled-corpus-described-as-generated).
+// No narrowing (`head`, a subdirectory glob meant as a sample, etc.) — callers that want a
+// subset pass an explicit pathspec, which git itself resolves, so the result is still a
+// full, un-sampled listing of whatever was asked for.
+function gitLsFiles(...pathspecs: string[]): string[] {
+  return execFileSync("git", ["ls-files", ...pathspecs], {
+    cwd: REPO_ROOT,
+    encoding: "utf-8",
+  })
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+}
+
 function grepFiles(pattern: string, roots: string[]): string[] {
   try {
     return execFileSync(
@@ -604,19 +645,7 @@ describe("todo-automerge-guard.sh (xhigh review: research-delegation skip-gate c
   // own gap (e.g. the verification-token.ts miss this xhigh review found) can't recur
   // silently — a change to SENSITIVE_OVERRIDE/SENSITIVE_INTENT_KEYWORDS that breaks this
   // consumer fails here, not just in the merge-guard's own test blocks above.
-  function extractConstant(name: string): string {
-    return execFileSync(
-      "bash",
-      [
-        "-c",
-        `grep -m1 '^${name}=' "$1" | cut -d= -f2- | tr -d "'"`,
-        "_",
-        GUARD_SCRIPT,
-      ],
-      { encoding: "utf-8" },
-    ).trim();
-  }
-
+  // extractConstant is module-scoped (see top of file) so this reuses the same helper.
   function skipGateShouldSkip(
     affectedFiles: string[],
     todoTitle: string,
@@ -649,6 +678,24 @@ describe("todo-automerge-guard.sh (xhigh review: research-delegation skip-gate c
       skipGateShouldSkip(["server/routes/recipes.ts"], "Fix pagination bug"),
     ).toBe(true);
   });
+
+  // These four are new to SENSITIVE_OVERRIDE in this diff. The PATH GATE itself never
+  // reaches SENSITIVE_OVERRIDE for these paths (STRUCTURAL_SENSITIVE HOLDs and `continue`s
+  // first, at step 2), so the ONLY reachable consumer of SENSITIVE_OVERRIDE's new content
+  // for these four paths is this skip-gate — without a row here, removing them from
+  // SENSITIVE_OVERRIDE (while leaving STRUCTURAL_SENSITIVE untouched) would leave every
+  // other test in this file green.
+  it.each([
+    ".claude/agents/code-reviewer.md",
+    ".claude/skills/todo/SKILL.md",
+    "docs/AI_WORKFLOW.md",
+    "docs/PATTERNS.md",
+  ])(
+    "skips delegation for %s under a neutral title (new SENSITIVE_OVERRIDE entry, reachable only through this consumer — see STRUCTURAL_SENSITIVE's own PATH GATE shortcut)",
+    (file) => {
+      expect(skipGateShouldSkip([file], "Fix pagination bug")).toBe(true);
+    },
+  );
 
   it("does NOT skip delegation for an ordinary client/ file under a neutral title (delegation still happens for genuinely non-sensitive work)", () => {
     expect(
@@ -737,5 +784,219 @@ describe("todo-automerge-guard.sh --paths-only", () => {
     expect(status).toBe(1);
     expect(stdout).toContain("no todos/archive/*.md in the diff");
     expect(stdout).toContain("PR #123");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Markdown-exemption bypass fix: the step-2 markdown exemption used to run BEFORE any
+// sensitivity check, so every whole-directory SENSITIVE_OVERRIDE entry (server/routes/,
+// .github/, scripts/, migrations/, docs/rules/) had a silent `\.md$` bypass through it,
+// and the files that DEFINE review (.claude/agents/, .claude/skills/, docs/AI_WORKFLOW.md,
+// docs/PATTERNS.md) were in no override at all. STRUCTURAL_SENSITIVE now runs first, for
+// every file (markdown included). --paths-only is used throughout below because that is
+// the exact mode .claude/hooks/merge-review-guard.sh stage 2 calls.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("todo-automerge-guard.sh (markdown-exemption bypass closed: .claude/agents/ and .claude/skills/ now HOLD)", () => {
+  // Generated via git ls-files, not hand-listed — see gitLsFiles's own comment.
+  const agentFiles = gitLsFiles(".claude/agents");
+  const skillFiles = gitLsFiles(".claude/skills");
+
+  it(`generated a non-empty corpus (${agentFiles.length} .claude/agents/ files, ${skillFiles.length} .claude/skills/ files) — sanity check git ls-files didn't return empty`, () => {
+    expect(agentFiles.length).toBeGreaterThan(0);
+    expect(skillFiles.length).toBeGreaterThan(0);
+  });
+
+  it.each(agentFiles)(
+    'HOLDs %s (--paths-only) — the reviewer checklists that define what "reviewed" means',
+    (file) => {
+      const { status } = runGuardPathsOnly([file]);
+      expect(status).toBe(1);
+    },
+  );
+
+  it.each(skillFiles)(
+    "HOLDs %s (--paths-only) — every .claude/skills/ file, including /codify's review-rule routing table",
+    (file) => {
+      const { status } = runGuardPathsOnly([file]);
+      expect(status).toBe(1);
+    },
+  );
+
+  it.each([
+    "docs/AI_WORKFLOW.md",
+    "docs/PATTERNS.md",
+    ".github/copilot-instructions.md",
+  ])(
+    "HOLDs %s (--paths-only) — the Review Policy roster / knowledge-base index / Copilot review source",
+    (file) => {
+      const { status } = runGuardPathsOnly([file]);
+      expect(status).toBe(1);
+    },
+  );
+
+  it("merge-review-guard.sh stage 2 falls through to stage 3 (review record required) for any non-zero GUARD_RC — verified by reading the held, out-of-scope file, not by editing or executing it", () => {
+    const hookText = readFileSync(
+      join(REPO_ROOT, ".claude/hooks/merge-review-guard.sh"),
+      "utf-8",
+    );
+    expect(hookText).toContain('[ "$GUARD_RC" -eq 0 ] && exit 0');
+  });
+});
+
+describe("todo-automerge-guard.sh (non-regression: all docs/rules/*.md still HOLD via STRUCTURAL_SENSITIVE, generated not hand-listed)", () => {
+  const rulesFiles = gitLsFiles("docs/rules");
+
+  it(`generated all ${rulesFiles.length} docs/rules/*.md files via git ls-files`, () => {
+    expect(rulesFiles.length).toBeGreaterThan(0);
+  });
+
+  it.each(rulesFiles)(
+    "HOLDs %s (--paths-only, unchanged by the reorder)",
+    (file) => {
+      const { status } = runGuardPathsOnly([file]);
+      expect(status).toBe(1);
+    },
+  );
+});
+
+describe("todo-automerge-guard.sh (controls, same run: the high-volume docs/todos exemption must not regress)", () => {
+  it.each([
+    "docs/solutions/best-practices/security-rules-extended-rationale-2026-06-05.md",
+    "docs/research/some-benchmark.md",
+    "docs/todo-automation-runbook.md",
+    "todos/P3-2026-08-05-some-open-todo.md",
+    "todos/archive/P3-2026-08-05-another.md",
+  ])(
+    "still allows %s (--paths-only) — control: the exemption's own high-volume, low-risk case must not have been swallowed",
+    (file) => {
+      const { status } = runGuardPathsOnly([file]);
+      expect(status).toBe(0);
+    },
+  );
+});
+
+describe("todo-automerge-guard.sh (non-regression bound: .claude/settings.json and .claude/hooks/*.sh keep HOLDing via allowlist absence, not the new override)", () => {
+  it("SAFE_ALLOWLIST does not match .claude/settings.json or a .claude/hooks/*.sh path — they HOLD at step 1, unaffected by STRUCTURAL_SENSITIVE/SENSITIVE_OVERRIDE (a widened allowlist later would silently expose them; this pins that today's protection is the NARROW allowlist, not the new override)", () => {
+    const allowlist = extractConstant("SAFE_ALLOWLIST");
+    expect(new RegExp(allowlist).test(".claude/settings.json")).toBe(false);
+    expect(new RegExp(allowlist).test(".claude/hooks/some-hook.sh")).toBe(
+      false,
+    );
+  });
+
+  it.each([".claude/settings.json", ".claude/hooks/some-hook.sh"])(
+    "HOLDs %s end to end (--paths-only)",
+    (file) => {
+      const { status } = runGuardPathsOnly([file]);
+      expect(status).toBe(1);
+    },
+  );
+});
+
+describe("todo-automerge-guard.sh (generated corpus, both directions, counts quoted with the corpus that produced them)", () => {
+  // Full tracked population — no head/narrowing glob (docs/solutions/code-quality/
+  // a-sampled-corpus-described-as-generated-2026-09-13.md is exactly this failure mode).
+  const allTracked = gitLsFiles();
+  const reviewGoverningFiles = [
+    ...gitLsFiles(".claude/agents"),
+    ...gitLsFiles(".claude/skills"),
+    "docs/AI_WORKFLOW.md",
+    "docs/PATTERNS.md",
+    ".github/copilot-instructions.md",
+  ];
+  const exemptControlFiles = allTracked.filter(
+    (f) => f.startsWith("docs/solutions/") || f.startsWith("todos/"),
+  );
+
+  it(`generated the full tracked corpus (${allTracked.length} paths) and both control subsets (${reviewGoverningFiles.length} review-governing, ${exemptControlFiles.length} docs/solutions+todos) via git ls-files — sanity check this is the real corpus, not a stub`, () => {
+    expect(allTracked.length).toBeGreaterThan(1000);
+    expect(reviewGoverningFiles.length).toBeGreaterThan(0);
+    expect(exemptControlFiles.length).toBeGreaterThan(0);
+  });
+
+  it(`HOLDs every one of the ${reviewGoverningFiles.length} review-governing files in one batched --paths-only run (direction 1: newly sensitive)`, () => {
+    const { status, stdout } = runGuardPathsOnly(reviewGoverningFiles);
+    expect(status).toBe(1);
+    for (const f of reviewGoverningFiles) {
+      expect(stdout).toContain(f);
+    }
+  });
+
+  // The guard's PATH GATE runs a handful of `grep -qE` calls per file in a bash while
+  // loop; ~1750 files takes ~15-20s wall clock, well over vitest's 10s default. Not a
+  // hang — the batched-run rows above and below this one finish in well under a second.
+  it(`does not regress a single one of the ${exemptControlFiles.length} docs/solutions/ and todos/ files in one batched --paths-only run (direction 2: must-still-PASS control)`, () => {
+    const { status } = runGuardPathsOnly(exemptControlFiles);
+    expect(status).toBe(0);
+  }, 30000);
+});
+
+describe("todo-automerge-guard.sh (drift guard: STRUCTURAL_SENSITIVE stays a subset of SENSITIVE_OVERRIDE)", () => {
+  it("every STRUCTURAL_SENSITIVE alternative also appears as an alternative in SENSITIVE_OVERRIDE (prevents the exact drift the script's own comment warns about: a path exempted structurally by STRUCTURAL_SENSITIVE but never reaching the SENSITIVE_OVERRIDE check that is supposed to HOLD it as code — the next whole-directory entry added only to SENSITIVE_OVERRIDE and not mirrored here would silently reopen the markdown bypass for that one new directory)", () => {
+    const structuralAlternatives = extractConstant(
+      "STRUCTURAL_SENSITIVE",
+    ).split("|");
+    const sensitiveAlternatives = new Set(
+      extractConstant("SENSITIVE_OVERRIDE").split("|"),
+    );
+    const missing = structuralAlternatives.filter(
+      (alt) => !sensitiveAlternatives.has(alt),
+    );
+    expect(missing).toEqual([]);
+  });
+});
+
+describe("todo-automerge-guard.sh (mutation-verified: STRUCTURAL_SENSITIVE's rc-capture discipline is fail-closed, not a bare && chain)", () => {
+  function runScript(
+    scriptPath: string,
+    files: string[],
+  ): { status: number | null } {
+    const dir = mkdtempSync(join(tmpdir(), "guard-mutant-gh-"));
+    tempDirs.push(dir);
+    writeFileSync(join(dir, "gh"), FAKE_GH_SCRIPT);
+    chmodSync(join(dir, "gh"), 0o755);
+    const result = spawnSync("bash", [scriptPath, "--paths-only", "123"], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${dir}:${process.env.PATH ?? ""}`,
+        FAKE_GH_DIFF_FILES: files.join("\n"),
+      },
+    });
+    return { status: result.status };
+  }
+
+  function mutantScriptWithBrokenStructuralSensitive(): string {
+    const original = readFileSync(GUARD_SCRIPT, "utf-8");
+    const mutated = original.replace(
+      /^STRUCTURAL_SENSITIVE='[^']*'$/m,
+      "STRUCTURAL_SENSITIVE='(unclosed'",
+    );
+    // Sanity check the mutation itself actually landed — otherwise this "mutation test"
+    // would silently run the healthy script twice and both rows would pass for the wrong
+    // reason (docs/solutions/code-quality/a-guard-and-its-mutation-test-can-both-be-inert).
+    expect(mutated).not.toBe(original);
+    const dir = mkdtempSync(join(tmpdir(), "guard-mutant-src-"));
+    tempDirs.push(dir);
+    const mutantPath = join(dir, "todo-automerge-guard.sh");
+    writeFileSync(mutantPath, mutated);
+    chmodSync(mutantPath, 0o755);
+    return mutantPath;
+  }
+
+  const CONTROL_FILE =
+    "docs/solutions/best-practices/security-rules-extended-rationale-2026-06-05.md";
+
+  it(`control: the healthy (unmutated) script still PASSES ${CONTROL_FILE} — proves the harness itself is not broken before trusting the mutant row below`, () => {
+    const { status } = runScript(GUARD_SCRIPT, [CONTROL_FILE]);
+    expect(status).toBe(0);
+  });
+
+  it(`mutant: a malformed STRUCTURAL_SENSITIVE (grep rc >= 2) HOLDs the SAME ${CONTROL_FILE} instead of silently taking the markdown exemption — fail-closed, mirroring step 4's existing rc_sens idiom, not a bare && chain that would invert a regex error into a silent PASS`, () => {
+    const mutantPath = mutantScriptWithBrokenStructuralSensitive();
+    const { status } = runScript(mutantPath, [CONTROL_FILE]);
+    expect(status).toBe(1);
   });
 });

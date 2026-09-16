@@ -17,9 +17,11 @@
 # server/routes/ directory (the request/authz boundary — see SAFE_ALLOWLIST's comment for
 # why this one root HOLDs wholesale instead of being enumerate-the-sensitive-ones), the
 # whole server/middleware/ directory, .github/ (the CI gates), scripts/ (incl. this
-# guard), migrations, shared/schema.ts, secrets/certs, docs/rules/ (the binding review
-# rules — the one docs path carved OUT of the markdown pass-through; see SENSITIVE_OVERRIDE
-# and PATH GATE step 2), plus explicit sensitive files named
+# guard), migrations, shared/schema.ts, secrets/certs, docs/rules/, .claude/agents/,
+# .claude/skills/, docs/AI_WORKFLOW.md and docs/PATTERNS.md (the binding review rules and
+# the files that define what "reviewed" means — structural entries carved OUT of the
+# markdown pass-through; see STRUCTURAL_SENSITIVE, SENSITIVE_OVERRIDE, and PATH GATE step 2),
+# plus explicit sensitive files named
 # in SENSITIVE_OVERRIDE that live inside the otherwise-open client/ and server/storage/
 # roots. server/routes/, .github/, scripts/, and migrations/ are held BOTH by SAFE_ALLOWLIST
 # omission AND by an explicit whole-dir SENSITIVE_OVERRIDE entry — belt-and-suspenders,
@@ -124,14 +126,14 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # reviewer and every injected-pattern hook acts on; accessibility.md, database.md and the rest are
 # equally binding, which is why this is scoped to the whole directory and not to security.md
 # alone — a per-file list would silently go stale the next time a rules file is added). It needs
-# BOTH this entry and the docs/rules/ carve-out in the PATH GATE's step 2 below: SAFE_ALLOWLIST's
-# ^docs/ prefix already passes them, and the step-2 markdown exemption used to `continue` before
-# this override was ever consulted, so a batch-generated PR trimming a binding security rule was
+# BOTH this entry and the PATH GATE's STRUCTURAL_SENSITIVE check (step 2, below): SAFE_ALLOWLIST's
+# ^docs/ prefix already passes them, and the markdown exemption used to `continue` before any
+# sensitivity check was ever consulted, so a batch-generated PR trimming a binding security rule was
 # auto-merge eligible and could land overnight unreviewed — contradicting this repo's own rule
 # that security changes get individual review. This is a real path, not a hypothetical:
 # todo-executor.md Step 5b appends CRITICAL/HIGH rule bullets to docs/rules/{domain}.md from
 # inside the /todo PR itself. Every OTHER docs path (docs/solutions/, docs/research/, runbooks)
-# and all of todos/ keeps the exemption. Listing it here rather than only in the step-2 carve-out
+# and all of todos/ keeps the exemption. Listing it here rather than only in STRUCTURAL_SENSITIVE
 # is what makes todo-executor.md's research-delegation skip-gate inherit it — that gate reads
 # SENSITIVE_OVERRIDE and never looks at SAFE_ALLOWLIST.
 # server/storage/verification.ts and client/components/VerificationBadge are the UNRELATED
@@ -166,7 +168,26 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # generically-named, allowlisted-directory file — named individually since none shares a
 # signature generic enough for the drift-detection test to generalize without becoming a
 # broad "security detector" (deliberately avoided — see that test's own comment).
-SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW\.md$|(^|/)docs/PATTERNS\.md$|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
+
+# Structural subset of the above: whole-directory and exact-path entries ONLY, no
+# free-text keywords. Read by the PATH GATE's structural-sensitivity check (below)
+# BEFORE the markdown/docs/todos exemption, so a markdown file under any of these can
+# never take that exemption — this is what closes the gap where every whole-directory
+# SENSITIVE_OVERRIDE entry had a silent `\.md$` bypass through the exemption that used
+# to run first. Deliberately narrower than SENSITIVE_OVERRIDE: that regex also carries
+# free-text keywords ([Aa]dmin, [Pp]remium, [Ll]ogin, secret, credential, (^|/)[Hh]ealth,
+# …) meant to classify CODE by filename, and running those over prose HOLDs any ordinary
+# doc/todo whose slug or title happens to contain an everyday word — measured over the
+# full tracked corpus (git ls-files, no sampling): 0 unintended changes under
+# docs/solutions/ or todos/ with this narrower regex, vs 33 with the full
+# SENSITIVE_OVERRIDE. .claude/agents/ and .claude/skills/ are added because they are the
+# files that DEFINE what "reviewed" means — every roster reviewer's checklist lives
+# there — and docs/AI_WORKFLOW.md / docs/PATTERNS.md are the Review Policy roster and the
+# knowledge-base index those checklists point back to. All four are ALSO added to
+# SENSITIVE_OVERRIDE above for defense-in-depth, same belt-and-suspenders reasoning as
+# the other whole-dir entries there.
+STRUCTURAL_SENSITIVE='(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW\.md$|(^|/)docs/PATTERNS\.md$'
 
 # Sensitive-domain keywords for the TODO gate's intent check (below): HOLDs any todo
 # whose own title/frontmatter names a sensitive domain, regardless of which file it ends
@@ -259,11 +280,16 @@ fi
 
 # ── PATH GATE ─────────────────────────────────────────────────────────────────
 
-# A file passes only if (1) it is on the allowlist and (2) — unless it is a doc/todo/
-# markdown file, which is never sensitive CODE — it does not hit the sensitive override.
-# ANY other outcome HOLDs: not allowlisted, sensitive, or a grep regex ERROR (rc >= 2).
-# Exit codes are captured explicitly so a broken regex (rc 2) can never look like a clean
-# "no match" (rc 1) — a typo fails CLOSED, never silently passes as eligible.
+# A file passes only if (1) it is on the allowlist, (2) it is not one of the
+# STRUCTURALLY sensitive whole-directory / exact-path entries (checked for EVERY file,
+# markdown included — this is what closes the markdown-exemption bypass: every
+# whole-directory SENSITIVE_OVERRIDE entry had a silent `\.md$` bypass through the
+# exemption when it ran first), and (3) — unless it is a doc/todo/markdown file that
+# survived (2), which is never sensitive CODE — it does not hit the full,
+# keyword-bearing sensitive override. ANY other outcome HOLDs: not allowlisted,
+# structurally sensitive, sensitive, or a grep regex ERROR (rc >= 2). Exit codes are
+# captured explicitly so a broken regex (rc 2) can never look like a clean "no match"
+# (rc 1) — a typo fails CLOSED, never silently passes as eligible.
 unsafe=""
 while IFS= read -r f; do
   [ -z "$f" ] && continue
@@ -271,25 +297,31 @@ while IFS= read -r f; do
   if ! printf '%s' "$f" | grep -qE "$SAFE_ALLOWLIST"; then
     unsafe="${unsafe}  ${f}"$'\n'; continue
   fi
-  # 2) docs / todos / markdown are never sensitive CODE — they pass on the allowlist alone
-  #    (a todo slug like subscription-tier-ui.md must not trip the override). ONE carve-out:
-  #    docs/rules/ holds this repo's BINDING review rules (see SENSITIVE_OVERRIDE's comment),
-  #    so those files fall through to (3) and HOLD. Every OTHER docs/todos path — docs/solutions/,
-  #    docs/research/, todos/, runbooks — keeps the exemption; that high-volume, low-risk case is
-  #    what the exemption exists for.
-  #    The rc is captured explicitly rather than written as `… && ! grep -qE '(^|/)docs/rules/'`:
+  # 2) structural sensitivity — whole-directory and exact-path entries ONLY, checked
+  #    BEFORE the markdown exemption below so markdown can never escape it. Deliberately
+  #    NOT the full SENSITIVE_OVERRIDE: that regex also carries free-text keywords meant
+  #    to classify CODE by filename, and running those over prose HOLDs any doc/todo
+  #    whose slug happens to contain an everyday word (see STRUCTURAL_SENSITIVE's comment).
+  #    The rc is captured explicitly rather than written as `… && ! grep -qE "$STRUCTURAL_SENSITIVE"`:
   #    under negation a BROKEN regex (rc >= 2) inverts to true, takes the exemption, and skips the
-  #    sensitive check — fail-OPEN, the exact trap step 3's rc_sens capture exists to avoid. Here
-  #    rc 1 (clean no-match ⇒ not a rules file) is the ONLY value that takes the exemption; rc 0
-  #    (is a rules file) and rc >= 2 (regex error) both fall through to MORE checking, not less.
-  #    Same regex text as the SENSITIVE_OVERRIDE entry on purpose — if the two ever diverged, a
-  #    path could be exempted here and never reach the override that is supposed to HOLD it.
-  rc_rules=0; printf '%s' "$f" | grep -qE '(^|/)docs/rules/' || rc_rules=$?
-  if [ "$rc_rules" -eq 1 ] && printf '%s' "$f" | grep -qE '^(docs|todos)/|\.md$'; then
+  #    sensitive check — fail-OPEN, the exact trap step 4's rc_sens capture exists to avoid. Here
+  #    rc 1 (clean no-match) is the ONLY value that may skip the HOLD; rc 0 (structurally
+  #    sensitive) and rc >= 2 (regex error) both HOLD.
+  rc_struct=0; printf '%s' "$f" | grep -qE "$STRUCTURAL_SENSITIVE" || rc_struct=$?
+  if [ "$rc_struct" -ne 1 ]; then
+    unsafe="${unsafe}  ${f}"$'\n'; continue
+  fi
+  # 3) docs / todos / markdown that survived (2) are never sensitive CODE — they pass on
+  #    the allowlist alone (a todo slug like subscription-tier-ui.md must not trip the
+  #    override). Every OTHER docs/todos path — docs/solutions/, docs/research/, todos/,
+  #    runbooks — keeps the exemption; that high-volume, low-risk case is what the
+  #    exemption exists for.
+  if printf '%s' "$f" | grep -qE '^(docs|todos)/|\.md$'; then
     continue
   fi
-  # 3) an allowlisted CODE file that hits the sensitive override HOLDs. rc 1 (clean no-match)
-  #    is the ONLY pass; rc 0 (sensitive) and rc >= 2 (regex error) both HOLD.
+  # 4) an allowlisted, structurally-clean CODE file that hits the full keyword-bearing
+  #    sensitive override HOLDs. rc 1 (clean no-match) is the ONLY pass; rc 0 (sensitive)
+  #    and rc >= 2 (regex error) both HOLD.
   rc_sens=0; printf '%s' "$f" | grep -qE "$SENSITIVE_OVERRIDE" || rc_sens=$?
   if [ "$rc_sens" -ne 1 ]; then
     unsafe="${unsafe}  ${f}"$'\n'
