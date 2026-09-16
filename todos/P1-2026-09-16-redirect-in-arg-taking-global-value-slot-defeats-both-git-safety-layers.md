@@ -1,5 +1,5 @@
 ---
-title: "A redirect in an arg-taking global's VALUE SLOT defeats both git-safety layers — `git -C >out /MAIN commit -m x` mutates main from a registered worktree"
+title: "Two redirect shapes still defeat git-safety: a redirect in an arg-taking global VALUE SLOT (both layers), and a parameter expansion in the fd slot (matcher only)"
 status: backlog
 priority: high
 created: 2026-09-16
@@ -13,7 +13,8 @@ github_issue:
 
 ## Summary
 
-`git -C >out /MAIN commit -m x` is a real `main` mutation (argv: `[-C] [/MAIN] [commit] [-m] [x]`)
+Two shapes, filed together because they are both fd-slot/value-slot misses in the same guard
+but fail at DIFFERENT layers. Shape 1: `git -C >out /MAIN commit -m x` is a real `main` mutation (argv: `[-C] [/MAIN] [commit] [-m] [x]`)
 that the worktree contract does **not** enforce. Both of `git-safety.sh`'s layers miss it
 independently, for two different reasons, so closing either one alone leaves the route open.
 
@@ -22,7 +23,7 @@ independently, for two different reasons, so closing either one alone leaves the
 Found during the review of PR #956 (`fix(hooks): see a redirect between git and its verb in the
 worktree contract`), which closed the redirect-**between**-`git`-and-its-verb position. This is a
 **sixth** redirect position that PR did not cover and that its residual list at
-`git-safety.sh:561` does not name — the omission matters because that list is written to read as
+the `NOT CLOSED` residual list in `git-safety.sh` does not name — the omission matters because that list is written to read as
 complete ("a residual list naming only one reads as completeness and the omitted one is the live
 route"), and this position sits _inside_ the very group PR #956 widened, which is exactly where an
 implementer is most likely to assume coverage.
@@ -34,13 +35,13 @@ pre-existing gap, filed separately so PR #956 stays scoped.
 
 **Structural (verified directly against the files, 2026-09-16):**
 
-- Matcher, `git-safety.sh:499` — `MUTATING_GIT_SEG_RE` spells the separate-arg globals as
+- Matcher, the `MUTATING_GIT_SEG_RE=` assignment in `git-safety.sh` — it spells the separate-arg globals as
   `-C[[:space:]]+[^[:space:]]+` (and the same shape for `-c`, `--git-dir`, `--work-tree`). The
   value class `[^[:space:]]+` happily consumes `>out`, so `>out` is eaten _as the `-C` value_.
   What is left is a bare `/MAIN` token, which matches neither the `-[^[:space:]]+` flag arm nor
   `_CMD_REDIR` — so the whole segment falls off the matcher.
-- Tokenizer, `git-safety.sh:272` — the `if (pend == "C") { fold(w); pend = ""; return }` branch
-  sits **above** the redirect-classifying arm at `:321`
+- Tokenizer, the `pend` dispatch inside `git_c_target` in `git-safety.sh` — the `if (pend == "C") { fold(w); pend = ""; return }` branch
+  sits **above** the redirect-classifying arm at the `index(w, "<")` redirect arm
   (`if (!tnt && (index(w, "<") || index(w, ">")))`). Because `pend` was set by the preceding
   `-C`, the redirect arm is never reached and `>out` is folded as a **relative** `-C` value,
   which then resolves under cwd — the wrong repo.
@@ -56,6 +57,25 @@ pre-existing gap, filed separately so PR #956 stays scoped.
 - Two-sided controls held in the same run: `git -C $MAIN commit -m x` DENY on both hooks, and
   `git 2>/dev/null -C $MAIN commit -m x` ALLOW on `main` / DENY on the branch (proving the #956
   adoption was engaged in the probe rather than the harness being inert).
+
+## Shape 2 — a parameter expansion in the fd slot (matcher-side only)
+
+Distinct from shape 1 and worth keeping separate in the fix: here the **matcher** misses, so the
+tokenizer is never consulted at all.
+
+`git ${nope}>o -C <main> commit -m x` and the unbraced `git $nope>o -C <main> commit -m x` both
+produce a real main-mutating argv — `[-C] [/MAIN] [commit]` — under **both** bash 5.3.15 and
+zsh 5.9, so unlike the brace-fd family this shape does not depend on zsh-only lexing. `_CMD_REDIR`
+spells the fd prefix as `([0-9]*|[{]...[}][[:space:]]*)`, which admits neither `${nope}` nor
+`$nope`, so `MUTATING_GIT_SEG_RE` never matches the segment.
+
+`main` allows both identically — an un-closed gap, not a regression. Pinned as KNOWN-WRONG rows
+in `test-git-safety.sh` and named as residual class 5 in `git-safety.sh`.
+
+Note the interaction that makes this worth fixing with shape 1 rather than after it: an expansion
+that is EMPTY at runtime leaves a bare redirect the guard already models, while a non-empty one
+becomes an fd number. The guard cannot know which, so the safe reading is that any expansion in
+the fd slot is a redirect prefix.
 
 ## Acceptance Criteria
 
@@ -75,17 +95,23 @@ pre-existing gap, filed separately so PR #956 stays scoped.
       mind — which is how this position was missed the first time).
 - [ ] `git-safety.sh`'s residual list is updated: this position is removed from the residuals once
       closed, and any KNOWN-WRONG rows for it in `test-git-safety.sh` become `assert_deny`.
+- [ ] **Shape 2:** `_CMD_REDIR` admits a parameter expansion in the fd slot, so
+      `git ${nope}>o -C $MAIN commit -m x` and `git $nope>o -C $MAIN commit -m x` both DENY from a
+      registered worktree cwd. Because this is a MATCHER fix on a constant with multiple
+      consumers, verify every consumer of `_CMD_REDIR`, not just `git-safety.sh`.
+- [ ] **Shape 2 control:** a literal `$` in a filename target (no expansion) is unaffected, and no
+      safe-idiom row in the FALSE-DENY sweep starts denying.
 
 ## Implementation Notes
 
 - The fix must move redirect classification above the `pend` checks in `git_c_target`, **and**
   stop the matcher's value class from swallowing a redirect-shaped token. The two edits are
   independent; neither alone closes the route.
-- `_CMD_GIT_GLOBALS` in `.claude/hooks/lib/cmd-detect.sh:151` carries the same separate-arg value
+- `_CMD_GIT_GLOBALS` in `.claude/hooks/lib/cmd-detect.sh` carries the same separate-arg value
   class and is shared by other consumers — check whether the fix belongs there rather than only in
   `git-safety.sh`, and widen the detector and its consumers in ONE change.
 - Related, already fixed in PR #956 and worth reading first as the worked example: the brace-fd
-  class at `git-safety.sh:323` was narrower than `_CMD_REDIR`, which is the same
+  class (the `rpre ~ /^[{]...[}]$/` test in `git_c_target`) was narrower than `_CMD_REDIR`, which is the same
   matcher/consumer-divergence shape.
 
 ## Scope Contract

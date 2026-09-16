@@ -442,9 +442,39 @@ assert_deny "registry: brace-fd {9} redirect (all-digits) before -C <main> is de
   "$(json "$SESSION" "$WT_A" "git {9}>o -C $MAIN commit -m x")"
 assert_deny "registry: control — brace-fd {fd} redirect (named) before -C <main> is denied" \
   "$(json "$SESSION" "$WT_A" "git {fd}>o -C $MAIN commit -m x")"
+# SPACED brace-fd — `_CMD_REDIR` carries a trailing `[[:space:]]*` after the closing brace and
+# zsh honours it. Measured: `zsh -c 'printf "[%s]" A {fd} >f B'` prints `[A][B]` and creates an
+# EMPTY f, so `{fd} >f` was consumed as an fd-var redirect; bash instead writes `[A][{fd}][B]`
+# into f, treating `{fd}` as an ordinary argument. The awk classifier computes rpre from the
+# prefix of a SINGLE word, so a brace-ONLY word never reaches the brace class at all — widening
+# the brace CONTENT axis without the WHITESPACE axis left BOTH directions wrong.
+assert_deny "registry: SPACED brace-fd redirect before -C <main> is denied (zsh fd-var form)" \
+  "$(json "$SESSION" "$WT_A" "git {fd} >o -C $MAIN commit -m x")"
+assert_allow "registry: SPACED brace-fd redirect before -C <worktree> stays allowed (false-DENY repair)" \
+  "$(json "$SESSION" "$MAIN" "git {fd} >o -C $WT_A commit -m x")"
+# A brace word NOT followed by a redirect is an ordinary argument in BOTH shells (git errors on
+# it), so it must still end the scan at the verb branch rather than being skipped as an fd —
+# otherwise a following -C would be mined and an inert command would be over-denied.
+assert_allow "registry: brace word with no following redirect is not swallowed as an fd" \
+  "$(json "$SESSION" "$WT_A" "git {fd} -C $MAIN commit -m x")"
+# CHAINED -C crossed with an interposed redirect — two dimensions this file tested only
+# separately (the chained--C block never adds a redirect; the brace-fd block never adds a second
+# -C), which is where the widening turns out to have its most security-relevant effect. git
+# resolves cumulative -C as LAST-ABSOLUTE-WINS, so the SECOND -C is the real target.
+# Measured against the pre-widening hook: the deny row below was a live ALLOW, i.e. a real main
+# mutation slipping through, and the allow row was an over-denial. Both are corrected now, so
+# they are pinned here or a later refactor silently reopens the bypass.
+assert_deny "registry: chained -C with interposed brace-fd — LAST -C is <main>, must deny" \
+  "$(json "$SESSION" "$WT_A" "git -C $WT_A {9}>out -C $MAIN commit -m x")"
+assert_allow "registry: chained -C with interposed brace-fd — LAST -C is <worktree>, stays allowed" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN {9}>out -C $WT_A commit -m x")"
 
 # --- FALSE-DENY sweep: widening a boundary class is the direction that invents denials, and
 # a guard that denies ordinary read-only git gets switched off. Every row here must ALLOW.
+# The brace-class widening is BIDIRECTIONAL, so its safe-direction half needs a pin too, or a
+# future narrowing silently re-introduces a false deny of the spelling CLAUDE.md prescribes.
+assert_allow "registry: brace-fd {9} redirect before -C <worktree> stays allowed (false-DENY repair)" \
+  "$(json "$SESSION" "$MAIN" "git {9}>o -C $WT_A commit -m x")"
 assert_allow "registry: read-only verb with the SAME interposed redirect stays allowed" \
   "$(json "$SESSION" "$MAIN" 'git 2>/dev/null status')"
 assert_allow "registry: read-only log with an interposed redirect stays allowed" \
@@ -638,11 +668,18 @@ assert_allow "KNOWN-WRONG (filed): redirect in the -C VALUE SLOT — real -C <ma
   "$(json "$SESSION" "$WT_A" "git -C >out $MAIN commit -m x")"
 assert_allow "KNOWN-WRONG (filed): redirect in the --work-tree VALUE SLOT — real <main> mutation MISSED" \
   "$(json "$SESSION" "$WT_A" "git --work-tree >out $MAIN reset --hard")"
+# (iv) A parameter expansion in the fd slot. MATCHER miss rather than tokenizer miss: the
+#     _CMD_REDIR fd-prefix group admits neither `${nope}` nor `$nope`, so the segment never
+#     matches at all. Real main-mutating argv under BOTH bash and zsh; main ALLOWs identically.
+# FOLDED INTO: todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
+assert_allow "KNOWN-WRONG (filed): braced param expansion in the fd slot — real -C <main> mutation MISSED" \
+  "$(json "$SESSION" "$WT_A" "git \${nope}>o -C $MAIN commit -m x")"
+assert_allow "KNOWN-WRONG (filed): unbraced param expansion in the fd slot — real -C <main> mutation MISSED" \
+  "$(json "$SESSION" "$WT_A" "git \$nope>o -C $MAIN commit -m x")"
 # Positive discriminator: assert_allow passes on EMPTY output, so a crashed hook would satisfy
 # the two rows above exactly as a correct ALLOW does. This row proves the hook is alive.
-assert_deny "discriminator for the two rows above: the hook is alive and still denying" \
+assert_deny "discriminator for the four rows above: the hook is alive and still denying" \
   "$(json "$SESSION" "$WT_A" "git -C $MAIN commit -m x")"
-
 
 # Inherited over-DENIAL, pinned in the other direction: a DIGIT glued to the binary is SEEN,
 # but bash lexes `git2>out` as the word `git2` plus `>out`, so it invokes `git2`, not git.
@@ -1372,7 +1409,14 @@ fi
 # walk past a separate-arg global in either position.
 # 159 -> 160: +1 for the discriminating single-global row, which the previous commit
 # described as added while only adding it to a comment.
-EXPECTED_TOTAL=232
+# 160 -> 240 (2026-09-16): +67 carried in by merging origin/main with this branch's own
+# pre-existing rows (the pin landed on main after this branch forked, so neither side saw the
+# other until the merge tree existed), +2 for the {9}/{fd} brace-fd control pair, +2 for the
+# value-slot KNOWN-WRONG rows, +1 for their liveness discriminator, +1 for the false-DENY
+# sweep row pinning the safe direction of the brace-class widening, +3 for the SPACED
+# brace-fd pair and its not-swallowed control, +2 for the fd-slot param-expansion
+# KNOWN-WRONG rows, +2 for the chained--C x interposed-redirect cross.
+EXPECTED_TOTAL=240
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

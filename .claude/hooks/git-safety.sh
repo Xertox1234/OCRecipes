@@ -269,6 +269,17 @@ git_c_target() {
       # git honors cumulative -C (last absolute wins) and --git-dir/--work-tree redirects; a
       # benign unmodeled global (--no-pager/-p/…) must be skipped so a later real -C is reached.
       if (predir)       { predir = 0; return }          #   target word of a SPACED redirect operator
+      # A brace-only fd word was skipped last round (see the pendbrace arm further down). Decide
+      # what it WAS by looking at THIS word: a redirect operator here means zsh consumed the pair
+      # as an fd-var redirect, so let this word fall through to the redirect arm and keep scanning
+      # for a later -C. Anything else means both shells treat the brace word as an ordinary
+      # argument (git errors on it), so it was the verb: emit and stop, exactly as the verb branch
+      # would have done had the brace word not been skipped. Deciding one word LATE is the only
+      # way to tell the two shells apart, because the brace word alone is ambiguous.
+      if (pendbrace) {
+        pendbrace = 0
+        if (tnt || (!index(w, "<") && !index(w, ">"))) { emit_effective(); done = 1; return }
+      }
       if (pend == "C")  { fold(w);  pend = ""; return } #   -C arg (value may be quoted): accumulate
       if (pend == "c")  { pend = ""; return }           #   -c value: skip (its name=value token)
       if (pend == "gd") { setgd(w); pend = ""; return } #   --git-dir arg (separate form)
@@ -284,6 +295,12 @@ git_c_target() {
       # dash, so skipping a QUOTED decoy flag still lets a later real -C be reached — a taint-gated
       # skip would instead halt the scan at the decoy and miss the real redirect (a bypass).
       if (substr(w, 1, 1) == "-") return
+      # A brace-ONLY word with no operator in it (`{fd}`, `{9}`). This is the WHITESPACE axis of
+      # _CMD_REDIR (`[}][[:space:]]*`), which the rpre class below can never see: rpre is the
+      # prefix of a SINGLE word before its first operator, and this word has no operator at all.
+      # Measured: zsh lexes `{fd} >o` as an fd-var redirect (argv drops both tokens) while bash
+      # keeps `{fd}` as an ordinary argument. Defer one word rather than guess — see pendbrace.
+      if (!tnt && w ~ /^[{]([A-Za-z_][A-Za-z0-9_]*|[0-9]+)[}]$/) { pendbrace = 1; return }
       # A REDIRECT token is not the verb (2026-09-13). It starts with a digit, `>`, `<`, `&`
       # or `{`, so the dash-skip above misses it and it used to fall through to the verb
       # branch below — ENDING the scan, so a repo-redirecting global AFTER it was never mined
@@ -320,6 +337,17 @@ git_c_target() {
       # tokenizer then emits nothing for, the repo falls back to cwd, and the hook ALLOWs a real
       # main mutation (zsh reads `{9}>` as an fd-var redirect). Pinned by the `{9}`/`{fd}` pair
       # in test-git-safety.sh: widen a detector and its consumers in ONE change, never half.
+      # NOT one-directional, despite how a tightening reads. Measured over a 440-row corpus by
+      # mutating this one class back: 24 DENY->ALLOW, 12 ALLOW->DENY, 404 unchanged. Every one
+      # is a CORRECT resolution -- 12 of the relaxations are the false-DENY repair (the
+      # prescribed -C <worktree> spelling stops being denied) and 12 are position-B rows where
+      # real git resolves to the LAST absolute -C. Security posture is unaffected: origin/main
+      # to HEAD is 0 DENY->ALLOW across that corpus. Do not restate this as monotone.
+      # THE OTHER AXIS: _CMD_REDIR also carries a trailing [[:space:]]* after the closing brace.
+      # That half cannot live in THIS class -- rpre is the prefix of a SINGLE word, and a
+      # brace-only word has no operator to take a prefix of -- so it is handled one word later
+      # by the pendbrace state above. Adopting only the axis that happened to fail is how the
+      # first attempt at this fix shipped a half-widening.
       # _CMD_POS_SUFFIX, that neither `<` nor `>` can be part of a real unquoted word.
       # (No apostrophe appears in this block on purpose: the whole program is inside a
       # single-quoted awk string, so one would close it and hand the rest to the shell.)
@@ -563,7 +591,7 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #     main, not something this adoption introduces; near-miss binaries generally (`gitk`,
     #     `gitk>out`, `git-foo`, `digit`, `legit`) all stay MISSED.
     #
-    # NOT CLOSED — FOUR residual classes, listed together because a residual list naming only
+    # NOT CLOSED — FIVE residual classes, listed together because a residual list naming only
     # one reads as completeness and the omitted one is the live route:
     #   1. A redirect BEFORE the `git` token (`2>/dev/null git commit -m x`) is a real
     #      invocation and is still MISSED: the segment anchor never reaches `git` when a
@@ -607,6 +635,16 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #      (un-closed gap, not a regression). Named explicitly because it sits INSIDE the
     #      globals group this change widened, which is the position most likely to be assumed
     #      covered. Filed as
+    #      todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
+    #      and pinned in test-git-safety.sh as KNOWN-WRONG rows.
+    #
+    #   5. A parameter expansion in the fd slot (`git ${nope}>o -C <main> commit`, and the
+    #      unbraced `git $nope>o ...`). A MATCHER miss, not a tokenizer one: _CMD_REDIR spells
+    #      the fd prefix as `([0-9]*|[{]...[}][[:space:]]*)`, which admits neither spelling, so
+    #      the segment never matches and the tokenizer is never consulted. Both produce a real
+    #      main-mutating argv under bash 5.3.15 AND zsh 5.9, so unlike class 4 this one does not
+    #      depend on zsh-only lexing. main ALLOWs both identically -- an un-closed gap, not a
+    #      regression. Folded into
     #      todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
     #      and pinned in test-git-safety.sh as KNOWN-WRONG rows.
     #
