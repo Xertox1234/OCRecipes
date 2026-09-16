@@ -168,7 +168,7 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # generically-named, allowlisted-directory file — named individually since none shares a
 # signature generic enough for the drift-detection test to generalize without becoming a
 # broad "security detector" (deliberately avoided — see that test's own comment).
-SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW\.md$|(^|/)docs/PATTERNS\.md$|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW(\.md$|/)|(^|/)docs/PATTERNS(\.md$|/)|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
 
 # Structural subset of the above: whole-directory and exact-path entries ONLY, no
 # free-text keywords. Read by the PATH GATE's structural-sensitivity check (below)
@@ -187,7 +187,18 @@ SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)sub
 # knowledge-base index those checklists point back to. All four are ALSO added to
 # SENSITIVE_OVERRIDE above for defense-in-depth, same belt-and-suspenders reasoning as
 # the other whole-dir entries there.
-STRUCTURAL_SENSITIVE='(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW\.md$|(^|/)docs/PATTERNS\.md$'
+# BOUNDARY, decided deliberately rather than left open: this set is `.claude/agents/` +
+# `.claude/skills/` and NOT `.claude/` wholesale. `.claude/hooks/**` is excluded because it
+# holds no markdown at all (`git ls-files '.claude/hooks/*.md'` is empty) and every tracked file
+# under it is `.sh`, which the step-1 allowlist already holds — so adding it would be a rule with
+# no live row behind it. The one tracked `.claude` markdown outside agents/skills is an
+# auto-memory file, which is not review-governing content. Matching is case-INSENSITIVE below,
+# so `.claude/Agents/` and a `docs/ai_workflow.md` spelling cannot walk around this on a
+# case-preserving filesystem, and the two exact-path entries admit a trailing `/` so a later
+# split of AI_WORKFLOW.md or PATTERNS.md into a directory stays covered.
+# If `.claude/hooks/**` ever gains markdown, widen to `(^|/)\.claude/` wholesale: over-HOLD is
+# the cheap direction here, per this script's own header.
+STRUCTURAL_SENSITIVE='(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW(\.md$|/)|(^|/)docs/PATTERNS(\.md$|/)'
 
 # Sensitive-domain keywords for the TODO gate's intent check (below): HOLDs any todo
 # whose own title/frontmatter names a sensitive domain, regardless of which file it ends
@@ -208,7 +219,23 @@ STRUCTURAL_SENSITIVE='(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/
 # it — relies on CI + review, not this list, same as any other unnamed-sensitive-file gap.
 SENSITIVE_INTENT_KEYWORDS='auth|jwt|login|password|admin|premium|subscription|iap|api-key|credential'
 
-files="$(gh pr diff "$PR" --name-only)" || {
+# A git-detected RENAME is reported by `gh pr diff --name-only` as its DESTINATION path ONLY,
+# so a high-similarity move OUT of a covered directory reads as a plain new file and evades
+# every path check below — including the STRUCTURAL_SENSITIVE check this gate relies on.
+# Measured pair: PR #977 carries `R067 todos/… -> todos/archive/…` and `gh pr diff 977
+# --name-only` lists only the destination, while control PR #965 (which git scored as
+# delete+add rather than a rename) lists BOTH paths. So removals ARE normally listed and the
+# blind spot is specific to renames, not to deletions generally. Concretely, a PR moving
+# `.claude/agents/code-reviewer.md` to `docs/solutions/kb/code-reviewer.md` would read as one
+# ordinary markdown file, take the SAFE_ALLOWLIST exemption, and arm auto-merge while walking a
+# reviewer checklist out of a protected directory.
+#
+# `pulls/{n}/files` carries `previous_filename` on a rename, so emitting it alongside
+# `filename` gates the SOURCE path too. `--paginate` because that endpoint pages at 30 and a
+# truncated file list is a silent under-read on a fail-closed gate. Error handling is
+# unchanged: gh failure exits 2, empty output exits 2.
+files="$(gh api "repos/{owner}/{repo}/pulls/$PR/files" --paginate \
+  --jq '.[].filename, (.[] | select(.previous_filename) | .previous_filename)')" || {
   echo "guard: ERROR PR #$PR — could not read changed files (gh error). Fail-closed."
   exit 2
 }
@@ -307,7 +334,7 @@ while IFS= read -r f; do
   #    sensitive check — fail-OPEN, the exact trap step 4's rc_sens capture exists to avoid. Here
   #    rc 1 (clean no-match) is the ONLY value that may skip the HOLD; rc 0 (structurally
   #    sensitive) and rc >= 2 (regex error) both HOLD.
-  rc_struct=0; printf '%s' "$f" | grep -qE "$STRUCTURAL_SENSITIVE" || rc_struct=$?
+  rc_struct=0; printf '%s' "$f" | grep -qiE "$STRUCTURAL_SENSITIVE" || rc_struct=$?
   if [ "$rc_struct" -ne 1 ]; then
     unsafe="${unsafe}  ${f}"$'\n'; continue
   fi

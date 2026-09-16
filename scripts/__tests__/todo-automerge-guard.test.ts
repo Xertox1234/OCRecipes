@@ -25,6 +25,31 @@ if [ "$1" = "pr" ] && [ "$2" = "diff" ]; then
   exit 0
 fi
 if [ "$1" = "api" ]; then
+  # The guard now reads its file list from pulls/{n}/files (so a rename's previous_filename is
+  # gated too), which is also a \`gh api\` call — so this stub must dispatch on the endpoint or
+  # it would answer the file-list request with frontmatter.
+  case "\${2:-}" in
+    */pulls/*/files)
+      if [ "\${FAKE_GH_DIFF_EXIT:-0}" != "0" ]; then
+        echo "fake-gh: simulated pulls/files failure" >&2
+        exit "$FAKE_GH_DIFF_EXIT"
+      fi
+      # When a test supplies raw endpoint JSON, run the guard's OWN --jq over it, so the jq
+      # expression is what is under test rather than a list the stub hands back. Otherwise fall
+      # back to the post-jq list, which is what every pre-existing test supplies.
+      if [ -n "\${FAKE_GH_PR_FILES_JSON:-}" ]; then
+        jqexpr=""; prev=""
+        for a in "$@"; do
+          if [ "$prev" = "--jq" ]; then jqexpr="$a"; fi
+          prev="$a"
+        done
+        printf '%s' "$FAKE_GH_PR_FILES_JSON" | jq -r "\${jqexpr:-.}"
+        exit 0
+      fi
+      printf '%s\\n' "$FAKE_GH_DIFF_FILES"
+      exit 0
+      ;;
+  esac
   if [ "\${FAKE_GH_API_EXIT:-0}" != "0" ]; then
     printf '%s\\n' "\${FAKE_GH_API_BODY:-fake-gh: simulated gh api failure}" >&2
     exit "$FAKE_GH_API_EXIT"
@@ -503,6 +528,39 @@ describe("todo-automerge-guard.sh (xhigh review: case-sensitivity and anchoring 
 // consumer contract, not a reimplementation. Module-scoped so every describe block that
 // needs a constant's live value (SENSITIVE_OVERRIDE, SAFE_ALLOWLIST, STRUCTURAL_SENSITIVE, …)
 // shares one implementation.
+// Split a regex alternation at TOP LEVEL only. A naive `.split("|")` also splits inside
+// `(^|/)` and `(agents|skills)`, which happens to be harmless when both sides of a comparison
+// are split the same way, but silently drops `(^|/)\\.claude/(agents|skills)/` out of any
+// predicate that inspects whole alternatives.
+function splitAlternatives(re: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = "";
+  let esc = false;
+  for (const ch of re) {
+    if (esc) {
+      cur += ch;
+      esc = false;
+      continue;
+    }
+    if (ch === "\\") {
+      cur += ch;
+      esc = true;
+      continue;
+    }
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if (ch === "|" && depth === 0) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
 function extractConstant(name: string): string {
   return execFileSync(
     "bash",
@@ -576,7 +634,7 @@ describe("todo-automerge-guard.sh (drift detection: Bearer-token attachment chok
 });
 
 describe("todo-automerge-guard.sh (xhigh review: fail-closed error branches, previously untested — the fake-gh stub only ever simulated success)", () => {
-  it("ERRORs (exit 2) when `gh pr diff` fails", () => {
+  it("ERRORs (exit 2) when the pulls/{n}/files read fails", () => {
     const { status, stdout } = runGuardRaw({
       FAKE_GH_DIFF_EXIT: "1",
       FAKE_GH_DIFF_FILES: "",
@@ -929,21 +987,50 @@ describe("todo-automerge-guard.sh (generated corpus, both directions, counts quo
   it(`does not regress a single one of the ${exemptControlFiles.length} docs/solutions/ and todos/ files in one batched --paths-only run (direction 2: must-still-PASS control)`, () => {
     const { status } = runGuardPathsOnly(exemptControlFiles);
     expect(status).toBe(0);
-  }, 30000);
+  }, 60000);
 });
 
 describe("todo-automerge-guard.sh (drift guard: STRUCTURAL_SENSITIVE stays a subset of SENSITIVE_OVERRIDE)", () => {
   it("every STRUCTURAL_SENSITIVE alternative also appears as an alternative in SENSITIVE_OVERRIDE (prevents the exact drift the script's own comment warns about: a path exempted structurally by STRUCTURAL_SENSITIVE but never reaching the SENSITIVE_OVERRIDE check that is supposed to HOLD it as code — the next whole-directory entry added only to SENSITIVE_OVERRIDE and not mirrored here would silently reopen the markdown bypass for that one new directory)", () => {
-    const structuralAlternatives = extractConstant(
-      "STRUCTURAL_SENSITIVE",
-    ).split("|");
+    const structuralAlternatives = splitAlternatives(
+      extractConstant("STRUCTURAL_SENSITIVE"),
+    );
     const sensitiveAlternatives = new Set(
-      extractConstant("SENSITIVE_OVERRIDE").split("|"),
+      splitAlternatives(extractConstant("SENSITIVE_OVERRIDE")),
     );
     const missing = structuralAlternatives.filter(
       (alt) => !sensitiveAlternatives.has(alt),
     );
     expect(missing).toEqual([]);
+  });
+
+  // The assertion above tests STRUCTURAL is a subset of SENSITIVE. That is NOT the direction
+  // that protects this fix: adding an entry to SENSITIVE_OVERRIDE only grows the set being
+  // subtracted, so it stays green. Measured by mutation — appending `|(^|/)fake-governance/` to
+  // SENSITIVE_OVERRIDE alone leaves `missing` empty, while appending the same alternative to
+  // STRUCTURAL_SENSITIVE alone turns it red. The markdown bypass reopens in the FIRST direction,
+  // so it needs its own assertion.
+  //
+  // Deliberately NOT set equality: the free-text keywords (`secret`, `[Aa]dmin`, `credential`, …)
+  // must stay OUT of STRUCTURAL_SENSITIVE by design — this script measures them at 0 useful vs 33
+  // unintended holds. The property that matters is narrower. SAFE_ALLOWLIST ends in a
+  // directory-independent `\.md$`, so EVERY directory containing markdown is auto-allowlisted
+  // unless it is also named structurally; therefore any whole-directory entry (and the exact
+  // doc-path entries, which admit a trailing `/` for a future split-into-a-directory) must be
+  // mirrored. A shape test, not a corpus test, so it cannot go quiet as the tree changes.
+  it("every whole-directory and exact-doc-path SENSITIVE_OVERRIDE alternative is mirrored in STRUCTURAL_SENSITIVE (the direction that actually reopens the markdown bypass)", () => {
+    const isStructuralShape = (alt: string) =>
+      alt.startsWith("(^|/)") && (alt.endsWith("/") || alt.endsWith("/)"));
+    const structural = new Set(
+      splitAlternatives(extractConstant("STRUCTURAL_SENSITIVE")),
+    );
+    const candidates = splitAlternatives(
+      extractConstant("SENSITIVE_OVERRIDE"),
+    ).filter(isStructuralShape);
+    // Guard the guard: if the shape predicate ever matches nothing, this row would pass
+    // vacuously and pin nothing at all.
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates.filter((alt) => !structural.has(alt))).toEqual([]);
   });
 });
 
@@ -998,5 +1085,45 @@ describe("todo-automerge-guard.sh (mutation-verified: STRUCTURAL_SENSITIVE's rc-
     const mutantPath = mutantScriptWithBrokenStructuralSensitive();
     const { status } = runScript(mutantPath, [CONTROL_FILE]);
     expect(status).toBe(1);
+  });
+});
+
+describe("todo-automerge-guard.sh (rename source paths are gated, not just destinations)", () => {
+  // `gh pr diff --name-only` reports a git-detected RENAME as its DESTINATION only, so a
+  // high-similarity move OUT of a covered directory used to read as one ordinary new markdown
+  // file, take the SAFE_ALLOWLIST exemption, and arm auto-merge. Measured against this repo when
+  // the hole was found: PR #977 carries `R067 todos/… -> todos/archive/…` and `gh pr diff 977
+  // --name-only` lists only the destination, while control PR #965 (scored delete+add rather
+  // than a rename) lists BOTH paths — so removals ARE normally listed and the blind spot is
+  // specific to renames. The guard now reads pulls/{n}/files and emits `previous_filename`.
+  //
+  // These two rows differ ONLY by the presence of `previous_filename`, so a pass here cannot be
+  // explained by the destination path, the todo gate, or the archive row. The stub runs the
+  // guard's OWN `--jq` over this JSON, so the jq expression is what is under test.
+  const RENAMED_OUT = "docs/solutions/kb/code-reviewer.md";
+
+  it("HOLDs a PR that renames a reviewer checklist OUT of .claude/agents/ (source path is gated)", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        {
+          filename: RENAMED_OUT,
+          previous_filename: ".claude/agents/code-reviewer.md",
+        },
+      ]),
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(1);
+  });
+
+  it("control — the identical destination path with NO previous_filename still passes, so the HOLD above is attributable to the rename source alone", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: RENAMED_OUT },
+      ]),
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(0);
   });
 });
