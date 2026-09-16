@@ -242,6 +242,16 @@
 #     property of the gated binary alone, so one extra launcher word reopened it
 #     and the corpus could not express the shape that did so. Every clause named
 #     here corresponds to a pinned row; if a shape is not pinned, it is not closed.
+#     WHERE THOSE PINS LIVE, because it is not uniform: the WRAPPER half is pinned
+#     in test-guard-outward-cli.sh ONLY. repro-outward-cli-corpus.sh emits no row
+#     with a wrapper word in command position at all, so its four pins are
+#     unchanged by that fix and must NOT be read as confirming it -- the grid is
+#     blind to the shape, exactly as it was blind to a path-qualified launcher one
+#     round earlier. A fix here that moves no corpus pin means the grid cannot
+#     express it, not that the grid agrees. The follow-up P1
+#     (todos/P1-2026-09-16-a-privilege-or-wrapper-prefix-before-a-launcher-defeats-the-outward-cli-guard.md)
+#     carries the wrapper prefix as a grid AXIS, composed against the existing
+#     launcher and path dimensions.
 #   * `gh workflow run`, `gh secret set`, `gh variable set` and other gh
 #     namespaces beyond `pr`/`release`/`repo`/`api` are not covered — the
 #     todo scoped this to "verb-scoped, not exhaustive"; `gh api` itself IS
