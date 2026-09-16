@@ -250,7 +250,20 @@ raw_files="$(gh api "repos/{owner}/{repo}/pulls/$PR/files" --paginate \
   echo "guard: ERROR PR #$PR — could not read changed files (gh error). Fail-closed."
   exit 2
 }
-files="$(printf '%s\n' "$raw_files" | sed -n 's/^[FP] //p')"
+# Every row must carry a class BEFORE anything is stripped. `sed -n 's/^[FP] //p'` DROPS what it
+# cannot match, and the completeness check cannot notice: an unclassed row contributes no `F `
+# line, so seen and declared stay equal and the path it carried is gated by nothing. Measured: a
+# filename containing a newline emits a second, unclassed line; the pre-classing revision HELD on
+# it (naming the protected path) while the classed revision returned OK. Refuse instead of
+# stripping. `X$` stays in the allowed set, or the sentinel row itself reads as unclassed and its
+# specific diagnostic below becomes unreachable.
+# `-n` first: a here-string of an EMPTY value still yields one empty line, which is not a valid
+# class, so an empty read would trip this arm and mask the clearer "no file changes" error below.
+if [ -n "$raw_files" ] && grep -qvE '^([FP] |X$)' <<< "$raw_files"; then
+  echo "guard: ERROR PR #$PR — a changed-file row came back without a recognisable class, so the file list cannot be gated reliably. Fail-closed."
+  exit 2
+fi
+files="$(sed -n 's/^[FP] //p' <<< "$raw_files")"
 if [ -z "$files" ]; then
   echo "guard: ERROR PR #$PR — no file changes (nothing to evaluate)"
   exit 2
@@ -259,7 +272,14 @@ fi
 # A row the API calls a rename but gives no previous_filename would have its SOURCE path
 # silently dropped -- the exact blind spot reading this endpoint was meant to close. Refuse
 # rather than gate a list known to be missing a path.
-if printf '%s\n' "$raw_files" | grep -qx 'X'; then
+# HERE-STRING, not a producer pipe. `grep -q` exits on first match, so under `set -o pipefail`
+# a `printf ... | grep -q` pipeline returns 141 (SIGPIPE on the writer) once the input exceeds
+# the 64KB pipe buffer -- which makes this `if` FALSE and skips this fail-closed sentinel on
+# exactly the large PRs where an odd file list is most likely. Measured: 92016 bytes with the X
+# row second gave exit 0 through the pipe form and exit 2 through this one, while an 85-byte
+# input carrying the SAME row exited 2 under both -- so the flip is the regime, not the row.
+# Same family this file already remedies further down with here-strings.
+if grep -qx 'X' <<< "$raw_files"; then
   echo "guard: ERROR PR #$PR — a changed file is reported as renamed with no previous_filename, so its SOURCE path cannot be gated. Fail-closed."
   exit 2
 fi
@@ -280,7 +300,18 @@ declared_files="$(gh pr view "$PR" --json changedFiles --jq .changedFiles)" || {
   echo "guard: ERROR PR #$PR — could not read the declared changed-file count. Fail-closed."
   exit 2
 }
-seen_files="$(printf '%s\n' "$raw_files" | grep -c '^F ' || true)"
+# `sort -u`: distinct DESTINATIONS. Duplicate rows -- possible across a page boundary under
+# --paginate -- would otherwise inflate the count and mask a file truncated away. The numeric
+# guard mirrors the one on declared_files below: `|| true` can yield an empty value, and
+# `[ "" -lt N ]` returns rc 2 INSIDE the if, which SKIPS the truncation error rather than raising
+# it. Not reachable today, but the fail-closed direction should be structural, not incidental.
+seen_files="$(grep '^F ' <<< "$raw_files" | sort -u | grep -c . || true)"
+case "$seen_files" in
+  ''|*[!0-9]*)
+    echo "guard: ERROR PR #$PR — could not count the changed paths that were read. Fail-closed."
+    exit 2
+    ;;
+esac
 case "$declared_files" in
   ''|*[!0-9]*)
     echo "guard: ERROR PR #$PR — declared changed-file count is not a number ('$declared_files'). Fail-closed."

@@ -1221,3 +1221,85 @@ describe("todo-automerge-guard.sh (rename sources cannot MASK a truncated file l
     expect(stdout).toContain("previous_filename");
   });
 });
+
+describe("todo-automerge-guard.sh (fail-closed arms survive a payload larger than the pipe buffer)", () => {
+  // `grep -q` exits on first match. Fed by a producer PIPE under `set -o pipefail`, the writer
+  // takes SIGPIPE and the pipeline returns 141, so the `if` is FALSE and the sentinel is skipped
+  // — but ONLY once the payload exceeds the 64KB pipe buffer. A small input passes happily, which
+  // is exactly why that regression shipped. These rows go through FAKE_GH_PR_FILES_JSON so the
+  // guard's own jq runs; the FAKE_GH_DIFF_FILES branch prefixes every line itself and could never
+  // reproduce it.
+  const PIPE_BUF_BYTES = 65536;
+  const bigRows = [
+    { filename: ARCHIVE_PATH },
+    { filename: "client/renamed.ts", status: "renamed" }, // no previous_filename -> the X row
+    ...Array.from({ length: 4000 }, (_, i) => ({
+      filename: `client/generated/file-${String(i).padStart(5, "0")}.ts`,
+    })),
+  ];
+  // The emitted form is "F " + path + "\n" per destination — the value the mechanism actually
+  // sees, not the JSON we constructed.
+  const emittedBytes =
+    bigRows.reduce((n, r) => n + 2 + r.filename.length + 1, 0) + 2;
+
+  it("REGIME PRECONDITION — the large payload really is above the pipe buffer", () => {
+    // Below the threshold the row beneath would pass for the wrong reason.
+    expect(emittedBytes).toBeGreaterThan(PIPE_BUF_BYTES);
+  });
+
+  it("ERRORs (exit 2) on an unusable rename source even when the emitted list exceeds the pipe buffer", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify(bigRows),
+      FAKE_GH_CHANGED_FILES: String(bigRows.length),
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+  });
+
+  it("control — the same unusable rename source BELOW the pipe buffer also errors, so the row above is about the regime and not the row", () => {
+    const smallRows = [
+      { filename: ARCHIVE_PATH },
+      { filename: "client/renamed.ts", status: "renamed" },
+    ];
+    const smallBytes =
+      smallRows.reduce((n, r) => n + 2 + r.filename.length + 1, 0) + 2;
+    expect(smallBytes).toBeLessThan(PIPE_BUF_BYTES);
+    const { status } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify(smallRows),
+      FAKE_GH_CHANGED_FILES: String(smallRows.length),
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+  });
+});
+
+describe("todo-automerge-guard.sh (a row that cannot be classed is refused, not silently dropped)", () => {
+  // The class strip discards whatever it cannot match, and the completeness check cannot notice:
+  // an unclassed row contributes no `F ` line, so seen and declared stay equal. A filename
+  // containing a newline is one way to produce one; the defect is the unchecked strip, so the
+  // refusal keys on the class rather than on that particular cause.
+  it("ERRORs (exit 2) when a row comes back without a recognisable class, instead of dropping the path it carried", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: ".claude/agents/code-reviewer.md\nclient/safe.ts" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "2",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("class");
+  });
+
+  it("control — ordinary rows all class cleanly and are gated normally, so the refusal above is attributable to the unclassed row", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: "client/safe.ts" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "2",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(0);
+  });
+});
