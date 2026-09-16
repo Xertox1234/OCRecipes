@@ -217,8 +217,15 @@ emit_write_targets() {
 #   git-dir target AND the work-tree target independently and DENYs if EITHER is outside the
 #   worktrees — conservative for a commit whose refs go to the safe side, but never a bypass.)
 #   - A RELATIVE `--git-dir`/`--work-tree` with a LATER `-C` resolves against cwd, not the -C'd dir
-#     (order-dependent); an unmodeled SEPARATE-arg global (`--namespace foo`) mis-reads its arg as
-#     the verb and stops early. Both obscure; SKIP_WORKTREE_CONTRACT=1 / the file-tool guard backstop.
+#     (order-dependent). An unmodeled SEPARATE-arg global (`--namespace foo`) is a MATCHER miss,
+#     NOT a walker one: the segment fails MUTATING_GIT_SEG_RE and takes its `|| continue`, so
+#     git_c_target never runs and cannot 'mis-read its arg as the verb'. Measured NOMATCH, with
+#     `git commit -m x` MATCH and `echo hello` NOMATCH as controls in the same run. It is a live
+#     route — real git accepts the separate-space form and still honours a later `-C` — and is
+#     pre-existing, identical on main. Layer attribution matters here: residual 6 below was
+#     re-attributed to the coarse pre-filter for the same reason, and a residual blamed on the
+#     wrong layer sends the eventual fix to a file that cannot close it.
+#     Both obscure; SKIP_WORKTREE_CONTRACT=1 / the file-tool guard backstop.
 #   - `$(…)`/`${…}` substitution, here-docs, `\`-newline continuation are unmodeled: they
 #     over-split (a false-POSITIVE/extra DENY), never an inversion-swallow false-negative.
 #   - ANSI-C escape DECODING is not modeled: `$'\x2f…'`/`\nnn`/`\uHHHH` read as literal chars,

@@ -715,8 +715,12 @@ assert_allow "KNOWN-WRONG (filed): brace-fd in the --work-tree VALUE SLOT — re
 assert_allow "KNOWN-UNENFORCED: brace decoy + brace-fd redirect skipped by the coarse filter (safe via git grammar)" \
   "$(json "$SESSION" "$WT_A" "git {fd} {9}>o -C $MAIN commit -m x")"
 # Positive discriminator: assert_allow passes on EMPTY output, so a crashed hook would satisfy
-# the two rows above exactly as a correct ALLOW does. This row proves the hook is alive.
-assert_deny "discriminator for the eight rows above: the hook is alive and still denying" \
+# the KNOWN-WRONG / KNOWN-UNENFORCED rows above exactly as a correct ALLOW does. This row proves
+# the hook is alive. NO NUMERAL, deliberately: this label carried a stale count through three
+# rounds because each round did arithmetic on the previous (wrong) number instead of recounting
+# the rows. An anchor cannot go stale the way an ordinal does -- the same reason the co-located
+# solutions doc argues for symbol citations over line numbers.
+assert_deny "discriminator for the KNOWN-WRONG / KNOWN-UNENFORCED rows above: the hook is alive and still denying" \
   "$(json "$SESSION" "$WT_A" "git -C $MAIN commit -m x")"
 
 # Inherited over-DENIAL, pinned in the other direction: a DIGIT glued to the binary is SEEN,
