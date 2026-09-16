@@ -10,6 +10,11 @@ import {
   createMockReceiptScan,
   createMockPantryItem,
 } from "../../__tests__/factories";
+import {
+  receiptAnalysisResultSchema,
+  receiptConfirmResultSchema,
+} from "@shared/schemas/receipt";
+import { expectResponseToMatch } from "../../../test/utils/expect-response-schema";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -148,6 +153,7 @@ describe("Receipt Routes", () => {
         .attach("photos", Buffer.from("fake"), "receipt.jpg");
 
       expect(res.status).toBe(200);
+      expectResponseToMatch(res.body, receiptAnalysisResultSchema);
       expect(res.body.items).toHaveLength(1);
       expect(res.body.storeName).toBe("Walmart");
       expect(res.body.overallConfidence).toBe(0.85);
@@ -346,6 +352,7 @@ describe("Receipt Routes", () => {
         });
 
       expect(res.status).toBe(200);
+      expectResponseToMatch(res.body, receiptConfirmResultSchema);
       expect(res.body.added).toBe(2);
       expect(res.body.items).toHaveLength(2);
     });

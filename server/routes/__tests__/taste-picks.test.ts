@@ -4,6 +4,11 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../taste-picks";
+import {
+  tastePickCandidatesResponseSchema,
+  tastePicksResponseSchema,
+} from "@shared/schemas/taste-picks";
+import { expectResponseToMatch } from "../../../test/utils/expect-response-schema";
 
 vi.mock("../../middleware/auth");
 vi.mock("express-rate-limit");
@@ -63,6 +68,7 @@ describe("Taste Picks Routes", () => {
       const res = await request(app).get("/api/taste-picks/candidates");
 
       expect(res.status).toBe(200);
+      expectResponseToMatch(res.body, tastePickCandidatesResponseSchema);
       expect(res.body.candidates).toHaveLength(1);
       expect(res.body.candidates[0].title).toBe("Greek Salad");
       expect(res.body.total).toBe(1);
@@ -134,6 +140,7 @@ describe("Taste Picks Routes", () => {
       const res = await request(app).get("/api/taste-picks");
 
       expect(res.status).toBe(200);
+      expectResponseToMatch(res.body, tastePicksResponseSchema);
       expect(res.body.picks).toHaveLength(1);
       expect(res.body.picks[0].recipeId).toBe(1);
     });
