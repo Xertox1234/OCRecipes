@@ -58,6 +58,19 @@ pre-existing gap, filed separately so PR #956 stays scoped.
   `git 2>/dev/null -C $MAIN commit -m x` ALLOW on `main` / DENY on the branch (proving the #956
   adoption was engaged in the probe rather than the harness being inert).
 
+### Shape 1b — the same value slot, with a brace-fd token
+
+Reachable because the guard now knows the brace token class: `git -C {fd} >o <main> commit -m x`,
+`git --git-dir {fd} >o <main>/.git commit -m x`, `git --work-tree {fd} >o <main> reset --hard`.
+
+The `pend` arms fire before the brace class, so the brace word is folded as a **relative** value
+and resolves under cwd. Measured emissions from `git_c_target`: `c {fd}`, `g {fd}`, `w {fd}` — so
+the real `-C <main>` is never mined. `origin/main` allows these identically; a gap, not a
+regression. Pinned as KNOWN-WRONG rows.
+
+Whatever fixes shape 1 must cover this spelling too: both are the same value slot, and a fix that
+only teaches the matcher about a bare redirect will leave the brace-fd form open.
+
 ## Shape 2 — a parameter expansion in the fd slot (matcher-side only)
 
 Distinct from shape 1 and worth keeping separate in the fix: here the **matcher** misses, so the
@@ -95,6 +108,8 @@ the fd slot is a redirect prefix.
       mind — which is how this position was missed the first time).
 - [ ] `git-safety.sh`'s residual list is updated: this position is removed from the residuals once
       closed, and any KNOWN-WRONG rows for it in `test-git-safety.sh` become `assert_deny`.
+- [ ] **Shape 1b:** the brace-fd spelling of the value slot denies too, and the fix is the same
+      one as shape 1 rather than a second special case.
 - [ ] **Shape 2:** `_CMD_REDIR` admits a parameter expansion in the fd slot, so
       `git ${nope}>o -C $MAIN commit -m x` and `git $nope>o -C $MAIN commit -m x` both DENY from a
       registered worktree cwd. Because this is a MATCHER fix on a constant with multiple

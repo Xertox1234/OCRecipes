@@ -341,8 +341,15 @@ git_c_target() {
       # mutating this one class back: 24 DENY->ALLOW, 12 ALLOW->DENY, 404 unchanged. Every one
       # is a CORRECT resolution -- 12 of the relaxations are the false-DENY repair (the
       # prescribed -C <worktree> spelling stops being denied) and 12 are position-B rows where
-      # real git resolves to the LAST absolute -C. Security posture is unaffected: origin/main
-      # to HEAD is 0 DENY->ALLOW across that corpus. Do not restate this as monotone.
+      # real git resolves to the LAST absolute -C. Do NOT quote a DENY->ALLOW count against
+      # origin/main here: over a 1200-row brace/redirect corpus origin/main denies 0 of 1200,
+      # because its MUTATING_GIT_SEG_RE has no redirect branch and matches no redirect-bearing
+      # segment at all -- a zero against that baseline is VACUOUS, not reassuring. The
+      # differential that HAS a denominator is pre-pendbrace to HEAD over the same corpus: 396
+      # rows deny on the pre-fix side, 360 stay DENY, 36 become ALLOW (every one ending with the
+      # last absolute -C at the registered worktree, correct under last-absolute-wins), and 54
+      # go ALLOW->DENY (every one targeting main). Zero incorrect relaxations. Quote the
+      # denominator with any such count. Do not restate this as monotone.
       # THE OTHER AXIS: _CMD_REDIR also carries a trailing [[:space:]]* after the closing brace.
       # That half cannot live in THIS class -- rpre is the prefix of a SINGLE word, and a
       # brace-only word has no operator to take a prefix of -- so it is handled one word later
@@ -634,7 +641,11 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #      `>out` as a RELATIVE -C value that resolves under cwd. main ALLOWs these identically
     #      (un-closed gap, not a regression). Named explicitly because it sits INSIDE the
     #      globals group this change widened, which is the position most likely to be assumed
-    #      covered. Filed as
+    #      covered. The BRACE-FD spelling of the same slot (`git -C {fd} >o <main> commit`) is
+    #      included: the pend arms fire before the brace class, so the brace word folds as a
+    #      RELATIVE value and resolves under cwd -- measured emissions `c {fd}`, `g {fd}`,
+    #      `w {fd}`. Same verdict on origin/main, so also a gap rather than a regression.
+    #      Filed as
     #      todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
     #      and pinned in test-git-safety.sh as KNOWN-WRONG rows.
     #

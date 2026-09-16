@@ -452,10 +452,11 @@ assert_deny "registry: SPACED brace-fd redirect before -C <main> is denied (zsh 
   "$(json "$SESSION" "$WT_A" "git {fd} >o -C $MAIN commit -m x")"
 assert_allow "registry: SPACED brace-fd redirect before -C <worktree> stays allowed (false-DENY repair)" \
   "$(json "$SESSION" "$MAIN" "git {fd} >o -C $WT_A commit -m x")"
-# A brace word NOT followed by a redirect is an ordinary argument in BOTH shells (git errors on
-# it), so it must still end the scan at the verb branch rather than being skipped as an fd —
-# otherwise a following -C would be mined and an inert command would be over-denied.
-assert_allow "registry: brace word with no following redirect is not swallowed as an fd" \
+# A brace word NOT followed by a redirect never reaches the tokenizer at all: it matches no arm
+# of MUTATING_GIT_SEG_RE (not the dash class, not _CMD_REDIR), so the segment falls out at the
+# MATCHER. This row pins THAT miss — it does NOT pin the pendbrace arm, measured: neutering the
+# arm body leaves this row green. The arm is pinned at the tokenizer, further down.
+assert_allow "registry: brace word with no following redirect is a MATCHER miss, not a tokenizer path" \
   "$(json "$SESSION" "$WT_A" "git {fd} -C $MAIN commit -m x")"
 # CHAINED -C crossed with an interposed redirect — two dimensions this file tested only
 # separately (the chained--C block never adds a redirect; the brace-fd block never adds a second
@@ -468,6 +469,26 @@ assert_deny "registry: chained -C with interposed brace-fd — LAST -C is <main>
   "$(json "$SESSION" "$WT_A" "git -C $WT_A {9}>out -C $MAIN commit -m x")"
 assert_allow "registry: chained -C with interposed brace-fd — LAST -C is <worktree>, stays allowed" \
   "$(json "$SESSION" "$WT_A" "git -C $MAIN {9}>out -C $WT_A commit -m x")"
+
+# ---------- tokenizer-level pin for the pendbrace arm ----------
+# The arm decides what a deferred brace word WAS. Its emit-and-stop branch cannot be reached
+# through the hook today: a brace word with no following redirect matches no arm of
+# MUTATING_GIT_SEG_RE, so the segment never gets to the tokenizer. It becomes reachable the
+# moment the matcher separate-arg value class is widened, which is an acceptance criterion of
+# todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md.
+# So pin it AT THE TOKENIZER rather than pretend a hook-level row covers it. Measured: neutering
+# only the arm body leaves the whole hook-level suite at 240/0, while this block goes red.
+eval "$(sed -n '/^git_c_target() {/,/^}/p' "$HOOK")"
+assert_walker() {  # $1=name $2=segment $3=expected emission
+  local name="$1" out
+  out=$(printf '%s' "$2" | git_c_target 2>/dev/null)
+  if [ "$out" = "$3" ]; then echo "PASS: $name"; PASS=$((PASS + 1))
+  else echo "FAIL: $name (expected [$3], got [$out])"; FAIL=$((FAIL + 1)); fi
+}
+# Healthy: the brace word ends the scan, so the -C BEFORE it is what git would honour and the
+# -C AFTER it is never mined. Neutering the arm inverts this to the trailing -C.
+assert_walker "walker/unit: brace word ends the scan — the -C before it is kept, the one after is not" \
+  "git -C $MAIN {fd} -C $WT_A commit -m x" "c $MAIN"
 
 # --- FALSE-DENY sweep: widening a boundary class is the direction that invents denials, and
 # a guard that denies ordinary read-only git gets switched off. Every row here must ALLOW.
@@ -676,9 +697,20 @@ assert_allow "KNOWN-WRONG (filed): braced param expansion in the fd slot — rea
   "$(json "$SESSION" "$WT_A" "git \${nope}>o -C $MAIN commit -m x")"
 assert_allow "KNOWN-WRONG (filed): unbraced param expansion in the fd slot — real -C <main> mutation MISSED" \
   "$(json "$SESSION" "$WT_A" "git \$nope>o -C $MAIN commit -m x")"
+# (v) The same VALUE SLOT, but with a brace-fd token rather than a bare redirect — reachable
+#     precisely because this change taught the tokenizer about the brace token class. The
+#     `pend` arms still fire first, so the brace word is folded as a RELATIVE value and
+#     resolves under cwd. Measured emissions: `c {fd}`, `g {fd}`, `w {fd}`. origin/main allows
+#     these identically, so this is an un-closed gap rather than a regression.
+assert_allow "KNOWN-WRONG (filed): brace-fd in the -C VALUE SLOT — real -C <main> mutation MISSED" \
+  "$(json "$SESSION" "$WT_A" "git -C {fd} >o $MAIN commit -m x")"
+assert_allow "KNOWN-WRONG (filed): brace-fd in the --git-dir VALUE SLOT — real <main> mutation MISSED" \
+  "$(json "$SESSION" "$WT_A" "git --git-dir {fd} >o $MAIN/.git commit -m x")"
+assert_allow "KNOWN-WRONG (filed): brace-fd in the --work-tree VALUE SLOT — real <main> mutation MISSED" \
+  "$(json "$SESSION" "$WT_A" "git --work-tree {fd} >o $MAIN reset --hard")"
 # Positive discriminator: assert_allow passes on EMPTY output, so a crashed hook would satisfy
 # the two rows above exactly as a correct ALLOW does. This row proves the hook is alive.
-assert_deny "discriminator for the four rows above: the hook is alive and still denying" \
+assert_deny "discriminator for the seven rows above: the hook is alive and still denying" \
   "$(json "$SESSION" "$WT_A" "git -C $MAIN commit -m x")"
 
 # Inherited over-DENIAL, pinned in the other direction: a DIGIT glued to the binary is SEEN,
@@ -1416,7 +1448,11 @@ fi
 # sweep row pinning the safe direction of the brace-class widening, +3 for the SPACED
 # brace-fd pair and its not-swallowed control, +2 for the fd-slot param-expansion
 # KNOWN-WRONG rows, +2 for the chained--C x interposed-redirect cross.
-EXPECTED_TOTAL=240
+# 240 -> 244 (2026-09-16, review round 3): +1 tokenizer-level pin for the pendbrace arm (the
+# hook-level row named for it was a MATCHER miss and left the arm unpinned -- proven by
+# mutation), +3 brace-fd-in-value-slot KNOWN-WRONG rows. The existing liveness discriminator
+# was relabelled to cover them rather than duplicated -- which is why this is +4, not +5.
+EXPECTED_TOTAL=244
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
