@@ -43,6 +43,12 @@ describe("Coach Blocks Service", () => {
     expect(result[1].type).toBe("meal_plan_card");
     // Contract anchor: every block the server emits must satisfy the schema the
     // client parses each SSE block with (client/components/coach/coach-chat-utils.ts).
+    // The two loops below are the provider-side anchor that
+    // scripts/__tests__/contract-coverage-guard.test.ts requires for
+    // coachBlockSchema and mealPlanCardSchema. They cannot fail while
+    // validateBlocks filters with the same schema object (a regression pin, not
+    // a check), so do not delete them without moving the anchor: the guard goes
+    // red the moment no server test references either name.
     for (const block of result) expectResponseToMatch(block, coachBlockSchema);
     for (const block of result)
       if (block.type === "meal_plan_card")

@@ -10,7 +10,10 @@
  */
 import { z } from "zod";
 
-export const receiptItemSchema = z.object({
+// Not `receiptItemSchema`: server/services/receipt-analysis.ts already has an
+// unrelated local schema of that name, and the contract-coverage guard matches
+// names by whole word across server tests, so sharing it would fake coverage.
+export const receiptWireItemSchema = z.object({
   name: z.string(),
   originalName: z.string(),
   quantity: z.number(),
@@ -22,7 +25,7 @@ export const receiptItemSchema = z.object({
 });
 
 export const receiptAnalysisResultSchema = z.object({
-  items: z.array(receiptItemSchema),
+  items: z.array(receiptWireItemSchema),
   storeName: z.string().optional(),
   purchaseDate: z.string().optional(),
   totalAmount: z.string().optional(),
@@ -30,7 +33,12 @@ export const receiptAnalysisResultSchema = z.object({
   overallConfidence: z.number(),
 });
 
-/** Wire shape of a `PantryItem` row after JSON serialization. */
+/**
+ * Wire shape of a `PantryItem` row (shared/schema) after JSON serialization.
+ * The Drizzle row types the timestamps as `Date` and `quantity` as `string`,
+ * but JSON serialization sends timestamps as ISO strings — this schema matches
+ * what actually arrives.
+ */
 export const receiptPantryItemSchema = z.object({
   id: z.number(),
   userId: z.string(),
@@ -48,6 +56,6 @@ export const receiptConfirmResultSchema = z.object({
   items: z.array(receiptPantryItemSchema),
 });
 
-export type ReceiptItem = z.infer<typeof receiptItemSchema>;
+export type ReceiptItem = z.infer<typeof receiptWireItemSchema>;
 export type ReceiptAnalysisResult = z.infer<typeof receiptAnalysisResultSchema>;
 export type ReceiptConfirmResult = z.infer<typeof receiptConfirmResultSchema>;
