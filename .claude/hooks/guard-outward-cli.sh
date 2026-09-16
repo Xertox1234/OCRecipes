@@ -1105,10 +1105,23 @@
 #     silently dropped).
 #
 #     FLAG-position -- STAYS OPEN, and is NOT closed by this block. MEASURED
-#     2026-09-16 against BOTH this tree and `origin/main`, with a positive
-#     control (a literal `--admin` -> DENY) and a negative control (the
-#     sanctioned `--auto --squash --delete-branch` automerge -> ALLOW) both
-#     behaving in the same run:
+#     2026-09-16 against BOTH this tree and `origin/main`.
+#
+#     READ THIS BEFORE MEASURING ANYTHING HERE. This check runs SEQUENTIALLY
+#     after the "without a REAL --auto flag" check. A command lacking --auto
+#     dies at that earlier check and the --admin scan is NEVER REACHED, so its
+#     deny is attribution-blind and proves nothing about detection. Every
+#     probe against this residual must (1) carry a real --auto so the scan is
+#     reached at all, and (2) record the deny REASON, not just deny-vs-allow.
+#     Reading polarity instead of attribution is exactly what produced a false
+#     "these spellings are closed" claim in an earlier revision of this
+#     paragraph. The positive control must therefore be a literal --admin
+#     INSIDE the sanctioned carve-out -- `gh pr merge 42 --auto
+#     --delete-branch --admin` -- which denies on the administrator-privileges
+#     reason; a literal --admin with no --auto denies on the OTHER reason and
+#     controls nothing. Negative control: the sanctioned `--auto --squash
+#     --delete-branch` automerge -> ALLOW. With both behaving and zero void
+#     rows:
 #         gh pr merge 42 --auto --delete-branch --{admin,squash}
 #     ALLOWS on both trees. Bash expands it to `--auto --delete-branch
 #     --admin --squash`; both reconstructed words are genuine flags of that
@@ -1118,12 +1131,37 @@
 #     spelled literally. PRE-EXISTING: it allows on `main` too, so this
 #     block neither introduced nor widened it.
 #
-#     The gap is specifically WHOLE-FLAG alternatives. Glued-IN-WORD
-#     spellings of the same flag DENY on both trees and are NOT part of this
-#     residual: `--ad{m,m}in` and its RANGE sibling `--ad{m..m}in` were both
-#     measured DENY, as were `{--admin,--admin}` and the empty-quote form.
-#     Do NOT cite the in-word spellings as examples of this hole -- they are
-#     closed, and an earlier review transcript asserted otherwise.
+#     The residual is WIDER than the whole-flag form above, and the
+#     discriminator is NOT how many alternatives the list has. Re-measured
+#     2026-09-16 with the base command `gh pr merge 42 --auto
+#     --delete-branch` held CONSTANT and only the trailing flag's spelling
+#     varied (positive control `--admin` -> DENY, no-extra-flag control ->
+#     ALLOW, both behaving, zero void rows), on BOTH trees:
+#         --ad{m,m}in        ALLOW   (expands to 2 words: --admin --admin)
+#         --ad{m..m}in       ALLOW   (expands to 1 word:  --admin)
+#         --{admin,squash}   ALLOW   (expands to 2 words: --admin --squash)
+#         {--admin,--admin}  DENY    (administrator-privileges reason)
+#         --ad""min          DENY    (administrator-privileges reason)
+#         --admin            DENY    (administrator-privileges reason)
+#     The RANGE in-word spelling is the CLEANEST of these: it reconstructs
+#     exactly `--admin` with no extra word at all, so not even a
+#     spare-positional tolerance is required.
+#
+#     What actually separates DENY from ALLOW is whether the literal
+#     substring `--admin` survives in the RAW COMMAND TEXT. `scan_renderings`
+#     never brace-expands, so any spelling that breaks that substring passes,
+#     and any spelling that leaves it intact (`{--admin,--admin}`) is caught
+#     by the literal check. Generalise from that, not from the alternative
+#     count.
+#
+#     CORRECTION, recorded deliberately: an earlier revision of THIS paragraph
+#     claimed the two in-word spellings were measured DENY and instructed
+#     readers not to cite them. That was wrong -- the probe behind it varied
+#     the flag spelling and the presence of `--auto`/`--delete-branch` at the
+#     same time, so those rows sat in a regime that denies for an unrelated
+#     reason and the flag dimension was masked entirely. A control only
+#     validates the path it actually runs through. The claim is retracted;
+#     these spellings are live, and citing them is correct.
 #
 #     TOOL-position — the list glued INSIDE the binary's own first letters
 #     (`{e,e}as update --branch preview`) STAYS OPEN, for the identical

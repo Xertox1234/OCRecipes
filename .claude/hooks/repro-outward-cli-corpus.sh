@@ -2325,7 +2325,16 @@ EXPECTED_DENY_ATTRIB_ROWS=768
 #       forbids widening the fast path's sigil class to reach it).
 #   17  toolvcasearm-* (7) + verbvcasearm-* (7) + flagvcasearm-* (3 of 4)
 #       -- `case` arm `)` with no matching opener.
-# Both buckets are DELIBERATE, documented residuals with open todos, not
+#   21  r4brlist-tool-* (7) + r4brlist-nested-* (7) + r4brlist-nested-list-*
+#       (7) -- brace LIST glued to the BINARY name, and any brace construct
+#       (range OR list) nested inside a list alternative. Added 2026-09-16.
+#       TOOL-position stays open for the same fast-path reason as its RANGE
+#       sibling above; the nested forms stay open because
+#       `_OUT_BR_LIST_TOKEN`'s item class excludes `{`/`}`, so a nested span
+#       does not match the outer list token at all. See guard-outward-cli.sh's
+#       DOCUMENTED RESIDUALS entry (search "BRACE LIST expansion") for the
+#       full per-position bound.
+# All three buckets are DELIBERATE, documented residuals with open todos, not
 # failures. Pinning 0 here would make this gate permanently red, and a
 # permanently red gate gets disabled -- which is how the corpus ended up
 # unguarded in the first place.
