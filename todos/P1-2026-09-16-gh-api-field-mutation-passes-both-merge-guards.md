@@ -69,10 +69,19 @@ disclaims the very thing the pin is pinning, and the gap fell between them.
 by GitHub (`enforce_admins: true`), so the harm cannot land. **This one is stopped by nothing
 local.**
 
-Bounded by: GitHub still enforces branch protection, so this cannot merge a PR with failing
-required checks or missing reviews. What it can do is merge an otherwise-ready PR while the
-local merge-review gate stays silent — i.e. without a recorded review, which is the specific
-control that gate exists to enforce.
+Bounded by the 9 required status checks, and by nothing else on the approvals axis. Measured
+via a read-only API read rather than recalled: `enforce_admins: true`, 9 required checks,
+`strict: false`, `required_approving_review_count: 0`, `require_code_owner_reviews: false`.
+
+**Required approvals are NOT a layer here — zero are required.** An unreviewed merge is
+already reachable through the sanctioned `--auto` path by design, so do not justify this
+todo's priority on an approvals bypass. What this route defeats is the LOCAL merge-review
+gate, which requires a recorded reviewer verdict for the head sha before any merge. That
+control is purely local, has no server-side counterpart, and this route walks past it in
+silence. GitHub's 9 checks still stand, so a PR with failing CI cannot be merged this way.
+
+Noted separately, out of scope, pre-existing, so it is not lost: `allow_force_pushes` reads
+`true` on `main` — a different vector entirely.
 
 ## Acceptance Criteria
 
