@@ -108,8 +108,12 @@ the fd slot is a redirect prefix.
       mind — which is how this position was missed the first time).
 - [ ] `git-safety.sh`'s residual list is updated — but gate this on the **whole value-slot cell**,
       not on the three `>out` spellings listed above. Measured in the PR #956 round-4 review
-      (176-row corpus = 3 bases x 3 insertion slots x 8 operators x 2 shells; 9 inert, **167 real
-      main mutations** as the denominator): the value slot holds **45** ALLOW rows and only **21**
+      (144-row corpus = 3 bases x 3 insertion slots x 8 operators x 2 shells; 9 inert, **135 real
+      main mutations** as the denominator). The round-4 report quoted this total as 176, which does
+      not multiply out; 144 is the figure that reconciles, since 3 bases x 8 operators x 2 shells =
+      48 rows per slot and 48 - 3 inert per slot = the 45 value-slot rows below. 176 cannot be
+      rescued by fixing one factor: it would need 11 base-by-slot combinations, not 9. The
+      45/21/24/18/6 chain the criterion depends on is unaffected and independently verified: the value slot holds **45** ALLOW rows and only **21**
       are the plain-redirect spellings this todo enumerates. Retiring residual class 4 after
       closing those 21 would leave **24** real-mutation rows allowed with NO residual naming
       them — the exact "a residual list reads as complete" failure this todo was filed to fix.
