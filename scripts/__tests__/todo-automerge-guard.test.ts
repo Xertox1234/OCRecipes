@@ -1252,12 +1252,17 @@ describe("todo-automerge-guard.sh (fail-closed arms survive a payload larger tha
   });
 
   it("ERRORs (exit 2) on an unusable rename source even when the emitted list exceeds the pipe buffer", () => {
-    const { status } = runGuardRaw({
+    const { status, stdout } = runGuardRaw({
       FAKE_GH_PR_FILES_JSON: JSON.stringify(bigRows),
       FAKE_GH_CHANGED_FILES: String(bigRows.length),
       FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
     });
     expect(status).toBe(2);
+    // Assert the DIAGNOSTIC, not just the code: three separate arms exit 2 here, so a bare
+    // status check cannot attribute the ERROR to the sentinel this row is named for. Measured —
+    // dropping `X$` from the class-check allowed set leaves this row green at 2 while stdout
+    // reads "could not be classed" instead.
+    expect(stdout).toContain("previous_filename");
   }, 60000);
 
   it("control — the same unusable rename source BELOW the pipe buffer also errors, so the row above is about the regime and not the row", () => {
@@ -1268,12 +1273,13 @@ describe("todo-automerge-guard.sh (fail-closed arms survive a payload larger tha
     const smallBytes =
       smallRows.reduce((n, r) => n + 2 + r.filename.length + 1, 0) + 2;
     expect(smallBytes).toBeLessThan(PIPE_BUF_BYTES);
-    const { status } = runGuardRaw({
+    const { status, stdout } = runGuardRaw({
       FAKE_GH_PR_FILES_JSON: JSON.stringify(smallRows),
       FAKE_GH_CHANGED_FILES: String(smallRows.length),
       FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
     });
     expect(status).toBe(2);
+    expect(stdout).toContain("previous_filename");
   });
 });
 

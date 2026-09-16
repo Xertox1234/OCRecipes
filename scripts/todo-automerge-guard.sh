@@ -275,9 +275,12 @@ fi
 # HERE-STRING, not a producer pipe. `grep -q` exits on first match, so under `set -o pipefail`
 # a `printf ... | grep -q` pipeline returns 141 (SIGPIPE on the writer) once the input exceeds
 # the 64KB pipe buffer -- which makes this `if` FALSE and skips this fail-closed sentinel on
-# exactly the large PRs where an odd file list is most likely. Measured: 92016 bytes with the X
-# row second gave exit 0 through the pipe form and exit 2 through this one, while an 85-byte
+# exactly the large PRs where an odd file list is most likely. Measured: 79623 bytes with the X
+# row second gave exit 0 through the pipe form and exit 2 through this one, while a 63-byte
 # input carrying the SAME row exited 2 under both -- so the flip is the regime, not the row.
+# (Those two figures are the CURRENT payload's, re-derived after it was resized: the earlier
+# 92016/85 pair described a 4000-row payload that was replaced because it timed out in CI.
+# The conclusion re-measures true at the new sizes; only the arithmetic was superseded.)
 # Same family this file already remedies further down with here-strings.
 if grep -qx 'X' <<< "$raw_files"; then
   echo "guard: ERROR PR #$PR — a changed file is reported as renamed with no previous_filename, so its SOURCE path cannot be gated. Fail-closed."
