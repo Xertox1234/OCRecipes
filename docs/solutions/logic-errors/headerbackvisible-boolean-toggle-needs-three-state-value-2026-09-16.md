@@ -67,11 +67,23 @@ is specifically in using `true`/`!isOpen` for the OTHER state.
 screens, so `canNavigateBack()` can't be used as the lever — `headerBackVisible` is the only
 one available.
 
-On iOS, `RNSScreenStackHeaderConfig.mm` sets `navitem.hidesBackButton = config.hideBackButton`
-directly from the same `headerBackVisible === false` boolean, with no `backButtonInCustomView`
-equivalent — so iOS has no analogous duplication bug; the false-positive only exists on
-Android and only when `headerTitle` is a function (a function `headerTitle` is what makes
-`headerTitleElement != null` true, which is one leg of the OR's second term).
+On iOS the same flag is live, so the rule below is platform-agnostic — do NOT read this
+section as license to use a plain boolean toggle on an iOS-only screen.
+`RNSScreenStackHeaderConfig.mm:660` sets `navitem.hidesBackButton = config.hideBackButton`
+from the same `headerBackVisible === false` boolean, and `RNSScreenStackHeaderConfig.mm:678`
+*additionally* assigns `navitem.leftItemsSupplementBackButton = config.backButtonInCustomView`
+inside the `RNSScreenStackHeaderSubviewTypeLeft` case (guarded `#if !TARGET_OS_TV`). UIKit's
+`leftItemsSupplementBackButton` displays a custom left bar button item ALONGSIDE the system
+back button rather than replacing it — the same duplication shape as Android. So a route with
+a custom `headerLeft` that explicitly sets `headerBackVisible: true` can duplicate the back
+control on iOS too.
+
+The two platforms differ in WHEN that path is reached, not in whether it exists. Verify the
+trigger against the source rather than from this paragraph: the `backButtonInCustomView`
+computation and the subview-rendering condition both live in
+`@react-navigation/native-stack/src/views/useHeaderConfigProps.tsx` (the OR's second term
+involves `headerLeftElement == null`, and a `Left` subview also renders for a function
+`headerTitle`). The Android composition is the one actually reproduced in this repo.
 
 ## Solution
 
