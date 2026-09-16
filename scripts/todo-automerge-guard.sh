@@ -17,9 +17,11 @@
 # server/routes/ directory (the request/authz boundary — see SAFE_ALLOWLIST's comment for
 # why this one root HOLDs wholesale instead of being enumerate-the-sensitive-ones), the
 # whole server/middleware/ directory, .github/ (the CI gates), scripts/ (incl. this
-# guard), migrations, shared/schema.ts, secrets/certs, docs/rules/ (the binding review
-# rules — the one docs path carved OUT of the markdown pass-through; see SENSITIVE_OVERRIDE
-# and PATH GATE step 2), plus explicit sensitive files named
+# guard), migrations, shared/schema.ts, secrets/certs, docs/rules/, .claude/agents/,
+# .claude/skills/, docs/AI_WORKFLOW.md and docs/PATTERNS.md (the binding review rules and
+# the files that define what "reviewed" means — structural entries carved OUT of the
+# markdown pass-through; see STRUCTURAL_SENSITIVE, SENSITIVE_OVERRIDE, and PATH GATE step 2),
+# plus explicit sensitive files named
 # in SENSITIVE_OVERRIDE that live inside the otherwise-open client/ and server/storage/
 # roots. server/routes/, .github/, scripts/, and migrations/ are held BOTH by SAFE_ALLOWLIST
 # omission AND by an explicit whole-dir SENSITIVE_OVERRIDE entry — belt-and-suspenders,
@@ -124,14 +126,14 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # reviewer and every injected-pattern hook acts on; accessibility.md, database.md and the rest are
 # equally binding, which is why this is scoped to the whole directory and not to security.md
 # alone — a per-file list would silently go stale the next time a rules file is added). It needs
-# BOTH this entry and the docs/rules/ carve-out in the PATH GATE's step 2 below: SAFE_ALLOWLIST's
-# ^docs/ prefix already passes them, and the step-2 markdown exemption used to `continue` before
-# this override was ever consulted, so a batch-generated PR trimming a binding security rule was
+# BOTH this entry and the PATH GATE's STRUCTURAL_SENSITIVE check (step 2, below): SAFE_ALLOWLIST's
+# ^docs/ prefix already passes them, and the markdown exemption used to `continue` before any
+# sensitivity check was ever consulted, so a batch-generated PR trimming a binding security rule was
 # auto-merge eligible and could land overnight unreviewed — contradicting this repo's own rule
 # that security changes get individual review. This is a real path, not a hypothetical:
 # todo-executor.md Step 5b appends CRITICAL/HIGH rule bullets to docs/rules/{domain}.md from
 # inside the /todo PR itself. Every OTHER docs path (docs/solutions/, docs/research/, runbooks)
-# and all of todos/ keeps the exemption. Listing it here rather than only in the step-2 carve-out
+# and all of todos/ keeps the exemption. Listing it here rather than only in STRUCTURAL_SENSITIVE
 # is what makes todo-executor.md's research-delegation skip-gate inherit it — that gate reads
 # SENSITIVE_OVERRIDE and never looks at SAFE_ALLOWLIST.
 # server/storage/verification.ts and client/components/VerificationBadge are the UNRELATED
@@ -166,7 +168,37 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # generically-named, allowlisted-directory file — named individually since none shares a
 # signature generic enough for the drift-detection test to generalize without becoming a
 # broad "security detector" (deliberately avoided — see that test's own comment).
-SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW(\.md$|/)|(^|/)docs/PATTERNS(\.md$|/)|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
+
+# Structural subset of the above: whole-directory and exact-path entries ONLY, no
+# free-text keywords. Read by the PATH GATE's structural-sensitivity check (below)
+# BEFORE the markdown/docs/todos exemption, so a markdown file under any of these can
+# never take that exemption — this is what closes the gap where every whole-directory
+# SENSITIVE_OVERRIDE entry had a silent `\.md$` bypass through the exemption that used
+# to run first. Deliberately narrower than SENSITIVE_OVERRIDE: that regex also carries
+# free-text keywords ([Aa]dmin, [Pp]remium, [Ll]ogin, secret, credential, (^|/)[Hh]ealth,
+# …) meant to classify CODE by filename, and running those over prose HOLDs any ordinary
+# doc/todo whose slug or title happens to contain an everyday word — measured over the
+# full tracked corpus (git ls-files, no sampling): 0 unintended changes under
+# docs/solutions/ or todos/ with this narrower regex, vs 33 with the full
+# SENSITIVE_OVERRIDE. .claude/agents/ and .claude/skills/ are added because they are the
+# files that DEFINE what "reviewed" means — every roster reviewer's checklist lives
+# there — and docs/AI_WORKFLOW.md / docs/PATTERNS.md are the Review Policy roster and the
+# knowledge-base index those checklists point back to. All four are ALSO added to
+# SENSITIVE_OVERRIDE above for defense-in-depth, same belt-and-suspenders reasoning as
+# the other whole-dir entries there.
+# BOUNDARY, decided deliberately rather than left open: this set is `.claude/agents/` +
+# `.claude/skills/` and NOT `.claude/` wholesale. `.claude/hooks/**` is excluded because it
+# holds no markdown at all (`git ls-files '.claude/hooks/*.md'` is empty) and every tracked file
+# under it is `.sh`, which the step-1 allowlist already holds — so adding it would be a rule with
+# no live row behind it. The one tracked `.claude` markdown outside agents/skills is an
+# auto-memory file, which is not review-governing content. Matching is case-INSENSITIVE below,
+# so `.claude/Agents/` and a `docs/ai_workflow.md` spelling cannot walk around this on a
+# case-preserving filesystem, and the two exact-path entries admit a trailing `/` so a later
+# split of AI_WORKFLOW.md or PATTERNS.md into a directory stays covered.
+# If `.claude/hooks/**` ever gains markdown, widen to `(^|/)\.claude/` wholesale: over-HOLD is
+# the cheap direction here, per this script's own header.
+STRUCTURAL_SENSITIVE='(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW(\.md$|/)|(^|/)docs/PATTERNS(\.md$|/)'
 
 # Sensitive-domain keywords for the TODO gate's intent check (below): HOLDs any todo
 # whose own title/frontmatter names a sensitive domain, regardless of which file it ends
@@ -187,12 +219,116 @@ SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)sub
 # it — relies on CI + review, not this list, same as any other unnamed-sensitive-file gap.
 SENSITIVE_INTENT_KEYWORDS='auth|jwt|login|password|admin|premium|subscription|iap|api-key|credential'
 
-files="$(gh pr diff "$PR" --name-only)" || {
+# A git-detected RENAME is reported by `gh pr diff --name-only` as its DESTINATION path ONLY,
+# so a high-similarity move OUT of a covered directory reads as a plain new file and evades
+# every path check below — including the STRUCTURAL_SENSITIVE check this gate relies on.
+# Measured pair: PR #977 carries `R067 todos/… -> todos/archive/…` and `gh pr diff 977
+# --name-only` lists only the destination, while control PR #965 (which git scored as
+# delete+add rather than a rename) lists BOTH paths. So removals ARE normally listed and the
+# blind spot is specific to renames, not to deletions generally. Concretely, a PR moving
+# `.claude/agents/code-reviewer.md` to `docs/solutions/kb/code-reviewer.md` would read as one
+# ordinary markdown file, take the SAFE_ALLOWLIST exemption, and arm auto-merge while walking a
+# reviewer checklist out of a protected directory.
+#
+# `pulls/{n}/files` carries `previous_filename` on a rename, so emitting it alongside
+# `filename` gates the SOURCE path too.
+#
+# `--paginate` closes the PER-PAGE truncation only (this endpoint pages at 30). It does NOT lift
+# the endpoint's server-side maximum file count, so pagination alone is not a completeness
+# guarantee and the comment must not claim one. Under-reporting is the dangerous direction here
+# because of the CONSUMER, not because of this gate: merge-review-guard.sh treats this script's
+# exit 0 as "no review record required", so a short list is a MERGE-GATE bypass rather than
+# merely a missed auto-merge HOLD. The count check below is the actual completeness detector.
+# Error handling is unchanged: gh failure exits 2, empty output exits 2.
+# Rows are CLASSED on the way out: `F ` a destination (one per changed FILE), `P ` a rename
+# SOURCE, `X` a rename whose source is missing. The class is what lets the completeness check
+# below count FILES rather than LINES -- see the note there for why that distinction is the
+# whole point. `// ""` on previous_filename because jq truthiness treats "" as TRUE, so a
+# present-but-empty value would otherwise emit a blank path and skip the X arm.
+raw_files="$(gh api "repos/{owner}/{repo}/pulls/$PR/files" --paginate \
+  --jq '.[] | ("F " + .filename), (select((.previous_filename // "") != "") | "P " + .previous_filename), (select(.status == "renamed" and ((.previous_filename // "") == "")) | "X")')" || {
   echo "guard: ERROR PR #$PR — could not read changed files (gh error). Fail-closed."
   exit 2
 }
+# Every row must carry a class BEFORE anything is stripped. `sed -n 's/^[FP] //p'` DROPS what it
+# cannot match, and the completeness check cannot notice: an unclassed row contributes no `F `
+# line, so seen and declared stay equal and the path it carried is gated by nothing. Measured: a
+# filename containing a newline emits a second, unclassed line; the pre-classing revision HELD on
+# it (naming the protected path) while the classed revision returned OK. Refuse instead of
+# stripping. `X$` stays in the allowed set, or the sentinel row itself reads as unclassed and its
+# specific diagnostic below becomes unreachable.
+# `-n` first: a here-string of an EMPTY value still yields one empty line, which is not a valid
+# class, so an empty read would trip this arm and mask the clearer "no file changes" error below.
+# rc captured explicitly rather than tested inline: a broken regex exits 2, and a bare `if` reads
+# ANY nonzero as "every row classed" and skips this refusal entirely. Only rc 1 means "all rows
+# matched". Mirrors the rc_struct/rc_sens idiom the PATH GATE already uses for the same reason —
+# the fail-closed direction should be structural, not incidental.
+rc_class=0
+grep -qvE '^([FP] |X$)' <<< "$raw_files" || rc_class=$?
+if [ -n "$raw_files" ] && [ "$rc_class" -ne 1 ]; then
+  echo "guard: ERROR PR #$PR — a changed-file row came back without a recognisable class, so the file list cannot be gated reliably. Fail-closed."
+  exit 2
+fi
+files="$(sed -n 's/^[FP] //p' <<< "$raw_files")"
 if [ -z "$files" ]; then
   echo "guard: ERROR PR #$PR — no file changes (nothing to evaluate)"
+  exit 2
+fi
+
+# A row the API calls a rename but gives no previous_filename would have its SOURCE path
+# silently dropped -- the exact blind spot reading this endpoint was meant to close. Refuse
+# rather than gate a list known to be missing a path.
+# HERE-STRING, not a producer pipe. `grep -q` exits on first match, so under `set -o pipefail`
+# a `printf ... | grep -q` pipeline returns 141 (SIGPIPE on the writer) once the input exceeds
+# the 64KB pipe buffer -- which makes this `if` FALSE and skips this fail-closed sentinel on
+# exactly the large PRs where an odd file list is most likely. Measured: 79623 bytes with the X
+# row second gave exit 0 through the pipe form and exit 2 through this one, while a 63-byte
+# input carrying the SAME row exited 2 under both -- so the flip is the regime, not the row.
+# (Those two figures are the CURRENT payload's, re-derived after it was resized: the earlier
+# 92016/85 pair described a 4000-row payload that was replaced because it timed out in CI.
+# The conclusion re-measures true at the new sizes; only the arithmetic was superseded.)
+# Same family this file already remedies further down with here-strings.
+if grep -qx 'X' <<< "$raw_files"; then
+  echo "guard: ERROR PR #$PR — a changed file is reported as renamed with no previous_filename, so its SOURCE path cannot be gated. Fail-closed."
+  exit 2
+fi
+
+# COMPLETENESS. Count DESTINATION rows only (`F `) and compare against the PR's declared
+# changed-FILE count: the two sides must measure the same unit.
+#
+# An earlier version of this check counted LINES, on the reasoning that rename sources only ever
+# ADD lines so the count can never fall below the declared total spuriously. That reasoning is
+# sound in one direction and the code depends on the OTHER: `seen < declared` really does imply
+# truncation, but the check acts on the converse, `seen >= declared` implying complete, and that
+# is false. Every rename source is an extra line, so R renames MASK R files truncated away.
+# Measured before the fix: declared 3, rows [archive, a renamed file, a .claude/agents/ markdown];
+# drop the third row to model truncation and 2 destinations + 1 rename source = 3 lines >= 3
+# declared, so the guard returned OK and the protected markdown went from HOLD to a merge-gate
+# pass -- the exact bypass this detector exists to prevent.
+declared_files="$(gh pr view "$PR" --json changedFiles --jq .changedFiles)" || {
+  echo "guard: ERROR PR #$PR — could not read the declared changed-file count. Fail-closed."
+  exit 2
+}
+# `sort -u`: distinct DESTINATIONS. Duplicate rows -- possible across a page boundary under
+# --paginate -- would otherwise inflate the count and mask a file truncated away. The numeric
+# guard mirrors the one on declared_files below: `|| true` can yield an empty value, and
+# `[ "" -lt N ]` returns rc 2 INSIDE the if, which SKIPS the truncation error rather than raising
+# it. Not reachable today, but the fail-closed direction should be structural, not incidental.
+seen_files="$(grep '^F ' <<< "$raw_files" | sort -u | grep -c . || true)"
+case "$seen_files" in
+  ''|*[!0-9]*)
+    echo "guard: ERROR PR #$PR — could not count the changed paths that were read. Fail-closed."
+    exit 2
+    ;;
+esac
+case "$declared_files" in
+  ''|*[!0-9]*)
+    echo "guard: ERROR PR #$PR — declared changed-file count is not a number ('$declared_files'). Fail-closed."
+    exit 2
+    ;;
+esac
+if [ "$seen_files" -lt "$declared_files" ]; then
+  echo "guard: ERROR PR #$PR — read $seen_files changed paths but the PR declares $declared_files changed files, so the list is truncated and some paths were never gated. Fail-closed."
   exit 2
 fi
 
@@ -221,7 +357,7 @@ while IFS= read -r tf; do
   # the frontmatter awk below only reads lines between the first pair of --- markers.
   if ! raw="$(gh api -H "Accept: application/vnd.github.raw" "repos/{owner}/{repo}/contents/${tf}?ref=refs/pull/${PR}/head" 2>&1)"; then
     if grep -qE '\bHTTP 404\b|"status": *"404"' <<< "$raw"; then
-      echo "guard: HOLD PR #$PR — ${tf} is listed in the diff but absent from the PR head (deleted?); cannot verify frontmatter"
+      echo "guard: HOLD PR #$PR — ${tf} is listed in the diff but absent from the PR head (deleted, or renamed away — this path may be a rename SOURCE, which this gate now reads deliberately); cannot verify frontmatter"
       echo "Needs individual review; exclude from the batch-merge."
       exit 1
     fi
@@ -259,11 +395,16 @@ fi
 
 # ── PATH GATE ─────────────────────────────────────────────────────────────────
 
-# A file passes only if (1) it is on the allowlist and (2) — unless it is a doc/todo/
-# markdown file, which is never sensitive CODE — it does not hit the sensitive override.
-# ANY other outcome HOLDs: not allowlisted, sensitive, or a grep regex ERROR (rc >= 2).
-# Exit codes are captured explicitly so a broken regex (rc 2) can never look like a clean
-# "no match" (rc 1) — a typo fails CLOSED, never silently passes as eligible.
+# A file passes only if (1) it is on the allowlist, (2) it is not one of the
+# STRUCTURALLY sensitive whole-directory / exact-path entries (checked for EVERY file,
+# markdown included — this is what closes the markdown-exemption bypass: every
+# whole-directory SENSITIVE_OVERRIDE entry had a silent `\.md$` bypass through the
+# exemption when it ran first), and (3) — unless it is a doc/todo/markdown file that
+# survived (2), which is never sensitive CODE — it does not hit the full,
+# keyword-bearing sensitive override. ANY other outcome HOLDs: not allowlisted,
+# structurally sensitive, sensitive, or a grep regex ERROR (rc >= 2). Exit codes are
+# captured explicitly so a broken regex (rc 2) can never look like a clean "no match"
+# (rc 1) — a typo fails CLOSED, never silently passes as eligible.
 unsafe=""
 while IFS= read -r f; do
   [ -z "$f" ] && continue
@@ -271,25 +412,31 @@ while IFS= read -r f; do
   if ! printf '%s' "$f" | grep -qE "$SAFE_ALLOWLIST"; then
     unsafe="${unsafe}  ${f}"$'\n'; continue
   fi
-  # 2) docs / todos / markdown are never sensitive CODE — they pass on the allowlist alone
-  #    (a todo slug like subscription-tier-ui.md must not trip the override). ONE carve-out:
-  #    docs/rules/ holds this repo's BINDING review rules (see SENSITIVE_OVERRIDE's comment),
-  #    so those files fall through to (3) and HOLD. Every OTHER docs/todos path — docs/solutions/,
-  #    docs/research/, todos/, runbooks — keeps the exemption; that high-volume, low-risk case is
-  #    what the exemption exists for.
-  #    The rc is captured explicitly rather than written as `… && ! grep -qE '(^|/)docs/rules/'`:
+  # 2) structural sensitivity — whole-directory and exact-path entries ONLY, checked
+  #    BEFORE the markdown exemption below so markdown can never escape it. Deliberately
+  #    NOT the full SENSITIVE_OVERRIDE: that regex also carries free-text keywords meant
+  #    to classify CODE by filename, and running those over prose HOLDs any doc/todo
+  #    whose slug happens to contain an everyday word (see STRUCTURAL_SENSITIVE's comment).
+  #    The rc is captured explicitly rather than written as `… && ! grep -qE "$STRUCTURAL_SENSITIVE"`:
   #    under negation a BROKEN regex (rc >= 2) inverts to true, takes the exemption, and skips the
-  #    sensitive check — fail-OPEN, the exact trap step 3's rc_sens capture exists to avoid. Here
-  #    rc 1 (clean no-match ⇒ not a rules file) is the ONLY value that takes the exemption; rc 0
-  #    (is a rules file) and rc >= 2 (regex error) both fall through to MORE checking, not less.
-  #    Same regex text as the SENSITIVE_OVERRIDE entry on purpose — if the two ever diverged, a
-  #    path could be exempted here and never reach the override that is supposed to HOLD it.
-  rc_rules=0; printf '%s' "$f" | grep -qE '(^|/)docs/rules/' || rc_rules=$?
-  if [ "$rc_rules" -eq 1 ] && printf '%s' "$f" | grep -qE '^(docs|todos)/|\.md$'; then
+  #    sensitive check — fail-OPEN, the exact trap step 4's rc_sens capture exists to avoid. Here
+  #    rc 1 (clean no-match) is the ONLY value that may skip the HOLD; rc 0 (structurally
+  #    sensitive) and rc >= 2 (regex error) both HOLD.
+  rc_struct=0; printf '%s' "$f" | grep -qiE "$STRUCTURAL_SENSITIVE" || rc_struct=$?
+  if [ "$rc_struct" -ne 1 ]; then
+    unsafe="${unsafe}  ${f}"$'\n'; continue
+  fi
+  # 3) docs / todos / markdown that survived (2) are never sensitive CODE — they pass on
+  #    the allowlist alone (a todo slug like subscription-tier-ui.md must not trip the
+  #    override). Every OTHER docs/todos path — docs/solutions/, docs/research/, todos/,
+  #    runbooks — keeps the exemption; that high-volume, low-risk case is what the
+  #    exemption exists for.
+  if printf '%s' "$f" | grep -qE '^(docs|todos)/|\.md$'; then
     continue
   fi
-  # 3) an allowlisted CODE file that hits the sensitive override HOLDs. rc 1 (clean no-match)
-  #    is the ONLY pass; rc 0 (sensitive) and rc >= 2 (regex error) both HOLD.
+  # 4) an allowlisted, structurally-clean CODE file that hits the full keyword-bearing
+  #    sensitive override HOLDs. rc 1 (clean no-match) is the ONLY pass; rc 0 (sensitive)
+  #    and rc >= 2 (regex error) both HOLD.
   rc_sens=0; printf '%s' "$f" | grep -qE "$SENSITIVE_OVERRIDE" || rc_sens=$?
   if [ "$rc_sens" -ne 1 ]; then
     unsafe="${unsafe}  ${f}"$'\n'

@@ -67,6 +67,18 @@ printf '%s\n' "$*" >> "$GH_LOG"
 # would look identical to one that anchors itself.
 if [ -n "${FAKE_PIN_PWD:-}" ] && [ "$PWD" != "$FAKE_PIN_PWD" ]; then exit 1; fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "view" ]; then
+  # todo-automerge-guard.sh asks this endpoint for the PR's DECLARED changed-file count, so it
+  # can refuse a truncated file list. Answer that query with a count that agrees with FAKE_FILES
+  # by default, keeping the completeness check a no-op here so only the merge-gate behaviour
+  # under test can move.
+  for a in "$@"; do
+    case "$a" in
+      changedFiles)
+        printf '%s\n' "${FAKE_CHANGED_FILES:-$(printf '%s\n' "${FAKE_FILES}" | grep -c . || true)}"
+        exit 0
+        ;;
+    esac
+  done
   printf '%s\n' "${FAKE_VIEW_JSON}"; exit 0
 fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "diff" ]; then
@@ -74,6 +86,28 @@ if [ "${1:-}" = "pr" ] && [ "${2:-}" = "diff" ]; then
   printf '%s\n' "${FAKE_FILES}"; exit 0
 fi
 if [ "${1:-}" = "api" ]; then
+  # todo-automerge-guard.sh reads its file list from pulls/{n}/files so that a rename SOURCE
+  # path (previous_filename) is gated and not just the destination. That is also a `gh api`
+  # call, so this stub must dispatch on the ENDPOINT: without the case below, the file-list
+  # read is answered with todo frontmatter, and under this harness's DEFAULT FAKE_API_FAIL=1
+  # -- which models only the TODO GATE being unable to read the archived todo -- it fails
+  # closed and every safe-paths ALLOW row turns into an exit-2 ERROR.
+  # Scan ALL arguments rather than matching $2: the contents call puts -H at $2 and reaches the
+  # frontmatter branch only by falling off the end of a positional case, so a later reordering
+  # of the file-list call would misroute it into the frontmatter branch silently -- which under
+  # this harness's default FAKE_API_FAIL=1 is exactly the seven-row exit-2 storm this stub was
+  # widened to repair.
+  _ep=""
+  for a in "$@"; do
+    case "$a" in */pulls/*/files) _ep="files" ;; esac
+  done
+  if [ "$_ep" = "files" ]; then
+    [ -n "${FAKE_DIFF_FAIL:-}" ] && exit 1
+    # Destination CLASS, matching what the guard's own jq emits, so its completeness check
+    # counts FILES rather than lines. The `pr diff` branch above is deliberately NOT classed:
+    # merge-review-guard.sh consumes that one directly for its own changed-file digest.
+    printf '%s\n' "${FAKE_FILES}" | sed -e '/^$/d' -e 's/^/F /'; exit 0
+  fi
   [ -n "${FAKE_API_FAIL:-}" ] && exit 1
   printf '%s\n' "${FAKE_TODO_MD:-}"; exit 0
 fi
@@ -586,13 +620,16 @@ out=$(mcp_payload 938 | run)
 assert_allowed "todo/* with safe paths is exempt" "$out"
 
 # 24. STAGE 1 MECHANISM. The branch name — not the file list — selects whether the FULL
-#     guard runs. The full guard's TODO GATE reads the archived todo through `gh api`;
-#     `--paths-only` never does. So an `api` line in the gh log is the observable
-#     signature of stage 1 having run.
+#     guard runs. The full guard's TODO GATE reads the archived todo through the API's
+#     CONTENTS endpoint; `--paths-only` never does. The endpoint is load-bearing in that
+#     sentence: todo-automerge-guard.sh now reads its FILE LIST through the same verb, on the
+#     pulls/{n}/files endpoint, and that read happens in BOTH modes -- so a bare `^api ` needle
+#     stopped discriminating the moment the file list moved off the diff subcommand (which it
+#     did so a rename SOURCE path is gated, not just the destination). Match contents.
 export FAKE_API_FAIL=""
 : > "$GH_LOG"
 mcp_payload 938 | run >/dev/null
-grep -q '^api ' "$GH_LOG" && ok "todo/* branch runs the FULL guard (stage 1 fires)" \
+grep -q '^api .*/contents/' "$GH_LOG" && ok "todo/* branch runs the FULL guard (stage 1 fires)" \
                           || bad "todo/* branch runs the FULL guard (stage 1 fires)" "$(cat "$GH_LOG")"
 
 # 25. …and the SAME file list on a non-todo branch does NOT run it. This is the #938
@@ -602,7 +639,7 @@ grep -q '^api ' "$GH_LOG" && ok "todo/* branch runs the FULL guard (stage 1 fire
 export FAKE_VIEW_JSON="{\"headRefName\":\"chore/close-a-todo\",\"headRefOid\":\"$SHA\"}"
 : > "$GH_LOG"
 mcp_payload 938 | run >/dev/null
-grep -q '^api ' "$GH_LOG" && bad "non-todo branch does NOT run the full guard" "$(cat "$GH_LOG")" \
+grep -q '^api .*/contents/' "$GH_LOG" && bad "non-todo branch does NOT run the full guard" "$(cat "$GH_LOG")" \
                           || ok "non-todo branch does NOT run the full guard"
 export FAKE_API_FAIL="1"
 
