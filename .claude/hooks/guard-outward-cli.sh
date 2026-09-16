@@ -226,32 +226,45 @@
 #     from "the blanking primitive failed" — it therefore routes to the crude
 #     smell test and DENIES. Over-denial on a shape no real caller writes; the
 #     safe direction.
-#   * CLOSED 2026-09-16, same todo as the launcher-family bullet above.
-#     Path invocation denies whether the path qualifies the GATED BINARY, the
-#     LAUNCHER word, the INTERPRETER, or a WRAPPER word -- the last of these only
-#     since the wrapper absorber was lifted out of the package-directory clauses into
-#     _OUT_POS_PREFIX_W and applied to the command-position anchors. Before that, a
-#     path-qualified wrapper in front of a bare gated binary ALLOWED while its bare
-#     spelling DENIED -- a one-token-different pair, measured on four gated binaries: the optional path sits
-#     on both sides of the launcher in `_OUT_POS_PREFIX_LP`, `_OUT_INTERP_WORD`
-#     carries its own optional path, and the package-directory clauses absorb a
-#     path-qualified `_OUT_WRAPPER_WORD`. PRECISE PATH ONLY (see that bullet for
-#     the degraded-path caveat, which applies identically here).
-#     Do NOT restate this as a category without re-measuring. The previous
-#     wording claimed path invocation was closed while modelling the path as a
-#     property of the gated binary alone, so one extra launcher word reopened it
-#     and the corpus could not express the shape that did so. Every clause named
-#     here corresponds to a pinned row; if a shape is not pinned, it is not closed.
-#     WHERE THOSE PINS LIVE, because it is not uniform: the WRAPPER half is pinned
-#     in test-guard-outward-cli.sh ONLY. repro-outward-cli-corpus.sh emits no row
-#     with a wrapper word in command position at all, so its four pins are
-#     unchanged by that fix and must NOT be read as confirming it -- the grid is
-#     blind to the shape, exactly as it was blind to a path-qualified launcher one
-#     round earlier. A fix here that moves no corpus pin means the grid cannot
-#     express it, not that the grid agrees. The follow-up P1
-#     (todos/P1-2026-09-16-a-privilege-or-wrapper-prefix-before-a-launcher-defeats-the-outward-cli-guard.md)
-#     carries the wrapper prefix as a grid AXIS, composed against the existing
-#     launcher and path dimensions.
+#   * CLOSED 2026-09-16 (round 5), same todo as the launcher-family bullet above.
+#     THE COMMAND-POSITION PREFIX IS AN AXIS, NOT A LIST. Every command-position deny decision
+#     in this file reads `_OUT_POS_PREFIX_W`, which absorbs any number of wrapper words
+#     (`env`, `command`, `nohup`, an inline assignment, a redirect) and privilege words
+#     (`sudo`, `doas`, `corepack`, via `_OUT_PRIV_WORD`, flags included), each independently
+#     path-qualifiable, in any order. `_OUT_POS_PREFIX_LP` is derived from it, so the launcher
+#     family inherits the same reach. The absorber body exists in exactly ONE place now: the
+#     package-directory clauses used to carry their own byte-identical copy and were repointed
+#     at the constant in this round, so widening it reaches them too.
+#
+#     READ THIS BEFORE "CLOSING" ANOTHER PREFIX SHAPE BY NAME. Round 4 applied the wrapper
+#     absorber PER GATED BINARY and wrote here that path invocation was closed "on all four
+#     gated binaries". For `gh`, exactly one anchor had been converted. Round 5 measured SEVEN
+#     command-position deny decisions still bypassed by the same one-token-different pair --
+#     `gh pr merge --admin`, a mutating `gh api`, cross-repo `gh pr create`/`pr comment`, the
+#     expansion-token and brace-range narrow denies, and an ambiguous-flag launcher that reaches
+#     a real OTA. Six were live on `main` too. The lesson is not "convert those seven": it is
+#     that a prefix applied per BINARY rather than per DECISION will always leave some behind.
+#
+#     COUNT CONSUMERS ARE PAIRED. `_OUT_POS_PREFIX_W` feeds counts and `grep -oE` extractors as
+#     well as boolean reads, so widening it is NOT automatically monotone. Each count moves with
+#     its extractor: `gh pr merge`'s count with its GRANT-shaped clause cut (widen the count
+#     alone and an empty clause reads as "no --auto", denying this repo's own sanctioned /todo
+#     automerge), `gh api`'s counts with `_GH_API_CUT` (that block ALLOWS by default, so the
+#     counts alone change nothing), and the brace-range exclusion with its extraction.
+#
+#     PINNED IN BOTH PLACES, which was the round-4 defect: that round's fix moved not one corpus
+#     pin, and the unchanged pins read as confirmation when the grid simply emitted no
+#     command-position prefix row. repro-outward-cli-corpus.sh now carries a PREFIX dimension
+#     (8 prefix forms x 10 deny payloads + 3 over-denial controls), composed against the anchor
+#     FAMILY rather than the launcher grid, because six of the seven bypasses were at anchors the
+#     launcher grid never reaches. A prefix regression now moves a number there.
+#     PRECISE PATH ONLY (see the launcher-family bullet for the degraded-path caveat).
+#     Remaining, measured, NOT closed by this axis -- they are LAUNCHER-GRAMMAR shapes, not
+#     prefix shapes, and are carried by
+#     todos/P1-2026-09-16-launcher-grammar-shapes-compose-around-the-outward-cli-guard.md:
+#     a wrapper word AFTER the launcher, stacked launchers, `npm explore <pkg> -- <gated>`,
+#     `pnpm`/`yarn` dispatching a local binary with no subcommand, and a launcher in front of
+#     the package-directory clauses. All five measured ALLOW on this branch and on `main`.
 #   * `gh workflow run`, `gh secret set`, `gh variable set` and other gh
 #     namespaces beyond `pr`/`release`/`repo`/`api` are not covered — the
 #     todo scoped this to "verb-scoped, not exhaustive"; `gh api` itself IS
@@ -1923,11 +1936,22 @@ fi
 # passed, 0 failed. A measurement written into a comment is not a guard. The guard is the pinned
 # definition-line hash in test-guard-outward-cli.sh, which reddens on any edit here.
 #
-# DO NOT widen this constant to close a new wrapper-word gap. Every widening also reaches
-# _OUT_POS_PREFIX, whose 28 non-comment use sites include `grep -oE` extraction and count
-# readers where a widening skews the result rather than merely denying more -- so there is no
-# way to widen it 'only for a boolean consumer'. Widen _OUT_POS_PREFIX_W or _OUT_POS_PREFIX_LP
-# instead: both are consumed exclusively by boolean deny sites, by construction.
+# DO NOT widen this constant to close a new wrapper-word gap. Every widening reaches
+# _OUT_POS_PREFIX, which _OUT_POS_PREFIX_W and _OUT_POS_PREFIX_LP are both derived from, so it
+# lands on EVERY command-position deny decision in this file at once -- including the count and
+# `grep -oE` extraction consumers, where widening is not monotone-safe.
+#
+# No use-site COUNT is stated here on purpose. Two were, and both went stale inside the round
+# that wrote them: "roughly 24", then "28" -- the latter written into this comment by the very
+# commit whose refactor moved 10 of those sites to _OUT_POS_PREFIX_W. Derive it with grep at the
+# moment you need it. And note that _OUT_POS_PREFIX_W is NO LONGER boolean-only either: round 5
+# made it the axis, so it now feeds counts and extractors too, each paired (see its own header).
+#
+# To add a new PRIVILEGE-style word that execs its argument, use _OUT_PRIV_WORD, which is
+# defined after _OUT_FLAG_RUN and therefore absorbs the flagged spelling (`sudo -E`, `sudo -u ci`)
+# as well as the bare one. A word added to THIS list cannot, because this constant is defined
+# above _OUT_FLAG_RUN -- that was measured, not assumed: the bare-word version of the round-5
+# privilege fix closed `sudo eas update` while `sudo -E eas update` stayed ALLOW.
 _OUT_WRAPPER_WORD='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|then|do|else|elif|time|'"$_CMD_REDIR"')'
 _OUT_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*('"$_OUT_WRAPPER_WORD"'[[:space:]]+)*'
 _OUT_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'
@@ -2088,6 +2112,23 @@ _OUT_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
 # not re-spelled) already avoids elsewhere; this follows the same rule.
 _OUT_FLAG_RUN='('"$_OUT_SEP"'-{1,2}[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:space:]]*)?)*'"$_OUT_SEP"
 
+# PRIVILEGE PREFIX (round 5, 2026-09-16). `sudo eas update --branch production` and
+# `sudo npx eas update --branch preview` were live ALLOWs on `main` and on this branch.
+# Deliberately NOT added to _OUT_WRAPPER_WORD, for two reasons that both matter:
+#   1. That constant is defined ~150 lines ABOVE _OUT_FLAG_RUN, so a plain word added there
+#      cannot absorb a FLAGGED privilege call. Measured: adding the bare word closed
+#      `sudo eas update` while `sudo -E eas update`, `sudo -u ci eas update` and
+#      `sudo --preserve-env npx eas update` all stayed ALLOW. Shipping that would be the same
+#      half-closed axis this round was opened to fix -- the bare spelling denied, its
+#      one-flag sibling open.
+#   2. _OUT_WRAPPER_WORD feeds _OUT_POS_PREFIX, which the test suite pins by hash and which
+#      review verified byte-identical to dbf15cdc. Adding capability HERE instead keeps both
+#      properties intact: the new reach lands only in _OUT_POS_PREFIX_W, whose consumers are
+#      all paired count+extractor or boolean sites.
+# `corepack` is here rather than in the launcher list because it is a SHIM in front of a
+# launcher (`corepack npx ...`), not a launcher that takes a package argument itself.
+_OUT_PRIV_WORD='(sudo|doas|corepack)'"$_OUT_FLAG_RUN"
+
 # LAUNCHER/PATH AXIS (todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md).
 # Defined HERE, after `_OUT_SEP`, not beside `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX`
 # above, because every internal word-to-word gap below (`npm`->`exec`,
@@ -2166,6 +2207,39 @@ _OUT_LAUNCHER='(npx|npm'"$_OUT_SEP"'(exec?|x)|bunx|bun'"$_OUT_SEP"'(x|run)|pnpm'
 # may begin" prevention the monotone-on-a-count doc above prescribes for a
 # narrow grammar — so this group can never itself absorb a real separator.
 _OUT_PATH_PREFIX='[^[:space:];&|()`{}<>]*/'
+
+# THE COMMAND-POSITION ANCHOR EVERY DENY DECISION IN THIS FILE USES. _OUT_POS_PREFIX absorbs the
+# BARE wrapper spellings (env, command, exec, nohup, ...) but not their path-qualified form, so
+# `/usr/bin/env eas update` ALLOWED while `env eas update` DENIED -- a one-token-different pair,
+# and /usr/bin/env is the spelling every shebang in this tree uses.
+#
+# ROUND 5 (2026-09-16) MADE THIS AN AXIS RATHER THAN A PATCH, and that history is the reason to
+# keep it one. Round 4 introduced this constant and applied it PER GATED BINARY rather than per
+# deny decision, then wrote a header bullet claiming path invocation was closed "on all four
+# gated binaries". For `gh` exactly one anchor had been converted. Seven command-position deny
+# decisions were still bypassed by the identical one-token-different pair, including
+# `/usr/bin/env gh pr merge 42 --admin` (an unreviewed, branch-protection-bypassing admin merge)
+# and `/usr/bin/env npx -c "eas update --branch production"` (a real OTA to production users --
+# the 2026-08-16 incident class this file exists for). Six of the seven were live on `main` too,
+# so the PR regressed nothing; what it shipped was a CLAIM wider than its coverage.
+#
+# THIS CONSTANT NOW FEEDS COUNT AND EXTRACTION CONSUMERS, not only boolean deny reads. That is
+# the deliberate consequence of making it an axis, and it is the thing to be careful about:
+# widening is monotone on a boolean read and NOT on a count, because a longer match can absorb
+# what would have started a second one. Every count consumer here is paired with an extractor,
+# and THE PAIR MUST MOVE TOGETHER, in the direction that preserves that anchor's polarity:
+#   * `gh pr merge` is GRANT-shaped -- an empty clause cut means no `--auto` grant was seen and
+#     the call DENIES. Widening the count (GH_PR_MERGE_RE) without the clause cut (CLAUSE=)
+#     would newly DENY `gh pr merge 42 --auto --squash --delete-branch`, which is this repo's own
+#     sanctioned /todo automerge pipeline. Measured ALLOW before and after this change.
+#   * `gh api` is the OPPOSITE -- it ALLOWS by default and denies only on affirmative evidence of
+#     a mutating method, so widening GH_API_RE/_SEPSAFE without _GH_API_CUT accomplishes nothing.
+#   * the brace-range family pairs an EXCLUSION (_OUT_BR_RANGE_ALREADY_HANDLED) with an
+#     extraction; widening one alone either double-counts or suppresses a real deny.
+# Do not convert a count site here without its extractor, and do not trust a probe that only
+# shows the deny side moving -- emit the measured COUNT on both sides.
+_OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}[[:space:]]+)|((${_OUT_PATH_PREFIX})?${_OUT_PRIV_WORD}))*"
+
 # Combined: existing prefix (opener + optional wrapper words) unchanged, THEN
 # MANDATORILY at least one of launcher/path — but NOT a plain alternation
 # (`launcher|path`), because the two COMPOSE (`npx /opt/homebrew/bin/eas
@@ -2182,21 +2256,12 @@ _OUT_PATH_PREFIX='[^[:space:];&|()`{}<>]*/'
 # launcher word flipped a deny: a path-qualified eas invocation DENIED while the same path with
 # npx in front of it ALLOWED, and the same shape reached the highest-value admin sink in this
 # file. readlink on the homebrew npx resolves to the real npx, so that spelling is reachable
-# today. Widening here and not in _OUT_POS_PREFIX is deliberate: this constant has only boolean
-# grep -Eqi deny consumers, so the widening is monotone-safe, while _OUT_POS_PREFIX feeds
-# count/extraction/exclusion consumers that a widening would skew.
-_OUT_POS_PREFIX_LP="${_OUT_POS_PREFIX}((${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER})(${_OUT_PATH_PREFIX})?|${_OUT_PATH_PREFIX})"
-
-# Command-position anchor that ALSO absorbs a PATH-QUALIFIED wrapper word. _OUT_POS_PREFIX
-# absorbs the BARE spellings (env, command, exec, nohup, ...) but not their path-qualified form,
-# so `/usr/bin/env eas update` ALLOWED while `env eas update` DENIED -- a one-token-different
-# pair, and /usr/bin/env is the spelling every shebang in this tree uses. Measured the same way
-# for /usr/bin/env on railway, npm publish and gh, and for /bin/nohup.
-#
-# A SEPARATE constant on purpose. _OUT_POS_PREFIX has 28 non-comment use sites of MIXED arity --
-# boolean deny reads, but also `grep -oE` extraction and count consumers where a widening skews
-# the result rather than merely denying more. This one is consumed only by boolean deny sites.
-_OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}[[:space:]]+)*"
+# today. Built on _OUT_POS_PREFIX_W, not _OUT_POS_PREFIX, since round 5: the wrapper prefix is an
+# AXIS composed against the launcher and path dimensions rather than a per-anchor patch, so a
+# privilege- or wrapper-prefixed launcher (`sudo npx ...`, `/usr/bin/env npx ...`) denies by
+# construction instead of waiting for someone to enumerate that spelling. This constant has only
+# boolean grep -Eqi deny consumers, so inheriting the wider anchor is monotone-safe here.
+_OUT_POS_PREFIX_LP="${_OUT_POS_PREFIX_W}((${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER})(${_OUT_PATH_PREFIX})?|${_OUT_PATH_PREFIX})"
 
 # --- Security-review round-1 additions (2026-09-16) --------------------------
 # Two further gaps in the launcher/path axis above, both found by
@@ -2993,9 +3058,9 @@ fi
 _OUT_EXPANSION_TOKEN='(\$\{[^}]*\}|\$\([^)]*\)|`[^`]*`|\$[A-Za-z_][A-Za-z0-9_]*)'
 _OUT_GATED_BIN='(eas|railway|npm|pnpm|yarn|gh)'
 _OUT_GATED_VERB='(update|publish|submit|build|up|deploy|redeploy|restart|down|delete|remove|rm|run|pr|release|repo|api)'
-if grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
-   || grep -Eq "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
-   || grep -Eq "${_OUT_POS_PREFIX}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"; then
+if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -3128,7 +3193,7 @@ _OUT_BR_RANGE_TOKEN='[^;&|)`{}[:space:]]*\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]
 # boolean exclusion instead of a count: "some text elsewhere also matches
 # the excluded shape" can never license silencing a DIFFERENT occurrence
 # that does not.
-_OUT_BR_RANGE_ALREADY_HANDLED="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment)|api)"'\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\}'"${_OUT_POS_SUFFIX}"
+_OUT_BR_RANGE_ALREADY_HANDLED="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment)|api)"'\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\}'"${_OUT_POS_SUFFIX}"
 # LOAD-BEARING COUPLING, stated because it is invisible from here: this exclusion is
 # safe ONLY because `_OUT_POS_SUFFIX` accepts `{` as a closer, which is what keeps the
 # four excluded verbs visible to their own downstream checks. Verified at this head --
@@ -3137,9 +3202,9 @@ _OUT_BR_RANGE_ALREADY_HANDLED="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}
 # `_OUT_POS_SUFFIX`'s closer class and this exclusion silently becomes a live bypass with
 # nothing here to catch it, so change the two together or not at all.
 _OUT_BR_OCC=$(
-  { grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
-    grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
-    grep -oE "${_OUT_POS_PREFIX}${_OUT_BR_RANGE_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"
+  { grep -oE "${_OUT_POS_PREFIX_W}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
+    grep -oE "${_OUT_POS_PREFIX_W}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
+    grep -oE "${_OUT_POS_PREFIX_W}${_OUT_BR_RANGE_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"
   } 2>/dev/null
 )
 _OUT_BR_FIRE=0
@@ -3157,7 +3222,7 @@ if [ "$_OUT_BR_FIRE" = 1 ]; then
 fi
 
 # --- gh: bare 'gh pr merge' (see the --auto/--admin carve-out in the header) -
-GH_PR_MERGE_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX}"
+GH_PR_MERGE_RE="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX}"
 # The OCCURRENCE COUNT just below is counted on $WORDS_DEEP (so a merge hidden
 # inside a live substitution is not silently invisible to this whole block);
 # the CLAUSE extraction feeding the --auto carve-out further down deliberately
@@ -3354,7 +3419,7 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # _OUT_GH_GLOBALS_GRANT, not _OUT_GH_GLOBALS: this is the grant-shaped cut, and the wide
   # form lets a dash-token glued to a separator start the clause inside a PREVIOUS command,
   # donating that command's standalone --auto to this merge. See the constant's own header.
-  CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS_GRANT}${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX_MERGE_CLAUSE}" | head -1)
+  CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS_GRANT}${_OUT_SEP}pr${_OUT_SEP}merge${_OUT_POS_SUFFIX_MERGE_CLAUSE}" | head -1)
   # A naive "--auto present" substring check is bypassable: several of `gh pr
   # merge`'s own flags (and the cross-subcommand --repo/-R every gh command
   # accepts) are VALUE-TAKING, so the token immediately after one of them is
@@ -3652,7 +3717,7 @@ fi
 # clause's --repo/-R sail through unexamined (`gh pr create --fill && gh pr
 # create --repo other/org --title x` was ALLOWED). Deny outright on >1
 # occurrence rather than guess which clause to inspect.
-GH_PR_CREATE_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}(create|comment)${_OUT_POS_SUFFIX}"
+GH_PR_CREATE_RE="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS}${_OUT_SEP}pr${_OUT_SEP}(create|comment)${_OUT_POS_SUFFIX}"
 GH_PR_CREATE_OCCURRENCES=$(_out_max_count "$GH_PR_CREATE_RE")
 if [ "${GH_PR_CREATE_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh pr create/comment' occurrence — ambiguous, cannot verify each is free of --repo/-R. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
@@ -3693,10 +3758,10 @@ fi
 # mutating second one (`gh api repos/x/y && gh api -X PUT .../merge` was
 # ALLOWED). Deny on >1, mirroring the identical multi-occurrence safe
 # direction the `gh pr merge` check above already takes.
-GH_API_RE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX}"
+GH_API_RE="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX}"
 # The same needle under the separator-safe grammar, for the occurrence COUNT only. Every other
 # consumer (the clause cut, the method check) keeps reading GH_API_RE.
-GH_API_RE_SEPSAFE="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS_SEPSAFE}${_OUT_SEP_SEPSAFE}api${_OUT_POS_SUFFIX}"
+GH_API_RE_SEPSAFE="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS_SEPSAFE}${_OUT_SEP_SEPSAFE}api${_OUT_POS_SUFFIX}"
 # BOTH CONSTANTS, not one. The fix needs a separator-safe GLOBALS run AND a separator-safe
 # SEP — the crossing that defeated the first attempt happened in the SEP, not the globals —
 # so asserting only the globals leaves half the repair revertible. Measured in round-4 review:
@@ -3905,7 +3970,7 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # clauses differed before cannot become equal after -- unequal prefixes stay
   # unequal when both are extended by their own suffixes. A rendering that was
   # previously checked therefore cannot newly collapse into DEEP and vanish.
-  _GH_API_CUT="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
+  _GH_API_CUT="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS}${_OUT_SEP}api${_OUT_POS_SUFFIX}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
   GH_API_CLAUSE_DEEP=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$_GH_API_CUT" | head -1)
   # ADDED 2026-09-05 (vanishing sigil, Task 7): the occurrence count above is
   # now a MAXIMUM across all three renderings, so it can be 1 because the VANISHED
@@ -4229,7 +4294,7 @@ fi
 # unconditionally — see the _OUT_LAUNCHER_AMBIG_FLAG header comment above for
 # why this cannot be scoped to only the gated packages (the -c/--call value
 # is inside a quoted string this guard already blanked as prose elsewhere).
-if grep -Eqi "${_OUT_POS_PREFIX}(${_OUT_LAUNCHER})${_OUT_LAUNCHER_AMBIG_FLAG}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}(${_OUT_LAUNCHER})${_OUT_LAUNCHER_AMBIG_FLAG}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) combined with --package/-p/-c/--call denies UNCONDITIONALLY — the guard cannot verify the true target from text: --package/-p's value can name any gated package, and -c/--call's argument sits inside a quoted string this guard's own quote-blanking already treats as non-command prose everywhere else. Fail-closed, same as an unparseable .tool_input.command. This also over-denies a benign use (e.g. 'npx -p typescript tsc --version') — checked offline (grep, no network) for this repo's own usage of any of these four flags under a launcher: none found, so no reachable cost here, same 'deliberate, documented over-denial' choice as the gh-family block below. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -4242,10 +4307,10 @@ fi
 # anywhere in the path is what matters, not launcher-or-path composition; an
 # optional bare interpreter word (node/bun/deno) is absorbed for free, but is
 # NOT required — the bare path alone is already the reachable exploit.
-if grep -Eqi "${_OUT_POS_PREFIX}((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}[[:space:]]+)*(${_OUT_PATH_PREFIX})?(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_EASCLI}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}(${_OUT_PATH_PREFIX})?(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_EASCLI}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a direct path invocation of a script INSIDE the eas-cli npm package directory (e.g. node_modules/eas-cli/bin/run) reached 'update/publish/submit' — eas-cli's own package.json maps bin: {\"eas\": \"./bin/run\"}, so the real installed script's filename is 'run', never 'eas'/'eas-cli', and can't match a literal-binary-name path check. Same OTA-publish incident class as the checks above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX}((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}[[:space:]]+)*(${_OUT_PATH_PREFIX})?(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_RAILWAYCLI}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}(${_OUT_PATH_PREFIX})?(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_RAILWAYCLI}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a direct path invocation of a script INSIDE the @railway/cli npm package directory reached a gated railway verb, by the same package.json-bin-mapping gap as eas-cli above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 

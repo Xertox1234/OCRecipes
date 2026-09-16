@@ -74,7 +74,7 @@ path prefix that the bare-command checks can never satisfy, for example) — tha
 guarantee, not just "the tests still pass," is what makes the composition additive rather
 than a second widening in disguise. The guard's own header comment names this reasoning
 inline at the point of use — see `_OUT_POS_PREFIX`'s own comment in `guard-outward-cli.sh`
-for a worked instance listing its its call sites by arity -- MEASURE that count with grep rather than quoting a remembered figure, because an earlier draft stated one and listed none, and the stated number was wrong.
+for a worked instance listing its call sites by arity -- MEASURE that count with grep rather than quoting a remembered figure, because an earlier draft stated one and listed none, and the stated number was wrong.
 
 **A FIFTH rule, same review, second pass: a shared PRE-FILTER gating access to a detector is
 part of that detector's own coverage surface, not a separate concern to check later.**

@@ -1648,6 +1648,63 @@ if [ "$LP_ROWS_GENERATED" -ne 536 ]; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# axis: COMMAND-POSITION PREFIX (wrapper / privilege word, optionally path-qualified)
+#
+# Round 4 closed a path-qualified wrapper in front of a bare gated binary and moved NOT ONE of
+# this file's four pins -- because no row here put a wrapper word in command position, so the
+# grid could not express the shape. An unchanged pin beside a security fix reads as confirmation
+# and was blindness, the identical failure the composition-order dimension above was added for
+# one round earlier. Round 5's review then measured SEVEN more anchors still bypassed by the same
+# one-token pair. This dimension exists so that a future prefix regression moves a number here.
+#
+# Composed against the ANCHOR FAMILY, not against the launcher grid: six of those seven bypasses
+# were at gh / expansion-token / brace-range anchors, which LP_TARGET_CMDS never reaches.
+PFX_IDS=(none bare path priv privflag privpath corepack stacked)
+PFX_FORMS=(
+  '' 'env ' '/usr/bin/env ' 'sudo ' 'sudo -E ' '/usr/bin/sudo -E ' 'corepack ' 'sudo /usr/bin/env '
+)
+# One payload per command-position deny DECISION, not per gated binary -- applying the prefix
+# per binary rather than per decision is precisely what round 4 got wrong.
+PFX_TARGET_IDS=(easupd npmpub railup ghadmin ghapimut ghcrossrepo expansion brange lambig lnch)
+PFX_TARGETS=(
+  'eas update --branch preview'
+  'npm publish'
+  'railway up'
+  'gh pr merge 42 --admin'
+  'gh api --method DELETE /repos/o/r'
+  'gh pr create --repo evil/repo --title x'
+  'eas ${V} --branch production'
+  'gh pr me{r..r}ge 42'
+  "npx -c 'eas update --branch production'"
+  'npx eas update --branch preview'
+)
+# Ungated work every developer types. The prefix widening must not reach these: over-denial is
+# the failure that gets a guard switched off rather than fixed.
+PFX_ALLOW_IDS=(node npmscript ghread)
+PFX_ALLOWS=(
+  'node scripts/build.js'
+  'npm run build'
+  'gh pr list'
+)
+PFX_ROWS_BEFORE=${#ROWS[@]}
+for _pfx_i in "${!PFX_IDS[@]}"; do
+  _pfx_id=${PFX_IDS[$_pfx_i]}; _pfx=${PFX_FORMS[$_pfx_i]}
+  for _pt_i in "${!PFX_TARGET_IDS[@]}"; do
+    add "pfx-$_pfx_id-${PFX_TARGET_IDS[$_pt_i]}" DENY "${_pfx}${PFX_TARGETS[$_pt_i]}"
+  done
+  for _pa_i in "${!PFX_ALLOW_IDS[@]}"; do
+    add "pfxok-$_pfx_id-${PFX_ALLOW_IDS[$_pa_i]}" ALLOW "${_pfx}${PFX_ALLOWS[$_pa_i]}"
+  done
+done
+PFX_ROWS_GENERATED=$(( ${#ROWS[@]} - PFX_ROWS_BEFORE ))
+# 8 prefix forms x (10 deny payloads + 3 allow controls) = 104. Asserted against what the loop
+# actually produced, never against the arithmetic alone -- same discipline as the LP axis below.
+if [ "$PFX_ROWS_GENERATED" -ne 104 ]; then
+  echo "FATAL: prefix axis generated $PFX_ROWS_GENERATED rows, expected 8 x (10 + 3) = 104 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+
 # axis: PACKAGE SPELLING (`eas-cli`, `@railway/cli`) on the launcher axis --
 # npm/npx resolve a PACKAGE name, not necessarily the binary name; `eas-cli`'s
 # own package.json declares bin:{"eas":"./bin/run"}, so npx/npm-exec reach the
@@ -2424,7 +2481,15 @@ fi
 # 1180 -> 1510 (2026-09-16): +330 from the composition-order dimension added to the
 # launcher/path grid (path-before-launcher and path-on-both-sides) plus the npm x
 # launcher. Regenerated from the run that measured them, never hand-computed.
-EXPECTED_ROWS=1510
+# 1510 -> 1614 (2026-09-16, round 5): +104 from the COMMAND-POSITION PREFIX dimension
+# (8 prefix forms x 10 deny payloads + 3 over-denial controls), composed against the
+# anchor FAMILY rather than the launcher grid. Its own short-iteration FATAL guard
+# asserts the 104. Why it exists: round 4's wrapper fix closed four reachable bypasses
+# and moved NOT ONE pin in this file, because no row put a wrapper word in command
+# position -- the unchanged pins read as confirmation and were blindness. Round 5's
+# review then found seven more anchors still bypassed, six of them at gh /
+# expansion-token / brace-range checks the launcher grid never reaches.
+EXPECTED_ROWS=1614
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 761 of the 876 rows deny on the precise path; the other 115 are ALLOW there: 91
@@ -2570,7 +2635,14 @@ EXPECTED_ROWS=1510
 # at 24 across the same run -- and that 24 now MEANS something, because the grid can
 # finally express a path-qualified launcher. It could not before, which is why the
 # previous unchanged 24 was true and vacuous.
-EXPECTED_DENY_ATTRIB_ROWS=1381
+# 1381 -> 1461 (2026-09-16, round 5): +80, NOT the full +104 row delta -- 24 of the new
+# prefix rows are over-denial controls that must keep ALLOWing (ungated work behind the
+# same prefixes), so only the 80 deny payloads are attributed. The gap between 104 and 80
+# is the point: a prefix axis that denied all 104 would be over-denial, which is the
+# failure that gets a guard switched off rather than fixed.
+# precise-path gaps held at 24 and all-path gaps at 306 across this change, with ZERO
+# membership drift in either manifest -- the 104 new rows agree on all four paths.
+EXPECTED_DENY_ATTRIB_ROWS=1461
 
 # 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -4320,6 +4392,86 @@ lp-ghmerge-yarnexec-dotbin-both : a gated 'gh' subcommand reached through a laun
 lp-ghmerge-yarnexec-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-yarnexec-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-yarnexec-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+pfx-none-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-none-npmpub    : command-position 'npm publish' pushes a package to the registry.
+pfx-none-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-none-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-none-ghapimut  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-none-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-none-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-none-brange    : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-none-lambig    : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-none-lnch      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+pfx-bare-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-bare-npmpub    : command-position 'npm publish' pushes a package to the registry.
+pfx-bare-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-bare-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-bare-ghapimut  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-bare-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-bare-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-bare-brange    : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-bare-lambig    : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-bare-lnch      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+pfx-path-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-path-npmpub    : command-position 'npm publish' pushes a package to the registry.
+pfx-path-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-path-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-path-ghapimut  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-path-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-path-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-path-brange    : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-path-lambig    : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-path-lnch      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+pfx-priv-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-priv-npmpub    : command-position 'npm publish' pushes a package to the registry.
+pfx-priv-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-priv-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-priv-ghapimut  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-priv-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-priv-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-priv-brange    : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-priv-lambig    : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-priv-lnch      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+pfx-privflag-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-privflag-npmpub : command-position 'npm publish' pushes a package to the registry.
+pfx-privflag-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-privflag-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-privflag-ghapimut : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-privflag-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-privflag-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-privflag-brange : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-privflag-lambig : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-privflag-lnch  : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-privpath-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-privpath-npmpub : command-position 'npm publish' pushes a package to the registry.
+pfx-privpath-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-privpath-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-privpath-ghapimut : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-privpath-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-privpath-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-privpath-brange : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-privpath-lambig : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-privpath-lnch  : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-corepack-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-corepack-npmpub : command-position 'npm publish' pushes a package to the registry.
+pfx-corepack-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-corepack-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-corepack-ghapimut : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-corepack-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-corepack-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-corepack-brange : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-corepack-lambig : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-corepack-lnch  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+pfx-stacked-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-stacked-npmpub : command-position 'npm publish' pushes a package to the registry.
+pfx-stacked-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-stacked-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-stacked-ghapimut : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-stacked-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-stacked-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-stacked-brange : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-stacked-lambig : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-stacked-lnch   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-pkg-eascli-npx  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-pkg-eascli-npmexec : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-pkg-railwaycli-npx : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t

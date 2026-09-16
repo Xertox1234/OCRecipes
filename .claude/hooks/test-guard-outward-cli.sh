@@ -4276,7 +4276,6 @@ assert_allow "npm x on an UNGATED binary stays allowed (the alias widening is no
 assert_allow "an ordinary npm run script stays allowed (only the two publish scripts are gated)" \
   "$(json 'npm run test:run')"
 
-_PIN_RAN=1
 # 462 -> 491 on 2026-09-06/07: +27 across three rounds, itemised because the
 # breakdown was WRONG once (it said "+21" beside a total of 488 -- 462+21=483, so
 # the sentence and the number disagreed and only the number was ever checked):
@@ -4542,6 +4541,7 @@ _PIN_RAN=1
 # widening made the existing --package/-p test rows redundant with check #1,
 # per code-reviewer's WARNING). MEASURED, NOT COMPUTED below.
 # 841 -> 851 (2026-09-16): +8 deny rows pinning the four path/alias holes the security review
+# found, +2 over-denial controls. Each deny row was a measured ALLOW before its fix.
 
 # ---------- path-qualified WRAPPER in front of a bare gated binary ----------
 # The wrapper absorber existed only inside the package-directory clauses, so a path-qualified
@@ -4598,8 +4598,12 @@ assert_allow "an npm abbreviation on an UNGATED script stays allowed (only the t
   "$(json 'npm ur test:run')"
 
 # ---------- PINNED: _OUT_WRAPPER_WORD's definition line ----------
-# This constant feeds _OUT_POS_PREFIX, whose 28 non-comment use sites include `grep -oE` extraction
-# and count readers, so a widening here is NOT monotone-safe. The comment above that constant used
+# This constant feeds _OUT_POS_PREFIX, which _OUT_POS_PREFIX_W and _OUT_POS_PREFIX_LP are both
+# derived from, so a widening here reaches every command-position deny decision in the file --
+# including the count and `grep -oE` extraction consumers, where widening is NOT monotone-safe.
+# Deliberately not stated as a use-site COUNT: the last two numbers written here (24, then 28)
+# were both invalidated by the very round that wrote them, the second by a refactor in the same
+# commit. Derive it with grep when you need it. The comment above that constant used
 # to claim this identity was "asserted in the self-test" when nothing asserted it: an inert widening
 # was measured to move the expansion from 243 to 267 bytes while the suite still reported 851
 # passed. This row is the assertion that claim described. Reading the first definition is only sound
@@ -4613,13 +4617,108 @@ else
   FAIL=$((FAIL+1))
 fi
 
-# found, +2 over-denial controls. Each deny row was a measured ALLOW before its fix.
+# ---------- ROUND 5: the prefix as an AXIS, not a per-binary patch ----------
+# Round 4 applied _OUT_POS_PREFIX_W PER GATED BINARY and then claimed in the guard header that
+# path invocation was closed "on all four gated binaries". For `gh` exactly ONE anchor had been
+# converted. Seven command-position deny decisions were still bypassed by the identical
+# one-token-different pair, each measured here with its bare-wrapper control denying (so the
+# ALLOW was meaningful, not a dead probe). Six of the seven were live on `main` too, so the PR
+# regressed nothing -- what it shipped was a CLAIM wider than its coverage.
+assert_deny "path-qualified wrapper before gh pr merge --admin (round-4 claim said closed; it was not)" \
+  "$(json '/usr/bin/env gh pr merge 42 --admin')" \
+  "without a REAL --auto flag"
+assert_deny "path-qualified wrapper before a mutating gh api" \
+  "$(json '/usr/bin/env gh api --method DELETE /repos/o/r')" \
+  "with a mutating HTTP method"
+assert_deny "path-qualified wrapper before gh pr create --repo (cross-repo write)" \
+  "$(json '/usr/bin/env gh pr create --repo evil/repo --title x')" \
+  "writes to a DIFFERENT GitHub rep"
+assert_deny "path-qualified wrapper before gh pr comment -R (cross-repo write)" \
+  "$(json '/usr/bin/env gh pr comment 1 -R evil/repo -b x')" \
+  "writes to a DIFFERENT GitHub rep"
+assert_deny "path-qualified wrapper before the expansion-token narrow deny" \
+  "$(json '/usr/bin/env eas ${V} --branch production')" \
+  "the verb is not"
+assert_deny "path-qualified wrapper before the brace-range narrow deny" \
+  "$(json '/usr/bin/env gh pr me{r..r}ge 42')" \
+  "glued to a brace RANGE"
+assert_deny "path-qualified wrapper before an ambiguous-flag launcher (reaches a real OTA)" \
+  "$(jsonc '/usr/bin/env npx -c "eas update --branch production"')" \
+  "a launcher"
+
+# ---------- ROUND 5: privilege prefix, flag-tolerant by construction ----------
+# _OUT_PRIV_WORD rather than a word in _OUT_WRAPPER_WORD: that constant is defined ~150 lines
+# above _OUT_FLAG_RUN, so a plain word there closes `sudo eas update` while `sudo -E eas update`
+# stays ALLOW. Both spellings are pinned here precisely because the bare-only version of this fix
+# was written, measured, and rejected for being the same half-closed axis as round 4.
+assert_deny "privilege prefix before a bare gated binary" \
+  "$(json 'sudo eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "privilege prefix WITH A FLAG (the spelling a bare-word fix would have missed)" \
+  "$(json 'sudo -E eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "privilege prefix with a flag TAKING A VALUE" \
+  "$(json 'sudo -u ci eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "privilege prefix in front of a launcher" \
+  "$(json 'sudo npx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "corepack shim in front of a launcher" \
+  "$(json 'corepack npx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "doas reaches railway" \
+  "$(json 'doas railway up')" \
+  "railway"
+assert_deny "path-qualified privilege word stacked on a path-qualified wrapper" \
+  "$(json '/usr/bin/sudo -E /usr/bin/env eas update --branch production')" \
+  "publishes an OTA update"
+
+# ---------- ROUND 5: ambiguity counting survives the widening ----------
+# The count consumers read >1 as AMBIGUOUS. Widening is monotone on a boolean read and NOT on a
+# count -- a longer match can absorb what would have started a second one, which would flip an
+# ambiguous deny into the single-occurrence grant path. Both spellings were ALLOW on `main`
+# because the path-qualified form never matched at all; they must now count as two.
+assert_deny "two path-qualified gh pr merge invocations still read as AMBIGUOUS (not merged into one)" \
+  "$(json '/usr/bin/env gh pr merge 1 --auto; /usr/bin/env gh pr merge 2 --auto')" \
+  "more than one command-position 'gh pr merge' occurrence"
+assert_deny "two path-qualified gh api invocations still read as AMBIGUOUS" \
+  "$(json '/usr/bin/env gh api /repos/o/r; /usr/bin/env gh api /repos/o/r2')" \
+  "more than one command-position 'gh api' occurrence"
+
+# ---------- ROUND 5: over-denial controls ----------
+# The first of these is the one that would break a live pipeline rather than merely annoy: the
+# gh pr merge clause cut is GRANT-shaped, so widening its count without its extractor would make
+# an empty clause read as "no --auto seen" and DENY this repo's own sanctioned /todo automerge.
+assert_allow "the sanctioned --auto automerge still ALLOWS through a path-qualified wrapper" \
+  "$(json '/usr/bin/env gh pr merge 42 --auto --squash --delete-branch')"
+assert_allow "a single read-only gh api through a path-qualified wrapper stays allowed" \
+  "$(json '/usr/bin/env gh api /repos/o/r')"
+assert_allow "read-only gh pr list through a path-qualified wrapper stays allowed" \
+  "$(json '/usr/bin/env gh pr list')"
+assert_allow "sudo on an UNGATED npm subcommand stays allowed" \
+  "$(json 'sudo npm install')"
+assert_allow "sudo -E on an ordinary npm script stays allowed" \
+  "$(json 'sudo -E npm run build')"
+assert_allow "sudo with a value-taking flag on an ungated binary stays allowed" \
+  "$(jsonc 'sudo -u postgres psql -c "SELECT 1"')"
+assert_allow "corepack's own subcommands stay allowed" \
+  "$(json 'corepack enable')"
+
+# (The "+2 over-denial controls" tail of the 841 -> 851 sentence lived here, orphaned from its
+# own paragraph by a later insertion; it has been returned to that paragraph above.)
+# 865 -> 888 (2026-09-16, security round 5): +23, DERIVED from the rows below rather than
+# guessed -- 7 for the command-position anchors round 4 left behind, 7 for the privilege prefix
+# (both the bare and the flagged spelling, because closing only the bare one was the same
+# half-closed axis), 2 for ambiguity counting surviving the widening, and 7 over-denial controls.
 # 851 -> 865 (2026-09-16, security round 2): +14. Five rows for the path-qualified wrapper in
 # front of a bare gated binary, four for npm's abbreviation closure (deref falls through to
 # abbrev, so the accepted set is 11 run tokens and 3 exec tokens, not the 4 and 2 in the alias
 # table), four over-denial controls because both widenings touch everyday spellings, and one
 # pin of _OUT_WRAPPER_WORD's definition line.
-EXPECTED_TOTAL=865
+# Set immediately before the total pin so a process death anywhere in the assertions above is
+# still caught as a TRUNCATED run rather than reported as success.
+_PIN_RAN=1
+EXPECTED_TOTAL=888
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
