@@ -5,6 +5,11 @@ import {
   parseBlocksFromContent,
   BLOCKS_SYSTEM_PROMPT,
 } from "../coach-blocks";
+import {
+  coachBlockSchema,
+  mealPlanCardSchema,
+} from "@shared/schemas/coach-blocks";
+import { expectResponseToMatch } from "../../../test/utils/expect-response-schema";
 
 describe("Coach Blocks Service", () => {
   it("validates valid blocks array", () => {
@@ -13,10 +18,41 @@ describe("Coach Blocks Service", () => {
         type: "quick_replies",
         options: [{ label: "Yes", message: "Yes please" }],
       },
+      {
+        type: "meal_plan_card",
+        title: "High-Protein Day Plan",
+        days: [
+          {
+            label: "Today",
+            meals: [
+              {
+                type: "breakfast",
+                title: "Greek Yogurt",
+                calories: 320,
+                protein: 28,
+              },
+            ],
+            totals: { calories: 320, protein: 28 },
+          },
+        ],
+      },
     ];
     const result = validateBlocks(blocks);
-    expect(result).toHaveLength(1);
+    expect(result).toHaveLength(2);
     expect(result[0].type).toBe("quick_replies");
+    expect(result[1].type).toBe("meal_plan_card");
+    // Contract anchor: every block the server emits must satisfy the schema the
+    // client parses each SSE block with (client/components/coach/coach-chat-utils.ts).
+    // The two loops below are the provider-side anchor that
+    // scripts/__tests__/contract-coverage-guard.test.ts requires for
+    // coachBlockSchema and mealPlanCardSchema. They cannot fail while
+    // validateBlocks filters with the same schema object (a regression pin, not
+    // a check), so do not delete them without moving the anchor: the guard goes
+    // red the moment no server test references either name.
+    for (const block of result) expectResponseToMatch(block, coachBlockSchema);
+    for (const block of result)
+      if (block.type === "meal_plan_card")
+        expectResponseToMatch(block, mealPlanCardSchema);
   });
 
   it("filters out invalid blocks silently", () => {
@@ -43,6 +79,7 @@ describe("Coach Blocks Service", () => {
     const { text, blocks } = parseBlocksFromContent(content);
     expect(text).toBe("Here are some options:");
     expect(blocks).toHaveLength(1);
+    for (const block of blocks) expectResponseToMatch(block, coachBlockSchema);
   });
 
   it("returns original content when no blocks marker found", () => {

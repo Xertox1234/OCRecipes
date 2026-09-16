@@ -27,21 +27,7 @@ import {
 } from "../lib/contract-coverage";
 
 /** Ratchet — remove an entry as soon as its provider-side assertion lands. */
-const CONTRACT_ALLOWLIST: ReadonlySet<string> = new Set([
-  "recipeSearchResponseSchema",
-  "catalogSearchResponseSchema",
-  "catalogConfigResponseSchema",
-  "receiptAnalysisResultSchema",
-  "receiptConfirmResultSchema",
-  "tastePickCandidatesResponseSchema",
-  "tastePicksResponseSchema",
-  "coachBlockSchema",
-  // Ninth entry, found 2026-09-15 by widening the extractor to sub-schema
-  // parses: client/components/coach/coach-chat-utils.ts parses
-  // mealPlanCardSchema.shape.days. Its anchor lands with the coach-blocks
-  // anchor (mealPlanCardSchema is a member of the coachBlockSchema union).
-  "mealPlanCardSchema",
-]);
+const CONTRACT_ALLOWLIST: ReadonlySet<string> = new Set<string>([]);
 
 /**
  * Permanent: schemas the client parses that are NOT server responses (form
@@ -227,7 +213,12 @@ describe("contract-coverage: repo walk", () => {
 
   it("scans a non-empty client tree (denominator)", () => {
     expect(clientFiles.length).toBeGreaterThan(50);
-    expect(clientSites.size).toBeGreaterThan(0);
+    // 9 client parse-site names measured 2026-09-15 (A0 final review, after the
+    // extractor learned sub-schema parses). The allowlist does not affect this
+    // count. If it drops, either the extractor/walk regressed or a client parse
+    // site was legitimately removed — in the latter case lower the floor and
+    // re-date this comment.
+    expect(clientSites.size).toBeGreaterThanOrEqual(9);
   });
 
   it("every client-parsed response schema has a provider-side assertion", () => {
