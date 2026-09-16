@@ -66,7 +66,13 @@ this to be reachable.
 
 ## Implementation Notes
 
-- The likely home is `_OUT_WRAPPER_WORD`, factored out of `_OUT_POS_PREFIX` in #980. Widening that
+- **Do NOT widen `_OUT_WRAPPER_WORD`.** It looks like the home and is the wrong one: it feeds
+  `_OUT_POS_PREFIX`, so every widening also reaches that constant's `grep -oE` extraction and
+  count consumers, where a widening skews a result rather than merely denying more. There is no
+  way to scope a widening of it to a boolean reader. Its definition line is pinned by hash in
+  `test-guard-outward-cli.sh`, so such an edit reddens rather than silently moving 28 use sites.
+  Widen `_OUT_POS_PREFIX_W` (command-position anchors) or `_OUT_POS_PREFIX_LP` (launcher/path)
+  instead — both are consumed exclusively by boolean deny sites by construction. Widening that
   constant reaches `_OUT_POS_PREFIX`, which has roughly 24 consumers **including
   count/extraction/exclusion** ones — a widening there is NOT monotone-safe. `_OUT_POS_PREFIX_LP`
   has only boolean `grep -Eqi` deny consumers and is the safe place to widen. Check which consumers
@@ -76,6 +82,25 @@ this to be reachable.
 - `xargs`-constructed arguments were also observed ALLOW in the same review. That is a different
   mechanism — the gated text never appears in the command at all — and is almost certainly not
   closeable by a text matcher. Record it as a residual rather than attempting it here.
+
+## Measured siblings in the same family — close these together, as an AXIS
+
+The PR #980 security review measured these ALLOWing on BOTH `main` and that branch. They are the
+same defect shape as the `sudo`/`corepack` case above, and each was found by adding one more
+spelling to a list that had already been "completed" several times. Close them by treating the
+prefix as a combinatorial AXIS composed against the existing launcher and path dimensions — not by
+appending these names:
+
+- A launcher in front of the package-directory clauses (`npx node ./node_modules/<pkg>/bin/run …`,
+  and the railway equivalent). Those clauses have no launcher alternative, and the launcher
+  constant has no package-directory alternative, so the two closures do not compose.
+- A wrapper word AFTER the launcher (`npx env …`, `npx FOO=1 …`), since the launcher grammar
+  permits only an optional PATH in that slot.
+- Stacked launchers (`npx npx …`, `bunx npx …`) — the grammar allows exactly one launcher
+  occurrence. Note the `--`-separated form already denies, so the gap is in the second position only.
+- `pnpm` and `yarn` dispatching a local binary with no subcommand.
+- `npm explore <pkg> -- <gated>`.
+- A path-qualified wrapper in front of a launcher — the axis of the wrapper fix composed with one.
 
 ## Scope Contract
 

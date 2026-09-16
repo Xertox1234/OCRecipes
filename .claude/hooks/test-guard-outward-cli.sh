@@ -4542,8 +4542,84 @@ _PIN_RAN=1
 # widening made the existing --package/-p test rows redundant with check #1,
 # per code-reviewer's WARNING). MEASURED, NOT COMPUTED below.
 # 841 -> 851 (2026-09-16): +8 deny rows pinning the four path/alias holes the security review
+
+# ---------- path-qualified WRAPPER in front of a bare gated binary ----------
+# The wrapper absorber existed only inside the package-directory clauses, so a path-qualified
+# wrapper word in front of a bare gated binary sailed past the command-position anchors. Measured
+# as one-token-different pairs: the bare wrapper spelling DENIED while its /usr/bin/ spelling
+# ALLOWED, on all four gated binaries. /usr/bin/env is the spelling every shebang in this tree
+# uses. Closed by _OUT_POS_PREFIX_W, a separate constant consumed only by boolean deny sites --
+# _OUT_POS_PREFIX itself has extraction and count consumers a widening would skew.
+assert_deny "path-qualified wrapper before a bare gated binary denies (was ALLOW while the bare wrapper spelling denied)" \
+  "$(json '/usr/bin/env eas update --branch preview')" \
+  "publishes an OTA update"
+assert_deny "path-qualified wrapper reaches railway too" \
+  "$(json '/usr/bin/env railway up')" \
+  "railway"
+assert_deny "path-qualified wrapper reaches npm publish" \
+  "$(json '/usr/bin/env npm publish')" \
+  "npm publish"
+assert_deny "path-qualified wrapper reaches a gated gh subcommand" \
+  "$(json '/usr/bin/env gh release create v1')" \
+  "gh"
+assert_deny "a different path-qualified wrapper word denies too (the property is the wrapper, not the word env)" \
+  "$(json '/bin/nohup eas update --branch preview')" \
+  "publishes an OTA update"
+
+# ---------- npm accepts an ABBREVIATION CLOSURE, not the alias table ----------
+# npm's deref() checks commands, then aliases, THEN abbrev(commands + alias keys). Computed from
+# npm's own modules: 11 tokens resolve to run (rum run run- run-s run-sc run-scr run-scri run-scrip
+# run-script ur urn) and 3 to exec (exe exec x). The previous alternation covered 4 and 2 -- it was
+# derived by grepping the aliases OBJECT, which is the wrong layer, and the assertion name said so.
+# `npm ur update:preview` runs package.json's update:preview: a real OTA to production users.
+assert_deny "npm ur denies -- an abbreviation of urn, not present in the alias table" \
+  "$(json 'npm ur update:preview')" \
+  "update:preview"
+assert_deny "npm run-s denies -- a truncation of run-script, accepted by abbrev" \
+  "$(json 'npm run-s update:preview')" \
+  "update:preview"
+assert_deny "npm run-scrip denies -- every truncation between run- and run-script resolves" \
+  "$(json 'npm run-scrip update:preview -- --message x')" \
+  "update:preview"
+assert_deny "npm exe denies -- the third exec token alongside exec and x" \
+  "$(json 'npm exe eas update --branch preview')" \
+  "reached through a launcher"
+
+# ---------- over-denial controls for BOTH widenings ----------
+# A wrapper prefix and an npm abbreviation are both everyday spellings. Denying them wholesale is
+# what gets a guard switched off rather than fixed, so each widening is pinned in both directions.
+assert_allow "path-qualified wrapper on an UNGATED binary stays allowed" \
+  "$(json '/usr/bin/env prettier --write .')"
+assert_allow "path-qualified wrapper running an ordinary repo script stays allowed" \
+  "$(json '/usr/bin/env node scripts/build.js')"
+assert_allow "a wrapper in front of an ordinary npm script stays allowed" \
+  "$(json 'nohup npm run dev')"
+assert_allow "an npm abbreviation on an UNGATED script stays allowed (only the two publish scripts are gated)" \
+  "$(json 'npm ur test:run')"
+
+# ---------- PINNED: _OUT_WRAPPER_WORD's definition line ----------
+# This constant feeds _OUT_POS_PREFIX, whose 28 non-comment use sites include `grep -oE` extraction
+# and count readers, so a widening here is NOT monotone-safe. The comment above that constant used
+# to claim this identity was "asserted in the self-test" when nothing asserted it: an inert widening
+# was measured to move the expansion from 243 to 267 bytes while the suite still reported 851
+# passed. This row is the assertion that claim described. Reading the first definition is only sound
+# because the count is asserted alongside it -- the same reasoning as the _OUT_SEP pin above.
+_WW_DEFS=$(grep -c '^_OUT_WRAPPER_WORD=' "$HOOK" | tr -d '[:space:]')
+_WW_SHA=$(grep -m1 '^_OUT_WRAPPER_WORD=' "$HOOK" | shasum | cut -c1-16)
+if [ "${_WW_DEFS:-0}" = 1 ] && [ "$_WW_SHA" = "03c5bd2be8126234" ]; then
+  echo "PASS: _OUT_WRAPPER_WORD definition unchanged (pinned by hash; it feeds _OUT_POS_PREFIX's mixed-arity consumers)"; PASS=$((PASS+1))
+else
+  echo "FAIL: _OUT_WRAPPER_WORD moved (defs=${_WW_DEFS:-0} sha=$_WW_SHA, expected 1 / 03c5bd2be8126234) -- widening it also moves _OUT_POS_PREFIX, whose extraction and count consumers this does not merely make stricter. If the change is deliberate, re-check those consumers and update this pin on purpose."
+  FAIL=$((FAIL+1))
+fi
+
 # found, +2 over-denial controls. Each deny row was a measured ALLOW before its fix.
-EXPECTED_TOTAL=851
+# 851 -> 865 (2026-09-16, security round 2): +14. Five rows for the path-qualified wrapper in
+# front of a bare gated binary, four for npm's abbreviation closure (deref falls through to
+# abbrev, so the accepted set is 11 run tokens and 3 exec tokens, not the 4 and 2 in the alias
+# table), four over-denial controls because both widenings touch everyday spellings, and one
+# pin of _OUT_WRAPPER_WORD's definition line.
+EXPECTED_TOTAL=865
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
