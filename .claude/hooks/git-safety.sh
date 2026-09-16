@@ -314,13 +314,18 @@ git_c_target() {
       #     `c /tmp/x`, letting a post-verb token overwrite the real repo redirect.
       # Deciding on the PREFIX rather than on the presence of an operator anywhere is what keeps
       # those three cases apart. It is not a re-derived redirect grammar: the only classes are
-      # empty, all-digits, and a `{name}` fd — the same insight stated in the note on
+      # empty, all-digits, and a `{name}` or `{N}` fd — the same insight stated in the note on
+      # _CMD_POS_SUFFIX. BOTH brace forms belong here: `_CMD_REDIR` admits digits inside the
+      # braces, so narrowing this class to names alone leaves the matcher MATCHING a row this
+      # tokenizer then emits nothing for, the repo falls back to cwd, and the hook ALLOWs a real
+      # main mutation (zsh reads `{9}>` as an fd-var redirect). Pinned by the `{9}`/`{fd}` pair
+      # in test-git-safety.sh: widen a detector and its consumers in ONE change, never half.
       # _CMD_POS_SUFFIX, that neither `<` nor `>` can be part of a real unquoted word.
       # (No apostrophe appears in this block on purpose: the whole program is inside a
       # single-quoted awk string, so one would close it and hand the rest to the shell.)
       if (!tnt && (index(w, "<") || index(w, ">"))) {
         rpre = w; sub(/[<>].*$/, "", rpre)
-        if (rpre == "" || rpre ~ /^[0-9]+$/ || rpre ~ /^[{][A-Za-z_][A-Za-z0-9_]*[}]$/) {
+        if (rpre == "" || rpre ~ /^[0-9]+$/ || rpre ~ /^[{]([A-Za-z_][A-Za-z0-9_]*|[0-9]+)[}]$/) {
           #   Does this word END AT the operator, so its TARGET is the next word? The test must
           #   be "ends with a complete operator RUN", not "ends with a character from the
           #   operator class". `[<>&|!]$` was the latter and matched `>out!` on the FILENAME:
@@ -558,7 +563,7 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #     main, not something this adoption introduces; near-miss binaries generally (`gitk`,
     #     `gitk>out`, `git-foo`, `digit`, `legit`) all stay MISSED.
     #
-    # NOT CLOSED — TWO residual classes, listed together because a residual list naming only
+    # NOT CLOSED — FOUR residual classes, listed together because a residual list naming only
     # one reads as completeness and the omitted one is the live route:
     #   1. A redirect BEFORE the `git` token (`2>/dev/null git commit -m x`) is a real
     #      invocation and is still MISSED: the segment anchor never reaches `git` when a
@@ -592,6 +597,18 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #          skip arm in git_c_target is gated on `!tnt` and quoting taints the whole word;
     #        * a redirect GLUED to the binary (`git>out -C <main> commit`) — phase 0 matches
     #          the binary as the exact word `git`, so the walker never enters phase 1.
+    #   4. A redirect occupying an arg-taking global VALUE SLOT (`git -C >out <main> commit`,
+    #      `git --work-tree >out <main> reset --hard`). Unlike 3, BOTH layers miss this one and
+    #      for DIFFERENT reasons, so closing either alone leaves the route open: the MATCHER
+    #      spells the separate-arg globals as `-C[[:space:]]+[^[:space:]]+`, whose value class
+    #      consumes `>out` as the -C value and leaves a bare path token nothing else absorbs;
+    #      the TOKENIZER reaches the `pend == "C"` branch BEFORE the redirect arm, folding
+    #      `>out` as a RELATIVE -C value that resolves under cwd. main ALLOWs these identically
+    #      (un-closed gap, not a regression). Named explicitly because it sits INSIDE the
+    #      globals group this change widened, which is the position most likely to be assumed
+    #      covered. Filed as
+    #      todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
+    #      and pinned in test-git-safety.sh as KNOWN-WRONG rows.
     #
     # So: three spellings closed across two mechanisms; the redirect bypass is NARROWED, not
     # eliminated. Measured through the real two-stage pipeline (split_segments then the regex),

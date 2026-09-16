@@ -429,6 +429,20 @@ assert_deny "registry: redirect AFTER a global, before the verb, is denied (was 
 assert_deny "registry: control — redirect TRAILING the whole command was always seen" \
   "$(json "$SESSION" "$MAIN" 'git commit -m x 2>/dev/null')"
 
+# Brace-fd redirect — the awk classifier's brace class was NAME-ONLY
+# (`[{][A-Za-z_][A-Za-z0-9_]*[}]`) while the `_CMD_REDIR` grammar this change adopted into the
+# MATCHER also admits all-digits inside braces (`[{][0-9]+[}]`). Half-applying that widening is
+# worse than neither half: the matcher MATCHED `git {9}>o -C <main> commit`, the tokenizer's
+# redirect arm never fired, nothing was emitted, the repo fell back to cwd, and the hook ALLOWed
+# a real main mutation. zsh — this environment's interactive shell — consumes `{9}>` as an
+# fd-var redirect (`zsh -c 'printf "[%s]" A {9}>o B'` prints `[A][B]`, file `o` empty), so the
+# route is live here even though bash treats `{9}` as an ordinary word. `{fd}` is the
+# one-character-class control: it differs from `{9}` only by the class inside the braces.
+assert_deny "registry: brace-fd {9} redirect (all-digits) before -C <main> is denied" \
+  "$(json "$SESSION" "$WT_A" "git {9}>o -C $MAIN commit -m x")"
+assert_deny "registry: control — brace-fd {fd} redirect (named) before -C <main> is denied" \
+  "$(json "$SESSION" "$WT_A" "git {fd}>o -C $MAIN commit -m x")"
+
 # --- FALSE-DENY sweep: widening a boundary class is the direction that invents denials, and
 # a guard that denies ordinary read-only git gets switched off. Every row here must ALLOW.
 assert_allow "registry: read-only verb with the SAME interposed redirect stays allowed" \
@@ -597,7 +611,7 @@ assert_deny "verb-glued redirect, cwd=main — control: DENY comes from the cwd 
 assert_allow "verb-glued redirect with -C <worktree> — control: the -C target resolves either way" \
   "$(json "$SESSION" "$MAIN" "git -C $WT_A commit>log")"
 
-# --- Two residuals this change does NOT close. Both are real invocations (argv shim) that
+# --- Three residuals this change does NOT close. All are real invocations (argv shim) that
 # --- main ALSO allows, so they are un-closed gaps rather than regressions. Pinned as WRONG.
 # (i) The `!tnt` gate is word-level, so a real redirect whose TARGET is quoted taints the whole
 #     word and is not skipped — the walker stops and falls back to cwd. Fails toward DENY from
@@ -609,6 +623,26 @@ assert_allow "KNOWN-WRONG: redirect with a QUOTED TARGET is not skipped — real
 #     sees the segment; the tokenizer does not resolve it.
 assert_allow "KNOWN-WRONG: redirect glued to the binary — walker never enters phase 1, -C <main> MISSED" \
   "$(json "$SESSION" "$WT_A" "git>out -C $MAIN commit -m x")"
+
+# (iii) A redirect occupying an arg-taking global VALUE SLOT. Both layers miss it for two
+#     DIFFERENT reasons, so closing either one alone leaves the route open. MATCHER: the
+#     separate-arg globals are spelled `-C[[:space:]]+[^[:space:]]+`, and that value class eats
+#     `>out` as the -C value, leaving a bare path token neither the flag arm nor `_CMD_REDIR`
+#     absorbs. TOKENIZER: the `pend == "C"` branch is reached BEFORE the redirect arm, so `>out`
+#     is folded as a RELATIVE -C value and resolves under cwd. `main` ALLOWs these identically,
+#     so this is an un-closed gap, not a regression. It is named explicitly because it sits
+#     INSIDE the group this change widened — the position an implementer is most likely to
+#     believe is already covered.
+# FILED: todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
+assert_allow "KNOWN-WRONG (filed): redirect in the -C VALUE SLOT — real -C <main> mutation MISSED" \
+  "$(json "$SESSION" "$WT_A" "git -C >out $MAIN commit -m x")"
+assert_allow "KNOWN-WRONG (filed): redirect in the --work-tree VALUE SLOT — real <main> mutation MISSED" \
+  "$(json "$SESSION" "$WT_A" "git --work-tree >out $MAIN reset --hard")"
+# Positive discriminator: assert_allow passes on EMPTY output, so a crashed hook would satisfy
+# the two rows above exactly as a correct ALLOW does. This row proves the hook is alive.
+assert_deny "discriminator for the two rows above: the hook is alive and still denying" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN commit -m x")"
+
 
 # Inherited over-DENIAL, pinned in the other direction: a DIGIT glued to the binary is SEEN,
 # but bash lexes `git2>out` as the word `git2` plus `>out`, so it invokes `git2`, not git.
@@ -1338,7 +1372,7 @@ fi
 # walk past a separate-arg global in either position.
 # 159 -> 160: +1 for the discriminating single-global row, which the previous commit
 # described as added while only adding it to a comment.
-EXPECTED_TOTAL=160
+EXPECTED_TOTAL=232
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
