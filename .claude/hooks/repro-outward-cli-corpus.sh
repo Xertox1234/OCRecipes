@@ -877,7 +877,7 @@ done
 #               r4brlist `{d,d}`    brace LIST (comma form) -- a THIRD,
 #                        independent expansion mechanism from r4brange (no
 #                        `..`), added 2026-09-16
-#                        (todos/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md).
+#                        (todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md).
 #                        A DUPLICATE-alternative list (`{d,d}`, same char both
 #                        sides) is used here rather than a distinguishable pair
 #                        (`{d,x}`) so the generated row reconstructs the SAME
@@ -891,7 +891,14 @@ done
 #                        here.
 #
 # 70 ROWS ((r4spec + r4dig + r4ansic + r4brange + r4brlist) x 2 positions x 7
-# families), ALL EXPECTED-DENY. They are real, reproduced bypasses (the
+# families), ALL EXPECTED-DENY. NOT EXHAUSTIVE over this file's own position
+# dimension, which has THREE members, not two: FLAG position IS generated for
+# other mechanisms here (flagvarithsep-*, flagvbareparen-*, flagvcasearm-*,
+# flagvcasecomment-*) but NOT for this family. The omission is disclosed, not
+# incidental -- see guard-outward-cli.sh's BRACE LIST residual entry,
+# FLAG-position paragraph, for the measured construction it leaves unmodelled,
+# and note that the un-generated member is precisely the one that measures
+# ALLOW, so the gap is invisible on every run of this corpus. They are real, reproduced bypasses (the
 # r4brlist-tool-* additions are pre-existing, like every r4brange-tool-*
 # sibling -- they allow on `main` too). The rows exist so the gap is measured
 # on every run instead of living in a review transcript. Verb-position rows
@@ -944,7 +951,7 @@ for i in "${!FAM_IDS[@]}"; do
 done
 
 # axis: r4brlist-nested residual (2026-09-16,
-# todos/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md). A
+# todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md). A
 # range NESTED inside a list alternative (`up{d,{a..z}}ate`) does not match
 # `_OUT_BR_LIST_TOKEN` at all -- its item class excludes `{`/`}`, so a nested
 # span is invisible to this mechanism's own token, not merely unclosed by the
@@ -2187,15 +2194,19 @@ fi
 EXPECTED_ROWS=904
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 761 of the 876 rows deny on the precise path; the other 115 are ALLOW there: 91
-# rows EXPECTED to allow, plus the 24 precise-path gaps. Those 91 span NINETEEN id
+# 768 of the 904 rows deny on the precise path; the other 136 are ALLOW there: 91
+# rows EXPECTED to allow, plus the 45 precise-path gaps. Those 91 span NINETEEN id
 # families -- fp-* (16), ghrootv-* (16), c2-* (9), c1g-* (7), fautodigfp-* (6),
 # sitefp-* (5), vft-* (5), flagadjfp-* (4), apicolfp-* (3), decoyfp-* (3),
 # ghrootfp-* (3), ghrootvfp-* (3), c9-* (2), fautocutsp-* (2), fautogrant-* (2),
 # siterailfp-* (2), plus the singletons co-nested-brace, fautobrace-pre and
 # fautodigctrl-bb. COUNTED, not recalled: select every row whose EXPECTED and
-# PRECISE verdicts are both ALLOW, group on the id prefix. 91 + 24 = 115 and
-# 876 - 761 = 115, so the decomposition closes.
+# PRECISE verdicts are both ALLOW, group on the id prefix. 91 + 45 = 136 and
+# 904 - 768 = 136, so the decomposition closes. The 91 is UNCHANGED by the
+# 2026-09-16 brace-LIST bump, and that is MEASURED rather than assumed: the
+# pin deltas are rows +28, deny-attrib +7, precise-gaps +21, and 7 + 21 = 28,
+# so every added row landed in one of those two buckets and none entered this
+# one.
 #
 # THIS PARAGRAPH WAS ITSELF THE SIXTH STALE COPY, and it went stale in the way this
 # file keeps documenting one level down. It read "646 of the 739 ... 69 ... SIXTEEN
@@ -2300,8 +2311,9 @@ EXPECTED_ROWS=904
 # of the whole CLASS, the defect that branch's own solution doc is named after.
 EXPECTED_DENY_ATTRIB_ROWS=768
 
-# 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
-# remaining precise-path gaps" note further down, and the two must stay equal:
+# 7 + 17 + 21 = 45. This is the SAME decomposition as the "FULL ATTRIBUTION of
+# the remaining precise-path gaps" note further down, and the two must stay
+# equal:
 #   7   r4brange-tool-* (7) -- brace range glued to the BINARY name itself,
 #       no sigil. CLOSED 2026-09-14 for the sibling r4brange-verb-* (7, the
 #       range glued to the VERB instead) -- see guard-outward-cli.sh's
@@ -4065,7 +4077,10 @@ exit 0
 # FULL ATTRIBUTION of the remaining precise-path gaps. Was 14 + 17 + 2 = 33;
 # the `2` bucket closed on 2026-09-07, so it became 14 + 17 = 31. The `14`
 # bucket itself halved on 2026-09-14 (r4brange-verb-* closed, see below), so
-# it is now 7 + 17 = 24. Each remaining row has an OPEN todo — none is a
+# it became 7 + 17 = 24; the 2026-09-16 brace-LIST addition then contributed a
+# third bucket of 21 (r4brlist-tool-* 7, r4brlist-nested-* 7,
+# r4brlist-nested-list-* 7), so it is now 7 + 17 + 21 = 45. Each remaining row
+# has an OPEN todo — none is a
 # defect this change introduced, and every one allows on `main` too:
 #
 #    7  (was 14) r4brange-tool-*. A brace RANGE carries no `$` and no backtick

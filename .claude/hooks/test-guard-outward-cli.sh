@@ -2968,7 +2968,7 @@ assert_allow "TOOL-position brace-range split of a binary NAME stays allowed —
 assert_allow "TOOL-position brace-range split of gh stays allowed — documented residual" \
   "$(json '{g..g}h api repos/o/r -X POST')"
 
-# ---------- 2026-09-16: narrow deny — a gated binary/verb glued to a brace LIST (todos/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md) --
+# ---------- 2026-09-16: narrow deny — a gated binary/verb glued to a brace LIST (todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md) --
 # Bash brace LIST expansion (the comma form, {a,b}) is a THIRD reconstruction
 # mechanism, distinct from the $/backtick family above AND from the brace
 # RANGE family immediately above this block (no `..`) -- every positive below

@@ -1038,7 +1038,7 @@
 #     resolution rather than command text and so covers this residual without
 #     reading the command at all.
 #
-#   * PARTIALLY CLOSED 2026-09-16 (todos/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md).
+#   * PARTIALLY CLOSED 2026-09-16 (todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md).
 #     BRACE LIST expansion (`{a,b}`, the comma form) is a THIRD reconstruction
 #     mechanism, distinct from both the `$`/backtick sigil family above and the
 #     brace RANGE family immediately above this entry: `eas up{d,x}ate --branch
@@ -1103,6 +1103,27 @@
 #     `r4brlist-nested-*` rows (p=ALLOW, all three degraded=DENY;
 #     EXPECTED-DENY, `GAP` on the precise path only, tracked rather than
 #     silently dropped).
+#
+#     FLAG-position -- STAYS OPEN, and is NOT closed by this block. MEASURED
+#     2026-09-16 against BOTH this tree and `origin/main`, with a positive
+#     control (a literal `--admin` -> DENY) and a negative control (the
+#     sanctioned `--auto --squash --delete-branch` automerge -> ALLOW) both
+#     behaving in the same run:
+#         gh pr merge 42 --auto --delete-branch --{admin,squash}
+#     ALLOWS on both trees. Bash expands it to `--auto --delete-branch
+#     --admin --squash`; both reconstructed words are genuine flags of that
+#     subcommand, so no repeated-flag or spare-positional tolerance is
+#     needed. That is an ADMINISTRATOR merge past branch protection, which
+#     the check further down denies "regardless of --auto" when the flag is
+#     spelled literally. PRE-EXISTING: it allows on `main` too, so this
+#     block neither introduced nor widened it.
+#
+#     The gap is specifically WHOLE-FLAG alternatives. Glued-IN-WORD
+#     spellings of the same flag DENY on both trees and are NOT part of this
+#     residual: `--ad{m,m}in` and its RANGE sibling `--ad{m..m}in` were both
+#     measured DENY, as were `{--admin,--admin}` and the empty-quote form.
+#     Do NOT cite the in-word spellings as examples of this hole -- they are
+#     closed, and an earlier review transcript asserted otherwise.
 #
 #     TOOL-position — the list glued INSIDE the binary's own first letters
 #     (`{e,e}as update --branch preview`) STAYS OPEN, for the identical
@@ -1590,7 +1611,7 @@ crude_smells_outward() {
   # ruling as the precise path.
   #
   # PLUS a brace LIST ({a,b}) alternative (2026-09-16,
-  # todos/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md).
+  # todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md).
   # Same VERB-position-only coverage as the precise path's sibling fix, for
   # the identical reason as the brace-RANGE alternative immediately above: a
   # split BINARY NAME (`{e,e}as update`) stays a documented residual here too.
@@ -2946,7 +2967,7 @@ if [ "$_OUT_BR_FIRE" = 1 ]; then
 fi
 
 # --- narrow deny: a gated binary/verb glued to a brace LIST ({a,b}) ---------
-# todos/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md
+# todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md
 # Bash brace LIST expansion (the comma form) is a THIRD reconstruction
 # mechanism -- distinct from the `$`/backtick sigil family above AND from the
 # brace RANGE family immediately above this block (no `..`, just a literal
@@ -2954,7 +2975,7 @@ fi
 # me{r,r}ge 42` (real argv: `gh pr merge merge 42`) carry none of the tokens
 # any check above this one keys on. See guard-outward-cli.sh's DOCUMENTED
 # RESIDUALS entry for this mechanism (search "BRACE LIST expansion") for the
-# full VERB/TOOL/nested-position bound -- this block closes VERB-position
+# full VERB/TOOL/FLAG/nested-position bound -- this block closes VERB-position
 # only, with the IDENTICAL structural reach as the brace-RANGE block: the same
 # three trigger arms, same `_OUT_GATED_BIN`/`_OUT_SEP` glue requirement, same
 # placement rationale (runs after eas/railway/npm, before gh pr merge, for the
