@@ -51,7 +51,7 @@ the fix touches the shared hook's API and all 8 call sites.
       screens its back/close control stays reachable, so this criterion is not
       met end to end. `behindContentA11yProps` structurally cannot reach a
       sibling the navigator renders. Tracked by
-      `todos/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`.
+      `todos/archive/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`.
 - [x] The mechanism covers all 8 existing `useConfirmationModal()` callers
       (CookSessionCapture, CookSessionReview, SavedItems, ChatList, BatchScan,
       GroceryLists, Pantry, Settings) without per-screen bespoke wiring where
@@ -113,6 +113,26 @@ the fix touches the shared hook's API and all 8 call sites.
 
 - Initial creation from mobile-reviewer WARNING on PR #924.
 
+### 2026-09-16
+
+- Residual 1 (navigator-rendered header stays reachable on 5 screens) closed
+  by `todos/archive/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`:
+  `useConfirmationModal()` now also returns `isOpen`, and Settings,
+  SavedItems, GroceryLists, Pantry, and CookSessionReview each drive
+  `navigation.setOptions()` from it (`headerBackVisible` for the native
+  default back button; a re-rendered `headerLeft` for the two screens whose
+  `RootStackNavigator`-hosted route has a custom close "X"). This bullet's
+  count of "5" was already correct at the time it was written — no count
+  correction was needed.
+- AC #1 and AC #4 above are **still left unchecked, deliberately, for the
+  same reason as 2026-09-13**: no Android SDK tooling (`adb`/`emulator`) is
+  available in the authoring environment, and this project's hardware is
+  Apple-only. The header-trap fix is implementation-complete and covered by
+  jsdom-level prop-pinning tests (same limitation as the original
+  `behindContentA11yProps` tests — jsdom cannot assert TalkBack/VoiceOver
+  reachability), but neither AC has had a device-level TalkBack or VoiceOver
+  pass. Re-deferred rather than falsely checked.
+
 ### 2026-09-13
 
 - Implemented candidate shape 1: `useConfirmationModal()` now returns
@@ -141,7 +161,7 @@ importantForAccessibility}` pair derived from internal `isOpen` state
      cannot hide a sibling rendered by the navigator. The flagship case of
      this todo — Settings → Sign Out — is one of the 5, so the escape route
      it was written to close is still open at that surface. Now tracked by
-     `todos/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`.
+     `todos/archive/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md`.
   2. `CookSessionCaptureScreen`'s bare `<CameraView>` is the only sibling in
      that return block without the spread. DEFERRED, with the reason:
      `CameraViewProps` (`client/camera/types.ts:36`) is a closed interface

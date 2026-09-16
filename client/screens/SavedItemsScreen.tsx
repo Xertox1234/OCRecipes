@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -9,6 +9,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -29,6 +31,7 @@ import {
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
+import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 import type { SavedItem } from "@shared/schema";
 
 const ITEM_SEPARATOR_HEIGHT = Spacing.md;
@@ -106,9 +109,21 @@ export default function SavedItemsScreen() {
   const { reducedMotion } = useAccessibility();
   const { isPremium, features } = usePremiumContext();
 
-  const { confirm, ConfirmationModal, behindContentA11yProps } =
+  const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
+  const navigation =
+    useNavigation<
+      NativeStackNavigationProp<ProfileStackParamList, "SavedItems">
+    >();
   const { mutate: deleteItem } = useDeleteSavedItem();
+
+  // The navigator renders the header as a sibling `behindContentA11yProps`
+  // can't reach — hide its default back button while the sheet is presented
+  // so TalkBack/VoiceOver can't swipe past the sheet to it. See
+  // todos/archive/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md.
+  useEffect(() => {
+    navigation.setOptions({ headerBackVisible: !isOpen });
+  }, [isOpen, navigation]);
 
   const {
     data: savedItems,
