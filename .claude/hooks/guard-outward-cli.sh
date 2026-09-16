@@ -192,6 +192,11 @@
 #     closeable by a name-based matcher without the same invented-enumeration
 #     risk already declined above; `cp node_modules/eas-cli/bin/run /tmp/x &&
 #     node /tmp/x update --branch preview` measured ALLOW.
+#     NARROWED 2026-09-16: until this round the IN-TREE, unmodified script was
+#     reachable too, by path-qualifying the interpreter or its wrapper word — no
+#     relocation required, so this bullet understated its own scope. Those two
+#     spellings now deny. What remains is genuinely only a copy that has LEFT the
+#     package directory the literal substring keys on.
 #   * `eas publish` does not exist in the installed eas-cli (20.1.0 at time of
 #     writing) — the pattern is kept anyway per the acceptance criteria's
 #     literal wording and to catch an older/different CLI version; a no-op
@@ -222,10 +227,17 @@
 #     smell test and DENIES. Over-denial on a shape no real caller writes; the
 #     safe direction.
 #   * CLOSED 2026-09-16, same todo as the launcher-family bullet above.
-#     Absolute/relative-path invocation (`/opt/homebrew/bin/eas update`,
-#     `./node_modules/.bin/eas update`, `../eas update`) now denies via the
-#     same `_OUT_POS_PREFIX_LP` checks, PRECISE PATH ONLY (see that bullet
-#     for the degraded-path caveat, which applies identically here).
+#     Path invocation denies whether the path qualifies the GATED BINARY, the
+#     LAUNCHER word, the INTERPRETER, or a WRAPPER word: the optional path sits
+#     on both sides of the launcher in `_OUT_POS_PREFIX_LP`, `_OUT_INTERP_WORD`
+#     carries its own optional path, and the package-directory clauses absorb a
+#     path-qualified `_OUT_WRAPPER_WORD`. PRECISE PATH ONLY (see that bullet for
+#     the degraded-path caveat, which applies identically here).
+#     Do NOT restate this as a category without re-measuring. The previous
+#     wording claimed path invocation was closed while modelling the path as a
+#     property of the gated binary alone, so one extra launcher word reopened it
+#     and the corpus could not express the shape that did so. Every clause named
+#     here corresponds to a pinned row; if a shape is not pinned, it is not closed.
 #   * `gh workflow run`, `gh secret set`, `gh variable set` and other gh
 #     namespaces beyond `pr`/`release`/`repo`/`api` are not covered — the
 #     todo scoped this to "verb-scoped, not exhaustive"; `gh api` itself IS
@@ -1621,7 +1633,7 @@ $_OUT_CRUDE_VANISHED"
   fi
   t=${t//\'/}; t=${t//\"/}; t=${t//\\/}; t=${t//\$/}
   # Command-word patterns — case-INSENSITIVE (macOS APFS resolves `EAS`).
-  grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run-script|run)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
+  grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run-script|run|rum|urn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
   # Flag-correlated patterns — case-SENSITIVE (a case-insensitive `-R` would
   # false-match the `-r` inside `--remove-reviewer`).
   grep -Eq 'gh[^a-zA-Z]+pr[^a-zA-Z]+(create|comment)([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*(--repo|-R)' <<< "$t" && return 0
@@ -1886,7 +1898,13 @@ fi
 # NOT first in the prefix bracket class (a leading `!`/`^` reads as negation to
 # some bracket-expression implementations); a backtick inside a single-quoted
 # shell string is literal, so no escaping is needed for either constant.
-_OUT_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|then|do|else|elif|time|'"$_CMD_REDIR"')[[:space:]]+)*'
+# Factored out of _OUT_POS_PREFIX so a PATH-QUALIFIED spelling of the same wrapper words can be
+# matched without duplicating the list (a second copy would drift). _OUT_POS_PREFIX below is
+# reassembled from this and is byte-identical to its previous expansion -- asserted in the
+# self-test, because ~24 consumers depend on it including count/extraction ones that a
+# widening would skew. Widen THIS only where a boolean deny consumer reads it.
+_OUT_WRAPPER_WORD='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|then|do|else|elif|time|'"$_CMD_REDIR"')'
+_OUT_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*('"$_OUT_WRAPPER_WORD"'[[:space:]]+)*'
 _OUT_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'
 # NON-SWALLOWING variant for a clause-cut whose downstream check DECIDES AN
 # ALLOW on flag presence (currently: the `gh pr merge` --auto clause below —
@@ -2114,7 +2132,7 @@ _OUT_FLAG_RUN='('"$_OUT_SEP"'-{1,2}[^[:space:]]*('"$_OUT_SEP"'[^-[:space:]][^[:s
 # `yarn`->`dlx`/`exec`) keep plain `$_OUT_SEP`, unchanged, since no bypass was
 # measured through them and widening every gap on spec would be the same
 # invented-enumeration risk in the other direction.
-_OUT_LAUNCHER='(npx|npm'"$_OUT_SEP"'exec|bunx|bun'"$_OUT_SEP"'(x|run)|pnpm'"$_OUT_SEP"'(dlx|exec)|yarn'"$_OUT_SEP"'(dlx|exec))'"$_OUT_FLAG_RUN"
+_OUT_LAUNCHER='(npx|npm'"$_OUT_SEP"'(exec|x)|bunx|bun'"$_OUT_SEP"'(x|run)|pnpm'"$_OUT_SEP"'(dlx|exec)|yarn'"$_OUT_SEP"'(dlx|exec))'"$_OUT_FLAG_RUN"
 # `_OUT_PATH_PREFIX` — an absolute or relative path segment immediately
 # before the binary literal (`/opt/homebrew/bin/eas`, `./node_modules/.bin/eas`,
 # `../eas`). The excluded-character class is deliberately the SAME set this
@@ -2134,7 +2152,15 @@ _OUT_PATH_PREFIX='[^[:space:];&|()`{}<>]*/'
 # matching a bare-command-position shape the checks above already handle.
 # `_OUT_POS_PREFIX_LP` is a NEW, independent constant; it is never assigned
 # into `_OUT_POS_PREFIX` and no existing call site references it.
-_OUT_POS_PREFIX_LP="${_OUT_POS_PREFIX}((${_OUT_LAUNCHER})(${_OUT_PATH_PREFIX})?|${_OUT_PATH_PREFIX})"
+# The optional path prefix sits on BOTH sides of the launcher word. Modelling it only AFTER the
+# launcher made path-qualification a property of the GATED BINARY alone, so one extra real
+# launcher word flipped a deny: a path-qualified eas invocation DENIED while the same path with
+# npx in front of it ALLOWED, and the same shape reached the highest-value admin sink in this
+# file. readlink on the homebrew npx resolves to the real npx, so that spelling is reachable
+# today. Widening here and not in _OUT_POS_PREFIX is deliberate: this constant has only boolean
+# grep -Eqi deny consumers, so the widening is monotone-safe, while _OUT_POS_PREFIX feeds
+# count/extraction/exclusion consumers that a widening would skew.
+_OUT_POS_PREFIX_LP="${_OUT_POS_PREFIX}((${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER})(${_OUT_PATH_PREFIX})?|${_OUT_PATH_PREFIX})"
 
 # --- Security-review round-1 additions (2026-09-16) --------------------------
 # Two further gaps in the launcher/path axis above, both found by
@@ -2181,7 +2207,10 @@ _OUT_LAUNCHER_AMBIG_FLAG='(--package|-p|--call|-c)(=|'"$_OUT_SEP"')'
 # directory name appearing anywhere in the path (not just as the terminal
 # component), so the check no longer depends on what the package's bin field
 # happens to name the script.
-_OUT_INTERP_WORD='(node|bun|deno)'"$_OUT_SEP"
+# Path-qualified interpreters are the SHEBANG spelling, not an exotic one: every shebang in this
+# tree writes /usr/bin/env. Measured before this widening, a bare env interpreter invocation of
+# the in-tree eas-cli script DENIED while the /usr/bin/env spelling of the same command ALLOWED.
+_OUT_INTERP_WORD='('"$_OUT_PATH_PREFIX"')?(node|bun|deno)'"$_OUT_SEP"
 _OUT_PKGDIR_EASCLI='[^[:space:];&|()`{}<>]*eas-cli/[^[:space:];&|()`{}<>]*/[^[:space:];&|()`{}<>]+'
 _OUT_PKGDIR_RAILWAYCLI='[^[:space:];&|()`{}<>]*@railway/cli/[^[:space:];&|()`{}<>]*/[^[:space:];&|()`{}<>]+'
 #
@@ -2891,7 +2920,7 @@ fi
 # per-launcher flag enumeration — see that comment for why. This comment
 # block, documenting every historical bypass this grammar closes, stays here
 # at its original site, right above its primary use site.
-if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run|rum|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
@@ -4138,7 +4167,7 @@ fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'npm publish' reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(run-script|run|rum|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    || grep -Eqi "${_OUT_POS_PREFIX_LP}(yarn|pnpm)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
@@ -4177,10 +4206,10 @@ fi
 # anywhere in the path is what matters, not launcher-or-path composition; an
 # optional bare interpreter word (node/bun/deno) is absorbed for free, but is
 # NOT required — the bare path alone is already the reachable exploit.
-if grep -Eqi "${_OUT_POS_PREFIX}(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_EASCLI}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX}((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}[[:space:]]+)*(${_OUT_PATH_PREFIX})?(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_EASCLI}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a direct path invocation of a script INSIDE the eas-cli npm package directory (e.g. node_modules/eas-cli/bin/run) reached 'update/publish/submit' — eas-cli's own package.json maps bin: {\"eas\": \"./bin/run\"}, so the real installed script's filename is 'run', never 'eas'/'eas-cli', and can't match a literal-binary-name path check. Same OTA-publish incident class as the checks above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX}(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_RAILWAYCLI}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX}((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}[[:space:]]+)*(${_OUT_PATH_PREFIX})?(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_RAILWAYCLI}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a direct path invocation of a script INSIDE the @railway/cli npm package directory reached a gated railway verb, by the same package.json-bin-mapping gap as eas-cli above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 

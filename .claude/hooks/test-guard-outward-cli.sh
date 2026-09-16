@@ -2864,7 +2864,7 @@ assert_deny "a MULTI-value brace range glued to a verb denies the same as a sing
 # increment, so the bare form typed into the Bash tool runs literally and the CLI
 # rejects it. It reconstructs under bash -- a script, a hook, or `bash -c`, and that
 # wrapper is its own accepted residual (see this file's header) tracked by
-# todos/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md.
+# todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md.
 # So these pins are grammar completeness and defense in depth, not a live bypass.
 assert_deny "a three-field increment brace range glued to a verb denies (gh)" \
   "$(json 'gh pr me{r..r..2}ge 42')" "glued to a brace RANGE"
@@ -4240,6 +4240,42 @@ assert_deny "npx --package=eas-cli -- tsc --version denies via GAP-1 (discrimina
   "$(json 'npx --package=eas-cli -- tsc --version')" \
   "combined with --package/-p/-c/--call"
 
+# ---------- path-qualified LAUNCHER / WRAPPER / INTERPRETER, and npm's own aliases ----------
+# Four holes the launcher round left open, each found by a one-token-different pair. They are
+# pinned here because a regression in any of them is silent: the corpus could not express the
+# first one at all until its composition-order dimension was added, so an unchanged gap count
+# read as closure while measuring nothing.
+assert_deny "path-qualified LAUNCHER denies (path was modelled only AFTER the launcher, so one extra launcher word reopened a deny)" \
+  "$(json '/opt/homebrew/bin/npx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "path-qualified launcher reaches railway too (same grammar, different gated binary)" \
+  "$(json '/opt/homebrew/bin/npx railway up')" \
+  "reached through a launcher"
+assert_deny "relative path-qualified launcher denies (the property is the path, not its absoluteness)" \
+  "$(json './npx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "path-qualified WRAPPER word denies -- /usr/bin/env is the shebang spelling every script in this tree uses" \
+  "$(json '/usr/bin/env node ./node_modules/eas-cli/bin/run update --branch preview')" \
+  "a direct path invocation of a script INSIDE the eas-cli"
+assert_deny "path-qualified INTERPRETER denies (same root cause, separate code site from the wrapper above)" \
+  "$(json '/opt/homebrew/bin/node ./node_modules/eas-cli/bin/run update')" \
+  "a direct path invocation of a script INSIDE the eas-cli"
+assert_deny "npm x denies -- x is npm's own documented alias for exec (lib/utils/cmd-list.js), not an invented spelling" \
+  "$(json 'npm x eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npm rum denies -- rum is npm's own alias for run, and this lands on THIS repo's OTA publisher" \
+  "$(json 'npm rum update:preview')" \
+  "command-position 'npm run update:preview/update:production"
+assert_deny "npm urn denies -- the second run alias from the same table; grepping it returned exactly run-script, x, rum, urn" \
+  "$(json 'npm urn update:preview -- --message hi')" \
+  "command-position 'npm run update:preview/update:production"
+# Over-denial controls: the widenings above must not make the guard refuse ordinary work, which
+# is the failure mode that gets a guard switched off rather than fixed.
+assert_allow "npm x on an UNGATED binary stays allowed (the alias widening is not a blanket deny)" \
+  "$(json 'npm x prettier --write .')"
+assert_allow "an ordinary npm run script stays allowed (only the two publish scripts are gated)" \
+  "$(json 'npm run test:run')"
+
 _PIN_RAN=1
 # 462 -> 491 on 2026-09-06/07: +27 across three rounds, itemised because the
 # breakdown was WRONG once (it said "+21" beside a total of 488 -- 462+21=483, so
@@ -4505,7 +4541,9 @@ _PIN_RAN=1
 # one discriminating row for GAP-1's --package/-p arm (the round-2 flag-run
 # widening made the existing --package/-p test rows redundant with check #1,
 # per code-reviewer's WARNING). MEASURED, NOT COMPUTED below.
-EXPECTED_TOTAL=841
+# 841 -> 851 (2026-09-16): +8 deny rows pinning the four path/alias holes the security review
+# found, +2 over-denial controls. Each deny row was a measured ALLOW before its fix.
+EXPECTED_TOTAL=851
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

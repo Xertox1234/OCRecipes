@@ -1604,9 +1604,9 @@ LP_TARGET_CMDS=(
   'railway up'
   'gh pr merge 42'
 )
-LP_LAUNCHER_IDS=(none npx npxy npxyes npmexec npmexecdd bunx bunx2 bunrun pnpmdlx pnpmexec yarndlx yarnexec)
+LP_LAUNCHER_IDS=(none npx npxy npxyes npmexec npmexecdd npmx bunx bunx2 bunrun pnpmdlx pnpmexec yarndlx yarnexec)
 LP_LAUNCHERS=(
-  '' 'npx ' 'npx -y ' 'npx --yes ' 'npm exec ' 'npm exec -- ' 'bunx ' 'bun x ' 'bun run ' 'pnpm dlx ' 'pnpm exec ' 'yarn dlx ' 'yarn exec '
+  '' 'npx ' 'npx -y ' 'npx --yes ' 'npm exec ' 'npm exec -- ' 'npm x ' 'bunx ' 'bun x ' 'bun run ' 'pnpm dlx ' 'pnpm exec ' 'yarn dlx ' 'yarn exec '
 )
 LP_PATH_IDS=(none abs dotbin dotdot)
 LP_PATHS=(
@@ -1620,6 +1620,16 @@ for _lp_ti in "${!LP_TARGET_IDS[@]}"; do
     for _lp_pi in "${!LP_PATH_IDS[@]}"; do
       _lp_pid=${LP_PATH_IDS[$_lp_pi]}; _lp_path=${LP_PATHS[$_lp_pi]}
       add "lp-$_lp_tgt-$_lp_lid-$_lp_pid" DENY "${_lp_launcher}${_lp_path}${_lp_cmd}"
+      # COMPOSITION ORDER is its own dimension. Emitting only launcher-then-path made this
+      # grid structurally incapable of expressing a path-qualified LAUNCHER, so the
+      # unchanged precise-gap pin read as evidence of closure while measuring exactly the
+      # list the fix enumerated -- true and vacuous. A path-qualified launcher was a live
+      # ALLOW that this grid could not have caught at any pin value. Skipped when either
+      # component is empty, where these orders collapse onto the row above.
+      if [ -n "$_lp_launcher" ] && [ -n "$_lp_path" ]; then
+        add "lp-$_lp_tgt-$_lp_lid-$_lp_pid-pre"  DENY "${_lp_path}${_lp_launcher}${_lp_cmd}"
+        add "lp-$_lp_tgt-$_lp_lid-$_lp_pid-both" DENY "${_lp_path}${_lp_launcher}${_lp_path}${_lp_cmd}"
+      fi
     done
   done
 done
@@ -1630,8 +1640,11 @@ LP_ROWS_GENERATED=$(( ${#ROWS[@]} - LP_ROWS_BEFORE ))
 # sampled-vs-generated failure
 # docs/solutions/code-quality/a-sampled-corpus-described-as-generated-2026-09-13.md
 # documents, applied to a nested-loop generator instead of a `head`-piped one.
-if [ "$LP_ROWS_GENERATED" -ne 208 ]; then
-  echo "FATAL: launcher/path axis generated $LP_ROWS_GENERATED rows, expected 4 x 13 x 4 = 208 -- a dimension silently iterated short" >&2
+# 4 targets x 14 launchers x 4 paths = 224 base rows, plus the two composition orders, which
+# are emitted only where BOTH the launcher and the path are non-empty:
+# 4 x 13 x 3 x 2 = 312. Total 536.
+if [ "$LP_ROWS_GENERATED" -ne 536 ]; then
+  echo "FATAL: launcher/path axis generated $LP_ROWS_GENERATED rows, expected 4 x 14 x 4 + 4 x 13 x 3 x 2 = 536 -- a dimension silently iterated short" >&2
   exit 1
 fi
 
@@ -1818,8 +1831,8 @@ for _lf_li in "${!LP_LFLAG_LAUNCHER_IDS[@]}"; do
   done
 done
 LP_LFLAG_ROWS_GENERATED=$(( ${#ROWS[@]} - LP_LFLAG_ROWS_BEFORE ))
-if [ "$LP_LFLAG_ROWS_GENERATED" -ne 24 ]; then
-  echo "FATAL: launcher flag-run axis generated $LP_LFLAG_ROWS_GENERATED rows, expected 12 x 2 = 24 -- a dimension silently iterated short" >&2
+if [ "$LP_LFLAG_ROWS_GENERATED" -ne 26 ]; then
+  echo "FATAL: launcher flag-run axis generated $LP_LFLAG_ROWS_GENERATED rows, expected 13 x 2 = 26 -- a dimension silently iterated short" >&2
   exit 1
 fi
 # The specific CRITICAL scenario found by review: an unrecognized flag on npx
@@ -2408,7 +2421,10 @@ fi
 # control, 1 documented-residual control, 2 fast-path-needle-gap rows, 1
 # GAP-1 --package/-p discriminating row. 24+10+24+11+1+1+1+2+1 = 75.
 # MEASURED, NOT COMPUTED: the run on this tree reported `rows=1180`.
-EXPECTED_ROWS=1180
+# 1180 -> 1510 (2026-09-16): +330 from the composition-order dimension added to the
+# launcher/path grid (path-before-launcher and path-on-both-sides) plus the npm x
+# launcher. Regenerated from the run that measured them, never hand-computed.
+EXPECTED_ROWS=1510
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 761 of the 876 rows deny on the precise path; the other 115 are ALLOW there: 91
@@ -2549,7 +2565,12 @@ EXPECTED_ROWS=1180
 # like this. MEASURED: the run reported `deny-reason attribution rows is
 # 1051`. The manifest below is the run's own printed attribution section,
 # pasted verbatim, not hand-derived.
-EXPECTED_DENY_ATTRIB_ROWS=1051
+# 1051 -> 1381 (2026-09-16): every one of the 330 new rows denies and is attributed,
+# so the attribution total moves by exactly the row delta. precise-path gaps stayed
+# at 24 across the same run -- and that 24 now MEANS something, because the grid can
+# finally express a path-qualified launcher. It could not before, which is why the
+# previous unchanged 24 was true and vacuous.
+EXPECTED_DENY_ATTRIB_ROWS=1381
 
 # 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -3769,208 +3790,536 @@ lp-easupd-none-dotbin : 'eas update/publish/submit' reached through a launcher (
 lp-easupd-none-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npx-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npx-abs  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npx-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npx-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npxy-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npxy-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npxy-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npxy-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npxyes-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npxyes-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npxyes-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npxyes-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npmexec-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npmexec-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npmexec-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npmexec-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npmexecdd-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npmexecdd-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npmexecdd-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-npmexecdd-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunx-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunx-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunx-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunx-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunx2-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunx2-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunx2-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunx2-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunrun-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunrun-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunrun-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-bunrun-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-pnpmdlx-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-pnpmdlx-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-pnpmdlx-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-pnpmdlx-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-pnpmexec-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-pnpmexec-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-pnpmexec-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-pnpmexec-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-yarndlx-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-yarndlx-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-yarndlx-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-yarndlx-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-yarnexec-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-yarnexec-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-yarnexec-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-easupd-yarnexec-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-npmpub-none-none : command-position 'npm publish' pushes a package to the registry.
 lp-npmpub-none-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-none-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-none-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npx-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npx-abs  : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npx-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npx-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npxy-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npxy-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npxy-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npxy-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npxyes-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npxyes-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npxyes-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npxyes-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npmexec-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npmexec-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npmexec-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npmexec-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npmexecdd-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npmexecdd-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npmexecdd-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-npmexecdd-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunx-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunx-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunx-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunx-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunx2-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunx2-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunx2-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunx2-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunrun-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunrun-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunrun-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-bunrun-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-pnpmdlx-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-pnpmdlx-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-pnpmdlx-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-pnpmdlx-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-pnpmexec-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-pnpmexec-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-pnpmexec-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-pnpmexec-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-yarndlx-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-yarndlx-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-yarndlx-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-yarndlx-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-yarnexec-none : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-yarnexec-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-yarnexec-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-npmpub-yarnexec-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
 lp-railup-none-none : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 lp-railup-none-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-none-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-none-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npx-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npx-abs  : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npx-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npx-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npxy-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npxy-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npxy-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npxy-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npxyes-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npxyes-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npxyes-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npxyes-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npmexec-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npmexec-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npmexec-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npmexec-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npmexecdd-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npmexecdd-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npmexecdd-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-npmexecdd-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunx-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunx-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunx-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunx-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunx2-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunx2-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunx2-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunx2-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunrun-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunrun-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunrun-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-bunrun-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-pnpmdlx-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-pnpmdlx-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-pnpmdlx-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-pnpmdlx-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-pnpmexec-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-pnpmexec-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-pnpmexec-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-pnpmexec-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-yarndlx-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-yarndlx-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-yarndlx-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-yarndlx-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-yarnexec-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-yarnexec-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-yarnexec-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-railup-yarnexec-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lp-ghmerge-none-none : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 lp-ghmerge-none-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-none-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-none-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npx-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npx-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npx-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npx-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npxy-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npxy-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npxy-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npxy-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npxyes-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npxyes-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npxyes-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npxyes-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npmexec-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npmexec-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npmexec-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npmexec-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npmexecdd-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npmexecdd-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npmexecdd-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-npmexecdd-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunx-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunx-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunx-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunx-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunx2-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunx2-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunx2-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunx2-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunrun-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunrun-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunrun-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-bunrun-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-pnpmdlx-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-pnpmdlx-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-pnpmdlx-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-pnpmdlx-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-pnpmexec-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-pnpmexec-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-pnpmexec-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-pnpmexec-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-yarndlx-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-yarndlx-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-yarndlx-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-yarndlx-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-yarnexec-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-yarnexec-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-yarnexec-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-ghmerge-yarnexec-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lp-pkg-eascli-npx  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-pkg-eascli-npmexec : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-pkg-railwaycli-npx : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
@@ -4035,6 +4384,8 @@ lp-lflag-npmexec-bool : 'eas update/publish/submit' reached through a launcher (
 lp-lflag-npmexec-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-lflag-npmexecdd-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-lflag-npmexecdd-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmx-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmx-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-lflag-bunx-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-lflag-bunx-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-lflag-bunx2-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
