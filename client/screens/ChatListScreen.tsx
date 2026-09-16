@@ -80,7 +80,8 @@ export default function ChatListScreen() {
   const haptics = useHaptics();
   const toast = useToast();
   const { reducedMotion } = useAccessibility();
-  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
   const navigation = useNavigation<ChatListNavigationProp>();
 
   const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
@@ -248,6 +249,7 @@ export default function ChatListScreen() {
             paddingTop: insets.top + Spacing.lg,
           },
         ]}
+        {...behindContentA11yProps}
       >
         <View>
           <ThemedText type="h4" style={styles.headerTitle}>
@@ -278,6 +280,7 @@ export default function ChatListScreen() {
           { backgroundColor: withOpacity(theme.text, 0.06) },
         ]}
         accessibilityRole="tablist"
+        {...behindContentA11yProps}
       >
         {(["coach", "recipe"] as const).map((segment) => {
           const isActive = activeSegment === segment;
@@ -320,6 +323,7 @@ export default function ChatListScreen() {
 
       <FlatList
         {...FLATLIST_DEFAULTS}
+        {...behindContentA11yProps}
         data={conversations}
         renderItem={renderItem}
         keyExtractor={(item) => item.id.toString()}

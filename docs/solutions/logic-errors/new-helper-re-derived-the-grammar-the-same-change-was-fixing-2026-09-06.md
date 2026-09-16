@@ -5,8 +5,9 @@ category: logic-errors
 tags: [harness, security, shell-quoting, parsing, testing]
 module: server
 applies_to: [".claude/hooks/**"]
-symptoms: ["A fix for a scanner desync ships alongside a NEW scan that has the same desync", "Every test for the new arm uses a 'clean' input that cannot exercise the bug", "The suite and the mutation run are both green over a live bypass", "A helper does its own byte-level counting next to a state machine that already answers the same question"]
+symptoms: ["A fix for a scanner desync ships alongside a NEW scan that has the same desync", "Every test for the new arm uses a 'clean' input that cannot exercise the bug", "The suite and the mutation run are both green over a live bypass", "A helper does its own byte-level counting next to a state machine that already answers the same question", "New per-construct tracking state is added to BOTH of two sibling renderings that a consumer unions together, instead of to only the one authorised to see more", "An adversarial unterminated construct (no matching closer anywhere in the input) collapses one rendering to empty, and the sibling rendering that was supposed to backstop it also comes back empty because it independently tracks the same new state"]
 created: 2026-09-06
+last_updated: '2026-09-14'
 severity: critical
 ---
 
@@ -162,10 +163,58 @@ harvest over real command history, not by review.
 - A reviewer found this by *constructing the input and running it*. Reading the arm — including
   writing its own header comment about pass-order hazards — did not.
 
+## New shared state must be gated to ONE side of a union, or an adversarial unbalanced input collapses both (2026-09-14)
+
+A later change to the same file's paren counter (closing a `case` arm's unmatched `)` — see
+`todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md`) needed to
+add **new per-construct tracking state** (a `casedepth` counter, incremented on a recognised
+`case` and decremented on `esac`) to the same two scanners this document already covers. This
+file's own rule — *"EVERY CONSUMER UNIONS THIS IN; NONE SUBSTITUTES IT FOR the deep
+rendering"* — was written about the **renderings**, and an approach-review call (before any code
+was written) surfaced that the rule applies with equal force to **new state added inside** a
+rendering's own machinery, not just to how a consumer reads the finished renderings.
+
+The two sibling renderings at stake are `cmd_words_vanished` (a per-level bare-paren *counting*
+pass) and `cmd_words_vanished_blind` (a *blind* pass that reproduces the pre-counter close
+semantics — first unquoted `)` wins — specifically so the union survives inputs the counting
+pass cannot read, such as a `(` inside a shell comment). Both passes are built from the **same**
+shared awk function, `_cmd_vanish_pass`, parameterised by a `pcount` flag.
+
+**The naive move — adding `casedepth` tracking unconditionally to `_cmd_vanish_pass`, so both
+passes get it — would have been exactly the mistake this document already names, in a new
+shape.** An **unterminated** `case` (a `case` recognised with no matching `esac` anywhere in the
+input) leaves `casedepth` permanently nonzero. In the counting pass this is the intended,
+disclosed cost — the rendering safely returns empty, per its own "unbalanced input" contract.
+But if the *blind* pass tracked `casedepth` too, the SAME unterminated `case` would ALSO empty
+the blind pass — and the blind pass is the ONLY thing backstopping the counting pass for exactly
+this shape of input. Both renderings failing on the same adversarial construction is a live
+deny→ALLOW regression, not a disclosed cost, because there is nothing left to union.
+
+**The fix: gate the new tracking to the counting pass only** (`if (pcount && ...)` on every
+branch that touches `casedepth` or the command-position anchor feeding it), leaving the blind
+pass's behaviour **completely unchanged** — it never learns about `case`/`esac` at all, and
+keeps closing at the first unquoted `)` exactly as before. Verified by construction, both
+directions: `e$(: ;case)as update --branch preview` (a genuine unterminated `case`) — the
+counting pass correctly renders empty (expected, matches its documented contract) while the
+blind pass still renders `eas update --branch preview` and the guard still denies; the required
+construction from the todo (`e$(case x in a) : ;; esac)as update --branch preview`, a
+*terminated* case with a real `esac`) is carried correctly by the counting pass alone, so the
+union loses nothing on the shape that motivated the fix.
+
+**The generalisation, one level more specific than this document's existing rule:** when a
+change needs to add NEW state to a mechanism that already backs two sibling renderings unioned
+at a consumer, ask which rendering the new state is *supposed* to help before writing the
+tracking — usually the one with narrower, more precise closing semantics — and gate the new
+state to that one alone. Adding it symmetrically "for consistency" is the natural-feeling move
+and is exactly how a union's redundancy gets silently deleted: the two renderings stop failing
+independently, which is the only property that made the union worth having.
+
 ## Related Files
 
-- `.claude/hooks/lib/cmd-detect.sh` — `arith_end()` and the `$((` arm in `cmd_words_vanished`.
-- `.claude/hooks/test-cmd-detect.sh` — the quoted-paren and `))`-evidence pins added afterwards.
+- `.claude/hooks/lib/cmd-detect.sh` — `arith_end()` and the `$((` arm in `cmd_words_vanished`;
+  `_cmd_vanish_pass`'s `pcount`-gated `casedepth` tracking (the 2026-09-14 addition above).
+- `.claude/hooks/test-cmd-detect.sh` — the quoted-paren and `))`-evidence pins added afterwards;
+  the unterminated-case union-preserving pins (`van`/`vanb` pairs) added by the same later change.
 - `.claude/hooks/test-guard-outward-cli.sh` — the end-to-end attack row plus its
   clean-arithmetic isolation control.
 

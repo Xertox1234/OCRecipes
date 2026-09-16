@@ -7,7 +7,7 @@ tags: [accessibility, talkback, voiceover, react-native, modal, overlay, focus-t
 symptoms: [Focus trap works in VoiceOver but a TalkBack user can swipe past the overlay to the controls behind it on Android, An overlay carries accessibilityViewIsModal but nothing hides the behind-content on Android]
 applies_to: [client/**/*.tsx]
 created: '2026-06-22'
-last_updated: '2026-08-28'
+last_updated: '2026-09-14'
 ---
 
 # In-screen modal overlays need an Android focus trap, not just iOS accessibilityViewIsModal
@@ -90,6 +90,7 @@ const overlayA11y = getScanOverlayA11y(!!confirmCard, productChipVisible);
 
 - **React Native `<Modal>`** already traps focus on both platforms (it's a new window on Android). You do **not** need this. The only a11y hide you may need inside a `<Modal>` is on a focusable backdrop `Pressable` — see `DeleteAccountModal.tsx` (it pairs `accessibilityElementsHidden` + `importantForAccessibility="no-hide-descendants"` on the backdrop).
 - If the overlay surface is genuinely *visually hidden but mounted* (collapsed/expanded swap), you want rule 17's pattern, not this one.
+- **Portal-rendered overlay** (e.g. `@gorhom/bottom-sheet`'s `BottomSheetModal`): the "don't complete the pair" rule above does **not** apply. A portal-rendered overlay is not a literal view-tree sibling of the host's content, so the sibling-scoped `accessibilityViewIsModal` can't be relied on to hide it (verified concretely for this library: `BottomSheetModal` has no rest-spread, so a prop like `accessibilityViewIsModal` passed to it is silently dropped — check the installed version's source, don't assume). With the iOS side unavailable, `accessibilityElementsHidden` on the host's **own** behind-content becomes the only iOS trap there is — apply it together with `importantForAccessibility="no-hide-descendants"`, both on the behind-content, never on the overlay itself. See `client/components/ConfirmationModal.tsx`'s `behindContentA11yProps` (derived from an `isOpen` state flipped `true` in the imperative `confirm()` call and `false` only once the sheet's own `onDismiss` fires, post close-animation) and the 8 screens that spread it.
 
 ## Related Files
 
@@ -97,6 +98,7 @@ const overlayA11y = getScanOverlayA11y(!!confirmCard, productChipVisible);
 - `client/screens/ScanScreenConfirmOverlay-utils.ts` — `getScanOverlayA11y` (the tested supersession helper)
 - `client/camera/components/ProductChip.tsx` — `importantForAccessibility` passthrough on an overlay component
 - `client/components/DeleteAccountModal.tsx` — the RN `<Modal>` + backdrop-hide variant
+- `client/components/ConfirmationModal.tsx` — the portal-rendered-overlay exception: `behindContentA11yProps`, applied per-element across its 8 caller screens under `client/screens/`
 - `docs/rules/accessibility.md` — rule 3 (modal root must be `accessibilityViewIsModal`) and rule 17 (visual-hide pattern)
 
 ## See Also

@@ -36,24 +36,30 @@ set -uo pipefail
 # wide open, and that is the CLAUDE.md-preferred merge path, so a half-fix is worse than
 # none. A payload matching neither shape is unaffected.
 #
+# A THIRD route joined this crude pre-check 2026-09-14, for the same reason the fast path
+# below did: `gh.*pr.*merge` alone never sees `gh api --method PUT repos/o/r/pulls/42/merge`
+# (no `pr` substring anywhere in that text), so a jq-less environment would silently allow
+# exactly the merge route this file otherwise now denies.
+# todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md
+#
 # The Bash arm is NOT the fast path repeated. `cmd_fastpath_has` matches the EXTRACTED
 # `.tool_input.command`; here there is no jq, so nothing can extract that field and the
 # grep runs against the WHOLE RAW ENVELOPE instead. That is a strictly WIDER match — it can
-# fire on `gh`/`pr`/`merge` appearing anywhere in the payload, including a `description`
-# field or another tool_input key, not just in the command being run. Deliberate: the wider
-# match is the fail-safe direction, and a narrower one is not available without the very
-# tool that is missing. Do not "align" it with the fast path.
+# fire on `gh`/`pr`/`merge` (or `gh`/`api`/`merge`) appearing anywhere in the payload,
+# including a `description` field or another tool_input key, not just in the command being
+# run. Deliberate: the wider match is the fail-safe direction, and a narrower one is not
+# available without the very tool that is missing. Do not "align" it with the fast path.
 #
 # Known over-deny that follows, accepted: any Bash payload whose raw text carries `gh`,
-# then `pr`, then `merge` in that order denies while jq is gone — `git commit -m "fix
-# highlight for pr merge"` among them. Every crude no-jq fallback in this repo makes the
-# same trade; a denied commit in an already-broken environment carries its own bypass, an
-# unreviewed merge does not.
+# then `pr`, then `merge` in that order (or `gh`, then `api`, then `merge`) denies while jq
+# is gone — `git commit -m "fix highlight for pr merge"` among them. Every crude no-jq
+# fallback in this repo makes the same trade; a denied commit in an already-broken
+# environment carries its own bypass, an unreviewed merge does not.
 if ! command -v jq >/dev/null 2>&1; then
   RAW=$(cat)
   if grep -Eq '"tool_name"[[:space:]]*:[[:space:]]*"mcp__github__merge_pull_request"' <<< "$RAW" \
      || { grep -Eq '"tool_name"[[:space:]]*:[[:space:]]*"Bash"' <<< "$RAW" \
-          && grep -q 'gh.*pr.*merge' <<< "$RAW"; }; then
+          && grep -Eq 'gh.*pr.*merge|gh.*api.*merge' <<< "$RAW"; }; then
     printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"merge-review-guard: jq unavailable - failing closed for what looks like a PR merge. Without jq no review record can be read, and review-stamp-writer.sh cannot write one either. Bypass: SKIP_MERGE_REVIEW=1 in the shell that launched Claude Code."}}'
   fi
   exit 0
@@ -85,8 +91,21 @@ case "$TOOL" in
     # It is a NECESSARY-substring filter, not a decision: `git commit -m "fix highlight
     # for pr merge"` matches it ("gh" inside "highlight", then "pr", then "merge"). Only
     # the precise detector below decides, so an ordinary commit is never denied.
+    #
+    # A SECOND needle joined this call 2026-09-14: `gh api` against the REST merge
+    # endpoint (`PUT /repos/{owner}/{repo}/pulls/{n}/merge`) is a THIRD merge route that
+    # carries no literal `pr` substring at all — `gh api --method PUT
+    # repos/o/r/pulls/42/merge` matches neither `pr` nor the old single needle, so it
+    # never reached the precise detector below and returned a silent allow.
+    # todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md
+    # Widening THIS call site (rather than adding a second, independent
+    # cmd_fastpath_has call) keeps test-cmd-detect.sh's assert_wired assertion for this
+    # hook meaningful without editing it: that assertion greps this exact line and does a
+    # SUBSTRING test (`case "$line" in *"$expect"*)`) against `'*gh*pr*merge*'`, so the
+    # original needle staying present — merely joined by a second one — leaves that pin
+    # passing unchanged (measured by running the suite after this change).
     if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
-      cmd_fastpath_has "$CMD" '*gh*pr*merge*' || exit 0
+      cmd_fastpath_has "$CMD" '*gh*pr*merge*' '*gh*api*merge*' || exit 0
     fi
     # Detection and ref resolution go through the SHARED library. Do not re-derive
     # positional extraction: cmd_gh_pr_ref's header documents three construction-proven
@@ -98,9 +117,36 @@ case "$TOOL" in
     # "$1"` sees an empty command, SUBCOMMAND comes back empty, and the `!= merge` early
     # exit below turns EVERY merge into a silent allow. Measured 2026-09-09: piped form
     # returns "" for `gh pr merge 938 --auto --squash`; argument form returns "merge"/938.
+    # THE THIRD CONJUNCT IS NOT OPTIONAL, and it was missing for one commit. This preflight
+    # exists because an undefined callee returns rc 127, and the gate below is written
+    # `if ! cmd_gh_pr_has_merge ...; then exit 0` -- so `!` inverts 127 to true and a lib
+    # that sources without defining the function becomes a SILENT ALLOW at the one
+    # ALLOW-shaped read in this file. Measured under bash 5.3.15: a defined function
+    # returning 1 takes the allow branch (correct, no merge present), a MISSING function
+    # takes the same allow branch (wrong), and a defined function returning 0 takes the
+    # deny branch. Version skew is the realistic trigger -- this hook cherry-picked without
+    # lib/cmd-detect.sh, a partially-merged tree, a stale .claude/ copy. Every function
+    # called below this line must appear in this conjunction; the `else` arm's deny is the
+    # only correct outcome when one does not. cmd_words_deep -- used by the gh-api route
+    # below -- was NOT in it when that sentence was first written, which made the sentence
+    # false about its own file. Unreachable in practice (it is defined far above
+    # cmd_gh_pr_ref, so any source defining the last necessarily defined it), but an
+    # invariant a file does not satisfy is worse than no invariant.
+    # THE CONSTANTS ARE CHECKED TOO, and documenting that they were not was not good enough.
+    # All four are interpolated unguarded below; under `set -u` an unset one kills the hook
+    # before it emits JSON, and a PreToolUse hook that exits without JSON is NON-BLOCKING --
+    # i.e. the blocking gate silently disarms, in the one direction that matters. The trigger
+    # is the same lib/consumer skew that justified the function checks. Routing them through
+    # the same conjunction sends a missing constant to the `else` deny instead of to an
+    # unguarded abort. They are tested with -n rather than declare -F because they are
+    # assignments, not functions.
     if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
        && declare -F cmd_gh_pr_write_subcommand >/dev/null \
-       && declare -F cmd_gh_pr_ref >/dev/null; then
+       && declare -F cmd_gh_pr_has_merge >/dev/null \
+       && declare -F cmd_words_deep >/dev/null \
+       && declare -F cmd_gh_pr_ref >/dev/null \
+       && [ -n "${_CMD_POS_PREFIX:-}" ] && [ -n "${_CMD_GH_GLOBALS:-}" ] \
+       && [ -n "${_CMD_POS_SUFFIX:-}" ] && [ -n "${_CMD_REDIR:-}" ]; then
       # PIPEFAIL MUST BE OFF FOR THIS CALL. cmd_gh_pr_write_subcommand signals REFUSE with
       # an explicit `return 1`, but signals NO MATCH through the rc of its trailing
       # `grep -oE … | head -1` pipeline. Under `set -o pipefail` a no-match grep makes that
@@ -147,7 +193,14 @@ case "$TOOL" in
       # redirect in BOTH slots. The same change closed a
       # separate P0: a repo-retarget flag in ROOT position (`gh -R owner/repo pr <verb> 42`)
       # sat in that same slot and reached this line as "not a merge", including with the
-      # retarget pointed at THIS repository.
+      # retarget pointed at THIS repository. That P0 was closed in TWO steps and only the
+      # first landed then: naming `-R`/`--repo` covered four spellings, but cobra takes any
+      # flag of the TARGET subcommand in root position, so ANY OTHER separate-arg flag still
+      # left its value where the namespace belongs -- `gh -t x pr merge 42 -R other/org`, a
+      # cross-repository retarget, reached this line as "not a merge" too. Closed 2026-09-13 by
+      # giving _CMD_GH_GLOBALS's generic arm an optional non-dash value token, i.e. by modelling
+      # the PROPERTY rather than naming more flags; `-Z somevalue` and `--not-a-real-flag v`
+      # are pinned in the suite precisely because neither is a real gh flag.
       # STILL OPEN, re-measured against the widened extractor and still pinned ALLOW: the
       # path-qualified binary, the glued metacharacter, and the quoted substitution. Those
       # three defeat the detector before the slot is ever reached - they are about how the
@@ -160,7 +213,13 @@ case "$TOOL" in
       # `gh      o/r pr merge 42` and the VALUE lands where the namespace belongs - SUB
       # comes back empty and this line allows. Isolating control measured the same day:
       # `gh "--no-color" pr merge 42` still resolves, so the cause is the separate value,
-      # not quoting as such. Not a regression (main behaves identically), and
+      # not quoting as such. RE-MEASURED 2026-09-13 against the value arm, which does NOT
+      # help here and was not expected to: the arm anchors on a DASH token, and blanking
+      # removes the only one, so there is nothing left for it to attach a value to. The
+      # family GREW with that change rather than shrinking -- every newly-covered flag has a
+      # quoted spelling too, e.g. `gh "-t" x pr merge 42`, measured ALLOW here and DENY in
+      # guard-outward-cli.sh. Closing it means making cmd_bare's blanking preserve token
+      # boundaries, which is a lib-wide change and P1's, not this one's. Not a regression (main behaves identically), and
       # guard-outward-cli.sh still denies it because that hook reads cmd_words, which
       # DELETES quote characters, rather than cmd_bare, which blanks the span.
       #
@@ -176,10 +235,207 @@ case "$TOOL" in
       # allows a path-qualified merge on main, and the redirect family defeats the SHARED
       # extractor in lib/cmd-detect.sh as well, so both layers miss the same row. The real
       # fix widens that shared library and re-pins the required `Outward-CLI guard corpus`
-      # check - a change of its own, exactly like the gh-api merge route
+      # check - a change of its own. P1 remains open for all of this.
+      #
+      # CLOSED 2026-09-14, SEPARATELY: the gh-api merge route
       # (todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md).
-      [ "$SUB" = "merge" ] || exit 0
-      PR=$(cmd_gh_pr_ref "$CMD") || PR=""
+      # This was never an extractor MISS in the sense above — cmd_gh_pr_write_subcommand
+      # is built to read the `gh pr <verb>` shape, and a `gh api` call correctly contains
+      # no `pr` subcommand for it to find. It is a DIFFERENT shape this file's own
+      # `gh pr` extractors were never asked to cover, so the fix lives here, in
+      # merge-review-guard.sh, rather than widening lib/cmd-detect.sh's `gh pr` matchers
+      # for an unrelated command. See the detector immediately below.
+      # RUNS UNCONDITIONALLY, and that is the whole point of this line. An earlier revision
+      # nested this scan inside `if [ "$SUB" != "merge" ]`, which made it unreachable in
+      # exactly the case that matters: when a `gh pr merge` resolves ANYWHERE in the same
+      # command, control took the `else` below, classified only that first PR, and the
+      # `gh api` merge rode through unexamined. The matcher was never the problem — it
+      # never ran. Measured (security review, 2026-09-14), no stamp, docs-only diff so the
+      # leading clause legitimately allows:
+      #     gh pr merge 938 --auto --squash; gh api -X PUT repos/o/r/pulls/999/merge  -> ALLOW
+      #     gh pr merge 938 --auto --squash && gh api -X PUT .../pulls/999/merge      -> ALLOW
+      #     gh api -X PUT .../pulls/999/merge; gh pr merge 938 --auto --squash        -> ALLOW
+      # and with both PreToolUse guards in sequence the whole chain permitted an unreviewed
+      # merge. The no-jq crude fallback still denied it (it greps the raw envelope), so the
+      # hole was specific to the normal, jq-present path — the one that actually runs.
+        # `gh api` against the REST merge route (`PUT /repos/{owner}/{repo}/pulls/{n}/merge`)
+        # is a merge this gate must also see. Detected independently of
+        # cmd_gh_pr_write_subcommand/cmd_gh_pr_ref (both scoped to `gh pr <verb>`), reusing
+        # cmd-detect.sh's own shared command-position primitives
+        # (_CMD_POS_PREFIX/_CMD_GH_GLOBALS/_CMD_POS_SUFFIX/cmd_words_deep) the same way
+        # guard-outward-cli.sh composes its OWN separate gh-api mutation check from them —
+        # not a widening of cmd-detect.sh itself, which stays untouched.
+        #
+        # THE CLAUSE CUT mirrors guard-outward-cli.sh's _GH_API_CUT: from `gh <globals>
+        # api` through the next real separator (;&|), so a LATER, unrelated clause on the
+        # same compound command cannot donate this one's method flag or endpoint text.
+        # cmd_words_deep, not cmd_bare_deep: this predicate is PURELY DENY-shaped (it
+        # never grants anything), so per
+        # docs/solutions/logic-errors/widening-is-safe-on-every-deny-read-and-a-false-grant-at-the-one-allow-read-2026-09-13.md
+        # reusing the wide, shared _CMD_GH_GLOBALS here (rather than a grant-safe narrowed
+        # sibling, which only that solution's ONE grant-shaped consumer needs) is the safe
+        # direction — over-capture here can only ADD a deny.
+        #
+        # BOTH CONJUNCTS ARE LOAD-BEARING, mirroring guard-outward-cli.sh's own ambiguity
+        # for this exact endpoint:
+        #   - a MUTATING method (-X/--method POST/PUT/PATCH/DELETE) — the bare GET default
+        #     on this same path is "has PR #n been merged?" (a real, read-only REST route),
+        #     not a merge; requiring the method flag is what keeps that read silent below.
+        #   - `pulls` then `merge` in the clause — the merge sub-resource path specifically,
+        #     not any mutating `gh api` call (an unrelated mutating endpoint is
+        #     guard-outward-cli.sh's concern, not this merge-specific gate's).
+        # Measured (script, not assumed): a bare `-m "docs: … gh api … pulls/N/merge …"`
+        # commit message never reaches this clause — the anchor requires real command
+        # position, and inside a quoted arg cmd_words glues the whole span into one token
+        # with no real separator for the anchor to match. A `gh api` clause hidden after a
+        # PRIOR, benign `gh api` clause on the same line is still caught: every matched
+        # clause is scanned, not only the first (a corpus-shape lesson from
+        # docs/solutions/conventions/one-axis-at-a-time-corpus-misses-co-occurrence-checks-2026-09-01.md).
+        #
+        # STILL OPEN, named rather than silently missed (security review, 2026-09-14):
+        # `gh api --help` documents that the method defaults to POST, not GET, whenever
+        # ANY `-f`/`-F`/`--raw-field`/`--field` is present, with no `-X`/`--method` token
+        # anywhere in the text — so a call relying on that implicit POST reaches neither
+        # conjunct above. Two constructions confirmed a silent ALLOW here: `gh api
+        # repos/o/r/pulls/938/merge -f merge_method=squash` (this endpoint's real-world
+        # effect on an implicit POST is unconfirmed — GitHub's merge route is documented
+        # PUT-only) and `gh api graphql -f query='mutation { mergePullRequest(...) }'` (a
+        # GENUINE, functioning merge — POST is graphql's own correct method, no PUT
+        # involved, and this text contains neither `pulls` nor a method flag at all, so it
+        # is a different SHAPE this two-conjunct detector was never built to parse, not an
+        # extension of the REST-path shape it targets).
+        #
+        # A THIRD shape is likewise unhandled and belongs in this list: `gh api
+        # repos/o/r/pulls/42/merge --input body.json` reaches neither conjunct
+        # (probe-confirmed silent ALLOW, no `-X`/`--method` and no field flag present).
+        # SETTLED 2026-09-15 against gh's SOURCE, which is what an earlier revision of this
+        # comment asked for and then did not do. `gh api --help` ties the implicit-POST
+        # switch to FIELD PARAMETERS specifically ("the default HTTP request method is GET
+        # normally and POST if any parameters were added"), and documents `--input` only as
+        # a body source — so the manual alone left the method question open, and this
+        # comment recorded it as UNVERIFIED. The source does not leave it open.
+        # cli/cli `pkg/cmd/api/api.go:329-330`:
+        #     if !opts.RequestMethodPassed && (len(params) > 0 || opts.RequestInputFile != "") {
+        #         method = "POST"
+        #     }
+        # `RequestInputFile` IS `--input` (api.go:301) and `RequestMethodPassed` is
+        # `c.Flags().Changed("method")` (api.go:236). So `--input` alone flips the default
+        # to POST exactly like a field parameter — it is a confirmed mutating shape, not an
+        # unverified one, and todos/P1-2026-09-07-outward-cli-path-wrapper.md:387 already
+        # classifies it that way for the same reason.
+        #
+        # What remains genuinely open is narrower and worth stating precisely so nobody
+        # re-litigates the settled half: the EFFECT of a POST on /pulls/{n}/merge, which
+        # GitHub documents as PUT-only. That was deliberately not settled empirically —
+        # this is a merge endpoint, and constructing the call to find out is the exact act
+        # this guard exists to prevent.
+        #
+        # Confirmed zero-delta from main:
+        # guard-outward-cli.sh (untouched by this change) allows the graphql construction
+        # too, so this gate did not remove coverage that existed. Already named, not yet
+        # closed, at todos/P1-2026-09-07-outward-cli-path-wrapper.md:387 ("gh api graphql,
+        # which is a different shape"). Closing it needs either widening this conjunct to
+        # `-f`/`-F` presence (mirroring the unreadable-value arm below) plus a SEPARATE
+        # graphql-mutation-body detector — a different scope than this todo's stated REST
+        # `/pulls/<n>/merge` route — or is better tracked as its own todo entirely.
+        MRG_API_CUT="${_CMD_POS_PREFIX}gh${_CMD_GH_GLOBALS}[[:space:]]+api${_CMD_POS_SUFFIX}([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*"
+        # THE FLAG->VALUE SEPARATOR MUST ABSORB A REDIRECT, same fix guard-outward-cli.sh
+        # already carries for its OWN gh-api mutating-method check (that file, dated
+        # 2026-09-07, "THE FLAG->VALUE SEPARATOR TAKES THE ABSORBER" — `gh api ... -X DELETE`
+        # denied there while `gh api ... -X 2>&1 DELETE` silently allowed, identical real
+        # argv, confirmed by an argv-dumping stub). A hand-spelled `([[:space:]]|=)*` here
+        # reintroduced the SAME pre-fix, vulnerable shape: measured (security review,
+        # 2026-09-14) that `gh api -X 2>&1 PUT repos/o/r/pulls/938/merge` genuinely invokes
+        # `gh` with argv `[api -X PUT repos/o/r/pulls/938/merge]` (confirmed under both bash
+        # and zsh with an argv-dumping stub) yet the un-absorbed separator let it through
+        # silently. MRG_SEP is built from the SAME `_CMD_REDIR` this file already sources,
+        # mirroring guard-outward-cli.sh's `_OUT_SEP` composition rather than re-deriving it.
+        MRG_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
+        # Case-insensitive VALUE, case-SENSITIVE flag (`-X`/`--method`) — same split
+        # guard-outward-cli.sh states for itself: a case-insensitive `-x` collides with the
+        # lowercase `x` placeholder cmd_words inserts for characters deleted from a quoted
+        # span, so a quoted value merely containing enough letters could forge a match.
+        MRG_API_M='([Pp][Oo][Ss][Tt]|[Pp][Uu][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])'
+        set +o pipefail
+        MRG_API_WORDS=$(cmd_words_deep "$CMD")
+        MRG_API_CLAUSES=$(printf '%s' "$MRG_API_WORDS" | grep -ioE "$MRG_API_CUT")
+        set -o pipefail
+        MRG_API_HIT=""
+        while IFS= read -r MRG_API_CLAUSE; do
+          [ -n "$MRG_API_CLAUSE" ] || continue
+          printf '%s' "$MRG_API_CLAUSE" | grep -qiE 'pulls.*merge' || continue
+          # Two ways this clause proves a mutating method: the value is a recognized
+          # literal (glued `-XPUT`, or separated by whitespace/redirect/`=`), OR a
+          # -X/--method flag is present at all alongside a `$`/backtick anywhere in the
+          # clause — an UNREADABLE value (a substitution supplying it) cannot be verified
+          # read-only, so it fails closed exactly like guard-outward-cli.sh's own sibling
+          # check for the same reason: "cannot verify -> deny". Measured (security review,
+          # 2026-09-14): `gh api -X "$(echo PUT)" repos/o/r/pulls/938/merge` renders the
+          # value as the cmd_words placeholder text, not the literal "PUT", so the literal
+          # match alone missed it — this second arm is what catches it.
+          if printf '%s' "$MRG_API_CLAUSE" | grep -Eq "(^|[[:space:]])(-X${MRG_API_M}${_CMD_POS_SUFFIX}|(-X|--method)(${MRG_SEP}|=)${MRG_API_M}${_CMD_POS_SUFFIX})" \
+             || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq '(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)' \
+                  && printf '%s' "$MRG_API_CLAUSE" | grep -qE '[$`]'; }; then
+            MRG_API_HIT=1
+            break
+          fi
+        done <<< "$MRG_API_CLAUSES"
+        # ORDER MATTERS: the api hit is checked FIRST, before $SUB is consulted at all.
+        # A command carrying BOTH a `gh pr merge` and a `gh api` merge names two different
+        # merges, and this gate classifies exactly one PR — so there is no answer it could
+        # give that covers both. Denying is the only correct response, and it matches the
+        # multi-write-subcommand refuse above, which declines for the same reason.
+        if [ -n "$MRG_API_HIT" ]; then
+          # No new extraction: this raw REST path is not something cmd_gh_pr_ref can
+          # resolve a PR number from (it is built for `gh pr <verb> <ref>`, not a URL
+          # path), so route through the SAME ref-less deny every other unresolvable-ref
+          # cause below already uses — fail closed, uniformly, rather than hand-rolling a
+          # second URL parser in a file whose own header already warns against
+          # re-deriving positional extraction. Set unconditionally: when a `gh pr merge`
+          # also resolved, its ref is deliberately DISCARDED rather than classified, since
+          # classifying it would allow the api merge riding alongside it.
+          PR=""
+        else
+          # ANY rc THAT IS NEITHER 0 NOR 1 FAILS CLOSED. `if ! <cmd>` collapses every
+          # non-zero status into one answer, and this read -- the only ALLOW-shaped one in
+          # the file -- has been bitten by that twice: rc 127 when the function was undefined
+          # under lib/consumer skew, and rc 141 when SIGPIPE hit past the 64KB pipe buffer.
+          # Both were fixed one spelling at a time. This handles the CLASS: grep's own rc 2,
+          # reachable by corrupting a shared constant, inverted to ALLOW under the old shape
+          # too. "I could not tell" is not "there is no merge here", and only one of those is
+          # safe to answer with exit 0.
+          MRG_HAS_RC=0
+          cmd_gh_pr_has_merge "$CMD" || MRG_HAS_RC=$?
+          if [ "$MRG_HAS_RC" -ne 0 ] && [ "$MRG_HAS_RC" -ne 1 ]; then
+            deny "Blocked: merge-review-guard could not determine whether this command contains a \`gh pr merge\`. The existence check returned $MRG_HAS_RC, which is neither \"found\" (0) nor \"absent\" (1) -- so this fails closed rather than guessing. $BYPASS"
+          fi
+          if [ "$MRG_HAS_RC" -eq 1 ]; then
+          # EXISTENCE, NOT FIRST-OCCURRENCE -- this is the one ALLOW-shaped read in this
+          # file, so it must be monotone under a widening of the shared grammar. It used to
+          # ask `[ "$SUB" != "merge" ]`, i.e. "is the FIRST gh-pr clause a merge", and $SUB
+          # comes from a `grep -oE ... | head -1`. Widening _CMD_GH_GLOBALS to admit a
+          # separate-arg root flag made a LEADING `gh <flag> <value> pr close ...` clause
+          # match where it previously did not; it then won head -1, $SUB read "close", and
+          # this branch exited 0 -- allowing the real `gh pr merge` later in the same
+          # command through with no review record. Measured DENY -> ALLOW on three flag
+          # families, including the ALLOW_OUTWARD_CLI=1-prefixed shape this repo merges
+          # with. Asking whether a merge occurrence EXISTS cannot regress that way: a wider
+          # grammar finds more occurrences, never fewer.
+          # $SUB is still read above -- its rc 1 refuse is handled before this point -- and
+          # is still the right value for the advisory consumers; only this gate changed.
+          # ACCEPTED COST, so the next reader does not re-litigate it as a bug: a TRAILING
+          # comment decoy -- `gh pr close 1 # gh pr merge 42` -- now denies where it
+          # previously allowed, because cmd_bare does not strip comments and the mention is
+          # real text. The operator sees the ref-less "cannot tell which PR" deny and splits
+          # the command. That is the restrictive direction, and it is the identical tradeoff
+          # cmd_gh_pr_write_subcommand already accepts and documents for its own trailing
+          # create decoy. A QUOTED mention is unaffected -- `git commit -m "gh pr merge 42"`
+          # still allows, because cmd_bare blanks the quoted span -- which is the row that
+          # would matter if this were over-denying in practice.
+            exit 0
+          fi
+          PR=$(cmd_gh_pr_ref "$CMD") || PR=""
+        fi
     else
       deny "Blocked: merge-review-guard could not load .claude/hooks/lib/cmd-detect.sh, so it cannot tell which PR this merges. Fail-closed. $BYPASS"
     fi
@@ -248,7 +504,16 @@ case "$PR" in
     # it denies only the non---auto form — so it arrives here and is denied unconditionally,
     # before any risk classification, even on a docs-only PR. A human who reads
     # "obfuscated or --repo" first has to guess that "the ref is missing" is their case.
-    deny "Blocked: merge-review-guard could not resolve a PR number from this merge, so it cannot tell which PR to classify. The usual cause is that NO number was given — \`gh pr merge --auto --squash\` merges the current branch's PR, and this gate deliberately will not infer that: the Bash tool's cwd persists and can differ from the branch being merged, so inferring would risk classifying one PR while merging another. Re-run as \`gh pr merge <number> --auto --squash …\`. The other two causes are a ref obfuscated by a shell substitution and a \`--repo\` retarget, both of which the shared extractor refuses to guess at. $BYPASS" ;;
+    #
+    # A FOURTH cause joined this deny 2026-09-14, without a new message: a `gh api` call
+    # against the raw REST merge route also arrives here with PR="" (see the detector
+    # above) — it genuinely names a PR number in its URL, but not in a shape
+    # cmd_gh_pr_ref can read, so this is still the correct, honest answer ("cannot
+    # resolve a PR number FROM THIS MERGE COMMAND'S SHAPE"), and the remedy this message
+    # already gives — re-run as `gh pr merge <number> ...` — is the right one for that
+    # caller too. Named explicitly in the message so it doesn't read as pure `gh pr
+    # merge` advice to someone who typed `gh api`.
+    deny "Blocked: merge-review-guard could not resolve a PR number from this merge, so it cannot tell which PR to classify. The usual cause is that NO number was given — \`gh pr merge --auto --squash\` merges the current branch's PR, and this gate deliberately will not infer that: the Bash tool's cwd persists and can differ from the branch being merged, so inferring would risk classifying one PR while merging another. Re-run as \`gh pr merge <number> --auto --squash …\`. The other causes are a ref obfuscated by a shell substitution, a \`--repo\` retarget (both of which the shared extractor refuses to guess at), and a merge attempted via \`gh api\` against the raw REST route — this gate cannot resolve a PR number out of a URL path, only out of \`gh pr merge\`'s own argument shape. $BYPASS" ;;
 esac
 
 GUARD="$ROOT/scripts/todo-automerge-guard.sh"

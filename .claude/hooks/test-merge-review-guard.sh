@@ -170,6 +170,134 @@ assert_allowed "fast-path hit that is not a merge stays silent" "$out"
 out=$(bash_payload "gh pr create --title x --body y" | run)
 assert_allowed "gh pr create is not gated" "$out"
 
+# ── gh api merge route (P2) ──────────────────────────────────────────────────
+# todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md
+# A THIRD merge route: `gh api` against the REST merge endpoint carries no `pr`
+# substring at all, so it must be detected independently of
+# cmd_gh_pr_write_subcommand/cmd_gh_pr_ref (both scoped to `gh pr <verb>`). These rows
+# do not depend on FAKE_FILES/stamp state — the new detector routes straight through
+# the ref-less deny (or an early allow) before stage 1/2/3 are ever reached.
+
+# 3a. DENY. --method PUT spelling, an -f field carrying the merge strategy.
+out=$(bash_payload 'gh api --method PUT repos/Xertox1234/OCRecipes/pulls/938/merge -f merge_method=squash' | run)
+denied "$out" && ok "gh api --method PUT against pulls/N/merge denies" \
+              || bad "gh api --method PUT against pulls/N/merge denies" "$out"
+
+# 3b. DENY. -X spelling, path-only (no -f fields).
+out=$(bash_payload 'gh api -X PUT /repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "gh api -X PUT against pulls/N/merge denies" \
+              || bad "gh api -X PUT against pulls/N/merge denies" "$out"
+
+# 3b-i..iv. THE PIGGYBACK. A `gh pr merge` anywhere in the same command used to make the
+#     gh-api scan unreachable: the detector was nested inside `if [ "$SUB" != "merge" ]`,
+#     so a resolved `gh pr merge` took the else, only that first PR was classified, and the
+#     api merge rode through unexamined.
+#
+#     FILES_SAFE IS LOAD-BEARING HERE, and the first version of this block omitted it and
+#     therefore tested nothing. With a RISKY diff the leading `gh pr merge 938` denies on
+#     its own for want of a stamp, so all three rows below pass whether or not the api
+#     merge is ever seen — measured: the bug reinstated still gave 98/0. A safe diff makes
+#     the leading clause legitimately ALLOW, so a deny can only come from the api merge.
+#     Case 3b-i is that control and must stay first: without it these are three assertions
+#     that cannot fail.
+MRG_PIGGY_FILES_SAVE="$FAKE_FILES"
+export FAKE_FILES="$FILES_SAFE"
+
+out=$(bash_payload 'gh pr merge 938 --auto --squash' | run)
+assert_allowed "CONTROL: the leading pr-merge clause alone allows on a safe diff" "$out"
+
+out=$(bash_payload 'gh pr merge 938 --auto --squash; gh api -X PUT repos/Xertox1234/OCRecipes/pulls/999/merge' | run)
+denied "$out" && ok "a gh-api merge piggybacked after pr merge (;) still denies" \
+              || bad "a gh-api merge piggybacked after pr merge (;) still denies" "$out"
+
+out=$(bash_payload 'gh pr merge 938 --auto --squash && gh api -X PUT repos/Xertox1234/OCRecipes/pulls/999/merge' | run)
+denied "$out" && ok "a gh-api merge piggybacked after pr merge (&&) still denies" \
+              || bad "a gh-api merge piggybacked after pr merge (&&) still denies" "$out"
+
+out=$(bash_payload 'gh api -X PUT repos/Xertox1234/OCRecipes/pulls/999/merge; gh pr merge 938 --auto --squash' | run)
+denied "$out" && ok "a gh-api merge BEFORE pr merge still denies" \
+              || bad "a gh-api merge BEFORE pr merge still denies" "$out"
+
+export FAKE_FILES="$MRG_PIGGY_FILES_SAVE"
+
+# 3c. DENY. The ALLOW_OUTWARD_CLI=1 escape belongs to the SIBLING guard
+#     (guard-outward-cli.sh) and must not be inherited here — this gate never reads
+#     that variable at all (grep it: zero hits).
+out=$(bash_payload 'ALLOW_OUTWARD_CLI=1 gh api -X PUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "ALLOW_OUTWARD_CLI=1 prefix does not bypass the merge gate" \
+              || bad "ALLOW_OUTWARD_CLI=1 prefix does not bypass the merge gate" "$out"
+
+# 3d. DENY. A benign gh api clause followed by the REAL merge in a SECOND gh api
+#     clause on the same compound command — proves every matched clause is scanned,
+#     not only the first (docs/solutions/conventions/one-axis-at-a-time-corpus-misses-co-occurrence-checks-2026-09-01.md).
+out=$(bash_payload 'gh api repos/Xertox1234/OCRecipes; gh api -X PUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "a real merge in a LATER gh api clause still denies" \
+              || bad "a real merge in a LATER gh api clause still denies" "$out"
+
+# 3e. The deny names the ACTUAL cause (gh api / REST route) and the gh-pr-merge
+#     remedy, not just a bare re-use of the missing-number wording.
+r=$(reason "$(bash_payload 'gh api -X PUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)")
+if grep -qi 'gh api' <<<"$r" && grep -qi 'gh pr merge' <<<"$r"; then
+  ok "gh-api-merge deny names the actual route and the gh pr merge remedy"
+else
+  bad "gh-api-merge deny names the actual route and the gh pr merge remedy" "$r"
+fi
+
+# 3f. ALLOW CONTROL. An ordinary read-only gh api call — no pulls/merge in the path.
+out=$(bash_payload 'gh api repos/Xertox1234/OCRecipes' | run)
+assert_allowed "ordinary read-only gh api call stays silent" "$out"
+
+# 3g. ALLOW CONTROL. The real, read-only "has PR N been merged?" REST route — same
+#     path, no method flag (defaults GET). It does not merge anything.
+out=$(bash_payload 'gh api repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+assert_allowed "read-only merge-status check (no method flag) stays silent" "$out"
+
+# 3h. ALLOW CONTROL. A mutating gh api call against an UNRELATED endpoint — this
+#     gate's business is the merge sub-resource specifically, not every mutating call.
+out=$(bash_payload 'gh api -X POST repos/Xertox1234/OCRecipes/issues/938/lock' | run)
+assert_allowed "mutating gh api call against an unrelated endpoint stays silent" "$out"
+
+# 3i. ALLOW CONTROL, the prose direction — the regression this whole route most needs
+#     to avoid repeating (see the withdrawn raw-token predicates in the P1 todo). A
+#     commit message merely mentioning the endpoint text must never be denied.
+out=$(bash_payload 'git commit -m "docs: explain the gh api -X PUT pulls/N/merge route"' | run)
+assert_allowed "commit message mentioning the gh-api merge endpoint is not denied" "$out"
+
+# 3j/3k. DENY. A redirect sitting in the flag->value separator (same class
+#     guard-outward-cli.sh already fixed for its own gh-api mutating-method check,
+#     2026-09-07 "THE FLAG->VALUE SEPARATOR TAKES THE ABSORBER"). Confirmed by
+#     construction: `gh api -X 2>&1 PUT repos/o/r/pulls/N/merge` genuinely invokes gh
+#     with argv [api -X PUT repos/o/r/pulls/N/merge] under both bash and zsh (an
+#     argv-dumping stub), so this is real argv, not decoy text.
+out=$(bash_payload 'gh api -X 2>&1 PUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "redirect in the -X/value separator still denies" \
+              || bad "redirect in the -X/value separator still denies" "$out"
+out=$(bash_payload 'gh api --method 2>&1 PUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "redirect in the --method/value separator still denies" \
+              || bad "redirect in the --method/value separator still denies" "$out"
+
+# 3l. DENY. A method value supplied by a live command substitution cannot be verified
+#     read-only — the literal-value match alone cannot see it (cmd_words renders the
+#     substitution as a placeholder, not "PUT"), so a second, presence-only arm
+#     (-X/--method co-occurring with $/backtick anywhere in the clause) is what fails
+#     this closed, mirroring guard-outward-cli.sh's own "cannot verify -> deny" check.
+out=$(bash_payload 'gh api -X "$(echo PUT)" repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "a substituted method value fails closed" \
+              || bad "a substituted method value fails closed" "$out"
+
+# 3m. DENY CONTROL. The glued short form (-XPUT, no separator at all) must keep
+#     denying — the redirect-absorbing separator must not have narrowed this.
+out=$(bash_payload 'gh api -XPUT repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "glued -XPUT still denies" || bad "glued -XPUT still denies" "$out"
+
+# 3n. DENY CONTROL. A redirect glued to the TRAILING boundary of the value
+#     (`-X PUT>/dev/null`, not between the flag and the value) is a different
+#     position than 3j/3k and must already be covered by the closer class
+#     (_CMD_POS_SUFFIX), not by the separator fix.
+out=$(bash_payload 'gh api -X PUT>/dev/null repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
+denied "$out" && ok "trailing redirect glued to the value still denies" \
+              || bad "trailing redirect glued to the value still denies" "$out"
+
 # ── Stage 2: content risk ────────────────────────────────────────────────────
 
 # 4. ALLOW. Safe paths need no stamp.
@@ -597,19 +725,35 @@ for spelling in \
   assert_allowed "KNOWN GAP, namespace->verb slot (see P1 todo): [$spelling]" "$out"
 done
 
-# STILL OPEN, and deliberately still pinned as ALLOW. The 2026-09-13 change closed the
-# binary-to-namespace SLOT; it did not touch how the BINARY ITSELF is rendered. These three
-# are P1 mechanism (a) (glued metacharacter) and (c) (quoted substitution), plus the
-# path-qualified spelling — all of which defeat the detector before the slot is ever
-# reached. Converting them is P1's remaining work, not this change's.
-# Re-measured 2026-09-13 against the widened extractor: all three still ALLOW.
+# TWO STILL OPEN, ONE CLOSED 2026-09-15 -- and the split is the point of this block. The
+# 2026-09-13 change closed the binary-to-namespace SLOT; it did not touch how the BINARY
+# ITSELF is rendered. Three spellings defeated the detector before the slot was reached:
+# the path-qualified binary, P1 mechanism (a) (glued metacharacter) and P1 mechanism (c)
+# (quoted substitution).
+#
+# Mechanism (a) is now CLOSED AT THIS CALL SITE ONLY, as a side effect of unioning
+# _CMD_POS_PREFIX into cmd_gh_pr_has_merge's anchor -- that union exists because a merge
+# glued to its separator was invisible to the one read that routes to ALLOW. Measured on
+# this tree through the helper, with `gh pr merge 42 --squash` SEEN and `npm run lint`
+# missed as controls in the same run:
+#   /opt/homebrew/bin/gh ...   missed   (still open -- "/" is not a _CMD_POS_PREFIX opener)
+#   echo x;gh ...              SEEN     (CLOSED, moved to the deny pin below)
+#   "$(which gh)" ...          missed   (still open -- cmd_bare blanks the quoted span)
+# The other two remain P1's work. Do NOT read this as the extractor-miss class being fixed:
+# it is closed for one mechanism, at one consumer, and the todo stays open.
 for spelling in \
   '/opt/homebrew/bin/gh pr merge 42 --squash' \
-  'echo x;gh pr merge 42 --squash' \
   '"$(which gh)" pr merge 42 --squash' ; do
   out=$(bash_payload "$spelling" | run)
-  assert_allowed "KNOWN GAP (see P1 todo): [$spelling]" "$out"
+  assert_allowed "KNOWN GAP, still open (see P1 todo): [$spelling]" "$out"
 done
+
+# The closed one, pinned in its new direction rather than deleted -- a gap that closes has
+# to be named, and a row that silently changes sides is how a later reader concludes the
+# class was never real.
+_lbl="P1 mechanism (a) CLOSED: a merge glued to a metacharacter is now seen [echo x;gh ...]"
+out=$(bash_payload 'echo x;gh pr merge 42 --squash' | run)
+denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
 
 # ── The P0's own family: a repo-retarget flag in ROOT POSITION ────────────────
 # `gh -R owner/repo pr merge 42` is a FUNCTIONAL invocation (cobra strips flags while
@@ -617,7 +761,7 @@ done
 # reached the `[ "$SUB" = "merge" ]` test as "not a merge" and was silently allowed —
 # including with the retarget pointed at THIS repository. Both guards missed the same
 # string, so the defence in depth was depth of one.
-# todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
+# todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
 for spelling in \
   'gh -R other/org pr merge 42 --squash' \
   'gh --repo other/org pr merge 42 --squash' \
@@ -643,6 +787,56 @@ else
       "denied=$(denied "$out" && echo yes || echo no) reason=[$r]"
 fi
 
+# ── The SECOND HALF of the same P0: a root flag this grammar does not NAME ────
+# The five spellings above were closed on 2026-09-13 by naming `-R`/`--repo`. That looked
+# complete and was not: cobra accepts any flag of the TARGET subcommand in root position, so
+# `gh -t x pr merge 42` left `x` where the namespace belongs and resolved no subcommand at all
+# — reaching `[ "$SUB" = "merge" ]` as "not a merge", the same silent allow, one spelling over.
+# Closed by modelling the PROPERTY (a dash token may consume a following non-dash token)
+# rather than by naming more flags, which is why the `-Z` and `--not-a-real-flag` rows are
+# here: neither exists in any `gh`, and a membership-list fix would leave both open.
+for spelling in \
+  'gh -t x pr merge 42 --squash' \
+  'gh -b body pr merge 42 --squash' \
+  'gh -A a@b.c pr merge 42 --squash' \
+  'gh -F notes.md pr merge 42 --squash' \
+  'gh --match-head-commit abc123 pr merge 42 --squash' \
+  'gh -Z somevalue pr merge 42 --squash' \
+  'gh --not-a-real-flag v pr merge 42 --squash' ; do
+  out=$(bash_payload "$spelling" | run)
+  denied "$out" && ok "an unnamed separate-arg root flag is no longer a silent allow: [$spelling]" \
+                || bad "an unnamed separate-arg root flag is no longer a silent allow: [$spelling]" "$out"
+done
+
+# THE HEADLINE SHAPE, and again THE DENY ALONE IS NOT THE ASSERTION. `gh -t x pr merge 42
+# -R other/org` must refuse at REF RESOLUTION — if it instead reached stage 3 it would be
+# classifying the LOCAL PR #42 while gh merges someone else's, and the deny text would be
+# byte-identical to a bare merge's. That is the exact trap the trailing-retarget row above
+# was written for; it applies here too, so it is asserted here too.
+for spelling in \
+  'gh -t x pr merge 42 -R other/org' \
+  'gh -Z v pr merge 42 --repo other/org' ; do
+  out=$(bash_payload "$spelling" | run)
+  r=$(reason "$out")
+  if denied "$out" && printf '%s' "$r" | grep -qi 'could not resolve a PR number'; then
+    ok "root flag + retarget refuses at ref resolution: [$spelling]"
+  else
+    bad "root flag + retarget refuses at ref resolution: [$spelling]" \
+        "denied=$(denied "$out" && echo yes || echo no) reason=[$r]"
+  fi
+done
+
+# TWO-SIDED for the value arm specifically: a NO-ARG root flag puts the namespace in the very
+# next token, so the grammar must DECLINE to consume it. If it consumed it these would go
+# silently ALLOW — the value arm's own failure direction, and the one it could have caused.
+for spelling in \
+  'gh --no-color pr merge 42 --squash' \
+  'gh -q -v --no-color pr merge 42 --squash' ; do
+  out=$(bash_payload "$spelling" | run)
+  denied "$out" && ok "a NO-ARG root flag still reaches the gate: [$spelling]" \
+                || bad "a NO-ARG root flag still reaches the gate: [$spelling]" "$out"
+done
+
 # THE OTHER DIRECTION, in the same run. A root-position flag on a READ-ONLY command must
 # stay silently allowed — widening the extractor must not turn `gh -R owner/repo pr list`
 # into a gated call. Without these the deny rows above are a restrictive failure wearing a
@@ -650,7 +844,10 @@ fi
 for spelling in \
   'gh -R other/org pr list' \
   'gh -R other/org pr view 42' \
-  'gh 2>/dev/null pr view 42' ; do
+  'gh 2>/dev/null pr view 42' \
+  'gh -t x pr list' \
+  'gh -Z somevalue pr view 42' \
+  'gh --no-color pr status' ; do
   out=$(bash_payload "$spelling" | run)
   assert_allowed "read-only usage in the same slot stays allowed: [$spelling]" "$out"
 done
@@ -663,7 +860,8 @@ for prose in \
   'git commit -m "docs: describe the gh pr merge gate"' \
   'git commit -m "highlight: through pr merge notes"' \
   'git commit -m "highlight: cost $var pr merge plan"' \
-  'git commit -m "fix highlight for pr merge"' ; do
+  'git commit -m "fix highlight for pr merge"' \
+  'git commit -m "docs: gh -t x pr merge 42 was allowed by both layers"' ; do
   out=$(bash_payload "$prose" | run)
   assert_allowed "prose must never be denied: [$prose]" "$out"
 done
@@ -818,14 +1016,20 @@ if [ -x "$NOJQ_BIN/bash" ] && ! PATH="$NOJQ_BIN" command -v jq >/dev/null 2>&1; 
   out=$(bash_payload "gh pr merge 938 --auto --squash" | run PATH="$NOJQ_BIN")
   denied "$out" && ok "no jq: Bash merge route denies" || bad "no jq: Bash merge route denies" "$out"
 
-  # 43. ALLOW CONTROL — without it, 41/42 only say "this hook denies everything once jq is
-  #     gone", which would be its own restrictive failure. An unrelated Bash call must
+  # 42b. The gh-api merge route (P2) — the no-jq fallback's own crude pre-check needed the
+  #      same second alternative the fast path did, or a jq-less environment would silently
+  #      allow exactly the merge shape the rest of this file now denies.
+  out=$(bash_payload 'gh api --method PUT repos/Xertox1234/OCRecipes/pulls/938/merge -f merge_method=squash' | run PATH="$NOJQ_BIN")
+  denied "$out" && ok "no jq: gh-api merge route denies" || bad "no jq: gh-api merge route denies" "$out"
+
+  # 43. ALLOW CONTROL — without it, 41/42/42b only say "this hook denies everything once jq
+  #     is gone", which would be its own restrictive failure. An unrelated Bash call must
   #     still pass through silently, AND exit 0 while doing so.
   out=$(bash_payload "npm run lint" | run PATH="$NOJQ_BIN")
   assert_allowed "no jq: unrelated Bash command is untouched" "$out"
 
   # 44. ALLOW CONTROL — the documented bypass still works with no jq (it is read before the
-  #     jq probe), so 41/42 are evidence about the missing tool, not about a blanket deny.
+  #     jq probe), so 41/42/42b are evidence about the missing tool, not about a blanket deny.
   out=$(mcp_payload 938 | run PATH="$NOJQ_BIN" SKIP_MERGE_REVIEW=1)
   assert_allowed "no jq: SKIP_MERGE_REVIEW still bypasses" "$out"
 else
@@ -833,12 +1037,203 @@ else
 fi
 rm -rf "$NOJQ_BIN"
 
+# ---------------------------------------------------------------------------------------
+# MERGE-GATE MIS-SELECTION (2026-09-15). A leading `gh <root flag> <value> pr close` clause
+# used to win cmd_gh_pr_write_subcommand's `head -1`, so the gate read the verb as "close"
+# and early-exited ALLOW while a real merge sat later in the same command. Pinned as a
+# FAMILY, not a single spelling, because the bug is a property of the flag CLASS (any
+# unnamed separate-arg root flag), not of any one flag.
+#
+# THE FIVE LOOP SPELLINGS ARE NOT ALL THE SAME KIND OF ROW, and an earlier version of this
+# header said they were ("every row here was MEASURED flipping main-DENY to branch-ALLOW"),
+# which this suite's own measured table contradicts. They split:
+#   REGRESSION PINS (3) -- main DENY, pre-fix ALLOW, post-fix DENY:
+#       -t x, -Z somevalue, --match-head-commit abc
+#   NET-NEW COVERAGE (2) -- main ALLOW, pre-fix ALLOW, post-fix DENY, i.e. a hole main has
+#   today and this branch closes:
+#       --no-color, -R o/r
+# The distinction is load-bearing in one direction: a later reader "restoring main's
+# behaviour" would read the old header as licence to delete the two rows main never
+# covered. Describing a filtered set as if it were the whole set is the defect this PR's
+# own solution docs are about.
+export FAKE_FILES="$FILES_ONE"
+
+for _mrgflag in '-t x' '-Z somevalue' '--match-head-commit abc' '--no-color' '-R o/r'; do
+  _lbl="a leading pr close clause carrying [$_mrgflag] cannot mask a later merge"
+  out=$(bash_payload "gh $_mrgflag pr close 1 ; gh pr merge 938 --squash --delete-branch" | run)
+  denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
+done
+
+# The prefixed spelling matters on its own: guard-outward-cli.sh honours the inline
+# ALLOW_OUTWARD_CLI=1 escape and this file deliberately does not, so before the fix this
+# exact shape was ALLOW through BOTH hooks -- an unreviewed merge with nothing in its way.
+_lbl="the ALLOW_OUTWARD_CLI=1-prefixed masking shape still reaches this gate"
+out=$(bash_payload "ALLOW_OUTWARD_CLI=1 gh -t x pr close 1 ; gh pr merge 938 --squash --delete-branch" | run)
+denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
+
+# CONTROLS, in the same block, because a gate that denied everything would also turn the
+# six rows above green.
+_lbl="CONTROL: a bare merge on a risky diff still denies"
+out=$(bash_payload 'gh pr merge 938 --squash --delete-branch' | run)
+denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
+
+out=$(bash_payload 'npm run lint' | run)
+assert_allowed "CONTROL: a non-gh command is untouched by the existence read" "$out"
+
+# A close with NO merge anywhere must still early-exit ALLOW -- the existence read must not
+# become "deny anything mentioning gh pr".
+out=$(bash_payload 'gh -t x pr close 1' | run)
+assert_allowed "CONTROL: a lone pr close clause still allows (no merge present)" "$out"
+
+# THE ROW ABOVE CANNOT FAIL, AND NEITHER CAN THE `npm run lint` ONE -- which is why this
+# third control exists. merge-review-guard.sh:108 runs
+# `cmd_fastpath_has "$CMD" '*gh*pr*merge*' '*gh*api*merge*' || exit 0`, and BOTH globs
+# require a literal `merge` substring. A lone close clause has none, so the hook exits at
+# :108 and never reaches cmd_gh_pr_has_merge at all; a gate that denied everything arriving
+# at the existence read would leave both rows green. Measured: `gh -t x pr close 1` and
+# `npm run lint` both exit at the fast path, while the row below and a real
+# `gh pr merge 938` both reach the gate.
+# This row clears `*gh*pr*merge*` on substrings alone -- `gh` inside "highlight", then `pr`,
+# then `merge` -- while containing no `gh <globals> pr merge` clause at all, so it
+# reaches the existence read and MUST still allow. It is the only one of the three that
+# would redden if the read inverted. The shape is borrowed from this file's own earlier
+# fast-path documentation rather than invented.
+out=$(bash_payload 'git commit -m "fix highlight for pr merge"' | run)
+assert_allowed "CONTROL: a command that REACHES the existence read with no merge still allows" "$out"
+
+# THE 64KB SIGPIPE ROW. The existence helper used to answer through `printf | grep -q`, and
+# `grep -q` closes the pipe on its first match. Past the 64KB pipe buffer, with the match on
+# an early LINE, the writer took SIGPIPE, the pipeline returned 141 under the pipefail this
+# hook sets, and `if ! ...` inverted 141 into a silent ALLOW. Measured before the fix:
+# 57,713 bytes detected, 96,913 bytes MISSED, and the same 96,913 bytes detected once the
+# pipe was replaced with a herestring. SINGLE-LINE input of the same size never trips it --
+# grep cannot exit mid-line, so the writer never blocks -- which is exactly why an earlier
+# review measured this shape and called it safe. No other row in this file is large enough
+# to reach the buffer, so without this one the whole class is unpinned.
+_big=$'gh pr merge 938 --squash'
+for _i in $(seq 1 2000); do _big+=$'\n# padding line to push this command past the 64KB pipe buffer'; done
+# REGIME PRECONDITION -- the convention is named in test-cmd-detect.sh, in the block headed
+# `CONVENTION: REGIME PRECONDITION`, which says to name it when a third pin adopts it. This
+# is that third pin, and the first outside that file. The deny row below does NOT imply it:
+# the 23-byte `gh pr merge 42 --squash` earlier in this file is denied too (the row labelled
+# "control: a readable gh pr merge still denies with no record"), so if seq went missing, the
+# loop bound were edited, or the padding string shortened, the row would go green having
+# exercised a string that never approaches the pipe buffer -- and by this row's own header,
+# no other row here is large enough to reach it.
+#
+# PART 2, MEASURE WHAT CROSSES THE PIPE. cmd_gh_pr_has_merge reads cmd_bare_deep's output, so
+# that rendering -- not the raw command -- is what a regression to the piped form would write.
+# The two coincide today at 124,024 bytes each; an assertion on raw $_big would agree with the
+# coincidence and go inert the moment the rendering changed. This file sources nothing, so the
+# rendering is obtained in a subshell and only its measurements cross back as text.
+#
+# PART 3, ASSERT EVERY PROPERTY THE REGIME NEEDS -- and size alone is the wrong one, because
+# the mechanism is line-structured. grep cannot exit mid-line, so what decides SIGPIPE is how
+# much printf still has pending at the first moment grep can conclude: the merge must sit on
+# the FIRST line, and more than a buffer's worth must remain behind that line. Measured
+# against four drifts that each leave the deny row GREEN: padding cut to 20 lines leaves 1,240
+# bytes behind; folding the padding onto one line leaves 0; moving the merge to the last line
+# clears the first-line test; and holding the total at 124,024 while growing line 1 to 99,224
+# bytes leaves 24,800 behind -- that last one passes a byte-offset-from-the-match formulation
+# and fails this one, which is why the cut is taken at the newline.
+# No separator assertion, unlike the retarget pin in test-cmd-detect.sh: that one needs it
+# because cmd_gh_pr_ref cuts its clause at the first [;&|]
+# (`repo_clause="$full_match${clause_tail%%[;&|]*}"`), while cmd_gh_pr_has_merge greps the
+# rendering whole. Read out of the two function bodies, not assumed from their similarity.
+_mb_probe=$(
+  if . "$HOOKS_DIR/lib/cmd-detect.sh" >/dev/null 2>&1 && declare -F cmd_bare_deep >/dev/null; then
+    _w=$(cmd_bare_deep "$_big")
+    _f="${_w%%$'\n'*}"
+    case "$_f" in *"gh pr merge"*) _on=yes;; *) _on=no;; esac
+    printf '%s %s %s' "$_on" "$(( ${#_w} - ${#_f} ))" "${#_w}"
+  else
+    printf 'unsourceable 0 0'
+  fi
+)
+[ -n "$_mb_probe" ] || _mb_probe='killed 0 0'
+_mb_onfirst="${_mb_probe%% *}"; _mb_rest="${_mb_probe#* }"
+_mb_behind="${_mb_rest%% *}"; _mb_total="${_mb_rest##* }"
+case "$_mb_behind" in ''|*[!0-9]*) _mb_behind=0;; esac
+_mb_lbl="the 64KB SIGPIPE pin still renders a first-line merge with a full buffer behind it"
+if [ "$_mb_onfirst" = yes ] && [ "$_mb_behind" -gt 65536 ]; then
+  ok "$_mb_lbl"
+else
+  bad "$_mb_lbl" "merge on first line: $_mb_onfirst; bytes behind that line: $_mb_behind (need >65536); rendered total: $_mb_total; probe=[$_mb_probe]"
+fi
+_lbl="a >64KB MULTI-LINE command with an early merge still denies (SIGPIPE rc-141 inversion)"
+out=$(bash_payload "$_big" | run)
+denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
+unset _big _mb_probe _mb_onfirst _mb_rest _mb_behind _mb_total _mb_lbl
+
+# GLUED SEPARATORS. `(^|[[:space:]])gh` does not see a binary glued to its separator, so a
+# real merge hid from the one read that routes to ALLOW. Unioned with _CMD_POS_PREFIX.
+# Measured as MISSED before and detected after, with the negative controls above unchanged.
+for _glue in ';' '&&' '|'; do
+  _lbl="a merge glued to [$_glue] is still seen by the existence read"
+  out=$(bash_payload "gh -t x pr close 1${_glue}gh pr merge 938 --squash" | run)
+  denied "$out" && ok "$_lbl" || bad "$_lbl" "$out"
+done
+
+# NEGATIVE CONTROL FOR THE UNION, in the same block: widening the anchor must not start
+# denying a quoted mention. cmd_bare blanks the quoted span, so this stays ALLOW.
+out=$(bash_payload 'git commit -m "gh pr merge 42"' | run)
+assert_allowed "CONTROL: a QUOTED merge mention is still not a merge" "$out"
+
+# ---------------------------------------------------------------------------------------
+# THE PREFLIGHT INVARIANT, ENFORCED RATHER THAN ASSERTED. merge-review-guard.sh's loader
+# checks `declare -F` for each cmd_* function and `-n` for each _CMD_* constant it uses, and
+# routes a miss to a deny -- because an undefined callee returns 127 and the gate below
+# inverts that to an allow, and an unset constant kills the hook under `set -u` without
+# emitting JSON, which for a PreToolUse hook is non-blocking. The invariant was written as a
+# comment and was ALREADY FALSE ONCE: cmd_words_deep was called below the line and missing
+# from the conjunction. A hand-maintained invariant with no test is a comment, not a guard.
+# This derives both sets from the file and fails if anything used below the conjunction is
+# unchecked -- so adding a callee without wiring it reddens here instead of silently
+# disarming the gate.
+_mrg_src="$HOOK"
+_mrg_conj_line=$(grep -n 'declare -F cmd_gh_pr_write_subcommand' "$_mrg_src" | head -1 | cut -d: -f1)
+_mrg_conj=$(sed -n "$((_mrg_conj_line-2)),$((_mrg_conj_line+8))p" "$_mrg_src")
+_mrg_missing=""
+# FULL-LINE COMMENTS ARE STRIPPED FIRST, and only those. The first version of this check
+# scanned the raw file and reported cmd_bare/cmd_bare_deep as unchecked -- six occurrences,
+# every one of them PROSE explaining what those helpers do. A check that cannot tell a call
+# from a sentence about a call reports the file's documentation as a defect. Trailing
+# comments on code lines are deliberately NOT stripped: a call followed by `# note` must
+# stay visible, and erring toward MORE matches is the safe direction for a guard whose job
+# is to notice an unwired callee.
+for _mrg_sym in $(sed -n "$((_mrg_conj_line+8)),\$p" "$_mrg_src" | grep -vE '^[[:space:]]*#' \
+                   | grep -oE '(^|[^_A-Za-z])cmd_[a-z_]+' | grep -oE 'cmd_[a-z_]+' | sort -u); do
+  case "$_mrg_sym" in cmd_fastpath_has) continue;; esac
+  printf '%s' "$_mrg_conj" | grep -q -- "declare -F $_mrg_sym" || _mrg_missing="$_mrg_missing $_mrg_sym"
+done
+for _mrg_sym in $(sed -n "$((_mrg_conj_line+8)),\$p" "$_mrg_src" | grep -vE '^[[:space:]]*#' \
+                   | grep -oE '_CMD_[A-Z_]+' | sort -u); do
+  printf '%s' "$_mrg_conj" | grep -q -- "$_mrg_sym" || _mrg_missing="$_mrg_missing $_mrg_sym"
+done
+_mrg_lbl="every cmd_*/_CMD_* used below the preflight is checked BY the preflight"
+if [ -z "$_mrg_missing" ]; then
+  ok "$_mrg_lbl"
+else
+  bad "$_mrg_lbl" "unchecked:$_mrg_missing"
+fi
+unset _mrg_src _mrg_conj_line _mrg_conj _mrg_missing _mrg_sym _mrg_lbl
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=80
+# 114 -> 123 (2026-09-15): +9 for the merge-gate mis-selection family above -- 5 flag
+# spellings x the masking shape, plus the prefixed spelling, plus three controls.
+# 123 -> 124: +1 for the control that actually REACHES the existence read (the two beside
+# it exit at the fast path and cannot redden).
+# 124 -> 129: +1 SIGPIPE row, +3 glued-separator rows, +1 quoted-mention control for the
+# widened anchor.
+# 129 -> 130: +1 for the row that derives the preflight's required symbol set from the file
+# instead of trusting the comment that states it.
+# 130 -> 131: +1 regime precondition for THE 64KB SIGPIPE ROW, which until now asserted its
+# DENY outcome with nothing asserting the input still reached the pipe buffer.
+EXPECTED_TOTAL=131
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

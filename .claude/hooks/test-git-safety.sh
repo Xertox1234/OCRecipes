@@ -829,6 +829,43 @@ else
   echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
 fi
 
+# lib/cmd-detect.sh unsourceable: this lib is used ONLY by the gh-pr-close
+# advisory detection (branch B) — branch A's mutating-git deny gate has its
+# own independent inline scanners and must keep denying regardless. Copy just
+# the hook into a dir with no lib/ sibling (mirrors test-core-bare-guard.sh's
+# NOLIB fixture) and prove BOTH halves so a future change that accidentally
+# makes branch A depend on this lib is caught here, not in production.
+NOLIB=$(mktemp -d)
+cp "$HOOK" "$NOLIB/git-safety.sh"
+out=$(echo "$(json "$SESSION" "$MAIN" 'git commit -m x')" | bash "$NOLIB/git-safety.sh" 2>/dev/null)
+if echo "$out" | grep -q '"permissionDecision": "deny"'; then
+  echo "PASS: lib-missing — contract-branch deny is unaffected"; PASS=$((PASS+1))
+else
+  echo "FAIL: lib-missing — contract-branch deny is unaffected"
+  echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
+fi
+out=$(echo "$(json no-registry-session "$MAIN" 'gh pr close 520')" | bash "$NOLIB/git-safety.sh" 2>/dev/null)
+if [ -z "$out" ]; then
+  echo "PASS: lib-missing — gh pr close advisory fails silent (no crash, no revived raw needle)"; PASS=$((PASS+1))
+else
+  echo "FAIL: lib-missing — gh pr close advisory fails silent"
+  echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
+fi
+rm -rf "$NOLIB"
+
+# The `*gh*`+`*close*` pre-guard (before the lib is even sourced) must never
+# interfere with branch A: a command that is BOTH contract-denied AND
+# contains both substrings (inside a quoted, therefore inert, commit message)
+# must still deny — pinning that branch A resolves independently of, and
+# before, branch B's lib-sourcing attempt.
+out=$(echo "$(jsonc "$SESSION" "$MAIN" 'git commit -m "would gh pr close but for real"')" | bash "$HOOK" 2>/dev/null)
+if echo "$out" | grep -q '"permissionDecision": "deny"'; then
+  echo "PASS: registry: a mutating command containing both gh-pr-close pre-guard substrings still denies"; PASS=$((PASS+1))
+else
+  echo "FAIL: registry: a mutating command containing both gh-pr-close pre-guard substrings still denies"
+  echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
+fi
+
 # ---------- advisor branch (fires with or without a registry) ----------
 FAKE_GH_STATE=MERGED assert_warn_contains "advisor: branch -D with MERGED PR reports safe" \
   "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')" \
@@ -887,6 +924,391 @@ FAKE_GH_EXIT=8 FAKE_GH_STDERR="network down" assert_warn_contains "advisor: gh h
 FAKE_GH_STATE=OPEN assert_warn_contains "advisor: gh pr close is matched" \
   "$(json no-registry-session "$MAIN" 'gh pr close 520')" \
   "OPEN and NOT merged"
+
+# P3-2026-09-13-git-safety-re-derives-the-gh-pr-close-needle: ported off a raw-$CMD
+# needle onto lib/cmd-detect.sh's cmd_gh_pr_write_subcommand/cmd_gh_pr_ref, so this
+# advisor inherits the root-position globals slot and quote-aware rendering.
+#
+# All four root-position `--repo`/`-R` spellings (P0-2026-09-13's own closed set):
+# cmd_gh_pr_write_subcommand still resolves "close" (the verb sits after the globals
+# slot), but cmd_gh_pr_ref REFUSES on the retarget (it has no way to convey a second
+# repository), so the advisory fires the SKIP_REASON path rather than staying silent
+# (old behavior: the raw needle required "gh" immediately followed by "pr" and never
+# matched any of these at all — see the OLD-NOMATCH control below).
+FAKE_GH_STATE=OPEN assert_warn_contains "advisor: gh pr close with -R <repo> (separate) fires the skip-reason path" \
+  "$(json no-registry-session "$MAIN" 'gh -R owner/repo pr close 42')" \
+  "could not resolve the PR ref via the shared extractor"
+FAKE_GH_STATE=OPEN assert_warn_contains "advisor: gh pr close with --repo <repo> (separate) fires the skip-reason path" \
+  "$(json no-registry-session "$MAIN" 'gh --repo owner/repo pr close 42')" \
+  "could not resolve the PR ref via the shared extractor"
+FAKE_GH_STATE=OPEN assert_warn_contains "advisor: gh pr close with --repo=<repo> (glued) fires the skip-reason path" \
+  "$(json no-registry-session "$MAIN" 'gh --repo=owner/repo pr close 42')" \
+  "could not resolve the PR ref via the shared extractor"
+FAKE_GH_STATE=OPEN assert_warn_contains "advisor: gh pr close with -R<repo> (glued) fires the skip-reason path" \
+  "$(json no-registry-session "$MAIN" 'gh -Rowner/repo pr close 42')" \
+  "could not resolve the PR ref via the shared extractor"
+# Control: the OLD raw needle never matched any of the four spellings above (this is
+# the bug this todo fixes) — prove it directly rather than asserting it from memory.
+#
+# NOTE FOR REVIEWERS: this is a TEST-ONLY measurement helper, not a production
+# detector. It re-derives the retired raw-$CMD needle deliberately, as a
+# negative-control instrument for the "before" behavior — it feeds no decision
+# in git-safety.sh itself (the file no longer contains this pattern at all;
+# confirm with `grep -n 'pr\[\[:space:\]\]+close' .claude/hooks/git-safety.sh`,
+# which matches nothing) and asserts, in code, exactly what several of the
+# controls below claim in comments, per the house rule that a measurement
+# belongs in an assertion, not only in prose next to one.
+old_needle_matches() {
+  printf '%s' "$1" | grep -qE '(^|[;&|[:space:]])gh[[:space:]]+pr[[:space:]]+close[[:space:]]+'
+}
+if ! old_needle_matches 'gh -R owner/repo pr close 42' \
+   && ! old_needle_matches 'gh --repo owner/repo pr close 42' \
+   && ! old_needle_matches 'gh --repo=owner/repo pr close 42' \
+   && ! old_needle_matches 'gh -Rowner/repo pr close 42'; then
+  echo "PASS: control — the old raw needle really missed all four root-position spellings"; PASS=$((PASS+1))
+else
+  echo "FAIL: control — the old raw needle unexpectedly matched a root-position spelling; the four PASS rows above are not proving what they claim"; FAIL=$((FAIL+1))
+fi
+
+# Quote-aware improvement: a `gh pr close` MENTION sitting inside a quoted commit
+# message must NOT fire (cmd_bare blanks the quoted span). The OLD raw needle DID
+# fire on this (no quote-awareness at all) — assert the fix, then assert the old
+# needle's false positive directly as the control.
+assert_allow "advisor: gh pr close mentioned in a quoted commit message is not matched (was a false positive)" \
+  "$(jsonc no-registry-session "$MAIN" 'git commit -m "mentions gh pr close 42 in the message"')"
+if old_needle_matches 'git commit -m "mentions gh pr close 42 in the message"'; then
+  echo "PASS: control — the old raw needle really did false-positive on the quoted-prose case"; PASS=$((PASS+1))
+else
+  echo "FAIL: control — the old raw needle did not match the quoted-prose case; the assert_allow above is not proving what it claims"; FAIL=$((FAIL+1))
+fi
+
+# A `gh pr close` invocation hidden inside a LIVE "$(...)" substitution genuinely
+# executes despite the surrounding double quotes — cmd_bare_deep (unlike plain
+# cmd_bare) surfaces it, and with no retarget present cmd_gh_pr_ref resolves the
+# ref normally.
+FAKE_GH_STATE=OPEN assert_warn_contains "advisor: gh pr close hidden inside a live \"\$(...)\" substitution still resolves its ref" \
+  "$(jsonc no-registry-session "$MAIN" 'echo "$(gh pr close 42)"')" \
+  "OPEN and NOT merged"
+
+# MEASURED RESIDUAL, not fixed by this port (pinned so it is a decision, not a
+# surprise): TWO causes, either independently sufficient for this exact input.
+# (1) git-safety.sh's own `*gh*`+`*close*` pre-guard (above the branch B header
+# comment) never sets _CMD_DETECT_OK here in the first place — `g"h"` contains
+# no literal contiguous "gh" substring, so the library is never even sourced
+# for this row. (2) Independently, cmd_gh_pr_write_subcommand/cmd_gh_pr_ref
+# read cmd_bare_deep, which BLANKS quoted spans rather than reconstructing
+# them — a binary name split across a quote boundary never re-forms into the
+# token "gh" even when the library IS reached directly (verified by calling
+# the library functions directly, bypassing the pre-guard). This is the SAME
+# accepted residual cmd-detect.sh documents for a quoted `-R`/`--repo` flag
+# (see _CMD_GH_GLOBALS's own quoted-flag residual note); closing it would need
+# a cmd_words-based predicate, which does not exist for `close` and is out of
+# this todo's Scope Contract (no new detector). The old raw needle also never
+# detected this shape (see the OLD-NOMATCH control), so this is not a
+# regression versus main — just a gap the port does not close. Because cause
+# (1) alone already suppresses this input, this row would stay green even if
+# cause (2) were ever fixed — it does not, on its own, prove cause (2) closed.
+assert_allow "advisor: a quote-glued gh binary (g\"h\") is a known, unfixed detection gap" \
+  "$(jsonc no-registry-session "$MAIN" 'g"h" pr close 42')"
+
+# Sibling shape (same "necessary substring" pre-guard limitation, different
+# token): quote-splicing the VERB defeats the pre-guard's literal-contiguous-
+# substring check the same way quote-splicing the binary does — `clo""se`
+# still executes as `close` (bash concatenates adjacent quoted/unquoted
+# segments into one word), but its raw text contains no contiguous "close"
+# substring, so `_CMD_DETECT_OK` is never set. Pre-existing (identical before
+# and after narrowing the pre-guard from `*gh*` alone to `*gh*`+`*close*` —
+# the single-substring gate already missed this shape too, since it is a
+# property of cmd_bare_deep's own tokenizer, not of the pre-guard's substring
+# count), so this is not a regression; pinned alongside the g"h" row above so
+# a future reader does not mistake the "necessary substring" comment for a
+# complete proof.
+assert_allow "advisor: quote-splicing the verb (gh pr clo\"\"se) is a known, pre-existing detection gap" \
+  "$(jsonc no-registry-session "$MAIN" 'gh pr clo""se 42')"
+
+# THIRD residual in the same family -- AND IT IS NO LONGER A RESIDUAL. Everything this
+# paragraph used to assert was measured, was correct on the tree it was written against,
+# and is false on this one. It is rewritten rather than patched because the claim it got
+# wrong is the one that matters most: whether a deny backstop exists.
+#
+# WHAT IT SAID: that `_CMD_GH_GLOBALS` admitted `-R v`, `--repo v` and glued `-x` but no
+# other flag-plus-value pair, so one separate-arg global was enough to make
+# `cmd_gh_pr_write_subcommand` stop matching -- silently, with no SKIP_REASON -- and that
+# `guard-outward-cli.sh` did NOT cover the shape either: both stacked forms returned
+# BYTE-EMPTY from the deny gate, indistinguishable from an `echo hello` control, so what
+# bounded them was gh's own parser refusing a global in the root slot, not a backstop.
+#
+# WHAT IS TRUE NOW. The root-position-flag-PROPERTY branch gave that alternation a
+# separate-arg value arm, so the extractor walks past `--hostname github.com`. Re-measured
+# under bash 5.3.15 on BOTH trees in one run, with controls, classifying git-safety output
+# as SILENT / SKIP-REASON / RESOLVED-ADVISORY and the deny gate as BYTE-EMPTY / DENY:
+#
+#   input                                                 main                merged
+#   gh --hostname github.com pr close 42             SILENT / EMPTY      RESOLVED / DENY
+#   gh --hostname github.com -R other/org pr close 42  SILENT / EMPTY      SKIP-REASON / DENY
+#   gh -R other/org --hostname github.com pr close 42  SILENT / EMPTY      SKIP-REASON / DENY
+#   gh pr close 42                                       RESOLVED / DENY     RESOLVED / DENY   (+ctl)
+#   echo hello                                            SILENT / EMPTY      SILENT / EMPTY    (-ctl)
+#
+# So the inversion is total and in the SAFE direction: three shapes that reached a mutating
+# cross-repo close BYTE-EMPTY at the deny gate on main now DENY. THERE IS NOW A DENY
+# BACKSTOP, and the sentence claiming there is not was the single most load-bearing wrong
+# line in this file -- it told a reader the hook's silence was bounded by gh's parser, which
+# is a much weaker guarantee than a deny.
+#
+# "Inherited from the UNMODIFIED _CMD_GH_GLOBALS grammar" is also retired: this branch
+# MODIFIES that grammar, which is exactly why the behaviour moved. Neither this file nor
+# git-safety.sh is touched by the change that moved it -- the grammar is in lib/cmd-detect.sh
+# and the consumer was pointed at it by a separate fix on main -- so only the MERGE of the
+# two produces this. Widen a detector and its consumers in one change, and when a gap
+# CLOSES, name it.
+#
+# THE ROOT-SLOT BOUND STILL STANDS AND IS STILL NARROW. gh 2.100.0 refuses a global in the
+# ROOT slot before `pr` (its root flags are only --help and --version; `gh --hostname
+# github.com --version` returns "unknown flag: --hostname"), so the annotated inputs above
+# cannot execute as written. Do NOT generalise that to "gh refuses a pre-verb global": gh
+# accepts `--repo`/`-R` BETWEEN `pr` and the verb (measured, `gh pr --repo cli/cli view
+# --help` resolves while `gh pr --bogus x view --help` errors), and that position is covered
+# by the SEPARATE residual below, not here.
+#
+# The residual's genuinely EXECUTABLE siblings do get a deny, verified in the same run:
+# `g"h" pr close 42`, `gh pr clo""se 42` and `gh pr create -t x && gh pr close 42` all DENY.
+# Pinned because the todo's AC says "all four root-position spellings" are handled, and
+# without this row that reads as full globals-slot coverage, which it is not.
+# THIS RESIDUAL CLOSED 2026-09-15, and it closed from files this suite does not test.
+# It was pinned as `assert_allow` -- expect SILENCE -- because the shared extractor's
+# _CMD_GH_GLOBALS modelled a root-position flag as `-[^[:space:]]+` with no value arm, so
+# `--hostname github.com` consumed the slot and the `-R other/org` behind it was never
+# reached. The root-position-flag-PROPERTY branch gave that alternation a separate-arg
+# value arm, so the extractor now walks past `--hostname github.com`; git-safety.sh, which
+# an earlier fix had pointed at the SHARED extractor instead of its own re-derived needle,
+# emits its advisory as a result. Two changes in two different files, NEITHER of which
+# touches this one, and only their MERGE moves the behaviour -- which is both the reason to
+# widen a detector and its consumers in one change, and the reason a gap that CLOSES still
+# has to be named rather than quietly re-pinned.
+# MEASURED on the merged tree, with controls in the SAME run, before this pin was flipped:
+#   gh --hostname github.com -R other/org pr close 42   -> SKIP-REASON advisory (this row)
+#   gh -R other/org --hostname github.com pr close 42   -> SKIP-REASON advisory (sibling, pinned below)
+#   gh --hostname github.com pr close 42                -> RESOLVED advisory, NOT skip-reason
+#   gh -R other/org pr close 42                         -> SKIP-REASON advisory (positive control)
+#   gh --hostname github.com pr view 42                 -> silent (verb-scope control)
+#   gh pr view 42                                       -> silent (verb-scope control)
+# THE THIRD ROW IS THE ONE THAT DISCRIMINATES, and an earlier version of this note did not
+# have it. It called the two `pr view` rows "the load-bearing half", which they are not:
+# git-safety.sh gates the whole advisory on the verb being `close`, so a `pr view` stays
+# silent under ANY extractor -- including a broken one that fired the skip-reason on every
+# close. They bound the verb scope and nothing else. The row that separates "the extractor
+# walked past --hostname and then reached the -R" from "any root global now forces a
+# refusal" is the single-global close, which must come back RESOLVED rather than
+# SKIP-REASON -- measured, it does. A control validates only the path it actually runs
+# through.
+assert_warn_contains "advisor: a root-position -R stacked with another separate-arg global (--hostname) is now SEEN — inherited gap CLOSED by the shared extractor's value arm" \
+  "$(jsonc no-registry-session "$MAIN" 'gh --hostname github.com -R other/org pr close 42')" \
+  "could not resolve the PR ref via the shared extractor"
+
+# ...and the -R-FIRST sibling, which moved in the same merge with no assertion on it at
+# all. Ordering is the whole point: the extractor has to walk past a separate-arg global in
+# either position, so pinning only the --hostname-first spelling leaves half the behaviour
+# unguarded while the comment above describes both.
+assert_warn_contains "advisor: the -R-FIRST ordering of the same stacked pair is SEEN too — both orderings pinned, not one" \
+  "$(jsonc no-registry-session "$MAIN" 'gh -R other/org --hostname github.com pr close 42')" \
+  "could not resolve the PR ref via the shared extractor"
+
+# THE DISCRIMINATING ROW, which until now existed only in the comment table above -- the
+# commit that flipped this residual said it had been "added" when it had only been
+# WRITTEN DOWN. Both rows above assert the SKIP-REASON string, and the two `pr view` rows
+# below are gated to silence by the verb check, so an extractor that returned the
+# skip-reason for EVERY close would keep this entire suite green. Nothing would redden.
+# This row is the one that separates "the extractor walked past --hostname and then
+# reached the -R" from "any root global now forces a refusal": a SINGLE root global with
+# no -R behind it must RESOLVE the ref, not skip it. Measured on this tree --
+# `Fresh PR check: PR #520 ... is MERGED` (520 is what this file's fake gh returns; the
+# ref in the command is 42, and the two differing is itself the evidence that the hook
+# LOOKED THE REF UP rather than echoing it back) -- where the stacked pair returns
+# `Fresh PR check skipped: could not resolve ...` instead.
+FAKE_GH_STATE=MERGED assert_warn_contains "advisor: a SINGLE root-position global still RESOLVES the ref — the discriminating row, not another skip-reason" \
+  "$(jsonc no-registry-session "$MAIN" 'gh --hostname github.com pr close 42')" \
+  "Fresh PR check: PR #520"
+
+# FOURTH residual in the same family, and the only one this port INTRODUCES rather than
+# inherits. The retired needle matched `(^|[;&|[:space:]])gh`; the shared
+# cmd_gh_pr_write_subcommand matches `(^|[[:space:]])gh`, and cmd_bare_deep only BLANKS
+# characters, so a separator glued straight to `gh` with no space stays contiguous and
+# cannot match. Measured under bash 5.3.15 against both hook versions, with the
+# space-separated form as a control:
+#   foo;gh pr close 42   old=warn  new=SILENT      foo&&gh …  old=warn  new=SILENT
+#   foo|gh pr close 42   old=warn  new=SILENT      foo||gh …  old=warn  new=SILENT
+#   foo&gh pr close 42   old=warn  new=SILENT
+#   foo; gh pr close 42  old=warn  new=warn        (control, space present)
+#   gh pr close 42       old=warn  new=warn        (control, bare)
+# All five are real executable bash. NOT WIDENED, deliberately: the fix would be to anchor
+# on _CMD_POS_PREFIX, but that class lives in the SHARED lib that also feeds
+# guard-outward-cli.sh's DENY decisions, and widening a matcher is the safe direction only
+# on a deny-shaped read -- here it would risk false denies for a warning this hook already
+# calls optional ("a missed warning, never a wrong one"). Cost bounded by measurement:
+# guard-outward-cli.sh returns a DENY for all five, so only the advisory is lost.
+assert_allow "advisor: a separator glued to gh with no space (foo;gh) loses the advisory — introduced by the port, bounded by guard-outward-cli's deny" \
+  "$(jsonc no-registry-session "$MAIN" 'foo;gh pr close 42')"
+
+# FIFTH residual, and the only one here that BOTH hooks miss. A `--repo`/`-R` retarget
+# placed BETWEEN `pr` and the verb reaches neither this advisor nor guard-outward-cli.sh.
+# Measured at this head, and the FOUR MID-POSITION ROWS are identical on origin/main --
+# scoped deliberately, because the blanket form was false for this table's own control:
+# `gh -R o/r pr close 42` is warn HERE and SILENT on main, and that difference is exactly
+# the root-slot coverage this PR delivers. Three controls in
+# the same run that are all covered:
+#   gh pr close 42                    advisory=warn    guard=DENY   (control)
+#   gh -R o/r pr close 42             advisory=warn    guard=DENY   (control, ROOT slot)
+#   gh pr close 42 --repo o/r         advisory=warn    guard=DENY   (control, POST-verb)
+#   gh pr --repo o/r close 42         advisory=SILENT  guard=allow
+#   gh pr --repo=o/r close 42         advisory=SILENT  guard=allow
+#   gh pr -R o/r close 42             advisory=SILENT  guard=allow
+#   gh pr -Ro/r close 42              advisory=SILENT  guard=allow
+# The shape PARSES: `gh pr --repo cli/cli view --help` resolves and prints `gh pr view`'s
+# help, while `gh pr --bogus x view --help` errors "unknown flag", so that slot genuinely
+# binds --repo rather than skipping it. Boundary of the claim: that is a PARSING result --
+# no close was executed.
+#
+# NOT INTRODUCED HERE and not this PR's to fix: guard-outward-cli.sh is not in this PR's
+# changed files and main behaves identically, so this port neither creates nor widens it.
+# Pinned rather than filed, because guard-outward-cli.sh's own deny text names --repo/-R
+# retargeting as the thing it exists to catch, and a gap that contradicts a guard's stated
+# purpose should be visible on every run rather than living in one reviewer's report.
+# NAME SAYS "advisor", NOT "neither hook", and the gap between those two is the point.
+# This row asserts the ADVISORY half only -- it runs git-safety.sh and nothing else. The
+# guard=allow half is recorded in the comment above and asserted NOWHERE, because this file
+# never executes guard-outward-cli.sh (all eight mentions of it here are comment text). So
+# if that guard is ever taught to cover this slot, NOTHING here goes red and the comment
+# goes stale silently: re-measure it against .claude/hooks/test-guard-outward-cli.sh, which
+# is where that guard's own rows live. The advisory half does stay honest -- teach the
+# advisor this slot and this assert_allow reddens, forcing a deliberate update.
+assert_allow "advisor: a --repo retarget BETWEEN 'pr' and the verb is SILENT here — pre-existing, identical on main, surfaced not fixed" \
+  "$(jsonc no-registry-session "$MAIN" 'gh pr --repo o/r close 42')"
+
+# SIXTH residual, and the one the pre-guard's own justification denied was possible. The
+# `*gh*`+`*close*` pre-guard rests on a necessary-substring argument that is unsound:
+# cmd_bare_deep routes through cmd_extract_substitutions, which DELETES a nested
+# substitution and leaves a zero-width hole, so deletion can synthesise a substring the raw
+# text never contained. Measured, with the plain form as control:
+#   gh pr close 42                    lib=close  advisory=warn   (control)
+#   echo "$(gh pr clo$(echo)se 42)"   lib=close  advisory=SILENT
+#   echo "$(g$(echo)h pr close 42)"   lib=close  advisory=SILENT
+# Both really execute `gh pr close 42`; the library resolves the verb and only the
+# pre-guard drops it. Distinct from the g"h" and clo""se rows above, which cmd_bare_deep's
+# tokenizer suppresses even when the library is reached directly — neither of those covers
+# this case. Missed warning only: both DENY at guard-outward-cli.sh, and both are SILENT on
+# origin/main too.
+assert_allow "advisor: a nested substitution that SYNTHESISES the verb is dropped by the cheap pre-guard — deliberate perf trade, deny layer still covers it" \
+  "$(jsonc no-registry-session "$MAIN" 'echo "$(gh pr clo$(echo)se 42)"')"
+
+# Accepted trade-off (documented in cmd_gh_pr_write_subcommand's own header): a `gh
+# pr create` mention co-occurring with the close means the create-vs-rest guard
+# refuses the whole subcommand lookup, so this advisor now stays silent where the
+# old raw needle fired. Safe direction — a missed warning, never a wrong one.
+assert_allow "advisor: gh pr create co-occurring with gh pr close is a known, accepted missed-warning (create-vs-rest guard)" \
+  "$(json no-registry-session "$MAIN" 'gh pr create -t x && gh pr close 42')"
+
+# Gate strictly on "close" (git-safety.sh's own comment above the elif).
+# Baseline coverage first (these three alone are NOT discriminating — none
+# contains a literal "close" substring, so they never clear the file's own
+# `*gh*`+`*close*` pre-source guard and never even reach the comparison this
+# block exists to pin; caught by review, code-reviewer round 2, proven by
+# mutation below).
+assert_allow "advisor: gh pr merge alone is not matched (baseline; not discriminating — see the echo-close row below)" \
+  "$(json no-registry-session "$MAIN" 'gh pr merge 42')"
+assert_allow "advisor: gh pr edit alone is not matched (baseline; not discriminating — see the echo-close row below)" \
+  "$(json no-registry-session "$MAIN" 'gh pr edit 42')"
+assert_allow "advisor: gh pr create alone is not matched (baseline; not discriminating — see the echo-close row below)" \
+  "$(json no-registry-session "$MAIN" 'gh pr create -t x')"
+
+# THE load-bearing proof that a widened `[ -n "$(cmd_gh_pr_write_subcommand
+# ...)" ]` gate (which would ALSO match create|merge|edit) is not what is
+# wired in. Each input is constructed to clear the pre-source guard (contains
+# both "gh" and "close" as literal substrings, via the "echo close" prefix)
+# while resolving via cmd_gh_pr_write_subcommand to a DIFFERENT verb than
+# "close" for the real `gh pr <verb>` clause — so these rows fail if the
+# comparison is ever widened, where the three baseline rows above would not.
+# Verified by mutation: widening `= "close"` to `-n "$(...)"` in a scratch
+# copy leaves the three baseline rows above unaffected (still silent — they
+# never reach the comparison at all) but makes these three rows emit a real
+# "PR #42 ... MERGED" / etc. warning about an unrelated gh pr merge/edit/
+# create clause — exactly the "must not widen to those" regression the
+# code's own comment warns against, and KIND="delete" is shared with the
+# branch -D / push --delete paths this advisor must not widen onto either.
+FAKE_GH_STATE=MERGED assert_allow "advisor: gh pr merge co-occurring with a bare 'close' mention is not matched (discriminating — proves close-only gating)" \
+  "$(json no-registry-session "$MAIN" 'echo close; gh pr merge 42')"
+FAKE_GH_STATE=MERGED assert_allow "advisor: gh pr edit co-occurring with a bare 'close' mention is not matched (discriminating — proves close-only gating)" \
+  "$(json no-registry-session "$MAIN" 'echo close; gh pr edit 42')"
+FAKE_GH_STATE=MERGED assert_allow "advisor: gh pr create co-occurring with a bare 'close' mention is not matched (discriminating — proves close-only gating)" \
+  "$(json no-registry-session "$MAIN" 'echo close; gh pr create -t x')"
+
+# AC's exact two-sided negative-control pairing: a read-only gh -R <repo> pr view
+# must not trigger the advisory even WITH the root-position retarget flag present
+# (view isn't in cmd_gh_pr_write_subcommand's create|merge|close|edit alternation,
+# so the globals slot never matters for it — but the todo names this exact input,
+# not just the no-flag form already covered below). Lower-risk than the three
+# above (view's exclusion is a finite, separately-tested regex alternation in
+# lib/cmd-detect.sh, not a runtime comparison in this file a one-line edit could
+# silently widen), but made discriminating the same way for consistency.
+FAKE_GH_STATE=MERGED assert_allow "advisor: gh -R owner/repo pr view 42 (read-only, with retarget) is not matched (discriminating)" \
+  "$(json no-registry-session "$MAIN" 'echo close; gh -R owner/repo pr view 42')"
+
+# CRITICAL FIX: cmd_gh_pr_ref can return a URL (not just a number or branch
+# name). Without a host restriction, `gh pr close <url>` — including one
+# hidden inside a live "$(...)" substitution, a shape this port newly
+# surfaces — would make this hook's own `gh pr view "$REF"` call open a real
+# network connection to an attacker-chosen host, independent of any user
+# permission decision. Mirrors pr-verify.sh's GH_ALLOWED_HOST guard.
+assert_warn_contains "advisor: gh pr close with an attacker-controlled URL ref is refused, not looked up" \
+  "$(jsonc no-registry-session "$MAIN" 'gh pr close https://exfil.example.test/o/r/pull/1')" \
+  "is a URL outside the configured GitHub host"
+# THE PR-DIRECTION HALF OF THE SUBJ/VERB FIX, previously reachable but asserted nowhere.
+# Only the BRANCH direction was pinned; the four -R rows assert a hardcoded prefix that
+# never interpolates ${SUBJ}/${VERB}. Measured: deleting the two SUBJ/VERB assignments in
+# git-safety.sh left this suite at 153/0 while this very command's guidance flipped to
+# "confirm this branch's merge state manually before deleting" -- exactly the mirror the
+# hook's own comment says would otherwise stay live. This row is the two-sided pair of the
+# branch-side row below.
+# The tail alone is NOT unique to this clause -- it is also the verbatim ending of the
+# hardcoded close-arm ref-refusal SKIP_REASON, so a row asserting only the tail would be
+# satisfied by a DIFFERENT skip path (measured: `gh -R owner/repo pr close 42` and
+# `gh --repo=owner/repo pr close 42` both emit it). Pinning the host-guard PREFIX in the
+# same row is what ties the assertion to the clause it names.
+assert_warn_contains "advisor: the PR-close direction gets PR-shaped guidance, not the branch mirror" \
+  "$(jsonc no-registry-session "$MAIN" 'gh pr close https://exfil.example.test/o/r/pull/1')" \
+  "is a URL outside the configured GitHub host"
+assert_warn_contains "advisor: ... and that same host-guard clause ends with the PR-shaped tail, not the branch mirror" \
+  "$(jsonc no-registry-session "$MAIN" 'gh pr close https://exfil.example.test/o/r/pull/1')" \
+  "confirm this PR's state manually before closing"
+assert_warn_contains "advisor: gh pr close with a URL ref hidden inside a live substitution is refused, not looked up" \
+  "$(jsonc no-registry-session "$MAIN" 'echo "$(gh pr close https://exfil.example.test/o/r/pull/1)"')" \
+  "is a URL outside the configured GitHub host"
+# The host guard sits in the SHARED ref-processing block, so it is reached by all five
+# KIND=delete arms — not just `gh pr close`. Its trailing guidance therefore has to name
+# the right subject per arm. Measured before that was fixed, this exact input produced
+# "confirm this PR's state manually before closing" on a BRANCH deletion, where no PR is
+# involved. Pin the branch-side wording here: the three rows above only ever exercise the
+# guard through `gh pr close`, so they cannot see a regression on the other four arms.
+assert_warn_contains "advisor: a URL ref on a BRANCH delete is refused with branch-shaped guidance, not PR-shaped" \
+  "$(jsonc no-registry-session "$MAIN" 'git branch -D https://exfil.example.test/o/r/pull/1')" \
+  "confirm this branch's merge state manually before deleting"
+# Protocol-relative bypass (found by review, security-auditor round 2,
+# CRITICAL): a scheme-less `//host/path` reference contains no colon at all,
+# so it matched NEITHER the allowed-host prefix NOR the original `*://*|*:*`
+# disqualify pattern — falling through unrestricted. git ref names can never
+# contain two consecutive slashes anywhere (git-check-ref-format), so this
+# case can only arise from a URL-shaped ref, never collide with a legitimate
+# branch name from the other four KIND=delete branches.
+assert_warn_contains "advisor: gh pr close with a protocol-relative (//host) ref is refused, not looked up" \
+  "$(jsonc no-registry-session "$MAIN" 'gh pr close //exfil.example.test/o/r/pull/1')" \
+  "is a URL outside the configured GitHub host"
+# Control: a URL ref that IS on the allowed host resolves normally — the
+# restriction targets the HOST, not "any URL shape", matching pr-verify.sh's
+# own accepted https://github.com/... PR-URL form.
+FAKE_GH_STATE=OPEN assert_warn_contains "advisor: gh pr close with an allowed-host github.com URL ref resolves normally" \
+  "$(jsonc no-registry-session "$MAIN" 'gh pr close https://github.com/xertox1234/OCRecipes/pull/42')" \
+  "OPEN and NOT merged"
+
 FAKE_GH_STATE=OPEN assert_warn_contains "advisor: long-form branch --delete --force is matched" \
   "$(json no-registry-session "$MAIN" 'git branch --delete --force todo/foo')" \
   "OPEN and NOT merged"
@@ -903,6 +1325,23 @@ if [ "$CALLER_STATE_BEFORE" = "$CALLER_STATE_AFTER" ]; then
   echo "PASS: caller repo untouched (hermetic)"; PASS=$((PASS+1))
 else
   echo "FAIL: caller repo untouched (hermetic)"; FAIL=$((FAIL+1))
+fi
+
+# Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin.
+# Without it a row that is silently skipped (a helper that dies mid-pipeline,
+# incrementing neither PASS nor FAIL) makes N/0 look identical to (N+1)/0. Update
+# the number DELIBERATELY when adding assertions.
+# 158 -> 159 (2026-09-15): +1 for the -R-FIRST sibling of the stacked root-global pair.
+# The --hostname-first spelling was already pinned; its sibling moved in the same merge
+# with no assertion on it at all, so the pair was half-covered while the comment above it
+# described both orderings. Ordering is the whole point of that row -- the extractor has to
+# walk past a separate-arg global in either position.
+# 159 -> 160: +1 for the discriminating single-global row, which the previous commit
+# described as added while only adding it to a comment.
+EXPECTED_TOTAL=160
+if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
+  echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
+  FAIL=$((FAIL + 1))
 fi
 
 echo ""

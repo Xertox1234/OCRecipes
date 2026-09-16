@@ -229,3 +229,24 @@ describe("RecipeBrowserScreen param contract", () => {
     expect(mockMutateAsync).not.toHaveBeenCalled();
   });
 });
+
+describe("RecipeBrowserScreen — filter sheet iOS a11y-leaf fix", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockMutateAsync.mockResolvedValue({ id: 1 });
+    mockRouteParams.value = {};
+  });
+
+  it("passes accessible={false} to the filter sheet (prevents the iOS a11y-leaf collapse; jsdom cannot verify the native effect)", () => {
+    // On new-arch iOS, @gorhom/bottom-sheet's default accessible=true makes the
+    // wrapper an accessibility LEAF, hiding the filter sheet's content from
+    // VoiceOver AND Maestro (jsdom renders children plainly and cannot see
+    // the native leaf-collapse — this only pins that the prop is passed). See
+    // docs/solutions/logic-errors/
+    // gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
+    renderComponent(<RecipeBrowserScreen />);
+    expect(
+      screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible"),
+    ).toBe("false");
+  });
+});

@@ -12,6 +12,14 @@ vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
 
+// Mocked (not `expect.any(String)`) so the assertion below discriminates a
+// real resolved device zone from a hardcoded constant — an unmocked
+// `expect.any(String)` would stay green even if the header were hardcoded to
+// "UTC", silently reintroducing the bug this fix exists to prevent.
+vi.mock("@/lib/timezone", () => ({
+  getDeviceTimezone: () => "America/Los_Angeles",
+}));
+
 const validItem = {
   id: "batch-1",
   barcode: "0012345678905",
@@ -55,12 +63,19 @@ describe("useBatchConfirm", () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", "/api/batch/save", {
-      items: [validItem],
-      destination: "daily_log",
-      groceryListId: undefined,
-      mealType: "lunch",
-    });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/batch/save",
+      {
+        items: [validItem],
+        destination: "daily_log",
+        groceryListId: undefined,
+        mealType: "lunch",
+      },
+      {
+        headers: { "X-Timezone": "America/Los_Angeles" },
+      },
+    );
   });
 
   it("invalidates daily-budget and scanned-items on daily_log success", async () => {

@@ -3,7 +3,7 @@
  * Each function uses transactions and batch INSERTs for atomicity and performance.
  */
 import { eq, and, sql } from "drizzle-orm";
-import { toDateString } from "@shared/lib/date";
+import { civilDateString } from "../lib/civil-date";
 import { db } from "../db";
 import {
   scannedItems,
@@ -100,10 +100,16 @@ export async function batchCreatePantryItems(
  * Batch create grocery list items from batch scan.
  * If no groceryListId provided, auto-creates a list named "Batch Scan - {date}".
  * Enforces IDOR check and 50-list-per-user limit.
+ *
+ * `tz` is required, not defaulted — the auto-create branch derives "today" from
+ * it, and a `tz = "UTC"` default would silently reintroduce the UTC-basis bug
+ * this parameter exists to prevent. Callers must pass the caller's actual
+ * timezone (see `server/routes/batch-scan.ts`).
  */
 export async function batchCreateGroceryItems(
   items: ResolvedBatchItem[],
   userId: string,
+  tz: string,
   groceryListId?: number,
 ): Promise<{ count: number; groceryListId: number }> {
   return db.transaction(async (tx) => {
@@ -133,7 +139,7 @@ export async function batchCreateGroceryItems(
         );
       }
 
-      const today = toDateString(new Date());
+      const today = civilDateString(new Date(), tz);
       const [newList] = await tx
         .insert(groceryLists)
         .values({

@@ -40,7 +40,8 @@ export default function GroceryListsScreen() {
   const tabBarHeight = useSafeTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const { confirm, ConfirmationModal, behindContentA11yProps } =
+    useConfirmationModal();
   const { data: lists, isLoading, isError, refetch } = useGroceryLists();
   const { streakUnlocks } = usePremiumContext();
   const { mutate: createListMutate, isPending: isCreatingList } =
@@ -160,6 +161,7 @@ export default function GroceryListsScreen() {
     >
       <FlatList
         {...FLATLIST_DEFAULTS}
+        {...behindContentA11yProps}
         data={lists || []}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}
@@ -324,6 +326,7 @@ export default function GroceryListsScreen() {
           ]}
           accessibilityRole="button"
           accessibilityLabel="Generate new grocery list"
+          {...behindContentA11yProps}
         >
           <Feather name="plus" size={24} color={theme.buttonText} />
         </Pressable>

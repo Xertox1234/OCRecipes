@@ -80,7 +80,7 @@ is still there — it is a case the author was not modelling, not a claim that w
 
 Filed **high**. It is an active bypass of a live control — the command runs now, unguarded —
 which is the criterion that put
-`todos/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md` at
+`todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md` at
 critical. It sits a tier below because the blast radius is narrower: the worktree contract
 prevents accidental cross-checkout mutation during isolated work, and it already has a
 sanctioned one-shot escape (`SKIP_WORKTREE_CONTRACT=1`), so this is an undocumented route to

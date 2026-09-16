@@ -123,7 +123,7 @@ describe("batch storage", () => {
   describe("batchCreateGroceryItems", () => {
     it("auto-creates a grocery list and inserts items when no listId is provided", async () => {
       const items = [makeItem()];
-      const result = await batchCreateGroceryItems(items, testUser.id);
+      const result = await batchCreateGroceryItems(items, testUser.id, "UTC");
       expect(result.count).toBe(1);
       expect(result.groceryListId).toBeGreaterThan(0);
 
@@ -151,7 +151,12 @@ describe("batch storage", () => {
         .returning();
 
       const items = [makeItem(), makeItem()];
-      const result = await batchCreateGroceryItems(items, testUser.id, list.id);
+      const result = await batchCreateGroceryItems(
+        items,
+        testUser.id,
+        "UTC",
+        list.id,
+      );
       expect(result).toEqual({ count: 2, groceryListId: list.id });
     });
 
@@ -168,7 +173,7 @@ describe("batch storage", () => {
         .returning();
 
       await expect(
-        batchCreateGroceryItems([makeItem()], testUser.id, list.id),
+        batchCreateGroceryItems([makeItem()], testUser.id, "UTC", list.id),
       ).rejects.toMatchObject({
         name: "BatchStorageError",
         code: "NOT_FOUND",
@@ -193,7 +198,7 @@ describe("batch storage", () => {
       await tx.insert(groceryLists).values(rows);
 
       await expect(
-        batchCreateGroceryItems([makeItem()], testUser.id),
+        batchCreateGroceryItems([makeItem()], testUser.id, "UTC"),
       ).rejects.toBeInstanceOf(BatchStorageError);
 
       // No 51st list and no items should have been written.
@@ -208,6 +213,66 @@ describe("batch storage", () => {
         .from(groceryListItems)
         .where(inArray(groceryListItems.groceryListId, listIds));
       expect(items).toHaveLength(0);
+    });
+
+    // The auto-created list's title/dateRangeStart/dateRangeEnd must be the
+    // CIVIL day in the caller's timezone, not the UTC day of the server
+    // clock's instant. Each fixture is frozen at an instant chosen so the two
+    // bases actually disagree (see docs/solutions/logic-errors/
+    // a-date-cannot-express-a-calendar-day-2026-08-31.md) — a shared instant
+    // cannot discriminate both signs, so each zone gets its own instant where
+    // ONLY that zone's basis puts it on a different day than the UTC instant.
+    // Only `Date` is faked (not timers/network) so the real Postgres pool
+    // used by `tx` is unaffected.
+    describe("auto-created list's calendar day follows the caller's timezone", () => {
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("uses the civil day in a UTC-negative zone (America/Los_Angeles)", async () => {
+        // 2026-09-04T02:30:00Z is 2026-09-03 19:30 PDT (UTC-7): the LA civil
+        // day is ONE DAY BEHIND the UTC day of this instant. The reverted
+        // UTC-basis code (`toDateString(new Date())`) would compute
+        // "2026-09-04" here.
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-09-04T02:30:00Z"));
+
+        const result = await batchCreateGroceryItems(
+          [makeItem()],
+          testUser.id,
+          "America/Los_Angeles",
+        );
+
+        const [list] = await tx
+          .select()
+          .from(groceryLists)
+          .where(eq(groceryLists.id, result.groceryListId));
+        expect(list.title).toBe("Batch Scan - 2026-09-03");
+        expect(list.dateRangeStart).toBe("2026-09-03");
+        expect(list.dateRangeEnd).toBe("2026-09-03");
+      });
+
+      it("uses the civil day in a UTC-positive zone (Asia/Kolkata)", async () => {
+        // 2026-09-03T19:00:00Z is 2026-09-04 00:30 IST (UTC+5:30): the
+        // Kolkata civil day is ONE DAY AHEAD of the UTC day of this instant.
+        // The reverted UTC-basis code would compute "2026-09-03" here.
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(new Date("2026-09-03T19:00:00Z"));
+
+        const result = await batchCreateGroceryItems(
+          [makeItem()],
+          testUser.id,
+          "Asia/Kolkata",
+        );
+
+        const [list] = await tx
+          .select()
+          .from(groceryLists)
+          .where(eq(groceryLists.id, result.groceryListId));
+        expect(list.title).toBe("Batch Scan - 2026-09-04");
+        expect(list.dateRangeStart).toBe("2026-09-04");
+        expect(list.dateRangeEnd).toBe("2026-09-04");
+      });
     });
   });
 });

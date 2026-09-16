@@ -741,8 +741,67 @@ EOF
 fi
 
 # ============ B) ADVISOR branch (never blocks) ============
+# `gh pr close` detection reads the shared, quote-AWARE command detector
+# (lib/cmd-detect.sh) instead of a hand-written raw-$CMD needle, so it inherits
+# the root-position globals slot (`gh -R <repo> pr close 42` and friends, all
+# four spellings) and cmd_bare's quote-aware rendering (a `gh pr close` MENTION
+# sitting inside a quoted commit message no longer false-fires; one hidden
+# inside a LIVE "$(...)" substitution now correctly does). Scoped to THIS
+# branch only, never sourced unconditionally at file scope: branch A (the
+# CONTRACT deny gate, above) has its own independent inline scanners and must
+# keep denying even when this lib cannot be sourced — an advisory hook may
+# fail silent, the main-checkout deny gate must not (see test-git-safety.sh's
+# "lib-missing" pair). Cheap `*gh*`+`*close*` pre-guard first — a deliberate
+# PERFORMANCE trade, and the necessary-substring argument that used to justify
+# it is UNSOUND. The premise was "cmd_bare only BLANKS characters, never inserts
+# them, so both substrings must be literally present". cmd_bare is blanking-only,
+# but the consumer is cmd_bare_deep, which routes through
+# cmd_extract_substitutions — and that DELETES a nested substitution, leaving a
+# zero-width hole. Deletion can SYNTHESISE a substring the raw text never had.
+# Measured under bash 5.3.15, control in the same run:
+#   gh pr close 42                       raw has both   lib=close   advisory=warn
+#   echo "$(gh pr clo$(echo)se 42)"      no "close"     lib=close   advisory=SILENT
+#   echo "$(g$(echo)h pr close 42)"      no "gh"        lib=close   advisory=SILENT
+# Both really execute `gh pr close 42`. So this pre-guard SUPPRESSES shapes the
+# library resolves. Kept anyway: this hook is advisory, both shapes DENY at
+# guard-outward-cli.sh, and the cost is a missed warning against a stated
+# ~140ms/hook budget on every Bash call. Pinned as a row below so the cost is
+# visible on every run rather than rediscovered. Do NOT restate the substring
+# argument as sound — and note pr-verify.sh's pre-guard, cited below as
+# precedent, has the same property, which makes it a second instance rather
+# than support. (Narrowed
+# here from `gh` alone: that single-substring form still sourced the library
+# for any command containing "gh" as a substring of an unrelated word —
+# highlight, through, weight, right — which this hook sees on every single
+# Bash call against a stated ~140ms/hook budget). Fork-free HERE
+# (core-bare-guard.sh/drift-detect.sh's own pattern): a $(cd …) subshell would
+# be the entire added cost of reaching the library.
+_CMD_DETECT_OK=""
+if [[ "$CMD" == *gh* && "$CMD" == *close* ]]; then
+  case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
+  if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
+     && declare -F cmd_gh_pr_write_subcommand >/dev/null \
+     && declare -F cmd_gh_pr_ref >/dev/null; then
+    _CMD_DETECT_OK=1
+  fi
+fi
+
 KIND=""
 REF=""
+SKIP_REASON=""
+# Wording for the SHARED guidance clauses further down. All five arms below set
+# KIND="delete", so KIND cannot say whether the thing being acted on is a branch or a
+# PR — these two carry that, and default to the branch-deletion case because four of
+# the five arms are branch deletions. The `gh pr close` arm overrides them.
+#
+# Why this is not cosmetic: the shared block is reached by every arm, so a hardcoded
+# noun is wrong for whichever arms it was not written for. Measured before this change,
+# `git branch -D https://exfil.example.test/o/r/pull/1` produced "confirm this PR's
+# state manually before closing" — no PR is involved in a branch deletion — while the
+# three sibling clauses said "branch" and were wrong in the mirror direction for
+# `gh pr close`. Fixing only the reported instance would have left its mirror live.
+SUBJ="this branch's merge state"
+VERB="deleting"
 if printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+branch[[:space:]]+-[a-zA-Z]*D[a-zA-Z]*[[:space:]]+'; then
   KIND="delete"
   REF=$(printf '%s' "$CMD" | sed -nE 's/.*git[[:space:]]+branch[[:space:]]+-[a-zA-Z]*D[a-zA-Z]*[[:space:]]+([^[:space:];&|]+).*/\1/p')
@@ -756,14 +815,38 @@ elif printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+push[[:spac
 elif printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+push[[:space:]][^;&|]*[[:space:]]:[^[:space:]]'; then
   KIND="delete"
   REF=$(printf '%s' "$CMD" | sed -nE 's/.*[[:space:]]:([^[:space:];&|]+).*/\1/p')
-elif printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])gh[[:space:]]+pr[[:space:]]+close[[:space:]]+'; then
+elif [ -n "$_CMD_DETECT_OK" ] && [ "$(cmd_gh_pr_write_subcommand "$CMD")" = "close" ]; then
+  # Gate strictly on "close" — cmd_gh_pr_write_subcommand also returns
+  # create|merge|edit, and this advisor must not widen to those. It also
+  # refuses (empty) when a `gh pr create` mention co-occurs with a
+  # merge/close/edit one (its own create-vs-rest guard) — so
+  # `gh pr create -t x && gh pr close 42` no longer fires here, where the old
+  # raw needle did (see test-git-safety.sh). Safe direction: a missed warning,
+  # never a wrong one — this hook is advisory only.
   KIND="delete"
-  REF=$(printf '%s' "$CMD" | sed -nE 's/.*gh[[:space:]]+pr[[:space:]]+close[[:space:]]+([^[:space:];&|]+).*/\1/p')
+  SUBJ="this PR's state"
+  VERB="closing"
+  # cmd_gh_pr_ref REFUSES (empty output, rc!=0) on a --repo/-R retarget, more
+  # than one gh-pr mention, or an ambiguous flag — that means "cannot name the
+  # branch/PR", not "no ref". Route it to the SAME SKIP_REASON path the other
+  # extractors below use (see the widened gate at the top of that block),
+  # rather than either silently dropping the advisory (REF empty would
+  # otherwise fail the `[ -n "$REF" ]` gate) or resolving `gh pr view $REF`
+  # against a garbled/retargeted ref, which could report on the WRONG PR.
+  # No `|| REF=""` fallback: every documented refusal path in cmd_gh_pr_ref
+  # returns 1 with empty stdout (verified by reading its body — no early
+  # `return 1` follows a `printf`), so a bare capture already yields REF="" on
+  # refusal. Checking `$?` here would also be the one caller that newly
+  # depends on cmd-detect.sh's own accepted SIGPIPE residual for this
+  # function (documented there as safe only because "no caller ... checks
+  # $? today") — not adding that dependency keeps that note accurate.
+  REF=$(cmd_gh_pr_ref "$CMD")
+  [ -n "$REF" ] || SKIP_REASON="could not resolve the PR ref via the shared extractor (e.g. a --repo/-R retarget, more than one 'gh pr' mention, or an ambiguous flag) — confirm this PR's state manually before closing."
 elif printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+worktree[[:space:]]+remove[[:space:]][^;&|]*(--force|[[:space:]]-f)'; then
   warn "⚠ git worktree remove --force discards any uncommitted work in that worktree. Confirm the branch is pushed (or its PR merged) before removal. Recovery runbook: docs/solutions/best-practices/restore-and-merge-closed-pr-after-branch-deletion-2026-07-11.md"
 fi
 
-if [ "$KIND" = "delete" ] && [ -n "$REF" ]; then
+if [ "$KIND" = "delete" ] && { [ -n "$REF" ] || [ -n "$SKIP_REASON" ]; }; then
   # Strip one matched pair of surrounding quotes BEFORE the origin/ prefix
   # strip below, so a quoted literal (`git branch -D "todo/foo"`) — or a
   # quoted origin ref — resolves exactly like the unquoted form. Matched-pair
@@ -782,7 +865,9 @@ if [ "$KIND" = "delete" ] && [ -n "$REF" ]; then
   # making the skip explicit here, instead of relying on that side effect,
   # keeps it true if `warn()` ever changes. See
   # docs/solutions/conventions/warn-deny-helper-embedded-exit-defeats-fallthrough-reasoning-2026-07-26.md.)
-  SKIP_REASON=""
+  # SKIP_REASON may already be set here (the gh-pr-close branch above presets
+  # it when cmd_gh_pr_ref refuses) — do not clobber that with the generic
+  # empty-ref message below.
   # A ref that is empty AFTER normalization (quote-stripping above, OR the
   # origin/ strip — e.g. `git branch -D ""` or `git push origin --delete
   # origin/`) must not reach `gh pr view`: an empty positional is NOT "no
@@ -790,11 +875,11 @@ if [ "$KIND" = "delete" ] && [ -n "$REF" ]; then
   # confident "MERGED — deletion is safe" about a branch that has nothing to
   # do with the one actually being deleted. That is worse than the honest
   # "no PR found" this hook used to (accidentally) produce for a garbled ref.
-  [ -n "$REF" ] || SKIP_REASON="the extracted ref is empty after normalization — confirm this branch's merge state manually before deleting."
+  [ -n "$SKIP_REASON" ] || [ -n "$REF" ] || SKIP_REASON="the extracted ref is empty after normalization — confirm ${SUBJ} manually before ${VERB}."
   # A flag-like extraction must not reach gh in argument position.
   if [ -z "$SKIP_REASON" ]; then
     case "$REF" in
-      -*) SKIP_REASON="extracted ref '${REF}' looks like a flag — verify the branch's PR state manually before deleting." ;;
+      -*) SKIP_REASON="extracted ref '${REF}' looks like a flag — verify ${SUBJ} manually before ${VERB}." ;;
     esac
   fi
   if [ -z "$SKIP_REASON" ]; then
@@ -807,7 +892,40 @@ if [ "$KIND" = "delete" ] && [ -n "$REF" ]; then
     # beats a confidently wrong one on the common quoted-variable case. Do
     # not "fix" this back to a real lookup for `$`/backtick-containing refs.
     case "$REF" in
-      *'$'*|*'`'*) SKIP_REASON="could not resolve a literal branch name from '${REF}' (looks like an unexpanded shell variable or command substitution) — confirm this branch's merge state manually before deleting." ;;
+      *'$'*|*'`'*) SKIP_REASON="could not resolve a literal branch name from '${REF}' (looks like an unexpanded shell variable or command substitution) — confirm ${SUBJ} manually before ${VERB}." ;;
+    esac
+  fi
+  if [ -z "$SKIP_REASON" ]; then
+    # cmd_gh_pr_ref can return a URL, not just a number or branch name (it was
+    # renamed from cmd_gh_pr_number for exactly this reason). Restrict a
+    # URL-shaped REF to the configured GitHub host before it ever reaches `gh
+    # pr view` below — mirrors pr-verify.sh's own GH_ALLOWED_HOST guard,
+    # required by cmd_gh_pr_write_subcommand's own header comment ("keep that
+    # guard if you reuse this matcher with a ref extractor that can return a
+    # URL"). Without this, `gh pr close <attacker-url>` — including one hidden
+    # inside a live "$(...)" substitution this port newly surfaces — makes
+    # this PreToolUse hook open a real network connection to an
+    # attacker-chosen host the instant the command is merely PROPOSED, before
+    # any user permission decision and independent of guard-outward-cli.sh
+    # (which screens the agent's own tool-call target, not a subprocess this
+    # hook spawns internally). Numbers and branch names are untouched: git
+    # ref names cannot contain a colon OR two consecutive slashes anywhere
+    # (git-check-ref-format; verified: `git check-ref-format --branch
+    # '//foo'` and `git check-ref-format 'refs/heads/a//b'` both reject),
+    # so only a URL-SHAPED or PROTOCOL-RELATIVE (`//host/path`, no scheme,
+    # no colon at all — still a real host reference to `gh`'s own URL
+    # handling) REF can match the disqualifying arm below. The `//*` arm was
+    # added after review (security-auditor, round 2, CRITICAL): the
+    # colon-based check alone let a scheme-less `//host/path` fall through
+    # BOTH arms unrestricted — reproduced by construction, no `gh` invoked:
+    # `cmd_gh_pr_ref` on a `gh pr close //exfil.example.test/...` mention
+    # resolves that exact string with rc=0, and it matched neither the
+    # allowed-host prefix nor the original `*://*|*:*` pattern (no colon
+    # present at all).
+    GH_ALLOWED_HOST="${GH_HOST:-github.com}"
+    case "$REF" in
+      "https://$GH_ALLOWED_HOST/"*) ;;
+      //*|*://*|*:*) SKIP_REASON="extracted ref '${REF}' is a URL outside the configured GitHub host — refusing to look it up (this hook never contacts a host other than https://${GH_ALLOWED_HOST}/) — confirm ${SUBJ} manually before ${VERB}." ;;
     esac
   fi
   if [ -n "$SKIP_REASON" ]; then
