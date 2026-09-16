@@ -820,8 +820,10 @@ add "fautoog-multi" DENY 'gh pr merge 42 --auto>log ; gh pr merge 7'
 #               different way. Tracked at
 #               todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #               NOT the whole case-arm axis: a case arm inside a BARE PAREN
-#               SUBSHELL still allows on every path, tracked at
-#               todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
+#               SUBSHELL still allows on every path -- measured by
+#               toolvcaseparen-*/verbvcaseparen-*/flagvcaseparen-* below (the
+#               vcasebrace mechanism is the control that isolates it), see
+#               todos/archive/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
 # vcomment: a `(` inside a shell COMMENT. Inert to bash (a comment runs to
 # end-of-line), so the substitution's real closer is the `)` on the NEXT line --
 # but a paren-counting scanner counts it and the level never closes. This
@@ -836,12 +838,29 @@ add "fautoog-multi" DENY 'gh pr merge 42 --auto>log ; gh pr merge 7'
 # separator and the decoy `esac` closes casedepth one arm early. PRE-EXISTING
 # (ALLOW on the parent commit too, before the case-arm fix landed) -- see
 # guard-outward-cli.sh's DOCUMENTED RESIDUALS entry for the full account.
+# vcaseparen / vcasebrace (added 2026-09-14, a SEPARATE composition found in
+# the same post-implementation review as vcasecomment, filed as its own todo):
+# a case arm wrapped in a BARE-PAREN SUBSHELL. The subshell's own `(` takes the
+# paren-depth credit lib/cmd-detect.sh's per-level counter (`parens[d]`)
+# tracks; the case arm's own unmatched `)` (its pattern's `a)`) is then read as
+# an ordinary paren-closer and spends that credit, so when the subshell's REAL
+# closing `)` arrives, `parens[d]==0` AND `casedepth[d]==0` both hold and it is
+# misread as the OUTER $(...)'s own closer -- one paren too early. PRE-EXISTING
+# (ALLOW on the parent commit and on main too). vcasebrace is the CONTROL that
+# isolates the mechanism: swap the subshell for a BRACE GROUP, which does not
+# consume `parens[d]`, and the identical live invocation is caught -- measured
+# DENY at all three splice positions (tool/verb/flag), including
+# flagvcasebrace-ghadmin, which denies for the SAME pre-existing "no REAL
+# --auto" reason flagvcasearm-ghadmin/flagvcasecomment-ghadmin already
+# document, not because this mechanism is closed there -- read its ATTRIBUTION,
+# not its verdict. See guard-outward-cli.sh's DOCUMENTED RESIDUALS entry for
+# the full account.
 TOOL_MECHS=('$()' '${UNSET}' '``' '$(: $(:))' '$(: "x)y")' "\$(: 'a)b')" \
             "\$(: '\"' \"a)b\" )" '$( (:) )' '$(case x in a) : ;; esac)' \
             "\$(: # (
 )" '$((:)|(:))' '$(case x in a) : ;; #x;esac
-b) : ;; esac)')
-TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep vcasecomment)
+b) : ;; esac)' '$( ( case x in a) : ;; esac ) )' '$({ case x in a) : ;; esac; })')
+TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep vcasecomment vcaseparen vcasebrace)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
   for m in "${!TOOL_MECHS[@]}"; do
@@ -1061,8 +1080,8 @@ done
 #                does not travel forward.
 SPAN2_MECHS=('$( (:) )' '$(case x in a) : ;; esac)' "\$(: # (
 )" '$((:)|(:))' '$(case x in a) : ;; #x;esac
-b) : ;; esac)')
-SPAN2_IDS=(vbareparen vcasearm vcomment varithsep vcasecomment)
+b) : ;; esac)' '$( ( case x in a) : ;; esac ) )' '$({ case x in a) : ;; esac; })')
+SPAN2_IDS=(vbareparen vcasearm vcomment varithsep vcasecomment vcaseparen vcasebrace)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
   lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))

@@ -1,6 +1,6 @@
 ---
 title: "cmd-detect: a case arm inside a bare-paren subshell steals the paren credit, so the subshell's `)` still closes $(...) early"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-14
 updated: 2026-09-14
