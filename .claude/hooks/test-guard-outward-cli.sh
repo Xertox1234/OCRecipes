@@ -4704,8 +4704,70 @@ assert_allow "sudo with a value-taking flag on an ungated binary stays allowed" 
 assert_allow "corepack's own subcommands stay allowed" \
   "$(json 'corepack enable')"
 
+
+# ---------- ROUND 6: the path/launcher qualifier of the COMMAND ----------
+# Round 5 made the prefix an axis but attached (path)? to a wrapper or privilege WORD only. The
+# bare-path arm -- a path qualifying the COMMAND or the LAUNCHER -- lives solely in
+# _OUT_POS_PREFIX_LP, so the three anchors with no _LP sibling were still bypassed by it while
+# the header claimed them closed. Six one-token-different pairs, each measured with its
+# env-prefixed control DENYING, and all six also ALLOW on origin/main (pre-existing, not
+# regressions). Closed with _OUT_OPT_QUAL, the optional form of the group _LP mandates.
+assert_deny "path-qualified LAUNCHER before an ambiguous flag (a real OTA; -c hides the payload from every downstream anchor)" \
+  "$(jsonc '/opt/homebrew/bin/npx -c "eas update --branch production"')" \
+  "a launcher"
+assert_deny "path-qualified binary with an expansion-token verb" \
+  "$(json '/opt/homebrew/bin/eas $V --branch production')" \
+  "the verb is not"
+assert_deny "launcher-qualified binary with an expansion-token verb" \
+  "$(json 'npx eas $V --branch production')" \
+  "the verb is not"
+assert_deny "expansion-token verb on gh reaches the admin sink when the path qualifies it" \
+  "$(json '/opt/homebrew/bin/gh pr $V 42')" \
+  "the verb is not"
+assert_deny "path-qualified binary with a brace-RANGE verb" \
+  "$(json '/opt/homebrew/bin/eas upd{a..z}te --branch production')" \
+  "glued to a brace RANGE"
+assert_deny "launcher-qualified binary with a brace-RANGE verb" \
+  "$(json 'npx eas upd{a..z}te --branch production')" \
+  "glued to a brace RANGE"
+
+# ---------- ROUND 6 REGRESSION: a decoy --auto absorbed into the PREFIX ----------
+# Introduced by round 5, not inherited. _OUT_PRIV_WORD appends _OUT_FLAG_RUN, which absorbs any
+# dash token as a flag of sudo/doas/corepack; that text lands inside the CLAUSE the grant check
+# reads, and the scan accepted a standalone --auto ANYWHERE in it. Measured before the fix:
+# `sudo gh pr merge 1` DENIED while `sudo --auto gh pr merge 1` was a silent ALLOW -- a decoy
+# that never reaches gh satisfying the grant. A false GRANT is worse than a missed detection.
+# The scan now starts at the gh token, so a dash token in the prefix cannot grant.
+assert_deny "a decoy --auto in the privilege prefix does not grant the merge" \
+  "$(json 'sudo --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+assert_deny "decoy --auto behind another privilege flag does not grant" \
+  "$(json 'sudo -E --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+assert_deny "decoy --auto in a VALUE-taking privilege flag slot does not grant" \
+  "$(json 'sudo -u ci --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+assert_deny "decoy --auto behind a path-qualified privilege word does not grant" \
+  "$(json '/usr/bin/sudo --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+
+# ---------- ROUND 6: the grant must still work for the REAL thing ----------
+# The failure mode on this side is denying the sanctioned /todo automerge, which would break a
+# live pipeline rather than merely annoy. Pinned under each prefix form the axis now absorbs.
+assert_allow "the sanctioned --auto automerge still ALLOWS behind a privilege prefix" \
+  "$(json 'sudo gh pr merge 42 --auto --squash')"
+assert_allow "the sanctioned --auto automerge still ALLOWS behind a bare wrapper" \
+  "$(json 'env gh pr merge 42 --auto --squash --delete-branch')"
+assert_allow "the sanctioned --auto automerge still ALLOWS behind an inline assignment" \
+  "$(json 'GH_TOKEN=x gh pr merge 42 --auto --squash')"
+
 # (The "+2 over-denial controls" tail of the 841 -> 851 sentence lived here, orphaned from its
 # own paragraph by a later insertion; it has been returned to that paragraph above.)
+# 888 -> 901 (2026-09-16, security round 6): +13, DERIVED from the rows below -- 6 for the
+# path/launcher qualifier of the COMMAND at the three anchors with no _LP sibling, 4 for the
+# decoy---auto-in-the-prefix REGRESSION round 5 introduced, and 3 that pin the sanctioned
+# automerge still ALLOWing behind each prefix form, because that is the side of this change that
+# would break a live pipeline rather than merely annoy.
 # 865 -> 888 (2026-09-16, security round 5): +23, DERIVED from the rows below rather than
 # guessed -- 7 for the command-position anchors round 4 left behind, 7 for the privilege prefix
 # (both the bare and the flagged spelling, because closing only the bare one was the same
@@ -4718,7 +4780,7 @@ assert_allow "corepack's own subcommands stay allowed" \
 # Set immediately before the total pin so a process death anywhere in the assertions above is
 # still caught as a TRUNCATED run rather than reported as success.
 _PIN_RAN=1
-EXPECTED_TOTAL=888
+EXPECTED_TOTAL=901
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

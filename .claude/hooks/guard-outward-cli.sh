@@ -232,7 +232,25 @@
 #     (`env`, `command`, `nohup`, an inline assignment, a redirect) and privilege words
 #     (`sudo`, `doas`, `corepack`, via `_OUT_PRIV_WORD`, flags included), each independently
 #     path-qualifiable, in any order. `_OUT_POS_PREFIX_LP` is derived from it, so the launcher
-#     family inherits the same reach. The absorber body exists in exactly ONE place now: the
+#     family inherits the same reach.
+#
+#     BE PRECISE ABOUT WHAT "PATH-QUALIFIABLE" COVERS, because the round-5 wording was not and
+#     cost a round. `_OUT_POS_PREFIX_W` path-qualifies a wrapper or privilege WORD. It does NOT
+#     by itself let a path or launcher qualify the COMMAND -- that arm lives in
+#     `_OUT_POS_PREFIX_LP` (mandatory) and `_OUT_OPT_QUAL` (optional). Anchors with an `_LP`
+#     sibling get it from there; the three without one -- the expansion-token narrow deny, the
+#     brace-range narrow deny and the ambiguous-flag launcher check -- take `_OUT_OPT_QUAL`
+#     explicitly, added in round 6 after six one-token-different pairs measured open. When you
+#     add a command-position anchor, decide which of the two it needs: `_W` alone is not enough
+#     unless the shape genuinely cannot be path- or launcher-qualified.
+#
+#     DELIBERATE BEHAVIOUR CHANGE vs `main`, measured: a launcher- or path-qualified merge with
+#     the auto flag now DENIES, where `main` allows it. The auto carve-out does not survive
+#     qualification, because a launcher can rewrite which binary actually runs -- that is exactly
+#     how a version-pinned launcher spelling reached an unreviewed admin merge in round 2. This
+#     repo's own sanctioned /todo automerge calls the BARE spelling, which still allows and is
+#     pinned in both the suite and the corpus. ALLOW_OUTWARD_CLI=1 covers the qualified form if
+#     it is ever genuinely needed. The absorber body exists in exactly ONE place now: the
 #     package-directory clauses used to carry their own byte-identical copy and were repointed
 #     at the constant in this round, so widening it reaches them too.
 #
@@ -2263,6 +2281,29 @@ _OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD
 # boolean grep -Eqi deny consumers, so inheriting the wider anchor is monotone-safe here.
 _OUT_POS_PREFIX_LP="${_OUT_POS_PREFIX_W}((${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER})(${_OUT_PATH_PREFIX})?|${_OUT_PATH_PREFIX})"
 
+# The same launcher/path group as _OUT_POS_PREFIX_LP above, but OPTIONAL -- "the command may be
+# qualified by a path, or by a launcher, or by both, or by neither". _LP mandates at least one of
+# them because its consumers exist only to catch the qualified forms; the three anchors below
+# catch an unqualified shape too, so they need the optional spelling or they would stop denying
+# the bare case.
+#
+# ROUND 6 (2026-09-16) ADDED THIS, and the reason is worth keeping. Round 5 made the command-
+# position PREFIX an axis and then wrote in this file's header that each element was
+# "independently path-qualifiable". Measured, that was true of a wrapper or privilege WORD and
+# false of the COMMAND and the LAUNCHER, because _OUT_POS_PREFIX_W carries `(path)?` only in
+# front of a wrapper word -- the bare-path arm lives only in _LP. The three anchors with no _LP
+# sibling were therefore still open, and the header claimed them closed. That is round 4's defect
+# restated one dimension over: a fix that closes one product and prose that claims the other.
+# Six one-token-different pairs were measured, each with its `env`-prefixed control DENYING:
+#   /opt/homebrew/bin/npx -c '<gated>'      ALLOW   (env npx -c '<gated>'      DENY)
+#   /opt/homebrew/bin/eas $V --branch ...   ALLOW   (env eas $V --branch ...   DENY)
+#   npx eas $V --branch ...                 ALLOW
+#   /opt/homebrew/bin/eas upd{a..z}te ...   ALLOW   (env eas upd{a..z}te ...   DENY)
+#   npx eas upd{a..z}te ...                 ALLOW
+#   /opt/homebrew/bin/gh pr $V 42           ALLOW   ($V=merge reaches the admin sink)
+# All six also measured ALLOW on origin/main, so they are pre-existing, not regressions.
+_OUT_OPT_QUAL="((${_OUT_PATH_PREFIX})?((${_OUT_LAUNCHER})(${_OUT_PATH_PREFIX})?)?)"
+
 # --- Security-review round-1 additions (2026-09-16) --------------------------
 # Two further gaps in the launcher/path axis above, both found by
 # CONSTRUCTING and RUNNING the adversarial command through the guard (never
@@ -3058,9 +3099,9 @@ fi
 _OUT_EXPANSION_TOKEN='(\$\{[^}]*\}|\$\([^)]*\)|`[^`]*`|\$[A-Za-z_][A-Za-z0-9_]*)'
 _OUT_GATED_BIN='(eas|railway|npm|pnpm|yarn|gh)'
 _OUT_GATED_VERB='(update|publish|submit|build|up|deploy|redeploy|restart|down|delete|remove|rm|run|pr|release|repo|api)'
-if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
-   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
-   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"; then
+if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -3193,7 +3234,7 @@ _OUT_BR_RANGE_TOKEN='[^;&|)`{}[:space:]]*\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]
 # boolean exclusion instead of a count: "some text elsewhere also matches
 # the excluded shape" can never license silencing a DIFFERENT occurrence
 # that does not.
-_OUT_BR_RANGE_ALREADY_HANDLED="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment)|api)"'\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\}'"${_OUT_POS_SUFFIX}"
+_OUT_BR_RANGE_ALREADY_HANDLED="${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment)|api)"'\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\}'"${_OUT_POS_SUFFIX}"
 # LOAD-BEARING COUPLING, stated because it is invisible from here: this exclusion is
 # safe ONLY because `_OUT_POS_SUFFIX` accepts `{` as a closer, which is what keeps the
 # four excluded verbs visible to their own downstream checks. Verified at this head --
@@ -3202,9 +3243,9 @@ _OUT_BR_RANGE_ALREADY_HANDLED="${_OUT_POS_PREFIX_W}gh${_OUT_GH_GLOBALS}${_OUT_SE
 # `_OUT_POS_SUFFIX`'s closer class and this exclusion silently becomes a live bypass with
 # nothing here to catch it, so change the two together or not at all.
 _OUT_BR_OCC=$(
-  { grep -oE "${_OUT_POS_PREFIX_W}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
-    grep -oE "${_OUT_POS_PREFIX_W}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
-    grep -oE "${_OUT_POS_PREFIX_W}${_OUT_BR_RANGE_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"
+  { grep -oE "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
+    grep -oE "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
+    grep -oE "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_BR_RANGE_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"
   } 2>/dev/null
 )
 _OUT_BR_FIRE=0
@@ -3636,7 +3677,25 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
       { norm = strip_redirs($0)
         n = split(norm, f, " ")
         prev = ""
+        # THE SCAN STARTS AT `gh`, NOT AT THE START OF THE CLAUSE. The clause begins at the
+        # command-position prefix, which absorbs wrapper and privilege words -- and, for a
+        # privilege word, its FLAGS too (_OUT_PRIV_WORD appends _OUT_FLAG_RUN, which treats any
+        # dash token as a flag without checking it against the option set of the real binary). A dash
+        # token sitting there is an argument to `sudo`, not to `gh`, so it must never grant.
+        # Measured before this fix, on this branch: `sudo gh pr merge 1` DENIED while
+        # `sudo --auto gh pr merge 1` was a silent ALLOW -- a decoy that never reaches gh
+        # satisfying the grant. If no gh token is found the scan simply never starts, which
+        # fails toward DENY, the safe direction for a grant-shaped check.
+        started = 0
         for (i = 1; i <= n; i++) {
+          if (!started) {
+            # `;gh`, `(gh`, `/usr/bin/gh` and bare `gh` all count -- the split leaves the
+            # opening separator or the path glued to the word. Same opener class as
+            # _OUT_POS_PREFIX, plus the path separator.
+            if (tolower(f[i]) ~ /(^|[;&|(`{!]|\/)gh$/) started = 1
+            prev = f[i]
+            continue
+          }
           if (f[i] == "--auto" && prev !~ flags) { print "yes"; exit }
           prev = f[i]
         }
@@ -4294,7 +4353,7 @@ fi
 # unconditionally — see the _OUT_LAUNCHER_AMBIG_FLAG header comment above for
 # why this cannot be scoped to only the gated packages (the -c/--call value
 # is inside a quoted string this guard already blanked as prose elsewhere).
-if grep -Eqi "${_OUT_POS_PREFIX_W}(${_OUT_LAUNCHER})${_OUT_LAUNCHER_AMBIG_FLAG}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}(${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER})${_OUT_LAUNCHER_AMBIG_FLAG}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) combined with --package/-p/-c/--call denies UNCONDITIONALLY — the guard cannot verify the true target from text: --package/-p's value can name any gated package, and -c/--call's argument sits inside a quoted string this guard's own quote-blanking already treats as non-command prose everywhere else. Fail-closed, same as an unparseable .tool_input.command. This also over-denies a benign use (e.g. 'npx -p typescript tsc --version') — checked offline (grep, no network) for this repo's own usage of any of these four flags under a launcher: none found, so no reachable cost here, same 'deliberate, documented over-denial' choice as the gh-family block below. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 

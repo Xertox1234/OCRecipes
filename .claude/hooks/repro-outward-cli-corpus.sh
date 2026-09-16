@@ -1681,11 +1681,17 @@ PFX_TARGETS=(
 )
 # Ungated work every developer types. The prefix widening must not reach these: over-denial is
 # the failure that gets a guard switched off rather than fixed.
-PFX_ALLOW_IDS=(node npmscript ghread)
+PFX_ALLOW_IDS=(node npmscript ghread automerge)
 PFX_ALLOWS=(
   'node scripts/build.js'
   'npm run build'
   'gh pr list'
+  # The sanctioned /todo automerge. This is the one control here whose regression would break a
+  # live pipeline rather than merely annoy: the gh pr merge clause cut is GRANT-shaped, so an
+  # empty clause reads as "no --auto seen" and DENIES. It belongs on the prefix grid because
+  # round 6 found a decoy --auto absorbed INTO a privilege prefix granting the merge -- the
+  # inverse failure, at the same site.
+  'gh pr merge 42 --auto --squash --delete-branch'
 )
 PFX_ROWS_BEFORE=${#ROWS[@]}
 for _pfx_i in "${!PFX_IDS[@]}"; do
@@ -1698,10 +1704,57 @@ for _pfx_i in "${!PFX_IDS[@]}"; do
   done
 done
 PFX_ROWS_GENERATED=$(( ${#ROWS[@]} - PFX_ROWS_BEFORE ))
-# 8 prefix forms x (10 deny payloads + 3 allow controls) = 104. Asserted against what the loop
+# 8 prefix forms x (10 deny payloads + 4 allow controls) = 112. Asserted against what the loop
 # actually produced, never against the arithmetic alone -- same discipline as the LP axis below.
-if [ "$PFX_ROWS_GENERATED" -ne 104 ]; then
-  echo "FATAL: prefix axis generated $PFX_ROWS_GENERATED rows, expected 8 x (10 + 3) = 104 -- a dimension silently iterated short" >&2
+if [ "$PFX_ROWS_GENERATED" -ne 112 ]; then
+  echo "FATAL: prefix axis generated $PFX_ROWS_GENERATED rows, expected 8 x (10 + 4) = 112 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# axis: PATH/LAUNCHER QUALIFIER OF THE COMMAND (round 6, 2026-09-16)
+#
+# Round 5 made the command-position PREFIX an axis, but `(path)?` sat in front of a wrapper or
+# privilege WORD only -- the bare-path arm lives in _OUT_POS_PREFIX_LP. The three anchors with no
+# _LP sibling (the expansion-token narrow deny, the brace-range narrow deny, and the
+# ambiguous-flag launcher check) therefore never saw a path or launcher qualifying the COMMAND,
+# and the round-5 prefix dimension above could not express it either -- so six live bypasses sat
+# behind pins that could not have moved for them. All six measured ALLOW on origin/main too.
+QL_IDS=(bare path npx npxpath pathnpx)
+QL_FORMS=(
+  '' '/opt/homebrew/bin/' 'npx ' 'npx /opt/homebrew/bin/' '/opt/homebrew/bin/npx '
+)
+QL_TARGET_IDS=(expansion brange)
+QL_TARGETS=(
+  'eas ${V} --branch production'
+  'eas upd{a..z}te --branch production'
+)
+# The ambiguous-flag launcher already spells its own launcher, so it varies over PATHS only --
+# a launcher in front of a launcher is the LAUNCHER-GRAMMAR axis, carried by the follow-up todo.
+QL_AMBIG_IDS=(bare abs dotbin)
+QL_AMBIG_PATHS=('' '/opt/homebrew/bin/' './node_modules/.bin/')
+# A decoy --auto absorbed into the privilege prefix must not grant the merge. Round 5 introduced
+# this one: _OUT_PRIV_WORD appends _OUT_FLAG_RUN, which absorbs any dash token, and that text
+# landed inside the CLAUSE the grant check reads.
+QL_DECOY_IDS=(sudo sudoflag sudopath corepack)
+QL_DECOY_FORMS=('sudo --auto ' 'sudo -E --auto ' '/usr/bin/sudo --auto ' 'corepack --auto ')
+QL_ROWS_BEFORE=${#ROWS[@]}
+for _ql_i in "${!QL_IDS[@]}"; do
+  for _qt_i in "${!QL_TARGET_IDS[@]}"; do
+    add "ql-${QL_IDS[$_ql_i]}-${QL_TARGET_IDS[$_qt_i]}" DENY "${QL_FORMS[$_ql_i]}${QL_TARGETS[$_qt_i]}"
+  done
+done
+for _qa_i in "${!QL_AMBIG_IDS[@]}"; do
+  add "ql-ambig-${QL_AMBIG_IDS[$_qa_i]}" DENY "${QL_AMBIG_PATHS[$_qa_i]}npx -c 'eas update --branch production'"
+done
+for _qd_i in "${!QL_DECOY_IDS[@]}"; do
+  add "ql-decoy-${QL_DECOY_IDS[$_qd_i]}" DENY "${QL_DECOY_FORMS[$_qd_i]}gh pr merge 1"
+done
+QL_ROWS_GENERATED=$(( ${#ROWS[@]} - QL_ROWS_BEFORE ))
+# 5 qualifier forms x 2 narrow-deny targets = 10, plus 3 ambiguous-flag path forms, plus 4 decoy
+# rows = 17. Asserted against what the loops actually produced, never the arithmetic alone.
+if [ "$QL_ROWS_GENERATED" -ne 17 ]; then
+  echo "FATAL: command-qualifier axis generated $QL_ROWS_GENERATED rows, expected 5 x 2 + 3 + 4 = 17 -- a dimension silently iterated short" >&2
   exit 1
 fi
 
@@ -2481,15 +2534,20 @@ fi
 # 1180 -> 1510 (2026-09-16): +330 from the composition-order dimension added to the
 # launcher/path grid (path-before-launcher and path-on-both-sides) plus the npm x
 # launcher. Regenerated from the run that measured them, never hand-computed.
+# 1614 -> 1639 (2026-09-16, round 6): +25. The COMMAND-QUALIFIER axis contributes 17 (5
+# qualifier forms x 2 narrow-deny targets, 3 ambiguous-flag path forms, 4 decoy rows), and the
+# sanctioned automerge joining PFX_ALLOWS contributes 8 (one per prefix form). The round-5
+# prefix dimension path-qualified the wrapper/privilege WORD only, so none of the six bypasses
+# round 6 found could have moved a pin here -- the same blindness one dimension over.
 # 1510 -> 1614 (2026-09-16, round 5): +104 from the COMMAND-POSITION PREFIX dimension
-# (8 prefix forms x 10 deny payloads + 3 over-denial controls), composed against the
+# (8 prefix forms x 10 deny payloads + 4 over-denial controls), composed against the
 # anchor FAMILY rather than the launcher grid. Its own short-iteration FATAL guard
 # asserts the 104. Why it exists: round 4's wrapper fix closed four reachable bypasses
 # and moved NOT ONE pin in this file, because no row put a wrapper word in command
 # position -- the unchanged pins read as confirmation and were blindness. Round 5's
 # review then found seven more anchors still bypassed, six of them at gh /
 # expansion-token / brace-range checks the launcher grid never reaches.
-EXPECTED_ROWS=1614
+EXPECTED_ROWS=1639
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 761 of the 876 rows deny on the precise path; the other 115 are ALLOW there: 91
@@ -2635,6 +2693,9 @@ EXPECTED_ROWS=1614
 # at 24 across the same run -- and that 24 now MEANS something, because the grid can
 # finally express a path-qualified launcher. It could not before, which is why the
 # previous unchanged 24 was true and vacuous.
+# 1461 -> 1478 (2026-09-16, round 6): +17, exactly the command-qualifier axis -- every one of
+# its rows denies. The 8 automerge rows added in the same round are ALLOW controls, so they are
+# not attributed, which is why this moves by 17 while EXPECTED_ROWS moves by 25.
 # 1381 -> 1461 (2026-09-16, round 5): +80, NOT the full +104 row delta -- 24 of the new
 # prefix rows are over-denial controls that must keep ALLOWing (ungated work behind the
 # same prefixes), so only the 80 deny payloads are attributed. The gap between 104 and 80
@@ -2642,7 +2703,7 @@ EXPECTED_ROWS=1614
 # failure that gets a guard switched off rather than fixed.
 # precise-path gaps held at 24 and all-path gaps at 306 across this change, with ZERO
 # membership drift in either manifest -- the 104 new rows agree on all four paths.
-EXPECTED_DENY_ATTRIB_ROWS=1461
+EXPECTED_DENY_ATTRIB_ROWS=1478
 
 # 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -2740,7 +2801,12 @@ EXPECTED_PRECISE_GAPS=24
 # pattern the +6 bump above describes. MEASURED: the run reported `all-path
 # gaps is 306`. The manifest below is the prior 285-line pin plus these 21,
 # LC_ALL=C sorted -- not hand-merged.
-EXPECTED_ALLPATH_GAPS=306
+# 306 -> 314 (2026-09-16, round 6): +8, and every one is a `pfxok-*-automerge` row measuring
+# p=ALLOW j=DENY l=DENY a=DENY. The precise path honours the --auto carve-out; the degraded
+# (nojq/nolib/noawk) fallbacks cannot see it and deny. That is the SAME documented degraded-path
+# residual the launcher rows already carry, not a new gap -- verified by reading the 8 added
+# manifest tuples rather than inferring from the count.
+EXPECTED_ALLPATH_GAPS=314
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -2975,6 +3041,14 @@ lp-verpin-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-verpin-yarnbare p=DENY j=ALLOW l=ALLOW a=ALLOW
 nssufx-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 nssufx-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+pfxok-bare-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-corepack-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-none-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-path-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-priv-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-privflag-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-privpath-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-stacked-automerge p=ALLOW j=DENY l=DENY a=DENY
 r4ansic-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
@@ -4472,6 +4546,23 @@ pfx-stacked-expansion : an outward-facing CLI is named in command position but t
 pfx-stacked-brange : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 pfx-stacked-lambig : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
 pfx-stacked-lnch   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+ql-bare-expansion  : an outward-facing CLI is named in command position but the verb is not l
+ql-bare-brange     : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+ql-path-expansion  : an outward-facing CLI is named in command position but the verb is not l
+ql-path-brange     : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+ql-npx-expansion   : an outward-facing CLI is named in command position but the verb is not l
+ql-npx-brange      : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+ql-npxpath-expansion : an outward-facing CLI is named in command position but the verb is not l
+ql-npxpath-brange  : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+ql-pathnpx-expansion : an outward-facing CLI is named in command position but the verb is not l
+ql-pathnpx-brange  : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+ql-ambig-bare      : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+ql-ambig-abs       : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+ql-ambig-dotbin    : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+ql-decoy-sudo      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ql-decoy-sudoflag  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ql-decoy-sudopath  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ql-decoy-corepack  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 lp-pkg-eascli-npx  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-pkg-eascli-npmexec : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-pkg-railwaycli-npx : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
