@@ -37,12 +37,30 @@ literally.
 nor widened it. PR #982 only documented it (see `guard-outward-cli.sh`'s DOCUMENTED
 RESIDUALS entry, search "BRACE LIST expansion", FLAG-position paragraph).
 
-**The gap is specifically WHOLE-FLAG alternatives.** Glued-IN-WORD spellings of the same
-flag DENY on both trees and must NOT be cited as examples of this hole — `--ad{m,m}in`
-and its RANGE sibling `--ad{m..m}in` were both measured DENY, as were `{--admin,--admin}`
-and the empty-quote form. An earlier review transcript asserted the in-word comma form
-ALLOWs; that assertion is wrong and was corrected by measurement before this todo was
-filed.
+**The residual is wider than the whole-flag form, and the alternative count is not the
+discriminator.** Re-measured with the base command `gh pr merge 42 --auto --delete-branch`
+held CONSTANT and only the trailing flag's spelling varied (positive control `--admin` →
+DENY, no-extra-flag control → ALLOW, both behaving, zero void rows), on both trees:
+
+| spelling            | verdict   | expands to                                |
+| ------------------- | --------- | ----------------------------------------- |
+| `--admin`           | DENY      | `--admin`                                 |
+| `{--admin,--admin}` | DENY      | `--admin --admin`                         |
+| `--{admin,squash}`  | **ALLOW** | `--admin --squash`                        |
+| `--ad{m,m}in`       | **ALLOW** | `--admin --admin`                         |
+| `--ad{m..m}in`      | **ALLOW** | `--admin` (one word, no extra positional) |
+
+The in-word RANGE form is the cleanest bypass of the set. What separates DENY from ALLOW is
+whether the literal substring `--admin` survives in the RAW command text: `scan_renderings`
+never brace-expands, so any spelling that breaks that substring passes, and any spelling
+that leaves it intact is caught by the literal check. Generalise from that, not from the
+alternative count.
+
+**Correction on the record.** An earlier revision of this todo claimed the in-word spellings
+were measured DENY. That was wrong. The probe behind it varied the flag spelling and the
+presence of `--auto`/`--delete-branch` simultaneously, so those rows sat in an
+already-denied regime and the flag dimension was masked. A control only validates the path
+it actually runs through.
 
 ### Why this is `medium` and not `high`
 
@@ -61,9 +79,11 @@ probing the guard.
 - [ ] `<pr-merge-command> 42 --auto --delete-branch --{admin,squash}` measures DENY on the
       precise path, with the deny reason attributable to a named check (not a generic
       fail-closed smell).
-- [ ] The three in-word spellings that already DENY (`--ad{m,m}in`, `--ad{m..m}in`,
-      `{--admin,--admin}`) still DENY — no attribution stolen from whatever check
-      currently catches them.
+- [ ] The in-word spellings `--ad{m,m}in` and `--ad{m..m}in` also measure DENY. They are
+      part of this residual, NOT already closed — the range form reconstructs a bare
+      `--admin` with no extra word, so any fix keyed on a spare positional misses it.
+- [ ] `{--admin,--admin}` and a literal `--admin` still DENY, with attribution unchanged —
+      no credit stolen from the literal check that already catches them.
 - [ ] The sanctioned automerge spelling (`--auto --squash --delete-branch`) still ALLOWs.
       This is the negative control and it must be asserted in the same run, not assumed.
 - [ ] Corpus rows added for FLAG position across the r4brlist family, generated from the
@@ -137,8 +157,8 @@ COMMENT text can move that pin — re-run the corpus after any edit to that file
 
 ## Risks
 
-- Widening the flag-position item class risks stealing attribution from the checks that
-  currently catch the in-word spellings. Widening a matcher is monotone on a BOOLEAN read
+- Widening the flag-position item class risks stealing attribution from the literal check
+  that catches `--admin` and `{--admin,--admin}`. Widening a matcher is monotone on a BOOLEAN read
   but NOT on a COUNT — a longer match absorbs what would have started a second one, so
   verify per deny SITE and per alternation BRANCH, not per file.
 - The composition space is open-ended. Measuring and closing FLAG position for this one
@@ -150,6 +170,12 @@ COMMENT text can move that pin — re-run the corpus after any edit to that file
 ### 2026-09-16
 
 - Filed after measurement during PR #982's merge-gate review. Found by `security-auditor`;
-  the core finding was confirmed by independent re-measurement, while two of the three
-  constructions the original report cited as evidence were refuted (both in-word spellings
-  DENY). Documented in the guard's residual entry by PR #982; this todo tracks closing it.
+  the core finding was confirmed by independent re-measurement. Documented in the guard's
+  residual entry by PR #982; this todo tracks closing it.
+- CORRECTED the same day, before merge. The first revision claimed the two in-word spellings
+  were refuted and measured DENY. They are not — a re-review caught it, and a controlled
+  re-measurement (base command held constant, positive and negative controls both behaving)
+  confirmed both ALLOW on both trees, with the range form the cleanest bypass of the set.
+  The original security report was right about them; the refutation was the error. Cause:
+  the refuting probe varied two dimensions at once, so the flag dimension was masked by an
+  unrelated deny. The guard's own residual entry carries the same retraction.
