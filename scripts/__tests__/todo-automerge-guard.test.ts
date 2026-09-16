@@ -1233,8 +1233,12 @@ describe("todo-automerge-guard.sh (fail-closed arms survive a payload larger tha
   const bigRows = [
     { filename: ARCHIVE_PATH },
     { filename: "client/renamed.ts", status: "renamed" }, // no previous_filename -> the X row
-    ...Array.from({ length: 4000 }, (_, i) => ({
-      filename: `client/generated/file-${String(i).padStart(5, "0")}.ts`,
+    // Cross the threshold with FEW, LONG paths rather than many short ones. The regime is a BYTE
+    // count; the guard's PATH GATE cost is a ROW count, because it loops per file running greps.
+    // 4000 short rows cleared 64KB and then timed out on CI under coverage instrumentation —
+    // the expensive dimension was the one that did not matter.
+    ...Array.from({ length: 520 }, (_, i) => ({
+      filename: `client/generated/${"deeply-nested-fixture-segment/".repeat(4)}file-${String(i).padStart(5, "0")}.ts`,
     })),
   ];
   // The emitted form is "F " + path + "\n" per destination — the value the mechanism actually
@@ -1254,7 +1258,7 @@ describe("todo-automerge-guard.sh (fail-closed arms survive a payload larger tha
       FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
     });
     expect(status).toBe(2);
-  });
+  }, 60000);
 
   it("control — the same unusable rename source BELOW the pipe buffer also errors, so the row above is about the regime and not the row", () => {
     const smallRows = [
