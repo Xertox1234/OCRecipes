@@ -4761,8 +4761,70 @@ assert_allow "the sanctioned --auto automerge still ALLOWS behind a bare wrapper
 assert_allow "the sanctioned --auto automerge still ALLOWS behind an inline assignment" \
   "$(json 'GH_TOKEN=x gh pr merge 42 --auto --squash')"
 
+
+# ---------- ROUND 7: one flag on a WRAPPER word skipped the guard entirely ----------
+# _OUT_POS_PREFIX_W composed its two arms asymmetrically: the privilege arm ends in
+# _OUT_FLAG_RUN (round 5 added it so `sudo -E` is absorbed) while the wrapper arm was
+# WRAPPER[[:space:]]+ with no flag run. One flag on a wrapper word therefore terminated the
+# prefix match, no command-position anchor matched, the occurrence count read 0, and the whole
+# block was skipped -- a silent ALLOW. Nine two-sided pairs measured, every bare control DENYing,
+# all nine also ALLOW on origin/main. Unlike round 6's decoys, -i/-u/-p/-a are REAL options of
+# these wrappers, so the command actually executes.
+assert_deny "a flag on a wrapper word no longer skips the guard (eas)" \
+  "$(json 'env -u FOO eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "nohup with a -- terminator still reaches the gated binary" \
+  "$(json 'nohup -- eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "command -p still reaches the gated binary" \
+  "$(json 'command -p eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "exec -a still reaches the gated binary" \
+  "$(json 'exec -a x eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "env -i reaches the ADMIN merge sink (the shape a second reviewer found independently)" \
+  "$(json 'env -i gh pr merge 1 --admin')" \
+  "without a REAL --auto flag"
+assert_deny "a flagged wrapper reaches a mutating gh api" \
+  "$(json 'env -u FOO gh api repos/o/r -X DELETE')" \
+  "with a mutating HTTP method"
+assert_deny "a flagged wrapper reaches railway" \
+  "$(json 'env -u FOO railway up')" \
+  "railway"
+assert_deny "a flagged wrapper reaches npm publish" \
+  "$(json 'env -u FOO npm publish --access public')" \
+  "npm publish"
+assert_deny "a flagged wrapper reaches a launcher-qualified OTA" \
+  "$(json 'env -u FOO npx eas update --branch preview')" \
+  "reached through a launcher"
+
+# ---------- ROUND 7 COUPLING: the decoy route the wrapper fix opens ----------
+# Absorbing wrapper flags means the gh-pr-merge CLAUSE cut captures them, so a decoy --auto can
+# ride in behind a wrapper word that -- unlike sudo, which rejects it -- really does execute.
+# The scan-start gate also fired on any token ENDING in /gh, including an inline-assignment
+# VALUE. Both closed in the same change, because fixing either alone is wrong.
+assert_deny "a decoy --auto behind an executing wrapper word does not grant" \
+  "$(json 'env --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+assert_deny "an assignment VALUE ending in /gh does not start the grant scan" \
+  "$(json 'GH_CONFIG_DIR=/etc/gh sudo --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+
+# ---------- ROUND 7: over-denial controls ----------
+assert_allow "a flagged wrapper on an UNGATED npm subcommand stays allowed" \
+  "$(json 'env -u FOO npm install')"
+assert_allow "env -i on an ungated interpreter stays allowed" \
+  "$(json 'env -i node scripts/build.js')"
+assert_allow "command -p on an ordinary binary stays allowed" \
+  "$(json 'command -p ls -la')"
+assert_allow "a preceding unrelated command still leaves the automerge carve-out intact" \
+  "$(json 'echo hi;gh pr merge 42 --auto --squash')"
+
 # (The "+2 over-denial controls" tail of the 841 -> 851 sentence lived here, orphaned from its
 # own paragraph by a later insertion; it has been returned to that paragraph above.)
+# 901 -> 916 (2026-09-16, security round 7): +15, DERIVED from the rows below -- 9 for the
+# wrapper-flag bypass, 2 for the decoy route that fixing it opens (coupled, same change),
+# and 4 over-denial controls, including the carve-out row that caught round 6's token-match bug.
 # 888 -> 901 (2026-09-16, security round 6): +13, DERIVED from the rows below -- 6 for the
 # path/launcher qualifier of the COMMAND at the three anchors with no _LP sibling, 4 for the
 # decoy---auto-in-the-prefix REGRESSION round 5 introduced, and 3 that pin the sanctioned
@@ -4780,7 +4842,7 @@ assert_allow "the sanctioned --auto automerge still ALLOWS behind an inline assi
 # Set immediately before the total pin so a process death anywhere in the assertions above is
 # still caught as a TRUNCATED run rather than reported as success.
 _PIN_RAN=1
-EXPECTED_TOTAL=901
+EXPECTED_TOTAL=916
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

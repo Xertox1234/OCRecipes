@@ -239,8 +239,12 @@
 #     by itself let a path or launcher qualify the COMMAND -- that arm lives in
 #     `_OUT_POS_PREFIX_LP` (mandatory) and `_OUT_OPT_QUAL` (optional). Anchors with an `_LP`
 #     sibling get it from there; the three without one -- the expansion-token narrow deny, the
-#     brace-range narrow deny and the ambiguous-flag launcher check -- take `_OUT_OPT_QUAL`
-#     explicitly, added in round 6 after six one-token-different pairs measured open. When you
+#     brace-range narrow deny -- take `_OUT_OPT_QUAL` explicitly, added in round 6 after six
+#     one-token-different pairs measured open. The third, the ambiguous-flag launcher check,
+#     deliberately does NOT: it spells an inline `(path)?(launcher)` because a launcher is
+#     MANDATORY there, and `_OUT_OPT_QUAL` makes the launcher optional. Substituting it would
+#     fire that check on any command-position invocation carrying --package/-p/-c/--call, not
+#     just a launcher one -- a real behaviour change wearing the costume of a no-op refactor. When you
 #     add a command-position anchor, decide which of the two it needs: `_W` alone is not enough
 #     unless the shape genuinely cannot be path- or launcher-qualified.
 #
@@ -2256,7 +2260,7 @@ _OUT_PATH_PREFIX='[^[:space:];&|()`{}<>]*/'
 #     extraction; widening one alone either double-counts or suppresses a real deny.
 # Do not convert a count site here without its extractor, and do not trust a probe that only
 # shows the deny side moving -- emit the measured COUNT on both sides.
-_OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}[[:space:]]+)|((${_OUT_PATH_PREFIX})?${_OUT_PRIV_WORD}))*"
+_OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}${_OUT_FLAG_RUN})|((${_OUT_PATH_PREFIX})?${_OUT_PRIV_WORD}))*"
 
 # Combined: existing prefix (opener + optional wrapper words) unchanged, THEN
 # MANDATORILY at least one of launcher/path — but NOT a plain alternation
@@ -3692,7 +3696,11 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
             # `;gh`, `(gh`, `/usr/bin/gh` and bare `gh` all count -- the split leaves the
             # opening separator or the path glued to the word. Same opener class as
             # _OUT_POS_PREFIX, plus the path separator.
-            if (tolower(f[i]) ~ /(^|[;&|(`{!]|\/)gh$/) started = 1
+            # A token containing `=` is an inline assignment, never the command word. Without
+            # this an assignment VALUE ending in /gh started the scan and a decoy --auto after
+            # it satisfied the grant. Measured: GH_CONFIG_DIR=/etc/gh sudo --auto <merge> was
+            # ALLOW against the control FOO=x sudo --auto <merge>, which DENIED.
+            if (index(f[i], "=") == 0 && tolower(f[i]) ~ /(^|[;&|(`{!]|\/)gh$/) started = 1
             prev = f[i]
             continue
           }
@@ -4353,6 +4361,9 @@ fi
 # unconditionally — see the _OUT_LAUNCHER_AMBIG_FLAG header comment above for
 # why this cannot be scoped to only the gated packages (the -c/--call value
 # is inside a quoted string this guard already blanked as prose elsewhere).
+# DO NOT "normalise" this to ${_OUT_OPT_QUAL}. That constant makes the LAUNCHER optional; here
+# it is mandatory, because the check is about a launcher carrying an ambiguous target flag.
+# Substituting it would fire on any command-position invocation carrying --package/-p/-c/--call.
 if grep -Eqi "${_OUT_POS_PREFIX_W}(${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER})${_OUT_LAUNCHER_AMBIG_FLAG}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) combined with --package/-p/-c/--call denies UNCONDITIONALLY — the guard cannot verify the true target from text: --package/-p's value can name any gated package, and -c/--call's argument sits inside a quoted string this guard's own quote-blanking already treats as non-command prose everywhere else. Fail-closed, same as an unparseable .tool_input.command. This also over-denies a benign use (e.g. 'npx -p typescript tsc --version') — checked offline (grep, no network) for this repo's own usage of any of these four flags under a launcher: none found, so no reachable cost here, same 'deliberate, documented over-denial' choice as the gh-family block below. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi

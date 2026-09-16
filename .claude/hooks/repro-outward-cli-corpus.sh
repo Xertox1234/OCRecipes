@@ -1758,6 +1758,47 @@ if [ "$QL_ROWS_GENERATED" -ne 17 ]; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# axis: A FLAG ON THE WRAPPER WORD (round 7, 2026-09-16)
+#
+# _OUT_POS_PREFIX_W absorbed flags after a PRIVILEGE word but not after a WRAPPER word, so one
+# real option -- `env -u`, `env -i`, `nohup --`, `command -p`, `exec -a` -- terminated the prefix
+# and every command-position anchor missed. No row here varied a wrapper word's FLAGS, so the
+# prefix dimension added in round 5 could not have caught it either.
+WF_IDS=(bare envu envi nohupdd commandp execa)
+WF_FORMS=(
+  '' 'env -u FOO ' 'env -i ' 'nohup -- ' 'command -p ' 'exec -a x '
+)
+WF_TARGET_IDS=(easupd railup npmpub ghadmin)
+WF_TARGETS=(
+  'eas update --branch preview'
+  'railway up'
+  'npm publish'
+  'gh pr merge 42 --admin'
+)
+# Ungated work behind the same flagged wrappers. Over-denial here would hit everyday commands.
+WF_ALLOW_IDS=(npminstall node)
+WF_ALLOWS=('npm install' 'node scripts/build.js')
+WF_ROWS_BEFORE=${#ROWS[@]}
+for _wf_i in "${!WF_IDS[@]}"; do
+  for _wt_i in "${!WF_TARGET_IDS[@]}"; do
+    add "wf-${WF_IDS[$_wf_i]}-${WF_TARGET_IDS[$_wt_i]}" DENY "${WF_FORMS[$_wf_i]}${WF_TARGETS[$_wt_i]}"
+  done
+  for _wa_i in "${!WF_ALLOW_IDS[@]}"; do
+    add "wfok-${WF_IDS[$_wf_i]}-${WF_ALLOW_IDS[$_wa_i]}" ALLOW "${WF_FORMS[$_wf_i]}${WF_ALLOWS[$_wa_i]}"
+  done
+done
+# A decoy --auto riding in on the now-absorbed wrapper flags, plus the assignment-VALUE route.
+add "wf-decoy-envauto"   DENY 'env --auto gh pr merge 1'
+add "wf-decoy-envuauto"  DENY 'env -u FOO --auto gh pr merge 1'
+add "wf-decoy-assignval" DENY 'GH_CONFIG_DIR=/etc/gh sudo --auto gh pr merge 1'
+WF_ROWS_GENERATED=$(( ${#ROWS[@]} - WF_ROWS_BEFORE ))
+# 6 wrapper forms x (4 deny targets + 2 allow controls) = 36, plus 3 decoy rows = 39.
+if [ "$WF_ROWS_GENERATED" -ne 39 ]; then
+  echo "FATAL: wrapper-flag axis generated $WF_ROWS_GENERATED rows, expected 6 x (4 + 2) + 3 = 39 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+
 # axis: PACKAGE SPELLING (`eas-cli`, `@railway/cli`) on the launcher axis --
 # npm/npx resolve a PACKAGE name, not necessarily the binary name; `eas-cli`'s
 # own package.json declares bin:{"eas":"./bin/run"}, so npx/npm-exec reach the
@@ -2534,6 +2575,15 @@ fi
 # 1180 -> 1510 (2026-09-16): +330 from the composition-order dimension added to the
 # launcher/path grid (path-before-launcher and path-on-both-sides) plus the npm x
 # launcher. Regenerated from the run that measured them, never hand-computed.
+# 1639 -> 1678 (2026-09-16, round 7): +39 from the WRAPPER-FLAG axis -- 6 wrapper forms
+# (the bare spelling as the dimension's own control, plus five flagged spellings) x (4 deny
+# targets + 2 over-denial controls) = 36, plus 3 decoy rows, with its own short-iteration
+# FATAL guard asserting the 39. No row in this file previously varied a wrapper word's
+# FLAGS -- only its PATH qualification -- so neither the round-5 prefix dimension nor the
+# round-6 command-qualifier axis could have moved a pin for the nine bypasses round 7 found.
+# That is the same blindness one dimension over, for the third round running: the axis a
+# round adds is chosen from the shapes that round happened to think of, and the next sibling
+# is composed from the same pieces varied along an axis nobody enumerated.
 # 1614 -> 1639 (2026-09-16, round 6): +25. The COMMAND-QUALIFIER axis contributes 17 (5
 # qualifier forms x 2 narrow-deny targets, 3 ambiguous-flag path forms, 4 decoy rows), and the
 # sanctioned automerge joining PFX_ALLOWS contributes 8 (one per prefix form). The round-5
@@ -2547,7 +2597,7 @@ fi
 # position -- the unchanged pins read as confirmation and were blindness. Round 5's
 # review then found seven more anchors still bypassed, six of them at gh /
 # expansion-token / brace-range checks the launcher grid never reaches.
-EXPECTED_ROWS=1639
+EXPECTED_ROWS=1678
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 761 of the 876 rows deny on the precise path; the other 115 are ALLOW there: 91
@@ -2693,6 +2743,13 @@ EXPECTED_ROWS=1639
 # at 24 across the same run -- and that 24 now MEANS something, because the grid can
 # finally express a path-qualified launcher. It could not before, which is why the
 # previous unchanged 24 was true and vacuous.
+# 1478 -> 1505 (2026-09-16, round 7): +27 of the 39 new rows, DERIVED from the dimension and
+# confirmed against the run: 6 wrapper forms x 4 deny targets = 24, plus the 3 decoy rows.
+# The other 12 (6 forms x 2 ungated payloads) are over-denial controls that must keep
+# ALLOWing, so they are never attributed -- which is why this moves by 27 while
+# EXPECTED_ROWS moves by 39. The run printed 27 additions and ZERO removals: nothing closed,
+# and no row kept its verdict while rerouting to a different check. That second reading is
+# the one the per-ID lists exist to separate from a bare moving total.
 # 1461 -> 1478 (2026-09-16, round 6): +17, exactly the command-qualifier axis -- every one of
 # its rows denies. The 8 automerge rows added in the same round are ALLOW controls, so they are
 # not attributed, which is why this moves by 17 while EXPECTED_ROWS moves by 25.
@@ -2703,7 +2760,7 @@ EXPECTED_ROWS=1639
 # failure that gets a guard switched off rather than fixed.
 # precise-path gaps held at 24 and all-path gaps at 306 across this change, with ZERO
 # membership drift in either manifest -- the 104 new rows agree on all four paths.
-EXPECTED_DENY_ATTRIB_ROWS=1478
+EXPECTED_DENY_ATTRIB_ROWS=1505
 
 # 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -2801,6 +2858,13 @@ EXPECTED_PRECISE_GAPS=24
 # pattern the +6 bump above describes. MEASURED: the run reported `all-path
 # gaps is 306`. The manifest below is the prior 285-line pin plus these 21,
 # LC_ALL=C sorted -- not hand-merged.
+# 314 -> 314 (2026-09-16, round 7): +0, and the ZERO is the informative part. All 39
+# wrapper-flag rows agree on all four paths (p=/j=/l=/a=), so none joined the degraded-path
+# manifest: the flag absorption happens in _OUT_POS_PREFIX_W, which every path shares, rather
+# than in a jq- or awk-dependent branch that only the precise path can evaluate. Verified as
+# ZERO MEMBERSHIP DRIFT in the run, not merely as an unchanged total -- an unchanged count
+# can hide an equal number of rows joining and leaving, which is the failure the per-ID
+# lists were added to catch.
 # 306 -> 314 (2026-09-16, round 6): +8, and every one is a `pfxok-*-automerge` row measuring
 # p=ALLOW j=DENY l=DENY a=DENY. The precise path honours the --auto carve-out; the degraded
 # (nojq/nolib/noawk) fallbacks cannot see it and deny. That is the SAME documented degraded-path
@@ -4563,6 +4627,33 @@ ql-decoy-sudo      : command-position 'gh pr merge' without a REAL --auto flag m
 ql-decoy-sudoflag  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 ql-decoy-sudopath  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 ql-decoy-corepack  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-bare-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-bare-railup     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-bare-npmpub     : command-position 'npm publish' pushes a package to the registry.
+wf-bare-ghadmin    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-envu-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-envu-railup     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-envu-npmpub     : command-position 'npm publish' pushes a package to the registry.
+wf-envu-ghadmin    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-envi-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-envi-railup     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-envi-npmpub     : command-position 'npm publish' pushes a package to the registry.
+wf-envi-ghadmin    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-nohupdd-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-nohupdd-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-nohupdd-npmpub  : command-position 'npm publish' pushes a package to the registry.
+wf-nohupdd-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-commandp-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-commandp-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-commandp-npmpub : command-position 'npm publish' pushes a package to the registry.
+wf-commandp-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-execa-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-execa-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-execa-npmpub    : command-position 'npm publish' pushes a package to the registry.
+wf-execa-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-decoy-envauto   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-decoy-envuauto  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-decoy-assignval : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 lp-pkg-eascli-npx  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-pkg-eascli-npmexec : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-pkg-railwaycli-npx : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t

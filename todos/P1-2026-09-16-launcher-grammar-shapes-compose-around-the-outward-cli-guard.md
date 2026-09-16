@@ -14,12 +14,18 @@ github_issue:
 ## What this todo is now, and what it is no longer
 
 It was filed as "a privilege or wrapper prefix before a launcher defeats the guard". **That half
-is closed**, in PR #980's round-5 axis rebuild: the command-position PREFIX became a property of
+is closed**, across PR #980's rounds 5-7: the command-position PREFIX became a property of
 every deny decision rather than a per-binary patch, so `sudo`/`doas`/`corepack` (flags included,
 via `_OUT_PRIV_WORD`) and any path-qualified wrapper word now deny in front of a bare gated
 binary, in front of a launcher, and at the seven `gh`/expansion-token/brace-range anchors round 4
 had left behind. `_OUT_POS_PREFIX_LP` is derived from `_OUT_POS_PREFIX_W`, so the launcher family
 inherits it, and the corpus gained a prefix dimension so a regression moves a number.
+Round 6 then added `_OUT_OPT_QUAL` so a path or launcher may qualify the COMMAND at the three
+anchors with no `_LP` sibling, and round 7 gave the wrapper arm the same `_OUT_FLAG_RUN` the
+privilege arm already had, so a single real option (`-u`, `-i`, `-p`, `-a`, `--`) on a wrapper
+word no longer terminates the prefix match. Each of those three rounds found its own axis by
+the same route: the previous round closed the spellings it had enumerated, and the next
+sibling was the same pieces varied along a dimension nobody had listed.
 
 What remains is a different axis that happens to live next door: the LAUNCHER GRAMMAR itself.
 It admits exactly one launcher word, in one position, immediately followed by the gated target.
@@ -28,10 +34,19 @@ Every shape below steps outside one of those three assumptions.
 ## Measured, not inferred
 
 2026-09-16, bash 5.3.15. PreToolUse envelopes fed to the hook on stdin; **nothing was executed**.
-Measured on PR #980's round-5 branch and on `origin/main` (`af0e27b2`) with the same harness, so
-each row is a two-tree comparison rather than a single reading.
+Measured on `origin/main` and on PR #980's branch with the same harness, so each row is a
+two-tree comparison rather than a single reading.
 
-| command shape                                  | origin/main | #980 round-5 branch |
+**Re-measured on the round-7 tree** (`817b47ae`), because rounds 6 and 7 both changed
+`_OUT_POS_PREFIX_W`, which `_OUT_POS_PREFIX_LP` derives from — so the launcher prefix moved
+underneath this table twice after it was first written, and a residual list republished
+without re-measuring would have been a claim about a tree that no longer existed. All five
+still ALLOW; all four closed shapes still DENY; all eight over-denial controls still ALLOW.
+The `main` column is carried forward unchanged and is still current: `main` advanced
+`af0e27b2` → `bf228799` while this PR was open, and
+`git diff --name-only af0e27b2..origin/main -- .claude/hooks/ scripts/` is **empty**.
+
+| command shape                                  | origin/main | #980 round-7 branch |
 | ---------------------------------------------- | ----------- | ------------------- |
 | bare `eas` + the OTA verb _(control)_          | DENY        | DENY                |
 | `sudo npx` + `eas` + the OTA verb _(control)_  | ALLOW       | **DENY** ← closed   |
@@ -50,11 +65,20 @@ Every row is pre-existing on `main` and is **not** a regression from #980.
 
 ## Background
 
-Surfaced across PR #980's five review rounds, which produced sixteen CRITICALs in total (4 + 2 + 4 + 2 + 4). The
-pattern worth carrying forward: each round closed the spellings someone had thought of, and the
-next round found a sibling composed from the same pieces in a different order. Round 5 broke that
-cycle for the prefix by making it an axis. **These five shapes need the same treatment, and for
-the same reason — not five more names in five more alternations.**
+Surfaced across PR #980's seven review rounds, which produced twenty-one CRITICALs in total
+(4 + 2 + 4 + 2 + 4 + 4 + 1). The pattern worth carrying forward: each round closed the spellings
+someone had thought of, and the next round found a sibling composed from the same pieces in a
+different order. Rounds 5, 6 and 7 each broke that cycle for one axis — the command-position
+prefix, the command qualifier, the wrapper flag — by making it a DIMENSION with its own
+combinatorial corpus rows and a short-iteration `FATAL` guard, rather than another alternation.
+**These five shapes need the same treatment, and for the same reason — not five more names in
+five more alternations.**
+
+Worth stating plainly for whoever picks this up: three consecutive rounds each believed they
+had closed the axis, and each was wrong about the SCOPE rather than the mechanism. The fix
+direction was sound every time. What kept failing was the sentence describing how far it
+reached. Enumerate the dimensions the claim ranges over and construct a one-token-different
+pair per cell BEFORE writing that the axis is closed.
 
 ## Acceptance Criteria
 
