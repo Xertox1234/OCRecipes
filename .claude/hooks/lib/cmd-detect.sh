@@ -148,7 +148,25 @@ _CMD_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'
 # The redirect alternative takes `[[:space:]]*`, not `+`: `git>log commit` is a real
 # invocation (bash splits at the operator with no space required), so requiring a space
 # would leave a hole the `-`-flag alternatives do not have.
-_CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+|--git-dir[[:space:]]+[^[:space:]]+|--work-tree[[:space:]]+[^[:space:]]+|-[^[:space:]]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
+# _CMD_GIT_ARGVAL — the VALUE SLOT of a separate-arg global (`-C <path>`), spelled so a
+# REDIRECT may sit between the flag and its value and so the value itself can never BE one.
+# Both halves are load-bearing and neither closes the route alone:
+#   * `([[:space:]]*<redirect>)*` admits the interposed operator. The shell removes a
+#     redirect from the word list wherever it sits, so `git -C >out /MAIN commit -m x` really
+#     runs with argv `[-C] [/MAIN] [commit] [-m] [x]` — a main mutation (argv measured with a
+#     shim under bash 5.3.15 and zsh 5.9, not reasoned from the grammar).
+#   * the value class is `[^[:space:]<>]+`, not `[^[:space:]]+`. The old class CONSUMED `>out`
+#     as the value of `-C`, leaving a bare `/MAIN` token that no alternative absorbs, so the
+#     whole segment failed to match and the worktree contract was never checked. An unquoted
+#     token containing `<`/`>` cannot be a value in any real shell — the shell would have split
+#     it there — so excluding those two characters removes no legitimate spelling. A value
+#     GLUED to a redirect (`git -C /a>b commit`) still matches: `/a` is the value and `>b` is
+#     absorbed by the redirect alternative of the enclosing group.
+# Tightening a value class is normally the SUBTRACTIVE direction on a deny gate; it is safe
+# here only because the redirect alternative re-absorbs everything the class gives up, which
+# was verified by differential rather than argued — see the PR body.
+_CMD_GIT_ARGVAL='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+[^[:space:]<>]+'
+_CMD_GIT_GLOBALS='(([[:space:]]+(-C'"$_CMD_GIT_ARGVAL"'|-c'"$_CMD_GIT_ARGVAL"'|--git-dir'"$_CMD_GIT_ARGVAL"'|--work-tree'"$_CMD_GIT_ARGVAL"'|-[^[:space:]]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
 
 # _CMD_GH_GLOBALS — the same slot for `gh`: the option run BETWEEN `gh` and its namespace.
 # The `gh` needles below carried NONE of the treatment _CMD_GIT_GLOBALS gave the git ones in
