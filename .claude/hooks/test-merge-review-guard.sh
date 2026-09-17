@@ -769,12 +769,22 @@ done
 # that launched the session — so a false deny here gets the whole gate switched off. A READ verb
 # in the same slot must stay allowed, and so must an ordinary command that merely mentions the
 # words: the raw-token predicate withdrawn across three review rounds died on exactly that.
+#
+# EVERY ROW BELOW CARRIES A LITERAL `merge` SOMEWHERE, AND THAT IS LOAD-BEARING, NOT DECORATION.
+# The gate opens with a necessary-substring fast path (`cmd_fastpath_has "$CMD" '*gh*pr*merge*'
+# '*gh*api*merge*' || exit 0`). A read-verb row spelled `gh pr 2>/dev/null view 42` never
+# contains `merge`, so it exits AT THAT PRE-FILTER and never reaches `_CMD_GH_PR_SEP` at all —
+# it would pass whatever the separator did, which makes it a vacuous control for this widening.
+# That is exactly the failure
+# docs/solutions/conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md describes,
+# and the first draft of this block shipped it. Each row now clears the fast path on its own and
+# is then allowed by the REAL reason: the verb in the widened slot is a read, not a merge.
 for spelling in \
-  'gh pr 2>/dev/null view 42' \
-  'gh pr>log view 42' \
-  'gh pr 2>/dev/null list' ; do
+  'gh pr 2>/dev/null view 42 --comment "not a merge, just checking"' \
+  'gh pr>log view 42 --comment "merge later, not now"' \
+  'gh pr 2>/dev/null list --search "merge"' ; do
   out=$(bash_payload "$spelling" | run)
-  assert_allowed "namespace->verb slot: a READ verb stays allowed: [$spelling]" "$out"
+  assert_allowed "namespace->verb slot: a READ verb past the fast path stays allowed: [$spelling]" "$out"
 done
 out=$(bash_payload 'git commit -m "fix highlight for pr merge"' | run)
 assert_allowed "namespace->verb slot: a commit MESSAGE naming the gate stays allowed" "$out"
