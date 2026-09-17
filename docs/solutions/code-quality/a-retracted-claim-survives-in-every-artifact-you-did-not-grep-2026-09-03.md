@@ -7,7 +7,7 @@ module: shared
 applies_to: ["e2e/**", "todos/**", "docs/**", ".github/**"]
 symptoms: ["A claim was investigated, found wrong, and retracted in the place it was discovered — but the same sentence still ships in a source comment, a todo, or a second PR body", "The surviving copy carries a stronger confidence marker than the original, e.g. a header labelled \"Measured, not argued\"", "Two CI runs on the SAME commit disagree about which items failed, so an outcome attributed to a code change is not reproducible", "A grep for the concept finds nothing but a grep for the literal numbers finds several copies"]
 created: 2026-09-03
-last_updated: '2026-09-06'
+last_updated: '2026-09-17'
 severity: high
 ---
 
@@ -73,6 +73,10 @@ gh pr view <n> --json body --jq .body | grep -niE "3/3|2/2|measured"
 
 Searching for "regression" or "the claim" finds nothing. Searching for `3/3` found all
 four survivors.
+
+When the claim being retracted is a *reference* rather than a measurement, the literal
+handle is the target's path or symbol — see "enumerate by TARGET" below, which also gives
+you a way to prove the sweep is complete.
 
 **2. Sweep every open PR, not just the one you were editing.** A claim written during a
 batch propagates across the batch. `gh pr list --state open` then grep each body.
@@ -151,6 +155,59 @@ inside the claim that the merged PR "closed **every other spelling** of the clas
 a later review round had already disproved. A path fix and a claim retraction arrive at the
 same line more often than chance, because both decay for the same reason: nothing
 recomputes prose.
+
+## When the retracted claim is a REFERENCE, enumerate by TARGET (added 2026-09-17)
+
+Step 1 above says to grep the literal fingerprint rather than the concept. When the
+thing being retracted is a **pointer** — "this belongs to todo X", "tracked by Y" —
+the literal fingerprint is **the target's own path or symbol**, and searching by it
+has a property the number-grep does not: it returns a **closed set you can
+classify**, which is what lets you say *done* instead of *I looked*.
+
+Measured on PR #985 (2026-09-17). A misattribution was retracted, and the sweep for
+surviving copies took **four rounds**. Every miss had the same cause: the sweeps
+grepped for how the reference had been *worded* —
+
+```bash
+grep -rn 'gh-api-route todo\|human decision is needed\|SAME ordering\|newly measured' .
+```
+
+— while one copy spelled it as the full todo path and matched none of those. Switching
+the key fixed it in one pass:
+
+```bash
+grep -rn 'P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route' \
+  .claude/hooks/ docs/ todos/
+```
+
+Seven hits, each classifiable: **one** stale (a corpus comment attributing this guard's
+field-mutation ALLOW to that todo), **six** legitimate (they concern
+`merge-review-guard.sh`, which is what that todo actually covered). A phrase grep could
+neither find the miss nor demonstrate the remaining six were fine. Report the
+classification — correct-as-is / retraction-text / stale — so completeness is shown
+rather than asserted.
+
+**Sweep every file the PR touches, not the files you happen to be editing.** One round
+here swept 2 of 5 files and declared the axis closed; the same sentence sat verbatim in
+the other three. `git diff origin/main...HEAD --name-only` is the scope, not your recent
+edits.
+
+**Never write "verified across all N files that no stale variant survives" unless you
+enumerated by target.** That exact sentence shipped in a commit message here and was
+false — a fourth copy survived. The claim of completeness is itself a claim, and it needs
+the same evidence as any other.
+
+### Why a stale pointer is a tracking failure, not a typo
+
+The copy that survived longest mattered most. `test-guard-outward-cli.sh` pinned a live
+bypass as ALLOW — deliberately, so a neighbouring fix would not be misread as closing it
+— and deferred to a todo for ownership. That todo was archived `status: done`, covered a
+different hook, and asserted the bypass was *not* live.
+
+Each artifact was individually defensible. The gap lived between them, and the bypass
+stayed untracked until a review followed the pointer. When a test pins a known-open hole,
+the pointer is the tracking system; repointing it is the fix.
+
 
 ## Related
 
