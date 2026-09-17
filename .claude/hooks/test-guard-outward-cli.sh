@@ -1742,6 +1742,36 @@ assert_deny "interior redirect: gh pr + redirect + ready denies" \
 assert_deny "interior redirect x narrow-deny: a gated binary, an interior redirect, then an EXPANSION where the verb belongs, still denies" \
   "$(json 'eas 2>&1 ${v:-update}')" "verb is not literal text"
 
+# --- COMPOSITION: an EXPANSION-rendered binary x a GLUED redirect in the verb slot.
+# Closed 2026-09-17. This was a live bypass of BOTH guards and NEITHER AXIS ALONE SHOWS IT:
+#   gh pr>log merge 42          DENY  (the literal `gh pr merge` check; _OUT_SEP eats `>log`)
+#   $(which gh) pr merge 42     DENY  (this expansion arm; the verb slot is spaced)
+#   $(which gh) pr>log merge 42 ALLOW <- the composition, until this change
+# The substitution defeats the literal check's command-position anchor, and the glued `>` is
+# neither `[[:space:]]` nor end-of-string, so this arm's old `([[:space:]]|$)` boundary failed.
+# merge-review-guard.sh missed the same string, so an unreviewed merge ran with both guards
+# satisfied. Real argv `pr merge 42` measured with a shim first on PATH -- nothing reached a
+# real gh. Fixed by giving the arm the `_OUT_POS_SUFFIX` closer class every sibling already
+# uses. A CORPUS THAT VARIES ONE AXIS AT A TIME CANNOT CONTAIN THIS ROW.
+assert_deny "composition: substitution binary + GLUED redirect in the verb slot denies" \
+  "$(json '$(which gh) pr>log merge 42 --squash')" "verb is not literal text"
+assert_deny "composition: the QUOTED substitution spelling of the same row denies" \
+  "$(json '\"$(which gh)\" pr>log merge 42 --squash')" "verb is not literal text"
+assert_deny "composition: a plain PARAMETER expansion, not just \$(...), denies too" \
+  "$(json '${GHBIN} pr>log merge 42 --squash')" "verb is not literal text"
+# THE TWO SINGLE-AXIS ROWS, pinned beside the composition so a later reader can see that each
+# already denied and that the gain is specifically their product.
+assert_deny "composition control: glued redirect ALONE (literal binary) already denied" \
+  "$(json 'gh pr>log merge 42 --squash')" "gh pr merge"
+assert_deny "composition control: substitution ALONE (spaced verb) already denied" \
+  "$(json '$(which gh) pr merge 42 --squash')" "verb is not literal text"
+# THE ALLOW SIDE. Widening a trailing boundary is the direction that invents denials, and this
+# guard has a one-command bypass but a false deny on ordinary work still gets it switched off.
+assert_allow "composition: a READ verb through the same glued-redirect slot stays allowed" \
+  "$(json 'gh pr>log view 42')"
+assert_allow "composition: an expansion NAMING the binary in argument position stays allowed" \
+  "$(json 'echo $(which gh) is installed')"
+
 # --- THE GAIN, which no single-invocation row can see
 # A second, interior-redirect merge was INVISIBLE to GH_PR_MERGE_RE, so the
 # occurrence count stayed 1 and the FIRST invocation's real --auto granted the
@@ -5065,7 +5095,12 @@ assert_allow "the sanctioned automerge is still allowed in its bare spelling" \
 # pin value, git reports no conflict, and the stale-low total lands silently. See
 # docs/solutions/code-quality/a-clean-merge-leaves-a-stale-count-pin-2026-09-14.md.
 _PIN_RAN=1
-EXPECTED_TOTAL=968
+# 968 -> 975 (2026-09-17, expansion x glued-redirect composition): +7. Three rows for the
+# composition itself (substitution, quoted substitution, and a plain parameter expansion --
+# the defect is not specific to `$(...)`), two single-axis controls pinned beside them so the
+# gain reads as their PRODUCT rather than as either axis, and two allow-side rows because
+# widening a trailing boundary is the direction that invents denials.
+EXPECTED_TOTAL=975
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

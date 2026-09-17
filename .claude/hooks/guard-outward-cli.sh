@@ -3367,12 +3367,22 @@ fi
 # docs/solutions/logic-errors/deny-reason-assertion-goes-stale-when-a-stricter-branch-fires-first-2026-09-03.md
 # defect, which is why those two rows assert their family's reason string and
 # would fail loudly if this block were moved up.
+# THE THIRD ARM BELOW CLOSES ITS VERB WITH _OUT_POS_SUFFIX, not `([[:space:]]|$)`, and that one
+# token was a live TWO-GUARD bypass until 2026-09-17. Taken one axis at a time the guard was
+# fine: a substitution-rendered binary with a spaced verb was denied HERE, and a glued redirect
+# in the namespace->verb slot was denied by the literal `gh pr merge` check. Their COMPOSITION
+# escaped both -- the substitution defeats the literal check-s command-position anchor, and the
+# glued `>` is neither `[[:space:]]` nor end-of-string, so this arm-s trailing boundary failed.
+# Real argv measured with a shim first on PATH, so nothing reached a real gh; merge-review-guard
+# missed the same string, so an unreviewed merge ran with BOTH guards satisfied.
+# A CORPUS THAT VARIES ONE AXIS AT A TIME CANNOT CONTAIN THIS ROW. _OUT_POS_SUFFIX already
+# spells the closer class every sibling arm uses; this arm had simply never adopted it.
 _OUT_EXPANSION_TOKEN='(\$\{[^}]*\}|\$\([^)]*\)|`[^`]*`|\$[A-Za-z_][A-Za-z0-9_]*)'
 _OUT_GATED_BIN='(eas|railway|npm|pnpm|yarn|gh)'
 _OUT_GATED_VERB='(update|publish|submit|build|up|deploy|redeploy|restart|down|delete|remove|rm|run|pr|release|repo|api)'
 if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
    || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
-   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"; then
+   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
