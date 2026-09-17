@@ -64,11 +64,21 @@ it actually runs through.
 
 ### Why this is `medium` and not `high`
 
-The harm this guard exists to prevent is independently blocked by a second layer.
-`main`'s branch protection has `enforce_admins: true`, required reviews, and 9 required
-checks, so GitHub refuses the merge regardless of whether the local guard lets the
-command run. Nothing reaches `main` unreviewed through this path. What is lost is the
-guard's completeness, not the branch's integrity.
+The harm this flag exists to cause is independently blocked by a second layer. Measured
+via a read-only API read rather than recalled: `enforce_admins: true` and 9 required
+status checks. Because admin enforcement is on, GitHub refuses an administrator override
+regardless of whether the local guard lets the command run, so a PR with failing or
+incomplete required checks cannot be forced past them through this path. What is lost is
+the guard's completeness, not the branch's integrity.
+
+Be precise about which layer stops what: `required_approving_review_count` reads **0**, so
+required approvals are NOT part of that protection, and this path does not make an
+unreviewed merge newly possible — an unreviewed merge is already reachable through the
+sanctioned `--auto` route by design. The only thing `--admin` would defeat is the 9
+required checks. An earlier revision of this section listed "required reviews" among the
+layers and concluded "nothing reaches `main` unreviewed through this path"; both
+overstated the protection and are corrected here. Confirming that a settings object
+exists is not confirming its value.
 
 It is also not reachable by accident: an agent intending to force a merge types the flag
 literally, which is denied. The brace form only appears when someone is deliberately
