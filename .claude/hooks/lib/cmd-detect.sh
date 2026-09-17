@@ -162,10 +162,19 @@ _CMD_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'
 #     it there — so excluding those two characters removes no legitimate spelling. A value
 #     GLUED to a redirect (`git -C /a>b commit`) still matches: `/a` is the value and `>b` is
 #     absorbed by the redirect alternative of the enclosing group.
+#     THE EXCEPTION, and the reason the class is not simply `[^[:space:]<>]+`: a BACKSLASH-
+#     ESCAPED operator IS a legitimate unquoted value character. `git -c a.b=c\> -C <main>
+#     commit` really does pass `a.b=c>` in argv (measured with a shim under bash 5.3.15 and
+#     zsh 5.9, and real git accepts the value), so the sentence above -- that an unquoted token
+#     containing `<`/`>` cannot be a value in any real shell -- is TRUE only of an UNESCAPED
+#     one. A regex cannot see the escape unless it is spelled, so `\\[<>]` is spelled here.
+#     Without it `git 2>/dev/null -c a.b=c\> -C <main> commit` stops matching: the hand-written
+#     fallback cannot absorb the leading redirect, so the union does not rescue that row and
+#     the miss is a DENY->ALLOW on its own, independent of the tokenizer.
 # Tightening a value class is normally the SUBTRACTIVE direction on a deny gate; it is safe
 # here only because the redirect alternative re-absorbs everything the class gives up, which
 # was verified by differential rather than argued — see the PR body.
-_CMD_GIT_ARGVAL='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+[^[:space:]<>]+'
+_CMD_GIT_ARGVAL='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+([^[:space:]<>]|\\[<>])+'
 _CMD_GIT_GLOBALS='(([[:space:]]+(-C'"$_CMD_GIT_ARGVAL"'|-c'"$_CMD_GIT_ARGVAL"'|--git-dir'"$_CMD_GIT_ARGVAL"'|--work-tree'"$_CMD_GIT_ARGVAL"'|-[^[:space:]]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
 
 # _CMD_GH_GLOBALS — the same slot for `gh`: the option run BETWEEN `gh` and its namespace.

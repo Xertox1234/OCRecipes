@@ -259,9 +259,10 @@ git_c_target() {
       if (gotc)  print "c " eff
       if (gotwt) print "w " worktree
     }
-    function endword(   w, tnt){
+    function endword(   w, tnt, wsn, wop){
       if (!wstart) return
-      w = word; tnt = wtaint; word = ""; wstart = 0; wtaint = 0
+      w = word; tnt = wtaint; wsn = wsan; word = ""; wsan = ""; wstart = 0; wtaint = 0
+      wop = (match(wsn, /[<>]/) ? RSTART : 0)
       if (done) return
       if (phase == 0) {                              # command position
         if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {        #   env assignment (value may be quoted): stay in phase 0,
@@ -275,6 +276,21 @@ git_c_target() {
       # phase 1: walk the git global options until the verb, resolving EVERY repo redirect.
       # git honors cumulative -C (last absolute wins) and --git-dir/--work-tree redirects; a
       # benign unmodeled global (--no-pager/-p/…) must be skipped so a later real -C is reached.
+      # WSAN: a SHADOW of this word in which every ESCAPED or QUOTED character is `_`, a
+      # character no operator class contains. Every operator predicate below reads the shadow;
+      # every CONTENT read still uses the real word, so a value keeps its own characters.
+      # WHY IT EXISTS: a backslash-escaped `<`/`>` is a LITERAL character in argv, but the
+      # scanner appends it WITHOUT tainting, so `index(w, ">")` could not tell `a.b=c\>` from
+      # `a.b=c>`. That was harmless while the pend arms ran FIRST -- the `-c` value was consumed
+      # before the redirect arm was reached -- and became a live ALLOW of a cross-checkout
+      # mutation the moment the 2026-09-17 reorder put the redirect arm above them: tailop saw a
+      # word ending in a literal `>`, set predir, and predir swallowed the REAL `-C` flag, so
+      # nothing was emitted and the repo fell back to cwd. Measured DENY->ALLOW on
+      # `git -c a.b=c\> -C <main> reset --hard`, argv identical under bash 5.3.15 and zsh 5.9.
+      # A SHADOW rather than a re-spelled predicate, because the first attempt at this fix
+      # redefined tailop as "operator run reaches the end of the word" and broke `git >a> -C
+      # <path> commit`, where a genuinely target-less trailing `>` really does consume the next
+      # word (argv-verified). Masking the input leaves every predicate meaning what it meant.
       if (predir)       { predir = 0; return }          #   target word of a SPACED redirect operator
       # A brace-only fd word was skipped last round (see the pendbrace arm further down). Decide
       # what it WAS by looking at THIS word: a redirect operator here means zsh consumed the pair
@@ -285,7 +301,7 @@ git_c_target() {
       # way to tell the two shells apart, because the brace word alone is ambiguous.
       if (pendbrace) {
         pendbrace = 0
-        if (tnt || (!index(w, "<") && !index(w, ">"))) { emit_effective(); done = 1; return }
+        if (tnt || wop == 0) { emit_effective(); done = 1; return }
       }
       # THE pend / FLAG / dash-skip ARMS NOW SIT BELOW THE REDIRECT ARM, and the ORDER IS THE FIX
       # (2026-09-17). They used to run FIRST, so an arg-taking global whose VALUE SLOT held a
@@ -360,15 +376,15 @@ git_c_target() {
       # _CMD_POS_SUFFIX, that neither `<` nor `>` can be part of a real unquoted word.
       # (No apostrophe appears in this block on purpose: the whole program is inside a
       # single-quoted awk string, so one would close it and hand the rest to the shell.)
-      if (!tnt && (index(w, "<") || index(w, ">"))) {
-        rpre = w; sub(/[<>].*$/, "", rpre)
+      if (!tnt && wop > 0) {
+        rpre = substr(w, 1, wop - 1)
         # A `&` sitting DIRECTLY before the operator belongs to the OPERATOR, not to the prefix:
         # _CMD_REDIR spells it `&?[<>]+`. Stripping it here rather than widening the class below
         # fixes two cells at once and keeps them from needing separate arms -- `&>o` (prefix
         # becomes empty, a plain redirect) and `-C&>o` (prefix becomes the FLAG `-C`, so the
         # real `-C <main>` is still mined). Both were live ALLOWs of real main mutations.
-        sub(/&$/, "", rpre)
-        tailop = (w ~ /[<>]+&?[|!]?$/)
+        if (wop > 1 && substr(wsn, wop - 1, 1) == "&") rpre = substr(w, 1, wop - 2)
+        tailop = (wsn ~ /[<>]+&?[|!]?$/)
         if (rpre == "" || rpre ~ /^[0-9]+$/ || rpre ~ /^[{]([A-Za-z_][A-Za-z0-9_]*|[0-9]+)[}]$/) {
           #   Does this word END AT the operator, so its TARGET is the next word? The test must
           #   be "ends with a complete operator RUN", not "ends with a character from the
@@ -421,24 +437,24 @@ git_c_target() {
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1)
         if (st == 0) {
-          if (c == BS) { i++; if (i <= n) { ch = substr(buf, i, 1); if (ch != "\n") { word = word ch; wstart = 1 } } }
-          else if (c == "$" && i < n && substr(buf, i + 1, 1) == "$") { word = word c substr(buf, i + 1, 1); wstart = 1; i++ }
+          if (c == BS) { i++; if (i <= n) { ch = substr(buf, i, 1); if (ch != "\n") { word = word ch; wsan = wsan "_"; wstart = 1 } } }
+          else if (c == "$" && i < n && substr(buf, i + 1, 1) == "$") { word = word c substr(buf, i + 1, 1); wsan = wsan "__"; wstart = 1; i++ }
           else if (c == "$" && i < n && substr(buf, i + 1, 1) == SQ) { i++; st = 3; wstart = 1 }
           else if (c == SQ) { st = 1; wstart = 1 }
           else if (c == DQ) { st = 2; wstart = 1 }
           else if (c == " " || c == "\t" || c == "\n") { endword() }
-          else { word = word c; wstart = 1 }
+          else { word = word c; wsan = wsan c; wstart = 1 }
         } else if (st == 1) {
-          if (c == SQ) st = 0; else { word = word c; wstart = 1; wtaint = 1 }
+          if (c == SQ) st = 0; else { word = word c; wsan = wsan "_"; wstart = 1; wtaint = 1 }
         } else if (st == 2) {
-          if (c == BS) { i++; if (i <= n) { word = word substr(buf, i, 1); wstart = 1; wtaint = 1 } }
+          if (c == BS) { i++; if (i <= n) { word = word substr(buf, i, 1); wsan = wsan "_"; wstart = 1; wtaint = 1 } }
           else if (c == DQ) st = 0
-          else { word = word c; wstart = 1; wtaint = 1 }
+          else { word = word c; wsan = wsan "_"; wstart = 1; wtaint = 1 }
         } else {
           # st==3 ANSI-C dollar-quote: BS escapes next char (incl. the quote); only an unescaped quote closes
-          if (c == BS) { i++; if (i <= n) { word = word substr(buf, i, 1); wstart = 1; wtaint = 1 } }
+          if (c == BS) { i++; if (i <= n) { word = word substr(buf, i, 1); wsan = wsan "_"; wstart = 1; wtaint = 1 } }
           else if (c == SQ) st = 0
-          else { word = word c; wstart = 1; wtaint = 1 }
+          else { word = word c; wsan = wsan "_"; wstart = 1; wtaint = 1 }
         }
       }
       endword()
@@ -657,8 +673,16 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     # together because a residual list naming only one reads as completeness and the omitted one
     # is the live route. Measured after the 2026-09-17 change over an 884-row grid (operator x
     # EVERY insertion slot x 3 arg-taking globals x bash/zsh, argv ground truth from a shim):
-    # 803 rows are real main mutations, 689 deny, and the 114 that still ALLOW fall entirely
-    # inside classes 3 and 5 below — no surviving bypass lacks a class.
+    # 803 rows are real main mutations, 689 deny, and every one of the 114 that still ALLOW
+    # IN THAT GRID falls inside class 3 or class 5 below.
+    # READ THAT SCOPE LITERALLY -- it is a property of the grid, not of the guard. An earlier
+    # revision of this sentence said "no surviving bypass lacks a class", which is a claim about
+    # ALL inputs, and it was FALSE when written: the grid varies operator x slot x spacing x
+    # global x shell and has NO QUOTING/ESCAPING DIMENSION, so a backslash-escaped operator --
+    # a whole population of real main mutations, and at the time a live DENY->ALLOW this file
+    # had just introduced -- could not appear in any of its 884 rows. The grid answered exactly
+    # what it was asked and the sentence asked for more. A count is a property of its corpus;
+    # quote it with the corpus, and never let a corpus-derived number carry a universal claim.
     #   1. A redirect BEFORE the `git` token (`2>/dev/null git commit -m x`) is a real
     #      invocation and is still MISSED: the segment anchor never reaches `git` when a
     #      redirect precedes it, and this change only touches the group BETWEEN `git` and the
