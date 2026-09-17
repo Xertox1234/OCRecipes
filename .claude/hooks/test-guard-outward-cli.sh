@@ -2874,6 +2874,25 @@ assert_deny "railway with a brace-range-split verb denies (no argument after it)
   "$(json 'railway u{p..p}')" "glued to a brace RANGE"
 assert_deny "gh api with a brace-range-split verb denies" \
   "$(json 'gh a{p..p}i repos/o/r -X POST')" "glued to a brace RANGE"
+# --- 2026-09-17: arm3's CLOSER, pinned BEHAVIOURALLY rather than only structurally.
+# The occurrence extractor's third arm matches TOKEN + gated verb, and used to close on a
+# hand-written `([[:space:]]|$)` which cannot see a GLUED `>` or `;`. The structural row far
+# below proves no hand-spelled closer survives anywhere; it CANNOT tell a closer widened
+# correctly from one widened to something subtly wrong, because it never runs the guard. These
+# rows do. Measured on origin/main (9f19b885) before the fix and on this branch after it:
+#   npx e{a..a}s update>log        ALLOW -> DENY
+#   npm ci; e{a..a}s update>log    ALLOW -> DENY
+#   npx e{a..a}s update            DENY  -> DENY   (control: the SPACE closer already worked)
+# THE LAUNCHER IS LOAD-BEARING on this arm and is not decoration: arm3 is prefixed by
+# _OUT_POS_PREFIX_W + _OUT_OPT_QUAL, and a bare `e{a..a}s` carries none of the fastpath needles
+# (eas/railway/npm/yarn/gh/npx/bun), so the hook exits before this check ever runs. That is the
+# separately documented TOOL-POSITION residual, not this closer -- do not "fix" it here.
+assert_deny "a launcher-qualified brace-RANGE tool token with a GLUED redirect denies" \
+  "$(json 'npx e{a..a}s update>log')" "glued to a brace RANGE"
+assert_deny "a brace-RANGE tool token after a segment separator with a GLUED redirect denies" \
+  "$(json 'npm ci; e{a..a}s update>log')" "glued to a brace RANGE"
+assert_deny "the same brace-RANGE tool token closed by a SPACE still denies (unmoved control)" \
+  "$(json 'npx e{a..a}s update')" "glued to a brace RANGE"
 # MULTI-VALUE range, ruled: denied IDENTICALLY to a single-value range.
 # Distinguishing them would mean evaluating what the range expands to, which
 # this file already refuses to do for the sibling $/backtick mechanism, and
@@ -3021,6 +3040,29 @@ assert_deny "gh api with a brace-list-split verb denies" \
   "$(json 'gh a{p,p}i repos/o/r -X POST')" "glued to a brace LIST"
 assert_deny "eas build with a brace-list-split verb denies" \
   "$(json 'eas bui{l,l}d --auto-submit')" "glued to a brace LIST"
+# --- 2026-09-17: the SAME arm3 closer on the LIST side, pinned behaviourally. Fixing one arm
+# and leaving its sibling is this file's most repeated mistake, so both are pinned, not just the
+# one that was easiest to construct. Measured on origin/main (9f19b885) before the fix:
+#   npm ci; e{a,a}s update>log     ALLOW -> DENY
+#   npm ci; e{a,a}s update;true    ALLOW -> DENY
+#   npm ci; rail{w,w}ay up>log     ALLOW -> DENY
+#   npm ci; e{a,a}s update         DENY  -> DENY   (control: the SPACE closer already worked)
+#   npm ci; ls                     ALLOW -> ALLOW  (control: no gated text anywhere)
+# THE PRIOR SEGMENT IS LOAD-BEARING, and for a DIFFERENT reason than the launcher above: the
+# LIST arm is prefixed by plain _OUT_POS_PREFIX, which admits wrapper words but NO launcher, so
+# `npx e{a,a}s ...` cannot reach this arm at all and pinning that spelling here would pin a
+# verdict this closer has no part in. The needle that carries the hook past its fastpath has to
+# come from elsewhere on the command line -- here an ordinary `npm ci` before the `;`.
+assert_deny "a brace-LIST tool token after a separator with a GLUED redirect denies" \
+  "$(json 'npm ci; e{a,a}s update>log')" "glued to a brace LIST"
+assert_deny "a brace-LIST tool token with a GLUED semicolon denies" \
+  "$(json 'npm ci; e{a,a}s update;true')" "glued to a brace LIST"
+assert_deny "a brace-LIST railway tool token with a GLUED redirect denies" \
+  "$(json 'npm ci; rail{w,w}ay up>log')" "glued to a brace LIST"
+assert_deny "the same brace-LIST tool token closed by a SPACE still denies (unmoved control)" \
+  "$(json 'npm ci; e{a,a}s update')" "glued to a brace LIST"
+assert_allow "an ordinary compound with no gated text stays allowed (over-denial control)" \
+  "$(json 'npm ci; ls')"
 # EMPTY alternative (`{,x}`) -- real bash: "up" + "" + "date" = "update", "up"
 # + "x" + "date" = "upxdate". Denied identically to a non-empty pair: this
 # file never evaluates which alternative bash would pick.
@@ -5131,7 +5173,13 @@ fi
 # extractors feeding an *_ALREADY_HANDLED exclusion that already uses _OUT_POS_SUFFIX) moved
 # too. The invariant is now asserted, with a non-vacuity row proving the pattern still matches
 # the file's own prose so a passing zero cannot mean the grep simply stopped working.
-EXPECTED_TOTAL=977
+# 977 -> 985 (2026-09-17, review round 1 on #992): +8 BEHAVIOURAL rows, 3 range + 5 list, that
+# run the guard against the exact constructions whose verdict the closer widening flips. The
+# structural row above is a regression tripwire; these are the evidence the widening was
+# correct. Each was measured on origin/main before it was written, and each family needed a
+# DIFFERENT carrier to reach its arm (a launcher for range, a prior segment for list) -- which
+# is why the obvious "same row with the other brace spelling" would have pinned nothing.
+EXPECTED_TOTAL=985
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
