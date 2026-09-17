@@ -385,8 +385,19 @@ done
 add apicolfp-read    ALLOW 'gh api repos/o/r'
 add apicolfp-rootflag ALLOW 'gh -t x api repos/o/r'
 # PRE-EXISTING and pinned as ALLOW so the rows above are not misread as closing it: a
-# SINGLE-command field mutation is allowed on main too. It belongs to
-# todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md.
+# SINGLE-command field mutation is allowed on main too.
+#
+# REPOINTED 2026-09-17. This previously named
+# todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md as the
+# owner. That todo is archived `status: done`, is about merge-review-guard.sh rather than
+# this guard, and its own text asserted this form was not a live bypass -- false for the
+# field-based spelling, and now retracted inline in that file. Owner is
+# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+#
+# The discriminator is the ABSENT EXPLICIT METHOD, not the endpoint and not the row's
+# collapse shape: `gh` infers POST from the presence of -f/-F/--field/--raw-field, so this
+# spelling is a POST that never says so and the method check never sees a method token to
+# match. The sibling pin in test-guard-outward-cli.sh carries the same correction.
 add apicolfp-oneshot ALLOW 'gh api -f a=b /repos/o/r/merges'
 
 add ghrootvfp-list ALLOW 'gh -t x pr list'
