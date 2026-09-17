@@ -1835,7 +1835,11 @@ fi
 # axis: PATH/LAUNCHER QUALIFIER OF THE COMMAND (round 6, 2026-09-16)
 #
 # Round 5 made the command-position PREFIX an axis, but `(path)?` sat in front of a wrapper or
-# privilege WORD only -- the bare-path arm lives in _OUT_POS_PREFIX_LP. The three anchors with no
+# privilege WORD only -- the bare-path arm lives in _OUT_POS_PREFIX_LP. (ROUND 11: the merge with
+# main's brace-LIST work added a FOURTH anchor in this category which was NOT converted and is
+# disclosed in the guard's residuals header; PFX_TARGETS and QL_TARGETS carry a brace-RANGE
+# payload and no brace-LIST one, so neither pin can move for it. Derive the category with grep.)
+# The three anchors with no
 # _LP sibling (the expansion-token narrow deny, the brace-range narrow deny, and the
 # ambiguous-flag launcher check) therefore never saw a path or launcher qualifying the COMMAND,
 # and the round-5 prefix dimension above could not express it either -- so six live bypasses sat

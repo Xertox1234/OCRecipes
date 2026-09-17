@@ -129,6 +129,33 @@ for `bun`, because this file's brace-LIST machinery keys on `_OUT_GATED_BIN`, wh
 `bun` entry — the npm/pnpm/yarn interior rows deny. All rows are ALLOW on `origin/main`
 as well, so this is pre-existing, not a regression from #980.
 
+## Also open: a PREFIX in front of a brace-LIST verb (added 2026-09-17 from PR #980 round 11)
+
+Distinct from the flag-slot cell above. PR #980 made the command-position prefix an axis, so
+every deny decision reads `_OUT_POS_PREFIX_W` — except this file's brace-LIST block, which
+merged in from #982 built on the narrow `_OUT_POS_PREFIX`. Measured on the merged tree, bash
+5.3.15, command text fed to the hook as data; the bare spellings are the positive controls:
+
+| shape                                            | branch    | origin/main |
+| ------------------------------------------------ | --------- | ----------- |
+| `eas up{d..d}ate --branch preview` _(control)_   | DENY      | DENY        |
+| `eas up{d,d}ate --branch preview` _(control)_    | DENY      | DENY        |
+| `npx eas up{d..d}ate --branch preview` _(RANGE)_ | DENY      | ALLOW       |
+| `npx eas up{d,d}ate --branch preview` _(LIST)_   | **ALLOW** | ALLOW       |
+| `sudo eas up{d,d}ate --branch preview` _(LIST)_  | **ALLOW** | ALLOW       |
+
+The RANGE spelling inherits the prefix axis; the LIST spelling does not. Pre-existing on
+`main`, so not a regression from #980. The LIST mechanism always expands to two or more words,
+so no well-formed argv path to a sink is confirmed — this is a matchability gap with
+reachability unproven, which is the weaker of the two categories this repo distinguishes.
+
+**Fix shape when picked up:** convert the four narrow sites together — the exclusion
+`_OUT_BR_LIST_ALREADY_HANDLED` and the three `grep -oE` trigger arms in `_OUT_BR_LIST_OCC` —
+moving each extractor with its exclusion, since widening an exclusion _removes_ denies. Add a
+corpus axis crossing prefix forms against the LIST mechanism: `PFX_TARGETS` and `QL_TARGETS`
+currently carry a brace-RANGE payload and no brace-LIST one, so no existing pin can move for
+this block, which is why it sat unnoticed through the merge.
+
 ## Implementation Notes
 
 The guard already models FLAG position for four other mechanisms

@@ -48,9 +48,12 @@ control still main=ALLOW/branch=DENY, all over-denial controls still ALLOW. Roun
 underneath this table twice after it was first written, and a residual list republished
 without re-measuring would have been a claim about a tree that no longer existed. All five
 still ALLOW; all four closed shapes still DENY; all eight over-denial controls still ALLOW.
-The `main` column is carried forward unchanged and is still current: `main` advanced
-`af0e27b2` → `bf228799` while this PR was open, and
-`git diff --name-only af0e27b2..origin/main -- .claude/hooks/ scripts/` is **empty**.
+The `main` column is re-measured with the branch column, never carried forward on the
+strength of a diff being empty. An earlier revision of this paragraph justified carrying it
+with "`main` advanced `af0e27b2` → `bf228799` … that diff is **empty**" — true when written
+and falsified within the day, because `main` went on to `a5f507ff` via the brace-LIST work,
+which touches all three hook files. A sentence whose truth depends on another branch's tip
+has a shelf life; state the trigger instead, as the paragraph above now does.
 
 | command shape                                  | origin/main | #980 round-7 branch |
 | ---------------------------------------------- | ----------- | ------------------- |

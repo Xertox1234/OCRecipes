@@ -177,6 +177,24 @@
 #     trailing slot already had. The lesson is not about this slot: a residual is
 #     only honestly scoped out when its JUSTIFICATION is measured too, and a pin
 #     that records a bypass contradicts any prose claiming none was found.
+#   * ROUND-11 DISCLOSED, 2026-09-17 (merge with origin/main's brace-LIST work).
+#     A PREFIX IN FRONT OF A BRACE-LIST VERB IS STILL OPEN, and this is a claim defect the
+#     MERGE created rather than any edit: the brace-LIST block arrived from main built on the
+#     narrow `_OUT_POS_PREFIX`, so it is the one command-position decision here that does not
+#     carry the round-5 axis -- while the header two bullets up asserted that every decision
+#     did. Measured, bash 5.3.15, command text fed as data; bare spellings are the controls:
+#         eas up{d..d}ate <flag> preview        DENY   |  eas up{d,d}ate <flag> preview   DENY
+#         npx eas up{d..d}ate <flag> preview    DENY   |  npx eas up{d,d}ate <flag> preview  ALLOW
+#                                                      |  sudo eas up{d,d}ate <flag> preview ALLOW
+#     So the RANGE spelling inherits this branch's prefix axis and the LIST spelling does not.
+#     ALLOW on origin/main identically, so pre-existing rather than a regression, and the LIST
+#     mechanism always expands to two or more words, so no well-formed argv path to a sink was
+#     confirmed. Recorded in todos/P2-2026-09-16-brace-list-at-flag-position-reconstructs-a-gated-flag.md.
+#     NOT fixed here, for the same reason the bullet above gives: widening a matcher on the
+#     strength of one round's probe is what produced the preceding rounds. It needs the four
+#     narrow sites converted TOGETHER with their extractors, and its own corpus axis.
+#     This is a DIFFERENT shape from the flag-slot residual above: that one is a brace list in
+#     the launcher's FLAG slot, this one is a prefix in front of a brace-list VERB.
 #     STILL OPEN AFTER ROUND 9, measured at the #982 merge and disclosed rather than
 #     widened: the BRACE-LIST spelling of the same flag slot. `npx --quiet --yes eas
 #     update --branch preview` denies, but `npx {--quiet,--yes} eas update --branch
@@ -249,7 +267,11 @@
 #     safe direction.
 #   * CLOSED 2026-09-16 (round 5), same todo as the launcher-family bullet above.
 #     THE COMMAND-POSITION PREFIX IS AN AXIS, NOT A LIST. Every command-position deny decision
-#     in this file reads `_OUT_POS_PREFIX_W`, which absorbs any number of wrapper words
+#     in this file reads `_OUT_POS_PREFIX_W` -- WITH ONE EXCEPTION, added by the 2026-09-17
+#     merge and documented in the ROUND-11 bullet below: the brace-LIST block still reads the
+#     narrow `_OUT_POS_PREFIX`. DERIVE THE EXCEPTIONS, DO NOT TRUST THIS SENTENCE:
+#     `grep -nE '\$\{_OUT_POS_PREFIX\}' "$0" | grep -v ':#'` lists every site that has NOT
+#     been converted. `_OUT_POS_PREFIX_W` absorbs any number of wrapper words
 #     (`env`, `command`, `nohup`, an inline assignment, a redirect) and privilege words
 #     (`sudo`, `doas`, `corepack`, via `_OUT_PRIV_WORD`, flags included), each independently
 #     path-qualifiable, in any order. `_OUT_POS_PREFIX_LP` is derived from it, so the launcher
@@ -1183,7 +1205,10 @@
 #     and is not relied on anywhere in this file.
 #
 #     VERB-position — CLOSED, with the IDENTICAL bound as the brace-RANGE entry
-#     above: the SAME three trigger arms, reused verbatim in shape
+#     above: the same three trigger arms in shape, but NOT in reach -- they were
+#     built on the narrow `_OUT_POS_PREFIX` while the range block's were converted to
+#     `_OUT_POS_PREFIX_W`, so a launcher/path/privilege prefix defeats the list arms and
+#     not the range ones (see the ROUND-11 bullet in the residuals header),
 #     (`_OUT_BR_LIST_TOKEN` in place of `_OUT_BR_RANGE_TOKEN`), so the same
 #     first-verb-word / `gh pr <verb>`-only reach applies — a gated verb in the
 #     THIRD word of a non-`gh pr` namespace is unreachable by this block for the
@@ -2513,6 +2538,12 @@ _OUT_POS_PREFIX_LP="${_OUT_POS_PREFIX_W}((${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER}
 # front of a wrapper word -- the bare-path arm lives only in _LP. The three anchors with no _LP
 # sibling were therefore still open, and the header claimed them closed. That is round 4's defect
 # restated one dimension over: a fix that closes one product and prose that claims the other.
+# ROUND 11 NOTE: round 6 did fix exactly those three, so the count above is correct as HISTORY.
+# But the 2026-09-17 merge added a FOURTH member of the same category -- the brace-LIST block,
+# which catches an unqualified shape and has no `_LP` sibling, yet reads the narrow
+# `_OUT_POS_PREFIX` and was never given the optional spelling. It is disclosed in the
+# residuals header rather than converted here. Count the category by grep, not by this
+# paragraph: a set that grows by MERGE will outlive any number written into prose.
 # Six one-token-different pairs were measured, each with its `env`-prefixed control DENYING:
 #   /opt/homebrew/bin/npx -c '<gated>'      ALLOW   (env npx -c '<gated>'      DENY)
 #   /opt/homebrew/bin/eas $V --branch ...   ALLOW   (env eas $V --branch ...   DENY)
@@ -3510,7 +3541,10 @@ fi
 # any check above this one keys on. See guard-outward-cli.sh's DOCUMENTED
 # RESIDUALS entry for this mechanism (search "BRACE LIST expansion") for the
 # full VERB/TOOL/FLAG/nested-position bound -- this block closes VERB-position
-# only, with the IDENTICAL structural reach as the brace-RANGE block: the same
+# only. The trigger ARMS mirror the brace-RANGE block, but the REACH does not: these
+# read the narrow `_OUT_POS_PREFIX` while the range block reads `_OUT_POS_PREFIX_W`,
+# so a launcher, path or privilege prefix defeats these and not those -- measured and
+# disclosed in the residuals header's ROUND-11 bullet. Otherwise the same
 # three trigger arms, same `_OUT_GATED_BIN`/`_OUT_SEP` glue requirement, same
 # placement rationale (runs after eas/railway/npm, before gh pr merge, for the
 # same deny-reason-attribution reason as the block above).
@@ -3529,7 +3563,8 @@ fi
 # is a documented, measured residual -- see DOCUMENTED RESIDUALS, not silently
 # assumed closed.
 _OUT_BR_LIST_TOKEN='[^;&|)`{}[:space:]]*\{[^{}]*,[^{}]*\}[^;&|)`{}[:space:]]*'
-# EXCLUSION, mirroring `_OUT_BR_RANGE_ALREADY_HANDLED` verbatim in shape and in
+# EXCLUSION, mirroring `_OUT_BR_RANGE_ALREADY_HANDLED` in shape but NOT in prefix reach
+# (narrow `_OUT_POS_PREFIX` here, `_OUT_POS_PREFIX_W` there), and otherwise in
 # BOTH hardening rounds that block's own exclusion needed (command-position
 # anchoring so a decoy occurrence elsewhere in the command cannot cancel this
 # whole block; per-OCCURRENCE evaluation so a genuinely benign co-occurring gh
