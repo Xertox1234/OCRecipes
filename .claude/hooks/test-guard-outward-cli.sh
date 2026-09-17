@@ -4009,8 +4009,11 @@ assert_deny "...opening at !" \
 # docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md
 # for the full mechanism and both rejected approaches, and
 # todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md
-# (status: blocked, not archived — AC1 is unreachable as worded for this ordering; a human
-# decision is needed given the more severe residual that finding surfaced).
+# (status: blocked, not archived — AC1 is unreachable as worded for this ordering; the one
+# decision remaining is whether to accept this tripwire-pinned residual as the permanent
+# posture). The more severe residual that investigation surfaced is NOT on this ordering
+# axis and is already filed separately as
+# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
 assert_deny "TRIPWIRE: a hidden second pr merge is miscounted but still denies" \
   "$(json 'gh -a -c <(gh pr merge 7) pr merge 42')" \
   "without a REAL --auto flag"
@@ -4051,7 +4054,16 @@ assert_allow "a single read-only gh api stays allowed" \
 assert_allow "a single read-only gh api behind a root flag stays allowed" \
   "$(json 'gh -t x api repos/o/r')"
 # The one-command mutating form is ALLOW on main too — pinned so a reader does not mistake
-# the rows above for a claim that this change closed it. It is the P2 gh-api-route todo's.
+# the rows above for a claim that this change closed it.
+#
+# Tracked by todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+# This pointer was REPOINTED 2026-09-17. It previously read "It is the P2 gh-api-route
+# todo's", naming an archived status:done todo about a DIFFERENT hook, whose own text
+# asserts guard-outward-cli denies this form — false for the field-based spelling. So the
+# pin deferred to a closed file that disclaimed the very thing being pinned, and the gap
+# fell between the two records and went untracked. The discriminator is the absent
+# explicit method: gh infers POST from the presence of -f/-F/--field/--raw-field, so this
+# spelling is a POST that never says so and the method check never sees one.
 assert_allow "the ONE-command -f mutation is allowed here, as it is on main (pre-existing)" \
   "$(json 'gh api -f a=b /repos/o/r/merges')"
 

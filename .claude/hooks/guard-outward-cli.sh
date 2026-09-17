@@ -2098,8 +2098,11 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 #
 # PROVED UNFIXABLE VIA OCCURRENCE COUNTING, not merely left open — see
 # todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md
-# (status: blocked; not archived — a human decision is needed given the more severe residual
-# that finding surfaced).
+# (status: blocked; not archived — one decision remains: whether to accept the
+# tripwire-pinned residual as the permanent posture for the two-token families).
+# The more severe residual that investigation surfaced is NOT that decision and is
+# NOT on this ordering axis — it is already filed separately as
+# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
 # Two repair attempts were measured and rejected: a gh-api-style separator-safe grammar
 # (max()'d against the wide count, mirroring `_OUT_GH_GLOBALS_SEPSAFE`/`_OUT_SEP_SEPSAFE`
 # below) returns count=1 under BOTH grammars for this exact shape, because the nested
