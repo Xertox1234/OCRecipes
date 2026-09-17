@@ -37,7 +37,9 @@ Every shape below steps outside one of those three assumptions.
 Measured on `origin/main` and on PR #980's branch with the same harness, so each row is a
 two-tree comparison rather than a single reading.
 
-**Re-measured on the round-7 tree** (`817b47ae`), because rounds 6 and 7 both changed
+**Re-measured on the round-7 tree** (`02dbe0c8`; first measured on the superseded WIP
+`817b47ae`, whose `guard-outward-cli.sh` blob is byte-identical, so the reading stands
+although that sha is not an ancestor of this branch), because rounds 6 and 7 both changed
 `_OUT_POS_PREFIX_W`, which `_OUT_POS_PREFIX_LP` derives from — so the launcher prefix moved
 underneath this table twice after it was first written, and a residual list republished
 without re-measuring would have been a claim about a tree that no longer existed. All five

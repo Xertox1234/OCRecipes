@@ -4217,8 +4217,15 @@ assert_allow "./node_modules/@railway/cli/bin/run --help stays allowed (same ver
   "$(json './node_modules/@railway/cli/bin/run --help')"
 assert_allow "npx -q tsc --noEmit stays allowed (unrecognized flag, but an UNGATED binary -- not blanket over-denial)" \
   "$(json 'npx -q tsc --noEmit')"
-assert_allow "npm --loglevel=silent exec eas update stays allowed (DOCUMENTED RESIDUAL: interior npm->exec flag slot, deliberately out of scope)" \
-  "$(json 'npm --loglevel=silent exec eas update --branch preview')"
+# ROUND-9: this row asserted the interior npm->exec flag slot stayed ALLOW as a documented
+# residual. Round 9 closed that slot, so the expectation flips here rather than the row being
+# deleted -- a residual that closes should read as one assertion changing its mind, with the
+# round named, not as a test quietly disappearing. The guard header sentence that justified
+# leaving it open ("no bypass through that specific slot was measured") was false when
+# written: repro-outward-cli-corpus.sh pinned this very command ALLOW at the same time.
+assert_deny "npm --loglevel=silent exec eas update now DENIES (round-9: the interior npm->exec flag slot closed)" \
+  "$(json 'npm --loglevel=silent exec eas update --branch preview')" \
+  "reached through a launcher"
 assert_deny "bare-form eas update still denies (negative control has a positive in this same block)" \
   "$(json 'eas update --branch preview')" \
   "command-position 'eas update/publish/submit'"
@@ -4820,8 +4827,63 @@ assert_allow "command -p on an ordinary binary stays allowed" \
 assert_allow "a preceding unrelated command still leaves the automerge carve-out intact" \
   "$(json 'echo hi;gh pr merge 42 --auto --squash')"
 
+
+# ---------- ROUND 9: a flag INSIDE a multi-word launcher skipped every check ----------
+# `_OUT_LAUNCHER` spelled its interior runner->subcommand gaps with bare `$_OUT_SEP` while
+# the trailing slot on the same line already used `_OUT_FLAG_RUN`. Moving one token one word
+# left -- `npm exec -s <gated>` to `npm -s exec <gated>` -- therefore defeated every
+# `_OUT_POS_PREFIX_LP`-gated check, including the gh-family blanket deny and the GAP-1
+# ambiguous-flag check whose own message says it denies UNCONDITIONALLY. All of these were
+# ALLOW on origin/main too, so this closes a pre-existing gap, not a regression.
+assert_deny "a flag inside the npm launcher phrase still reaches the OTA verb" \
+  "$(jsonc 'npm -s exec eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "a flag inside the npm launcher phrase still reaches the ADMIN merge sink" \
+  "$(jsonc 'npm -s exec gh pr merge 42 --admin')" \
+  "gh"
+assert_deny "a long-form interior flag with a value is absorbed too" \
+  "$(jsonc 'npm --loglevel=silent exec eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "an interior flag whose value is a separate word is absorbed" \
+  "$(jsonc 'npm --prefix /tmp exec eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "pnpm's interior gap absorbs a flag before the ADMIN merge sink" \
+  "$(jsonc 'pnpm -s dlx gh pr merge 42 --admin')" \
+  "gh"
+assert_deny "bun's interior gap absorbs a flag before the OTA verb" \
+  "$(jsonc 'bun -s run eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "yarn's interior gap absorbs a flag before railway" \
+  "$(jsonc 'yarn -s dlx railway up')" \
+  "railway"
+assert_deny "the GAP-1 check that claims to deny UNCONDITIONALLY is no longer defeated by an interior flag" \
+  "$(jsonc 'npm -s exec --package=eas-cli -- tsc --version')" \
+  "denies UNCONDITIONALLY"
+
+# ---------- ROUND 9: over-denial controls for the interior slot ----------
+# The interior gap sits inside EVERYDAY npm/pnpm/yarn/bun invocations, so a widening here is
+# the one most likely to deny ordinary work. Measured 0 new over-denials across 26 ordinary
+# commands; these pin the ones a developer types hourly.
+assert_allow "an interior flag on an UNGATED npm subcommand stays allowed" \
+  "$(jsonc 'npm -s install')"
+assert_allow "a long-form interior flag on an ungated npm script stays allowed" \
+  "$(jsonc 'npm --loglevel=silent run build')"
+assert_allow "a workspace flag before an ungated npm script stays allowed" \
+  "$(jsonc 'npm -w pkg run build')"
+assert_allow "the launcher phrase with an interior flag and an UNGATED target stays allowed" \
+  "$(jsonc 'npm -s exec tsc --noEmit')"
+assert_allow "pnpm install with an interior flag stays allowed" \
+  "$(jsonc 'pnpm -s install')"
+assert_allow "the sanctioned automerge is still allowed in its bare spelling" \
+  "$(jsonc 'gh pr merge 42 --auto --squash --delete-branch')"
+
 # (The "+2 over-denial controls" tail of the 841 -> 851 sentence lived here, orphaned from its
 # own paragraph by a later insertion; it has been returned to that paragraph above.)
+# 916 -> 930 (2026-09-17, security round 9): +14, DERIVED from the rows below -- 8 for the
+# interior-launcher-gap bypass (one per launcher form plus the two flag-with-value spellings
+# and the GAP-1 check that claimed to deny unconditionally), and 6 over-denial controls,
+# because this gap sits inside everyday npm/pnpm invocations and a widening here is the one
+# most likely to deny ordinary work.
 # 901 -> 916 (2026-09-16, security round 7): +15, DERIVED from the rows below -- 9 for the
 # wrapper-flag bypass, 2 for the decoy route that fixing it opens (coupled, same change),
 # and 4 over-denial controls, including the carve-out row that caught round 6's token-match bug.
@@ -4842,7 +4904,7 @@ assert_allow "a preceding unrelated command still leaves the automerge carve-out
 # Set immediately before the total pin so a process death anywhere in the assertions above is
 # still caught as a TRUNCATED run rather than reported as success.
 _PIN_RAN=1
-EXPECTED_TOTAL=916
+EXPECTED_TOTAL=930
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

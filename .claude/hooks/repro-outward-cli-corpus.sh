@@ -1799,6 +1799,58 @@ if [ "$WF_ROWS_GENERATED" -ne 39 ]; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# axis: A FLAG INSIDE THE LAUNCHER PHRASE (round 9, 2026-09-17)
+#
+# `_OUT_LAUNCHER` absorbed flags AFTER the complete launcher phrase but not BETWEEN its two
+# words, so `npm -s exec <gated>` skipped every `_OUT_POS_PREFIX_LP`-gated check while
+# `npm exec -s <gated>` denied. One token, one word to the left. Every row here was ALLOW on
+# origin/main as well, so this axis records a pre-existing gap closing, not a regression.
+#
+# The dimension that was missing is the FLAG's POSITION RELATIVE TO THE LAUNCHER'S OWN WORDS.
+# The round-2 rows varied the flag AFTER the phrase, and the round-7 wrapper-flag axis varied
+# flags on a WRAPPER word -- neither could express a flag INSIDE a two-word launcher, which is
+# why the single pinned row for this slot sat ALLOW for seven rounds and read as intentional.
+IF_IDS=(npmexec npmx bunrun bunx pnpmdlx pnpmexec yarndlx yarnexec)
+IF_HEADS=(npm npm bun bun pnpm pnpm yarn yarn)
+IF_VERBS=(exec x run x dlx exec dlx exec)
+# The empty form is this dimension's own control: it must deny for the same reason as the
+# flagged forms, or the row proves nothing about the flag.
+IF_FLAG_IDS=(none s loglevel workspace)
+IF_FLAGS=('' '-s ' '--loglevel=silent ' '-w pkg ')
+# Both sinks, deliberately. Every previous record of this slot used an OTA only, so the
+# admin-merge sink -- the one that made the sibling TRAILING slot a must-fix -- was invisible.
+IF_SINK_IDS=(easupd ghadmin)
+IF_SINKS=('eas update --branch preview' 'gh pr merge 42 --admin')
+# Ungated work behind the identical launcher phrases. This gap sits inside everyday
+# npm/pnpm/yarn invocations, so over-denial here would be felt hourly.
+IF_ALLOW_IDS=(tsc)
+IF_ALLOWS=('tsc --noEmit')
+IF_ROWS_BEFORE=${#ROWS[@]}
+for _if_i in "${!IF_IDS[@]}"; do
+  for _if_f in "${!IF_FLAG_IDS[@]}"; do
+    for _if_s in "${!IF_SINK_IDS[@]}"; do
+      add "if-${IF_IDS[$_if_i]}-${IF_FLAG_IDS[$_if_f]}-${IF_SINK_IDS[$_if_s]}" DENY \
+        "${IF_HEADS[$_if_i]} ${IF_FLAGS[$_if_f]}${IF_VERBS[$_if_i]} ${IF_SINKS[$_if_s]}"
+    done
+    for _if_a in "${!IF_ALLOW_IDS[@]}"; do
+      add "ifok-${IF_IDS[$_if_i]}-${IF_FLAG_IDS[$_if_f]}-${IF_ALLOW_IDS[$_if_a]}" ALLOW \
+        "${IF_HEADS[$_if_i]} ${IF_FLAGS[$_if_f]}${IF_VERBS[$_if_i]} ${IF_ALLOWS[$_if_a]}"
+    done
+  done
+done
+IF_ROWS_GENERATED=$(( ${#ROWS[@]} - IF_ROWS_BEFORE ))
+# 8 launcher forms x 4 flag forms x (2 deny sinks + 1 allow control) = 96.
+if [ "$IF_ROWS_GENERATED" -ne 96 ]; then
+  echo "FATAL: interior-flag axis generated $IF_ROWS_GENERATED rows, expected 8 x 4 x (2 + 1) = 96 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+# The round-7 wrapper flag-run brought a VALUE slot that can absorb a real command word, so a
+# gated name appearing as an ARGUMENT after a flagged wrapper now denies. Narrow, and in the
+# safe direction, but pinned here so the accuracy cost is visible in the corpus rather than
+# discovered by a user with ALLOW_OUTWARD_CLI=1.
+add "wf-valueslot-grep" DENY 'env -i grep eas update docs/'
+
 # axis: PACKAGE SPELLING (`eas-cli`, `@railway/cli`) on the launcher axis --
 # npm/npx resolve a PACKAGE name, not necessarily the binary name; `eas-cli`'s
 # own package.json declares bin:{"eas":"./bin/run"}, so npx/npm-exec reach the
@@ -1994,13 +2046,15 @@ add lp-lflag-ghmerge     DENY  'npx -q gh pr merge 42 --auto'
 # UNRELATED (non-gated) binary, stays allowed -- the widening is scoped to
 # the flag SLOT, not a blanket "any flag denies" rule.
 add lp-lflag-fp-tsc      ALLOW 'npx -q tsc --noEmit'
-# DOCUMENTED RESIDUAL, not a regression: a flag BETWEEN the two words of a
-# multi-word launcher (here, npm -> exec) sits in a slot this fix
-# deliberately did not widen -- see guard-outward-cli.sh's DOCUMENTED
-# RESIDUALS header, "ROUND-2 CLOSED, 2026-09-16" bullet. Pinned ALLOW so a
-# future accidental fix of this slot is a visible pin change, not a silent
-# one.
-add lp-lflag-residual-interior ALLOW 'npm --loglevel=silent exec eas update --branch preview'
+# ROUND-9 CLOSED. This row was pinned ALLOW for seven rounds as a DOCUMENTED RESIDUAL,
+# with the note that "a future accidental fix of this slot is a visible pin change, not
+# a silent one". Round 9's fix was not accidental, and this is that visible change: the
+# row now DENIES on all four paths, so it also leaves the all-path dirty manifest it used
+# to sit in as p=ALLOW j=DENY l=DENY a=DENY. Kept at its original id rather than renamed,
+# so the manifest diff reads as one row changing verdict instead of one leaving and
+# another arriving. The guard header's claim that no bypass had been measured through
+# this slot was contradicted by THIS LINE for seven rounds.
+add lp-lflag-residual-interior DENY 'npm --loglevel=silent exec eas update --branch preview'
 
 # axis: FAST-PATH NEEDLE-LIST GAP (2026-09-16, round-2 review's own findings,
 # second pass). `cmd_fastpath_has`'s needle list gated EVERY launcher-family
@@ -2575,6 +2629,16 @@ fi
 # 1180 -> 1510 (2026-09-16): +330 from the composition-order dimension added to the
 # launcher/path grid (path-before-launcher and path-on-both-sides) plus the npm x
 # launcher. Regenerated from the run that measured them, never hand-computed.
+# 1678 -> 1775 (2026-09-17, round 9): +97 -- 96 from the INTERIOR-FLAG axis (8 launcher forms x
+# 4 flag forms, the empty spelling being the dimension's own control, x (2 deny sinks + 1
+# over-denial control)) plus 1 row pinning the round-7 value-slot accuracy cost. The axis has
+# its own short-iteration FATAL guard asserting the 96.
+# The dimension nobody had varied is the FLAG'S POSITION RELATIVE TO THE LAUNCHER'S OWN
+# WORDS. Round 2 varied the flag AFTER the complete launcher phrase; round 7 varied flags on
+# a WRAPPER word. Neither could express a flag INSIDE a two-word launcher, so the single row
+# that did cover this slot (lp-lflag-residual-interior) sat pinned ALLOW for seven rounds and
+# read as intentional rather than as the measured bypass it was. Three axes in a row have now
+# been found this way: the grid can only disagree with you about shapes it can spell.
 # 1639 -> 1678 (2026-09-16, round 7): +39 from the WRAPPER-FLAG axis -- 6 wrapper forms
 # (the bare spelling as the dimension's own control, plus five flagged spellings) x (4 deny
 # targets + 2 over-denial controls) = 36, plus 3 decoy rows, with its own short-iteration
@@ -2597,7 +2661,7 @@ fi
 # position -- the unchanged pins read as confirmation and were blindness. Round 5's
 # review then found seven more anchors still bypassed, six of them at gh /
 # expansion-token / brace-range checks the launcher grid never reaches.
-EXPECTED_ROWS=1678
+EXPECTED_ROWS=1775
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 761 of the 876 rows deny on the precise path; the other 115 are ALLOW there: 91
@@ -2743,6 +2807,12 @@ EXPECTED_ROWS=1678
 # at 24 across the same run -- and that 24 now MEANS something, because the grid can
 # finally express a path-qualified launcher. It could not before, which is why the
 # previous unchanged 24 was true and vacuous.
+# 1505 -> 1571 (2026-09-17, round 9): +66, DERIVED and then confirmed against the run -- 8 launcher
+# forms x 4 flag forms x 2 deny sinks = 64 from the new axis, plus the value-slot row, plus
+# ONE row that was already here: lp-lflag-residual-interior flipped ALLOW -> DENY, so it joins
+# the attribution list without changing the row count. The other 32 new rows (8 x 4 ungated
+# payloads) are over-denial controls and are never attributed, which is why this moves by 66
+# while EXPECTED_ROWS moves by 97.
 # 1478 -> 1505 (2026-09-16, round 7): +27 of the 39 new rows, DERIVED from the dimension and
 # confirmed against the run: 6 wrapper forms x 4 deny targets = 24, plus the 3 decoy rows.
 # The other 12 (6 forms x 2 ungated payloads) are over-denial controls that must keep
@@ -2760,7 +2830,7 @@ EXPECTED_ROWS=1678
 # failure that gets a guard switched off rather than fixed.
 # precise-path gaps held at 24 and all-path gaps at 306 across this change, with ZERO
 # membership drift in either manifest -- the 104 new rows agree on all four paths.
-EXPECTED_DENY_ATTRIB_ROWS=1505
+EXPECTED_DENY_ATTRIB_ROWS=1571
 
 # 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
 # remaining precise-path gaps" note further down, and the two must stay equal:
@@ -2858,6 +2928,14 @@ EXPECTED_PRECISE_GAPS=24
 # pattern the +6 bump above describes. MEASURED: the run reported `all-path
 # gaps is 306`. The manifest below is the prior 285-line pin plus these 21,
 # LC_ALL=C sorted -- not hand-merged.
+# 314 -> 313 (2026-09-17, round 9): -1, a manifest LEAVING rather than joining, which is rare
+# enough here to name. lp-lflag-residual-interior measured p=ALLOW j=DENY l=DENY a=DENY: the
+# precise path allowed the interior-flag bypass while the three degraded fallbacks denied it
+# by the crude text match they use instead. Closing the bypass makes the precise path agree
+# with them, so the row denies on all four paths and drops out of the dirty manifest. A
+# degraded-path DISAGREEMENT that disappears because the precise path got STRICTER is the
+# healthy direction; the same count moving because the degraded paths got looser would not be,
+# and only the per-path tuple tells the two apart.
 # 314 -> 314 (2026-09-16, round 7): +0, and the ZERO is the informative part. All 39
 # wrapper-flag rows agree on all four paths (p=/j=/l=/a=), so none joined the degraded-path
 # manifest: the flag absorption happens in _OUT_POS_PREFIX_W, which every path shares, rather
@@ -2870,7 +2948,7 @@ EXPECTED_PRECISE_GAPS=24
 # (nojq/nolib/noawk) fallbacks cannot see it and deny. That is the SAME documented degraded-path
 # residual the launcher rows already carry, not a new gap -- verified by reading the 8 added
 # manifest tuples rather than inferring from the count.
-EXPECTED_ALLPATH_GAPS=314
+EXPECTED_ALLPATH_GAPS=313
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -3082,7 +3160,6 @@ lp-fpneedle-callnoNeedle p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-fpneedle-pkgnoNeedle p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-gap1-discriminating p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-ghmerge-auto-bare p=ALLOW j=DENY l=DENY a=DENY
-lp-lflag-residual-interior p=ALLOW j=DENY l=DENY a=DENY
 lp-pd-eascli-bun p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-pd-eascli-deno p=DENY j=ALLOW l=ALLOW a=ALLOW
 lp-pd-eascli-node p=DENY j=ALLOW l=ALLOW a=ALLOW
@@ -4654,6 +4731,71 @@ wf-execa-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag m
 wf-decoy-envauto   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 wf-decoy-envuauto  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 wf-decoy-assignval : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+if-npmexec-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmexec-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmexec-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmexec-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmexec-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmexec-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmexec-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmexec-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmx-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmx-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmx-s-easupd   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmx-s-ghadmin  : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmx-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmx-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmx-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmx-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunrun-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunrun-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunrun-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunrun-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunrun-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunrun-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunrun-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunrun-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunx-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunx-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunx-s-easupd   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunx-s-ghadmin  : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunx-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunx-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunx-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunx-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmdlx-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmdlx-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmdlx-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmdlx-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmdlx-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmdlx-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmdlx-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmdlx-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmexec-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmexec-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmexec-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmexec-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmexec-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmexec-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmexec-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmexec-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarndlx-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarndlx-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarndlx-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarndlx-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarndlx-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarndlx-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarndlx-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarndlx-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarnexec-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarnexec-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarnexec-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarnexec-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarnexec-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarnexec-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarnexec-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarnexec-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+wf-valueslot-grep  : command-position 'eas update/publish/submit' publishes an OTA update or
 lp-pkg-eascli-npx  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-pkg-eascli-npmexec : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-pkg-railwaycli-npx : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
@@ -4735,6 +4877,7 @@ lp-lflag-yarndlx-value : 'eas update/publish/submit' reached through a launcher 
 lp-lflag-yarnexec-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-lflag-yarnexec-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-lflag-ghmerge   : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-lflag-residual-interior : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-fpneedle-callnoNeedle : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
 lp-fpneedle-pkgnoNeedle : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
 lp-gap1-discriminating : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com

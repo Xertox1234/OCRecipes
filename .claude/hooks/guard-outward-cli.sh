@@ -162,13 +162,21 @@
 #     the binary defeated every `_OUT_POS_PREFIX_LP`-gated check, including
 #     the gh-family blanket-deny (`npx -q gh pr merge 42 --auto` reached an
 #     unreviewed admin merge). Now closed with `_OUT_FLAG_RUN` (this file's
-#     own general flag-absorber idiom). REMAINING, DELIBERATELY OUT OF SCOPE:
-#     a flag BETWEEN the two words of a multi-word launcher (`npm
-#     --loglevel=silent exec eas update`) — no bypass through that specific
-#     slot was measured, and widening every interior word-to-word gap on spec
-#     (rather than the one slot actually found bypassed) would be the same
-#     invented-enumeration risk in the other direction. Measured: still
-#     ALLOWS.
+#     own general flag-absorber idiom).
+#   * ROUND-9 CLOSED, 2026-09-17 (same todo, security review, eighth pass).
+#     The sibling slot INSIDE a multi-word launcher (`npm -s exec <gated>`,
+#     `pnpm --loglevel=silent dlx <gated>`) was left on plain `$_OUT_SEP` by every
+#     round up to 8, justified here by the sentence "no bypass through that
+#     specific slot was measured". That sentence was FALSE when written:
+#     repro-outward-cli-corpus.sh already pinned `npm --loglevel=silent exec eas
+#     update --branch preview` as ALLOW, which IS such a measurement. Worse, the
+#     only shape ever recorded for the slot was an OTA; the admin-merge sink
+#     (`npm -s exec gh pr merge 42 --admin`, ALLOW) appeared nowhere, although it
+#     is the sink whose reachability made the TRAILING slot a must-fix two bullets
+#     up. Now closed by giving the interior gaps the same `_OUT_FLAG_RUN` the
+#     trailing slot already had. The lesson is not about this slot: a residual is
+#     only honestly scoped out when its JUSTIFICATION is measured too, and a pin
+#     that records a bypass contradicts any prose claiming none was found.
 #   * ROUND-2 CLOSED, 2026-09-16 (same todo, security review, second pass).
 #     The `cmd_fastpath_has` pre-filter gating every check in this file
 #     needed `npx`/`bun` in its needle list — `npx`/`bunx`/`bun x`/`bun run`
@@ -2209,18 +2217,44 @@ _OUT_PRIV_WORD='(sudo|doas|corepack)'"$_OUT_FLAG_RUN"
 # rendered redundant. This is a pure WIDENING of what `_OUT_LAUNCHER` matches
 # (`_OUT_FLAG_RUN` at zero iterations is byte-identical to the `_OUT_SEP` it
 # replaces — the same "deny-shaped, so widening is monotone" property that
-# constant's own header comment documents), and `_OUT_LAUNCHER` has exactly
-# two consumers, both boolean `grep -Eqi` reads (`_OUT_POS_PREFIX_LP` above,
-# and the GAP-1 ambiguous-flag check below) — neither a count nor an
-# extraction — so widening it here is safe per
-# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md.
-# Scoped to the flag slot AFTER the complete launcher phrase, before the
-# binary/path — the only slot measured bypassed; the interior word-to-word
-# gaps (`npm`->`exec`, `bun`->`x`/`run`, `pnpm`->`dlx`/`exec`,
-# `yarn`->`dlx`/`exec`) keep plain `$_OUT_SEP`, unchanged, since no bypass was
-# measured through them and widening every gap on spec would be the same
-# invented-enumeration risk in the other direction.
-_OUT_LAUNCHER='(npx|npm'"$_OUT_SEP"'(exec?|x)|bunx|bun'"$_OUT_SEP"'(x|run)|pnpm'"$_OUT_SEP"'(dlx|exec)|yarn'"$_OUT_SEP"'(dlx|exec))'"$_OUT_FLAG_RUN"
+# constant's own header comment documents).
+#
+# CONSUMERS — DERIVE THE LIST, DO NOT QUOTE THIS SENTENCE'S ARITY. Run
+# `grep -n '\${_OUT_LAUNCHER}' "$0"`. At the round-9 head that returns THREE sites,
+# and they are NOT all boolean, which is why an earlier revision of this comment
+# ("exactly two consumers, both boolean") was false and had to be replaced:
+#   * `_OUT_POS_PREFIX_LP`          — boolean `grep -Eqi`. Widening is monotone.
+#   * the GAP-1 ambiguous-flag check — boolean `grep -Eqi`. Widening is monotone.
+#   * `_OUT_OPT_QUAL`               — NOT boolean. It feeds the brace-range
+#     EXCLUSION `_OUT_BR_RANGE_ALREADY_HANDLED` (where widening REMOVES denies,
+#     the one direction that can open a hole while looking like a tightening) and
+#     THREE `grep -oE` EXTRACTORS in `_OUT_BR_OCC` (where a longer match can absorb
+#     what would have started a second one — not monotone on a count).
+# `_OUT_OPT_QUAL` was added by round 6 while this comment still claimed two boolean
+# consumers, so the sentence went stale inside the same PR that invalidated it — the
+# exact failure this file warns about for use-site counts. Any future widening of
+# `_OUT_LAUNCHER` must MEASURE the exclusion and the extractors, not assume them:
+# print the verdict for a brace-range row through each launcher spelling before and
+# after, and require that nothing moves DENY -> ALLOW. See
+# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md
+# and docs/solutions/conventions/compose-precise-detector-from-shared-primitives-without-widening-extractor-2026-09-14.md.
+#
+# ROUND 9 applies `_OUT_FLAG_RUN` to the INTERIOR word-to-word gaps as well
+# (`npm`->`exec`/`x`, `bun`->`x`/`run`, `pnpm`->`dlx`/`exec`, `yarn`->`dlx`/`exec`),
+# not just the trailing slot. Rounds 2-8 left those gaps on plain `$_OUT_SEP` and
+# justified it with "no bypass through that specific slot was measured" — which was
+# untrue at the time it was written, because repro-outward-cli-corpus.sh pinned
+# `npm --loglevel=silent exec eas update` ALLOW in this same file set. Measured at
+# round 9, one token moved one word left: `npm exec -s <OTA>` DENY vs
+# `npm -s exec <OTA>` ALLOW, and `npm exec gh pr merge 42 --admin` DENY vs
+# `npm -s exec gh pr merge 42 --admin` ALLOW — an unreviewed, branch-protection-
+# bypassing admin merge, the same sink whose reachability made the TRAILING slot a
+# must-fix in round 2. 100 bypass rows (5 launcher forms x 4 sinks x 5 flag
+# spellings) now deny with their 20 bare controls still denying; all were ALLOW on
+# `main` too, so this closes a pre-existing gap rather than a regression.
+# The exclusion/extractor audit above was RUN, not assumed: 4 brace-range verdicts
+# moved and every one moved ALLOW -> DENY. None moved DENY -> ALLOW.
+_OUT_LAUNCHER='(npx|npm'"$_OUT_FLAG_RUN"'(exec?|x)|bunx|bun'"$_OUT_FLAG_RUN"'(x|run)|pnpm'"$_OUT_FLAG_RUN"'(dlx|exec)|yarn'"$_OUT_FLAG_RUN"'(dlx|exec))'"$_OUT_FLAG_RUN"
 # `_OUT_PATH_PREFIX` — an absolute or relative path segment immediately
 # before the binary literal (`/opt/homebrew/bin/eas`, `./node_modules/.bin/eas`,
 # `../eas`). The excluded-character class is deliberately the SAME set this
