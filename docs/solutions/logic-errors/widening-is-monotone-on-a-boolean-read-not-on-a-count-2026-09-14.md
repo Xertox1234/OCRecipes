@@ -7,7 +7,7 @@ module: shared
 applies_to: [".claude/hooks/*.sh", "scripts/**/*.sh"]
 symptoms: ["A guard widened to close a bypass starts ALLOWING a command its previous version denied, on a DENY-shaped consumer", "An occurrence count drops from 2 to 1 after a pattern was made more permissive", "A multi-occurrence ambiguity refusal silently stops firing", "The argument 'widening only ever adds matches, so it can only add denies' was applied to a consumer that counts rather than tests", "Only one member of a needle family regresses and the others are structurally immune"]
 created: 2026-09-14
-last_updated: '2026-09-16'
+last_updated: '2026-09-17'
 severity: critical
 ---
 
@@ -143,8 +143,7 @@ match BEFORE the separator reaches the psub:
   case counts 2 under the **wide grammar alone** — SEPSAFE adds nothing, because a two-token
   verb's globals arm has only one value slot and cannot also swallow past the psub the way a
   single-token verb's can; see this doc's own Root Cause).
-- **Psub BEFORE the verb** (`gh -a -c <(gh pr merge 7) pr merge 42`, and — newly measured —
-  the single-token analogue `gh -a -c <(gh api /x) api ...`): the outer "gh" cannot reach its
+- **Psub BEFORE the verb** (`gh -a -c <(gh pr merge 7) pr merge 42`): the outer "gh" cannot reach its
   OWN verb tokens without first passing through the nested invocation's text, and grep -o's
   non-overlapping matching commits to using that outer "gh" for whichever match it finds
   first. **This is unfixable by narrowing the separator grammar** — both the wide and the
@@ -225,8 +224,10 @@ instead. Any before/after comparison of a hook must run from inside `.claude/hoo
 - `todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md`
   — status: blocked (not archived): the two-token families' psub-before-verb miscount is
   proved unfixable via occurrence counting (both the SEPSAFE template and a boundary-crossing
-  check were tried and rejected, per the sections above), and it also surfaced an unfixed,
-  more severe `gh api` residual on the SAME ordering — a human decision is needed
+  check were tried and rejected, per the sections above). It separately surfaced a more
+  severe residual at the REST merge route, which is NOT on this ordering axis at all — see
+  the CORRECTED note above — and is now filed as
+  `todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md`
 
 ## See Also
 

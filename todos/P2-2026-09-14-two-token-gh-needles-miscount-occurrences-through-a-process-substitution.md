@@ -224,8 +224,13 @@ retracts the archived todo's stale "not currently a live bypass" line. **Do not 
 occurrence-counting or grammar work for it** — that is the dead end this correction exists to
 prevent.
 
-**Status set to `blocked`, not `done` or `archived`.** The stated acceptance criteria are not
-met and the todo needs a human decision on: (a) whether to accept the tripwire-pinned
-residual as the permanent posture for the two-token families (closing this todo as
-documentation), and (b) whether/when to open a new, appropriately-scoped todo for the `gh
-api` psub-before-verb finding above.
+**Status set to `blocked`, not `done` or `archived`.** The stated acceptance criteria are
+not met. One decision remains: whether to accept the tripwire-pinned residual as the
+permanent posture for the two-token families, closing this todo as documentation.
+
+The REST merge-route finding this investigation surfaced is **already resolved as a tracking
+question** — it is filed as
+`todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md` (PR #986, merged),
+with the corrected attribution. Do not call it a "psub-before-verb" finding: as the CORRECTED
+note above records, the ordering is irrelevant to it and the plainest spelling reproduces
+it.
