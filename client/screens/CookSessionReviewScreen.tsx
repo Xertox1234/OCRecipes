@@ -57,12 +57,20 @@ export default function CookSessionReviewScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
-  const { confirm, ConfirmationModal, behindContentA11yProps } =
+  const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "CookSessionReview">>();
   const { features } = usePremiumContext();
+
+  // The navigator renders the header as a sibling `behindContentA11yProps`
+  // can't reach — hide its default back button while the sheet is presented
+  // so TalkBack/VoiceOver can't swipe past the sheet to it. See
+  // todos/archive/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md.
+  useEffect(() => {
+    navigation.setOptions({ headerBackVisible: !isOpen });
+  }, [isOpen, navigation]);
 
   const { sessionId } = route.params;
   const { data: session } = useCookSessionQuery(sessionId);

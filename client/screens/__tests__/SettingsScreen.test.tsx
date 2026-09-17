@@ -12,7 +12,7 @@ const { mockConfirm, mockLogout } = vi.hoisted(() => ({
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn() }),
+  useNavigation: () => ({ navigate: vi.fn(), setOptions: vi.fn() }),
 }));
 
 vi.mock("@react-navigation/bottom-tabs", () => ({

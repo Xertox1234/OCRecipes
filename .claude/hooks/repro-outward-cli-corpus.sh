@@ -893,23 +893,55 @@ done
 #                        Note this is a RANGE sharing a token with the binary
 #                        or verb, NOT the already-documented `merge{1..3}`
 #                        form that follows an intact verb (that one DENIES).
+#               r4brlist `{d,d}`    brace LIST (comma form) -- a THIRD,
+#                        independent expansion mechanism from r4brange (no
+#                        `..`), added 2026-09-16
+#                        (todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md).
+#                        A DUPLICATE-alternative list (`{d,d}`, same char both
+#                        sides) is used here rather than a distinguishable pair
+#                        (`{d,x}`) so the generated row reconstructs the SAME
+#                        single split character as its r4brange sibling row --
+#                        the guard's own token never evaluates which
+#                        alternative bash would pick, so a duplicate list is
+#                        exactly as detectable as a distinguishing one; the
+#                        todo's own illustrative constructions (`up{d,x}ate`
+#                        etc.) are pinned separately as named `assert_deny`
+#                        rows in test-guard-outward-cli.sh, not hand-listed
+#                        here.
 #
-# 56 ROWS (4 mechanisms x 2 positions x 7 families), ALL EXPECTED-DENY. They are real,
-# reproduced bypasses, pre-existing (they allow on `main` too). The rows exist so
-# the gap is measured on every run instead of living in a review transcript.
-# Verb-position rows additionally INVERT this file's usual asymmetry: precise
-# ALLOWs while all three degraded paths DENY.
+# 70 ROWS ((r4spec + r4dig + r4ansic + r4brange + r4brlist) x 2 positions x 7
+# families), ALL EXPECTED-DENY. NOT EXHAUSTIVE over this file's own position
+# dimension, which has THREE members, not two: FLAG position IS generated for
+# other mechanisms here (flagvarithsep-*, flagvbareparen-*, flagvcasearm-*,
+# flagvcasecomment-*) but NOT for this family. The omission is disclosed, not
+# incidental -- see guard-outward-cli.sh's BRACE LIST residual entry,
+# FLAG-position paragraph, for the measured construction it leaves unmodelled,
+# and note that the un-generated member is precisely the one that measures
+# ALLOW, so the gap is invisible on every run of this corpus. They are real, reproduced bypasses (the
+# r4brlist-tool-* additions are pre-existing, like every r4brange-tool-*
+# sibling -- they allow on `main` too). The rows exist so the gap is measured
+# on every run instead of living in a review transcript. Verb-position rows
+# additionally INVERT this file's usual asymmetry: precise ALLOWs while all
+# three degraded paths DENY.
 #
-# UPDATED 2026-09-14: "deliberately NOT closed" no longer describes all 56, and
-# hasn't since an earlier PR closed r4spec/r4dig/r4ansic-tool-* (21) and
-# r4spec/r4dig/r4ansic-verb-* (21) — see the FULL ATTRIBUTION note above ("60
-# CLOSED"). Of the 14 that were still open after that (r4brange-tool-*,
-# r4brange-verb-*, 7 each), r4brange-verb-* closed 2026-09-14 too — see the
-# "r4brange-verb-* CLOSED 2026-09-14" entry in NOTE6 above for the fix and its
-# verification. So of the original 56: 49 now closed, 7 (r4brange-tool-* only)
-# remain per the guard's DOCUMENTED RESIDUALS entry.
+# UPDATED 2026-09-14: "deliberately NOT closed" no longer describes all 56 of
+# the original four mechanisms, and hasn't since an earlier PR closed
+# r4spec/r4dig/r4ansic-tool-* (21) and r4spec/r4dig/r4ansic-verb-* (21) — see
+# the FULL ATTRIBUTION note above ("60 CLOSED"). Of the 14 that were still
+# open after that (r4brange-tool-*, r4brange-verb-*, 7 each), r4brange-verb-*
+# closed 2026-09-14 too — see the "r4brange-verb-* CLOSED 2026-09-14" entry in
+# NOTE6 above for the fix and its verification. So of the original 56: 49 now
+# closed, 7 (r4brange-tool-* only) remain per the guard's DOCUMENTED
+# RESIDUALS entry.
+#
+# UPDATED 2026-09-16: +14 r4brlist rows (a fifth mechanism, same 2-position x
+# 7-family shape). r4brlist-verb-* (7) CLOSED on arrival (the guard's
+# VERB-position brace-LIST narrow deny). r4brlist-tool-* (7) remain GAP by
+# design, the identical TOOL-position bound as r4brange-tool-* and for the
+# identical reason (see the guard's DOCUMENTED RESIDUALS entry for this
+# mechanism).
 R4_INS_MECHS=('$!' '$1');       R4_INS_IDS=(r4spec r4dig)
-R4_RSP_IDS=(r4ansic r4brange)
+R4_RSP_IDS=(r4ansic r4brange r4brlist)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
   # split point 1: TOOL position, immediately after the binary's first char.
@@ -930,10 +962,56 @@ for i in "${!FAM_IDS[@]}"; do
       case "$mid" in
         r4ansic)  sp="\$'\\x$(printf '%02x' "'$c")'" ;;
         r4brange) sp="{$c..$c}" ;;
+        r4brlist) sp="{$c,$c}" ;;
       esac
       add "$mid-$pos-$id" DENY "${pre}${sp}${post}"
     done
   done
+done
+
+# axis: r4brlist-nested residual (2026-09-16,
+# todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md). A
+# range NESTED inside a list alternative (`up{d,{a..z}}ate`) does not match
+# `_OUT_BR_LIST_TOKEN` at all -- its item class excludes `{`/`}`, so a nested
+# span is invisible to this mechanism's own token, not merely unclosed by the
+# TOOL-position fast-path bound the way r4brlist-tool-*/r4brange-tool-* are.
+# Generated from the SAME family/split-point construction as the r4brlist-verb
+# rows above (reusing $vhead/$vtail/$vrest from the last loop iteration would
+# be wrong -- regenerated per family here), one row per family, EXPECT=DENY.
+#
+# MEASURED, NOT SYMMETRIC ACROSS PATHS: precise ALLOWs (a GAP by design, same
+# convention as r4brange-tool-*), but all THREE degraded paths DENY --
+# discovered running this axis, not derived from reading the token. The
+# degraded mirror's pre-existing brace-RANGE alternative in
+# `crude_smells_outward` sits behind a brace-depth-UNAWARE gap (`[^;&|]*`), so
+# the inner `{a..z}` span alone satisfies that alternative independent of the
+# outer list -- an accidental side effect of a mechanism that already shipped,
+# not of this axis's own list alternative. See guard-outward-cli.sh's
+# DOCUMENTED RESIDUALS entry for this mechanism (search "NESTED form").
+for i in "${!FAM_IDS[@]}"; do
+  id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
+  lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
+  vhead="${lead}${lw:0:$h}"; vtail="${lw:$h}"; vrest=${cmd#"$vp"}
+  c=${vtail:0:1}
+  add "r4brlist-nested-$id" DENY "${vhead}{${c},{a..z}}${vtail:1}${vrest}"
+done
+
+# axis: r4brlist-nested-list residual (2026-09-16, code-reviewer SUGGESTION on
+# this same todo's review round). The range-inside-list example above is ONE
+# member of the "nested brace excluded by the item class" defect, not the
+# whole class -- a LIST nested inside a LIST (`up{d,{x,y}}ate`) hits the
+# identical `{`/`}`-exclusion gap in `_OUT_BR_LIST_TOKEN`'s item class, and is
+# measured on its own rather than assumed to generalise from the range
+# sibling (see guard-outward-cli.sh's DOCUMENTED RESIDUALS entry, "NESTED
+# form", and its cite of
+# docs/solutions/logic-errors/one-form-property-asserted-of-whole-syntax-class-2026-09-06.md).
+# Same family/split-point construction, EXPECT=DENY, GAP on precise only.
+for i in "${!FAM_IDS[@]}"; do
+  id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
+  lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
+  vhead="${lead}${lw:0:$h}"; vtail="${lw:$h}"; vrest=${cmd#"$vp"}
+  c=${vtail:0:1}
+  add "r4brlist-nested-list-$id" DENY "${vhead}{${c},{x,y}}${vtail:1}${vrest}"
 done
 
 # axis: r4brange-verb DECOY combination (2026-09-14, found by code-reviewer
@@ -2132,23 +2210,30 @@ fi
 # All three manifests below were REGENERATED FROM THE RUN, not hand-merged. Hand-merging
 # them is how an earlier resolution in this same file silently dropped flagvcasearm-*
 # and produced a 21-member pin that still looked plausible.
-EXPECTED_ROWS=912
+EXPECTED_ROWS=940
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 780 of the 912 rows deny on the precise path; the other 132 are ALLOW there: 91
-# rows EXPECTED to allow, plus the 41 precise-path gaps. Those 91 span NINETEEN id
+# 787 of the 940 rows deny on the precise path; the other 153 are ALLOW there: 91
+# rows EXPECTED to allow, plus the 62 precise-path gaps. Those 91 span NINETEEN id
 # families -- fp-* (16), ghrootv-* (16), c2-* (9), c1g-* (7), fautodigfp-* (6),
 # sitefp-* (5), vft-* (5), flagadjfp-* (4), apicolfp-* (3), decoyfp-* (3),
 # ghrootfp-* (3), ghrootvfp-* (3), c9-* (2), fautocutsp-* (2), fautogrant-* (2),
 # siterailfp-* (2), plus the singletons co-nested-brace, fautobrace-pre and
 # fautodigctrl-bb. COUNTED, not recalled: select every row whose EXPECTED and
-# PRECISE verdicts are both ALLOW, group on the id prefix. 91 + 41 = 132 and
-# 912 - 780 = 132, so the decomposition closes. BUMPED 2026-09-14 (this todo,
-# case-arm-in-bare-paren-subshell): 876 -> 912, 761 -> 780, 24 -> 41. The 91/
-# NINETEEN-families side is UNCHANGED by this bump -- the 36 new rows split into
-# 17 newly-gapped (vcaseparen, EXPECTED=DENY/PRECISE=ALLOW) and 19 newly-denying
-# (vcasebrace + flagvcaseparen-ghadmin, EXPECTED=DENY/PRECISE=DENY), and neither
-# bucket is EXPECTED=ALLOW/PRECISE=ALLOW, which is what the 91 counts.
+# PRECISE verdicts are both ALLOW, group on the id prefix. 91 + 62 = 153 and
+# 940 - 787 = 153, so the decomposition closes. The 91 is UNCHANGED by BOTH
+# the 2026-09-16 brace-LIST bump and the 2026-09-17 case-arm-in-bare-paren
+# bump, and that is MEASURED rather than assumed. Brace-LIST: rows +28,
+# deny-attrib +7, precise-gaps +21, and 7 + 21 = 28. Case-arm-in-bare-paren:
+# rows +36, deny-attrib +19, precise-gaps +17, and 19 + 17 = 36. Every added
+# row on both sides landed in the deny-attrib or gap bucket and none entered
+# this one, which is why 91 survives two merges untouched.
+#
+# The 940/787/62/324 values were RE-DERIVED FROM A RUN after merging main,
+# never arithmetic on the two branches' pins. That distinction is load-bearing
+# here: precise-gaps went 24 -> 45 on one side and 24 -> 41 on the other, so no
+# sum, max or average of the two sides is correct, and hand-resolving that
+# conflict would have produced a plausible wrong number.
 #
 # THIS PARAGRAPH WAS ITSELF THE SIXTH STALE COPY, and it went stale in the way this
 # file keeps documenting one level down. It read "646 of the 739 ... 69 ... SIXTEEN
@@ -2251,10 +2336,11 @@ EXPECTED_ROWS=912
 # only the first seven are ALLOW on all four. An earlier revision on the branch
 # said all of them were "ALLOW on all four paths" -- one FORM's property asserted
 # of the whole CLASS, the defect that branch's own solution doc is named after.
-EXPECTED_DENY_ATTRIB_ROWS=780
+EXPECTED_DENY_ATTRIB_ROWS=787
 
-# 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
-# remaining precise-path gaps" note further down, and the two must stay equal:
+# 7 + 17 + 21 + 17 = 62. This is the SAME decomposition as the "FULL ATTRIBUTION of
+# the remaining precise-path gaps" note further down, and the two must stay
+# equal:
 #   7   r4brange-tool-* (7) -- brace range glued to the BINARY name itself,
 #       no sigil. CLOSED 2026-09-14 for the sibling r4brange-verb-* (7, the
 #       range glued to the VERB instead) -- see guard-outward-cli.sh's
@@ -2266,11 +2352,30 @@ EXPECTED_DENY_ATTRIB_ROWS=780
 #       forbids widening the fast path's sigil class to reach it).
 #   17  toolvcasearm-* (7) + verbvcasearm-* (7) + flagvcasearm-* (3 of 4)
 #       -- `case` arm `)` with no matching opener.
-# Both buckets are DELIBERATE, documented residuals with open todos, not
+#   21  r4brlist-tool-* (7) + r4brlist-nested-* (7) + r4brlist-nested-list-*
+#       (7) -- brace LIST glued to the BINARY name, and any brace construct
+#       (range OR list) nested inside a list alternative. Added 2026-09-16.
+#       TOOL-position stays open for the same fast-path reason as its RANGE
+#       sibling above; the nested forms stay open because
+#       `_OUT_BR_LIST_TOKEN`'s item class excludes `{`/`}`, so a nested span
+#       does not match the outer list token at all. See guard-outward-cli.sh's
+#       DOCUMENTED RESIDUALS entry (search "BRACE LIST expansion") for the
+#       full per-position bound.
+#   17  toolvcaseparen-* (7) + verbvcaseparen-* (7) + flagvcaseparen-* (3 of 4)
+#       -- a `case` arm nested inside a BARE-PAREN subshell steals the scanner's
+#       paren credit, so `parens[d]==0 && casedepth[d]==0` both spuriously hold
+#       and the outer `$(...)` closes one paren early. Added 2026-09-17.
+#       MEASUREMENT-ONLY by design: this todo's Scope Contract forbade a new
+#       scanner, and closing it needs `casedepth` tracking to survive a
+#       bare-paren subshell boundary -- a change to how `parens[d]` and
+#       `casedepth` interact, which must keep the blind pass case-blind so the
+#       union is preserved. See guard-outward-cli.sh's DOCUMENTED RESIDUALS
+#       entry for the model-B construction bound.
+# All four buckets are DELIBERATE, documented residuals with open todos, not
 # failures. Pinning 0 here would make this gate permanently red, and a
 # permanently red gate gets disabled -- which is how the corpus ended up
 # unguarded in the first place.
-EXPECTED_PRECISE_GAPS=41
+EXPECTED_PRECISE_GAPS=62
 
 # PRE-EXISTING STALENESS, found incidentally while bumping this pin for the
 # brace-range fix (2026-09-14) and left AS FOUND rather than silently
@@ -2317,7 +2422,7 @@ EXPECTED_PRECISE_GAPS=41
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=303
+EXPECTED_ALLPATH_GAPS=324
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -2330,6 +2435,27 @@ r4brange-tool-ghcomment
 r4brange-tool-ghmerge
 r4brange-tool-npmpub
 r4brange-tool-railup
+r4brlist-nested-easbld
+r4brlist-nested-easupd
+r4brlist-nested-ghapi
+r4brlist-nested-ghcomment
+r4brlist-nested-ghmerge
+r4brlist-nested-npmpub
+r4brlist-nested-railup
+r4brlist-nested-list-easbld
+r4brlist-nested-list-easupd
+r4brlist-nested-list-ghapi
+r4brlist-nested-list-ghcomment
+r4brlist-nested-list-ghmerge
+r4brlist-nested-list-npmpub
+r4brlist-nested-list-railup
+r4brlist-tool-easbld
+r4brlist-tool-easupd
+r4brlist-tool-ghapi
+r4brlist-tool-ghcomment
+r4brlist-tool-ghmerge
+r4brlist-tool-npmpub
+r4brlist-tool-railup
 toolvcasecomment-easbld
 toolvcasecomment-easupd
 toolvcasecomment-ghapi
@@ -2556,6 +2682,27 @@ r4brange-tool-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-nested-easbld p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-easupd p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-ghapi p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-npmpub p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-railup p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-easbld p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-easupd p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-ghapi p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-npmpub p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-railup p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-tool-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
@@ -3200,6 +3347,13 @@ r4brange-verb-decoy-before-railup-2 : an outward-facing CLI's verb or binary is 
 r4brange-verb-decoy-before-railup-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-easbld : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-easupd : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brlist-verb-easbld : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4brlist-verb-easupd : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4brlist-verb-ghapi : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4brlist-verb-ghcomment : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4brlist-verb-ghmerge : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4brlist-verb-npmpub : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4brlist-verb-railup : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
 r4brange-verb-genuine-after-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-genuine-after-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
 r4brange-verb-genuine-after-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
@@ -3559,7 +3713,7 @@ PIN_EXEMPT_EOF
 # on a claim of coverage elsewhere, leaves the site covered NOWHERE -- and a justification
 # naming coverage that does not exist is worse than none, because it stops the next reader
 # looking. Verify the rows exist before trusting this paragraph.
-EXPECTED_EMIT_SITES=28
+EXPECTED_EMIT_SITES=29
 
 PIN_FAIL=0
 
@@ -4029,7 +4183,12 @@ exit 0
 # FULL ATTRIBUTION of the remaining precise-path gaps. Was 14 + 17 + 2 = 33;
 # the `2` bucket closed on 2026-09-07, so it became 14 + 17 = 31. The `14`
 # bucket itself halved on 2026-09-14 (r4brange-verb-* closed, see below), so
-# it is now 7 + 17 = 24. Each remaining row has an OPEN todo — none is a
+# it became 7 + 17 = 24; the 2026-09-16 brace-LIST addition then contributed a
+# third bucket of 21 (r4brlist-tool-* 7, r4brlist-nested-* 7,
+# r4brlist-nested-list-* 7), and the 2026-09-17 case-arm-in-bare-paren addition
+# a fourth of 17 (toolvcaseparen-* 7, verbvcaseparen-* 7, flagvcaseparen-* 3 of
+# 4), so it is now 7 + 17 + 21 + 17 = 62. Each remaining row
+# has an OPEN todo — none is a
 # defect this change introduced, and every one allows on `main` too:
 #
 #    7  (was 14) r4brange-tool-*. A brace RANGE carries no `$` and no backtick
@@ -4061,6 +4220,23 @@ exit 0
 #       that spelling reaches the --admin check instead. The
 #       construct does NOT break the `--auto` spelling -- it is spliced into
 #       --admin and --auto stays byte-intact. Same rule as co-mask-c1.
+#
+#   21  r4brlist-tool-* (7), r4brlist-nested-* (7), r4brlist-nested-list-* (7)
+#       — brace LIST glued to the BINARY name, plus any brace construct (range
+#       OR list) nested inside a list alternative. Added 2026-09-16.
+#       TOOL-position stays open for the same fast-path reason as the
+#       r4brange-tool-* bucket above; the nested forms stay open because
+#       `_OUT_BR_LIST_TOKEN`'s item class excludes `{`/`}`, so a nested span
+#       never matches the outer list token at all. Tracked at
+#       todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md
+#
+#   17  toolvcaseparen-* (7), verbvcaseparen-* (7), flagvcaseparen-* (3 of 4)
+#       — a `case` arm inside a BARE-PAREN subshell steals the scanner's paren
+#       credit, so both counters spuriously read zero and the enclosing
+#       `$(...)` closes one paren early. Added 2026-09-17, MEASUREMENT-ONLY:
+#       closing it needs `casedepth` to survive a bare-paren boundary, which
+#       this todo's Scope Contract forbade as a new scanner. Tracked at
+#       todos/archive/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
 #
 #    0  (was 2) nssufx-ghmerge and nssufx-ghcomment — an INTERIOR redirect, a
 #       different mechanism with its own entry below and its own todo. CLOSED

@@ -1,9 +1,9 @@
 ---
 title: "guard-outward-cli.sh: brace LIST expansion {a,b} reconstructs a gated verb and is not modelled at all"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-14
-updated: 2026-09-14
+updated: 2026-09-16
 assignee:
 labels: [deferred, harness, security]
 github_issue:
@@ -54,19 +54,53 @@ A nested variant compounds it and should be covered by the same work:
 
 ## Acceptance Criteria
 
-- [ ] `_OUT_BR_LIST_TOKEN` (or equivalent) models `\{[^{}]*,[^{}]*\}` in the same
+- [x] `_OUT_BR_LIST_TOKEN` (or equivalent) models `\{[^{}]*,[^{}]*\}` in the same
       command-position-anchored, per-occurrence, quote-aware way the range token is
       modelled — braces INSIDE quotes must not count (`"up{d,x}ate"` is literal to
       bash), braces outside quotes must.
-- [ ] The five constructions in the table above flip to DENY, and
+      — Implemented verbatim in shape to `_OUT_BR_RANGE_TOKEN`/`_OUT_BR_RANGE_ALREADY_HANDLED`,
+      including the anchored + per-occurrence exclusion discipline the RANGE block needed
+      two review rounds to reach — applied from the start here and confirmed by both review
+      rounds' own decoy/co-occurrence construct-and-run probes. Quote-awareness confirmed both
+      ways: fully-quoted stays ALLOW, partially-quoted still DENIES (regression-pinned).
+- [x] The five constructions in the table above flip to DENY, and
       `mkdir -p /tmp/x/{a,b}` plus other benign list uses stay ALLOW.
-- [ ] The nested `up{d,{a..z}}ate` form is covered or explicitly named as a residual.
-- [ ] Corpus rows generated for the new axis, following the `r4brange-*` convention,
+      — The three DENY-shaped rows in the table (eas/gh/npm) all flip to DENY, plus 4 more
+      families (railway, gh api, gh comment, eas build) via the same corpus axis — 7 families
+      total, matching the RANGE block's own coverage. The table itself lists 3 DENY rows + 1
+      ALLOW control (4 rows), not 5 — likely an editing artifact; the executor implemented the
+      superset (all 7 gated families) rather than reconciling the count. `mkdir -p /tmp/x/{a,b}`,
+      `cp f{,.bak}`, and `find -exec {} +` all confirmed ALLOW.
+- [x] The nested `up{d,{a..z}}ate` form is covered or explicitly named as a residual.
+      — Named as a documented, measured residual (precise-path only; all three degraded paths
+      deny it via a pre-existing side effect). Round-1 review found the residual class is
+      broader than one example (a LIST nested inside a LIST, not just a RANGE nested inside a
+      LIST) — generalized in the DOCUMENTED RESIDUALS prose and given its own corpus axis
+      (`r4brlist-nested-list-*`) and test pin in round 2.
+- [x] Corpus rows generated for the new axis, following the `r4brange-*` convention,
       with the false-positive ALLOW controls the axis convention requires.
-- [ ] Mutation-verified: deleting the new token from the alternation flips at least one
+      — `r4brlist` added to `R4_RSP_IDS`, generating verb/tool rows the same way as
+      `r4brange`/`r4ansic`; `r4brlist-nested-*` and `r4brlist-nested-list-*` added as dedicated
+      residual axes. FP controls live in `test-guard-outward-cli.sh`'s `assert_allow` pins,
+      matching the pre-existing convention (the RANGE axis has no separate ALLOW-expect corpus
+      rows either — FP coverage lives in the test file for this mechanism family).
+- [x] Mutation-verified: deleting the new token from the alternation flips at least one
       new row DENY → ALLOW, measured, not asserted.
-- [ ] `test-guard-outward-cli.sh` and the corpus pins re-derived from a run, never
+      — Two independent mutations on scratch copies (with `lib/` preserved so the precise path
+      is genuinely exercised, not the no-lib fallback): neutering `_OUT_BR_LIST_TOKEN` flips the
+      precise-path verdict on `eas up{d,x}ate --branch preview` / `gh pr me{r,r}ge 42` /
+      `pnpm publish{1,3}` from DENY to ALLOW; separately removing only the new list alternative
+      from `crude_smells_outward`'s alternation flips the no-jq degraded path's verdict on the
+      same construction from DENY to ALLOW, with the pre-existing RANGE alternative left intact
+      (proving the degraded-mirror addition is independently necessary). Both mutations
+      independently re-verified by the round-1 reviewers too.
+- [x] `test-guard-outward-cli.sh` and the corpus pins re-derived from a run, never
       hand-incremented.
+      — `test-guard-outward-cli.sh`: 822/822 passing, `EXPECTED_TOTAL=822` re-derived from a
+      real run. `repro-outward-cli-corpus.sh`: `rows=904 precise-path gaps=45 all-path gaps=300`,
+      all manifests exact, all 768 deny reasons attributed — every `EXPECTED_*` pin and both
+      membership heredocs (`EXPECTED_PRECISE_GAP_IDS`/`EXPECTED_ALLPATH_DIRTY_IDS`) re-derived
+      from actual script output, never hand-typed.
 
 ## Implementation Notes
 
@@ -95,6 +129,14 @@ A nested variant compounds it and should be covered by the same work:
   command-position anchor is what keeps that from happening — do not drop it.
 
 ## Updates
+
+### 2026-09-16
+
+- Implemented, reviewed (2 rounds, code-reviewer + security-auditor round 1,
+  code-reviewer round 2 — zero CRITICALs either round), and archived. See the
+  checked Acceptance Criteria above for what was verified and how. Concurrency
+  note: PR #980 was open concurrently, editing the same three `.claude/hooks/`
+  files — this PR may need a rebase once #980 lands.
 
 ### 2026-09-14
 
