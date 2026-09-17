@@ -192,10 +192,19 @@ here swept 2 of 5 files and declared the axis closed; the same sentence sat verb
 the other three. `git diff origin/main...HEAD --name-only` is the scope, not your recent
 edits.
 
-**Never write "verified across all N files that no stale variant survives" unless you
-enumerated by target.** That exact sentence shipped in a commit message here and was
-false — a fourth copy survived. The claim of completeness is itself a claim, and it needs
-the same evidence as any other.
+**Never claim completeness you did not enumerate for.** A commit message here read:
+
+> Verified across all five files that no live stale variant survives - the two remaining
+> grep hits are an unrelated `set -u` note and retraction text quoting what was wrong.
+
+It was false. A fourth live copy survived, in the fifth file.
+
+Note how careful that sentence is, because that is the instructive part. `live` is a
+deliberate qualifier, and the second clause classifies the survivors by hand — the author
+had already thought about exactly the distinction this section is about. The claim was
+narrow, hedged, specific, and still wrong, because it was never enumerated by target. A
+hedge is not a substitute for a closed set. A completeness claim is itself a claim, and it
+needs the same evidence as any other.
 
 ### Why a stale pointer is a tracking failure, not a typo
 
