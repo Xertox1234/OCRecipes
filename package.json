@@ -238,6 +238,9 @@
     "docs/rules/*.md": [
       "node scripts/check-rules-file-size.js"
     ],
+    "{.claude/hooks/**/*.sh,todos/**/*.md}": [
+      "node scripts/check-claim-staleness.js"
+    ],
     "*.{js,md}": [
       "prettier --write"
     ],
