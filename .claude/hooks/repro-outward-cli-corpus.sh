@@ -2784,9 +2784,9 @@ fi
 # prefix dimension path-qualified the wrapper/privilege WORD only, so none of the six bypasses
 # round 6 found could have moved a pin here -- the same blindness one dimension over.
 # 1510 -> 1614 (2026-09-16, round 5): +104 from the COMMAND-POSITION PREFIX dimension
-# (8 prefix forms x 10 deny payloads + 4 over-denial controls), composed against the
-# anchor FAMILY rather than the launcher grid. Its own short-iteration FATAL guard
-# asserts the 104. Why it exists: round 4's wrapper fix closed four reachable bypasses
+# (8 prefix forms x 10 deny payloads = 80, plus 24 over-denial controls = 104), composed
+# against the anchor FAMILY rather than the launcher grid. Its own short-iteration FATAL
+# guard asserts the 104. Why it exists: round 4's wrapper fix closed four reachable bypasses
 # and moved NOT ONE pin in this file, because no row put a wrapper word in command
 # position -- the unchanged pins read as confirmation and were blindness. Round 5's
 # review then found seven more anchors still bypassed, six of them at gh /
