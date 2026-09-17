@@ -2236,11 +2236,30 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # authorisation at all and the decoy alone would grant the carve-out. Both are pinned below.
 # The exposure today is the MISCOUNT, not a grant — but whoever fixes the count must fix the
 # CLAUSE CAPTURE BOUNDARY too, or relaxing the mask reintroduces this class. Tripwire rows in
-# test-guard-outward-cli.sh so a flip to ALLOW cannot be silent, and tracked in
-# todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md.
+# test-guard-outward-cli.sh so a flip to ALLOW cannot be silent.
 # Do not read "cannot collapse" as "is counted correctly". Measured on all four
 # separators, glued and spaced, with `gh api /repos/o/r` ALLOW and `gh api -X POST …` DENY as
 # in-band controls.
+#
+# PROVED UNFIXABLE VIA OCCURRENCE COUNTING, not merely left open — see
+# todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md
+# (status: blocked; not archived — one decision remains: whether to accept the
+# tripwire-pinned residual as the permanent posture for the two-token families).
+# The more severe residual that investigation surfaced is NOT that decision and is
+# NOT on this ordering axis — it is already filed separately as
+# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+# Two repair attempts were measured and rejected: a gh-api-style separator-safe grammar
+# (max()'d against the wide count, mirroring `_OUT_GH_GLOBALS_SEPSAFE`/`_OUT_SEP_SEPSAFE`
+# below) returns count=1 under BOTH grammars for this exact shape, because the nested
+# invocation's own "gh" is the ONLY "gh" reachable to complete ITS OWN match — the outer,
+# really-executing verb has no separate "gh" to anchor a second, non-overlapping match under
+# any separator narrowing. A "does the matched span cross a command-position boundary" check
+# was tried next and rejected too: it reddened 23 unrelated, already-correct assertions
+# (ordinary interior redirects like `gh pr 2>&1 merge`, and glued `;`/`&&`/`||` before an
+# UNRELATED preceding `gh` command) because those legitimately contain anchor-class bytes as
+# redirect/glue syntax, not as evidence of a hidden second command. See
+# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md
+# for the full mechanism and both rejected approaches.
 #
 # The `-X`/`--method` check is NOT a sufficient compensating control. It does still fire on the
 # collapsed clause, but the ambiguity refusal also covered mutations carrying no `-X` at all:

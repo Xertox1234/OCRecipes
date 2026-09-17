@@ -1,9 +1,9 @@
 ---
 title: "The two-token gh needles miscount occurrences through a process substitution, so a hidden second merge is invisible to the ambiguity refusal"
-status: backlog
+status: blocked
 priority: medium
 created: 2026-09-14
-updated: 2026-09-14
+updated: 2026-09-16
 assignee:
 labels: [deferred, harness, security]
 github_issue:
@@ -130,3 +130,107 @@ Filed from round-3 baseline review of PR #957, which asked whether the "two-toke
 cannot collapse" claim in that PR's own header covered the `(` mechanism. It did not — it was
 true of the value-arm mechanism only. The claim has been scoped in place and the current
 miscount pinned as tripwires rather than left undisclosed.
+
+### 2026-09-16 — BLOCKED: AC1 proved unreachable as worded; a more severe, unrelated residual found
+
+**AC1 cannot be satisfied by occurrence counting, for either `pr merge` or `pr
+create|comment`, and this is proved rather than merely un-attempted.**
+
+Two repair approaches were implemented, measured, and reverted:
+
+1. **The `gh api` SEPSAFE template** (a separator-safe grammar, `max()`'d against the wide
+   count, mirroring `_OUT_GH_GLOBALS_SEPSAFE`/`_OUT_SEP_SEPSAFE`/`_gh_api_n_wide`/
+   `_gh_api_n_sepsafe`) is **inert** for this exact shape. Measured: `gh -a -c <(gh pr merge
+
+7) pr merge 42`returns count=1 under BOTH the wide AND a separator-safe grammar built the
+same way — the nested invocation's own`gh`is the ONLY`gh`reachable to complete ITS OWN
+match; the outer, really-executing`pr merge 42`has no separate`gh`of its own to anchor
+a second, non-overlapping`grep -o`match, under any separator narrowing. (The template
+DOES work for the ordering the original`gh api`fix targeted — psub AFTER a complete
+first occurrence, e.g.`gh pr merge 7 -c <(gh pr merge 42)` — where it is unneeded for the
+   two-token families anyway: the wide grammar alone already counts 2 there, because a
+   two-token verb's globals arm has only one value slot. The vulnerable ordering is
+   specifically psub BEFORE the verb.)
+
+2. **A "does the matched span cross a command-position boundary" check** (denying whenever a
+   match's own separator/globals run contains one of `_OUT_POS_PREFIX`'s anchor characters,
+   `;&|(` backtick `{!`, after excluding the match's own leading anchor and trailing suffix
+   char) was implemented next. It correctly converted all three TRIPWIRE rows to deny on the
+   ambiguity reason and covered every command-position opener for both families — but it also
+   **reddened 23 unrelated, already-correct assertions** in `test-guard-outward-cli.sh`:
+   ordinary interior redirects (`gh pr 2>&1 merge 42`, `gh --auto &> ...`) and glued `;`/`&&`/
+   `||` before an UNRELATED, verb-less preceding `gh` invocation (`gh --auto -x;gh pr merge
+42`) legitimately contain the same anchor bytes as ordinary redirect/glue syntax, and the
+   check could not distinguish that from a genuinely nested second invocation. No narrower,
+   still-general signal was found. **Reverted in full** — the guard file is back to
+   byte-identical with `main` (`git diff` on `guard-outward-cli.sh` is empty).
+
+Both attempts, the measurements, and the reasoning are written up in
+`docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md`
+(dedup-updated, not a new file) so a future attempt does not re-derive the same two dead ends.
+
+**AC2–AC6 are therefore also not met**: the three TRIPWIRE rows in
+`test-guard-outward-cli.sh` are intentionally left UNCONVERTED (still pinning the current,
+coincidental "without a REAL --auto flag" / "with --repo/-R" denial), with an updated comment
+explaining why conversion was tried and reverted. No new corpus axis was added for the
+two-token families for the same reason. Two stale-prose spots WERE fixed in the same change
+(cheap, correct, in scope): the corpus comment at `repro-outward-cli-corpus.sh`'s
+`apicollapse-*` header, which claimed the two-token families are "structurally immune"
+without scoping that to the value-arm mechanism only; and the guard header's pointer to this
+todo, which no longer says "still open" without qualification.
+
+**Release/repo need no fix, confirmed by measurement, not assumption.** `GH_MUTATING_RE`
+(covering `release`/`repo`/other `pr` verbs) is a plain boolean `grep -Eqi` deny-on-any-match
+with no occurrence-count ambiguity concept at all, so the miscount mechanism (which only
+affects a COUNT consumer) cannot create a false ALLOW there. Swept across all 9
+command-position openers (`;&|(` backtick `{!` `<(` `>(`) in the same psub-before-verb
+shape for both families: 18/18 DENY, no exceptions.
+
+**A more severe, unrelated finding surfaced while testing this, on a family explicitly
+out of this todo's scope (`gh api`, single-token) and NOT fixed here:**
+
+```
+gh -a -c <(gh api /x) api -f merge_method=squash /repos/o/r/pulls/42/merge
+```
+
+This is **ALLOWED** by the unmodified guard on `main` (measured from inside
+`.claude/hooks/` so `$HERE`-relative `lib/` sourcing resolves correctly — a `/tmp` copy of
+the file gives a false verdict via a different code path entirely, see the solution doc's
+process note). It is a field-based (`-f`, no `-X` token) mutating `gh api` call at a PR-merge
+REST endpoint.
+
+**CORRECTED 2026-09-17 — the attribution above was wrong, and the ordering is
+irrelevant.** An earlier revision of this paragraph blamed the psub-before-verb ordering and
+claimed the family had never been measured that way. Both were false, established
+independently twice (by the orchestrator re-measuring, and by this PR's own reviewer):
+
+- The plainest possible spelling — **no process substitution, no root flags, no occurrence
+  ambiguity** — allows identically: `gh api -f merge_method=squash /repos/o/r/pulls/42/merge`,
+  and likewise with `-F`, `--field`, `--raw-field`. In the same run,
+  `gh api -X POST -f merge_method=squash ...` correctly DENIES on the mutating-method reason.
+- So the escape has nothing to do with occurrence counting, grammar narrowing, or psub
+  placement. The real mechanism is that the mutating-method check only recognises a literal
+  `-X`/`--method` token, and is blind to `gh api`'s documented behaviour of sending POST
+  automatically whenever field flags are present. The method is never spelled out, so the
+  check never sees one.
+- It is also **not novel**. The identical bare form is already pinned as pre-existing on
+  `main` in `test-guard-outward-cli.sh` ("the ONE-command -f mutation is allowed here, as it
+  is on main (pre-existing)"), about 35 lines below this PR's own tripwire block, attributed
+  there to an archived `status: done` todo about a different hook.
+
+Now filed with the correct attribution as
+`todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md` (PR #986), which also
+retracts the archived todo's stale "not currently a live bypass" line. **Do not re-derive
+occurrence-counting or grammar work for it** — that is the dead end this correction exists to
+prevent.
+
+**Status set to `blocked`, not `done` or `archived`.** The stated acceptance criteria are
+not met. One decision remains: whether to accept the tripwire-pinned residual as the
+permanent posture for the two-token families, closing this todo as documentation.
+
+The REST merge-route finding this investigation surfaced is **already resolved as a tracking
+question** — it is filed as
+`todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md` (PR #986, merged),
+with the corrected attribution. Do not call it a "psub-before-verb" finding: as the CORRECTED
+note above records, the ordering is irrelevant to it and the plainest spelling reproduces
+it.
