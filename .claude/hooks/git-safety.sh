@@ -512,7 +512,7 @@ split_segments() {
           # An `&` or `|` ADJACENT to `<`/`>` is part of a REDIRECT OPERATOR, not a separator.
           # Without this the scanner flushed mid-operator and `git 2>&1 commit -m x` arrived as
           # `git 2>` + `1 commit -m x`, so neither half matched and the contract was never
-          # checked (todos/P1-2026-09-13-split-segments-fractures-redirect-operators-…).
+          # checked (todos/archive/P1-2026-09-13-split-segments-fractures-redirect-operators-…).
           # The adjacency test is derived from the `&?[<>]+&?[|!]?` shape _CMD_REDIR already
           # spells, which keeps the surrounding `&`/`|` as part of ONE unit, rather than from a
           # second local grammar. (NO APOSTROPHE anywhere in this awk program: it is inside a

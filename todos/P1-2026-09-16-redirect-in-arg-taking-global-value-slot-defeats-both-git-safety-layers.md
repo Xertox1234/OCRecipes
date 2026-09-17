@@ -205,7 +205,7 @@ todo's own matcher+tokenizer fix could not reach:
   `git --git-dir >&2 <main>/.git commit`, `git --work-tree >|o <main> reset --hard`) and are
   FRACTURED by `split_segments` into two segments before any matcher runs —
   `git -C 2>&1 /path commit -m x` becomes `[git -C 2>]` + `[1 /path commit -m x]`. No fix inside
-  this todo can see them. **`todos/P1-2026-09-13-split-segments-fractures-redirect-operators-containing-amp-or-pipe.md`
+  this todo can see them. **`todos/archive/P1-2026-09-13-split-segments-fractures-redirect-operators-containing-amp-or-pipe.md`
   (residual 2) must land first.**
 - **6 are `git -C ${n}>o <main> commit -m x` and siblings** — single-segment, but they need the
   `_CMD_REDIR` widening tracked here as shape 2 (residual 5).
