@@ -780,6 +780,42 @@ assert_deny "value slot: brace-fd in the --work-tree VALUE SLOT — DENIED" \
 # introduces, and zero rows go DENY->ALLOW.
 assert_deny "over-deny (deliberate): {9} in the -C value slot denies — a redirect in zsh, inert in bash" \
   "$(json "$SESSION" "$WT_A" "git -C {9}>o $MAIN commit -m x")"
+
+# (vii) A BACKSLASH-ESCAPED operator. These are REGRESSION pins, not new closures: the rows
+#     denied on origin/main, the 2026-09-17 redirect-arm reorder turned them into live ALLOWs of
+#     a cross-checkout mutation, and the shadow-word (wsan) fix restores them. An escaped `<`/`>`
+#     is a LITERAL character in argv, but git_c_target appends it WITHOUT tainting, so the
+#     redirect arm could not tell `a.b=c\>` from `a.b=c>`; once that arm ran ABOVE the pend arms,
+#     `tailop` saw a word ending in a literal `>`, set predir, and predir swallowed the REAL `-C`.
+#     argv measured with a shim, identical under bash 5.3.15 and zsh 5.9:
+#       git -c a.b=c\> -C <main> reset --hard  ->  [-c] [a.b=c>] [-C] [<main>] [reset] [--hard]
+#     jsonc, not json: a lone backslash is not valid JSON by hand.
+#     The two rows below drive the TWO DIFFERENT halves of the prefix-role branch -- the `pend`
+#     half (a `-c` value awaiting capture) and the dash half (a glued `--namespace=` global) --
+#     because a single row would leave the other half unpinned.
+assert_deny "escaped operator: -c VALUE ending in \\> must not swallow the following -C <main>" \
+  "$(jsonc "$SESSION" "$WT_A" "git -c a.b=c\\> -C $MAIN commit -m x")"
+assert_deny "escaped operator: glued --namespace=foo\\> must not swallow the following -C <main>" \
+  "$(jsonc "$SESSION" "$WT_A" "git --namespace=foo\\> -C $MAIN commit -m x")"
+assert_deny "escaped operator: the destructive family — \\> before --work-tree <main> reset --hard" \
+  "$(jsonc "$SESSION" "$WT_A" "git -c a.b=c\\> --work-tree $MAIN reset --hard")"
+# MATCHER-LAYER route, independent of the walker. Here the hand-written fallback cannot absorb
+# the leading redirect, so the union does not rescue the segment: without the escaped-operator
+# alternative in the value class this row is a DENY->ALLOW on the matcher alone.
+assert_deny "escaped operator: leading redirect + escaped -c value — the MATCHER-only route" \
+  "$(jsonc "$SESSION" "$WT_A" "git 2>/dev/null -c a.b=c\\> -C $MAIN commit -m x")"
+assert_matcher "matcher/unit: an escaped operator in a value does NOT truncate the value class" \
+  "git -c a.b=c\\> -C $MAIN commit -m x" MATCH
+assert_walker "walker/unit: an escaped operator is not a redirect, so <main> is still mined" \
+  "git -c a.b=c\\> -C $MAIN commit -m x" "c $MAIN"
+# CONTROL, mid-word: the escaped operator is not at the end, so tailop never fired even before
+# the fix. It denies on both sides, which is what isolates tailop/predir as the mechanism.
+assert_deny "escaped operator: control — mid-word \\>d denied on both sides (isolates tailop)" \
+  "$(jsonc "$SESSION" "$WT_A" "git -c a.b=c\\>d -C $MAIN commit -m x")"
+# ALLOW-SIDE control: the same escaped value pointing INSIDE the worktree must stay allowed, so
+# the repair is shown to be one-directional rather than a blanket new denial.
+assert_allow "escaped operator: control — same shape targeting the WORKTREE stays ALLOWED" \
+  "$(jsonc "$SESSION" "$MAIN" "git -c a.b=c\\> -C $WT_A commit -m x")"
 # (vi) The coarse pre-filter skips a bare brace decoy ahead of a second brace-fd redirect, so
 #     the tokenizer never runs. ALLOW here is safe ONLY because real git treats the undigested
 #     brace word as the subcommand and errors out -- git CLI grammar, not this guard. Pinned so
@@ -1552,7 +1588,15 @@ fi
 #   +1  the deliberate `{9}` over-denial, pinned as a choice rather than left to read as a bug.
 # The 3-way split is stated because a bare "+17" cannot be checked against the diff, and this
 # file has twice carried a total whose narrative no longer multiplied out.
-EXPECTED_TOTAL=262
+# 262 -> 270 (2026-09-17, escaped-operator regression): +8. SEVEN are regression pins for a
+# route the 2026-09-17 reorder OPENED and this change closes -- three end-to-end DENY rows
+# (the `pend` half, the dash half, and the destructive family), the MATCHER-only row whose
+# fallback cannot rescue it, one assert_matcher and one assert_walker unit so the two layers
+# stay separable, and the mid-word control that isolates tailop as the mechanism. The eighth
+# is the allow-side control proving the repair is one-directional. None of these existed
+# before because the 884-row grid that cleared the reorder had NO quoting/escaping dimension
+# -- an axis not varied is an axis where a defect is invisible, which is how it shipped.
+EXPECTED_TOTAL=270
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped (check stderr for 'command not found'), or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

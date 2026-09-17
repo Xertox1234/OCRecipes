@@ -344,7 +344,7 @@ carries values outside the population the check governs; quote the APPLICABLE de
   The regex-only corpus had already agreed with itself twice.
 
 - **Residual filed, NOT closed here:**
-  `todos/P1-2026-09-13-split-segments-fractures-redirect-operators-containing-amp-or-pipe.md`.
+  `todos/archive/P1-2026-09-13-split-segments-fractures-redirect-operators-containing-amp-or-pipe.md`.
   Fixing it means narrowing where `split_segments` flushes, which merges adjacent commands
   into one segment and breaks the `^` anchor that makes a following `git commit` visible —
   the false-ALLOW direction, and the laundering this splitter exists to prevent. That is a

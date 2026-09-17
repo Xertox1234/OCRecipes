@@ -205,7 +205,7 @@ todo's own matcher+tokenizer fix could not reach:
   `git --git-dir >&2 <main>/.git commit`, `git --work-tree >|o <main> reset --hard`) and are
   FRACTURED by `split_segments` into two segments before any matcher runs —
   `git -C 2>&1 /path commit -m x` becomes `[git -C 2>]` + `[1 /path commit -m x]`. No fix inside
-  this todo can see them. **`todos/P1-2026-09-13-split-segments-fractures-redirect-operators-containing-amp-or-pipe.md`
+  this todo can see them. **`todos/archive/P1-2026-09-13-split-segments-fractures-redirect-operators-containing-amp-or-pipe.md`
   (residual 2) must land first.**
 - **6 are `git -C ${n}>o <main> commit -m x` and siblings** — single-segment, but they need the
   `_CMD_REDIR` widening tracked here as shape 2 (residual 5).
@@ -245,7 +245,12 @@ and `main` allows every one identically, so none is a regression.
   corpus by inserting each operator at EVERY gap of a token list (884 rows = 13 operators ×
   every slot × spaced/glued × 3 arg-taking globals × bash/zsh, argv ground truth from a shim)
   measured **291 live bypasses across 49 cells before the change, 114 across 20 after**, with
-  **0 DENY→ALLOW regressions** and exactly **3 deliberate over-denials**. Do not reconcile the
+  **0 DENY→ALLOW regressions ACROSS THOSE DIMENSIONS** and exactly **3 deliberate
+  over-denials**. The scope qualifier is load-bearing and was added after the fact: the grid
+  has no quoting/escaping axis, and the reorder it cleared DID open a DENY→ALLOW population —
+  backslash-escaped operators — which the grid could not contain and which a later security
+  review found and which is fixed separately. A zero is a property of the corpus that produced
+  it; this one never covered escaping. Do not reconcile the
   old chain against these figures — they count different populations, and the old one was built
   from a named-slot list.
 - **Two cells neither todo enumerated were found this way and closed:** the operator GLUED to
