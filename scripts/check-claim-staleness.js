@@ -52,8 +52,16 @@ const POSITIONAL =
 // A claim about what a git command PRINTS — a property of two moving trees, not of this file.
 const GIT_CMD =
   /`[^`]*\bgit\s+(?:diff|log|rev-list|ls-tree|merge-base|status)\b[^`]*`/;
-const EMPTINESS =
-  /\bis\s+\*{0,2}empty\*{0,2}\b|\breturns?\s+(?:nothing|no\s+\w+)\b|\bprints?\s+nothing\b|\bshows?\s+nothing\b/i;
+// ANCHORED at the text immediately after the command, so the emptiness must be the
+// command's OWN predicate. A bare proximity window cannot tell "`git log` is empty" from
+// "`git log` shows the cache is empty", where an intervening noun owns the emptiness.
+// A PREPOSITIONAL qualifier of the command ("on `file`", "against main") may sit between the
+// command and its predicate -- it narrows what was run, it does not introduce a new subject.
+// An intervening SUBJECT ("the cache", "the upload queue") does, and that is the whole
+// discrimination. Dropping the qualifier was measured: it lost the tree's one genuine hit,
+// `` `git diff` on `guard-outward-cli.sh` is empty ``.
+const EMPTINESS_PREDICATE =
+  /^[\s,:;.—-]*(?:(?:on|for|against|in|over|between|at|from|of)\s+(?:`[^`]*`|[^\s`]+)\s*)*(?:is|was|were|are|returns?|printed?|prints?|shows?|outputs?|yields?|comes? back)\s+\*{0,2}(?:empty|nothing|no\s+\w+)\*{0,2}/i;
 
 const RULES = [
   {
@@ -63,17 +71,28 @@ const RULES = [
   },
   {
     name: "FROZEN-DIFF",
-    // Proximity, not co-occurrence. ANDing the two patterns across a whole line fires on
-    // `run \`npm run build\`; the cache is empty, then check \`git status\`` -- where the
-    // emptiness describes a build cache and no command's output at all. The claim this rule
-    // exists for reads "<git command> is empty", so only text FOLLOWING the command counts.
-    // A pre-posed spelling ("that diff is empty: \`git diff ...\`") is a deliberate false
-    // negative: a narrow rule that fires truthfully beats a broad one that gets switched off.
+    // PREDICATION, not proximity, and not co-occurrence. Each weaker test was tried and
+    // each admitted a class of false positive:
+    //   co-occurrence (the two patterns anywhere on one line) fires on
+    //     `run \`npm run build\`; the cache is empty, then check \`git status\``
+    //     -- the emptiness describes a build cache and no command's output at all;
+    //   a 40-character window AFTER the command closes that one but still fires on
+    //     `run \`git log\` shows the cache is empty` and
+    //     `after \`git status\` the upload queue returns nothing`
+    //     -- both measured, both false, both inside the window. Raw character distance
+    //     cannot tell whose emptiness it is.
+    // The claim this rule exists for reads "<git command> is empty", where the emptiness
+    // verb is the command's OWN predicate, so the test anchors at the first character after
+    // the closing backtick and allows only punctuation before the verb. An intervening noun
+    // phrase ("the cache", "the upload queue") is what distinguishes the false positives, and
+    // anchoring is what sees it.
+    // A pre-posed spelling ("that diff is empty: \`git diff ...\`") remains a deliberate
+    // false negative: a narrow rule that fires truthfully beats a broad one that gets
+    // switched off, which is this repo's standing lesson about over-denying guards.
     test: (line) => {
       const m = GIT_CMD.exec(line);
       if (!m) return false;
-      const after = m.index + m[0].length;
-      return EMPTINESS.test(line.slice(after, after + 40));
+      return EMPTINESS_PREDICATE.test(line.slice(m.index + m[0].length));
     },
     fix: 'State the re-measurement TRIGGER ("re-run if <constant> changed"), not the output a command produced once.',
   },
