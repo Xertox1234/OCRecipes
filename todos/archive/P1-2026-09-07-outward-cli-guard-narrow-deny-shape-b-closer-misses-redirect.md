@@ -1,9 +1,9 @@
 ---
 title: "guard-outward-cli.sh: the narrow-deny expansion shape (b) closes with a narrower class than every sibling, so a trailing redirect escapes it"
-status: backlog
+status: done
 priority: high
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-17
 assignee:
 labels: [security, harness]
 github_issue:
@@ -67,20 +67,20 @@ P0's `eas 2>&1 update`. Filed high rather than critical on likelihood, not on ef
 
 ## Acceptance Criteria
 
-- [ ] Reproduced first against unmodified `main`, per row, with actual exit codes recorded.
-- [ ] Shape (b) closes with `${_OUT_POS_SUFFIX}` (or a documented reason why it cannot), so
+- [x] Reproduced first against unmodified `main`, per row, with actual exit codes recorded.
+- [x] Shape (b) closes with `${_OUT_POS_SUFFIX}` (or a documented reason why it cannot), so
       it can never again lag a widening of that constant.
-- [ ] **Enumerate every other inline closer in the file before changing this one.** If shape
+- [x] **Enumerate every other inline closer in the file before changing this one.** If shape
       (b) hand-spelled its closer, check whether anything else did too — a `grep` for
       `([[:space:]]|$)` and similar hand-written classes on code lines. Fixing one instance of
       a selectivity defect while leaving its siblings is this file's most repeated mistake.
-- [ ] Consider a structural test asserting no detector uses a hand-written closer class where
+- [x] Consider a structural test asserting no detector uses a hand-written closer class where
       `_OUT_POS_SUFFIX` exists — counting OCCURRENCES (`grep -o | wc -l`), never `grep -c` or
       `grep -m1`, and skipping comment lines (the header quotes these fragments verbatim).
-- [ ] Two-sided regression tests with deny reasons asserted, including the literal-verb
+- [x] Two-sided regression tests with deny reasons asserted, including the literal-verb
       sibling as an attribution control.
-- [ ] Mutation-tested per row; false-positive population measured by execution.
-- [ ] Corpus rows added for the newly covered boundary characters at this position, as a
+- [x] Mutation-tested per row; false-positive population measured by execution.
+- [x] Corpus rows added for the newly covered boundary characters at this position, as a
       GENERATED axis (NOTE6 makes generation binding — hand-listing is how the tool position
       came to be missing).
 
@@ -100,3 +100,37 @@ P0's `eas 2>&1 update`. Filed high rather than critical on likelihood, not on ef
   `.claude/hooks/test-guard-outward-cli.sh`, `.claude/hooks/repro-outward-cli-corpus.sh`,
   plus disclosure sites.
 - No new mechanisms, files, or abstractions.
+
+### 2026-09-17 - CLOSED, by #991, which was aimed at something else
+
+- Shape (b) now closes with `${_OUT_POS_SUFFIX}`, which is exactly what the first acceptance
+  criterion asked for. It got there via PR #991: that PR was chasing a `gh` merge bypass and the
+  arm it repaired is the SAME narrow-deny expansion arm this todo is about, so one token closed
+  both. The todo's own table is the pin:
+
+  ${e:-eas} update>log at 50e9c63e (the commit BEFORE #991) -> ALLOW (the defect)
+  ${e:-eas} update>log at main with #991 -> DENY (closed)
+  ${e:-eas} update both -> DENY (control, unmoved)
+
+  Measured by feeding each string to the two hook trees, never by executing it.
+
+- **THE SIBLING SWEEP, which is this todo's second criterion and the part #991 did NOT do.**
+  #991 fixed one arm. A `grep -o` count over CODE lines found TWO more hand-written
+  `([[:space:]]|$)` closers, both `grep -oE` extractors whose output feeds an
+  `*_ALREADY_HANDLED` exclusion that itself uses `_OUT_POS_SUFFIX` -- the file's own comment
+  beside them says to change the two together or not at all. A narrower EXTRACTION is the
+  dangerous half: a `>`-closed row is never extracted, so it is never considered and never
+  excluded, it is simply allowed. Both now use `_OUT_POS_SUFFIX`.
+
+- **The invariant is now asserted, not remembered** (criterion four): a structural row counts
+  hand-spelled closers on code lines with `grep -o | wc -l` -- never `grep -c`, which counts
+  LINES and would read two on one line as one -- and skips comment lines, because this file's
+  header quotes the fragment verbatim when explaining the defect. A second row asserts the
+  same pattern still matches that prose, so a passing zero cannot mean the grep silently
+  stopped working.
+
+- **NOT A TARGET, measured rather than assumed:** the brace-range and brace-list spellings
+  (`ea{s..s} update`, `ea{s,x} update`) allow even with a plain SPACE closer, so they are not
+  a closer defect at all -- they are the separately ruled brace residual (model B, deliberate
+  construction). Chasing them here would have been fixing something that is not broken, which
+  the first criterion explicitly warns against.

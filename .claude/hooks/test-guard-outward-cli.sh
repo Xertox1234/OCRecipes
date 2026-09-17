@@ -5100,7 +5100,38 @@ _PIN_RAN=1
 # the defect is not specific to `$(...)`), two single-axis controls pinned beside them so the
 # gain reads as their PRODUCT rather than as either axis, and two allow-side rows because
 # widening a trailing boundary is the direction that invents denials.
-EXPECTED_TOTAL=975
+# --- STRUCTURAL: no detector may hand-spell a closer class that _OUT_POS_SUFFIX provides.
+# Three separate live bypasses came from exactly this: an arm closing with `([[:space:]]|$)`
+# cannot see a GLUED `<`/`>`, while `_OUT_POS_SUFFIX` spells `[);&|`{}<>]` and can. Fixing one
+# arm and leaving its siblings is this file's most repeated mistake, so the invariant is
+# asserted rather than remembered.
+# COUNTS OCCURRENCES with `grep -o | wc -l`, never `grep -c` (which counts LINES and would read
+# two on one line as one) and never `grep -m1`. COMMENT LINES ARE EXCLUDED deliberately: this
+# file's header quotes these fragments verbatim when explaining the defect, and a check that
+# counted prose would force the explanation to be deleted to stay green.
+_closer_hits=$(grep -nE '\(\[\[:space:\]\]\|\$\)' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|\$\)' | wc -l | tr -d ' ')
+if [ "$_closer_hits" = "0" ]; then
+  echo "PASS: no code line hand-spells a closer class that _OUT_POS_SUFFIX already provides"; PASS=$((PASS+1))
+else
+  echo "FAIL: $_closer_hits code-line closer class(es) hand-spelled as ([[:space:]]|\$) instead of \${_OUT_POS_SUFFIX} -- a glued < or > escapes them"; FAIL=$((FAIL+1))
+fi
+# NON-VACUITY, because a structural grep that matches nothing passes for the wrong reason just
+# as readily as one that matches nothing for the right one. The same pipeline over the file's
+# COMMENT lines must still find the fragment, proving the pattern itself is live.
+_closer_prose=$(grep -nE '\(\[\[:space:\]\]\|\$\)' "$HOOK" | grep -E '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|\$\)' | wc -l | tr -d ' ')
+if [ "$_closer_prose" -gt 0 ]; then
+  echo "PASS: the closer-class pattern still matches this file's own prose (the check is live, not vacuous)"; PASS=$((PASS+1))
+else
+  echo "FAIL: the closer-class pattern matches nothing anywhere -- the structural check above is vacuous"; FAIL=$((FAIL+1))
+fi
+
+# 975 -> 977 (2026-09-17, closer-class sweep): +2 structural rows. #991 fixed ONE hand-written
+# `([[:space:]]|$)` closer; the sibling todo's criterion is that leaving the others is this
+# file's most repeated mistake, so the two remaining code-line instances (both `grep -oE`
+# extractors feeding an *_ALREADY_HANDLED exclusion that already uses _OUT_POS_SUFFIX) moved
+# too. The invariant is now asserted, with a non-vacuity row proving the pattern still matches
+# the file's own prose so a passing zero cannot mean the grep simply stopped working.
+EXPECTED_TOTAL=977
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -2310,6 +2310,17 @@ _OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
 # already absorbs letter-FREE redirects (`2>&1`) but not letter-bearing ones
 # (`>/dev/null` — the `dev` breaks the class); that asymmetry is recorded in
 # DOCUMENTED RESIDUALS rather than papered over.
+# THE SURVIVING ROWS ARE NAMED, not left as a general asymmetry, because a residual stated as a
+# property is one nobody can check and one a later reader cannot tell has shrunk. As of
+# 2026-09-17 exactly FOUR corpus rows are DENY on the precise path and ALLOW on all three
+# degraded paths, and they are pinned that way per-path in repro-outward-cli-corpus.sh:
+#     flagadjfd-npmlog   flagadjglue-npmlog   flagadjsp-npmlog   flagadjsp-yarncwd
+# All four are the `npm`/`yarn` run-script clause reached through the `[^a-zA-Z]+` separator.
+# THE SET USED TO BE SIX. `flagadjfd-ghcomment` and `flagadjfd-ghcreate` were closed by PR #939,
+# which widened the crude `--repo` mirror to the precise path's own redirect spelling
+# `([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*` — so the `gh` half of this residual is DONE and
+# only the npm/yarn half survives. Re-derive from the per-path pins before quoting either
+# number; the pin list is the authority, not this comment.
 _OUT_SEP='([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+'
 
 # `_OUT_FLAG_RUN` — MOVED HERE (2026-09-16, round-2 security review of
@@ -3526,7 +3537,7 @@ _OUT_BR_RANGE_ALREADY_HANDLED="${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}gh${_OUT_GH_G
 _OUT_BR_OCC=$(
   { grep -oE "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
     grep -oE "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_BR_RANGE_TOKEN}" <<< "$WORDS_SCAN"
-    grep -oE "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_BR_RANGE_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"
+    grep -oE "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_BR_RANGE_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"
   } 2>/dev/null
 )
 _OUT_BR_FIRE=0
@@ -3608,7 +3619,7 @@ _OUT_BR_LIST_ALREADY_HANDLED="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(
 _OUT_BR_LIST_OCC=$(
   { grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_BR_LIST_TOKEN}" <<< "$WORDS_SCAN"
     grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_BR_LIST_TOKEN}" <<< "$WORDS_SCAN"
-    grep -oE "${_OUT_POS_PREFIX}${_OUT_BR_LIST_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"
+    grep -oE "${_OUT_POS_PREFIX}${_OUT_BR_LIST_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"
   } 2>/dev/null
 )
 _OUT_BR_LIST_FIRE=0
