@@ -181,8 +181,10 @@
 #     A PREFIX IN FRONT OF A BRACE-LIST VERB IS STILL OPEN, and this is a claim defect the
 #     MERGE created rather than any edit: the brace-LIST block arrived from main built on the
 #     narrow `_OUT_POS_PREFIX`, so it is the one command-position decision here that does not
-#     carry the round-5 axis -- while the header two bullets up asserted that every decision
-#     did. Measured, bash 5.3.15, command text fed as data; bare spellings are the controls:
+#     carry the round-5 axis -- while the round-5 `THE COMMAND-POSITION PREFIX IS AN AXIS`
+#     bullet BELOW asserted that every decision did. (Named, not counted: an earlier
+#     revision said "two bullets up", which this file's own idiom reads literally and
+#     which resolved to an unrelated bullet.) Measured, bash 5.3.15, command text fed as data; bare spellings are the controls:
 #         eas up{d..d}ate <flag> preview        DENY   |  eas up{d,d}ate <flag> preview   DENY
 #         npx eas up{d..d}ate <flag> preview    DENY   |  npx eas up{d,d}ate <flag> preview  ALLOW
 #                                                      |  sudo eas up{d,d}ate <flag> preview ALLOW
