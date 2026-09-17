@@ -1,6 +1,6 @@
 ---
 title: "A launcher prefix (npx / npm exec / bunx / pnpm dlx) or an absolute path defeats guard-outward-cli.sh — `npm exec eas update` reaches the guard as ALLOW"
-status: backlog
+status: done
 priority: high
 created: 2026-09-13
 updated: 2026-09-13

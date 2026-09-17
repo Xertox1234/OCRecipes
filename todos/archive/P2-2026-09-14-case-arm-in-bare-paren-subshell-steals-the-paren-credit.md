@@ -55,7 +55,7 @@ a correction to that diff.
 - [x] Rows are EXPECTED-DENY and therefore report as gaps by design, exactly as the
       `toolvcasecomment-*`/`verbvcasecomment-*` rows do, until the mechanism is closed.
       Measured: 17 of 18 `*vcaseparen-*` rows report as precise-path gaps (`flagvcaseparen-
-    ghadmin` denies for a pre-existing, unrelated "no REAL --auto" reason, matching the
+  ghadmin` denies for a pre-existing, unrelated "no REAL --auto" reason, matching the
       `flagvcasearm-ghadmin`/`flagvcasecomment-ghadmin` precedent).
 - [x] The brace-group control is carried alongside as an EXPECTED-DENY row that actually
       passes, so the pair discriminates rather than both sitting in the gap list.
