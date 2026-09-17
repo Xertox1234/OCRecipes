@@ -55,6 +55,15 @@ ALLOW_OUTWARD_CLI=1 gh api -X PUT repos/Xertox1234/OCRecipes/pulls/42/merge
   -> outward=ALLOW  merge-review=ALLOW
 ```
 
+<!-- RETRACTED 2026-09-17, second of two: the `merge-review=ALLOW` half above is now FALSE.
+     Measured against main's current hooks, with a read-only control in the same run:
+     merge-review-guard.sh DENIES this exact construction on the unresolvable-ref reason.
+     Its gh-api-merge detector was added 2026-09-14, AFTER this todo was written, and it
+     parses the raw command text on its own — the ALLOW_OUTWARD_CLI token is read only by
+     guard-outward-cli.sh's own case-arm escape, a different hook, so it does not reach this
+     one. The sentence was accurate on 2026-09-12 and is stale today. Today that prefix
+     defeats guard-outward-cli.sh only, not both local guards. -->
+
 The hook's own header (`merge-review-guard.sh:34-37`) argues the crude pre-check "MUST
 cover BOTH merge routes" because covering only one "is worse than none". The same argument
 applies to a third route.

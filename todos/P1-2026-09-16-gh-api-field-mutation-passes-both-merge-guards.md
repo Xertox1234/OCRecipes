@@ -108,10 +108,28 @@ WITHDRAWN in `22b88513` after three rounds proved it unshippable — it denied o
 every time it was tightened. The false-positive boundary is the hard part here, not the
 detection.
 
-The archived todo's suggested shape still applies: a second fast-path needle
-(`*gh*api*merge*` or `*pulls*merge*`), and on a match the precise detector cannot resolve to a
-PR number, deny through the existing unresolvable-ref path (`merge-review-guard.sh:172-181`),
-whose message already names the right remedy.
+**Most of the mechanism already exists — do NOT build a second needle and deny pair.** An
+earlier revision of this note repeated the archived todo's "add a fast-path needle" suggestion
+and cited `merge-review-guard.sh:172-181` as the deny path. That citation was wrong (those
+lines are unrelated comment prose) and the suggestion is obsolete. Verified against
+`origin/main`:
+
+- the fast-path needle **already includes** the gh-api-merge pattern —
+  `cmd_fastpath_has "$CMD" '*gh*pr*merge*' '*gh*api*merge*'` at `merge-review-guard.sh:108`;
+- the precise gh-api detector spans `:341-397` and already sets `PR=""` on a hit (`:397`);
+- that routes into the unresolvable-ref deny at `:499-517`, whose message text (`:516`)
+  already names "a merge attempted via `gh api` against the raw REST route".
+
+So the explicit-method case is fully handled today. **The single missing piece is the method
+conjunct.** Both guards require a literal `-X`/`--method` token:
+
+- `MRG_API_M` at `merge-review-guard.sh:358`, consumed at `:376`
+- `_GH_API_M` at `guard-outward-cli.sh:3783`, consumed at `:3830`
+
+Each needs to treat the PRESENCE of `-f`/`-F`/`--field`/`--raw-field`/`--input` as the
+implicit POST that `gh` actually sends — which `merge-review-guard.sh`'s own comment at
+`:295-325` already prescribes. Widening those two conjuncts is the change; re-deriving a
+duplicate needle+deny pair on this file is the failure mode its history warns about.
 
 **Do not key the fix on an explicit method.** That is exactly the assumption that produced this
 gap. `gh` infers the method from the argument shape: `-f`/`-F`/`--field`/`--raw-field` imply
