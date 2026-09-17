@@ -13,8 +13,13 @@
  *                   at the instant of writing and falsified by the next merge — #980 carried
  *                   one that its own merge falsified the same day.
  *
- * RATCHET: only lines a commit ADDS are checked. The tracked tree already carries ~21 legacy
- * positional refs; failing on those would block every unrelated edit to those files and the
+ * RATCHET: only lines a commit ADDS are checked. The tracked tree carries 30 legacy findings
+ * (29 POSITIONAL-REF + 1 FROZEN-DIFF) across the 944 files this check's glob really selects,
+ * measured by running this script with --all over a micromatch expansion of that glob -- NOT
+ * with git's own pathspec, which treats `**` literally and silently omits every top-level
+ * .claude/hooks/*.sh. An earlier revision of this comment said "~21" from that narrower
+ * accidental scope: a count quoted without the corpus that produced it, in the very file
+ * written to catch that. Failing on those would block every unrelated edit to those files and the
  * check would be switched off within a day — the same over-denial failure this repo documents
  * for its outward-CLI guard. New text is held to the bar; old text is fixed when touched.
  * Pass --all to audit an entire file deliberately.
@@ -58,7 +63,18 @@ const RULES = [
   },
   {
     name: "FROZEN-DIFF",
-    test: (line) => GIT_CMD.test(line) && EMPTINESS.test(line),
+    // Proximity, not co-occurrence. ANDing the two patterns across a whole line fires on
+    // `run \`npm run build\`; the cache is empty, then check \`git status\`` -- where the
+    // emptiness describes a build cache and no command's output at all. The claim this rule
+    // exists for reads "<git command> is empty", so only text FOLLOWING the command counts.
+    // A pre-posed spelling ("that diff is empty: \`git diff ...\`") is a deliberate false
+    // negative: a narrow rule that fires truthfully beats a broad one that gets switched off.
+    test: (line) => {
+      const m = GIT_CMD.exec(line);
+      if (!m) return false;
+      const after = m.index + m[0].length;
+      return EMPTINESS.test(line.slice(after, after + 40));
+    },
     fix: 'State the re-measurement TRIGGER ("re-run if <constant> changed"), not the output a command produced once.',
   },
 ];
@@ -76,14 +92,24 @@ function addedLines(file) {
   }
   const added = new Set();
   let next = 0;
+  let inHunk = false;
   for (const line of out.split("\n")) {
     const h = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
     if (h) {
       next = parseInt(h[1], 10);
+      inHunk = true;
       continue;
     }
-    if (line.startsWith("+") && !line.startsWith("+++")) added.add(next++);
-    else if (line.startsWith("-") || line.startsWith("---")) continue;
+    // Everything before the first @@ is preamble ("diff --git", "index", "--- a/f",
+    // "+++ b/f"). Testing a BODY line for a "+++" prefix mistakes a content line that
+    // happens to begin with "++" for the file header, which both drops that line from
+    // coverage AND stops the counter advancing, mis-numbering every later addition in
+    // the same hunk. Position, not spelling, separates a header from content -- and the
+    // glob this check covers is dense with prose quoting diff syntax verbatim.
+    if (!inHunk) continue;
+    const marker = line[0];
+    if (marker === "+") added.add(next++);
+    else if (marker === " ") next++; // a context line advances the new-side number
   }
   return added;
 }
