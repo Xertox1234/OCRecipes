@@ -177,6 +177,19 @@
 #     trailing slot already had. The lesson is not about this slot: a residual is
 #     only honestly scoped out when its JUSTIFICATION is measured too, and a pin
 #     that records a bypass contradicts any prose claiming none was found.
+#     STILL OPEN AFTER ROUND 9, measured at the #982 merge and disclosed rather than
+#     widened: the BRACE-LIST spelling of the same flag slot. `npx --quiet --yes eas
+#     update --branch preview` denies, but `npx {--quiet,--yes} eas update --branch
+#     preview` ALLOWS, and so does the admin-merge sibling. Both alternatives are real
+#     npx flags, so the expansion is well-formed and reaches the binary. Keep the two
+#     slots distinct or the note becomes wider than the measurement: the TRAILING slot
+#     is open for every launcher form, while the INTERIOR slot this round created is
+#     open only for `bun` -- main's brace-LIST machinery keys on `_OUT_GATED_BIN`,
+#     which has no `bun` entry, so the npm/pnpm/yarn interior rows deny. ALLOW on
+#     `origin/main` too, hence pre-existing rather than a regression from this PR, and
+#     tracked in todos/P2-2026-09-16-brace-list-at-flag-position-reconstructs-a-gated-flag.md.
+#     Not fixed here because widening a matcher on the strength of one round's probe is
+#     what produced the last four rounds; it needs its own axis and its own controls.
 #   * ROUND-2 CLOSED, 2026-09-16 (same todo, security review, second pass).
 #     The `cmd_fastpath_has` pre-filter gating every check in this file
 #     needed `npx`/`bun` in its needle list — `npx`/`bunx`/`bun x`/`bun run`
@@ -844,9 +857,11 @@
 #     read "COMMENT-FREE ARM", and THIS SHAPE IS COMMENT-FREE: the wording asserted
 #     a property of a whole class from the one form that had been tested, which is
 #     the exact failure `one-form-property-asserted-of-whole-syntax-class` in this
-#     same diff is named after. Not yet carried by a corpus row — filed as
-#     todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
-#     so it stays measured rather than only described.
+#     same diff is named after. Measured by
+#     toolvcaseparen-*/verbvcaseparen-*/flagvcaseparen-* in the corpus
+#     (EXPECTED-DENY, reported as gaps by design; the brace-group control above
+#     is vcasebrace, carried alongside and denying at every splice position). See
+#     todos/archive/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
 #     RECORDED HERE ONLY. The CLOSED entry further down documents the case-arm
 #     mechanism and STILL OPEN #2, but has no counterpart for THIS residual, so
 #     the pointer at the end of #2 ("the CLOSED entry is the authority for the
@@ -1153,6 +1168,141 @@
 #     `todos/P1-2026-09-07-outward-cli-path-wrapper.md`, which attacks PATH
 #     resolution rather than command text and so covers this residual without
 #     reading the command at all.
+#
+#   * PARTIALLY CLOSED 2026-09-16 (todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md).
+#     BRACE LIST expansion (`{a,b}`, the comma form) is a THIRD reconstruction
+#     mechanism, distinct from both the `$`/backtick sigil family above and the
+#     brace RANGE family immediately above this entry: `eas up{d,x}ate --branch
+#     preview` (real argv: `eas update upxate --branch preview`) and `gh pr
+#     me{r,r}ge 42` (real argv: `gh pr merge merge 42`) carry no `$`, no
+#     backtick, and no `..` — every mechanism above this one is blind to them.
+#     Unlike a range, a list needs >=2 comma-separated alternatives, so every
+#     list reconstruction emits the real verb PLUS AT LEAST ONE EXTRA WORD
+#     (`eas update upxate ...`, not `eas update ...` alone) — whether the
+#     downstream CLI tolerates that extra positional argument varies by tool
+#     and is not relied on anywhere in this file.
+#
+#     VERB-position — CLOSED, with the IDENTICAL bound as the brace-RANGE entry
+#     above: the SAME three trigger arms, reused verbatim in shape
+#     (`_OUT_BR_LIST_TOKEN` in place of `_OUT_BR_RANGE_TOKEN`), so the same
+#     first-verb-word / `gh pr <verb>`-only reach applies — a gated verb in the
+#     THIRD word of a non-`gh pr` namespace is unreachable by this block for the
+#     same structural reason (tracked by the RANGE entry's own
+#     `todos/P3-2026-09-15-brace-range-third-word-verb-unreachable.md`, which
+#     that todo's own scope did not extend to this mechanism — flagged, not
+#     silently assumed covered). NEVER EVALUATES the list (which alternative
+#     bash would pick is not computed); an empty alternative (`up{,x}date` ->
+#     `update upxdate`) is denied identically to a non-empty one. A list glued
+#     only AFTER an intact literal verb (`gh pr merge{1,3} 42`) is unaffected —
+#     already denied via the pre-existing `_OUT_POS_SUFFIX` `{`-as-closer
+#     boundary check, with ITS OWN reason; the per-occurrence
+#     `_OUT_BR_LIST_ALREADY_HANDLED` exclusion (same anchoring and
+#     per-occurrence discipline as `_OUT_BR_RANGE_ALREADY_HANDLED`, applying
+#     the two live bypasses that discipline was hardened against on the range
+#     block rather than re-deriving them) exists only so this block does not
+#     steal that other check's attribution — `pnpm`/`yarn publish{1,3}` are
+#     DELIBERATELY NOT in the exclusion (no pnpm/yarn publish check exists
+#     anywhere in this file — this block's own deny is the only thing standing
+#     between that construction and a registry push, measured the same way the
+#     RANGE entry already measured it for its own mechanism).
+#
+#     The NESTED form STAYS OPEN ON THE PRECISE PATH ONLY, and applies to ANY
+#     brace construct -- range OR list -- nested inside a list alternative,
+#     not only the range-inside-list example first measured
+#     (`up{d,{a..z}}ate`): `_OUT_BR_LIST_TOKEN`'s item class excludes `{`/`}`,
+#     so a nested span of EITHER shape does not match the outer list token at
+#     all and the construction reaches no check in this block, independent of
+#     what mechanism the nested span itself is. A property proven of one
+#     nested shape does not generalise to the class by itself -- see
+#     docs/solutions/logic-errors/one-form-property-asserted-of-whole-syntax-class-2026-09-06.md
+#     -- so the LIST-inside-LIST sibling is measured on its own, not inferred:
+#     `eas up{d,{x,y}}ate --branch preview` ALLOWS on precise (bash expands it
+#     to 6 words -- `eas update upxate upyate --branch preview` -- the SECOND
+#     of which is the literal `update`). The range-inside-list example:
+#     `eas up{d,{a..z}}ate --branch preview` ALLOWS on precise (bash expands
+#     it to 30 words total -- `set -- eas up{d,{a..z}}ate --branch preview;
+#     echo $#` -- of which the SECOND is the literal `update`). All THREE
+#     DEGRADED paths (no-jq/no-lib/no-awk) DENY both -- not via anything new
+#     in this fix, but as an accidental side effect of PRE-EXISTING
+#     alternatives in `crude_smells_outward`: that function's gap between the
+#     binary name and the trailing alternative (`[^;&|]*`) is not
+#     brace-depth-aware, so it lets the INNER span (`{a..z}` via the
+#     PRE-EXISTING brace-RANGE alternative, `{x,y}` via THIS fix's own new
+#     brace-LIST alternative) satisfy its alternative on its own, independent
+#     of the outer list. Measured and NOT assumed symmetric with the precise
+#     path -- see the per-path columns on `repro-outward-cli-corpus.sh`'s
+#     `r4brlist-nested-*` rows (p=ALLOW, all three degraded=DENY;
+#     EXPECTED-DENY, `GAP` on the precise path only, tracked rather than
+#     silently dropped).
+#
+#     FLAG-position -- STAYS OPEN, and is NOT closed by this block. MEASURED
+#     2026-09-16 against BOTH this tree and `origin/main`.
+#
+#     READ THIS BEFORE MEASURING ANYTHING HERE. This check runs SEQUENTIALLY
+#     after the "without a REAL --auto flag" check. A command lacking --auto
+#     dies at that earlier check and the --admin scan is NEVER REACHED, so its
+#     deny is attribution-blind and proves nothing about detection. Every
+#     probe against this residual must (1) carry a real --auto so the scan is
+#     reached at all, and (2) record the deny REASON, not just deny-vs-allow.
+#     Reading polarity instead of attribution is exactly what produced a false
+#     "these spellings are closed" claim in an earlier revision of this
+#     paragraph. The positive control must therefore be a literal --admin
+#     INSIDE the sanctioned carve-out -- `gh pr merge 42 --auto
+#     --delete-branch --admin` -- which denies on the administrator-privileges
+#     reason; a literal --admin with no --auto denies on the OTHER reason and
+#     controls nothing. Negative control: the sanctioned `--auto --squash
+#     --delete-branch` automerge -> ALLOW. With both behaving and zero void
+#     rows:
+#         gh pr merge 42 --auto --delete-branch --{admin,squash}
+#     ALLOWS on both trees. Bash expands it to `--auto --delete-branch
+#     --admin --squash`; both reconstructed words are genuine flags of that
+#     subcommand, so no repeated-flag or spare-positional tolerance is
+#     needed. That is an ADMINISTRATOR merge past branch protection, which
+#     the check further down denies "regardless of --auto" when the flag is
+#     spelled literally. PRE-EXISTING: it allows on `main` too, so this
+#     block neither introduced nor widened it.
+#
+#     The residual is WIDER than the whole-flag form above, and the
+#     discriminator is NOT how many alternatives the list has. Re-measured
+#     2026-09-16 with the base command `gh pr merge 42 --auto
+#     --delete-branch` held CONSTANT and only the trailing flag's spelling
+#     varied (positive control `--admin` -> DENY, no-extra-flag control ->
+#     ALLOW, both behaving, zero void rows), on BOTH trees:
+#         --ad{m,m}in        ALLOW   (expands to 2 words: --admin --admin)
+#         --ad{m..m}in       ALLOW   (expands to 1 word:  --admin)
+#         --{admin,squash}   ALLOW   (expands to 2 words: --admin --squash)
+#         {--admin,--admin}  DENY    (administrator-privileges reason)
+#         --ad""min          DENY    (administrator-privileges reason)
+#         --admin            DENY    (administrator-privileges reason)
+#     The RANGE in-word spelling is the CLEANEST of these: it reconstructs
+#     exactly `--admin` with no extra word at all, so not even a
+#     spare-positional tolerance is required.
+#
+#     What actually separates DENY from ALLOW is whether the literal
+#     substring `--admin` survives in the RAW COMMAND TEXT. `scan_renderings`
+#     never brace-expands, so any spelling that breaks that substring passes,
+#     and any spelling that leaves it intact (`{--admin,--admin}`) is caught
+#     by the literal check. Generalise from that, not from the alternative
+#     count.
+#
+#     CORRECTION, recorded deliberately: an earlier revision of THIS paragraph
+#     claimed the two in-word spellings were measured DENY and instructed
+#     readers not to cite them. That was wrong -- the probe behind it varied
+#     the flag spelling and the presence of `--auto`/`--delete-branch` at the
+#     same time, so those rows sat in a regime that denies for an unrelated
+#     reason and the flag dimension was masked entirely. A control only
+#     validates the path it actually runs through. The claim is retracted;
+#     these spellings are live, and citing them is correct.
+#
+#     TOOL-position — the list glued INSIDE the binary's own first letters
+#     (`{e,e}as update --branch preview`) STAYS OPEN, for the identical
+#     fast-path reason as brace RANGE's TOOL-position residual immediately
+#     above (no `$`/backtick/`..` for the fast path's needle or stage-3 decline
+#     to key on either), and this todo's Scope Contract carries forward the
+#     same "no widening of the fast path's sigil class" bound. Tracked by
+#     `r4brlist-tool-*` (7, ALL EXPECTED-DENY, all `GAP` by design) and, like
+#     its RANGE sibling, covered without reading the command at all by
+#     `todos/P1-2026-09-07-outward-cli-path-wrapper.md`.
 #
 #   * ACCEPTED COST, not a gap (2026-09-06, round 3): the fast path DECLINES its
 #     cheap exit for any command containing `${`, `$(` or a backtick, so those
@@ -1628,7 +1778,15 @@ crude_smells_outward() {
   # the deleting-rendering this todo's Scope Contract forbids adding. NEVER
   # EVALUATES the range (single- or multi-value denied identically), same
   # ruling as the precise path.
-  grep -Eq '(^|[^a-zA-Z])(eas|railway|npm|pnpm|yarn|gh)[^;&|]*([$`]|\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\})' <<< "$t" && return 0
+  #
+  # PLUS a brace LIST ({a,b}) alternative (2026-09-16,
+  # todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md).
+  # Same VERB-position-only coverage as the precise path's sibling fix, for
+  # the identical reason as the brace-RANGE alternative immediately above: a
+  # split BINARY NAME (`{e,e}as update`) stays a documented residual here too.
+  # NEVER EVALUATES the list (which alternative bash would pick), same ruling
+  # as the precise path.
+  grep -Eq '(^|[^a-zA-Z])(eas|railway|npm|pnpm|yarn|gh)[^;&|]*([$`]|\{[A-Za-z0-9]+\.\.[A-Za-z0-9]+(\.\.[+-]?[A-Za-z0-9]+)?\}|\{[^{}]*,[^{}]*\})' <<< "$t" && return 0
   # ADDED 2026-09-06 (security review of PR #926, finding C1 — the DEGRADED
   # half). The mirror just above requires the gated binary NAME to survive
   # intact, with a sigil somewhere after it. That covers a split VERB
@@ -2177,8 +2335,12 @@ _OUT_PRIV_WORD='(sudo|doas|corepack)'"$_OUT_FLAG_RUN"
 # the tool->verb gap the pin was written for) and a genuine, independently
 # real gap (the redirect WOULD have slipped through) — fixed by the same edit.
 #
-# `_OUT_POS_PREFIX` is NOT widened for this axis — it feeds 24 call sites, and
-# not all of them are safe to widen: `_OUT_BR_RANGE_ALREADY_HANDLED` (an
+# `_OUT_POS_PREFIX` is NOT widened for this axis. DERIVE ITS USE-SITE COUNT WITH GREP
+# AT THE MOMENT YOU NEED IT; do not quote a number from this comment. Two successive
+# figures written here ("roughly 24", then "28") were each invalidated by the round
+# that wrote them, and a third ("24 call sites") was measured at round 10 to match no
+# tree in this PR's history — not the commit that wrote it, and not this head. The
+# PROPERTY is what matters, and it is stable: not all consumers are safe to widen — `_OUT_BR_RANGE_ALREADY_HANDLED` (an
 # EXCLUSION — widening it REMOVES denies), the `gh pr merge` --auto CLAUSE=
 # cut (an ALLOW-deciding extraction — widening moves what `head -1` picks),
 # and the `gh pr merge`/`gh pr create`/`gh api` OCCURRENCE COUNTERS (widening
@@ -2189,7 +2351,18 @@ _OUT_PRIV_WORD='(sudo|doas|corepack)'"$_OUT_FLAG_RUN"
 # on). Composing a SEPARATE, narrowly-scoped detector instead — reusing this
 # anchor's own primitives, per
 # docs/solutions/conventions/compose-precise-detector-from-shared-primitives-without-widening-extractor-2026-09-14.md
-# — leaves every one of those 24 sites byte-for-byte untouched.
+# — leaves the BOOLEAN consumers untouched.
+#
+# BUT NOT ALL OF THEM, AND THAT IS DELIBERATE. An earlier revision of this paragraph
+# claimed the composition "leaves every one of those sites byte-for-byte untouched".
+# That is false at this head: rounds 5-7 of this same PR deliberately REPOINTED the
+# four unsafe consumers named just above — `_OUT_BR_RANGE_ALREADY_HANDLED`,
+# `GH_PR_MERGE_RE`, `GH_PR_CREATE_RE` and `GH_API_RE` — from `${_OUT_POS_PREFIX}` to
+# the strictly wider `${_OUT_POS_PREFIX_W}`, because leaving them behind was itself the
+# bypass (a wrapper word in front of an admin merge). Each moved together with its own
+# count or extractor and in its own polarity; see `_OUT_POS_PREFIX_W`'s comment below.
+# So the rule is not "never widen these" but "never widen these WITHOUT moving the
+# count/extractor with them and measuring that nothing goes DENY -> ALLOW".
 #
 # `_OUT_LAUNCHER` — the measured, non-exhaustive set of launcher forms that
 # hand their first argument to `exec`/spawn without ever consulting PATH:
@@ -2249,9 +2422,17 @@ _OUT_PRIV_WORD='(sudo|doas|corepack)'"$_OUT_FLAG_RUN"
 # `npm -s exec <OTA>` ALLOW, and `npm exec gh pr merge 42 --admin` DENY vs
 # `npm -s exec gh pr merge 42 --admin` ALLOW — an unreviewed, branch-protection-
 # bypassing admin merge, the same sink whose reachability made the TRAILING slot a
-# must-fix in round 2. 100 bypass rows (5 launcher forms x 4 sinks x 5 flag
-# spellings) now deny with their 20 bare controls still denying; all were ALLOW on
-# `main` too, so this closes a pre-existing gap rather than a regression.
+# must-fix in round 2. All were ALLOW on `main` too, so this closes a pre-existing gap
+# rather than a regression.
+# THE REPRODUCIBLE EVIDENCE is repro-outward-cli-corpus.sh's INTERIOR-FLAG axis: 8
+# launcher forms x 4 flag spellings x 2 sinks = 64 deny rows (16 of them the flag-less
+# baseline that must deny for the same reason), plus 32 ungated over-denial controls,
+# FATAL-pinned at 96 generated rows. Run that; it is in the tree.
+# A wider ad-hoc probe (5 launcher forms x 4 sinks x 5 flag spellings = 100 deny rows
+# with 20 bare controls) was also run while developing the fix and agreed, but it was
+# NEVER COMMITTED, so this comment no longer cites its counts as if they were
+# reproducible here. A number a reader cannot re-derive from the tree is indistinguishable
+# from one that is wrong, which is the whole failure this file keeps re-learning.
 # The exclusion/extractor audit above was RUN, not assumed: 4 brace-range verdicts
 # moved and every one moved ALLOW -> DENY. None moved DENY -> ALLOW.
 _OUT_LAUNCHER='(npx|npm'"$_OUT_FLAG_RUN"'(exec?|x)|bunx|bun'"$_OUT_FLAG_RUN"'(x|run)|pnpm'"$_OUT_FLAG_RUN"'(dlx|exec)|yarn'"$_OUT_FLAG_RUN"'(dlx|exec))'"$_OUT_FLAG_RUN"
@@ -2524,11 +2705,30 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # authorisation at all and the decoy alone would grant the carve-out. Both are pinned below.
 # The exposure today is the MISCOUNT, not a grant — but whoever fixes the count must fix the
 # CLAUSE CAPTURE BOUNDARY too, or relaxing the mask reintroduces this class. Tripwire rows in
-# test-guard-outward-cli.sh so a flip to ALLOW cannot be silent, and tracked in
-# todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md.
+# test-guard-outward-cli.sh so a flip to ALLOW cannot be silent.
 # Do not read "cannot collapse" as "is counted correctly". Measured on all four
 # separators, glued and spaced, with `gh api /repos/o/r` ALLOW and `gh api -X POST …` DENY as
 # in-band controls.
+#
+# PROVED UNFIXABLE VIA OCCURRENCE COUNTING, not merely left open — see
+# todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md
+# (status: blocked; not archived — one decision remains: whether to accept the
+# tripwire-pinned residual as the permanent posture for the two-token families).
+# The more severe residual that investigation surfaced is NOT that decision and is
+# NOT on this ordering axis — it is already filed separately as
+# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+# Two repair attempts were measured and rejected: a gh-api-style separator-safe grammar
+# (max()'d against the wide count, mirroring `_OUT_GH_GLOBALS_SEPSAFE`/`_OUT_SEP_SEPSAFE`
+# below) returns count=1 under BOTH grammars for this exact shape, because the nested
+# invocation's own "gh" is the ONLY "gh" reachable to complete ITS OWN match — the outer,
+# really-executing verb has no separate "gh" to anchor a second, non-overlapping match under
+# any separator narrowing. A "does the matched span cross a command-position boundary" check
+# was tried next and rejected too: it reddened 23 unrelated, already-correct assertions
+# (ordinary interior redirects like `gh pr 2>&1 merge`, and glued `;`/`&&`/`||` before an
+# UNRELATED preceding `gh` command) because those legitimately contain anchor-class bytes as
+# redirect/glue syntax, not as evidence of a hidden second command. See
+# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md
+# for the full mechanism and both rejected approaches.
 #
 # The `-X`/`--method` check is NOT a sufficient compensating control. It does still fire on the
 # collapsed clause, but the ambiguity refusal also covered mutations carrying no `-X` at all:
@@ -3298,6 +3498,84 @@ if [ -n "$_OUT_BR_OCC" ]; then
 fi
 if [ "$_OUT_BR_FIRE" = 1 ]; then
   deny "guard-outward-cli: an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}), which real bash brace expansion resolves before this command runs — this hook cannot evaluate what the range expands to (single- or multi-value), so it cannot tell a read-only call from a mutating one. Denying, per the 2026-09-14 brace-range narrow-deny. A range glued only AFTER an intact literal verb (e.g. merge{1..3}) is unaffected — that already denies via the existing boundary check. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+
+# --- narrow deny: a gated binary/verb glued to a brace LIST ({a,b}) ---------
+# todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md
+# Bash brace LIST expansion (the comma form) is a THIRD reconstruction
+# mechanism -- distinct from the `$`/backtick sigil family above AND from the
+# brace RANGE family immediately above this block (no `..`, just a literal
+# comma): `eas up{d,x}ate` (real argv: `eas update upxate ...`) and `gh pr
+# me{r,r}ge 42` (real argv: `gh pr merge merge 42`) carry none of the tokens
+# any check above this one keys on. See guard-outward-cli.sh's DOCUMENTED
+# RESIDUALS entry for this mechanism (search "BRACE LIST expansion") for the
+# full VERB/TOOL/FLAG/nested-position bound -- this block closes VERB-position
+# only, with the IDENTICAL structural reach as the brace-RANGE block: the same
+# three trigger arms, same `_OUT_GATED_BIN`/`_OUT_SEP` glue requirement, same
+# placement rationale (runs after eas/railway/npm, before gh pr merge, for the
+# same deny-reason-attribution reason as the block above).
+#
+# NEVER EVALUATES which alternative bash would pick. An empty alternative
+# (`up{,x}date` -> `update upxdate`) is denied identically to a non-empty one
+# -- distinguishing them would mean computing the expansion, which this file
+# already refuses to do for every sibling mechanism.
+#
+# Item class is `[^{}]*` (no nested braces; anything else, including a
+# semicolon or pipe character, is deliberately permitted inside a token that
+# can only ever ADD a deny -- see this file's own "widening a DENY-only
+# anchor's boundary can only ADD matches" argument, restated in the RANGE
+# block's own header comment). A nested range-inside-list span
+# (`up{d,{a..z}}ate`) does NOT match this item class (it excludes `{`/`}`) and
+# is a documented, measured residual -- see DOCUMENTED RESIDUALS, not silently
+# assumed closed.
+_OUT_BR_LIST_TOKEN='[^;&|)`{}[:space:]]*\{[^{}]*,[^{}]*\}[^;&|)`{}[:space:]]*'
+# EXCLUSION, mirroring `_OUT_BR_RANGE_ALREADY_HANDLED` verbatim in shape and in
+# BOTH hardening rounds that block's own exclusion needed (command-position
+# anchoring so a decoy occurrence elsewhere in the command cannot cancel this
+# whole block; per-OCCURRENCE evaluation so a genuinely benign co-occurring gh
+# construction sharing the excluded shape cannot silence an unrelated,
+# dangerous glued construction) -- reused rather than re-derived, since both
+# live bypasses the range block's own comments document apply identically to
+# this exclusion if it is NOT built the same way. Measured before this shipped
+# (2026-09-16): `gh pr merge{1,3} 42`, `gh pr create{1,3} --repo o/r`, `gh pr
+# comment{1,3} --repo o/r` and `gh api{1,3} repos/o/r -X POST` each ALREADY
+# deny on this branch's pre-LIST-block tree, each with its OWN reason string
+# (the `_OUT_POS_SUFFIX` `{`-as-closer boundary check) -- this exclusion exists
+# only so this block does not run first and steal that attribution.
+# `npm publish{1,3}`, `eas update{1,3} --branch preview` and `railway
+# up{1,3}` also already deny pre-this-block, but via THEIR OWN family checks
+# (command-position `npm publish`/`eas update`/`railway up`), which run BEFORE
+# this block in the file and so never reach this line at all -- they do not
+# need to be named in the exclusion. `pnpm publish{1,3}` and `yarn
+# publish{1,3}` measured ALLOW pre-this-block (there is no pnpm/yarn publish
+# check anywhere in this file) and are DELIBERATELY NOT added to the
+# exclusion: this block's own deny is the only thing standing between them and
+# a registry push, the identical "do not fix the attribution by widening the
+# exclusion" ruling the RANGE block's own comment states for the same two
+# tools.
+_OUT_BR_LIST_ALREADY_HANDLED="${_OUT_POS_PREFIX}gh${_OUT_GH_GLOBALS}${_OUT_SEP}(pr${_OUT_SEP}(merge|create|comment)|api)"'\{[^{}]*,[^{}]*\}'"${_OUT_POS_SUFFIX}"
+# LOAD-BEARING COUPLING, same as the RANGE block's identical note: this
+# exclusion is safe ONLY because `_OUT_POS_SUFFIX` accepts `{` as a closer.
+# Narrow that closer class and this exclusion silently becomes a live bypass
+# with nothing here to catch it -- change the two together or not at all.
+_OUT_BR_LIST_OCC=$(
+  { grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_BR_LIST_TOKEN}" <<< "$WORDS_SCAN"
+    grep -oE "${_OUT_POS_PREFIX}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_BR_LIST_TOKEN}" <<< "$WORDS_SCAN"
+    grep -oE "${_OUT_POS_PREFIX}${_OUT_BR_LIST_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}([[:space:]]|$)" <<< "$WORDS_SCAN"
+  } 2>/dev/null
+)
+_OUT_BR_LIST_FIRE=0
+if [ -n "$_OUT_BR_LIST_OCC" ]; then
+  while IFS= read -r _OUT_BR_LIST_ONE; do
+    [ -n "$_OUT_BR_LIST_ONE" ] || continue
+    if ! grep -Eq "$_OUT_BR_LIST_ALREADY_HANDLED" <<< "$_OUT_BR_LIST_ONE"; then
+      _OUT_BR_LIST_FIRE=1
+      break
+    fi
+  done <<< "$_OUT_BR_LIST_OCC"
+fi
+if [ "$_OUT_BR_LIST_FIRE" = 1 ]; then
+  deny "guard-outward-cli: an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}), which real bash brace expansion resolves into multiple words before this command runs — this hook cannot evaluate which alternative applies, so it cannot tell a read-only call from a mutating one. Denying, per the 2026-09-16 brace-list narrow-deny. A list glued only AFTER an intact literal verb (e.g. merge{1,3}) is unaffected — that already denies via the existing boundary check. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 # --- gh: bare 'gh pr merge' (see the --auto/--admin carve-out in the header) -

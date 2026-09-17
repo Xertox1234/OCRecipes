@@ -1,4 +1,4 @@
-import React, { ComponentProps, useCallback, useState } from "react";
+import React, { ComponentProps, useCallback, useEffect, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -83,9 +83,17 @@ export default function SettingsScreen() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [showChangeEmailModal, setShowChangeEmailModal] = useState(false);
-  const { confirm, ConfirmationModal, behindContentA11yProps } =
+  const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
   const [isExporting, setIsExporting] = useState(false);
+
+  // The navigator renders the header as a sibling `behindContentA11yProps`
+  // can't reach — hide its default back button while the sheet is presented
+  // so TalkBack/VoiceOver can't swipe past the sheet to it. See
+  // todos/archive/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md.
+  useEffect(() => {
+    navigation.setOptions({ headerBackVisible: !isOpen });
+  }, [isOpen, navigation]);
 
   const handleDeleteAccount = useCallback(
     async (password: string) => {

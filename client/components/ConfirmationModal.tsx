@@ -153,7 +153,12 @@ export function useConfirmationModal() {
       }
     : { accessibilityElementsHidden: false, importantForAccessibility: "auto" };
 
-  return { confirm, ConfirmationModal, behindContentA11yProps };
+  // `isOpen` is also returned so hosts whose header is rendered by a
+  // navigator (a sibling `behindContentA11yProps` structurally cannot reach —
+  // see todos/archive/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md)
+  // can drive `navigation.setOptions()` from it to trap the header's own
+  // back/close control while the sheet is presented.
+  return { confirm, ConfirmationModal, behindContentA11yProps, isOpen };
 }
 
 // --- Inner component ---

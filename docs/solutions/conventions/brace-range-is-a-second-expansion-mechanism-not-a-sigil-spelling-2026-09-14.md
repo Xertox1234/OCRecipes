@@ -6,7 +6,7 @@ tags: [harness, security, shell-quoting, false-negative, parsing]
 module: server
 applies_to: [".claude/hooks/**"]
 created: 2026-09-14
-last_updated: '2026-09-14'
+last_updated: '2026-09-16'
 ---
 
 # Enumerating spellings of one expansion mechanism cannot cover a second, unrelated one
@@ -133,18 +133,67 @@ fast-path sigil class that a Scope Contract deliberately protects) — that is a
 decision, not a claim that the mechanism doesn't exist. State which half is closed
 explicitly; do not let "the brace-range bypass is fixed" imply both halves when only one is.
 
+## A THIRD sibling mechanism confirms the rule, and nesting exposes a path asymmetry neither of the first two ever surfaced (2026-09-16)
+
+`todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md` added bash brace
+**LIST** expansion (the comma form, `{a,b}`) as a third, independent reconstruction mechanism —
+no `$`, no backtick, and no `..`. `eas up{d,x}ate --branch preview` (real argv: `eas update
+upxate --branch preview`) is invisible to the sigil-keyed checks above AND to the brace-RANGE
+token above it, for the identical reason each is invisible to the others: three unrelated bash
+grammars share only the symptom (a split token reconstructs a gated verb), not the mechanism.
+The fix reused `_OUT_BR_RANGE_TOKEN`/`_OUT_BR_RANGE_ALREADY_HANDLED`'s shape verbatim
+(`_OUT_BR_LIST_TOKEN`/`_OUT_BR_LIST_ALREADY_HANDLED`), applying the command-position anchoring
+and per-occurrence exclusion discipline from the start — the range block needed two live-bypass
+review rounds to reach that shape; the list block shipped it directly and both this todo's own
+two review rounds confirmed it holds. **Nothing new to the rule itself** — this is confirmation,
+not a fourth spelling of the lesson.
+
+**What IS new: nesting a construct inside a LIST alternative exposes an asymmetry no prior
+mechanism in this chain surfaced**, because it is the first time one expansion construct sits
+*inside* another rather than beside it. `_OUT_BR_LIST_TOKEN`'s item class excludes `{`/`}` (no
+nested braces, by design — the Scope Contract forbids a new scanner), so `up{d,{a..z}}ate` or
+`up{d,{x,y}}ate` (a RANGE or a LIST nested inside a LIST alternative) reaches no check on the
+**precise** path and ALLOWS. But all three **degraded** paths DENY the identical construction —
+not via anything new, but because `crude_smells_outward`'s gap between the binary name and its
+trailing alternative (`[^;&|]*`) is not brace-depth-aware: it lets the INNER span alone (`{a..z}`
+via the pre-existing RANGE alternative, `{x,y}` via the new LIST alternative) satisfy its own
+alternative, independent of and blind to the outer list it sits inside. The precise path's
+careful, item-class-scoped token and the degraded path's loose, depth-blind gap disagree on the
+identical input for structurally different reasons — a property that could not appear anywhere
+in this chain until there were two nestable mechanisms to put one inside the other. State which
+path a nested-residual claim is about; "ALLOWS" or "DENIES" without a path qualifier is
+ambiguous exactly here.
+
+**Second recurrence, one level up from the detector:** round 1 of this todo's own review found
+that the nested-residual's PROSE — not a regex this time, a doc comment — asserted a property
+("this nested form is a residual") from the one example that happened to be measured
+(range-in-list) and left a structurally identical sibling (list-in-list) unmeasured and
+unmentioned. This is
+[a property proven of one construction asserted of its whole class](../logic-errors/one-form-property-asserted-of-whole-syntax-class-2026-09-06.md)
+recurring in a THIRD shape: that document already covers it happening to a regex boundary class
+and to a scope claim; here it happened to a residual's own disclosure. Fixed the same way as
+every prior instance — construct the untested sibling and run it (`eas up{d,{x,y}}ate --branch
+preview` measured, not inferred) — and given its own corpus row (`r4brlist-nested-list-*`) so
+the class, not one member of it, is what's tracked.
+
 ## Related Files
 
 - `.claude/hooks/guard-outward-cli.sh` — the brace-range narrow-deny block (VERB-position,
   placed next to the existing `$`/backtick expansion-token narrow deny) and its
-  `_OUT_BR_RANGE_ALREADY_HANDLED` exclusion; the DOCUMENTED RESIDUALS entry for the
-  still-open TOOL-position half; `crude_smells_outward`'s degraded-mirror trailing-sigil
-  class, widened with the same range alternative.
+  `_OUT_BR_RANGE_ALREADY_HANDLED` exclusion; the sibling brace-LIST narrow-deny block
+  (`_OUT_BR_LIST_TOKEN`/`_OUT_BR_LIST_ALREADY_HANDLED`) placed directly after it; the
+  DOCUMENTED RESIDUALS entries for both mechanisms' still-open TOOL-position halves and
+  the shared nested-in-a-list residual (search "NESTED form"); `crude_smells_outward`'s
+  degraded-mirror trailing-sigil class, widened with both the range and list alternatives.
 - `.claude/hooks/lib/fastpath-filter.sh` — `cmd_fastpath_has`, the needle-based stage 1/2
   that (incidentally, not by design for this mechanism) already lets VERB-position
   constructions reach the precise matcher.
 - `.claude/hooks/repro-outward-cli-corpus.sh` — the `r4brange-tool-*` / `r4brange-verb-*`
-  generated rows (`R4_RSP_IDS`), NOTE6's attribution of which half is closed.
+  generated rows and their `r4brlist-tool-*` / `r4brlist-verb-*` siblings (both share
+  `R4_RSP_IDS`'s generation loop), plus the `r4brlist-nested-*` /
+  `r4brlist-nested-list-*` residual axes; NOTE6's attribution of which halves are closed.
+- `todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md` — the
+  brace-LIST todo this section documents.
 - `.claude/hooks/test-guard-outward-cli.sh` — the brace-range positives, the
   already-documented-boundary controls (pinning the pre-existing check's OWN reason), and
   the `assert_allow` false-positive bounds (numeric loop ranges, comma-form braces, bare

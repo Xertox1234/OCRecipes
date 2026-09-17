@@ -15,7 +15,7 @@ vi.mock("@react-navigation/native", () => ({
 
 // Test wrapper that exposes the hook API via a trigger button
 function TestHarness({ options }: { options: ConfirmOptions }) {
-  const { confirm, ConfirmationModal, behindContentA11yProps } =
+  const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
   return (
     <>
@@ -30,6 +30,10 @@ function TestHarness({ options }: { options: ConfirmOptions }) {
       <View testID="host-content" {...behindContentA11yProps}>
         <Text>Host screen content</Text>
       </View>
+      {/* Stands in for a host screen's `navigation.setOptions()` effect,
+          driven by the same `isOpen` those screens destructure — see the
+          "isOpen (drives navigator header trap)" describe block below. */}
+      <Text testID="is-open">{String(isOpen)}</Text>
       <ConfirmationModal />
     </>
   );
@@ -234,6 +238,46 @@ describe("ConfirmationModal", () => {
       fireEvent.click(screen.getByText("Cancel"));
       const hostContent = screen.getByTestId("host-content");
       expect(hostContent.getAttribute("aria-hidden")).toBeNull();
+    });
+  });
+
+  describe("isOpen (drives navigator header trap)", () => {
+    // `useConfirmationModal()` also returns `isOpen` so a host screen whose
+    // header is rendered by React Navigation (a sibling
+    // `behindContentA11yProps` structurally cannot reach) can drive
+    // `navigation.setOptions()` from it — see
+    // todos/archive/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md
+    // and the 5 screens that consume it that way (Settings, SavedItems,
+    // GroceryLists, Pantry, CookSessionReview). This only pins that the
+    // signal flips true/false on presented/dismissed, the same jsdom-visible
+    // level the `behindContentA11yProps` tests above pin it at — it does NOT
+    // observe any screen's `navigation.setOptions()` call itself. That is a
+    // separate, jsdom-observable gap (see
+    // client/screens/meal-plan/__tests__/CookbookCreateScreen.test.tsx for
+    // the in-repo pattern that asserts a `setOptions` call's payload
+    // directly), not something only a device pass could ever verify —
+    // closing it needs the 5 screens' own test files. TWO of the five now
+    // exist: GroceryListsScreen.header.test.tsx and
+    // PantryScreen.header.test.tsx (same directory as the CookbookCreate
+    // precedent above) assert that payload for both dual-mounted screens.
+    // The gap remains open only for Settings, SavedItems and
+    // CookSessionReview.
+    it("is false before the sheet is presented", () => {
+      renderComponent(<TestHarness options={defaultOptions} />);
+      expect(screen.getByTestId("is-open").textContent).toBe("false");
+    });
+
+    it("flips true once the sheet is presented", () => {
+      renderComponent(<TestHarness options={defaultOptions} />);
+      triggerModal();
+      expect(screen.getByTestId("is-open").textContent).toBe("true");
+    });
+
+    it("flips back to false once the sheet is dismissed", () => {
+      renderComponent(<TestHarness options={defaultOptions} />);
+      triggerModal();
+      fireEvent.click(screen.getByText("Cancel"));
+      expect(screen.getByTestId("is-open").textContent).toBe("false");
     });
   });
 });

@@ -37,9 +37,13 @@ Every shape below steps outside one of those three assumptions.
 Measured on `origin/main` and on PR #980's branch with the same harness, so each row is a
 two-tree comparison rather than a single reading.
 
-**Re-measured on the round-7 tree** (`02dbe0c8`; first measured on the superseded WIP
-`817b47ae`, whose `guard-outward-cli.sh` blob is byte-identical, so the reading stands
-although that sha is not an ancestor of this branch), because rounds 6 and 7 both changed
+**Re-measured whenever the constants these shapes depend on change**, rather than cited
+against one tree sha — the sha went stale three rounds running, which is its own small
+lesson: an attribution that must be hand-bumped every round will not be. The trigger is
+mechanical: re-run the probe if `_OUT_LAUNCHER`, `_OUT_POS_PREFIX`, `_OUT_POS_PREFIX_W`
+or `_OUT_POS_PREFIX_LP` changed. Last re-measured on the #982 merge, and independently
+reproduced by the round-10 security review: all five shapes still ALLOW, the `sudo npx`
+control still main=ALLOW/branch=DENY, all over-denial controls still ALLOW. Rounds 6 and 7 both changed
 `_OUT_POS_PREFIX_W`, which `_OUT_POS_PREFIX_LP` derives from — so the launcher prefix moved
 underneath this table twice after it was first written, and a residual list republished
 without re-measuring would have been a claim about a tree that no longer existed. All five

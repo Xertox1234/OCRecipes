@@ -1,6 +1,6 @@
 ---
 title: "cmd-detect: a case arm inside a bare-paren subshell steals the paren credit, so the subshell's `)` still closes $(...) early"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-14
 updated: 2026-09-14
@@ -48,20 +48,37 @@ a correction to that diff.
 
 ## Acceptance Criteria
 
-- [ ] Corpus rows for the composition, following the `vcasecomment` convention already used
+- [x] Corpus rows for the composition, following the `vcasecomment` convention already used
       for the sibling comment-composition residual (a `TOOL_MIDS`/`SPAN2_IDS` variant rather
       than hand-listed rows — the axis's own rule is that new dimensions are GENERATED).
-- [ ] Rows are EXPECTED-DENY and therefore report as gaps by design, exactly as the
+      Done: `vcaseparen` added to `TOOL_MECHS`/`TOOL_MIDS` and `SPAN2_MECHS`/`SPAN2_IDS`.
+- [x] Rows are EXPECTED-DENY and therefore report as gaps by design, exactly as the
       `toolvcasecomment-*`/`verbvcasecomment-*` rows do, until the mechanism is closed.
-- [ ] The brace-group control is carried alongside as an EXPECTED-DENY row that actually
+      Measured: 17 of 18 `*vcaseparen-*` rows report as precise-path gaps (`flagvcaseparen-
+  ghadmin` denies for a pre-existing, unrelated "no REAL --auto" reason, matching the
+      `flagvcasearm-ghadmin`/`flagvcasecomment-ghadmin` precedent).
+- [x] The brace-group control is carried alongside as an EXPECTED-DENY row that actually
       passes, so the pair discriminates rather than both sitting in the gap list.
-- [ ] `EXPECTED_ROWS`, `EXPECTED_PRECISE_GAPS` and the manifests re-derived from a run, never
+      Done: `vcasebrace` added to the same two arrays. Measured at all three splice positions
+      (tool/verb/flag) before wiring it in — all 18 rows DENY, 0 gaps.
+- [x] `EXPECTED_ROWS`, `EXPECTED_PRECISE_GAPS` and the manifests re-derived from a run, never
       hand-incremented (a branch can LOWER a gap pin, so neither the old nor the new value is
       safe to assume).
+      Done: `EXPECTED_ROWS` 876->912, `EXPECTED_PRECISE_GAPS` 24->41, `EXPECTED_ALLPATH_GAPS`
+      279->303, `EXPECTED_DENY_ATTRIB_ROWS` 761->780, all copied verbatim from the script's own
+      printed diff after a full run. Corpus now reports a clean pin (rows=912, precise-path
+      gaps=41, all-path gaps=303, 780 deny reasons attributed).
 - [ ] If the mechanism is actually closed rather than just measured: the `casedepth` tracking
       needs to survive a bare-paren subshell boundary, which is a change to how `parens[d]`
       and `casedepth` interact — verify the blind pass stays case-blind so the union is
       preserved.
+      NOT attempted, deliberately: this is the conditional item. Per the Scope Contract
+      ("no new scanner, no comment-state tracking") and the Risks section's own warning
+      against over-scoping ("measuring this one shape is worth more than an attempt to close
+      'all compositions'"), and per this todo's immediate predecessor being reclassified the
+      same way (model B: deliberate-construction-only, documented residual, not a critical
+      defect), this todo ships the measurement-only path. `.claude/hooks/lib/cmd-detect.sh`
+      and `.claude/hooks/test-cmd-detect.sh` carry zero diff.
 
 ## Implementation Notes
 
@@ -99,3 +116,30 @@ a correction to that diff.
 
 - Filed from #966's post-implementation review, after reproducing the three-row table above
   at branch, parent and main with a positive control in each run.
+
+### 2026-09-16
+
+- Implemented, measurement-only path: `vcaseparen`/`vcasebrace` added to
+  `repro-outward-cli-corpus.sh`'s `TOOL_MECHS`/`TOOL_MIDS` and `SPAN2_MECHS`/`SPAN2_IDS`
+  generator arrays. All 18 `vcaseparen` rows (tool/verb/flag) measured ALLOW except
+  `flagvcaseparen-ghadmin` (denies for a pre-existing unrelated reason); all 18 `vcasebrace`
+  control rows measured DENY at every position, confirmed via direct probe before wiring
+  into the arrays (per an advisor pre-check gate on exactly this question) and again via the
+  full corpus run.
+- Pins re-derived from a full run, never hand-computed: `EXPECTED_ROWS` 876->912,
+  `EXPECTED_PRECISE_GAPS` 24->41, `EXPECTED_ALLPATH_GAPS` 279->303,
+  `EXPECTED_DENY_ATTRIB_ROWS` 761->780, plus the three ID-manifest heredocs, all copied
+  verbatim from the script's own printed diff.
+- `guard-outward-cli.sh`'s existing DOCUMENTED RESIDUALS entry (already fully written up)
+  updated with a one-line pointer to the new row ids, mirroring the `vcasecomment` sibling's
+  phrasing. No new residual paragraph added.
+- `.claude/hooks/lib/cmd-detect.sh` and `.claude/hooks/test-cmd-detect.sh` carry zero diff —
+  the conditional AC item (actually closing the mechanism) was deliberately not attempted;
+  see the Acceptance Criteria section for the reasoning.
+- Reviewed by `code-reviewer` and `security-auditor`: zero CRITICAL findings from either.
+  Two WARNINGs — a stale prose decomposition paragraph (fixed inline) and the
+  `todos/archive/...` pointer paths in the two DOCUMENTED RESIDUALS comments referencing a
+  location that didn't exist yet at review time (resolved by this same archive move).
+- Hook self-tests (38 suites, including `test-cmd-detect.sh` 659/0 and
+  `test-guard-outward-cli.sh` 784/0), full `npm run test:run` (531/531 files, 8514/8514
+  tests), `npm run check:types`, and `npm run lint` all pass clean.
