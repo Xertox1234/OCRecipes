@@ -3,7 +3,7 @@ title: "merge-review-guard.sh: an extractor MISS is indistinguishable from 'not 
 status: backlog
 priority: high
 created: 2026-09-12
-updated: 2026-09-12
+updated: 2026-09-17
 assignee:
 labels: [deferred, harness, security]
 github_issue:
@@ -119,3 +119,31 @@ fails closed. Write that down in the code rather than rediscovering it.
 - Sibling todo, same root cause class, do them together if touching the shared extractor: `todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md`.
 - The comment block already in `merge-review-guard.sh` records this gap where the check is defined; update it rather than deleting it.
 - `.claude/hooks/**` feeds a required check. Mutation-verify before pushing, and run the corpus against **branch + current main**, not the bare tip.
+
+### 2026-09-17 - mechanism (b) CLOSED in full; a live two-guard bypass closed with it
+
+- **The namespace->verb slot is closed.** `_CMD_GH_PR_SEP` gives it the absorber
+  `_CMD_GH_GLOBALS` has had since 2026-09-13, applied from ONE constant at all seven call
+  sites. The three `KNOWN GAP, namespace->verb slot` tripwire rows are now deny assertions,
+  which is what they were pinned for.
+- **A LIVE TWO-GUARD BYPASS was found and closed**, which this todo did not predict: a
+  substitution-rendered binary with a GLUED redirect in the verb slot passed BOTH guards.
+  Neither axis alone does - the glued redirect alone denies, the substitution alone denies.
+  Only their PRODUCT escaped, because guard-outward-cli's expansion arm closed its verb with
+  `([[:space:]]|$)` rather than `_OUT_POS_SUFFIX`. One token. Not specific to `$(...)`: a plain
+  parameter expansion was equally open and is pinned.
+- **THE 248-of-537 FIGURE IS AGAINST THE REVIEW GATE ALONE and overstates the exploitable
+  surface.** Re-measured on a generated rendering x separator x slot x verb corpus with argv
+  ground truth from a shim: of 70 real merge rows the gate was blind to 44, but
+  guard-outward-cli denied all but **2**. Name the layer before quoting the number.
+- **STILL OPEN, and why this todo stays open:** the BINARY RENDERING family - path-qualified,
+  wholly quoted, and substitution - defeats the detector BEFORE any slot is reached, so the
+  slot widening cannot touch it. All are denied today by guard-outward-cli, so it is
+  defence-in-depth rather than a live bypass. Pinned as `KNOWN GAP, binary rendering` rows.
+  Closing it means making `cmd_bare`'s blanking preserve token boundaries, a lib-wide change.
+- The required corpus reproduces BYTE-IDENTICAL pins on the fix branch. That is the finding
+  rather than a reassurance: it varies one axis at a time and so cannot contain a
+  product-of-two defect.
+- Harness bound, stated because it limits the 44: rows whose separator is a literal TAB are
+  unreliable (the tab collides with the measurement harness's own field delimiter) and are
+  excluded. `sp2` covers non-single-space whitespace.

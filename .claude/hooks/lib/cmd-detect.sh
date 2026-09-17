@@ -324,6 +324,18 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C'"$_CMD_GIT_ARGVAL"'|-c'"$_CMD_GIT_ARGVAL"'|-
 # closed just because the unquoted slot is.
 _CMD_GH_GLOBALS='(([[:space:]]+(-R[[:space:]]+[^[:space:]]+|--repo[[:space:]]+[^[:space:]]+|-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?))|([[:space:]]*'"$_CMD_REDIR"'))*'
 
+# _CMD_GH_PR_SEP — the NAMESPACE->VERB slot, i.e. what may sit between `pr` and its verb.
+# _CMD_GH_GLOBALS above models the BINARY->NAMESPACE slot and has carried a redirect arm since
+# 2026-09-13; this slot was left spelled as a bare `[[:space:]]+` at every call site, so
+# `gh pr 2>/dev/null merge 42` and `gh pr>log merge 42` resolved to NO subcommand and the merge
+# review gate allowed them. Both are real merges (argv measured with a shim; nothing reached a
+# real gh). Two of them were LIVE bypasses of both guards at once when the binary was also
+# rendered through a substitution -- `$(which gh) pr>log merge 42` -- because guard-outward-cli.sh
+# missed the same slot. Modelled as ONE constant used at every site rather than widened per call,
+# because the per-call spelling is exactly how the two slots drifted apart in the first place.
+# `[[:space:]]*` before the redirect, not `+`: the GLUED spelling `pr>log` has no space at all.
+_CMD_GH_PR_SEP='(([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+)'
+
 # Verb alternations, named ONCE. cmd_git_repo_dir (below) must be called with the SAME verb
 # set as the predicate whose match it is qualifying — passing a wider set re-opens the
 # false-DENY described in that function's header — so the sets are constants rather than
@@ -1654,7 +1666,7 @@ cmd_bare_deep() {
 cmd_is_gh_pr_create() {
   local words
   words=$(cmd_words_deep "$1")
-  grep -Eq "${_CMD_POS_PREFIX}gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+create${_CMD_POS_SUFFIX}" <<< "$words"
+  grep -Eq "${_CMD_POS_PREFIX}gh${_CMD_GH_GLOBALS}[[:space:]]+pr${_CMD_GH_PR_SEP}create${_CMD_POS_SUFFIX}" <<< "$words"
 }
 
 # cmd_is_git_commit <command>  → exit 0 if it invokes `git [-c k=v]* commit` in command position.
@@ -2367,8 +2379,8 @@ cmd_gh_pr_write_subcommand() {
   # An earlier probe of this exact claim came back clean because its padding produced only
   # 48KB and never crossed the buffer. A negative from a probe that never traverses the path
   # is not evidence about the path.
-  if grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+create([[:space:]]|\$)" <<< "$words" \
-     && grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]|\$)" <<< "$words"; then
+  if grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr${_CMD_GH_PR_SEP}create([[:space:]]|\$)" <<< "$words" \
+     && grep -qE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr${_CMD_GH_PR_SEP}(merge|close|edit)([[:space:]]|\$)" <<< "$words"; then
     return 1
   fi
   # THE VERB COMES FROM THE VERB SLOT, NOT FROM A RE-SCAN OF THE SPAN (2026-09-13).
@@ -2390,9 +2402,9 @@ cmd_gh_pr_write_subcommand() {
   # greedy `.*` applied across all lines would silently become last-occurrence — and `-n…p`
   # emits nothing rather than echoing the line back when the capture does not match.
   printf '%s' "$words" \
-    | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(create|merge|close|edit)([[:space:]]|\$)" \
+    | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr${_CMD_GH_PR_SEP}(create|merge|close|edit)([[:space:]]|\$)" \
     | head -1 \
-    | sed -nE 's/.*[[:space:]]pr[[:space:]]+(create|merge|close|edit).*/\1/p'
+    | sed -nE 's/.*[[:space:]]*(create|merge|close|edit)[[:space:]]*$/\1/p'
 }
 
 # cmd_gh_pr_has_merge <command>  → rc 0 if ANY `gh pr merge` occurrence is present,
@@ -2461,7 +2473,7 @@ cmd_gh_pr_write_subcommand() {
 cmd_gh_pr_has_merge() {
   local words
   words=$(cmd_bare_deep "$1")
-  grep -qE "(${_CMD_POS_PREFIX}|(^|[[:space:]]))gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+merge([[:space:]]|\$)" <<< "$words"
+  grep -qE "(${_CMD_POS_PREFIX}|(^|[[:space:]]))gh${_CMD_GH_GLOBALS}[[:space:]]+pr${_CMD_GH_PR_SEP}merge([[:space:]]|\$)" <<< "$words"
 }
 
 # cmd_gh_pr_ref <command>  → echo the PR ref (number, branch name, or URL) that
@@ -2643,13 +2655,13 @@ cmd_gh_pr_ref() {
   # over `grep -oE` output, NOT `grep -c` — `-c` counts matching LINES, and a
   # compound command is normally one line.
   occurrences=$(printf '%s' "$bare" \
-    | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]|\$)" \
+    | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr${_CMD_GH_PR_SEP}(merge|close|edit)([[:space:]]|\$)" \
     | wc -l | tr -d '[:space:]')
   if [ "${occurrences:-0}" -gt 1 ]; then
     return 1
   fi
   full_match=$(printf '%s' "$bare" \
-    | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]+(${value_flags})[[:space:]]+[^[:space:];&|]*|[[:space:]]+-[^[:space:];&|]*)*[[:space:]]+[^[:space:];&|-][^[:space:];&|]*" \
+    | grep -oE "(^|[[:space:]])gh${_CMD_GH_GLOBALS}[[:space:]]+pr${_CMD_GH_PR_SEP}(merge|close|edit)([[:space:]]+(${value_flags})[[:space:]]+[^[:space:];&|]*|[[:space:]]+-[^[:space:];&|]*)*[[:space:]]+[^[:space:];&|-][^[:space:];&|]*" \
     | head -1)
   [ -n "$full_match" ] || return 1
   # `--repo`/`-R` retargets another repository, which this function cannot

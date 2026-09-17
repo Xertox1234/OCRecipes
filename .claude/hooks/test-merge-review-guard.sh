@@ -749,17 +749,49 @@ for spelling in \
                 || bad "CLOSED, P1 mech (b) redirect: [$spelling]" "$out"
 done
 
-# STILL OPEN, the OTHER HALF of mechanism (b): a redirect in the NAMESPACE->VERB slot.
-# _CMD_GH_GLOBALS models the binary->namespace slot only; `pr[[:space:]]+(verb)` still has no
-# absorber, so these reach the gate with SUB empty. Not a regression — main allows them too —
-# and guard-outward-cli.sh denies all of them, because its _OUT_SEP absorbs a redirect in
-# BOTH slots. Pinned as a tripwire so closing the second slot has to come back and convert it.
+# CLOSED 2026-09-17 — the OTHER HALF of mechanism (b): a redirect in the NAMESPACE->VERB slot.
+# These were pinned as a tripwire precisely so that closing the slot had to come back and
+# convert them, and it has. `_CMD_GH_GLOBALS` modelled the binary->namespace slot from
+# 2026-09-13; the namespace->verb slot stayed spelled as a bare `[[:space:]]+` at every call
+# site, so `gh pr 2>/dev/null merge 42` resolved to NO subcommand and this gate allowed a real
+# merge. `_CMD_GH_PR_SEP` now gives that slot the same absorber, applied at every site from one
+# constant rather than per call — the per-call spelling is how the two slots drifted apart.
 for spelling in \
   'gh pr 2>/dev/null merge 42 --squash' \
   'gh pr>log merge 42 --squash' \
   'gh pr 2>&1 merge 42 --squash' ; do
   out=$(bash_payload "$spelling" | run)
-  assert_allowed "KNOWN GAP, namespace->verb slot (see P1 todo): [$spelling]" "$out"
+  denied "$out" && ok "namespace->verb slot now resolves, so the merge is gated: [$spelling]" \
+                || bad "namespace->verb slot now resolves, so the merge is gated: [$spelling]" "$out"
+done
+# THE ALLOW SIDE of the same widening. A separator absorber is the direction that invents
+# denials, and this gate has no per-command escape — SKIP_MERGE_REVIEW must be set in the shell
+# that launched the session — so a false deny here gets the whole gate switched off. A READ verb
+# in the same slot must stay allowed, and so must an ordinary command that merely mentions the
+# words: the raw-token predicate withdrawn across three review rounds died on exactly that.
+for spelling in \
+  'gh pr 2>/dev/null view 42' \
+  'gh pr>log view 42' \
+  'gh pr 2>/dev/null list' ; do
+  out=$(bash_payload "$spelling" | run)
+  assert_allowed "namespace->verb slot: a READ verb stays allowed: [$spelling]" "$out"
+done
+out=$(bash_payload 'git commit -m "fix highlight for pr merge"' | run)
+assert_allowed "namespace->verb slot: a commit MESSAGE naming the gate stays allowed" "$out"
+# STILL OPEN, and named so this block is not read as closing the class: the BINARY renderings.
+# A path-qualified binary, a wholly quoted one, and a command substitution all defeat the
+# detector BEFORE any slot is reached, so the widening above cannot touch them. Measured on a
+# 320-row rendering x separator x slot x verb corpus driven through these fixtures: of 70 real
+# `gh pr merge` rows the gate still allows 44 (tab-separator rows excluded — a literal tab
+# collides with the harness's own field delimiter and those rows are unreliable). All are
+# denied today by guard-outward-cli.sh, so they are a defence-in-depth gap rather than a live
+# bypass; the P1 todo carries the corpus.
+for spelling in \
+  '/opt/homebrew/bin/gh pr merge 42 --squash' \
+  '"$(which gh)" pr merge 42 --squash' \
+  "'gh' pr merge 42 --squash" ; do
+  out=$(bash_payload "$spelling" | run)
+  assert_allowed "KNOWN GAP, binary rendering (see P1 todo): [$spelling]" "$out"
 done
 
 # TWO STILL OPEN, ONE CLOSED 2026-09-15 -- and the split is the point of this block. The
@@ -1270,7 +1302,13 @@ unset _mrg_src _mrg_conj_line _mrg_conj _mrg_missing _mrg_sym _mrg_lbl
 # instead of trusting the comment that states it.
 # 130 -> 131: +1 regime precondition for THE 64KB SIGPIPE ROW, which until now asserted its
 # DENY outcome with nothing asserting the input still reached the pipe buffer.
-EXPECTED_TOTAL=131
+# 131 -> 138 (2026-09-17, namespace->verb slot): +7. The three KNOWN GAP tripwire rows were
+# CONVERTED in place from assert_allowed to a deny assertion, so they contribute 0 to this
+# delta — the count moves only on genuinely new rows: +3 read-verb rows and +1 commit-message
+# row pinning the ALLOW side of a separator widening (the direction that invents denials, and
+# the one that killed the withdrawn raw-token predicate), and +3 rows pinning the BINARY
+# renderings that remain open so the block is not read as closing the whole class.
+EXPECTED_TOTAL=138
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
