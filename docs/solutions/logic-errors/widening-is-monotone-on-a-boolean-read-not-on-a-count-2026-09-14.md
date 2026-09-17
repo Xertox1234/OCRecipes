@@ -151,9 +151,16 @@ match BEFORE the separator reaches the psub:
   separator-safe grammar land on the SAME nested tokens (measured on the two-token case:
   wide=1, sepsafe=1, both matching only the inner decoy's own "gh pr merge 7"; the outer,
   really-executing verb has no separate "gh" of its own to anchor a second match under any
-  grammar). **This is true of `gh api` too, not just the two-token families** — the earlier
-  "closed" fix only handled the psub-AFTER-verb ordering; psub-BEFORE-verb was never tested
-  against `gh api` before this finding.
+  grammar).
+
+  **CORRECTED 2026-09-17: do NOT generalise this to `gh api`.** An earlier revision claimed
+  the same ordering explained a `gh api` field-based merge bypass. It does not. That bypass
+  reproduces with NO process substitution and NO occurrence ambiguity at all — the plainest
+  spelling allows — because the mutating-method check only recognises a literal
+  `-X`/`--method` token and is blind to field-bearing requests, which `gh` sends as POST
+  automatically. Different mechanism, different fix, tracked separately as a P1. Reaching for
+  occurrence counting or grammar narrowing there is a dead end; this paragraph's reasoning
+  applies to the two-token families only.
 
 **A follow-on "does the matched span cross a command-position boundary" check was also tried
 and rejected.** The idea: if the separator run absorbed one of `_OUT_POS_PREFIX`'s own anchor
@@ -177,13 +184,26 @@ authorisation in the inner decoy's clause) and is pinned as a tripwire rather th
 `gh -a -c <(gh api /x) api -f merge_method=squash /repos/o/r/pulls/42/merge` is **ALLOWED**
 by the unmodified guard, measured in its own directory (a `/tmp` copy breaks `$HERE`-relative
 `lib/` sourcing and gives a false ALLOW for the wrong reason — see the process note below).
-This is a field-based (`-f`, no `-X` token) mutating `gh api` call at a merge endpoint,
-hidden by the SAME psub-before-verb ordering as this doc's own two-token finding, on a family
-this repo's records describe as "closed" (2026-09-13/14). It was found, not fixed — out of
-scope for the todo that surfaced it (which covered only the two-token families) and touching
-`guard-outward-cli.sh` again risked colliding with concurrent PRs on the same file. Flagged
-for human triage rather than auto-filed (Critical/High severity per this repo's own
-deferred-item policy).
+This is a field-based (`-f`, no `-X` token) mutating call at a merge endpoint.
+
+**CORRECTED 2026-09-17.** An earlier revision of this section said the bypass was "hidden by
+the SAME psub-before-verb ordering as this doc's own two-token finding". It is NOT. The
+ordering is irrelevant and this doc's mechanism does not apply to it. Re-measured twice
+independently: the plainest spelling — no process substitution, no root flags, no occurrence
+ambiguity at all — allows identically, and the same holds with `-F`, `--field` and
+`--raw-field`, while the explicit `-X POST` spelling denies correctly in the same run. The
+real mechanism is that the mutating-method check recognises only a literal `-X`/`--method`
+token and is blind to field-bearing requests, which the tool sends as POST automatically.
+
+Nor was it novel: the identical bare form is already pinned as pre-existing on `main` in
+`test-guard-outward-cli.sh`, attributed there to an archived `status: done` todo about a
+different hook — which is why it fell between the two records and went untracked.
+
+It was found here, not fixed — out of scope for the todo that surfaced it. Now tracked with
+the correct attribution as
+`todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md`. **Do not reach for
+occurrence counting or grammar narrowing there** — that is the dead end this correction
+exists to prevent.
 
 ### Process note: compare against a prior hook revision from inside its own directory
 
