@@ -1,9 +1,9 @@
 ---
 title: "split_segments flushes on the unquoted `&`/`|` INSIDE a redirect operator, so `git 2>&1 commit` is fractured before any matcher sees it"
-status: backlog
+status: done
 priority: high
 created: 2026-09-13
-updated: 2026-09-13
+updated: 2026-09-17
 assignee:
 labels: [deferred, harness, security]
 github_issue:
@@ -86,26 +86,61 @@ guarantee higher.
 
 ## Acceptance Criteria
 
-- [ ] A mutating git command whose redirect operator contains `&` or `|` reaches the contract
+- [x] A mutating git command whose redirect operator contains `&` or `|` reaches the contract
       check with its segment intact, for all four families (`2>&1`, `&>`, `>&`, `>|`) **in the
       three INTERPOSED positions** (spaced, glued-to-binary, between-globals). The verb-glued
       position is out of scope — see the positional table above; two of its four cells are
       already denied and the third correctly is not.
-- [ ] **No segment is merged that was previously separate.** This is the criterion the whole
+- [x] **No segment is merged that was previously separate.** This is the criterion the whole
       todo turns on — see Risks. A differential over a corpus that includes genuine control
       operators must show ZERO change in segment COUNT for every command whose `&`/`|` is a
       real separator.
-- [ ] Laundering controls, constructed not harvested: `git -C <worktree> status && git -C
-  <main> commit -m x` must still DENY, and every existing compound/laundering row in
-    `test-git-safety.sh` must stay green.
-- [ ] The four `KNOWN-WRONG (filed)` rows in `test-git-safety.sh` flip to `assert_deny` and
+
+      **REFINED AT IMPLEMENTATION, and NOT met as literally written — read this before
+      treating the box as satisfied.** Raw segment COUNT is the wrong invariant for a row
+      carrying BOTH a redirect-`&` and a separator-`&`, e.g. `git commit >&out & git commit -m
+      y`. The old splitter FRACTURED the first command into `git commit >` + `out `; the new
+      one keeps it whole and still splits at the real separator, so the count legitimately
+      drops 4 → 3 on a row whose `&` is a real separator. Two corpus rows do exactly this. The
+      property that actually protects the gate is that no real command loses its segment-
+      INITIAL position, because `MUTATING_GIT_SEG_RE` is `^`-anchored per segment. Measured on
+      that invariant instead: 16 rows change count (all un-fracturing) and **0 rows lose a
+      segment-initial `git`**, including both mixed rows.
+
+- [x] Laundering controls, constructed not harvested: `git -C <worktree> status && git -C
+<main> commit -m x` must still DENY, and every existing compound/laundering row in
+  `test-git-safety.sh` must stay green.
+- [x] The four `KNOWN-WRONG (filed)` rows in `test-git-safety.sh` flip to `assert_deny` and
       lose the KNOWN-WRONG label, in the same change that fixes the cause.
-- [ ] Corpus generated from a product of dimensions, measured through the REAL pipeline
+- [x] Corpus generated from a product of dimensions, measured through the REAL pipeline
       (`split_segments` then the regex), never the regex alone — the parent's mistake.
-- [ ] Mutation-verified: revert the fix and confirm only the four families **in the three
+- [x] Mutation-verified: revert the fix and confirm only the four families **in the three
       interposed positions** redden. Stated as "the four families" it will not hold — the
       verb-glued `>&` and `>|` rows are already green without this fix and would not move.
-- [ ] Full hook suite green; the `Outward-CLI guard corpus` required check reproduces its pin.
+- [x] Full hook suite green; the `Outward-CLI guard corpus` required check reproduces its pin.
+
+      These are TWO DIFFERENT ARTIFACTS with similar names and an earlier revision of this
+      line cited the wrong one, so both are named explicitly:
+
+      - **The required check** is `.claude/hooks/repro-outward-cli-corpus.sh` (`ci.yml:151`).
+        Run locally on this branch, exit 0:
+        `✓ pin: rows=940  precise-path gaps=62  all-path gaps=324; precise manifest exact;
+        all-path manifest exact INCLUDING per-path verdicts; precise-subset-of-all-path holds;
+        all 787 deny reasons attributed to the same checks as the pin`.
+      - **The hook SUITES** (not the required check): git-safety 262/0, cmd-detect 659/0,
+        guard-outward-cli 822/0, merge-review-guard 131/0, branch-preflight 72/0,
+        drift-detect 36/0, guard-worktree-isolation 23/0, core-bare-guard 9/0. Listed
+        individually because the matcher half edits a SHARED constant in `lib/cmd-detect.sh`,
+        so "the hook suite" alone would not have been the right denominator.
+      - **The EXTRACTOR, which no suite above constrains.** `_CMD_GIT_GLOBALS` also carves a
+        span for `cmd_git_repo_dir`'s `grep -oE`, and widening is monotone on a boolean read
+        but NOT on an extractor — its answer feeds `branch-preflight.sh`, `drift-detect.sh`
+        and `drift-detect-update.sh`, the last of which the lib flags as the consumer where
+        over-matching SUPPRESSES a baseline write rather than failing safe. Diffed on the
+        EXTRACTED ANSWER over the same 884 commands: **0 changed**. That zero has a
+        denominator — 204 of the rows return a real path (95 the worktree, 95 main, plus
+        glued-value artifacts), so the probe entered the regime rather than answering
+        uniformly.
 
 ## Implementation Notes
 
@@ -169,3 +204,35 @@ head of the contract branch); testing the whole command as one string re-opens t
   the finding was surfaced. The fracture, the four affected families, and their status as
   real invocations were each measured — the argv-shim run above — rather than inferred from
   the splitter's source.
+
+### 2026-09-17 — CLOSED
+
+- `split_segments`'s state-0 flush now treats an `&`/`|` **adjacent to `<`/`>`** as part of a
+  redirect operator rather than a separator. The adjacency is derived from the
+  `&?[<>]+&?[|!]?` shape `_CMD_REDIR` already spells, not from a second local grammar.
+- **The discriminator reads `praw`, not `buf[i-1]`** — the last character appended in state 0
+  UNQUOTED and UNESCAPED. `echo \>& git -C <main> commit` has a LITERAL `>`, so its `&` really
+  is a separator; a naive lookbehind would have merged there and hidden the following command.
+  That row is pinned in `test-git-safety.sh` (via `jsonc`, since a lone backslash is not valid
+  JSON by hand).
+- **The segment-count criterion this todo turned on** was measured, not argued. Raw count is
+  the WRONG invariant: a row carrying both a redirect-`&` and a separator-`&` legitimately
+  drops one segment because the first command stops being fractured. The invariant that
+  matters is that no real command loses its segment-INITIAL position, since
+  `MUTATING_GIT_SEG_RE` is `^`-anchored per segment. Over a constructed corpus carrying genuine
+  separators: 16 rows change segment count (every one un-fracturing) and **0 rows lose a
+  segment-initial `git`**.
+- **Mutation-verified per layer.** Reverting only this splitter change reddens exactly 5
+  assertions — the four families plus `git -C&>out <main> commit`, which needs the operator
+  intact before the tokenizer can read its prefix. Reverting the two value-slot layers reddens
+  disjoint sets, so none of the three edits is inert.
+- Measured on an 884-row grid (operator × EVERY insertion slot × 3 arg-taking globals ×
+  bash/zsh, argv ground truth from a shim): live bypasses 291 → 114 across the whole change,
+  **0 DENY→ALLOW regressions**.
+- The four `KNOWN-WRONG (filed)` rows are now `assert_deny`, in the same change as the cause.
+  Residual class 2 in `git-safety.sh` is marked CLOSED in place (not renumbered — other files
+  cite these numbers).
+- Landed together with
+  `todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md`,
+  which lists this todo as a blocking dependency: 18 of its 45 value-slot rows were fractured
+  here before any matcher could see them.

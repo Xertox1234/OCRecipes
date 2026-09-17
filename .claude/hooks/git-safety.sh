@@ -287,21 +287,16 @@ git_c_target() {
         pendbrace = 0
         if (tnt || (!index(w, "<") && !index(w, ">"))) { emit_effective(); done = 1; return }
       }
-      if (pend == "C")  { fold(w);  pend = ""; return } #   -C arg (value may be quoted): accumulate
-      if (pend == "c")  { pend = ""; return }           #   -c value: skip (its name=value token)
-      if (pend == "gd") { setgd(w); pend = ""; return } #   --git-dir arg (separate form)
-      if (pend == "wt") { setwt(w); pend = ""; return } #   --work-tree arg (separate form)
-      if (!tnt && w == "-C") { pend = "C"; return }     #   real -C flag: next word is its arg
-      if (!tnt && w == "-c") { pend = "c"; return }     #   real -c flag: skip its value
-      if (!tnt && w == "--git-dir")   { pend = "gd"; return }   #   separate: --git-dir <path>
-      if (!tnt && w == "--work-tree") { pend = "wt"; return }   #   separate: --work-tree <path>
-      if (!tnt && w ~ /^--git-dir=/)   { setgd(substr(w, 11)); return } #   glued: --git-dir=<path>
-      if (!tnt && w ~ /^--work-tree=/) { setwt(substr(w, 13)); return } #   glued: --work-tree=<path>
-      # Any OTHER global (no-arg): skip, keep scanning. TAINT-INDEPENDENT (unlike the value
-      # captures above): a dash-token here is always a global since no mutating verb starts with a
-      # dash, so skipping a QUOTED decoy flag still lets a later real -C be reached — a taint-gated
-      # skip would instead halt the scan at the decoy and miss the real redirect (a bypass).
-      if (substr(w, 1, 1) == "-") return
+      # THE pend / FLAG / dash-skip ARMS NOW SIT BELOW THE REDIRECT ARM, and the ORDER IS THE FIX
+      # (2026-09-17). They used to run FIRST, so an arg-taking global whose VALUE SLOT held a
+      # redirect folded the operator as the value: `git -C >out <main> commit -m x` emitted
+      # `c >out`, a RELATIVE path that resolved under cwd, and a real main mutation was ALLOWED
+      # from a worktree cwd. The shell strips a redirect from the word list WHEREVER it sits --
+      # including between a flag and its value -- so classifying redirects first is what mirrors
+      # the shell rather than a special case for one slot. The brace-fd spelling
+      # (`git -C {fd} >o <main> commit`) is the same defect one token over and is closed by the
+      # same move, because the brace class below also now precedes these arms.
+      # Filed as todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-…
       # A brace-ONLY word with no operator in it (`{fd}`, `{9}`). This is the WHITESPACE axis of
       # _CMD_REDIR (`[}][[:space:]]*`), which the rpre class below can never see: rpre is the
       # prefix of a SINGLE word before its first operator, and this word has no operator at all.
@@ -367,6 +362,13 @@ git_c_target() {
       # single-quoted awk string, so one would close it and hand the rest to the shell.)
       if (!tnt && (index(w, "<") || index(w, ">"))) {
         rpre = w; sub(/[<>].*$/, "", rpre)
+        # A `&` sitting DIRECTLY before the operator belongs to the OPERATOR, not to the prefix:
+        # _CMD_REDIR spells it `&?[<>]+`. Stripping it here rather than widening the class below
+        # fixes two cells at once and keeps them from needing separate arms -- `&>o` (prefix
+        # becomes empty, a plain redirect) and `-C&>o` (prefix becomes the FLAG `-C`, so the
+        # real `-C <main>` is still mined). Both were live ALLOWs of real main mutations.
+        sub(/&$/, "", rpre)
+        tailop = (w ~ /[<>]+&?[|!]?$/)
         if (rpre == "" || rpre ~ /^[0-9]+$/ || rpre ~ /^[{]([A-Za-z_][A-Za-z0-9_]*|[0-9]+)[}]$/) {
           #   Does this word END AT the operator, so its TARGET is the next word? The test must
           #   be "ends with a complete operator RUN", not "ends with a character from the
@@ -378,11 +380,37 @@ git_c_target() {
           #   control (`>out`) that still denied. Do NOT narrow by dropping `!`/`|`: they model
           #   `>|` and the zsh `>!` form, and this predicate keeps both plus a trailing `>`
           #   (`>a>`), which is a genuine target-less operator.
-          if (w ~ /[<>]+&?[|!]?$/) predir = 1            #   operator with no target: next word is it
+          if (tailop) predir = 1                          #   operator with no target: next word is it
           return                                          #   a real redirect: skip, keep scanning
         }
-        emit_effective(); done = 1; return                #   a VERB glued to a redirect: stop here
+        # A REAL PREFIX GLUED TO A REDIRECT. The shell removes the operator, so the prefix keeps
+        # exactly the role it would have had standing alone: the awaited VALUE while a pend is
+        # open (`git -C <main>>o commit`), a FLAG when it starts with a dash (`git -C>o <main>
+        # commit`), and otherwise the VERB (`commit>log`), which ends the scan as before.
+        # Folding the WHOLE word is why `git -C <main>>o commit` denied only BY ACCIDENT -- the
+        # value it emitted still LOOKED absolute -- so a reorder that did not add this branch
+        # would have converted that accident into a DENY->ALLOW regression. Measured as such:
+        # the grid caught it before the reorder shipped.
+        if (pend != "" || substr(rpre, 1, 1) == "-") {
+          if (tailop) predir = 1
+          w = rpre                                        #   fall through: the prefix is re-read below
+        } else { emit_effective(); done = 1; return }     #   a VERB glued to a redirect: stop here
       }
+      if (pend == "C")  { fold(w);  pend = ""; return } #   -C arg (value may be quoted): accumulate
+      if (pend == "c")  { pend = ""; return }           #   -c value: skip (its name=value token)
+      if (pend == "gd") { setgd(w); pend = ""; return } #   --git-dir arg (separate form)
+      if (pend == "wt") { setwt(w); pend = ""; return } #   --work-tree arg (separate form)
+      if (!tnt && w == "-C") { pend = "C"; return }     #   real -C flag: next word is its arg
+      if (!tnt && w == "-c") { pend = "c"; return }     #   real -c flag: skip its value
+      if (!tnt && w == "--git-dir")   { pend = "gd"; return }   #   separate: --git-dir <path>
+      if (!tnt && w == "--work-tree") { pend = "wt"; return }   #   separate: --work-tree <path>
+      if (!tnt && w ~ /^--git-dir=/)   { setgd(substr(w, 11)); return } #   glued: --git-dir=<path>
+      if (!tnt && w ~ /^--work-tree=/) { setwt(substr(w, 13)); return } #   glued: --work-tree=<path>
+      # Any OTHER global (no-arg): skip, keep scanning. TAINT-INDEPENDENT (unlike the value
+      # captures above): a dash-token here is always a global since no mutating verb starts with a
+      # dash, so skipping a QUOTED decoy flag still lets a later real -C be reached — a taint-gated
+      # skip would instead halt the scan at the decoy and miss the real redirect (a bypass).
+      if (substr(w, 1, 1) == "-") return
       emit_effective()                                  #   first non-option word = the verb: emit & stop
       done = 1                                           #   (git commit -C HEAD: a -C after the verb is never mined)
     }
@@ -455,27 +483,45 @@ split_segments() {
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\" }
     { buf = buf $0 "\n" }
     END {
-      n = length(buf); st = 0
+      n = length(buf); st = 0; praw = ""
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1)
         if (st == 0) {
-          if (c == BS) { seg = seg c; i++; if (i <= n) seg = seg substr(buf, i, 1) }
-          else if (c == "$" && i < n && substr(buf, i + 1, 1) == "$") { seg = seg c substr(buf, i + 1, 1); i++ }
-          else if (c == "$" && i < n && substr(buf, i + 1, 1) == SQ) { seg = seg c substr(buf, i + 1, 1); i++; st = 3 }
-          else if (c == SQ) { seg = seg c; st = 1 }
-          else if (c == DQ) { seg = seg c; st = 2 }
-          else if (c == ";" || c == "|" || c == "&" || c == "\n") { flush() }
-          else seg = seg c
+          nxt = (i < n ? substr(buf, i + 1, 1) : "")
+          if (c == BS) { seg = seg c; i++; if (i <= n) seg = seg substr(buf, i, 1); praw = "" }
+          else if (c == "$" && i < n && substr(buf, i + 1, 1) == "$") { seg = seg c substr(buf, i + 1, 1); i++; praw = "" }
+          else if (c == "$" && i < n && substr(buf, i + 1, 1) == SQ) { seg = seg c substr(buf, i + 1, 1); i++; st = 3; praw = "" }
+          else if (c == SQ) { seg = seg c; st = 1; praw = "" }
+          else if (c == DQ) { seg = seg c; st = 2; praw = "" }
+          # An `&` or `|` ADJACENT to `<`/`>` is part of a REDIRECT OPERATOR, not a separator.
+          # Without this the scanner flushed mid-operator and `git 2>&1 commit -m x` arrived as
+          # `git 2>` + `1 commit -m x`, so neither half matched and the contract was never
+          # checked (todos/P1-2026-09-13-split-segments-fractures-redirect-operators-…).
+          # The adjacency test is derived from the `&?[<>]+&?[|!]?` shape _CMD_REDIR already
+          # spells, which keeps the surrounding `&`/`|` as part of ONE unit, rather than from a
+          # second local grammar. (NO APOSTROPHE anywhere in this awk program: it is inside a
+          # single-quoted string, so one would close it and hand the rest to the shell. That is
+          # not hypothetical -- the first draft of this comment did exactly that.)
+          # praw is the last character appended in state 0 UNQUOTED and UNESCAPED — reading
+          # buf[i-1] directly would misread `echo \>& foo`, where the `>` is a literal and the
+          # `&` really is a separator, and merging there is the false-ALLOW direction.
+          # `&?[<>]+&?[|!]?` -- so a LEADING `&` needs `<`/`>` next (`&>`), a TRAILING one needs
+          # `<`/`>` behind it (`>&`, `2>&`), and only `[|!]` may follow that `&` (`>&|`). A second
+          # `&` may NOT (`>&&` is not an operator), which is why the two arms differ.
+          else if (c == "&" && (nxt == ">" || nxt == "<" || praw == ">" || praw == "<")) { seg = seg c; praw = c }
+          else if (c == "|" && (praw == ">" || praw == "<" || praw == "&")) { seg = seg c; praw = c }
+          else if (c == ";" || c == "|" || c == "&" || c == "\n") { flush(); praw = "" }
+          else { seg = seg c; praw = c }
         } else if (st == 1) {
-          seg = seg c; if (c == SQ) st = 0
+          seg = seg c; if (c == SQ) { st = 0; praw = "" }
         } else if (st == 2) {
           if (c == BS) { seg = seg c; i++; if (i <= n) seg = seg substr(buf, i, 1) }
-          else if (c == DQ) { seg = seg c; st = 0 }
+          else if (c == DQ) { seg = seg c; st = 0; praw = "" }
           else seg = seg c
         } else {
           # st==3 ANSI-C dollar-quote: BS escapes next (incl. the quote); only an unescaped quote closes
           if (c == BS) { seg = seg c; i++; if (i <= n) seg = seg substr(buf, i, 1) }
-          else if (c == SQ) { seg = seg c; st = 0 }
+          else if (c == SQ) { seg = seg c; st = 0; praw = "" }
           else seg = seg c
         }
       }
@@ -605,31 +651,37 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #     main, not something this adoption introduces; near-miss binaries generally (`gitk`,
     #     `gitk>out`, `git-foo`, `digit`, `legit`) all stay MISSED.
     #
-    # NOT CLOSED — SIX residual classes, listed together because a residual list naming only
-    # one reads as completeness and the omitted one is the live route:
+    # RESIDUAL CLASSES — SIX. Classes 2 and 4 were CLOSED on 2026-09-17 and are kept IN PLACE,
+    # marked, rather than deleted and renumbered: test-git-safety.sh cites these numbers, and
+    # renumbering silently re-points every citation at the wrong class. The rest are listed
+    # together because a residual list naming only one reads as completeness and the omitted one
+    # is the live route. Measured after the 2026-09-17 change over an 884-row grid (operator x
+    # EVERY insertion slot x 3 arg-taking globals x bash/zsh, argv ground truth from a shim):
+    # 803 rows are real main mutations, 689 deny, and the 114 that still ALLOW fall entirely
+    # inside classes 3 and 5 below — no surviving bypass lacks a class.
     #   1. A redirect BEFORE the `git` token (`2>/dev/null git commit -m x`) is a real
     #      invocation and is still MISSED: the segment anchor never reaches `git` when a
     #      redirect precedes it, and this change only touches the group BETWEEN `git` and the
     #      verb. Pre-existing; `_CMD_POS_PREFIX` upstream models the shape if it is ever fixed.
-    #   2. A redirect operator containing `&` or `|` (`2>&1`, `&>`, `>&`, `>|`) in an
-    #      INTERPOSED position — spaced, glued-to-binary, or between-globals. split_segments
-    #      (above) flushes on those characters unconditionally, so `git 2>&1 commit -m x`
-    #      arrives as `git 2>` + `1 commit -m x` and neither half matches. All are real
-    #      invocations (argv shim).
-    #      **The gap is POSITIONAL, not per-family** — an earlier revision of this note said
-    #      these families "never reach this regex at all", which this file's OWN test suite
-    #      already falsified: `git checkout>&2 -b foo` is an assert_deny here. Measured across
-    #      4 families x 4 positions against both hooks, the VERB-GLUED position is closed:
-    #      `git commit&>out` was already denied before this change — split_segments flushes on
-    #      its unquoted `&` and leaves `git commit` to match the OLD trailing boundary at
-    #      end-of-string, so nothing about `_CMD_POS_SUFFIX` is involved — and
-    #      `git commit>&out` / `git commit>|out` are newly denied BY this change. Only
-    #      `git commit2>&1` stays allowed there, correctly — it lexes as the verb `commit2`.
-    #      Filed as
-    #      todos/P1-2026-09-13-split-segments-fractures-redirect-operators-containing-amp-or-pipe.md
-    #      and pinned in test-git-safety.sh as KNOWN-WRONG rows. Do NOT "fix" it by narrowing
-    #      where split_segments flushes without reading that todo's Risks: merging segments
-    #      breaks the `^` anchor for a FOLLOWING command, which is the false-ALLOW direction.
+    #   2. CLOSED 2026-09-17 — a redirect operator containing `&` or `|` (`2>&1`, `&>`, `>&`,
+    #      `>|`) in an INTERPOSED position. split_segments used to flush on those characters
+    #      unconditionally, so `git 2>&1 commit -m x` arrived as `git 2>` + `1 commit -m x` and
+    #      neither half matched. Its state-0 flush now recognises an `&`/`|` ADJACENT to `<`/`>`
+    #      as part of a redirect operator, deriving the adjacency from the `&?[<>]+&?[|!]?`
+    #      shape _CMD_REDIR already spells rather than from a second local grammar.
+    #      THE DANGEROUS DIRECTION, and why this is safe: narrowing where a splitter flushes is
+    #      the FALSE-ALLOW direction, because MUTATING_GIT_SEG_RE is `^`-anchored PER SEGMENT, so
+    #      a genuine separator that stops flushing makes the command after it non-segment-initial
+    #      and therefore INVISIBLE. The adjacency test reads the last character appended in
+    #      state 0 UNQUOTED and UNESCAPED, not buf[i-1]: `echo \>& git -C <main> commit` has a
+    #      LITERAL `>`, so its `&` really is a separator, and a naive lookbehind would have
+    #      swallowed it. Verified by a segment-count differential over a constructed corpus
+    #      carrying genuine separators: 16 rows change segment count (all un-fracturing) and
+    #      ZERO rows lose a segment-initial `git`. The old KNOWN-WRONG rows are now assert_deny.
+    #      Historical note worth keeping: **the gap was POSITIONAL, not per-family** — an earlier
+    #      revision of this note said these families "never reach this regex at all", which this
+    #      file's OWN test suite already falsified (`git checkout>&2 -b foo` was an assert_deny
+    #      here), and `git commit2>&1` stays allowed CORRECTLY because it lexes as verb `commit2`.
     #
     #   3. Two shapes the MATCHER now sees but the TOKENIZER still mis-resolves, so the
     #      effective repo falls back to cwd and a real `-C <main>` mutation is missed from a
@@ -639,22 +691,37 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #          skip arm in git_c_target is gated on `!tnt` and quoting taints the whole word;
     #        * a redirect GLUED to the binary (`git>out -C <main> commit`) — phase 0 matches
     #          the binary as the exact word `git`, so the walker never enters phase 1.
-    #   4. A redirect occupying an arg-taking global VALUE SLOT (`git -C >out <main> commit`,
-    #      `git --work-tree >out <main> reset --hard`). Unlike 3, BOTH layers miss this one and
-    #      for DIFFERENT reasons, so closing either alone leaves the route open: the MATCHER
-    #      spells the separate-arg globals as `-C[[:space:]]+[^[:space:]]+`, whose value class
-    #      consumes `>out` as the -C value and leaves a bare path token nothing else absorbs;
-    #      the TOKENIZER reaches the `pend == "C"` branch BEFORE the redirect arm, folding
-    #      `>out` as a RELATIVE -C value that resolves under cwd. main ALLOWs these identically
-    #      (un-closed gap, not a regression). Named explicitly because it sits INSIDE the
-    #      globals group this change widened, which is the position most likely to be assumed
-    #      covered. The BRACE-FD spelling of the same slot (`git -C {fd} >o <main> commit`) is
-    #      included: the pend arms fire before the brace class, so the brace word folds as a
-    #      RELATIVE value and resolves under cwd -- measured emissions `c {fd}`, `g {fd}`,
-    #      `w {fd}`. Same verdict on origin/main, so also a gap rather than a regression.
-    #      Filed as
-    #      todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
-    #      and pinned in test-git-safety.sh as KNOWN-WRONG rows.
+    #   4. CLOSED 2026-09-17 — a redirect occupying an arg-taking global VALUE SLOT
+    #      (`git -C >out <main> commit`, `git --work-tree >out <main> reset --hard`). BOTH
+    #      layers missed it, for DIFFERENT reasons, so it needed two edits in two files:
+    #        MATCHER   _CMD_GIT_ARGVAL (lib/cmd-detect.sh) now spells the separate-arg value slot
+    #                  as `(redirect)*[[:space:]]+[^[:space:]<>]+`. The old `[^[:space:]]+` ATE
+    #                  `>out` as the -C value and left a bare path token nothing absorbs, so the
+    #                  whole segment failed to match.
+    #        TOKENIZER the redirect and brace classes now precede the `pend` arms in git_c_target,
+    #                  so an operator in a value slot is skipped instead of folded as a RELATIVE
+    #                  value that resolves under cwd.
+    #      The BRACE-FD spelling (`git -C {fd} >o <main> commit`) is closed by the SAME move, not
+    #      by a second special case. Each layer is pinned separately in test-git-safety.sh
+    #      (assert_matcher / assert_walker), because a green end-to-end row cannot say which of
+    #      the two regressed.
+    #      WHAT THIS CLASS NO LONGER COVERS, stated because retiring a class silently is how a
+    #      live route ends up with no residual naming it: the value slot STILL allows the
+    #      PARAMETER-EXPANSION fd spelling (`git -C ${n}>o <main> commit`). Those rows are not
+    #      orphaned — they belong to class 5, which is explicitly slot-INDEPENDENT below. On the
+    #      884-row grid every surviving value-slot ALLOW is a class-5 spelling and nothing else.
+    #      A deliberate over-denial came with this: `{9}` in the value slot is an fd redirect in
+    #      zsh but a literal word in bash (whose `{varname}>` needs a valid identifier), so bash
+    #      would pass `{9}` as the -C value and git would error without mutating. The guard
+    #      cannot know the shell and takes the dangerous reading — 3 rows, pinned as a choice.
+    #      CLOSED VIA THE LIB ARM ONLY, which is a condition and not a footnote: the matcher half
+    #      lives in `_CMD_GIT_ARGVAL` in lib/cmd-detect.sh, and the hand-written fallback above
+    #      still spells the separate-arg globals `-C[[:space:]]+[^[:space:]]+`. On an UNSOURCEABLE
+    #      lib this class REOPENS. That is the file-wide fail-to-status-quo contract working as
+    #      designed — the fallback is deliberately not touched, because re-deriving a redirect
+    #      grammar in the consumer is this repo's most-repeated defect — but a residual list whose
+    #      whole purpose is completeness has to say so rather than read as unconditional. The
+    #      TOKENIZER half has no such condition: it is in this file and always in force.
     #
     #   5. A parameter expansion in the fd slot (`git ${nope}>o -C <main> commit`, and the
     #      unbraced `git $nope>o ...`). A MATCHER miss, not a tokenizer one: _CMD_REDIR spells
@@ -662,9 +729,22 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #      the segment never matches and the tokenizer is never consulted. Both produce a real
     #      main-mutating argv under bash 5.3.15 AND zsh 5.9, so unlike class 4 this one does not
     #      depend on zsh-only lexing. main ALLOWs both identically -- an un-closed gap, not a
-    #      regression. Folded into
+    #      regression.
+    #      SLOT-INDEPENDENT, widened 2026-09-17 and the reason it matters: because the miss is in
+    #      the MATCHER, the whole segment fails to match WHEREVER the operator sits, so this class
+    #      covers the interposed position, the arg-taking global VALUE SLOT that class 4 otherwise
+    #      closed, the pre-verb slot and the post-verb slot alike. Measured on the 884-row grid:
+    #      72 of the 114 surviving ALLOWs are this class (the other 42 are class 3), spread over
+    #      12 operator x slot x spacing cells. Class 4 was retired in the same change, and had
+    #      this widening not landed with it those value-slot rows would have been left live with
+    #      NO residual naming them -- which is the exact failure the filing todo was written about.
+    #      NOT FIXED HERE ON PURPOSE: the fix is to widen `_CMD_REDIR` itself, which is consumed by
+    #      guard-outward-cli.sh (`_OUT_SEP`, `_OUT_POS_PREFIX`, `_OUT_GH_GLOBALS_GRANT`),
+    #      merge-review-guard.sh (`MRG_SEP`) and two more constants in lib/cmd-detect.sh. That
+    #      makes it a cross-guard change whose corpus pins must be re-derived, and it is tracked
+    #      separately rather than smuggled into a git-safety-only PR. Still pinned in
+    #      test-git-safety.sh as KNOWN-WRONG rows. Folded into
     #      todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
-    #      and pinned in test-git-safety.sh as KNOWN-WRONG rows.
     #
     #   6. A bare brace DECOY word ahead of a second brace-fd redirect
     #      (`git {fd} {9}>o -C <main> commit`). This one fails at the COARSE PRE-FILTER, before
