@@ -820,8 +820,10 @@ add "fautoog-multi" DENY 'gh pr merge 42 --auto>log ; gh pr merge 7'
 #               different way. Tracked at
 #               todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #               NOT the whole case-arm axis: a case arm inside a BARE PAREN
-#               SUBSHELL still allows on every path, tracked at
-#               todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
+#               SUBSHELL still allows on every path -- measured by
+#               toolvcaseparen-*/verbvcaseparen-*/flagvcaseparen-* below (the
+#               vcasebrace mechanism is the control that isolates it), see
+#               todos/archive/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
 # vcomment: a `(` inside a shell COMMENT. Inert to bash (a comment runs to
 # end-of-line), so the substitution's real closer is the `)` on the NEXT line --
 # but a paren-counting scanner counts it and the level never closes. This
@@ -836,12 +838,29 @@ add "fautoog-multi" DENY 'gh pr merge 42 --auto>log ; gh pr merge 7'
 # separator and the decoy `esac` closes casedepth one arm early. PRE-EXISTING
 # (ALLOW on the parent commit too, before the case-arm fix landed) -- see
 # guard-outward-cli.sh's DOCUMENTED RESIDUALS entry for the full account.
+# vcaseparen / vcasebrace (added 2026-09-14, a SEPARATE composition found in
+# the same post-implementation review as vcasecomment, filed as its own todo):
+# a case arm wrapped in a BARE-PAREN SUBSHELL. The subshell's own `(` takes the
+# paren-depth credit lib/cmd-detect.sh's per-level counter (`parens[d]`)
+# tracks; the case arm's own unmatched `)` (its pattern's `a)`) is then read as
+# an ordinary paren-closer and spends that credit, so when the subshell's REAL
+# closing `)` arrives, `parens[d]==0` AND `casedepth[d]==0` both hold and it is
+# misread as the OUTER $(...)'s own closer -- one paren too early. PRE-EXISTING
+# (ALLOW on the parent commit and on main too). vcasebrace is the CONTROL that
+# isolates the mechanism: swap the subshell for a BRACE GROUP, which does not
+# consume `parens[d]`, and the identical live invocation is caught -- measured
+# DENY at all three splice positions (tool/verb/flag), including
+# flagvcasebrace-ghadmin, which denies for the SAME pre-existing "no REAL
+# --auto" reason flagvcasearm-ghadmin/flagvcasecomment-ghadmin already
+# document, not because this mechanism is closed there -- read its ATTRIBUTION,
+# not its verdict. See guard-outward-cli.sh's DOCUMENTED RESIDUALS entry for
+# the full account.
 TOOL_MECHS=('$()' '${UNSET}' '``' '$(: $(:))' '$(: "x)y")' "\$(: 'a)b')" \
             "\$(: '\"' \"a)b\" )" '$( (:) )' '$(case x in a) : ;; esac)' \
             "\$(: # (
 )" '$((:)|(:))' '$(case x in a) : ;; #x;esac
-b) : ;; esac)')
-TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep vcasecomment)
+b) : ;; esac)' '$( ( case x in a) : ;; esac ) )' '$({ case x in a) : ;; esac; })')
+TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep vcasecomment vcaseparen vcasebrace)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
   for m in "${!TOOL_MECHS[@]}"; do
@@ -1139,8 +1158,8 @@ done
 #                does not travel forward.
 SPAN2_MECHS=('$( (:) )' '$(case x in a) : ;; esac)' "\$(: # (
 )" '$((:)|(:))' '$(case x in a) : ;; #x;esac
-b) : ;; esac)')
-SPAN2_IDS=(vbareparen vcasearm vcomment varithsep vcasecomment)
+b) : ;; esac)' '$( ( case x in a) : ;; esac ) )' '$({ case x in a) : ;; esac; })')
+SPAN2_IDS=(vbareparen vcasearm vcomment varithsep vcasecomment vcaseparen vcasebrace)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
   lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
@@ -2191,22 +2210,30 @@ fi
 # All three manifests below were REGENERATED FROM THE RUN, not hand-merged. Hand-merging
 # them is how an earlier resolution in this same file silently dropped flagvcasearm-*
 # and produced a 21-member pin that still looked plausible.
-EXPECTED_ROWS=904
+EXPECTED_ROWS=940
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 768 of the 904 rows deny on the precise path; the other 136 are ALLOW there: 91
-# rows EXPECTED to allow, plus the 45 precise-path gaps. Those 91 span NINETEEN id
+# 787 of the 940 rows deny on the precise path; the other 153 are ALLOW there: 91
+# rows EXPECTED to allow, plus the 62 precise-path gaps. Those 91 span NINETEEN id
 # families -- fp-* (16), ghrootv-* (16), c2-* (9), c1g-* (7), fautodigfp-* (6),
 # sitefp-* (5), vft-* (5), flagadjfp-* (4), apicolfp-* (3), decoyfp-* (3),
 # ghrootfp-* (3), ghrootvfp-* (3), c9-* (2), fautocutsp-* (2), fautogrant-* (2),
 # siterailfp-* (2), plus the singletons co-nested-brace, fautobrace-pre and
 # fautodigctrl-bb. COUNTED, not recalled: select every row whose EXPECTED and
-# PRECISE verdicts are both ALLOW, group on the id prefix. 91 + 45 = 136 and
-# 904 - 768 = 136, so the decomposition closes. The 91 is UNCHANGED by the
-# 2026-09-16 brace-LIST bump, and that is MEASURED rather than assumed: the
-# pin deltas are rows +28, deny-attrib +7, precise-gaps +21, and 7 + 21 = 28,
-# so every added row landed in one of those two buckets and none entered this
-# one.
+# PRECISE verdicts are both ALLOW, group on the id prefix. 91 + 62 = 153 and
+# 940 - 787 = 153, so the decomposition closes. The 91 is UNCHANGED by BOTH
+# the 2026-09-16 brace-LIST bump and the 2026-09-17 case-arm-in-bare-paren
+# bump, and that is MEASURED rather than assumed. Brace-LIST: rows +28,
+# deny-attrib +7, precise-gaps +21, and 7 + 21 = 28. Case-arm-in-bare-paren:
+# rows +36, deny-attrib +19, precise-gaps +17, and 19 + 17 = 36. Every added
+# row on both sides landed in the deny-attrib or gap bucket and none entered
+# this one, which is why 91 survives two merges untouched.
+#
+# The 940/787/62/324 values were RE-DERIVED FROM A RUN after merging main,
+# never arithmetic on the two branches' pins. That distinction is load-bearing
+# here: precise-gaps went 24 -> 45 on one side and 24 -> 41 on the other, so no
+# sum, max or average of the two sides is correct, and hand-resolving that
+# conflict would have produced a plausible wrong number.
 #
 # THIS PARAGRAPH WAS ITSELF THE SIXTH STALE COPY, and it went stale in the way this
 # file keeps documenting one level down. It read "646 of the 739 ... 69 ... SIXTEEN
@@ -2309,9 +2336,9 @@ EXPECTED_ROWS=904
 # only the first seven are ALLOW on all four. An earlier revision on the branch
 # said all of them were "ALLOW on all four paths" -- one FORM's property asserted
 # of the whole CLASS, the defect that branch's own solution doc is named after.
-EXPECTED_DENY_ATTRIB_ROWS=768
+EXPECTED_DENY_ATTRIB_ROWS=787
 
-# 7 + 17 + 21 = 45. This is the SAME decomposition as the "FULL ATTRIBUTION of
+# 7 + 17 + 21 + 17 = 62. This is the SAME decomposition as the "FULL ATTRIBUTION of
 # the remaining precise-path gaps" note further down, and the two must stay
 # equal:
 #   7   r4brange-tool-* (7) -- brace range glued to the BINARY name itself,
@@ -2334,11 +2361,21 @@ EXPECTED_DENY_ATTRIB_ROWS=768
 #       does not match the outer list token at all. See guard-outward-cli.sh's
 #       DOCUMENTED RESIDUALS entry (search "BRACE LIST expansion") for the
 #       full per-position bound.
-# All three buckets are DELIBERATE, documented residuals with open todos, not
+#   17  toolvcaseparen-* (7) + verbvcaseparen-* (7) + flagvcaseparen-* (3 of 4)
+#       -- a `case` arm nested inside a BARE-PAREN subshell steals the scanner's
+#       paren credit, so `parens[d]==0 && casedepth[d]==0` both spuriously hold
+#       and the outer `$(...)` closes one paren early. Added 2026-09-17.
+#       MEASUREMENT-ONLY by design: this todo's Scope Contract forbade a new
+#       scanner, and closing it needs `casedepth` tracking to survive a
+#       bare-paren subshell boundary -- a change to how `parens[d]` and
+#       `casedepth` interact, which must keep the blind pass case-blind so the
+#       union is preserved. See guard-outward-cli.sh's DOCUMENTED RESIDUALS
+#       entry for the model-B construction bound.
+# All four buckets are DELIBERATE, documented residuals with open todos, not
 # failures. Pinning 0 here would make this gate permanently red, and a
 # permanently red gate gets disabled -- which is how the corpus ended up
 # unguarded in the first place.
-EXPECTED_PRECISE_GAPS=45
+EXPECTED_PRECISE_GAPS=62
 
 # PRE-EXISTING STALENESS, found incidentally while bumping this pin for the
 # brace-range fix (2026-09-14) and left AS FOUND rather than silently
@@ -2385,7 +2422,7 @@ EXPECTED_PRECISE_GAPS=45
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=300
+EXPECTED_ALLPATH_GAPS=324
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -2433,6 +2470,23 @@ verbvcasecomment-ghcomment
 verbvcasecomment-ghmerge
 verbvcasecomment-npmpub
 verbvcasecomment-railup
+flagvcaseparen-easbld
+flagvcaseparen-ghapi
+flagvcaseparen-ghcomment
+toolvcaseparen-easbld
+toolvcaseparen-easupd
+toolvcaseparen-ghapi
+toolvcaseparen-ghcomment
+toolvcaseparen-ghmerge
+toolvcaseparen-npmpub
+toolvcaseparen-railup
+verbvcaseparen-easbld
+verbvcaseparen-easupd
+verbvcaseparen-ghapi
+verbvcaseparen-ghcomment
+verbvcaseparen-ghmerge
+verbvcaseparen-npmpub
+verbvcaseparen-railup
 PIN_PRECISE_EOF
 )
 
@@ -2737,6 +2791,30 @@ vft-bang p=ALLOW j=DENY l=DENY a=DENY
 vft-fd p=ALLOW j=DENY l=DENY a=DENY
 vft-gt p=ALLOW j=DENY l=DENY a=DENY
 vft-in p=ALLOW j=DENY l=DENY a=DENY
+flagvcaseparen-easbld p=ALLOW j=DENY l=DENY a=DENY
+flagvcaseparen-ghapi p=ALLOW j=DENY l=DENY a=DENY
+flagvcaseparen-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+toolvcasebrace-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+verbvcaseparen-easbld p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-easupd p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-ghapi p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-npmpub p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-railup p=ALLOW j=DENY l=DENY a=DENY
 PIN_ALLPATH_EOF
 )
 
@@ -3523,6 +3601,25 @@ vvar-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT
 vvar-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 vvar-npmpub        : command-position 'npm publish' pushes a package to the registry.
 vvar-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+flagvcasebrace-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvcasebrace-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcasebrace-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvcasebrace-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvcaseparen-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvcasebrace-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvcasebrace-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvcasebrace-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvcasebrace-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvcasebrace-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvcasebrace-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvcasebrace-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvcasebrace-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvcasebrace-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvcasebrace-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvcasebrace-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvcasebrace-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvcasebrace-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvcasebrace-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
@@ -4088,7 +4185,9 @@ exit 0
 # bucket itself halved on 2026-09-14 (r4brange-verb-* closed, see below), so
 # it became 7 + 17 = 24; the 2026-09-16 brace-LIST addition then contributed a
 # third bucket of 21 (r4brlist-tool-* 7, r4brlist-nested-* 7,
-# r4brlist-nested-list-* 7), so it is now 7 + 17 + 21 = 45. Each remaining row
+# r4brlist-nested-list-* 7), and the 2026-09-17 case-arm-in-bare-paren addition
+# a fourth of 17 (toolvcaseparen-* 7, verbvcaseparen-* 7, flagvcaseparen-* 3 of
+# 4), so it is now 7 + 17 + 21 + 17 = 62. Each remaining row
 # has an OPEN todo — none is a
 # defect this change introduced, and every one allows on `main` too:
 #
@@ -4121,6 +4220,23 @@ exit 0
 #       that spelling reaches the --admin check instead. The
 #       construct does NOT break the `--auto` spelling -- it is spliced into
 #       --admin and --auto stays byte-intact. Same rule as co-mask-c1.
+#
+#   21  r4brlist-tool-* (7), r4brlist-nested-* (7), r4brlist-nested-list-* (7)
+#       — brace LIST glued to the BINARY name, plus any brace construct (range
+#       OR list) nested inside a list alternative. Added 2026-09-16.
+#       TOOL-position stays open for the same fast-path reason as the
+#       r4brange-tool-* bucket above; the nested forms stay open because
+#       `_OUT_BR_LIST_TOKEN`'s item class excludes `{`/`}`, so a nested span
+#       never matches the outer list token at all. Tracked at
+#       todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md
+#
+#   17  toolvcaseparen-* (7), verbvcaseparen-* (7), flagvcaseparen-* (3 of 4)
+#       — a `case` arm inside a BARE-PAREN subshell steals the scanner's paren
+#       credit, so both counters spuriously read zero and the enclosing
+#       `$(...)` closes one paren early. Added 2026-09-17, MEASUREMENT-ONLY:
+#       closing it needs `casedepth` to survive a bare-paren boundary, which
+#       this todo's Scope Contract forbade as a new scanner. Tracked at
+#       todos/archive/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
 #
 #    0  (was 2) nssufx-ghmerge and nssufx-ghcomment — an INTERIOR redirect, a
 #       different mechanism with its own entry below and its own todo. CLOSED

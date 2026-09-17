@@ -728,9 +728,11 @@
 #     read "COMMENT-FREE ARM", and THIS SHAPE IS COMMENT-FREE: the wording asserted
 #     a property of a whole class from the one form that had been tested, which is
 #     the exact failure `one-form-property-asserted-of-whole-syntax-class` in this
-#     same diff is named after. Not yet carried by a corpus row — filed as
-#     todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
-#     so it stays measured rather than only described.
+#     same diff is named after. Measured by
+#     toolvcaseparen-*/verbvcaseparen-*/flagvcaseparen-* in the corpus
+#     (EXPECTED-DENY, reported as gaps by design; the brace-group control above
+#     is vcasebrace, carried alongside and denying at every splice position). See
+#     todos/archive/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
 #     RECORDED HERE ONLY. The CLOSED entry further down documents the case-arm
 #     mechanism and STILL OPEN #2, but has no counterpart for THIS residual, so
 #     the pointer at the end of #2 ("the CLOSED entry is the authority for the
