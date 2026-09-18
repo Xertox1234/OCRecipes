@@ -5083,6 +5083,137 @@ assert_deny "the GAP-1 check that claims to deny UNCONDITIONALLY is no longer de
   "$(jsonc 'npm -s exec --package=eas-cli -- tsc --version')" \
   "denies UNCONDITIONALLY"
 
+# ---------- 2026-09-17: the LAUNCHER GRAMMAR itself (todos/archive/P1-2026-09-16-launcher-grammar-shapes-compose-around-the-outward-cli-guard.md) --
+# Before this round the grammar admitted exactly ONE launcher word, in ONE position, IMMEDIATELY
+# followed by the gated target. Five measured shapes stepped outside one of those three
+# assumptions. They are ONE defect -- "how many launcher words, in which positions, and what may
+# sit between a launcher and its target" -- and are fixed as a property (_OUT_LAUNCH_STEP,
+# repeated) rather than as five more names in five more alternations, which is what the previous
+# three rounds each did before the next sibling turned up.
+#
+# A WRAPPER OR PRIVILEGE WORD AFTER THE LAUNCHER. _OUT_POS_PREFIX_W already admitted these in
+# COMMAND position; a wrapper word does not stop being one because a launcher preceded it.
+assert_deny "a wrapper word AFTER the launcher no longer hides the target" \
+  "$(jsonc 'npx env eas update')" "reached through a launcher"
+assert_deny "a different wrapper word after the launcher denies the same way" \
+  "$(jsonc 'npx command eas update')" "reached through a launcher"
+assert_deny "a PRIVILEGE word after the launcher denies (the inter-slot takes both classes)" \
+  "$(jsonc 'npx sudo eas update')" "reached through a launcher"
+# STACKED LAUNCHERS. One launcher hop was modelled; two were not.
+assert_deny "a stacked launcher (npm exec + npx) denies" \
+  "$(jsonc 'npm exec npx eas update')" "reached through a launcher"
+assert_deny "a stacked launcher of a different pair denies" \
+  "$(jsonc 'npx pnpm dlx eas update')" "reached through a launcher"
+assert_deny "THREE stacked launcher hops deny -- the repetition is unbounded, not special-cased at two" \
+  "$(jsonc 'npx npm exec pnpm dlx eas update')" "reached through a launcher"
+assert_deny "a bare pnpm dispatch in front of a launcher denies" \
+  "$(jsonc 'pnpm npx eas update')" "reached through a launcher"
+# A LAUNCHER THAT TAKES AN ARGUMENT BEFORE ITS TARGET. npm explore's package name sits between
+# the launcher and the command, so no fixed-width launcher pattern can reach past it. The `--`
+# is optional because npm accepts both spellings, and BOTH are pinned.
+assert_deny "npm explore with the -- separator denies" \
+  "$(jsonc 'npm explore some-pkg -- eas update')" "reached through a launcher"
+assert_deny "npm explore WITHOUT the -- separator denies too" \
+  "$(jsonc 'npm explore some-pkg eas update')" "reached through a launcher"
+# A BARE pnpm/yarn DISPATCH of a local binary -- no dlx, no exec verb at all.
+assert_deny "a bare pnpm dispatch of a local gated binary denies" \
+  "$(jsonc 'pnpm eas update')" "reached through a launcher"
+assert_deny "a bare yarn dispatch of a local gated binary denies" \
+  "$(jsonc 'yarn eas update')" "reached through a launcher"
+assert_deny "a bare pnpm dispatch reaching railway denies" \
+  "$(jsonc 'pnpm railway up')" "railway"
+# A LAUNCHER IN FRONT OF THE PACKAGE-DIR CLAUSES. Those two checks were anchored on
+# _OUT_POS_PREFIX_W, which has no launcher slot at all.
+assert_deny "a launcher in front of the eas-cli package-dir path denies" \
+  "$(jsonc 'npx node_modules/eas-cli/bin/run update')" "eas-cli npm package"
+assert_deny "a bare pnpm dispatch in front of the eas-cli package-dir path denies" \
+  "$(jsonc 'pnpm node_modules/eas-cli/bin/run update')" "eas-cli npm package"
+assert_deny "a launcher in front of the railway package-dir path denies" \
+  "$(jsonc 'npx node_modules/@railway/cli/bin/run up')" "@railway/cli npm package"
+# COMPOSITION with the already-closed command-position PREFIX axis (#980 round 5). The prefix
+# and the chain are separate dimensions and must compose, not merely coexist.
+assert_deny "a privilege prefix composed with a launcher chain and an inter word denies" \
+  "$(jsonc 'sudo npx env eas update')" "reached through a launcher"
+# COMPOSITION with the EXPANSION-token axis. These come from giving the three BOOLEAN expansion
+# arms the chain qualifier; the brace-range siblings deliberately do NOT move (see the residual).
+assert_deny "a launcher chain composed with a parameter expansion denies" \
+  "$(jsonc 'npx env ${e:-eas} update')" "not literal"
+assert_deny "npm explore composed with a parameter expansion denies" \
+  "$(jsonc 'npm explore some-pkg -- ${e:-eas} update')" "not literal"
+assert_deny "a stacked launcher composed with a command substitution denies" \
+  "$(jsonc 'npx pnpm dlx $(which eas) update')" "not literal"
+
+# ---------- over-denial controls for the launcher grammar ----------
+# This widening lands on npm/pnpm/yarn/npx, which is every JS developer's hourly typing. Over-
+# denial is the failure that gets a guard switched OFF rather than fixed, so the controls are
+# not an afterthought here. Every row below was measured ALLOW before AND after the change.
+assert_allow "npx with an ungated tool stays allowed" \
+  "$(jsonc 'npx prettier --write .')"
+assert_allow "pnpm install stays allowed (bare pnpm is a launcher now -- install is not a gated binary)" \
+  "$(jsonc 'pnpm install')"
+assert_allow "yarn install stays allowed" \
+  "$(jsonc 'yarn install')"
+assert_allow "an ordinary npm run script stays allowed" \
+  "$(jsonc 'npm run lint')"
+assert_allow "an ordinary pnpm run script stays allowed" \
+  "$(jsonc 'pnpm run build')"
+assert_allow "npm explore running an ungated command stays allowed" \
+  "$(jsonc 'npm explore some-pkg -- ls')"
+assert_allow "npm explore running an ungated npm script stays allowed" \
+  "$(jsonc 'npm explore some-pkg -- npm run build')"
+assert_allow "npm explore with no command at all stays allowed" \
+  "$(jsonc 'npm explore some-pkg')"
+# A REPO SCRIPT WHOSE NAME COLLIDES WITH A GATED BINARY. `run` is neither a launcher word nor a
+# flag, so it terminates the chain and the gated name never reaches command position.
+assert_allow "a repo script NAMED like a gated CLI stays allowed under pnpm run" \
+  "$(jsonc 'pnpm run eas')"
+assert_allow "a repo script named like a gated CLI stays allowed under yarn run" \
+  "$(jsonc 'yarn run railway')"
+assert_allow "pnpm why stays allowed" \
+  "$(jsonc 'pnpm why lodash')"
+assert_allow "yarn info stays allowed" \
+  "$(jsonc 'yarn info lodash')"
+assert_allow "pnpm dlx of an ungated tool stays allowed" \
+  "$(jsonc 'pnpm dlx prettier --check .')"
+assert_allow "yarn dlx of an ungated tool stays allowed" \
+  "$(jsonc 'yarn dlx tsc --noEmit')"
+# THE ROW THAT MATTERS MOST. `gh pr merge` is reached through _OUT_POS_PREFIX_LP, which this
+# change widens, and the merge clause is GRANT-shaped -- an empty clause cut DENIES. If the
+# chain widening ever reaches the count/clause pair wrong, this repo's own sanctioned /todo
+# automerge stops working and the guard gets switched off rather than fixed.
+assert_allow "the sanctioned /todo automerge is still allowed through the widened launcher prefix" \
+  "$(jsonc 'gh pr merge --auto --squash --delete-branch 42')"
+
+# ---------- the monotonicity invariant, asserted rather than remembered ----------
+# _OUT_OPT_QUAL_CH is the chain-widened qualifier and _OUT_OPT_QUAL is the narrow original. The
+# split is NOT stylistic: widening is monotone on a BOOLEAN read and is NOT monotone on a COUNT
+# or an EXTRACTION, where a longer match absorbs what would have started a second one, so the
+# occurrence count can FALL while the guard gets strictly wider. The `grep -oE` extractors and
+# the _ALREADY_HANDLED exclusion that pairs with them therefore keep the narrow constant. This
+# is the one property a future edit is most likely to break by "tidying up" the two into one.
+_chain_in_extractors=$(grep -nE 'grep -oE' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -c '_OUT_OPT_QUAL_CH')
+if [ "$_chain_in_extractors" = "0" ]; then
+  echo "PASS: no grep -oE extractor uses the chain-widened qualifier (widening stays off the non-monotone consumers)"; PASS=$((PASS+1))
+else
+  echo "FAIL: $_chain_in_extractors grep -oE extractor(s) reference _OUT_OPT_QUAL_CH -- widening an EXTRACTION is not monotone, the occurrence count can fall while the guard widens"; FAIL=$((FAIL+1))
+fi
+# NON-VACUITY: the grep above would also print 0 if the extractors stopped existing, or if the
+# constant were renamed. Prove the narrow constant is still on those same lines.
+_narrow_in_extractors=$(grep -nE 'grep -oE' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -c '\${_OUT_OPT_QUAL}')
+if [ "$_narrow_in_extractors" -gt 0 ]; then
+  echo "PASS: the grep -oE extractors still carry the NARROW qualifier (the check above is live, not vacuous)"; PASS=$((PASS+1))
+else
+  echo "FAIL: no grep -oE extractor references \${_OUT_OPT_QUAL} -- the monotonicity check above is vacuous"; FAIL=$((FAIL+1))
+fi
+# POSITIVE CONTROL: and prove the chain constant is actually WIRED somewhere, so a passing pair
+# above cannot mean the widening was silently dropped.
+_chain_in_booleans=$(grep -nE 'grep -Eq' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -c '_OUT_OPT_QUAL_CH')
+if [ "$_chain_in_booleans" -gt 0 ]; then
+  echo "PASS: the chain-widened qualifier IS wired into boolean deny sites (the widening was not dropped)"; PASS=$((PASS+1))
+else
+  echo "FAIL: _OUT_OPT_QUAL_CH is referenced by no boolean grep -Eq site -- the chain widening is dead code"; FAIL=$((FAIL+1))
+fi
+
 # ---------- ROUND 9: over-denial controls for the interior slot ----------
 # The interior gap sits inside EVERYDAY npm/pnpm/yarn/bun invocations, so a widening here is
 # the one most likely to deny ordinary work. Measured 0 new over-denials across 26 ordinary
@@ -5179,7 +5310,14 @@ fi
 # correct. Each was measured on origin/main before it was written, and each family needed a
 # DIFFERENT carrier to reach its arm (a launcher for range, a prior segment for list) -- which
 # is why the obvious "same row with the other brace spelling" would have pinned nothing.
-EXPECTED_TOTAL=985
+# 985 -> 1022 (2026-09-17, launcher grammar): +37 rows = 19 deny + 15 over-denial controls + 3
+# structural. The deny rows are the five shapes the todo measured, plus their compositions with
+# the already-closed prefix axis and with the expansion-token axis. The controls are weighted
+# deliberately: this widening lands on npm/pnpm/yarn/npx, and over-denial is the failure that
+# gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
+# EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
+# so a passing pair cannot mean the widening was silently dropped.
+EXPECTED_TOTAL=1022
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

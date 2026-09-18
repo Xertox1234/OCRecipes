@@ -1,9 +1,9 @@
 ---
 title: "Launcher-grammar shapes compose around guard-outward-cli.sh — a wrapper after the launcher, a stacked launcher, npm explore, and a bare pnpm/yarn dispatch all reach the real CLI"
-status: backlog
+status: done
 priority: high
 created: 2026-09-16
-updated: 2026-09-16
+updated: 2026-09-17
 assignee:
 labels: [deferred, harness, security]
 github_issue:
@@ -91,17 +91,17 @@ pair per cell BEFORE writing that the axis is closed.
 
 ## Acceptance Criteria
 
-- [ ] All five shapes above DENY, and the fix is expressed as a property of the launcher grammar
+- [x] All five shapes above DENY, and the fix is expressed as a property of the launcher grammar
       — how many launcher words may appear, in which positions, and what may sit between a
       launcher and its target — rather than as an enumeration of the five.
-- [ ] Two-sided: for each shape, a control that MUST keep ALLOWing. `npx prettier --write .`,
+- [x] Two-sided: for each shape, a control that MUST keep ALLOWing. `npx prettier --write .`,
       `pnpm install`, `npm explore <pkg> -- ls` and an ordinary `npm run` script must not be
       caught. Over-denial is the failure that gets a guard switched off rather than fixed.
-- [ ] Corpus rows composed **combinatorially** against the existing launcher, path and prefix
+- [x] Corpus rows composed **combinatorially** against the existing launcher, path and prefix
       dimensions rather than appended as hand-listed cases, with a dimension assertion on the
       generated row count. Both prior axes needed this and neither had it until a live bypass
       sat behind a green pin.
-- [ ] `EXPECTED_PRECISE_GAPS` re-derived from a measured run, never adjusted to match a pin.
+- [x] `EXPECTED_PRECISE_GAPS` re-derived from a measured run, never adjusted to match a pin.
 
 ## Implementation Notes
 
@@ -138,3 +138,67 @@ pair per cell BEFORE writing that the axis is closed.
   `.claude/hooks/test-guard-outward-cli.sh`, `.claude/hooks/repro-outward-cli-corpus.sh`.
 - **Out of scope:** the command-position prefix (closed in #980 round 5), and the MCP surface,
   which this hook cannot see at all.
+
+### 2026-09-17 - CLOSED. The grammar is now a property, and the five shapes fall out of it
+
+- **What replaced the enumeration** (criterion 1). Four constants in `guard-outward-cli.sh`,
+  each answering one of the three assumptions the old grammar made:
+  `_OUT_LAUNCHER_ANY` (which words hand the next word to a real binary -- now including
+  `npm explore <pkg> [--]`, which carries an ARGUMENT before its target, and a bare
+  `pnpm`/`yarn` dispatch with no exec verb at all); `_OUT_LAUNCH_INTER` (what may sit BETWEEN a
+  launcher and the next word -- interpolated from the same wrapper/privilege alternation
+  `_OUT_POS_PREFIX_W` already admits in command position, not re-spelled, so the two cannot
+  drift); `_OUT_LAUNCH_STEP` (one hop, path-qualifiable on either side); and
+  `_OUT_OPT_QUAL_CH` (the optional chain). `_OUT_POS_PREFIX_LP` became
+  `${_OUT_POS_PREFIX_W}((${_OUT_LAUNCH_STEP})+(PATH)?|PATH)` -- `+` not `*`, which PRESERVES the
+  file's "mandatorily at least one of launcher/path" property. The repetition is unbounded, and
+  a three-hop row is pinned to say so rather than the fix being special-cased at two.
+
+- **Why it is a NEW constant and not a widening of `_OUT_LAUNCHER`** -- the decision that shaped
+  the whole change, and it came from one grep, not a probe. `_OUT_POS_PREFIX_LP`'s consumers are
+  all boolean `grep -Eqi`, where widening is monotone. `_OUT_OPT_QUAL`'s consumers include three
+  `grep -oE` OCCURRENCE EXTRACTORS whose counts feed `*_ALREADY_HANDLED` exclusions, where
+  widening is NOT monotone: a longer match absorbs what would have started a second one, so the
+  count can FALL while the guard gets strictly wider. So `_OUT_OPT_QUAL` stays verbatim at the
+  extractors and at the exclusion that pairs with them, and only boolean sites take `_CH`.
+  **Three structural test rows assert exactly that split** -- chain-in-extractors must be 0,
+  narrow-in-extractors must be >0 (non-vacuity), chain-in-booleans must be >0 (positive
+  control). Measured 0 / 3 / 5.
+
+- **Two-sided, measured** (criterion 2). 26 rows fed to the hook, nothing executed: all five
+  shapes and their path/wrapper/privilege compositions DENY, and every named over-denial control
+  ALLOWs -- `npx prettier --write .`, `pnpm install`, `yarn install`, `npm run lint`,
+  `pnpm run build`, `npm explore some-pkg -- ls`, `npx tsc --noEmit`, `pnpm add lodash`,
+  `yarn add lodash`, `npm exec prettier -- --check .`, plus two prose rows that merely NAME a
+  gated command. 0 failures. `pnpm run eas` is ALLOW and pinned for the same reason: the word
+  after a bare `pnpm` is a package-manager verb there, not a gated binary.
+
+- **Combinatorial, with the dimension asserted** (criterion 3). 128 corpus rows =
+  4 targets x 4 chain forms x 4 path forms x 2 inter forms, with a FATAL if the loop
+  iterates short. Cardinality is deliberately small: crossing the chain with all 14 launcher
+  forms would take the file past 7000 rows and a ~17-minute required check into hours. The
+  `lnchr` form is the built-in control, not padding -- its 16 `noint` rows deny on the pre-fix
+  tree too, so a run where those also flip means the baseline was not what it claimed.
+
+- **Pins re-derived from a measured run, never adjusted to match** (criterion 4). The run
+  moved exactly one pin: deny-reason attribution 1597 -> 1725, `+128` with **zero removals and
+  zero ids in both lists** -- so nothing closed and no pre-existing row kept its verdict while
+  rerouting to a different check. That reroute is the specific risk of widening a
+  command-position anchor, and the attribution manifest is what makes it visible; a bare moving
+  total cannot. `EXPECTED_PRECISE_GAPS` and `EXPECTED_ALLPATH_GAPS` were re-derived from the
+  same run and **held at 62 and 358** with no membership drift in either manifest: the 128 new
+  rows deny on the precise path and on all three degraded paths alike. `EXPECTED_EMIT_SITES`
+  and the attributed-rows-vs-DENY-verdicts denominator both held. Suite: 1022 passed, 0 failed.
+
+- **DOCUMENTED RESIDUAL, named by row rather than stated as a property** -- 9 launcher-CHAIN x
+  BRACE-token spellings stay ALLOW, because every brace arm reaches its qualifier through one
+  of those `grep -oE` extractors. Listed verbatim beside `_OUT_OPT_QUAL_CH` in the guard.
+  Three near-misses that DENY today (a bare `pnpm` or `npx` in front of a brace-range or
+  brace-list token glued to the binary name) are listed with them, so a later widener
+  re-measures instead of trusting the list: a SINGLE launcher in front of a brace token is
+  already covered, it is the CHAIN that is not.
+
+- **Not attempted, and why** -- `_OUT_LAUNCHER_AMBIG_FLAG` was deliberately NOT widened: a bare
+  `pnpm|yarn` there would newly deny ordinary `yarn -p ...`. Named as a residual rather than
+  closed. The `xargs`-constructed shape this todo already recorded stays a residual too: the
+  gated text never appears in the command, so no text matcher reaches it.

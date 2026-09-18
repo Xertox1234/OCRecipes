@@ -2515,6 +2515,74 @@ _OUT_PATH_PREFIX='[^[:space:];&|()`{}<>]*/'
 # shows the deny side moving -- emit the measured COUNT on both sides.
 _OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}${_OUT_FLAG_RUN})|((${_OUT_PATH_PREFIX})?${_OUT_PRIV_WORD}))*"
 
+# --- THE LAUNCHER GRAMMAR, as a property rather than an enumeration -----------------------
+# Before this block the grammar admitted exactly ONE launcher word, in ONE position,
+# IMMEDIATELY followed by the gated target. Five measured shapes stepped outside one of those
+# three assumptions and reached the real CLI; all five are one grammar defect, not five.
+# Measured ALLOW on the tree this block was written against, every one of them:
+#     npx env eas <otaverb>            a wrapper word AFTER the launcher
+#     npm exec npx eas <otaverb>       a stacked launcher
+#     npx pnpm dlx eas <otaverb>       a stacked launcher, different pair
+#     npm explore <pkg> -- eas ...     a launcher that takes an ARGUMENT before its target
+#     pnpm eas <otaverb>               a bare pnpm/yarn dispatch of a local binary
+#
+# _OUT_LAUNCHER_ANY -- every spelling that hands the NEXT word to a real binary.
+#   * `npm explore <pkg> [--]`: the package name sits between the launcher and its target, so
+#     no fixed-width launcher pattern can reach past it. The `--` is OPTIONAL because npm
+#     accepts both spellings; `npm explore <pkg> -- ls` stays ALLOW because `ls` is not gated.
+#   * bare `pnpm`/`yarn`: both dispatch a local node_modules binary with no `dlx`/`exec` verb.
+#     `pnpm install`, `pnpm add <pkg>`, `pnpm run <script>` are unaffected -- the word after the
+#     launcher is a package-manager verb, not a gated binary, so the pattern simply does not
+#     match. `pnpm run eas` is ALLOW for the same reason and is pinned as a control.
+# EVERY ALTERNATIVE ENDS IN A SEPARATOR, which is what makes the group safe to repeat.
+_OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|(pnpm|yarn)'"$_OUT_FLAG_RUN"')'
+
+# _OUT_LAUNCH_INTER -- what may sit BETWEEN a launcher and the next word. Deliberately the same
+# wrapper/privilege alternation _OUT_POS_PREFIX_W already admits in COMMAND position: a wrapper
+# word does not stop being a wrapper because a launcher preceded it. Interpolated, not re-spelled,
+# so the two cannot drift apart.
+_OUT_LAUNCH_INTER="(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}${_OUT_FLAG_RUN})|((${_OUT_PATH_PREFIX})?${_OUT_PRIV_WORD}))*"
+
+# _OUT_LAUNCH_STEP -- ONE launcher hop: optional path qualifier, a launcher word, optional path
+# qualifier, then any wrapper/privilege words trailing it. CANNOT MATCH EMPTY: _OUT_LAUNCHER_ANY
+# requires a literal launcher word, which is what makes `(${_OUT_LAUNCH_STEP})+` well-behaved.
+# If a future edit makes that piece optional the group becomes `()+` and the repetition is
+# meaningless -- keep the launcher word mandatory here.
+_OUT_LAUNCH_STEP="((${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER_ANY})(${_OUT_PATH_PREFIX})?${_OUT_LAUNCH_INTER})"
+
+# _OUT_OPT_QUAL_CH -- the OPTIONAL chain qualifier: "the command may be reached through any
+# number of launcher hops, or a path, or both, or neither". This is _OUT_OPT_QUAL widened to the
+# chain, and it is a SEPARATE constant on purpose. _OUT_OPT_QUAL is still used verbatim at the
+# `grep -oE` extraction sites and at the _ALREADY_HANDLED exclusion that pairs with them, where
+# widening is NOT monotone: a longer match absorbs what would have started a second one, so the
+# occurrence COUNT can fall while the guard gets strictly wider. Only boolean `grep -Eq` deny
+# sites take _CH.
+_OUT_OPT_QUAL_CH="((${_OUT_LAUNCH_STEP})*(${_OUT_PATH_PREFIX})?)"
+#
+# DOCUMENTED RESIDUAL -- launcher CHAIN composed with a BRACE token. Named by row, not stated as
+# an asymmetry, because a residual expressed as a property is one nobody can check and one a
+# later reader cannot tell has already shrunk. Measured 2026-09-17 on the tree that introduced
+# _OUT_OPT_QUAL_CH; each row is ALLOW, and each is a chain spelling the brace arms cannot see:
+#     npx pnpm dlx ea{s..s} update          npx pnpm dlx ea{s,x} update
+#     npx env ea{s..s} update               npx env ea{s,x} update
+#     npm explore some-pkg -- ea{s..s} update   npm explore some-pkg -- ea{s,x} update
+#     npx pnpm dlx eas upd{a..z}te          npx env eas up{d,x}ate
+#     pnpm eas up{d,x}ate
+# WHY IT IS DELIBERATE, and not an oversight. Every brace arm reaches its qualifier through a
+# `grep -oE` OCCURRENCE EXTRACTOR paired with an `*_ALREADY_HANDLED` exclusion, and widening an
+# extraction is NOT monotone: a longer match absorbs what would have started a second one, so
+# the occurrence COUNT can FALL while the guard gets strictly wider, and the count is what
+# decides. That is the same non-monotonicity documented at
+# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md.
+# Giving those sites the chain therefore requires moving the count and its extractor TOGETHER
+# and re-deriving the pins, which is a separate change with its own corpus re-run.
+# WHAT IS NOT IN THIS RESIDUAL, measured rather than assumed -- these DENY today:
+#     pnpm ea{s..s} update    pnpm ea{s,x} update    npx ea{s..s} update
+# A SINGLE launcher word in front of a brace token is already covered; it is the CHAIN that is
+# not. Do not widen on the strength of the list above without re-measuring these three.
+# The separately ruled bare tool-position residual (`ea{s..s} update`, no launcher at all) is a
+# DIFFERENT mechanism -- the fastpath needle -- and is not this.
+
 # Combined: existing prefix (opener + optional wrapper words) unchanged, THEN
 # MANDATORILY at least one of launcher/path — but NOT a plain alternation
 # (`launcher|path`), because the two COMPOSE (`npx /opt/homebrew/bin/eas
@@ -2536,7 +2604,13 @@ _OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD
 # privilege- or wrapper-prefixed launcher (`sudo npx ...`, `/usr/bin/env npx ...`) denies by
 # construction instead of waiting for someone to enumerate that spelling. This constant has only
 # boolean grep -Eqi deny consumers, so inheriting the wider anchor is monotone-safe here.
-_OUT_POS_PREFIX_LP="${_OUT_POS_PREFIX_W}((${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER})(${_OUT_PATH_PREFIX})?|${_OUT_PATH_PREFIX})"
+# The launcher half is now `(${_OUT_LAUNCH_STEP})+` -- ONE OR MORE hops, each able to carry a
+# path on either side and trailing wrapper words -- with the bare-path alternative unchanged.
+# The "MANDATORILY at least one of launcher/path" property above is PRESERVED: `+` not `*`, and
+# the `|${_OUT_PATH_PREFIX}` arm still carries the path-only case. Making it `*` would let this
+# constant match a bare command position, which the checks above already handle under a
+# different deny reason, and would move corpus reason pins without widening the guard at all.
+_OUT_POS_PREFIX_LP="${_OUT_POS_PREFIX_W}((${_OUT_LAUNCH_STEP})+(${_OUT_PATH_PREFIX})?|${_OUT_PATH_PREFIX})"
 
 # The same launcher/path group as _OUT_POS_PREFIX_LP above, but OPTIONAL -- "the command may be
 # qualified by a path, or by a launcher, or by both, or by neither". _LP mandates at least one of
@@ -3391,9 +3465,9 @@ fi
 _OUT_EXPANSION_TOKEN='(\$\{[^}]*\}|\$\([^)]*\)|`[^`]*`|\$[A-Za-z_][A-Za-z0-9_]*)'
 _OUT_GATED_BIN='(eas|railway|npm|pnpm|yarn|gh)'
 _OUT_GATED_VERB='(update|publish|submit|build|up|deploy|redeploy|restart|down|delete|remove|rm|run|pr|release|repo|api)'
-if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
-   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
-   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -4747,10 +4821,10 @@ fi
 # anywhere in the path is what matters, not launcher-or-path composition; an
 # optional bare interpreter word (node/bun/deno) is absorbed for free, but is
 # NOT required — the bare path alone is already the reachable exploit.
-if grep -Eqi "${_OUT_POS_PREFIX_W}(${_OUT_PATH_PREFIX})?(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_EASCLI}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_EASCLI}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a direct path invocation of a script INSIDE the eas-cli npm package directory (e.g. node_modules/eas-cli/bin/run) reached 'update/publish/submit' — eas-cli's own package.json maps bin: {\"eas\": \"./bin/run\"}, so the real installed script's filename is 'run', never 'eas'/'eas-cli', and can't match a literal-binary-name path check. Same OTA-publish incident class as the checks above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_W}(${_OUT_PATH_PREFIX})?(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_RAILWAYCLI}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_RAILWAYCLI}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a direct path invocation of a script INSIDE the @railway/cli npm package directory reached a gated railway verb, by the same package.json-bin-mapping gap as eas-cli above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
