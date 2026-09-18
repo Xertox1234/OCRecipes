@@ -75,7 +75,12 @@ intersection is the defect:
 # as ONE non-existent filename. grep then matches nothing, `comm` prints
 # nothing, and the run reads as "no collisions" — the same false clean this
 # check exists to prevent. Measured 2026-09-17 under zsh: 0 left-side matches
-# via the parameter form, 34 via xargs.
+# via the parameter form, 34 via xargs. That 34 is the RAW match count, BEFORE
+# `sort -u`; it collapses to the 33 unique names reported below because
+# `FavouriteRecipes` is registered in two navigators (ProfileStackNavigator and
+# MealPlanStackNavigator). Two SIBLING navigators cannot shadow each other —
+# only a nested route shadows a ROOT one — so the duplicate is not a defect.
+# The two figures are the same pipeline measured at two different stages.
 #
 # Excluding RootStackNavigator.tsx is the other half: it matches a bare
 # *Navigator.tsx glob, and its own registrations then intersect its own

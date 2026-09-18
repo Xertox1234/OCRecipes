@@ -99,9 +99,9 @@ function baseHookReturn(
     setServingQuantity: vi.fn(),
     servingSizeGrams: null,
     setServingSizeGrams: vi.fn(),
-    // The band source (slice 2c). `null` / `null` is the SAVED-ITEM shape and
-    // the scan path's pre-lookup shape: no per-100g payload, no derived
-    // beverage flag, so every band resolves `unknown` and no row is painted.
+    // The band source (slice 2c). `null` / `null` is the scan/image path's
+    // pre-lookup shape: no per-100g payload, no derived beverage flag, so
+    // every band resolves `unknown` and no row is painted.
     // Suites that need a real band supply both explicitly.
     validatedData: null,
     isBeverage: null,
@@ -168,7 +168,7 @@ function validatedWithServing(
  * - Rows are read through their `accessibilityLabel`, not their visible label.
  *   The summary card's promoted standout uses `standoutCopy`, whose
  *   `unknown` + `hasValue` branch is the bare capitalised nutrient word — the
- *   dominant saved-item state — so "Saturated fat" matches the standout AND
+ *   dominant unresolved-basis state — so "Saturated fat" matches the standout AND
  *   the row label, and a text query would throw on two matches.
  * - An absent nutrient no longer omits its row; it renders "Not recorded".
  *   That is `NutritionPanel`'s deliberate contract (see its docblock): a
@@ -1118,8 +1118,8 @@ describe("NutritionDetailScreen — nutrition panel wiring (slice 2c)", () => {
     isServingDataTrusted: true,
   };
 
-  it("renders the saved-item sugar row UNBANDED — no indicator, no tag", () => {
-    // Saved-item path: `validatedData` is null and `nutrition` IS the
+  it("renders an unbanded sugar row when the serving string carries no metric quantity — no indicator, no tag", () => {
+    // Image-entry path: `validatedData` is null and `nutrition` IS the
     // per-serving source, but "1 bottle" carries no metric quantity, so
     // `resolveBasis` returns `unknown` and 39 g of sugar gets no colour. A
     // fabricated denominator here would be a confident false claim.
