@@ -394,8 +394,30 @@ case "$TOOL" in
           # Identical defect fixed in guard-outward-cli.sh on 2026-09-05 for a glued
           # `-XPOST>`; #992 swept the hand-spelled closers and this one was written
           # new afterwards. Do not re-spell it.
+          #
+          # THE SEGMENT CLASS WAS THE BUG, AND IT MADE THIS ARM A REGRESSION AGAINST main.
+          # This started life as `/?[A-Za-z0-9._{}-]+(/[A-Za-z0-9._{}-]+)*/pulls/...`, replacing
+          # main's substring test `pulls.*merge`. Enumerating the legal characters of a path
+          # segment silently EXCLUDED the two that appear most often in a real command: `$`, so
+          # `repos/$OWNER/$REPO/pulls/42/merge` did not match, and `:`, so a full
+          # `https://api.github.com/...` endpoint did not either. Both are ordinary spellings --
+          # the sibling guard's own comment names `repos/$OWNER/$REPO` as the routine idiom --
+          # and both fell through to `continue`, i.e. ALLOW. Measured against main on 2026-09-18:
+          # main DENY / this arm ALLOW for the variable, quoted-variable and full-URL forms, with
+          # the plain `repos/o/r/...` form denying on BOTH as the non-vacuity control.
+          # The closer had the same shape of bug from the other end: `${_CMD_POS_SUFFIX}` is a
+          # SHELL word terminator, and `?` and `/` are neither shell terminators nor in it, so
+          # `.../merge?x=1` and `.../merge/` -- both valid endpoint spellings -- also fell through.
+          #
+          # So: match a non-space run before `/pulls/` instead of enumerating what may appear in
+          # it, and allow URL-legal trailing content (`/`, `?query`) before the real shell closer.
+          # WHAT ACTUALLY SEPARATES AN ENDPOINT FROM PROSE IS THE SLASH, NOT THE CHARACTER SET --
+          # a prose mention is a bare `pulls/42/merge` with a space in front, and that still has
+          # no path segment before it, so it still allows. Do not narrow this back to an
+          # enumeration: an allowlist of characters in a deny predicate fails OPEN on every
+          # character its author did not think of, which is the whole defect above.
           printf '%s' "$MRG_API_CLAUSE" \
-            | grep -qiE "(^|[[:space:]])/?[A-Za-z0-9._{}-]+(/[A-Za-z0-9._{}-]+)*/pulls/[^[:space:]/]+/merge${_CMD_POS_SUFFIX}" \
+            | grep -qiE "(^|[[:space:]])[^[:space:]]+/pulls/[^[:space:]/]+/merge/?(\?[^[:space:]]*)?${_CMD_POS_SUFFIX}" \
             || continue
           # Two ways this clause proves a mutating method: the value is a recognized
           # literal (glued `-XPUT`, or separated by whitespace/redirect/`=`), OR a

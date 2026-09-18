@@ -254,12 +254,20 @@ the-gh-api-merge-route.md` — a CLOSED todo whose own line 39 read "guard-outwa
   change a convergence rather than moved goalposts. The `fp` in each id is kept on purpose so the
   move stays visible.
 
-- **Pins re-derived from real runs, with the delta explained:** `EXPECTED_ALLPATH_GAPS`
-  358 -> 355 (-3, those rows stop being dirty — a DECREASE, which is the unusual direction and
-  is annotated in place), `EXPECTED_DENY_ATTRIB_ROWS` 1789 -> 1792 (+3, they now attribute to
-  the new deny), `EXPECTED_EMIT_SITES` 42 -> 43 (one new message), `EXPECTED_PRECISE_GAPS`
-  unchanged at 62 once the expectations were corrected. Zero unexplained movement, and NO id in
-  both the added and removed lists — so no pre-existing row kept its verdict while rerouting.
+- **Pins re-derived from real runs, with the delta explained — THESE ARE PRE-MERGE NUMBERS,
+  measured against this branch's own pre-#993 base, and four of the five have since moved:**
+  `EXPECTED_ALLPATH_GAPS` 358 -> 355 (-3, those rows stop being dirty — a DECREASE, which is the
+  unusual direction and is annotated in place), `EXPECTED_DENY_ATTRIB_ROWS` 1789 -> 1792 (+3, they
+  now attribute to the new deny), `EXPECTED_EMIT_SITES` 42 -> 43 (one new message),
+  `EXPECTED_PRECISE_GAPS` unchanged at 62 once the expectations were corrected. Zero unexplained
+  movement, and NO id in both the added and removed lists — so no pre-existing row kept its verdict
+  while rerouting. **ON THE MERGED TREE the live pins are `EXPECTED_ROWS=2160`,
+  `EXPECTED_DENY_ATTRIB_ROWS=1921`, `EXPECTED_ALLPATH_GAPS=356`, `EXPECTED_EMIT_SITES=44`,
+  `EXPECTED_PRECISE_GAPS=62`** — main carried four of them further over #993's rounds 3/4/8, and
+  the deltas above re-applied additively on top. `EXPECTED_EMIT_SITES` is the one worth naming:
+  main and this branch EACH took it 42 -> 43, for different deny sites, so the merge saw two sides
+  agreeing on `43` and produced no conflict at all; the merged guard emits 44. Read the pins in
+  `repro-outward-cli-corpus.sh`, never these figures.
 
 - **Mutation-verified (criterion 7):** with both guards reverted to the base commit and the new
   test files kept, both suites go red, and every failure is named after the implicit-POST feature
@@ -273,6 +281,9 @@ the-gh-api-merge-route.md` — a CLOSED todo whose own line 39 read "guard-outwa
   **The live pins are the authority** (`EXPECTED_TOTAL` in each suite); the per-commit deltas are
   in the commit messages.
 
-- Corpus pins, independently reconfirmed by a completed run: `rows=2031 precise-path gaps=62
-all-path gaps=355; all 1792 deny reasons attributed to the same checks as the pin`, emit
-  sites 43.
+- Corpus pins, independently reconfirmed by a completed run **on the pre-merge branch**:
+  `rows=2031 precise-path gaps=62 all-path gaps=355; all 1792 deny reasons attributed to the same
+checks as the pin`, emit sites 43. **Superseded by the completed run on the merged tree:**
+  `rows=2160 precise-path gaps=62 all-path gaps=356; precise manifest exact; all-path manifest
+exact INCLUDING per-path verdicts; all 1921 deny reasons attributed to the same checks as the
+pin`, emit sites 44.

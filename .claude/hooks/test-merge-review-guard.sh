@@ -279,6 +279,37 @@ assert_allowed "an EXPLICIT --method GET with fields allows" "$out"
 out=$(bash_payload 'gh api /repos/o/r/issues -f title=hello' | run)
 assert_allowed "an implicit POST to a NON-merge endpoint is not this gate's business" "$out"
 
+# 3a-ter. ENDPOINT SPELLINGS THE SEGMENT-CLASS DISCRIMINATOR LET THROUGH (regression vs main,
+# found by both reviewers independently, 2026-09-18). Each of these DENIED on main's
+# `pulls.*merge` substring test and ALLOWED once the class enumeration replaced it; the plain
+# `repos/o/r/...` rows above are their non-vacuity control and deny on both versions. There is no
+# combinatorial corpus behind this file -- repro-outward-cli-corpus.sh pins guard-outward-cli.sh
+# only -- so these rows ARE the coverage for this predicate.
+out=$(bash_payload 'gh api -X PUT repos/$OWNER/$REPO/pulls/42/merge' | run)
+denied "$out" && ok "a merge endpoint spelled with shell variables is still an endpoint" \
+              || bad "a merge endpoint spelled with shell variables is still an endpoint" "$out"
+out=$(bash_payload 'gh api -X PUT "repos/$OWNER/$REPO/pulls/$PR/merge"' | run)
+denied "$out" && ok "the quoted variable-segment endpoint denies too" \
+              || bad "the quoted variable-segment endpoint denies too" "$out"
+out=$(bash_payload 'gh api --method PUT https://api.github.com/repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "a full https:// endpoint URL is a documented gh api spelling and denies" \
+              || bad "a full https:// endpoint URL is a documented gh api spelling and denies" "$out"
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge?x=1' | run)
+denied "$out" && ok "a query string after the endpoint does not end the match" \
+              || bad "a query string after the endpoint does not end the match" "$out"
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge/' | run)
+denied "$out" && ok "a trailing slash after the endpoint does not end the match" \
+              || bad "a trailing slash after the endpoint does not end the match" "$out"
+out=$(bash_payload 'gh api https://api.github.com/repos/o/r/pulls/42/merge -f merge_method=squash' | run)
+denied "$out" && ok "the implicit POST reaches a URL-spelled endpoint too" \
+              || bad "the implicit POST reaches a URL-spelled endpoint too" "$out"
+# THE WIDENING'S OWN OVER-DENIAL CONTROLS. `[^[:space:]]+` accepts more than the class did, so
+# these pin that it did not start swallowing reads or non-merge paths.
+out=$(bash_payload 'gh api -X GET https://api.github.com/repos/o/r/pulls/42/merge' | run)
+assert_allowed "an EXPLICIT read of a URL-spelled merge endpoint still allows" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/comments -f body=hi' | run)
+assert_allowed "a pulls/N/<other> path is still not a merge endpoint" "$out"
+
 # 3b. DENY. -X spelling, path-only (no -f fields).
 out=$(bash_payload 'gh api -X PUT /repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
 denied "$out" && ok "gh api -X PUT against pulls/N/merge denies" \
@@ -1414,7 +1445,7 @@ unset _mrgcloser_hits _mrgcloser_prose
 # row pinning the ALLOW side of a separator widening (the direction that invents denials, and
 # the one that killed the withdrawn raw-token predicate), and +3 rows pinning the BINARY
 # renderings that remain open so the block is not read as closing the whole class.
-EXPECTED_TOTAL=156
+EXPECTED_TOTAL=164
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
