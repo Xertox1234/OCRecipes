@@ -279,11 +279,25 @@ lookup in flight and asserts the guard returns null with the prior product's
 values on screen. It passes. That is the evidence, and the prose was corrected
 to match it rather than to match either reviewer's argument.
 
-`code-reviewer` independently verified, by measurement: the `effectivePer100g`
-memo body is byte-identical between `main` and HEAD (comment-stripped, 900 vs
-900 chars); all four `it()`-count deltas; that `d8982797` and `649af17b` do what
-this record claims; that the `{ itemId: 42 }` → `{ imageUri }` default-route
-change makes no surviving assertion vacuous; and that
-`server/routes/__tests__/photos.test.ts:537,593` genuinely covers the invariant
-the deleted `servingsConsumed` band test pinned. Neither reviewer found a
-CRITICAL.
+Review verified, by measurement: all four `it()`-count deltas; that `d8982797`
+and `649af17b` do what this record claims; that the `{ itemId: 42 }` →
+`{ imageUri }` default-route change makes no surviving assertion vacuous; and
+that `server/routes/__tests__/photos.test.ts:537,593` genuinely covers the
+invariant the deleted `servingsConsumed` band test pinned. No blocking issue was
+found in any round.
+
+Two reproducible checks stand behind the #819 acceptance criterion, in place of
+a character count an earlier draft of this record quoted from a review and could
+not reproduce:
+
+- The memo's code is unchanged. Extract it from either ref, drop comment and
+  blank lines, and hash it — 26 lines, `md5 3d1c6546d197779e9972ad0a0ceae34a` on
+  both `main` and this branch:
+  `git show <ref>:client/hooks/useNutritionLookup.ts | sed -n '/const effectivePer100g = useMemo/,/^  }, \[/p' | grep -vE '^\s*//' | grep -vE '^\s*$' | md5`
+  (print the line count alongside the hash — an extraction that silently matches
+  nothing hashes to the empty-input digest on both sides and reads as a match).
+- The new reset-window test is attributable to THIS guard, not a sibling.
+  Restoring the pre-fix `servingSizeGrams || 100` makes exactly that one test
+  fail, with `calories: 236` (= 100 × 236/100) against the expected no-op `100`
+  — so it falls through `recalculateNutrition`'s own `> 0` branch and lands on
+  `if (!effectivePer100g) return;`, which is the line under test.
