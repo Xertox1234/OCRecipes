@@ -182,9 +182,12 @@ pair per cell BEFORE writing that the axis is closed.
   same reason: the word after a bare `pnpm` is a package-manager verb there, not a gated
   binary.
 
-- **Combinatorial, with the dimension asserted** (criterion 3). 128 corpus rows =
-  4 targets x 4 chain forms x 4 path forms x 2 inter forms, with a FATAL if the loop
-  iterates short. Cardinality is deliberately small: crossing the chain with all 14 launcher
+- **Combinatorial, with the dimension asserted** (criterion 3). 192 corpus rows =
+  4 targets x 6 chain forms x 4 path forms x 2 inter forms, with a FATAL if the loop
+  iterates short. (It closed at 128 / 4 chain forms; the two yarn workspace-scope forms the
+  round-1 security review found were added in round 2, and this number is restated here rather
+  than left at the round-1 figure -- a `status: done` todo that disagrees with the tree is a
+  worse artefact than no todo, and nothing marks a paragraph as historical for a reader.) Cardinality is deliberately small: crossing the chain with all 14 launcher
   forms would take the file past 7000 rows and a ~17-minute required check into hours. The
   `lnchr` form is the built-in control, not padding -- its 16 `noint` rows deny on the pre-fix
   tree too, so a run where those also flip means the baseline was not what it claimed.
@@ -206,6 +209,12 @@ pair per cell BEFORE writing that the axis is closed.
   brace-list token glued to the binary name) are listed with them, so a later widener
   re-measures instead of trusting the list: a SINGLE launcher in front of a brace token is
   already covered, it is the CHAIN that is not.
+
+- **OUTSIDE THE SCOPE CONTRACT, named rather than slipped in:** `.github/workflows/ci.yml`.
+  The contract lists three hook files. The corpus job's `timeout-minutes` had to move because
+  the in-scope row growth killed it -- a required check that dies takes every PR with it -- so
+  this is a consequence of the in-scope change rather than new mechanism, but it is a fourth
+  file and a reviewer is entitled to see it declared instead of discovering it.
 
 - **Not attempted, and why -- stated at the width the code actually has.**
   `_OUT_LAUNCHER_AMBIG_FLAG`'s call site is still anchored on a SINGLE launcher hop, so the
@@ -234,7 +243,17 @@ real binary`. That is the same argument-taking class as `npm explore`, of which 
   covers brace tokens only, read as exhaustive over a live route. `_OUT_WS_SCOPE` now closes it
   in both roles the shape needs (a launcher arm, and an absorber at the four OTA-script
   anchors), and the comment is enumerated rather than universal. 13 deny rows and 10
-  over-denial controls pin it on the normal path; the 49-row invariant set showed ZERO movement.
+  over-denial controls pin it on the normal path, and the corpus manifest moved by exactly the
+  64 new rows with zero removals and no id in both lists -- which is the evidence that no
+  pre-existing row silently rerouted. An earlier revision of this sentence cited "the 49-row
+  invariant set", which HAS NO REFERENT IN THE TREE: it is a scratchpad row file, so a reader
+  cannot check it. The criterion-2 bullet in this same closure section was rewritten to cure
+  exactly that defect, and the very commit carrying that cure reintroduced it here -- so the
+  rule is not "cite carefully", it is **cite something the reader can open**. Two drafts of
+  THIS sentence then failed the same way: both located the other bullet by position ("two
+  paragraphs later", then "above"), and `scripts/check-claim-staleness.js` rejected each,
+  because an offset stops being true the moment anything is inserted near it. Name the
+  referent -- `criterion 2` is a label and survives; a count is not.
 
   The crude fastpath also gained a `workspaces?` alternative, and what it is FOR was stated
   wrongly at first: the round-2 review mutation-tested each claimed role, removed just that

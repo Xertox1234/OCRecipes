@@ -3247,6 +3247,21 @@ check "no-jq: yarn workspace run update:preview closed"  deny "$(nojq_hook "$(js
 check "no-jq: yarn workspace bare update:preview closed" deny "$(nojq_hook "$(json 'yarn workspace api update:preview')")"
 check "no-jq: yarn workspaces foreach update:preview closed" deny "$(nojq_hook "$(json 'yarn workspaces foreach exec npm run update:preview')")"
 check "no-jq: yarn workspace ordinary script allowed"    allow "$(nojq_hook "$(json 'yarn workspace api build')")"
+# THE OVER-DENIAL ROWS THIS ARM REGRESSED ONCE, AND WHY THEY ARE HERE.
+# The first revision of the fastpath alternative spanned arbitrary words between the scope and
+# the script name, so an ordinary monorepo command that merely NAMED the script later in the
+# same clause denied -- on the degraded paths only, where nothing was looking. Found by review,
+# not by this suite. Each row below ALLOWs on main, denied on that revision, and allows now.
+check "no-jq: workspace test filter naming the script allowed" allow "$(nojq_hook "$(json 'yarn workspace api test -- -t should not call update:preview endpoint')")"
+check "no-jq: workspace lint message naming the script allowed" allow "$(nojq_hook "$(json 'yarn workspace docs lint --message this checks that update:preview stays disabled in dev')")"
+check "no-jq: npm workspace test naming the script allowed"    allow "$(nojq_hook "$(json 'npm workspace api test -- -t update:production guard')")"
+check "no-jq: pnpm workspaces grep naming the script allowed"  allow "$(nojq_hook "$(json 'pnpm workspaces run test -- --grep update:preview')")"
+check "no-jq: workspaces foreach echoing the script allowed"   allow "$(nojq_hook "$(json 'yarn workspaces foreach exec echo update:preview is the script name')")"
+# The spellings the BOUNDED span still has to catch -- flags before `run`, and `foreach run`.
+check "no-jq: workspaces foreach run script closed"      deny "$(nojq_hook "$(json 'yarn workspaces foreach run update:preview')")"
+check "no-jq: workspaces foreach flag run script closed" deny "$(nojq_hook "$(json 'yarn workspaces foreach -A run update:preview')")"
+check "no-jq: workspace flag run script closed"          deny "$(nojq_hook "$(json 'yarn workspace api --silent run update:preview')")"
+check "no-jq: workspace run production script closed"    deny "$(nojq_hook "$(json 'yarn workspace api run update:production')")"
 check "no-lib: yarn workspace run update:preview closed"  deny "$(nolib_hook "$(json 'yarn workspace api run update:preview')")"
 check "no-lib: yarn workspace bare update:preview closed" deny "$(nolib_hook "$(json 'yarn workspace api update:preview')")"
 check "no-lib: yarn workspace ordinary script allowed"    allow "$(nolib_hook "$(json 'yarn workspace api build')")"
@@ -5409,7 +5424,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1055
+EXPECTED_TOTAL=1064
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

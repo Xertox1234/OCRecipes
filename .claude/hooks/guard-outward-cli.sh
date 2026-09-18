@@ -1877,8 +1877,7 @@ $_OUT_CRUDE_VANISHED"
   # Command-word patterns — case-INSENSITIVE (macOS APFS resolves `EAS`).
   #
   # THE `workspaces?` ALTERNATIVE IS DEGRADED-PATH-ONLY, AND SAYING SO IS THE POINT.
-  # `(npm|pnpm|yarn)[^a-zA-Z]+workspaces?[^a-zA-Z][^;&|]*update:(preview|production)` covers
-  # `yarn workspace <ws> run update:preview` and its bare-script twin. It changes NOTHING on
+  # It covers `yarn workspace <ws> run <otascript>` and its bare-script twin. It changes NOTHING on
   # the normal path -- this whole function is reached only from the four degraded entry points
   # (no jq, jq extraction failure, lib unsourceable, blanking returned empty), so the precise
   # anchors handle those rows there via _OUT_WS_SCOPE. An earlier revision of the comment in
@@ -1889,7 +1888,18 @@ $_OUT_CRUDE_VANISHED"
   # merely corrected. What deleting it actually costs is measured and pinned: on all three
   # degraded fixtures both rows go base ALLOW / with-alternative DENY / without-alternative
   # ALLOW, asserted below through nojq_hook / nolib_hook / noawk_hook.
-  grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)[^a-zA-Z]+workspaces?[^a-zA-Z][^;&|]*update:(preview|production)|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run(-s?c?r?i?p?t?)?|rum|ur|urn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
+  #
+  # ITS SPAN IS BOUNDED, AND THAT IS A CORRECTION. The first revision put `[^;&|]*` between the
+  # scope word and the script name, which spans arbitrary intervening WORDS -- so an ordinary
+  # monorepo command that merely NAMES the script later in the same clause denied on the
+  # degraded paths (a test filter, a lint `--message`). Four such rows were measured. Every
+  # sibling alternative in this regex uses two-token adjacency or a REPEATED-FLAG absorber
+  # (`-{1,2}[^[:space:]]*`), never an arbitrary word gap, so the unbounded version was an
+  # outlier among its own neighbours -- which is the cheapest tell that a pattern here is
+  # wrong. The span now mirrors the precise _OUT_WS_SCOPE: ONE non-space workspace token, then
+  # flags only, then an optional `run`/`exec`, then flags only. Over-denial on a degraded path
+  # is still over-denial: it is the failure that gets a guard switched off rather than fixed.
+  grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)[^a-zA-Z]+workspaces?[^a-zA-Z]+[^;&|[:space:]]+([^a-zA-Z]+-{1,2}[^[:space:]]*)*([^a-zA-Z]+(run|exec))?([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run(-s?c?r?i?p?t?)?|rum|ur|urn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
   # Flag-correlated patterns — case-SENSITIVE (a case-insensitive `-R` would
   # false-match the `-r` inside `--remove-reviewer`).
   grep -Eq 'gh[^a-zA-Z]+pr[^a-zA-Z]+(create|comment)([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*(--repo|-R)' <<< "$t" && return 0
