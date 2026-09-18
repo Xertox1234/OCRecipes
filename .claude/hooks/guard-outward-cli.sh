@@ -421,6 +421,25 @@
 #     runner re-entering by bare argv (`npx turbo run update:production`,
 #     `npx lerna run ...`, `npx npm-run-all ...`, `dotenv -- npm run ...`) - an
 #     open enumeration this file deliberately does not chase. Filed, not closed.
+#     THREE MORE, measured 2026-09-18 (round 9) and ALLOW on main as well as here:
+#     (a) THE SCRIPT-NAME SLOT, one token right of the slot round 8 closed -
+#     `npm run $(echo update:production)`, `bun run $(...)` and `deno task $(...)`
+#     all reach the real script. The co-occurrence half already matches; only the
+#     ADJACENCY requirement of the first half blocks it. `npm run $TARGET` is an
+#     ordinary idiom, which makes this the accident-plausible member of the set
+#     and the one worth closing next.
+#     (b) AN EXPANSION SUPPLYING THE INTERPRETER - `$NODE --run update:production`
+#     and `$DENO task update:production`, because the expansion-then-verb arm
+#     recognises `_OUT_GATED_VERB`, which carries `run` but neither `--run` nor
+#     `task` (`$NODE run ...` and `$BUN run ...` DO deny).
+#     (c) A NESTED VANISHING EXPANSION - `node $(echo --run update:prod${X}uction)`
+#     allows while the un-nested `node --run update:prod${X}uction` denies: the
+#     vanished rendering does not recover a script name from inside a substitution,
+#     so the co-occurrence half never matches.
+#     ALSO PRE-EXISTING AND FAMILY-WIDE: the expansion-then-verb arm above is
+#     case-SENSITIVE (`NPM $(echo run update:production)` allows while
+#     `EAS update --branch preview` denies). Left alone deliberately - adding `-i`
+#     there changes `_OUT_GATED_VERB` matching too, so it is its own change.
 #   * QUOTED COMMAND WORDS — FIXED 2026-08-16, previously bypassed every check
 #     in this file. `cmd_bare` BLANKS quoted spans, but the shell word-splits
 #     `eas "update"` and concatenates `eas up"date"` into the argv `eas update`,
@@ -3739,7 +3758,16 @@ fi
 # what keeps ordinary interpreter use allowed -- `node $SCRIPT` and `node $(echo --run build)`
 # carry no script name and are pinned as controls. It keys on the same literal as the fastpath
 # needles added in the same round, so it is reachable by construction rather than by luck.
-if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(node|bun|deno)${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+# BOTH HALVES ARE `-Eqi`, AND THE FIRST ONE WAS NOT UNTIL ROUND 9 MEASURED IT. Spelled `-Eq`,
+# this arm was the only member of its family that was case-SENSITIVE, and that is not a
+# theoretical spelling on a case-insensitive filesystem: `/opt/homebrew/bin/NODE` resolves and
+# `NODE --version` prints a real version here, so `NODE $(echo --run update:production)` ALLOWED
+# while its lowercase twin and the literal `NODE --run update:production` both denied. The
+# fastpath already pays for case-insensitivity at this point (it matches under `nocasematch`),
+# so the insensitivity was being dropped at the arm alone. There is no new over-denial surface:
+# the predicate still requires command-position node/bun/deno AND an expansion AND the
+# co-occurring script name.
+if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(node|bun|deno)${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
    && grep -Eqi 'update:(preview|production)' <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: an interpreter (node/bun/deno) sits in command position with an EXPANSION in its verb slot while 'update:preview/update:production' appears in the same command - that script execs 'eas update --branch production --platform all', a real OTA to real users. The expansion cannot be read, so the verb it supplies cannot be checked, and denying is the safe direction for the 2026-08-16 incident class. Ordinary interpreter use with an expansion is unaffected: this fires ONLY when the OTA script name co-occurs. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi

@@ -5598,16 +5598,16 @@ assert_allow "an npm: specifier for an UNGATED package stays allowed" \
 # it is written that way -- widening _OUT_GATED_BIN instead would deny every one of them.
 assert_deny "an expansion in node's verb slot with the OTA script present" \
   "$(jsonc 'node $(echo --run update:production)')" \
-  "expansion"
+  "interpreter (node/bun/deno)"
 assert_deny "an expansion in bun's verb slot with the OTA script present" \
   "$(jsonc 'bun $(echo run update:production)')" \
-  "expansion"
+  "interpreter (node/bun/deno)"
 assert_deny "an expansion in deno's verb slot with the OTA script present" \
   "$(jsonc 'deno $(echo task update:production)')" \
-  "expansion"
+  "interpreter (node/bun/deno)"
 assert_deny "a backtick substitution in the verb slot is the same route" \
   "$(jsonc 'node `echo --run update:production`')" \
-  "expansion"
+  "interpreter (node/bun/deno)"
 assert_allow "an ordinary expansion after an interpreter stays allowed" \
   "$(jsonc 'node $SCRIPT')"
 assert_allow "a command substitution resolving a tool path stays allowed" \
@@ -5616,6 +5616,12 @@ assert_allow "an expansion with an UNGATED script name stays allowed" \
   "$(jsonc 'node $(echo --run build)')"
 assert_allow "deno running an expansion-supplied module stays allowed" \
   "$(jsonc 'deno run ${MOD}')"
+
+# ROUND 9: this arm was the only one of its family spelled case-SENSITIVE, and `/opt/homebrew/bin/
+# NODE` resolves on a case-insensitive filesystem, so the uppercase spelling really execs node.
+assert_deny "an uppercase interpreter is still an interpreter" \
+  "$(jsonc 'NODE $(echo --run update:production)')" \
+  "interpreter (node/bun/deno)"
 # THE ROW THAT MATTERS MOST. `gh pr merge` is reached through _OUT_POS_PREFIX_LP, which this
 # change widens, and the merge clause is GRANT-shaped -- an empty clause cut DENIES. If the
 # chain widening ever reaches the count/clause pair wrong, this repo's own sanctioned /todo
@@ -5765,7 +5771,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1166
+EXPECTED_TOTAL=1167
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
