@@ -4788,6 +4788,27 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # `-xpost` and falsely denied (review, 2026-08-16). `-X post` is a real
   # spelling, so the value must stay case-insensitive.
   _GH_API_M='([Pp][Oo][Ss][Tt]|[Pp][Uu][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])'
+  # gh's IMPLICIT POST, modelled from the CLI's own source rather than from its help text.
+  # cli/cli pkg/cmd/api/api.go:329-330:
+  #     if !opts.RequestMethodPassed && (len(params) > 0 || opts.RequestInputFile != "") {
+  #         method = "POST"
+  #     }
+  # `params` is the field parameters (-f/--raw-field, -F/--field) and RequestInputFile is
+  # `--input` (api.go:301). So a field or an input file, with NO method flag anywhere, is a
+  # POST -- the same mutating surface the explicit arm below denies, reached without ever
+  # naming a method. Seven spellings measured ALLOW before this arm existed.
+  #
+  # BOTH HALVES OF THE CONDITION ARE LOAD-BEARING. `-X GET ... -f a=b` is a GET in gh
+  # (RequestMethodPassed is true, so the implicit switch never fires), and denying it would
+  # deny a READ -- the failure that gets a guard switched off. The arm is therefore anchored
+  # on the ABSENCE of a method token, exactly as gh anchors on !RequestMethodPassed, not on
+  # the presence of fields alone.
+  _GH_API_FIELD='(^|[[:space:]])(-[fF]|--field|--raw-field|--input)([[:space:]]|=|$)'
+  _GH_API_ANYMETHOD='(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)'
+  if [ -n "$GH_API_CLAUSE" ] && grep -Eq "$_GH_API_FIELD" <<< "$GH_API_CLAUSE" \
+     && ! grep -Eq "$_GH_API_ANYMETHOD" <<< "$GH_API_CLAUSE"; then
+    deny "guard-outward-cli: command-position 'gh api' with a field parameter (-f/-F/--field/--raw-field) or --input and NO -X/--method flag is a POST, not a GET — gh's own api.go sets method=POST whenever a method was not passed and any parameter or input file is present, so this reaches the same arbitrary-mutation surface as an explicit -X POST (including a PR merge). An explicit read (-X GET/--method GET) with the same parameters is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  fi
   # FIXED 2026-09-05 (found by this task's own mandated finding-A
   # co-occurrence test; distinct from the unreadable-method check on
   # GH_API_CLAUSE — the value here is fully literal, no `$`/backtick

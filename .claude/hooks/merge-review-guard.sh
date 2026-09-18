@@ -356,6 +356,14 @@ case "$TOOL" in
         # lowercase `x` placeholder cmd_words inserts for characters deleted from a quoted
         # span, so a quoted value merely containing enough letters could forge a match.
         MRG_API_M='([Pp][Oo][Ss][Tt]|[Pp][Uu][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])'
+        # gh's IMPLICIT POST. api.go:329-330 makes the method POST when NO method flag was
+        # passed AND there is at least one field parameter or an --input file. Both halves
+        # are needed: `-X GET ... -f a=b` is a GET in gh and must stay ALLOW here, so this
+        # arm is anchored on the ABSENCE of a method token exactly as gh anchors on
+        # `!opts.RequestMethodPassed`. Short flags are matched without a value because gh
+        # accepts `-f k=v` and `--field=k=v` alike and the VALUE is irrelevant to the method.
+        MRG_API_FIELD='(^|[[:space:]])(-[fF]|--field|--raw-field|--input)([[:space:]]|=|$)'
+        MRG_API_ANYMETHOD='(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)'
         set +o pipefail
         MRG_API_WORDS=$(cmd_words_deep "$CMD")
         MRG_API_CLAUSES=$(printf '%s' "$MRG_API_WORDS" | grep -ioE "$MRG_API_CUT")
@@ -375,7 +383,9 @@ case "$TOOL" in
           # match alone missed it — this second arm is what catches it.
           if printf '%s' "$MRG_API_CLAUSE" | grep -Eq "(^|[[:space:]])(-X${MRG_API_M}${_CMD_POS_SUFFIX}|(-X|--method)(${MRG_SEP}|=)${MRG_API_M}${_CMD_POS_SUFFIX})" \
              || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq '(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)' \
-                  && printf '%s' "$MRG_API_CLAUSE" | grep -qE '[$`]'; }; then
+                  && printf '%s' "$MRG_API_CLAUSE" | grep -qE '[$`]'; } \
+             || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq "$MRG_API_FIELD" \
+                  && ! printf '%s' "$MRG_API_CLAUSE" | grep -Eq "$MRG_API_ANYMETHOD"; }; then
             MRG_API_HIT=1
             break
           fi

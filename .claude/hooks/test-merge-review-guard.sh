@@ -217,6 +217,36 @@ out=$(bash_payload 'gh api --method PUT repos/Xertox1234/OCRecipes/pulls/938/mer
 denied "$out" && ok "gh api --method PUT against pulls/N/merge denies" \
               || bad "gh api --method PUT against pulls/N/merge denies" "$out"
 
+# 3a-bis. DENY. gh's IMPLICIT POST — no method flag anywhere.
+# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md. cli/cli
+# pkg/cmd/api/api.go:329-330 sets method=POST when no method flag was passed AND there is any
+# field parameter or an --input file, so these name no method and are still merges. This gate is
+# fail-closed, so before this arm each was a SILENT ALLOW of a real merge route — the worst
+# shape a merge gate can have.
+out=$(bash_payload 'gh api -f merge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "gh api -f with no method flag against pulls/N/merge denies" \
+              || bad "gh api -f with no method flag against pulls/N/merge denies" "$out"
+out=$(bash_payload 'gh api -F merge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "gh api -F with no method flag against pulls/N/merge denies" \
+              || bad "gh api -F with no method flag against pulls/N/merge denies" "$out"
+out=$(bash_payload 'gh api --raw-field merge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "gh api --raw-field with no method flag denies" \
+              || bad "gh api --raw-field with no method flag denies" "$out"
+out=$(bash_payload 'gh api --field=merge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "gh api --field=k=v glued with no method flag denies" \
+              || bad "gh api --field=k=v glued with no method flag denies" "$out"
+out=$(bash_payload 'gh api /repos/o/r/pulls/42/merge --input body.json' | run)
+denied "$out" && ok "gh api --input with no method flag denies (api.go:301 ties it to the same switch)" \
+              || bad "gh api --input with no method flag denies (api.go:301 ties it to the same switch)" "$out"
+# THE ALLOW SIDE, which is what keeps the arm from denying reads. gh's switch is
+# `!RequestMethodPassed && params`, so an explicit method beats it: these are GETs.
+out=$(bash_payload 'gh api -X GET /repos/o/r/pulls/42/merge -f foo=bar' | run)
+assert_allowed "an EXPLICIT -X GET with fields at the merge endpoint is a read and allows" "$out"
+out=$(bash_payload 'gh api --method GET /repos/o/r/pulls/42/merge --field foo=bar' | run)
+assert_allowed "an EXPLICIT --method GET with fields allows" "$out"
+out=$(bash_payload 'gh api /repos/o/r/issues -f title=hello' | run)
+assert_allowed "an implicit POST to a NON-merge endpoint is not this gate's business" "$out"
+
 # 3b. DENY. -X spelling, path-only (no -f fields).
 out=$(bash_payload 'gh api -X PUT /repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
 denied "$out" && ok "gh api -X PUT against pulls/N/merge denies" \
@@ -1318,7 +1348,7 @@ unset _mrg_src _mrg_conj_line _mrg_conj _mrg_missing _mrg_sym _mrg_lbl
 # row pinning the ALLOW side of a separator widening (the direction that invents denials, and
 # the one that killed the withdrawn raw-token predicate), and +3 rows pinning the BINARY
 # renderings that remain open so the block is not read as closing the whole class.
-EXPECTED_TOTAL=138
+EXPECTED_TOTAL=146
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

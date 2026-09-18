@@ -398,7 +398,12 @@ add apicolfp-rootflag ALLOW 'gh -t x api repos/o/r'
 # collapse shape: `gh` infers POST from the presence of -f/-F/--field/--raw-field, so this
 # spelling is a POST that never says so and the method check never sees a method token to
 # match. The sibling pin in test-guard-outward-cli.sh carries the same correction.
-add apicolfp-oneshot ALLOW 'gh api -f a=b /repos/o/r/merges'
+# EXPECTATION CHANGED 2026-09-18 (gh-api-field-mutation): ALLOW -> DENY. A field parameter
+# with no method flag is a POST per gh api.go:329-330, so this is a mutation, not a false
+# positive. All three degraded paths ALREADY denied it (p=ALLOW j=DENY l=DENY a=DENY before,
+# p=DENY on all four after) -- the precise path now agrees with its own fail-closed mirror.
+# The `fp` in the id is kept so the move stays visible.
+add apicolfp-oneshot DENY  'gh api -f a=b /repos/o/r/merges'
 
 add ghrootvfp-list ALLOW 'gh -t x pr list'
 add ghrootvfp-view ALLOW 'gh -Z somevalue pr view 42'
@@ -1327,8 +1332,18 @@ add c2-fp-paginate   ALLOW 'gh api --paginate repos/o/r/issues'
 add c2-fp-jq         ALLOW 'gh api repos/o/r --jq ".[] | .name"'
 add c2-fp-getf       ALLOW 'gh api repos/o/r -X GET -f name=value'
 add c2-fp-header     ALLOW 'gh api repos/o/r -H "Accept: application/vnd.github+json"'
-add c2-fp-methodology ALLOW 'gh api repos/o/r -f notes=$X --methodology=custom'
-add c2-fp-backtick   ALLOW 'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here'
+# EXPECTATION CHANGED 2026-09-18 (gh-api-field-mutation): ALLOW -> DENY. A field parameter
+# with no method flag is a POST per gh api.go:329-330, so this is a mutation, not a false
+# positive. All three degraded paths ALREADY denied it (p=ALLOW j=DENY l=DENY a=DENY before,
+# p=DENY on all four after) -- the precise path now agrees with its own fail-closed mirror.
+# The `fp` in the id is kept so the move stays visible.
+add c2-fp-methodology DENY  'gh api repos/o/r -f notes=$X --methodology=custom'
+# EXPECTATION CHANGED 2026-09-18 (gh-api-field-mutation): ALLOW -> DENY. A field parameter
+# with no method flag is a POST per gh api.go:329-330, so this is a mutation, not a false
+# positive. All three degraded paths ALREADY denied it (p=ALLOW j=DENY l=DENY a=DENY before,
+# p=DENY on all four after) -- the precise path now agrees with its own fail-closed mirror.
+# The `fp` in the id is kept so the move stays visible.
+add c2-fp-backtick   DENY  'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here'
 add c2-tension-bt    DENY  'gh api repos/o/r -X GET -f note=see `code` here'
 # UNHANDLED GAP, CONFIRMED LIVE (guard-outward-cli.sh's own DOCUMENTED
 # RESIDUALS header has the full writeup) -- an ANSI-C hex-escape inside
@@ -3085,7 +3100,11 @@ EXPECTED_ROWS=2031
 # failure that gets a guard switched off rather than fixed.
 # precise-path gaps held at 24 and all-path gaps at 306 across this change, with ZERO
 # membership drift in either manifest -- the 104 new rows agree on all four paths.
-EXPECTED_DENY_ATTRIB_ROWS=1789
+# 1789 -> 1792 (2026-09-18, gh-api-field-mutation): +3, the same three rows, now attributing to
+# the new implicit-POST deny. 3 added, 0 removed, and NO id in both lists -- so nothing closed
+# and no pre-existing row kept its verdict while rerouting to a different check. The manifest
+# below is the run's own printed attribution section, pasted verbatim.
+EXPECTED_DENY_ATTRIB_ROWS=1792
 
 # 7 + 17 + 21 + 17 = 62. This is the SAME decomposition as the "FULL ATTRIBUTION of
 # the remaining precise-path gaps" note further down, and the two must stay
@@ -3226,7 +3245,14 @@ EXPECTED_PRECISE_GAPS=62
 # (nojq/nolib/noawk) fallbacks cannot see it and deny. That is the SAME documented degraded-path
 # residual the launcher rows already carry, not a new gap -- verified by reading the 8 added
 # manifest tuples rather than inferring from the count.
-EXPECTED_ALLPATH_GAPS=358
+# 358 -> 355 (2026-09-18, gh-api-field-mutation): -3, and a DECREASE here is the unusual
+# direction so it is worth stating why. The three rows are `apicolfp-oneshot`,
+# `c2-fp-methodology` and `c2-fp-backtick`, whose expected verdict moved ALLOW -> DENY because a
+# field parameter with no method flag is a POST (gh api.go:329-330). They read
+# `p=ALLOW j=DENY l=DENY a=DENY` before and DENY on all four paths after: the DEGRADED paths were
+# already denying them, and the precise path now agrees with its own fail-closed mirror, so the
+# rows stop being "dirty" at all. 3 removed, 0 added -- no pre-existing row moved.
+EXPECTED_ALLPATH_GAPS=355
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -3295,7 +3321,6 @@ PIN_PRECISE_EOF
 )
 
 EXPECTED_ALLPATH_DIRTY_IDS=$(cat <<'PIN_ALLPATH_EOF'
-apicolfp-oneshot p=ALLOW j=DENY l=DENY a=DENY
 apicolfp-read p=ALLOW j=DENY l=DENY a=DENY
 c1g-allargs-3dash p=ALLOW j=DENY l=DENY a=DENY
 c1g-arrelem-3dash p=ALLOW j=DENY l=DENY a=DENY
@@ -3305,11 +3330,9 @@ c1g-excl-status p=ALLOW j=DENY l=DENY a=DENY
 c1g-ind-3dash p=ALLOW j=DENY l=DENY a=DENY
 c1g-pos1-3dash p=ALLOW j=DENY l=DENY a=DENY
 c2-dynpath p=ALLOW j=DENY l=DENY a=DENY
-c2-fp-backtick p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-getf p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-header p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-jq p=ALLOW j=DENY l=DENY a=DENY
-c2-fp-methodology p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-paginate p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-user p=ALLOW j=DENY l=DENY a=DENY
 c2-readonly p=ALLOW j=DENY l=DENY a=DENY
@@ -3845,6 +3868,7 @@ apicollapse-unknown-psubout-method : more than one command-position 'gh api' occ
 apicollapse-unknown-btick-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
 apicollapse-unknown-btick-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
 apicollapse-unknown-btick-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicolfp-oneshot   : command-position 'gh api' with a field parameter (-f/-F/--field/--raw-fi
 intrtoolglue-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
 intrtoolsp-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
 intrtoolfd-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
@@ -4345,6 +4369,8 @@ c2-dynamic         : command-position 'gh api' with a method flag (-X/--method) 
 c2-glued           : command-position 'gh api' with a method flag (-X/--method) whose value i
 c2-tension         : command-position 'gh api' with a method flag (-X/--method) whose value i
 c2-backtick        : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-fp-methodology  : command-position 'gh api' with a field parameter (-f/-F/--field/--raw-fi
+c2-fp-backtick     : command-position 'gh api' with a field parameter (-f/-F/--field/--raw-fi
 c2-tension-bt      : command-position 'gh api' with a method flag (-X/--method) whose value i
 c2-ansic-hex       : command-position 'gh api' with a method flag (-X/--method) whose value i
 ghapi-redir-trail  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
@@ -5573,7 +5599,7 @@ PIN_EXEMPT_EOF
 # 41 -> 42 (2026-09-17, MERGE with origin/main): +1, main's brace-LIST narrow-deny
 # site. Ancestor af0e27b2 had 28; this branch added 13 and main added 1, and the
 # merged tree MEASURES 42 -- additive, like every other pin in this merge.
-EXPECTED_EMIT_SITES=42
+EXPECTED_EMIT_SITES=43
 
 PIN_FAIL=0
 
