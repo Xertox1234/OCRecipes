@@ -1894,15 +1894,20 @@ $_OUT_CRUDE_VANISHED"
   # monorepo command that merely NAMES the script later in the same clause denied on the
   # degraded paths (a test filter, a lint `--message`). Four such rows were measured. Every
   # sibling alternative in this regex uses two-token adjacency or a REPEATED-FLAG absorber
-  # (`-{1,2}[^[:space:]]*`) -- CORRECTION, and the correction is the useful part: one sibling
-  # DOES use an arbitrary word gap, `eas[^a-zA-Z]+build[^;&|]*--auto-submit`, and it is fine.
-  # An earlier revision of this comment asserted the universal ("never an arbitrary word gap")
-  # and drew a rule from it; a review found the counter-example by exact-substring match. The
-  # real distinction is not the GAP, it is what sits on the far side of it. `--auto-submit` is
-  # a FLAG: it appears in a command only when someone means it, so spanning words to reach it
-  # cannot collide with prose. `update:(preview|production)` is a SCRIPT NAME, which shows up
-  # in test filters, `--grep` patterns, commit messages and lint output, so spanning words to
-  # reach it collides constantly. Ask what the far token is, not how wide the gap is. The span now mirrors the precise _OUT_WS_SCOPE: ONE non-space workspace token, then
+  # (`-{1,2}[^[:space:]]*`) -- except one, `eas[^a-zA-Z]+build[^;&|]*--auto-submit`, which uses
+  # an arbitrary word gap.
+  # NO RULE IS STATED HERE, AND THAT IS DELIBERATE. Three revisions of this block each asserted
+  # a universal about these patterns and each was refuted by one command:
+  #   "never an arbitrary word gap"          -- refuted by the --auto-submit sibling above
+  #   "a flag cannot collide with prose"     -- refuted by
+  #       git commit -m 'we should never run eas build --auto-submit in CI'   DENY (degraded)
+  #   "no value slot reaches past `run`"     -- refuted by the second _OUT_FLAG_RUN in the
+  #                                             run-form anchors, found by reading them
+  # The MEASURED rows, which is all this block now claims: the unbounded workspace span denied
+  # four ordinary monorepo commands that merely named the script; the bounded span denies none
+  # of them; the --auto-submit sibling denies one prose phrasing and allows the script-name
+  # twin. Whatever intuition those rows suggest, run the pair before writing it down as a rule
+  # -- on this file the intuition has been wrong three times out of three. The span now mirrors the precise _OUT_WS_SCOPE: ONE non-space workspace token, then
   # flag tokens, then an optional `run`/`exec`, then flag tokens. Over-denial on a degraded path
   # is still over-denial: it is the failure that gets a guard switched off rather than fixed.
   #
@@ -2607,12 +2612,31 @@ _OUT_WS_SCOPE='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}
 # from a flag's value.
 #
 # WHY TWO VARIANTS RATHER THAN ONE CHOICE. _OUT_FLAG_RUN's iteration is `SEP -flag (SEP value)?`,
-# so ONE flag after the scope swallows the next word. Where a literal `run` follows the scope,
-# that is harmless -- the script has to come after `run`, and no value slot reaches past it, so
-# those anchors keep the full _OUT_WS_SCOPE and `--cwd <dir> run <otascript>` still denies.
+# so ONE flag after the scope swallows the next word. The bare-script anchors cannot tell that
+# swallowed word from the script itself, so they take the value-less variant.
+# The run-form anchors keep the FULL _OUT_WS_SCOPE for a different and narrower reason than an
+# earlier revision of this comment claimed. That revision said "the script has to come after
+# `run`, and no value slot reaches past it" -- FALSE, and a review caught it by reading the
+# anchors: they carry a SECOND _OUT_FLAG_RUN after the `run` literal, and ITS value slot does
+# reach past. The actual reason is that narrowing the scope there would stop
+# `--cwd <dir> run <otascript>` denying, and narrowing the POST-`run` slot was measured and
+# rejected -- see the residual note below. Do not re-derive this from the shape of the anchor;
+# the shape is what misled the last revision.
 # Where the script name is the first word after the flags, the swallow is indistinguishable from
 # the real thing, and an ordinary `yarn workspace api --silent test -- --grep <otascript>` denied
 # because `test` became `--silent`'s value. Those anchors take this variant.
+# SECOND RESIDUAL, ACCEPTED ON MEASUREMENT: the post-`run` slot has the same value-slot
+# behaviour, so `<pm> <scope> run --flag <word> <otascript>` denies even when <word> is the real
+# command and the script name is only incidental text (`run --silent test -- --grep <otascript>`).
+# Review measured 240 such rows. THE OBVIOUS REPAIR WAS BUILT AND PRICED, AND IS REJECTED: a
+# value-less absorber in the post-`run` slot does NOT remove those denials, and it turns
+# `npm run --workspace api <otascript>` and `pnpm run --filter api <otascript>` from DENY into
+# ALLOW -- the documented npm and pnpm spellings for running a workspace script, i.e. two real
+# OTA routes traded for a cosmetic over-denial. The unscoped forms (`yarn run --silent test --
+# --grep <otascript>`) already deny on origin/main, so this is a pre-existing class newly
+# reachable through a workspace scope, not a new one. Filed rather than patched; a fix belongs
+# at _OUT_FLAG_RUN itself, which every anchor in this file shares.
+#
 # RESIDUAL, measured and deliberate: `<pm> workspace <ws> --flag <value> <otascript>` -- a flag
 # WITH a value and no `run` -- now ALLOWS on the precise path. The run-form spelling of the same
 # command denies, and the crude degraded mirror denies this one too, so it is narrow. It is the

@@ -5273,6 +5273,29 @@ assert_deny "a flagged foreach still denies the real run-form" \
   "$(jsonc 'yarn workspaces foreach -A run update:preview')" "update:preview"
 assert_deny "a flag WITH A VALUE still denies the real run-form" \
   "$(jsonc 'yarn workspace api --cwd packages/api run update:preview')" "update:preview"
+# THE POST-`run` VALUE SLOT, AND WHY IT STAYS. These three rows exist to make one specific
+# "obvious repair" fail loudly. The post-`run` slot has the same value-slot behaviour as the
+# scope-level one, so `<pm> <scope> run --flag <word> <otascript>` denies even when <word> is the
+# real command and the script name is incidental -- review measured 240 such rows and proposed
+# the symmetric fix, a value-less absorber there. That candidate was BUILT AND PRICED: it does
+# not remove those denials, AND it turns the two rows below from DENY into ALLOW. Those are the
+# documented npm and pnpm spellings for running a workspace script -- two live OTA routes traded
+# for a cosmetic over-denial. If someone narrows that slot, these two rows redden first.
+assert_deny "npm's own workspace run spelling still denies (separate-token flag value)" \
+  "$(jsonc 'npm run --workspace api update:preview')" "update:preview"
+assert_deny "pnpm's filter run spelling still denies (separate-token flag value)" \
+  "$(jsonc 'pnpm run --filter api update:preview')" "update:preview"
+# ACCEPTED OVER-DENIAL, pinned so it is a known cost rather than a surprise: a flag AFTER `run`
+# swallows the real command word, so an incidental script name in a test filter denies here even
+# though the scope-level twin was fixed. The unscoped form denies on origin/main too, so this is
+# a pre-existing class reached through one more spelling. Filed, not patched -- a fix belongs at
+# _OUT_FLAG_RUN, which every anchor in the file shares.
+assert_deny "ACCEPTED: a flag after run swallows the command word (pre-existing _OUT_FLAG_RUN class)" \
+  "$(jsonc 'yarn workspace api run --silent test -- --grep update:preview')" "update:preview"
+# The flagless twin, which is the one-token control proving the row above is about the FLAG.
+assert_allow "the flagless twin of that row stays allowed" \
+  "$(jsonc 'yarn workspace api run test -- --grep update:preview')"
+
 # NAMED RESIDUAL of the split, pinned as ALLOW so it is visible: a flag WITH a value followed by
 # the BARE script and no `run` under-denies on the precise path. The run-form spelling above
 # denies, and the crude degraded mirror denies this one too, so it is narrow. If this flips to
@@ -5478,7 +5501,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1083
+EXPECTED_TOTAL=1087
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

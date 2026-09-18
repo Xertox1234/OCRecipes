@@ -225,6 +225,30 @@ pair per cell BEFORE writing that the axis is closed.
 <otascript>` now denies, because that is the same token shape as
   `<pm> workspace <ws> --silent <otascript>`, which should.
 
+- **ACCEPTED, NOT FIXED, AND PRICED BEFORE ACCEPTING:** the post-`run` value slot. The final
+  review round found that `_OUT_FLAG_RUN`'s value slot sits after the `run` literal too, so
+  `<pm> <scope> run --flag <word> <otascript>` denies even when `<word>` is the real command and
+  the script name is incidental -- 240 measured rows. The symmetric repair was BUILT and PRICED
+  against a parsing candidate with a live control, and rejected on the measurement: it does not
+  remove those denials, and it turns `npm run --workspace api <otascript>` and
+  `pnpm run --filter api <otascript>` from DENY into ALLOW -- the documented npm and pnpm
+  spellings for running a workspace script, i.e. two live OTA routes traded for a cosmetic
+  over-denial. Both are now pinned as `assert_deny`, so an attempt to narrow that slot reddens
+  first. The unscoped forms already deny on `origin/main`, so this is a pre-existing class
+  reached through one more spelling; it is filed as
+  `todos/P2-2026-09-17-out-flag-run-value-slot-swallows-the-command-word.md`, where it belongs,
+  because a fix has to happen once at `_OUT_FLAG_RUN` rather than per-anchor. **Three of this
+  PR's rounds each patched one slot and each exposed the next**, which is the evidence that
+  per-anchor was the wrong shape.
+
+- **THE COMMENT BLOCK STATES ROWS AND NO UNIVERSALS, and that is a correction too.** Three
+  revisions of it asserted a general rule about these patterns and all three were refuted by one
+  command: "never an arbitrary word gap" (a sibling uses one), "a flag cannot collide with
+  prose" (a commit message naming `eas build --auto-submit` denies on the degraded path), and
+  "no value slot reaches past `run`" (the anchors carry a second `_OUT_FLAG_RUN`). Each was
+  written to help the next reader and each would have misled them. The block now lists what was
+  measured and says to run the pair before writing down a rule.
+
 - **OUTSIDE THE SCOPE CONTRACT, named rather than slipped in:** `.github/workflows/ci.yml`.
   The contract lists three hook files. The corpus job's `timeout-minutes` had to move because
   the in-scope row growth killed it -- a required check that dies takes every PR with it -- so
