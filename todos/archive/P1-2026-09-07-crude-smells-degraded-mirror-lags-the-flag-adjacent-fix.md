@@ -1,9 +1,9 @@
 ---
 title: "crude_smells_outward's degraded mirror still allows 6 measured flag-adjacent rows — and half of that is fixable without $_CMD_REDIR"
-status: backlog
+status: done
 priority: high
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-17
 assignee:
 labels: [security, harness]
 github_issue:
@@ -71,19 +71,19 @@ second copy of `_CMD_REDIR` and therefore a lockstep-contract decision, not a on
 
 ## Acceptance Criteria
 
-- [ ] Reproduce all 6 rows against unmodified `main` first, per path. If a row does not
+- [x] Reproduce all 6 rows against unmodified `main` first, per path. If a row does not
       reproduce, report that rather than fixing something that is not broken.
-- [ ] Cause A fixed: `:1248` and `:1313` admit the `&`-bearing redirect operators, matching the
+- [x] Cause A fixed: `:1248` and `:1313` admit the `&`-bearing redirect operators, matching the
       precise-path spelling. `flagadjfd-ghcomment` and `flagadjfd-ghcreate` go DENY on all
       three degraded paths.
-- [ ] A false-positive control proves the widening stayed narrow on the degraded paths too —
+- [x] A false-positive control proves the widening stayed narrow on the degraded paths too —
       a `--repo` belonging to a command after a real `&&` must NOT be absorbed.
-- [ ] Cause B either fixed with an explicit decision recorded about the duplicated redirect
+- [x] Cause B either fixed with an explicit decision recorded about the duplicated redirect
       pattern, or left with its DOCUMENTED RESIDUALS entry **updated to name these specific
       rows** rather than the general asymmetry.
-- [ ] Corpus per-ID `comm` on the all-path axis: rows closed, **0 newly dirty**. Do not
+- [x] Corpus per-ID `comm` on the all-path axis: rows closed, **0 newly dirty**. Do not
       subtract totals.
-- [ ] `EXPECTED_TOTAL` and the corpus NOTE6 numbers updated in the same commit as the change
+- [x] `EXPECTED_TOTAL` and the corpus NOTE6 numbers updated in the same commit as the change
       that moves them.
 
 ## Implementation Notes
@@ -113,3 +113,34 @@ revert there trips a test.
 
 Codified background:
 `docs/solutions/logic-errors/a-slot-declined-on-semantics-was-never-measured-2026-09-07.md`.
+
+### 2026-09-17 - CLOSED: cause A was already done, cause B is named rather than fixed
+
+- **THE FIRST CRITERION SAVED THE WORK.** "Reproduce all 6 rows against unmodified `main` first.
+  If a row does not reproduce, report that rather than fixing something that is not broken."
+  Two of the six do not reproduce: `flagadjfd-ghcomment` and `flagadjfd-ghcreate` are absent
+  from the per-path pin list in `repro-outward-cli-corpus.sh`, i.e. they now DENY on all three
+  degraded paths. PR #939 closed them by widening the crude `--repo` mirror to the precise
+  path's own redirect spelling — which is exactly what this todo's cause-A criterion asked for,
+  landed before the todo was picked up. The corpus file says so in its own words at the
+  165-vs-167 note. Had I gone straight to the named line numbers I would have "fixed" a clause
+  that was already correct.
+
+- **Cause A is therefore CLOSED**, and not by this change.
+
+- **Cause B is named, not fixed**, which is the option the criterion allows. Four rows survive
+  as DENY-on-precise / ALLOW-on-all-degraded, and they are now listed BY ID in the residual
+  beside `_OUT_SEP` rather than described as a general asymmetry:
+  `flagadjfd-npmlog`, `flagadjglue-npmlog`, `flagadjsp-npmlog`, `flagadjsp-yarncwd` — all the
+  npm/yarn run-script clause reached through the `[^a-zA-Z]+` separator. A residual stated as a
+  property is one nobody can check and one a later reader cannot tell has shrunk; this one
+  shrank from six to four without anybody noticing, which is the argument for naming rows.
+
+- Why cause B stays open: `crude_smells_outward` runs BEFORE/WITHOUT the lib source, so
+  `$_CMD_REDIR` is unbound there and under `set -u` referencing it aborts the hook rather than
+  expanding empty. Closing it needs a guard-local literal redirect pattern defined above the
+  source — a second copy of a grammar this repo has repeatedly been burned by duplicating. That
+  is a deliberate decision recorded here, not an oversight.
+
+- The line numbers this todo cites (`:1248`, `:1313`) had drifted by hundreds of lines before it
+  was picked up. Cite the symbol, not the offset.
