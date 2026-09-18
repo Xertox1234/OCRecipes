@@ -217,6 +217,24 @@ out=$(bash_payload 'gh api --method PUT repos/Xertox1234/OCRecipes/pulls/938/mer
 denied "$out" && ok "gh api --method PUT against pulls/N/merge denies" \
               || bad "gh api --method PUT against pulls/N/merge denies" "$out"
 
+# 3a-ter. The GLUED short form, which the first revision of the arm missed entirely, and the
+# glued method flag, which it wrongly denied. Both are the same separator mistake in opposite
+# directions: on the positive pattern it under-denied, on the negative one it over-denied.
+out=$(bash_payload 'gh api -fmerge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "the GLUED -f short form denies" \
+              || bad "the GLUED -f short form denies" "$out"
+out=$(bash_payload 'gh api -Fmerge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "the GLUED -F short form denies" \
+              || bad "the GLUED -F short form denies" "$out"
+out=$(bash_payload 'gh api -XGET /repos/o/r/pulls/42/merge -f foo=bar' | run)
+assert_allowed "a GLUED -XGET with fields is an explicit read" "$out"
+# THE ENDPOINT DISCRIMINATOR reads field VALUES, and this arm made that reachable for field-only
+# calls for the first time. A comment body quoting the endpoint was classified a merge.
+out=$(bash_payload "gh api repos/o/r/issues/12/comments -f body=see pulls/42/merge for context" | run)
+assert_allowed "prose quoting the endpoint inside a field value is not a merge" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls -f title=merge cleanup' | run)
+assert_allowed "a field value containing the word merge is not a merge" "$out"
+
 # 3a-bis. DENY. gh's IMPLICIT POST — no method flag anywhere.
 # todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md. cli/cli
 # pkg/cmd/api/api.go:329-330 sets method=POST when no method flag was passed AND there is any
@@ -1348,7 +1366,7 @@ unset _mrg_src _mrg_conj_line _mrg_conj _mrg_missing _mrg_sym _mrg_lbl
 # row pinning the ALLOW side of a separator widening (the direction that invents denials, and
 # the one that killed the withdrawn raw-token predicate), and +3 rows pinning the BINARY
 # renderings that remain open so the block is not read as closing the whole class.
-EXPECTED_TOTAL=146
+EXPECTED_TOTAL=151
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

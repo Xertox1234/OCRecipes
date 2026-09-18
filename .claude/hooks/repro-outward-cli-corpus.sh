@@ -400,8 +400,13 @@ add apicolfp-rootflag ALLOW 'gh -t x api repos/o/r'
 # match. The sibling pin in test-guard-outward-cli.sh carries the same correction.
 # EXPECTATION CHANGED 2026-09-18 (gh-api-field-mutation): ALLOW -> DENY. A field parameter
 # with no method flag is a POST per gh api.go:329-330, so this is a mutation, not a false
-# positive. All three degraded paths ALREADY denied it (p=ALLOW j=DENY l=DENY a=DENY before,
-# p=DENY on all four after) -- the precise path now agrees with its own fail-closed mirror.
+# positive. THAT CITATION IS THE WHOLE JUSTIFICATION. The three degraded paths also already
+# denied it (p=ALLOW j=DENY l=DENY a=DENY before, p=DENY on all four after), but that is
+# CORROBORATION, NOT EVIDENCE: every `gh api` row in this neighbourhood reads j=DENY l=DENY
+# a=DENY, including `c2-fp-getf` and `c2-readonly`, which correctly stay ALLOW. Degraded
+# agreement is a property of the row's SHAPE and says nothing about its verdict. Do not
+# reuse it as a standalone argument for moving a `want` -- that is the one edit that can
+# hide an over-denial, so it needs the strongest reason available, not the handiest.
 # The `fp` in the id is kept so the move stays visible.
 add apicolfp-oneshot DENY  'gh api -f a=b /repos/o/r/merges'
 
@@ -1334,14 +1339,24 @@ add c2-fp-getf       ALLOW 'gh api repos/o/r -X GET -f name=value'
 add c2-fp-header     ALLOW 'gh api repos/o/r -H "Accept: application/vnd.github+json"'
 # EXPECTATION CHANGED 2026-09-18 (gh-api-field-mutation): ALLOW -> DENY. A field parameter
 # with no method flag is a POST per gh api.go:329-330, so this is a mutation, not a false
-# positive. All three degraded paths ALREADY denied it (p=ALLOW j=DENY l=DENY a=DENY before,
-# p=DENY on all four after) -- the precise path now agrees with its own fail-closed mirror.
+# positive. THAT CITATION IS THE WHOLE JUSTIFICATION. The three degraded paths also already
+# denied it (p=ALLOW j=DENY l=DENY a=DENY before, p=DENY on all four after), but that is
+# CORROBORATION, NOT EVIDENCE: every `gh api` row in this neighbourhood reads j=DENY l=DENY
+# a=DENY, including `c2-fp-getf` and `c2-readonly`, which correctly stay ALLOW. Degraded
+# agreement is a property of the row's SHAPE and says nothing about its verdict. Do not
+# reuse it as a standalone argument for moving a `want` -- that is the one edit that can
+# hide an over-denial, so it needs the strongest reason available, not the handiest.
 # The `fp` in the id is kept so the move stays visible.
 add c2-fp-methodology DENY  'gh api repos/o/r -f notes=$X --methodology=custom'
 # EXPECTATION CHANGED 2026-09-18 (gh-api-field-mutation): ALLOW -> DENY. A field parameter
 # with no method flag is a POST per gh api.go:329-330, so this is a mutation, not a false
-# positive. All three degraded paths ALREADY denied it (p=ALLOW j=DENY l=DENY a=DENY before,
-# p=DENY on all four after) -- the precise path now agrees with its own fail-closed mirror.
+# positive. THAT CITATION IS THE WHOLE JUSTIFICATION. The three degraded paths also already
+# denied it (p=ALLOW j=DENY l=DENY a=DENY before, p=DENY on all four after), but that is
+# CORROBORATION, NOT EVIDENCE: every `gh api` row in this neighbourhood reads j=DENY l=DENY
+# a=DENY, including `c2-fp-getf` and `c2-readonly`, which correctly stay ALLOW. Degraded
+# agreement is a property of the row's SHAPE and says nothing about its verdict. Do not
+# reuse it as a standalone argument for moving a `want` -- that is the one edit that can
+# hide an over-denial, so it needs the strongest reason available, not the handiest.
 # The `fp` in the id is kept so the move stays visible.
 add c2-fp-backtick   DENY  'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here'
 add c2-tension-bt    DENY  'gh api repos/o/r -X GET -f note=see `code` here'

@@ -4332,6 +4332,35 @@ assert_allow "a single read-only gh api behind a root flag stays allowed" \
 # api.go:329-330 sets method=POST when NO method flag was passed and there is any field
 # parameter or --input. Every spelling below reached the arbitrary-mutation surface while naming
 # no method at all, and every one measured ALLOW before this arm existed.
+# GLUED SHORT FORMS. The first revision of this arm required a trailing separator, so
+# `-fmerge_method=squash` never matched and the route this change exists to close stayed OPEN on
+# both guards. The file already knew: :4781 records the sibling flag's glued form as "the common
+# curl-style spelling; found bypassing a separator-only pattern in review round 2". Same
+# function, same lesson, written again.
+assert_deny "the GLUED -f short form denies (separator-only patterns miss it)" \
+  "$(json 'gh api -fmerge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "the GLUED -F short form denies" \
+  "$(json 'gh api -Fmerge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "the GLUED form against a templated endpoint denies" \
+  "$(json 'gh api -fmerge_method=squash repos/{owner}/{repo}/pulls/995/merge')" "NO -X/--method flag"
+# THE MIRROR-IMAGE BUG, on the NEGATIVE conjunct. The same separator requirement on the
+# method-flag pattern meant glued `-XGET` did not register as a method flag while the field
+# pattern did match — denying an explicit READ. gh's RequestMethodPassed is TRUE for `-XGET`.
+assert_allow "a GLUED -XGET with fields is an explicit read and stays allowed" \
+  "$(json 'gh api -XGET /repos/o/r/pulls/42/merge -f foo=bar')"
+assert_allow "a GLUED -XGET on a search endpoint with fields stays allowed" \
+  "$(json 'gh api -XGET search/issues -f q=repo:o/r')"
+assert_allow "--methodology is still not a method flag and needs no field to prove it" \
+  "$(json 'gh api --methodology=custom repos/o/r')"
+# WHY THERE ARE NO DEGRADED-PATH ROWS FOR THE GLUED FORMS, measured rather than assumed.
+# Four were written and removed. On the degraded fixtures the crude mirror denies ANY `gh api`
+# call — verified against the BASE guard, where both `gh api -fmerge_method=squash <merge
+# endpoint>` and a plain `gh api /repos/o/r/pulls/42` already DENY on nolib. So a glued-form
+# deny there passes with or without this fix: it is count, not coverage, and it would read to a
+# later maintainer as evidence the fix works on those paths. The discriminating rows are the
+# PRECISE-path ones above (base ALLOW -> head DENY). This note exists so the rows are not added
+# back for looking like a gap.
+
 assert_deny "gh api -f with no method flag denies (implicit POST)" \
   "$(json 'gh api -f merge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
 assert_deny "gh api -F with no method flag denies" \
@@ -5588,7 +5617,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1116
+EXPECTED_TOTAL=1122
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

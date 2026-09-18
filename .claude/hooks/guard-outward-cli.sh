@@ -4803,8 +4803,20 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # deny a READ -- the failure that gets a guard switched off. The arm is therefore anchored
   # on the ABSENCE of a method token, exactly as gh anchors on !RequestMethodPassed, not on
   # the presence of fields alone.
-  _GH_API_FIELD='(^|[[:space:]])(-[fF]|--field|--raw-field|--input)([[:space:]]|=|$)'
-  _GH_API_ANYMETHOD='(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)'
+  # DOCUMENTED RESIDUALS of this arm, named rather than discovered later:
+  #   * AN UNREADABLE FIELD FLAG has no "cannot verify -> deny" mirror. The sibling arm denies an
+  #     unreadable METHOD value on the 2026-09-05 ruling, but `gh api $(printf -- -f) k=v <merge
+  #     endpoint>` is ALLOW here. A blanket `$`-in-clause deny is not available -- `gh api
+  #     repos/$OWNER/$REPO` must stay allowed, as this block's own comment says -- so the
+  #     tractable form is a co-occurrence rule: a bare `key=value` positional beside an
+  #     unreadable token, with no method flag, is the same implicit POST. Not built here.
+  #   * `gh api graphql -f query='mutation {...}'` is a GENUINE merge that carries neither a
+  #     path nor a method flag, so it is a different SHAPE than this arm parses. This change
+  #     NARROWS it (the outward guard now denies the bare form) but with the documented inline
+  #     bypass in front, both guards allow it. Pre-existing; see merge-review-guard.sh's own
+  #     note proposing a graphql-mutation-body detector.
+  _GH_API_FIELD='(^|[[:space:]])(-[fF]|(--field|--raw-field|--input)([[:space:]]|=|$))'
+  _GH_API_ANYMETHOD='(^|[[:space:]])(-X|--method([^-A-Za-z0-9]|$))'
   if [ -n "$GH_API_CLAUSE" ] && grep -Eq "$_GH_API_FIELD" <<< "$GH_API_CLAUSE" \
      && ! grep -Eq "$_GH_API_ANYMETHOD" <<< "$GH_API_CLAUSE"; then
     deny "guard-outward-cli: command-position 'gh api' with a field parameter (-f/-F/--field/--raw-field) or --input and NO -X/--method flag is a POST, not a GET — gh's own api.go sets method=POST whenever a method was not passed and any parameter or input file is present, so this reaches the same arbitrary-mutation surface as an explicit -X POST (including a PR merge). An explicit read (-X GET/--method GET) with the same parameters is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."

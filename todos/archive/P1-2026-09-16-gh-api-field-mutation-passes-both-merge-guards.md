@@ -244,8 +244,12 @@ the-gh-api-merge-route.md` — a CLOSED todo whose own line 39 read "guard-outwa
   Moving a `want` is also how one would bury a real over-denial, so: each is a field-parameter
   call with no method flag, hence a POST by api.go:329-330; and the corpus's own per-path tuples
   show every one reading `p=ALLOW j=DENY l=DENY a=DENY` before and DENY on all four paths after.
-  **The three DEGRADED paths were already denying them** — the precise path was brought into
-  agreement with its own fail-closed mirror. Three independent mechanisms converged on the same
+  **That citation is the whole justification.** The three degraded paths were also already
+  denying them, and the precise path was brought into agreement with its own fail-closed mirror
+  — but a review showed that observation DOES NOT DISCRIMINATE: every `gh api` row in that
+  neighbourhood reads `j=DENY l=DENY a=DENY`, including rows that correctly stay ALLOW. It is
+  corroboration, not evidence, and it is demoted wherever it appears so nobody reuses it as a
+  standalone argument for moving a `want`. Three independent mechanisms converged on the same
   three ids (the suite, the precise-gap list, the all-path dirty list), which is what makes the
   change a convergence rather than moved goalposts. The `fp` in each id is kept on purpose so the
   move stays visible.

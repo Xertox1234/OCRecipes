@@ -362,8 +362,8 @@ case "$TOOL" in
         # arm is anchored on the ABSENCE of a method token exactly as gh anchors on
         # `!opts.RequestMethodPassed`. Short flags are matched without a value because gh
         # accepts `-f k=v` and `--field=k=v` alike and the VALUE is irrelevant to the method.
-        MRG_API_FIELD='(^|[[:space:]])(-[fF]|--field|--raw-field|--input)([[:space:]]|=|$)'
-        MRG_API_ANYMETHOD='(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)'
+        MRG_API_FIELD='(^|[[:space:]])(-[fF]|(--field|--raw-field|--input)([[:space:]]|=|$))'
+        MRG_API_ANYMETHOD='(^|[[:space:]])(-X|--method([^-A-Za-z0-9]|$))'
         set +o pipefail
         MRG_API_WORDS=$(cmd_words_deep "$CMD")
         MRG_API_CLAUSES=$(printf '%s' "$MRG_API_WORDS" | grep -ioE "$MRG_API_CUT")
@@ -371,7 +371,21 @@ case "$TOOL" in
         MRG_API_HIT=""
         while IFS= read -r MRG_API_CLAUSE; do
           [ -n "$MRG_API_CLAUSE" ] || continue
-          printf '%s' "$MRG_API_CLAUSE" | grep -qiE 'pulls.*merge' || continue
+          # ENDPOINT, NOT TWO WORDS ANYWHERE IN THE CLAUSE. `pulls.*merge` reads field VALUES
+          # too, and the implicit-POST conjunct below made that reachable for field-only calls
+          # for the first time: `-f body='see pulls/42/merge for context'` on an ISSUES endpoint
+          # was classified a merge and denied, with a reason about resolving a PR number from a
+          # command that posts a comment. Measured ALLOW before that conjunct, DENY after — an
+          # over-denial this change introduced, not a pre-existing one.
+          # Requiring at least ONE PATH SEGMENT before `pulls/` is what separates them: a real
+          # endpoint is `repos/o/r/pulls/42/merge`, while a prose mention is a bare
+          # `pulls/42/merge` with a space in front. RESIDUAL, narrower and named: prose that
+          # quotes the FULL path (`body=see repos/o/r/pulls/42/merge …`) still matches. There is
+          # no text-level way to tell that from the endpoint itself, and erring toward DENY is
+          # the right direction for a merge gate.
+          printf '%s' "$MRG_API_CLAUSE" \
+            | grep -qiE '(^|[[:space:]])/?[A-Za-z0-9._{}-]+(/[A-Za-z0-9._{}-]+)*/pulls/[^[:space:]/]+/merge([[:space:]]|$)' \
+            || continue
           # Two ways this clause proves a mutating method: the value is a recognized
           # literal (glued `-XPUT`, or separated by whitespace/redirect/`=`), OR a
           # -X/--method flag is present at all alongside a `$`/backtick anywhere in the
