@@ -5532,6 +5532,15 @@ fi
 # correct. Each was measured on origin/main before it was written, and each family needed a
 # DIFFERENT carrier to reach its arm (a launcher for range, a prior segment for list) -- which
 # is why the obvious "same row with the other brace spelling" would have pinned nothing.
+# 1022 -> 1104 (2026-09-17, rounds 2-11 of the same PR): +82 — the workspace-scope closure and
+# everything the review rounds pinned: the workspace deny/allow block, the degraded-path
+# nojq/nolib/noawk rows for the crude mirror's accepted over-denial, and four assert_deny rows
+# that exist to redden if anyone re-attempts the rejected post-`run` repair. CHAINED rather than
+# overwritten, mirroring repro-outward-cli-corpus.sh's EXPECTED_ROWS convention. An earlier
+# revision left this narrative at "+37" while the pin below read 1104: the PIN is enforced by
+# the suite failing, the SENTENCE beside it is not. A number with a gate stays right on its own;
+# a sentence quoting that number does not, which is why this chain has to be extended by hand
+# every time the pin moves.
 # 985 -> 1022 (2026-09-17, launcher grammar): +37 rows = 19 deny + 15 over-denial controls + 3
 # structural. The deny rows are the five shapes the todo measured, plus their compositions with
 # the already-closed prefix axis and with the expansion-token axis. The controls are weighted

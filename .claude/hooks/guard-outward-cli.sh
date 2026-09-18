@@ -326,12 +326,19 @@
 #     FAMILY rather than the launcher grid, because six of the seven bypasses were at anchors the
 #     launcher grid never reaches. A prefix regression now moves a number there.
 #     PRECISE PATH ONLY (see the launcher-family bullet for the degraded-path caveat).
-#     Remaining, measured, NOT closed by this axis -- they are LAUNCHER-GRAMMAR shapes, not
-#     prefix shapes, and are carried by
-#     todos/P1-2026-09-16-launcher-grammar-shapes-compose-around-the-outward-cli-guard.md:
-#     a wrapper word AFTER the launcher, stacked launchers, `npm explore <pkg> -- <gated>`,
-#     `pnpm`/`yarn` dispatching a local binary with no subcommand, and a launcher in front of
-#     the package-directory clauses. All five measured ALLOW on this branch and on `main`.
+#     CLOSED 2026-09-17 by the launcher-grammar work, and this paragraph is REWRITTEN rather
+#     than deleted because what it used to say is the lesson. It read "Remaining, measured, NOT
+#     closed by this axis ... All five measured ALLOW on this branch and on `main`", naming a
+#     wrapper word after the launcher, stacked launchers, `npm explore <pkg> -- <gated>`, a bare
+#     `pnpm`/`yarn` dispatch, and a launcher in front of the package-directory clauses. All five
+#     now DENY -- measured, not inferred. The change that closed them is in this same file
+#     (_OUT_LAUNCHER_ANY / _OUT_LAUNCH_INTER / _OUT_LAUNCH_STEP / _OUT_OPT_QUAL_CH, and
+#     _OUT_POS_PREFIX_LP taking `(_OUT_LAUNCH_STEP)+`), and the closed todo is at
+#     todos/archive/P1-2026-09-16-launcher-grammar-shapes-compose-around-the-outward-cli-guard.md.
+#     THE FAILURE WORTH REMEMBERING: the PR that closed these left this paragraph asserting they
+#     were open, while correctly repointing the SAME citation in test-guard-outward-cli.sh. One
+#     of two targets swept. Grep for the PATH, not for the phrasing -- that returns a closed set
+#     of two and neither can be missed.
 #   * `gh workflow run`, `gh secret set`, `gh variable set` and other gh
 #     namespaces beyond `pr`/`release`/`repo`/`api` are not covered — the
 #     todo scoped this to "verb-scoped, not exhaustive"; `gh api` itself IS

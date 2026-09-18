@@ -200,7 +200,9 @@ pair per cell BEFORE writing that the axis is closed.
   total cannot. `EXPECTED_PRECISE_GAPS` and `EXPECTED_ALLPATH_GAPS` were re-derived from the
   same run and **held at 62 and 358** with no membership drift in either manifest: the 128 new
   rows deny on the precise path and on all three degraded paths alike. `EXPECTED_EMIT_SITES`
-  and the attributed-rows-vs-DENY-verdicts denominator both held. Suite: 1022 passed, 0 failed.
+  and the attributed-rows-vs-DENY-verdicts denominator both held. Suite: 1104 passed, 0 failed —
+  it read "1022" for ten rounds after later commits raised it, because the pin is enforced by
+  the suite and a sentence quoting the pin is not. Check `EXPECTED_TOTAL`, not this line.
 
 - **DOCUMENTED RESIDUAL, named by row rather than stated as a property** -- 9 launcher-CHAIN x
   BRACE-token spellings stay ALLOW, because every brace arm reaches its qualifier through one
