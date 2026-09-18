@@ -5385,8 +5385,10 @@ assert_allow "npm explore running an ungated npm script stays allowed" \
   "$(jsonc 'npm explore some-pkg -- npm run build')"
 assert_allow "npm explore with no command at all stays allowed" \
   "$(jsonc 'npm explore some-pkg')"
-# A REPO SCRIPT WHOSE NAME COLLIDES WITH A GATED BINARY. `run` is neither a launcher word nor a
-# flag, so it terminates the chain and the gated name never reaches command position.
+# A REPO SCRIPT WHOSE NAME COLLIDES WITH A GATED BINARY. These stay ALLOW because NO GATED VERB
+# follows the name -- NOT because `run` terminates the chain. For npm/pnpm `run` really is
+# script-only; for YARN it falls back to node_modules/.bin, so `run` IS a launcher step there:
+# `yarn run railway up` denies while the bare `yarn run railway` below still allows.
 assert_allow "a repo script NAMED like a gated CLI stays allowed under pnpm run" \
   "$(jsonc 'pnpm run eas')"
 assert_allow "a repo script named like a gated CLI stays allowed under yarn run" \
@@ -5399,6 +5401,66 @@ assert_allow "pnpm dlx of an ungated tool stays allowed" \
   "$(jsonc 'pnpm dlx prettier --check .')"
 assert_allow "yarn dlx of an ungated tool stays allowed" \
   "$(jsonc 'yarn dlx tsc --noEmit')"
+
+# ---------------------------------------------------------------------------
+# TWO COMPOSITION CLOSURES, 2026-09-18. Both were live ALLOWs on origin/main and
+# both were pinned here as safe by prose that did not survive measurement, so the
+# pins below are behavioural: each asserts the guard's verdict, not a comment.
+#
+# (1) REPEATED WORKSPACE SCOPE. `yarn workspace <ws> X` forwards X to yarn inside
+#     that workspace, so a SECOND `workspace <ws2>` needs no fresh `yarn` literal
+#     and _OUT_LAUNCH_STEP's repetition could never see it. One hop denied; two
+#     did not.
+# (2) YARN'S `run`. npm/pnpm `run` is script-only, but yarn's falls back to
+#     node_modules/.bin, so `yarn run <gated> <verb>` reaches the same sink as
+#     `yarn <gated> <verb>`.
+#
+# The ALLOW rows are not decoration: each is the control that proves the widening
+# is specific. Without them a blanket new denial would pass every row above.
+assert_deny "yarn run reaches the OTA sink (yarn run is a launcher step, unlike npm/pnpm run)" \
+  "$(jsonc 'yarn run eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "yarn run reaches the OTA sink with a flag after run" \
+  "$(jsonc 'yarn run -s eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "yarn run reaches railway" \
+  "$(jsonc 'yarn run railway up')" \
+  "reached through a launcher"
+assert_deny "yarn run composed with a workspace scope reaches the OTA sink" \
+  "$(jsonc 'yarn workspace api run eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "TWO workspace hops reach the OTA sink" \
+  "$(jsonc 'yarn workspace api workspace foo eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "THREE workspace hops reach the OTA sink" \
+  "$(jsonc 'yarn workspace api workspace foo workspace bar eas update')" \
+  "reached through a launcher"
+assert_deny "workspaces foreach followed by a second scope reaches the OTA sink" \
+  "$(jsonc 'yarn workspaces foreach exec workspace foo eas update')" \
+  "reached through a launcher"
+assert_deny "two workspace hops reach npm publish" \
+  "$(jsonc 'yarn workspace api workspace foo npm publish')" \
+  "reached through a launcher"
+assert_deny "two workspace hops reach the run-form OTA script anchor" \
+  "$(jsonc 'yarn workspace api workspace foo run update:production')" \
+  "update:preview/update:production"
+assert_deny "two workspace hops reach the bare-script OTA anchor" \
+  "$(jsonc 'yarn workspace api workspace foo update:production')" \
+  "update:preview/update:production"
+# CONTROLS. `run` is a launcher step for YARN ONLY; npm and pnpm keep script-only
+# semantics, and an ungated sink behind any number of hops must still run.
+assert_allow "npm run does NOT become a launcher step" \
+  "$(jsonc 'npm run eas update')"
+assert_allow "pnpm run does NOT become a launcher step" \
+  "$(jsonc 'pnpm run eas update')"
+assert_allow "a gated binary name with NO gated verb still runs under yarn run" \
+  "$(jsonc 'yarn run eas')"
+assert_allow "an ungated script still runs under yarn run" \
+  "$(jsonc 'yarn run build')"
+assert_allow "an ungated sink behind two workspace hops still runs" \
+  "$(jsonc 'yarn workspace api workspace foo build')"
+assert_allow "an ungated sink behind a mixed scope chain still runs" \
+  "$(jsonc 'yarn workspace api workspaces foreach exec jest')"
 # THE ROW THAT MATTERS MOST. `gh pr merge` is reached through _OUT_POS_PREFIX_LP, which this
 # change widens, and the merge clause is GRANT-shaped -- an empty clause cut DENIES. If the
 # chain widening ever reaches the count/clause pair wrong, this repo's own sanctioned /todo
@@ -5548,7 +5610,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1104
+EXPECTED_TOTAL=1120
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

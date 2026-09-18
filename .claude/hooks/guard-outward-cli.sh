@@ -2597,9 +2597,18 @@ _OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD
 #     no fixed-width launcher pattern can reach past it. The `--` is OPTIONAL because npm
 #     accepts both spellings; `npm explore <pkg> -- ls` stays ALLOW because `ls` is not gated.
 #   * bare `pnpm`/`yarn`: both dispatch a local node_modules binary with no `dlx`/`exec` verb.
-#     `pnpm install`, `pnpm add <pkg>`, `pnpm run <script>` are unaffected -- the word after the
-#     launcher is a package-manager verb, not a gated binary, so the pattern simply does not
-#     match. `pnpm run eas` is ALLOW for the same reason and is pinned as a control.
+#     `pnpm install`, `pnpm add <pkg>`, `pnpm run <script>` are unaffected -- for npm and pnpm the
+#     word after `run` is a SCRIPT name, never a binary, so the pattern does not match and
+#     `pnpm run eas` stays ALLOW, pinned as a control.
+#     YARN IS THE EXCEPTION, and assuming otherwise left a live bypass. yarn's `run` falls back to
+#     `node_modules/.bin`, so `yarn run <gated-bin> <verb>` reaches exactly the sink that
+#     `yarn <gated-bin> <verb>` reaches. Measured 2026-09-18 BEFORE this fix: `yarn eas update`
+#     DENY while `yarn run eas update` ALLOW, and the same through a workspace scope
+#     (`yarn workspace api run eas update` ALLOW). `run` is therefore a launcher STEP for YARN
+#     ONLY -- interpolated into the yarn arms below and deliberately NOT into npm/pnpm.
+#     The accepted over-denial is narrow and was measured, not assumed: a repo script named like
+#     a gated binary still runs, because no gated VERB follows it (`yarn run eas` ALLOW,
+#     `yarn run railway` ALLOW); only `yarn run eas update` and its siblings deny.
 # EVERY ALTERNATIVE ENDS IN A SEPARATOR, which is what makes the group safe to repeat.
 # _OUT_WS_SCOPE -- yarn's WORKSPACE SCOPE SELECTOR: `workspace <ws>` or `workspaces foreach`,
 # each optionally followed by `exec`. It is NOT a launcher verb and modelling it as one is the
@@ -2671,7 +2680,7 @@ _OUT_WS_SCOPE='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}
 # the failure that gets a guard switched off rather than fixed.
 _OUT_WS_SCOPE_NV='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'foreach)('"$_OUT_SEP"'-{1,2}[^[:space:]]*)*'"$_OUT_SEP"'(exec'"$_OUT_SEP"')?'
 
-_OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|yarn'"$_OUT_FLAG_RUN"''"$_OUT_WS_SCOPE"'|(pnpm|yarn)'"$_OUT_FLAG_RUN"')'
+_OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|yarn'"$_OUT_FLAG_RUN"'('"$_OUT_WS_SCOPE"')+(run'"$_OUT_FLAG_RUN"')?|yarn'"$_OUT_FLAG_RUN"'run'"$_OUT_FLAG_RUN"'|(pnpm|yarn)'"$_OUT_FLAG_RUN"')'
 
 # _OUT_LAUNCH_INTER -- what may sit BETWEEN a launcher and the next word. Deliberately the same
 # wrapper/privilege alternation _OUT_POS_PREFIX_W already admits in COMMAND position: a wrapper
@@ -2695,10 +2704,15 @@ _OUT_LAUNCH_STEP="((${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER_ANY})(${_OUT_PATH_PREF
 # sites take _CH.
 _OUT_OPT_QUAL_CH="((${_OUT_LAUNCH_STEP})*(${_OUT_PATH_PREFIX})?)"
 #
-# DOCUMENTED RESIDUAL -- launcher CHAIN composed with a BRACE token. Named by row, not stated as
-# an asymmetry, because a residual expressed as a property is one nobody can check and one a
-# later reader cannot tell has already shrunk. Measured 2026-09-17 on the tree that introduced
-# _OUT_OPT_QUAL_CH; each row is ALLOW, and each is a chain spelling the brace arms cannot see:
+# DOCUMENTED RESIDUAL -- a BRACE token behind anything the brace arms' qualifier cannot see.
+# An earlier revision named nine rows and presented them as THE SET. They were not: a generated
+# 1980-row grid (2026-09-18) found 48 further ALLOW rows across 8 chain forms this list never
+# named -- three of them arms this same PR introduced, so the enumeration aged the moment the
+# grammar grew. Rows below are EXAMPLES. The SET is the property, and the property is checkable
+# precisely because the corpus GENERATES it combinatorially rather than listing it:
+#     every _OUT_LAUNCH_STEP chain crossed with a brace token, PLUS every single-launcher
+#     brace-LIST spelling (the RANGE spelling under one launcher IS covered -- see below).
+# Measured 2026-09-17/18; each row is ALLOW:
 #     npx pnpm dlx ea{s..s} update          npx pnpm dlx ea{s,x} update
 #     npx env ea{s..s} update               npx env ea{s,x} update
 #     npm explore some-pkg -- ea{s..s} update   npm explore some-pkg -- ea{s,x} update
@@ -2714,8 +2728,16 @@ _OUT_OPT_QUAL_CH="((${_OUT_LAUNCH_STEP})*(${_OUT_PATH_PREFIX})?)"
 # and re-deriving the pins, which is a separate change with its own corpus re-run.
 # WHAT IS NOT IN THIS RESIDUAL, measured rather than assumed -- these DENY today:
 #     pnpm ea{s..s} update    pnpm ea{s,x} update    npx ea{s..s} update
-# A SINGLE launcher word in front of a brace token is already covered; it is the CHAIN that is
-# not. Do not widen on the strength of the list above without re-measuring these three.
+# READ THOSE THREE CAREFULLY -- an earlier revision drew the wrong universal from them. They do
+# NOT show that a single launcher in front of a brace token is covered; each denies for its own
+# reason. The two `pnpm` rows deny because `pnpm` is ITSELF in _OUT_GATED_BIN (see the
+# _OUT_GATED_BIN definition below) and so matches the gated-bin arm, not any launcher arm. The
+# `npx` row denies because it is brace-RANGE, the one brace family whose extractor carries
+# _OUT_OPT_QUAL. The LIST spelling under the very same single launcher is ALLOW -- measured
+# 2026-09-18, npx / npm exec / pnpm dlx / yarn dlx / bunx every one of them allows
+# `ea{s,x} update`, and `g{h,x} pr merge 42 --admin` allows behind npx too. The ROUND-11
+# bullet at the top of this file already recorded that class; the two statements could not both
+# stand. Do not widen on the strength of the list above without re-measuring.
 # The separately ruled bare tool-position residual (`ea{s..s} update`, no launcher at all) is a
 # DIFFERENT mechanism -- the fastpath needle -- and is not this.
 
@@ -3554,8 +3576,8 @@ fi
 # per-launcher flag enumeration — see that comment for why. This comment
 # block, documenting every historical bypass this grammar closes, stays here
 # at its original site, right above its primary use site.
-if grep -Eqi "${_OUT_POS_PREFIX_W}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})?(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
-   || grep -Eqi "${_OUT_POS_PREFIX_W}(yarn|pnpm)${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE_NV})?update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})*(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_POS_PREFIX_W}(yarn|pnpm)${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE_NV})*update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
 
@@ -4915,8 +4937,8 @@ fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'npm publish' reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})?(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
-   || grep -Eqi "${_OUT_POS_PREFIX_LP}(yarn|pnpm)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE_NV})?update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})*(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_POS_PREFIX_LP}(yarn|pnpm)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE_NV})*update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
 # VERSION-PIN on `gh` itself (2026-09-16, round-2 review correction): the
