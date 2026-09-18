@@ -236,8 +236,48 @@
 #     NARROWED 2026-09-16: until this round the IN-TREE, unmodified script was
 #     reachable too, by path-qualifying the interpreter or its wrapper word — no
 #     relocation required, so this bullet understated its own scope. Those two
-#     spellings now deny. What remains is genuinely only a copy that has LEFT the
-#     package directory the literal substring keys on.
+#     spellings now deny.
+#     THAT NARROWING WAS ITSELF TOO WIDE, and round 4 (2026-09-18) measured it.
+#     "Only a copy that has LEFT the package directory" was FALSE: the INSTALLED
+#     shim never left it. `/opt/homebrew/bin/eas` is a SYMLINK to
+#     `../lib/node_modules/eas-cli/bin/run`, so the script sits exactly where the
+#     substring expects while the path it is REACHED BY carries no `eas-cli/` at
+#     all — and a substring check cannot see through a symlink.
+#     `node /opt/homebrew/bin/eas update --branch production` was ALLOW on this
+#     branch AND on main, with its interpreter-less twin denying; `bun` and a
+#     wrapper word behaved identically. The interpreter word is now a launcher
+#     STEP (see _OUT_LAUNCHER_ANY), so the gated-bin and verb anchors fire on the
+#     TERMINAL NAME for ANY path spelling rather than for the two the literal
+#     substrings happen to name.
+#     What remains is narrower, and is stated as a property rather than a
+#     location: a copy reached under a name that is NOT a gated binary name
+#     (`cp .../bin/run /tmp/x && node /tmp/x update`). No name-based matcher can
+#     see that one, which is the invented-enumeration risk declined above.
+#     ROUND 5 FOUND THAT SENTENCE TOO NARROW WHEN IT WAS WRITTEN, for the second
+#     time in two rounds: `deno run <path>/eas update` reached the sink under the
+#     REAL gated binary name, no copy and no rename involved, because the round-4
+#     arm ended in a bare separator and deno's working syntax needs an interior
+#     `run`. It is closed now and pinned. Treat the "what remains" line as the
+#     current best account rather than a proof -- on this file it has been wrong
+#     in four consecutive rounds.
+#   * WHICH RUNNERS the OTA-script clause covers, named because nothing named them before and
+#     a reader could only find out by reading the alternation. A package.json script is
+#     reachable by more than `npm run`: `bun run <s>`, bare `bun <s>`, `node --run <s>` and
+#     `node --run=<s>` (node 22+), and `deno task <s>` all execute it. Round 6 measured every
+#     one of those ALLOW against `update:production`, whose body ends in
+#     `exec eas update --branch production --platform all` -- i.e. a production OTA publish
+#     through this repo's OWN script, reached by a runner the alternation happened not to list,
+#     while `npm run` and bare `yarn` were covered. All are covered now. The covered set is
+#     therefore: npm, pnpm, yarn (run-form and yarn/pnpm bare-script form), bun (run-form and
+#     bare), node (`--run` separated and `=`-glued) and deno (`task`). A runner NOT in that
+#     list is a live route, so extend it rather than assuming closure.
+#   * THE `npm:` TARGET SPECIFIER is now accepted in front of the gated package names. deno
+#     documents `deno run npm:<pkg>` for running an npm CLI, and round 6 measured
+#     `deno run -A npm:eas-cli update --branch production` ALLOW while the raw-path spelling
+#     denied -- the marginal form closed and the documented one open. It is an optional
+#     `(npm:)?` before tokens the guard already gates, not a new enumeration. `jsr:` and
+#     `https:` specifiers are NOT handled: they do not name an npm package, so a name-based
+#     matcher has nothing to key on, and that is a residual rather than an oversight.
 #   * `eas publish` does not exist in the installed eas-cli (20.1.0 at time of
 #     writing) — the pattern is kept anyway per the acceptance criteria's
 #     literal wording and to catch an older/different CLI version; a no-op
@@ -326,12 +366,19 @@
 #     FAMILY rather than the launcher grid, because six of the seven bypasses were at anchors the
 #     launcher grid never reaches. A prefix regression now moves a number there.
 #     PRECISE PATH ONLY (see the launcher-family bullet for the degraded-path caveat).
-#     Remaining, measured, NOT closed by this axis -- they are LAUNCHER-GRAMMAR shapes, not
-#     prefix shapes, and are carried by
-#     todos/P1-2026-09-16-launcher-grammar-shapes-compose-around-the-outward-cli-guard.md:
-#     a wrapper word AFTER the launcher, stacked launchers, `npm explore <pkg> -- <gated>`,
-#     `pnpm`/`yarn` dispatching a local binary with no subcommand, and a launcher in front of
-#     the package-directory clauses. All five measured ALLOW on this branch and on `main`.
+#     CLOSED 2026-09-17 by the launcher-grammar work, and this paragraph is REWRITTEN rather
+#     than deleted because what it used to say is the lesson. It read "Remaining, measured, NOT
+#     closed by this axis ... All five measured ALLOW on this branch and on `main`", naming a
+#     wrapper word after the launcher, stacked launchers, `npm explore <pkg> -- <gated>`, a bare
+#     `pnpm`/`yarn` dispatch, and a launcher in front of the package-directory clauses. All five
+#     now DENY -- measured, not inferred. The change that closed them is in this same file
+#     (_OUT_LAUNCHER_ANY / _OUT_LAUNCH_INTER / _OUT_LAUNCH_STEP / _OUT_OPT_QUAL_CH, and
+#     _OUT_POS_PREFIX_LP taking `(_OUT_LAUNCH_STEP)+`), and the closed todo is at
+#     todos/archive/P1-2026-09-16-launcher-grammar-shapes-compose-around-the-outward-cli-guard.md.
+#     THE FAILURE WORTH REMEMBERING: the PR that closed these left this paragraph asserting they
+#     were open, while correctly repointing the SAME citation in test-guard-outward-cli.sh. One
+#     of two targets swept. Grep for the PATH, not for the phrasing -- that returns a closed set
+#     of two and neither can be missed.
 #   * `gh workflow run`, `gh secret set`, `gh variable set` and other gh
 #     namespaces beyond `pr`/`release`/`repo`/`api` are not covered — the
 #     todo scoped this to "verb-scoped, not exhaustive"; `gh api` itself IS
@@ -360,9 +407,39 @@
 #     the `yarn`/`pnpm` bare-script equivalents, and — since the _OUT_FLAG_RUN
 #     fix — every FLAG spelling between the runner, `run`, and the script name
 #     (`-s`, `--silent`, `--flag=value`, and `--flag value` with a
-#     space-separated value). `bunx`/a shell alias/`corepack npm run …`/a direct
+#     space-separated value). Since round 7 the RUNNER set also covers `bun run`,
+#     bare `bun`, `node --run` (separated and `=`-glued) and `deno task`, and an
+#     interpreter whose verb slot is an EXPANSION is denied when the script name
+#     co-occurs. CORRECTED 2026-09-18: an earlier revision listed `bunx` and
+#     `corepack npm run …` as NOT covered. Measurement contradicts it - both DENY
+#     today (`corepack` is a privilege word, `bunx` a launcher). The error was in
+#     the SAFE direction, claiming less coverage than exists, which is how a
+#     later round comes to re-close something already closed.
+#     Still NOT covered: a shell alias; a direct
 #     `sh -c "$(node -p 'require("./package.json").scripts["update:preview"]')"`
-#     are not.
+#     (the quoted-span residual documented below); and a third-party script
+#     runner re-entering by bare argv (`npx turbo run update:production`,
+#     `npx lerna run ...`, `npx npm-run-all ...`, `dotenv -- npm run ...`) - an
+#     open enumeration this file deliberately does not chase. Filed, not closed.
+#     THREE MORE, measured 2026-09-18 (round 9) and ALLOW on main as well as here:
+#     (a) THE SCRIPT-NAME SLOT, one token right of the slot round 8 closed -
+#     `npm run $(echo update:production)`, `bun run $(...)` and `deno task $(...)`
+#     all reach the real script. The co-occurrence half already matches; only the
+#     ADJACENCY requirement of the first half blocks it. `npm run $TARGET` is an
+#     ordinary idiom, which makes this the accident-plausible member of the set
+#     and the one worth closing next.
+#     (b) AN EXPANSION SUPPLYING THE INTERPRETER - `$NODE --run update:production`
+#     and `$DENO task update:production`, because the expansion-then-verb arm
+#     recognises `_OUT_GATED_VERB`, which carries `run` but neither `--run` nor
+#     `task` (`$NODE run ...` and `$BUN run ...` DO deny).
+#     (c) A NESTED VANISHING EXPANSION - `node $(echo --run update:prod${X}uction)`
+#     allows while the un-nested `node --run update:prod${X}uction` denies: the
+#     vanished rendering does not recover a script name from inside a substitution,
+#     so the co-occurrence half never matches.
+#     ALSO PRE-EXISTING AND FAMILY-WIDE: the expansion-then-verb arm above is
+#     case-SENSITIVE (`NPM $(echo run update:production)` allows while
+#     `EAS update --branch preview` denies). Left alone deliberately - adding `-i`
+#     there changes `_OUT_GATED_VERB` matching too, so it is its own change.
 #   * QUOTED COMMAND WORDS — FIXED 2026-08-16, previously bypassed every check
 #     in this file. `cmd_bare` BLANKS quoted spans, but the shell word-splits
 #     `eas "update"` and concatenates `eas up"date"` into the argv `eas update`,
@@ -1875,7 +1952,59 @@ $_OUT_CRUDE_VANISHED"
   fi
   t=${t//\'/}; t=${t//\"/}; t=${t//\\/}; t=${t//\$/}
   # Command-word patterns — case-INSENSITIVE (macOS APFS resolves `EAS`).
-  grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run(-s?c?r?i?p?t?)?|rum|ur|urn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
+  #
+  # THE `workspaces?` ALTERNATIVE IS DEGRADED-PATH-ONLY, AND SAYING SO IS THE POINT.
+  # It covers `yarn workspace <ws> run <otascript>` and its bare-script twin. It changes NOTHING on
+  # the normal path -- this whole function is reached only from the four degraded entry points
+  # (no jq, jq extraction failure, lib unsourceable, blanking returned empty), so the precise
+  # anchors handle those rows there via _OUT_WS_SCOPE. An earlier revision of the comment in
+  # test-guard-outward-cli.sh claimed this alternative was what let those rows reach an anchor
+  # AT ALL; a round-2 review mutation-tested it, removed just this alternative, and measured
+  # ZERO normal-path movement. A justification a maintainer can disprove in one test makes the
+  # line EASIER to delete than no justification, which is why it is restated here rather than
+  # merely corrected. What deleting it actually costs is measured and pinned: on all three
+  # degraded fixtures both rows go base ALLOW / with-alternative DENY / without-alternative
+  # ALLOW, asserted below through nojq_hook / nolib_hook / noawk_hook.
+  #
+  # ITS SPAN IS BOUNDED, AND THAT IS A CORRECTION. The first revision put `[^;&|]*` between the
+  # scope word and the script name, which spans arbitrary intervening WORDS -- so an ordinary
+  # monorepo command that merely NAMES the script later in the same clause denied on the
+  # degraded paths (a test filter, a lint `--message`). Four such rows were measured. Every
+  # sibling alternative in this regex uses two-token adjacency or a REPEATED-FLAG absorber
+  # (`-{1,2}[^[:space:]]*`) -- except one, `eas[^a-zA-Z]+build[^;&|]*--auto-submit`, which uses
+  # an arbitrary word gap.
+  # NO RULE IS STATED HERE, AND THAT IS DELIBERATE. Three revisions of this block each asserted
+  # a universal about these patterns and each was refuted by one command:
+  #   "never an arbitrary word gap"          -- refuted by the --auto-submit sibling above
+  #   "a flag cannot collide with prose"     -- refuted by
+  #       git commit -m 'we should never run eas build --auto-submit in CI'   DENY (degraded)
+  #   "no value slot reaches past `run`"     -- refuted by the second _OUT_FLAG_RUN in the
+  #                                             run-form anchors, found by reading them
+  # The MEASURED rows, which is all this block now claims: the unbounded workspace span denied
+  # four ordinary monorepo commands that merely named the script; the bounded span denies none
+  # of them; the --auto-submit sibling denies one prose phrasing and allows the script-name
+  # twin. Whatever intuition those rows suggest, run the pair before writing it down as a rule
+  # -- on this file the intuition has been wrong three times out of three. The span now mirrors the precise _OUT_WS_SCOPE: ONE non-space workspace token, then
+  # flag tokens, then an optional `run`/`exec`, then flag tokens. Over-denial on a degraded path
+  # is still over-denial: it is the failure that gets a guard switched off rather than fixed.
+  #
+  # EACH FLAG TOKEN MAY CARRY A VALUE, and that is the second correction. The first bounded
+  # revision matched BARE flags only, so a flag whose value is a separate letter-bearing token
+  # broke the absorber and `<pm> workspace <ws> --cwd <dir> run <otascript>` slipped. Note the
+  # shape of that bug: `--jobs 4 run <otascript>` still denied, because a DIGIT is non-alphabetic
+  # and `[^a-zA-Z]+` swallows it -- so "I tested a flag with a value" would have been a true
+  # sentence and a useless test. The value must contain a LETTER to expose it.
+  # The root cause is an asymmetry between the two paths rather than anything about workspaces:
+  # the precise path's _OUT_FLAG_RUN has always absorbed flag+value pairs and this crude mirror
+  # never did. `yarn --cwd <dir> run <otascript>`, with no workspace word at all, is ALLOW on
+  # origin/main too -- the class predates this arm, and this fix closes it only where the
+  # workspace alternative reaches.
+  # ACCEPTED, MEASURED TRADE: `<pm> workspace <ws> --flag <oneword> <otascript>` now denies.
+  # That is the same token shape as `<pm> workspace <ws> --silent <otascript>`, which SHOULD
+  # deny -- a scope, a flag, and the OTA script as the final word -- so the crude path cannot
+  # tell them apart and takes the dangerous reading. Two words between the flag and the script
+  # (`--message wrote docs about <otascript> today`) allow, which is the ordinary prose case.
+  grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)[^a-zA-Z]+workspaces?[^a-zA-Z]+[^;&|[:space:]]+([^a-zA-Z]+-{1,2}[^[:space:]]*([^a-zA-Z]+[^-[:space:]][^[:space:]]*)?)*([^a-zA-Z]+(run|exec))?([^a-zA-Z]+-{1,2}[^[:space:]]*([^a-zA-Z]+[^-[:space:]][^[:space:]]*)?)*[^a-zA-Z]+update:(preview|production)|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run(-s?c?r?i?p?t?)?|rum|ur|urn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
   # Flag-correlated patterns — case-SENSITIVE (a case-insensitive `-R` would
   # false-match the `-r` inside `--remove-reviewer`).
   grep -Eq 'gh[^a-zA-Z]+pr[^a-zA-Z]+(create|comment)([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*(--repo|-R)' <<< "$t" && return 0
@@ -1995,7 +2124,14 @@ case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esa
 # decision.
 if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
   shopt -s nocasematch
-  cmd_fastpath_has "$CMD" '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*' '*npx*' '*bun*'
+  # THE NEEDLE LIST IS A SECOND GATE, and a deep check for a token absent from it is dead code
+  # that reads as live. Round 6 added node/bun/deno to the OTA-script runner alternation; `bun`
+  # denied and `node --run update:production` / `deno task update:production` did not, because
+  # `*bun*` is a needle here and `*node*`/`*deno*` are not -- the deep clause was never reached.
+  # The runner is the WRONG needle to add: `*node*` matches `node_modules`, which appears in
+  # most commands in this repo, so it would neuter the pre-filter it belongs to. The SCRIPT NAME
+  # is the precise one -- rare, and the actual target of the clause.
+  cmd_fastpath_has "$CMD" '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*' '*npx*' '*bun*' '*update:preview*' '*update:production*'
   # _OUT_FP_RC is an EXIT-STATUS capture (0 = matched), not a boolean "found" flag — code
   # review, 2026-09-02: the old inline filter's `_OUT_FASTPATH=1` meant "matched"; this is
   # `$?` from cmd_fastpath_has, where 0 means "matched" — same polarity as the check below,
@@ -2515,6 +2651,208 @@ _OUT_PATH_PREFIX='[^[:space:];&|()`{}<>]*/'
 # shows the deny side moving -- emit the measured COUNT on both sides.
 _OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}${_OUT_FLAG_RUN})|((${_OUT_PATH_PREFIX})?${_OUT_PRIV_WORD}))*"
 
+# --- THE LAUNCHER GRAMMAR, as a property rather than an enumeration -----------------------
+# Before this block the grammar admitted exactly ONE launcher word, in ONE position,
+# IMMEDIATELY followed by the gated target. Five measured shapes stepped outside one of those
+# three assumptions and reached the real CLI; all five are one grammar defect, not five.
+# Measured ALLOW on the tree this block was written against, every one of them:
+#     npx env eas <otaverb>            a wrapper word AFTER the launcher
+#     npm exec npx eas <otaverb>       a stacked launcher
+#     npx pnpm dlx eas <otaverb>       a stacked launcher, different pair
+#     npm explore <pkg> -- eas ...     a launcher that takes an ARGUMENT before its target
+#     pnpm eas <otaverb>               a bare pnpm/yarn dispatch of a local binary
+#
+# _OUT_LAUNCHER_ANY -- the spellings that hand the NEXT word to a real binary. ENUMERATED,
+# not universal: this is a closed list of four arms, and the residual block below names what
+# is knowingly outside it. An earlier revision of this line said `every spelling`, which the
+# tree contradicted -- a security review measured `yarn workspace <ws> <cmd>` and
+# `yarn workspaces foreach exec <cmd>` reaching the OTA sink while this comment claimed the
+# class was closed. Those two are now arms; the lesson that outlives them is that a UNIVERSAL
+# in a comment beside a closed alternation is a claim nobody can check and the next sibling
+# is always already there.
+#   * `npm explore <pkg> [--]`: the package name sits between the launcher and its target, so
+#     no fixed-width launcher pattern can reach past it. The `--` is OPTIONAL because npm
+#     accepts both spellings; `npm explore <pkg> -- ls` stays ALLOW because `ls` is not gated.
+#   * bare `pnpm`/`yarn`: both dispatch a local node_modules binary with no `dlx`/`exec` verb.
+#     `pnpm install`, `pnpm add <pkg>`, `pnpm run <script>` are unaffected -- for npm and pnpm the
+#     word after `run` is a SCRIPT name, never a binary, so the pattern does not match and
+#     `pnpm run eas` stays ALLOW, pinned as a control.
+#     YARN IS THE EXCEPTION, and assuming otherwise left a live bypass. yarn's `run` falls back to
+#     `node_modules/.bin`, so `yarn run <gated-bin> <verb>` reaches exactly the sink that
+#     `yarn <gated-bin> <verb>` reaches. Measured 2026-09-18 BEFORE this fix: `yarn eas update`
+#     DENY while `yarn run eas update` ALLOW, and the same through a workspace scope
+#     (`yarn workspace api run eas update` ALLOW). `run` is therefore a launcher STEP for YARN
+#     ONLY -- interpolated into the yarn arms below and deliberately NOT into npm/pnpm.
+#     The accepted over-denial is narrow and was measured, not assumed: a repo script named like
+#     a gated binary still runs, because no gated VERB follows it (`yarn run eas` ALLOW,
+#     `yarn run railway` ALLOW); only `yarn run eas update` and its siblings deny.
+#   * THE INTERPRETER WORD (`node`/`bun`/`deno`). Running a gated CLI's script through its
+#     interpreter reaches the same sink as running the script: `node <path>/eas update` IS
+#     `eas update`. Before round 4 the interpreter was admitted ONLY in front of the literal
+#     `eas-cli/` and `@railway/cli/` package-directory substrings, so it closed
+#     `node .../node_modules/eas-cli/bin/run update` and left `node /opt/homebrew/bin/eas update`
+#     wide open -- the installed shim is a SYMLINK into that package whose own path carries no
+#     `eas-cli/` substring, so the substring check could never see it. Measured 2026-09-18 on a
+#     box where `/opt/homebrew/bin/eas -> ../lib/node_modules/eas-cli/bin/run` with an
+#     `#!/usr/bin/env node` shebang: the interpreter-less twin denied and the `node`-prefixed
+#     form ALLOWED, on this branch and on main alike. As a launcher STEP the existing gated-bin
+#     and verb anchors fire on the terminal name instead, so the route closes for ANY path
+#     spelling rather than for the two the substrings happen to name. Over-denial stays narrow
+#     because the anchors still require a GATED terminal name and its verb: `node <path>/tsc`,
+#     `node scripts/seed.js` and `node --version` are unaffected, and are pinned as controls.
+#     THE ARM TAKES `_OUT_FLAG_RUN` AND AN OPTIONAL `run`, NOT A BARE SEPARATOR, and round 5
+#     measured why. `deno` does not accept a bare script path -- its real invocation is
+#     `deno run <path>` -- so an arm ending in a plain separator closed the spelling deno
+#     REJECTS and left the one that works ALLOW: `deno run /opt/homebrew/bin/eas update` was
+#     ALLOW while `deno /opt/homebrew/bin/eas update` denied. `bun run <path>` only escaped the
+#     same fate because `bun<sep>(x|run)` already sat in `_OUT_LAUNCHER`. Modelling the
+#     interpreter word on how it is actually TYPED rather than on the shortest form that parses
+#     is the lesson; `_OUT_FLAG_RUN` additionally absorbs interpreter flags, so
+#     `node -r ./reg <path>/eas update` and `deno --allow-all run <path>/eas update` close with
+#     it. `node` has no `run` subcommand, so admitting an optional one for all three costs only
+#     a nonsense spelling nobody types, and the ungated controls above still pass.
+# EVERY ALTERNATIVE ENDS IN A SEPARATOR, which is what makes the group safe to repeat.
+# THE `workspaces` ARM IS AN ALTERNATION OF EXACTLY THE FORWARDING SUBCOMMANDS, which is a
+# property rather than a list that will keep growing: yarn forwards the remainder of the command
+# line in exactly two spellings -- `workspaces run <cmd>` (classic v1) and
+# `workspaces foreach <cmd>` (berry v2+). `workspaces info`, `workspaces list` and
+# `workspaces focus` forward nothing, so they cannot reach a sink and are deliberately absent;
+# over-denial rows in test-guard-outward-cli.sh pin that they keep ALLOWing. `run` was missing
+# here until the round-3 security review measured `yarn workspaces run <gated> <verb>` ALLOW at
+# this branch's head, at its parent AND on main, across all four path forms -- the THIRD member
+# of this same class found by review rather than by the grammar, which is why it is now spelled
+# as the forwarding property instead of one more remembered row.
+# _OUT_WS_SCOPE -- yarn's WORKSPACE SCOPE SELECTOR: `workspace <ws>` or `workspaces foreach/run`,
+# each optionally followed by `exec`. It is NOT a launcher verb and modelling it as one is the
+# mistake this constant exists to avoid: `yarn workspace <ws> X` forwards X to yarn INSIDE that
+# workspace, so the WHOLE grammar re-applies after it. That is why it is interpolated in two
+# different roles below -- as an arm of _OUT_LAUNCHER_ANY (so `yarn workspace api eas update`
+# denies) AND as an absorber between a package manager and its verb at the OTA-script anchors
+# (so `yarn workspace api run update:preview` denies, which the launcher arm alone cannot reach:
+# once the prefix is consumed there is no package-manager word left for that anchor to match).
+# The workspace name is NOT allowed to start with `-`, so a flag can never be mistaken for it;
+# ordinary `yarn workspace api build` / `yarn workspaces foreach exec tsc --noEmit` are
+# unaffected, because the word after the scope still has to be a gated binary or verb.
+_OUT_WS_SCOPE='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'(foreach|run))'"$_OUT_FLAG_RUN"'(exec'"$_OUT_SEP"')?'
+
+# _OUT_WS_SCOPE_NV -- the same scope selector with a VALUE-LESS flag absorber, for the anchors
+# where the script name is the first word after the flags and therefore cannot be told apart
+# from a flag's value.
+#
+# WHY TWO VARIANTS RATHER THAN ONE CHOICE. _OUT_FLAG_RUN's iteration is `SEP -flag (SEP value)?`,
+# so ONE flag after the scope swallows the next word. The bare-script anchors cannot tell that
+# swallowed word from the script itself, so they take the value-less variant.
+# The run-form anchors keep the FULL _OUT_WS_SCOPE for a different and narrower reason than an
+# earlier revision of this comment claimed. That revision said "the script has to come after
+# `run`, and no value slot reaches past it" -- FALSE, and a review caught it by reading the
+# anchors: they carry a SECOND _OUT_FLAG_RUN after the `run` literal, and ITS value slot does
+# reach past. The actual reason is that narrowing the scope there would stop
+# `--cwd <dir> run <otascript>` denying, and narrowing the POST-`run` slot was measured and
+# rejected -- see the residual note below. Do not re-derive this from the shape of the anchor;
+# the shape is what misled the last revision.
+# Where the script name is the first word after the flags, the swallow is indistinguishable from
+# the real thing, and an ordinary `yarn workspace api --silent test -- --grep <otascript>` denied
+# because `test` became `--silent`'s value. Those anchors take this variant.
+# SECOND RESIDUAL, ACCEPTED ON MEASUREMENT: the post-`run` slot has the same value-slot
+# behaviour, so `<pm> <scope> run --flag <word> <otascript>` denies even when <word> is the real
+# command and the script name is only incidental text (`run --silent test -- --grep <otascript>`).
+# Review measured 240 such rows. THE OBVIOUS REPAIR WAS BUILT AND PRICED, AND IS REJECTED: a
+# value-less absorber in the post-`run` slot does NOT remove those denials, and it turns
+# `npm run --workspace api <otascript>` and `pnpm run --filter api <otascript>` from DENY into
+# ALLOW -- the documented npm and pnpm spellings for running a workspace script, i.e. two real
+# OTA routes traded for a cosmetic over-denial. The unscoped forms (`yarn run --silent test --
+# --grep <otascript>`) already deny on origin/main, so this is a pre-existing class newly
+# reachable through a workspace scope, not a new one. Filed rather than patched; a fix belongs
+# at _OUT_FLAG_RUN itself, which every anchor in this file shares.
+#
+# THREE CONSUMERS, NOT TWO. `_OUT_WS_SCOPE` is also read by `_OUT_LAUNCHER_ANY`'s launcher arm,
+# which is neither anchor family. An earlier revision of this comment said the two anchor
+# families were its only consumers; a review found the third by grep. It correctly needed no
+# split -- measured on precise AND all three degraded paths, `yarn workspace api -A eas <otaverb>`
+# and `yarn --tag beta eas update` deny and `yarn workspace api -A tsc --noEmit` allows -- because
+# a gated BINARY NAME follows there, not a script name, so a swallowed word cannot be mistaken
+# for the target. Count the consumers before describing them; this file makes that cheap.
+#
+# ACCEPTED OVER-DENIAL (degraded paths only), following this file's existing convention for
+# them. The crude mirror never got the run-form/bare-script split, so the very rows the precise
+# path was fixed for still deny there: `yarn workspaces foreach -A test -- --grep <otascript>`,
+# `yarn workspace api --silent test -- --grep <otascript>` and
+# `yarn workspace api --message hi --grep <otascript>` are ALLOW on precise and DENY on nojq,
+# nolib and noawk. The flagless twin allows everywhere, and one non-flag word after the flag
+# (`--message wrote docs about <otascript> today`) allows everywhere -- it is a SECOND
+# flag-shaped token that restarts the crude absorber. Not split, for the reason the post-`run`
+# slot was not: each slot patched here has exposed the next, and the crude mirror is
+# deliberately the wider, fail-closed side. PINNED as degraded-path rows so the precise-path
+# `assert_allow`s cannot be read as path-independent.
+#
+# RESIDUAL, measured and deliberate: `<pm> workspace <ws> --flag <value> <otascript>` -- a flag
+# WITH a value and no `run` -- now ALLOWS on the precise path. The run-form spelling of the same
+# command denies, and the crude degraded mirror denies this one too, so it is narrow. It is the
+# price of not denying every flagged workspace command that merely NAMES the script, which is
+# the failure that gets a guard switched off rather than fixed.
+_OUT_WS_SCOPE_NV='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'(foreach|run))('"$_OUT_SEP"'-{1,2}[^[:space:]]*)*'"$_OUT_SEP"'(exec'"$_OUT_SEP"')?'
+
+_OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|yarn'"$_OUT_FLAG_RUN"'('"$_OUT_WS_SCOPE"')+(run'"$_OUT_FLAG_RUN"')?|yarn'"$_OUT_FLAG_RUN"'run'"$_OUT_FLAG_RUN"'|(pnpm|yarn)'"$_OUT_FLAG_RUN"'|(node|bun|deno)'"$_OUT_FLAG_RUN"'(run'"$_OUT_FLAG_RUN"')?)'
+
+# _OUT_LAUNCH_INTER -- what may sit BETWEEN a launcher and the next word. Deliberately the same
+# wrapper/privilege alternation _OUT_POS_PREFIX_W already admits in COMMAND position: a wrapper
+# word does not stop being a wrapper because a launcher preceded it. Interpolated, not re-spelled,
+# so the two cannot drift apart.
+_OUT_LAUNCH_INTER="(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD}${_OUT_FLAG_RUN})|((${_OUT_PATH_PREFIX})?${_OUT_PRIV_WORD}))*"
+
+# _OUT_LAUNCH_STEP -- ONE launcher hop: optional path qualifier, a launcher word, optional path
+# qualifier, then any wrapper/privilege words trailing it. CANNOT MATCH EMPTY: _OUT_LAUNCHER_ANY
+# requires a literal launcher word, which is what makes `(${_OUT_LAUNCH_STEP})+` well-behaved.
+# If a future edit makes that piece optional the group becomes `()+` and the repetition is
+# meaningless -- keep the launcher word mandatory here.
+_OUT_LAUNCH_STEP="((${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER_ANY})(${_OUT_PATH_PREFIX})?${_OUT_LAUNCH_INTER})"
+
+# _OUT_OPT_QUAL_CH -- the OPTIONAL chain qualifier: "the command may be reached through any
+# number of launcher hops, or a path, or both, or neither". This is _OUT_OPT_QUAL widened to the
+# chain, and it is a SEPARATE constant on purpose. _OUT_OPT_QUAL is still used verbatim at the
+# `grep -oE` extraction sites and at the _ALREADY_HANDLED exclusion that pairs with them, where
+# widening is NOT monotone: a longer match absorbs what would have started a second one, so the
+# occurrence COUNT can fall while the guard gets strictly wider. Only boolean `grep -Eq` deny
+# sites take _CH.
+_OUT_OPT_QUAL_CH="((${_OUT_LAUNCH_STEP})*(${_OUT_PATH_PREFIX})?)"
+#
+# DOCUMENTED RESIDUAL -- a BRACE token behind anything the brace arms' qualifier cannot see.
+# An earlier revision named nine rows and presented them as THE SET. They were not: a generated
+# 1980-row grid (2026-09-18) found 48 further ALLOW rows across 8 chain forms this list never
+# named -- three of them arms this same PR introduced, so the enumeration aged the moment the
+# grammar grew. Rows below are EXAMPLES. The SET is the property, and the property is checkable
+# precisely because the corpus GENERATES it combinatorially rather than listing it:
+#     every _OUT_LAUNCH_STEP chain crossed with a brace token, PLUS every single-launcher
+#     brace-LIST spelling (the RANGE spelling under one launcher IS covered -- see below).
+# Measured 2026-09-17/18; each row is ALLOW:
+#     npx pnpm dlx ea{s..s} update          npx pnpm dlx ea{s,x} update
+#     npx env ea{s..s} update               npx env ea{s,x} update
+#     npm explore some-pkg -- ea{s..s} update   npm explore some-pkg -- ea{s,x} update
+#     npx pnpm dlx eas upd{a..z}te          npx env eas up{d,x}ate
+#     pnpm eas up{d,x}ate
+# WHY IT IS DELIBERATE, and not an oversight. Every brace arm reaches its qualifier through a
+# `grep -oE` OCCURRENCE EXTRACTOR paired with an `*_ALREADY_HANDLED` exclusion, and widening an
+# extraction is NOT monotone: a longer match absorbs what would have started a second one, so
+# the occurrence COUNT can FALL while the guard gets strictly wider, and the count is what
+# decides. That is the same non-monotonicity documented at
+# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md.
+# Giving those sites the chain therefore requires moving the count and its extractor TOGETHER
+# and re-deriving the pins, which is a separate change with its own corpus re-run.
+# WHAT IS NOT IN THIS RESIDUAL, measured rather than assumed -- these DENY today:
+#     pnpm ea{s..s} update    pnpm ea{s,x} update    npx ea{s..s} update
+# READ THOSE THREE CAREFULLY -- an earlier revision drew the wrong universal from them. They do
+# NOT show that a single launcher in front of a brace token is covered; each denies for its own
+# reason. The two `pnpm` rows deny because `pnpm` is ITSELF in _OUT_GATED_BIN (see the
+# _OUT_GATED_BIN definition below) and so matches the gated-bin arm, not any launcher arm. The
+# `npx` row denies because it is brace-RANGE, the one brace family whose extractor carries
+# _OUT_OPT_QUAL. The LIST spelling under the very same single launcher is ALLOW -- measured
+# 2026-09-18, npx / npm exec / pnpm dlx / yarn dlx / bunx every one of them allows
+# `ea{s,x} update`, and `g{h,x} pr merge 42 --admin` allows behind npx too. The ROUND-11
+# bullet at the top of this file already recorded that class; the two statements could not both
+# stand. Do not widen on the strength of the list above without re-measuring.
+# The separately ruled bare tool-position residual (`ea{s..s} update`, no launcher at all) is a
+# DIFFERENT mechanism -- the fastpath needle -- and is not this.
+
 # Combined: existing prefix (opener + optional wrapper words) unchanged, THEN
 # MANDATORILY at least one of launcher/path — but NOT a plain alternation
 # (`launcher|path`), because the two COMPOSE (`npx /opt/homebrew/bin/eas
@@ -2536,7 +2874,13 @@ _OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD
 # privilege- or wrapper-prefixed launcher (`sudo npx ...`, `/usr/bin/env npx ...`) denies by
 # construction instead of waiting for someone to enumerate that spelling. This constant has only
 # boolean grep -Eqi deny consumers, so inheriting the wider anchor is monotone-safe here.
-_OUT_POS_PREFIX_LP="${_OUT_POS_PREFIX_W}((${_OUT_PATH_PREFIX})?(${_OUT_LAUNCHER})(${_OUT_PATH_PREFIX})?|${_OUT_PATH_PREFIX})"
+# The launcher half is now `(${_OUT_LAUNCH_STEP})+` -- ONE OR MORE hops, each able to carry a
+# path on either side and trailing wrapper words -- with the bare-path alternative unchanged.
+# The "MANDATORILY at least one of launcher/path" property above is PRESERVED: `+` not `*`, and
+# the `|${_OUT_PATH_PREFIX}` arm still carries the path-only case. Making it `*` would let this
+# constant match a bare command position, which the checks above already handle under a
+# different deny reason, and would move corpus reason pins without widening the guard at all.
+_OUT_POS_PREFIX_LP="${_OUT_POS_PREFIX_W}((${_OUT_LAUNCH_STEP})+(${_OUT_PATH_PREFIX})?|${_OUT_PATH_PREFIX})"
 
 # The same launcher/path group as _OUT_POS_PREFIX_LP above, but OPTIONAL -- "the command may be
 # qualified by a path, or by a launcher, or by both, or by neither". _LP mandates at least one of
@@ -3344,8 +3688,9 @@ fi
 # per-launcher flag enumeration — see that comment for why. This comment
 # block, documenting every historical bypass this grammar closes, stays here
 # at its original site, right above its primary use site.
-if grep -Eqi "${_OUT_POS_PREFIX_W}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
-   || grep -Eqi "${_OUT_POS_PREFIX_W}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})*(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_POS_PREFIX_W}(yarn|pnpm)${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE_NV})*update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_POS_PREFIX_W}(node|bun|deno)${_OUT_FLAG_RUN}((run|task)${_OUT_FLAG_RUN}|--run=)?update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
 
@@ -3391,10 +3736,40 @@ fi
 _OUT_EXPANSION_TOKEN='(\$\{[^}]*\}|\$\([^)]*\)|`[^`]*`|\$[A-Za-z_][A-Za-z0-9_]*)'
 _OUT_GATED_BIN='(eas|railway|npm|pnpm|yarn|gh)'
 _OUT_GATED_VERB='(update|publish|submit|build|up|deploy|redeploy|restart|down|delete|remove|rm|run|pr|release|repo|api)'
-if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
-   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
-   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_GATED_BIN}${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+
+# --- narrow deny: an INTERPRETER whose verb slot is an expansion, WITH the OTA script present -
+# `_OUT_GATED_BIN` above deliberately does NOT list node/bun/deno, and must not: that arm denies
+# a gated binary followed by ANY expansion, and `node $SCRIPT`, `node $(which tsx)` and
+# `deno run ${MOD}` are ordinary and everywhere. But once round 7 made those three recognised
+# runners of `update:(preview|production)`, their expansion slot became the one cell the
+# widening did not carry. Measured on the pre-fix tree: `npm $(echo run update:production)`
+# DENIED while `node $(echo --run update:production)`, `bun $(echo run update:production)` and
+# `deno $(echo task update:production)` all ALLOWED -- and that script execs
+# `eas update --branch production --platform all`, a real OTA to real users. A reviewer
+# confirmed by decoy that `$( )` genuinely delivers the verb under BOTH bash and zsh.
+# THE PREDICATE IS A CO-OCCURRENCE, the shape this file already uses for the unreadable-value
+# `gh api` case: an interpreter in command position whose next token cannot be read, AND the OTA
+# script name somewhere in the same rendering. BOTH halves are required, and that is precisely
+# what keeps ordinary interpreter use allowed -- `node $SCRIPT` and `node $(echo --run build)`
+# carry no script name and are pinned as controls. It keys on the same literal as the fastpath
+# needles added in the same round, so it is reachable by construction rather than by luck.
+# BOTH HALVES ARE `-Eqi`, AND THE FIRST ONE WAS NOT UNTIL ROUND 9 MEASURED IT. Spelled `-Eq`,
+# this arm was the only member of its family that was case-SENSITIVE, and that is not a
+# theoretical spelling on a case-insensitive filesystem: `/opt/homebrew/bin/NODE` resolves and
+# `NODE --version` prints a real version here, so `NODE $(echo --run update:production)` ALLOWED
+# while its lowercase twin and the literal `NODE --run update:production` both denied. The
+# fastpath already pays for case-insensitivity at this point (it matches under `nocasematch`),
+# so the insensitivity was being dropped at the arm alone. There is no new over-denial surface:
+# the predicate still requires command-position node/bun/deno AND an expansion AND the
+# co-occurring script name.
+if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(node|bun|deno)${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   && grep -Eqi 'update:(preview|production)' <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: an interpreter (node/bun/deno) sits in command position with an EXPANSION in its verb slot while 'update:preview/update:production' appears in the same command - that script execs 'eas update --branch production --platform all', a real OTA to real users. The expansion cannot be read, so the verb it supplies cannot be checked, and denying is the safe direction for the 2026-08-16 incident class. Ordinary interpreter use with an expansion is unaffected: this fires ONLY when the OTA script name co-occurs. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 # --- narrow deny: a gated binary/verb glued to a brace RANGE ({X..Y}) --------
@@ -4680,33 +5055,34 @@ fi
 # over-denial has no reachable cost. Pinned as a deliberate choice, not a
 # residual: `gh pr merge --auto` reached via `npx`/`npm exec`/a path DENIES,
 # where the bare-position form ALLOWS.
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'eas update/publish/submit' reached through a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) or a path-qualified invocation (incl. the 'eas-cli' package spelling) — npm's own resolution for 'npm exec'/'npx' never consults PATH, so a PATH-only wrapper cannot stop this. Same OTA-publish incident class as the bare-command check above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'eas channel:/branch: create/edit/delete/rename' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(eas|eas-cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}build${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
    && scan_renderings "${_OUT_FLAG_LEAD}"'--auto-submit'; then
   deny "guard-outward-cli: 'eas build --auto-submit' reached through a launcher or a path-qualified invocation (incl. 'eas-cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached through a launcher or a path-qualified invocation (incl. the '@railway/cli' package spelling). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(variable|variables|vars|var)${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(variable|variables|vars|var)${_OUT_SEP}(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'railway variable/vars/var set/delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(service|environment)${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm:)?(railway|@railway/cli)${_OUT_PKG_VERSION_PIN}${_OUT_SEP}(service|environment)${_OUT_SEP}delete${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'railway service/environment delete' reached through a launcher or a path-qualified invocation (incl. '@railway/cli'). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_SEP}publish${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'npm publish' reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
-   || grep -Eqi "${_OUT_POS_PREFIX_LP}(yarn|pnpm)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})*(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_POS_PREFIX_LP}(yarn|pnpm)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE_NV})*update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
+   || grep -Eqi "${_OUT_POS_PREFIX_LP}(node|bun|deno)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}((run|task)${_OUT_FLAG_RUN}|--run=)?update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
 # VERSION-PIN on `gh` itself (2026-09-16, round-2 review correction): the
@@ -4747,10 +5123,10 @@ fi
 # anywhere in the path is what matters, not launcher-or-path composition; an
 # optional bare interpreter word (node/bun/deno) is absorbed for free, but is
 # NOT required — the bare path alone is already the reachable exploit.
-if grep -Eqi "${_OUT_POS_PREFIX_W}(${_OUT_PATH_PREFIX})?(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_EASCLI}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_EASCLI}${_OUT_SEP}(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a direct path invocation of a script INSIDE the eas-cli npm package directory (e.g. node_modules/eas-cli/bin/run) reached 'update/publish/submit' — eas-cli's own package.json maps bin: {\"eas\": \"./bin/run\"}, so the real installed script's filename is 'run', never 'eas'/'eas-cli', and can't match a literal-binary-name path check. Same OTA-publish incident class as the checks above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX_W}(${_OUT_PATH_PREFIX})?(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_RAILWAYCLI}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+if grep -Eqi "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(${_OUT_INTERP_WORD})?${_OUT_PKGDIR_RAILWAYCLI}${_OUT_SEP}(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: a direct path invocation of a script INSIDE the @railway/cli npm package directory reached a gated railway verb, by the same package.json-bin-mapping gap as eas-cli above. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
