@@ -4,10 +4,10 @@
 // Trans Fat / Cholesterol / Caffeine rows (Task 11, Smart Scan Universal
 // Nutrition Flags v1). The screen has no prior render test — this file
 // mocks useNutritionLookup (the screen's sole data source) plus
-// @react-navigation/native, and pins the route to an `itemId` lookup so the
-// serving-controls / verification-badge / manual-search / flags branches
-// (each gated on `!itemId` or a non-empty array) stay out of the render
-// tree — only the Additional Nutrients card is exercised.
+// @react-navigation/native, and pins the route to an image-entry lookup (no
+// `barcode`) so the serving-controls / verification-badge / manual-search /
+// flags branches (each gated on a barcode or a non-empty array) stay out of
+// the render tree — only the Additional Nutrients card is exercised.
 import React from "react";
 import { describe, it, expect, afterEach } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
@@ -19,21 +19,30 @@ import { buildNutritionDetailParams } from "../scan-screen-utils";
 import { Spacing } from "@/constants/theme";
 import type { ScanPhase } from "@/camera/types/scan-phase";
 
-/** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`, no
- * `itemId`); every other suite relies on the `itemId` default below.
+/** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`);
+ * every other suite relies on the image-entry default below. The default used
+ * to carry `itemId: 42`, whose branch was removed 2026-09-17 — `imageUri` is
+ * the surviving entry mode that reaches this screen without a barcode, so
+ * every barcode-gated suppression this file depends on is unchanged.
  * `mockNavigate` is hoisted (not a fresh `vi.fn()` per `useNavigation()` call)
  * so a test can assert against a stable reference — see the verification-panel
  * CTA test below. */
 const { mockUseNutritionLookup, mockRoute, mockNavigate } = vi.hoisted(() => ({
   mockUseNutritionLookup: vi.fn(),
-  mockRoute: { params: { itemId: 42 } as Record<string, unknown> },
+  // Inline literal, not a const: `vi.hoisted` runs before module-level
+  // bindings are initialised, so a reference here would be a TDZ error.
+  mockRoute: {
+    params: { imageUri: "file:///manual.jpg" } as Record<string, unknown>,
+  },
   mockNavigate: vi.fn(),
 }));
 
-const ITEM_ID_ROUTE_PARAMS: Record<string, unknown> = { itemId: 42 };
+const IMAGE_ROUTE_PARAMS: Record<string, unknown> = {
+  imageUri: "file:///manual.jpg",
+};
 
 afterEach(() => {
-  mockRoute.params = ITEM_ID_ROUTE_PARAMS;
+  mockRoute.params = IMAGE_ROUTE_PARAMS;
   mockNavigate.mockClear();
 });
 
@@ -116,8 +125,8 @@ function baseHookReturn(
     handleManualSearch: vi.fn(),
     addToLogMutation: { isPending: false },
     handleAddToLog: vi.fn(),
-    // Required even though this file pins the route to `itemId` (which closes
-    // the log-button block): the screen reads `logGate.kind` in a top-level
+    // Required even though this suite never asserts on the log button: the
+    // screen reads `logGate.kind` in a top-level
     // useEffect dep array, so omitting it is a TypeError, not a falsy no-op
     // like the notice fields above.
     logGate: { kind: "open" },
@@ -557,8 +566,8 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
  * exists to deliver is that "Add to Today" is NOT reachable in one tap while
  * gated, and that only holds at this layer.
  *
- * These use a scan-flow route (`barcode`, no `itemId`), which is the only route
- * shape where the log button renders at all.
+ * These use a scan-flow route (`barcode`), the only route shape where the log
+ * button's GATED copy can be exercised end to end.
  */
 describe("NutritionDetailScreen — log gate (Task 6)", () => {
   // Derived, not hand-copied: a change to the button copy must not leave this
@@ -693,11 +702,10 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
 
   // D4 fix (Task 8): the CTA navigated to Scan with mode: "label" — asking
   // for the nutrition-label photo that step 2 of the main flow already
-  // collects. Uses renderScanRoute (barcode route, no itemId) because the
-  // verification section only renders under `!itemId && barcode &&
-  // nutrition`; the default itemId route would keep this text out of the
-  // tree regardless of whether the CTA still existed, making the assertion
-  // vacuous.
+  // collects. Uses renderScanRoute (barcode route) because the verification
+  // section only renders under `barcode && nutrition`; the default image-entry
+  // route would keep this text out of the tree regardless of whether the CTA
+  // still existed, making the assertion vacuous.
   it("does not render the obsolete Help verify this product CTA", () => {
     const { queryByText } = renderScanRoute({ kind: "open" });
 
@@ -1118,7 +1126,7 @@ describe("NutritionDetailScreen — nutrition panel wiring (slice 2c)", () => {
     //
     // Asserting on the indicator and the value rather than the row label: a
     // label-only assertion passes in every row state.
-    mockRoute.params = { itemId: 42 };
+    mockRoute.params = IMAGE_ROUTE_PARAMS;
     mockUseNutritionLookup.mockReturnValue(
       baseHookReturn({
         productName: "Mystery Drink",
@@ -1449,15 +1457,6 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
     return renderComponent(<NutritionDetailScreen />);
   }
 
-  function renderSavedItem(overrides: Record<string, unknown> = {}) {
-    mockRoute.params = { itemId: 42 };
-    mockUseNutritionLookup.mockReturnValue({
-      ...baseHookReturn({ productName: "Cherry Coke", calories: 39 }),
-      ...overrides,
-    });
-    return renderComponent(<NutritionDetailScreen />);
-  }
-
   /**
    * React keeps every prop it was handed on the host node's fiber, including
    * ones it declined to wire up (`onLayout`) or to recognise
@@ -1652,22 +1651,6 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
     ).toBeTruthy();
   });
 
-  // Constraint 25: the saved-item view keeps its existing omissions. All three
-  // notice inputs are supplied, so a dropped `!itemId` gate goes red here
-  // rather than passing because the fixture had nothing to show.
-  it("renders no notices at all on the saved-item path", () => {
-    const { queryByText } = renderSavedItem({
-      labelReadNotice: LABEL_BODY,
-      correctionNotice: CORRECTION_BODY,
-      isPer100g: true,
-    });
-
-    expect(queryByText(LABEL_BODY)).toBeNull();
-    expect(queryByText(CORRECTION_BODY)).toBeNull();
-    expect(queryByText(PER_100G_BODY)).toBeNull();
-    expect(queryByText("Label not used")).toBeNull();
-  });
-
   /**
    * `error` renders through `InlineError`, not as a `NoticeStack` row
    * (Constraint 23): error messages require `assertive`, and the notices
@@ -1824,19 +1807,6 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
   });
 
   /**
-   * The other half of "counted once": with no bar to own it, the inset has to
-   * stay on the ScrollView or the saved-item view loses its home-indicator
-   * clearance. Same reason the loading branch keeps it.
-   */
-  it("keeps insets.bottom on the ScrollView where no bar renders", () => {
-    const { container } = renderSavedItem();
-
-    expect(scrollPaddingBottom(container)).toBe(
-      SAFE_AREA_BOTTOM + Spacing["3xl"],
-    );
-  });
-
-  /**
    * Constraint 8: the bar must render INSIDE the `accessibilityViewIsModal`
    * root, or it falls outside the modal's iOS accessibility scope.
    *
@@ -1856,15 +1826,5 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
     expect(root!.children).toHaveLength(2);
     expect(root!.children[0]).toBe(scrollViewOf(container));
     expect(root!.children[1]).toBe(getByTestId("log-action-bar"));
-  });
-
-  // Constraint 25 again: no log button on the saved-item path. The root drops
-  // back to a lone ScrollView.
-  it("renders no sticky bar on the saved-item path", () => {
-    const { container, queryByTestId, queryByText } = renderSavedItem();
-
-    expect(queryByTestId("log-action-bar")).toBeNull();
-    expect(queryByText("Add to Today")).toBeNull();
-    expect(container.firstElementChild!.children).toHaveLength(1);
   });
 });

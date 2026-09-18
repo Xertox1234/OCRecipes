@@ -64,7 +64,6 @@ export interface NutritionData {
 export function useNutritionLookup(params: {
   barcode?: string;
   imageUri?: string;
-  itemId?: number;
   /**
    * Three-valued: `undefined` = no label step ran (barcode-only scan), `null` =
    * a label was photographed but the recognizer produced nothing usable, string
@@ -72,7 +71,7 @@ export function useNutritionLookup(params: {
    */
   ocrText?: string | null;
 }) {
-  const { barcode, imageUri, itemId, ocrText } = params;
+  const { barcode, imageUri, ocrText } = params;
 
   const navigation = useNavigation<NutritionDetailScreenNavigationProp>();
   const queryClient = useQueryClient();
@@ -90,8 +89,6 @@ export function useNutritionLookup(params: {
    * sending `false`, since the server has no basis to claim certainty either
    * way. `resolveBasis` treats null as unknown rather than defaulting to the
    * food scale, which would halve the strictness applied to a real drink.
-   * The itemId/saved-item path never runs the barcode handler below, so it
-   * keeps this null initialiser — the correct "no signal" value there too.
    */
   const [isBeverage, setIsBeverage] = useState<boolean | null>(null);
   const [hasFrontLabelData, setHasFrontLabelData] = useState(false);
@@ -100,95 +97,24 @@ export function useNutritionLookup(params: {
   const [isPer100g, setIsPer100g] = useState(false);
   const [servingQuantity, setServingQuantity] = useState(1);
   /**
-   * Stays null for the whole itemId/saved-item path, deliberately.
+   * Null until a barcode lookup resolves a real gram weight. The initialiser
+   * is the honest "no basis known" value, and `effectivePer100g`'s guard below
+   * returns null rather than fabricating one from it.
    *
-   * Two bounds on that sentence, both verified 2026-08-15:
-   *   - `RootStackParamList["NutritionDetail"]` is a discriminated union of
-   *     the three entry modes (barcode / itemId / imageUri), each arm typing
-   *     the other selectors `?: never` — so `{ itemId, barcode }` together is
-   *     a COMPILE ERROR at the route-params boundary (proven in
-   *     `client/navigation/__tests__/RootStackNavigator.paramlist.test.ts`).
-   *     That enforcement is conditional on going through that boundary,
-   *     though: this hook's OWN parameter object below (`params: { barcode?,
-   *     imageUri?, itemId?, ocrText? }`) still declares the three selectors
-   *     as independent optionals — `NutritionDetailScreen` reconstructs them
-   *     by destructuring `route.params`, which re-widens each field back to
-   *     `T | undefined` across the union's arms — so a caller of this hook
-   *     that is NOT the route boundary could still pass two. This is not
-   *     only a hypothetical future caller: `CoachChat.tsx`'s
-   *     `params as RootStackParamList["NutritionDetail"]` cast (an `as`,
-   *     which bypasses the union entirely) is a LIVE bypass today.
-   *     `shared/schemas/coach-blocks.ts`'s `validateNavigateParams` used to
-   *     check only `schema.safeParse(val.params).success` and never
-   *     reassign `val.params` to the parsed/stripped `result.data`, so an
-   *     LLM action payload of `{ itemId, barcode }` for
-   *     `screen: "NutritionDetail"` passed validation (barcode alone
-   *     satisfies the schema) with `itemId` still attached, reaching this
-   *     hook via `navigation.navigate` with both set. **That gap is now
-   *     CLOSED** (P3-2026-08-16): `validateNavigateParams` reassigns
-   *     `val.params` to `result.data` on success, so `{ itemId, barcode }`
-   *     is stripped down to `{ barcode }`. This closes the gap for every
-   *     block the client renders, not only newly-generated ones — both
-   *     `CoachChat.tsx`'s `messageBlocks` (persisted history, re-parsed via
-   *     `filterValidBlocks`/`coachBlockSchema` on every `useChatMessages`
-   *     read) and `useCoachStream.ts`'s live-stream path re-validate through
-   *     the current schema before `handleBlockAction` ever sees an action,
-   *     so a block persisted before this fix is stripped too, on read. See
-   *     docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2026-08-06.md
-   *     — do not read this docblock as claiming the exclusivity is enforced
-   *     everywhere; `CoachChat.tsx`'s
-   *     `params as RootStackParamList["NutritionDetail"]` cast is still an
-   *     `as`, not a compiler-verified narrowing, so TYPE-level exclusivity
-   *     is not enforced through that call site — only the RUNTIME shape (no
-   *     stray `itemId` reaching this hook) is, and now it is enforced both
-   *     at the route-params boundary and by this stripping fix.
-   *   - No caller passes `itemId` at all IN PRACTICE. The one caller that
-   *     could have — the Coach bypass just described — no longer can: its
-   *     `itemId` is stripped before this hook is ever invoked. `ScanScreen`
-   *     sends barcode-only; history taps go to the separate `ItemDetail`
-   *     screen (`useHistoryData.ts`), which does not use this hook. So the
-   *     saved-item branch is wired and typed but has no production producer
-   *     — do not read the scan-vs-Today framing in the memo comment below as
-   *     a flow a user can reach today.
-   *
-   * Every assignment below is downstream of `fetchBarcodeData` — including
-   * `chooseSource`'s (needs a `conflict`/`dbSnapshot` only it sets) and
-   * `handleManualSearch`'s (needs `showManualSearch`, likewise) — and the
-   * `existingItem` effect returns before ever calling it.
-   *
-   * Nothing reads it there either — but only ONE of the three reasons is
-   * caller-side gating, so do not restate this as "the consumers are gated".
-   *
-   *   - `ServingControls` genuinely is: `showServingControls`
-   *     (`!itemId && !!barcode && …`, NutritionDetailScreen.tsx) is false here,
-   *     so it never mounts.
-   *   - `effectivePer100g` returns null by its own guard below.
-   *   - `getServingContextLabel` is CALLED UNCONDITIONALLY
-   *     (NutritionDetailScreen.tsx, alongside `showServingControls` — only its
-   *     OUTPUT is gated, at the `servingContextLabel` prop). It runs here every
-   *     render with this null and with `servingOptions`' fabricated `|| 100`
-   *     list. It is harmless solely because of its OWN
-   *     `if (servingSizeGrams === null)` early return
-   *     (`client/screens/nutrition-detail-utils.ts`), which returns before
-   *     touching `servingOptions` — a property of the callee, not of the call
-   *     site. Reorder that branch and the fabricated list becomes live.
-   *
-   * So the protection here is one gate plus two callee-side early returns.
-   * That is thinner than it looks, and it is why the guard below returns null
-   * rather than trusting the absence of readers.
-   *
-   * Do not "fix" that by parsing `existingItem.servingSize` into it. A saved
-   * item's serving string IS parsed on that path, by `selectBandSource`'s
-   * saved-item branch in `client/components/nutrition/nutrition-band-source.ts`
-   * — which resolves the FSA basis and the portion weight from the one string
-   * through the one parser, precisely so those two can never describe
-   * different portions. Populating this as a second, independent answer to the
-   * same question reintroduces exactly that drift, and buys nothing: saved-item
-   * bands already work.
+   * Do not "fix" a null here by parsing a serving string into it. The FSA
+   * basis and the portion weight are resolved from the ONE string through the
+   * ONE parser, in `client/components/nutrition/nutrition-band-source.ts`,
+   * precisely so those two can never describe different portions. Populating
+   * this as a second, independent answer to the same question reintroduces
+   * exactly that drift.
    *
    * Per-consumer parsing is the standing pattern here. Decision recorded
    * 2026-08-15 (human-led) in
    * `todos/archive/P3-2026-08-15-should-saved-item-path-populate-servingsizegrams.md`.
+   * That record reasons about a saved-item path this hook no longer has (the
+   * `itemId` branch was removed 2026-09-17 — see
+   * `RootStackParamList["NutritionDetail"]`), but its conclusion holds on the
+   * paths that remain, for the same one-parser reason.
    */
   const [servingSizeGrams, setServingSizeGrams] = useState<number | null>(null);
   const [customGramsInput, setCustomGramsInput] = useState("");
@@ -276,9 +202,8 @@ export function useNutritionLookup(params: {
   // docs/solutions/logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md
   //
   // Safe because the notices are reachable only on the barcode path, which is
-  // the same `!itemId` condition that mounts `NoticeStack` (see the saved-item
-  // note above `existingItem`) — there is no state where a notice is set and
-  // no announcer is listening.
+  // also the only path that mounts `NoticeStack` — there is no state where a
+  // notice is set and no announcer is listening.
   //
   // The `error` string had the identical duplicate — an iOS-gated `useEffect`
   // here re-announced it alongside `InlineError`'s own iOS-gated announce
@@ -294,12 +219,12 @@ export function useNutritionLookup(params: {
   // (e.g. when the USDA/API Ninjas fallback was used).
   //
   // Deliberately omits saturatedFat/transFat/cholesterol/caffeine: the
-  // itemId/history-load path (validatedData null) sources `nutrition` from
-  // `/api/scanned-items/:id`, whose payload is the `scanned_items` Drizzle
-  // row (shared/schema.ts) — that table has no columns for these 4
-  // nutrients at all, so there is nothing to carry through here. Verified
-  // won't-fix (Smart Scan v1 refinements follow-up); revisit only if
-  // `scanned_items` ever gains those columns.
+  // back-calculation path runs when `validatedData` is null, and the fallback
+  // payloads that leave it null (USDA / API Ninjas, and formerly the
+  // `scanned_items` Drizzle row in shared/schema.ts) carry no values for these
+  // 4 nutrients at all, so there is nothing to carry through here. Verified
+  // won't-fix (Smart Scan v1 refinements follow-up); revisit only if a
+  // fallback payload ever gains those fields.
   const effectivePer100g = useMemo((): NutritionPer100g | null => {
     if (validatedData) return validatedData.per100g;
     if (!nutrition || nutrition.calories === undefined) return null;
@@ -309,18 +234,31 @@ export function useNutritionLookup(params: {
     // returned labelled per-100 g. `isPer100g` stays false on that path too,
     // so not even the "Values shown per 100g" banner disclosed it.
     //
-    // The itemId/saved-item path is where that state is reached: its effect
-    // calls only `setNutrition` (see `existingItem` below), leaving
-    // `servingSizeGrams` at its null initialiser while a `scanned_items` row's
-    // per-serving values sit on screen. Amy's chili — 680 mg of sodium in a
-    // 236 g can — then reads as 680 mg/100 g instead of 288: an FSA HIGH band
-    // where the truth is MEDIUM, and the same product banding differently
-    // depending on whether it was opened from a scan or from Today.
+    // The state is reached whenever a lookup populates `nutrition` without
+    // resolving a gram weight — the USDA / API Ninjas fallback, and the
+    // direct-OFF fallback described below. Amy's chili — 680 mg of sodium in a
+    // 236 g can — would then read as 680 mg/100 g instead of 288: an FSA HIGH
+    // band where the truth is MEDIUM. Returning null is what prevents that.
     //
-    // No consumer reads it there today — `recalculateNutrition` is the only
-    // one, and it is reachable only through `ServingControls`, gated on
-    // `!itemId` (NutritionDetailScreen.tsx). That is an accident of which
-    // components happen to render, not a guard, and it would arm silently.
+    // This guard is deliberately not narrowed to the paths that reach the
+    // state today: it returns null from the value itself, not from a caller's
+    // gating, so a future path cannot arm it silently.
+    //
+    // Removing the saved-item branch (2026-09-17) removed the last STEADY
+    // producer of `validatedData === null` alongside a defined
+    // `nutrition.calories`: every `setNutrition` that settles with calories now
+    // pairs with a `setValidatedData` on the same path, and the ones that do
+    // not carry no calories.
+    //
+    // The state is still LIVE in transit, which is why this guard is not
+    // merely defensive: the per-lookup reset above calls `setValidatedData(null)`
+    // and resets neither `nutrition` nor `servingSizeGrams`, so a re-fetch on a
+    // mounted instance (the effect re-fires on a new `barcode`) holds the PRIOR
+    // product's values with no validated basis behind them for the whole
+    // duration of the new lookup. If that prior lookup left `servingSizeGrams`
+    // null — an OFF record whose serving_size is "1 bottle" — this guard is the
+    // thing returning null. Do not thin it on the strength of the steady-state
+    // enumeration above.
     //
     // `> 0`, not `!= null`, for the same reason as `recalculateNutrition`'s
     // guard below: `0 || 100` is 100, so a zero basis fabricated identically
@@ -441,12 +379,6 @@ export function useNutritionLookup(params: {
     },
     [effectivePer100g, validatedData],
   );
-
-  const { data: existingItem, isError: existingItemFailed } =
-    useQuery<NutritionData>({
-      queryKey: ["/api/scanned-items", itemId],
-      enabled: !!itemId,
-    });
 
   const { data: micronutrientData, isLoading: micronutrientsLoading } =
     useQuery<{ foodName: string; micronutrients: MicronutrientData[] }>({
@@ -952,32 +884,15 @@ export function useNutritionLookup(params: {
     [barcode],
   );
 
-  // Dispatch priority: existingItem/existingItemFailed (itemId path) > barcode
-  // > imageUri > "no scan data". `RootStackParamList["NutritionDetail"]`'s
-  // discriminated union means a caller reaching this hook THROUGH the route
-  // boundary can never supply two of `barcode`/`imageUri`/`itemId` at once —
-  // that combination is a compile error there, not merely a convention this
-  // effect has to police at runtime. This effect's own fallthrough order is
-  // unchanged and still the correct defense for a non-route caller (see the
-  // `servingSizeGrams` docblock above for the exact scope of that guarantee).
+  // Dispatch priority: barcode > imageUri > "no scan data".
+  // `RootStackParamList["NutritionDetail"]`'s discriminated union means a
+  // caller reaching this hook THROUGH the route boundary can never supply both
+  // `barcode` and `imageUri` — that combination is a compile error there, not
+  // merely a convention this effect has to police at runtime. The fallthrough
+  // order is still the correct defense for a non-route caller, which reaches
+  // this hook's own parameter object (independent optionals) rather than the
+  // union.
   useEffect(() => {
-    if (existingItem) {
-      setNutrition(existingItem);
-      setIsLoading(false);
-      return;
-    }
-
-    // itemId was provided but its lookup failed — without this terminal branch
-    // the chain below falls through (barcode/imageUri are empty and !itemId is
-    // false), leaving isLoading stuck true forever (a permanent spinner with no
-    // error). Gate on isError, not !existingItem, so we don't fire while the
-    // query is still in-flight.
-    if (existingItemFailed) {
-      setError("Failed to load item");
-      setIsLoading(false);
-      return;
-    }
-
     if (barcode) {
       void fetchBarcodeData(barcode);
     } else if (imageUri) {
@@ -986,18 +901,11 @@ export function useNutritionLookup(params: {
         servingSize: "1 serving",
       });
       setIsLoading(false);
-    } else if (!itemId) {
+    } else {
       setError("No scan data provided");
       setIsLoading(false);
     }
-  }, [
-    barcode,
-    imageUri,
-    itemId,
-    existingItem,
-    existingItemFailed,
-    fetchBarcodeData,
-  ]);
+  }, [barcode, imageUri, fetchBarcodeData]);
 
   const addToLogMutation = useMutation<ScannedItemResponse | undefined, Error>({
     // "always" so mutationFn RUNS while offline and the branch below can enqueue
