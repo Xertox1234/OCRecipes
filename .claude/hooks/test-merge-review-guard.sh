@@ -310,6 +310,34 @@ assert_allowed "an EXPLICIT read of a URL-spelled merge endpoint still allows" "
 out=$(bash_payload 'gh api repos/o/r/pulls/42/comments -f body=hi' | run)
 assert_allowed "a pulls/N/<other> path is still not a merge endpoint" "$out"
 
+# 3a-quater. THE FRAGMENT. The first version of the fix above allowed `/` and `?query` after the
+# endpoint but not `#fragment`, which is the SAME fail-open one layer down: `.../merge#frag` read
+# main DENY / fixed-arm ALLOW on all five prefix spellings, while `?x=1#frag` denied because the
+# query alternative swallowed the fragment -- which is what isolates the miss to a bare fragment.
+# A fragment is never placed on the wire (RFC 3986 s3.5), so the request that reaches GitHub is
+# the unmodified merge. `[?#]` is exhaustive, not another enumeration: a path can be followed
+# only by `?query` or `#fragment`.
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge#frag' | run)
+denied "$out" && ok "a fragment glued to the endpoint does not end the match" \
+              || bad "a fragment glued to the endpoint does not end the match" "$out"
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge/#frag' | run)
+denied "$out" && ok "a trailing slash then a fragment still denies" \
+              || bad "a trailing slash then a fragment still denies" "$out"
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge?x=1#frag' | run)
+denied "$out" && ok "a query AND a fragment still denies" \
+              || bad "a query AND a fragment still denies" "$out"
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge#frag>/dev/null' | run)
+denied "$out" && ok "a fragment followed by a glued redirect still denies (the tail is greedy, the closer still lands)" \
+              || bad "a fragment followed by a glued redirect still denies (the tail is greedy, the closer still lands)" "$out"
+out=$(bash_payload 'gh api --method PUT repos/$OWNER/$REPO/pulls/42/merge#frag' | run)
+denied "$out" && ok "variable segments AND a fragment together still deny" \
+              || bad "variable segments AND a fragment together still deny" "$out"
+# The fragment rows' own over-denial controls.
+out=$(bash_payload 'gh api -X GET repos/o/r/pulls/42/merge#frag' | run)
+assert_allowed "an EXPLICIT read of a fragment-suffixed endpoint still allows" "$out"
+out=$(bash_payload 'gh api -X GET repos/o/r/pulls/42/merge #frag' | run)
+assert_allowed "a SPACED hash is a shell comment, not a fragment, and is not a merge" "$out"
+
 # 3b. DENY. -X spelling, path-only (no -f fields).
 out=$(bash_payload 'gh api -X PUT /repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
 denied "$out" && ok "gh api -X PUT against pulls/N/merge denies" \
@@ -1445,7 +1473,7 @@ unset _mrgcloser_hits _mrgcloser_prose
 # row pinning the ALLOW side of a separator widening (the direction that invents denials, and
 # the one that killed the withdrawn raw-token predicate), and +3 rows pinning the BINARY
 # renderings that remain open so the block is not read as closing the whole class.
-EXPECTED_TOTAL=164
+EXPECTED_TOTAL=171
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

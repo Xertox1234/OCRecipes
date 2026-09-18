@@ -44,7 +44,7 @@ gh api -X PUT /repos/{owner}/{repo}/pulls/42/merge
      guard-outward-cli.sh AND merge-review-guard.sh. Only the explicit-method form
      (`--method PUT` / `-X POST`), which is what this todo measured, is denied.
      `gh` infers POST from the presence of -f, so the -f-only form is a POST that
-     never says so. Tracked by todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md. -->
+     never says so. Tracked by todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md. -->
 
 that backstop is one agent-writable word away — its inline escape is read from the command
 text (`guard-outward-cli.sh:1381`, `case "$CMD" in "ALLOW_OUTWARD_CLI=1 "*) exit 0`), and

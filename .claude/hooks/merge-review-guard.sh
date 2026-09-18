@@ -410,14 +410,24 @@ case "$TOOL" in
           # `.../merge?x=1` and `.../merge/` -- both valid endpoint spellings -- also fell through.
           #
           # So: match a non-space run before `/pulls/` instead of enumerating what may appear in
-          # it, and allow URL-legal trailing content (`/`, `?query`) before the real shell closer.
+          # it, and allow URL-legal trailing content before the real shell closer.
+          #
+          # THAT TRAILING CLASS IS `[?#]`, AND THE FIRST ATTEMPT AT THIS FIX SPELLED IT `\?` ALONE,
+          # WHICH WAS THE SAME BUG ONE LAYER DOWN. A FRAGMENT also follows a path, so
+          # `.../pulls/42/merge#frag` still fell through to ALLOW while main DENIED -- measured on
+          # all five prefix spellings, with `?x=1#frag` denying (the query alternative swallowed the
+          # fragment) which is what isolated the miss to a bare fragment. The fragment is never put
+          # on the wire (RFC 3986 section 3.5), so the request that reaches GitHub is the unmodified
+          # merge. `[?#]` is EXHAUSTIVE rather than another enumeration: by RFC 3986 a path can be
+          # followed only by `?query` or `#fragment` and nothing else, so there is no third
+          # character waiting to be discovered here.
           # WHAT ACTUALLY SEPARATES AN ENDPOINT FROM PROSE IS THE SLASH, NOT THE CHARACTER SET --
           # a prose mention is a bare `pulls/42/merge` with a space in front, and that still has
           # no path segment before it, so it still allows. Do not narrow this back to an
           # enumeration: an allowlist of characters in a deny predicate fails OPEN on every
           # character its author did not think of, which is the whole defect above.
           printf '%s' "$MRG_API_CLAUSE" \
-            | grep -qiE "(^|[[:space:]])[^[:space:]]+/pulls/[^[:space:]/]+/merge/?(\?[^[:space:]]*)?${_CMD_POS_SUFFIX}" \
+            | grep -qiE "(^|[[:space:]])[^[:space:]]+/pulls/[^[:space:]/]+/merge/?([?#][^[:space:]]*)?${_CMD_POS_SUFFIX}" \
             || continue
           # Two ways this clause proves a mutating method: the value is a recognized
           # literal (glued `-XPUT`, or separated by whitespace/redirect/`=`), OR a

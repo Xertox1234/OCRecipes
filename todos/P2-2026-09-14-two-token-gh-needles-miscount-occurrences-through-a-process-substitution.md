@@ -219,7 +219,7 @@ independently twice (by the orchestrator re-measuring, and by this PR's own revi
   there to an archived `status: done` todo about a different hook.
 
 Now filed with the correct attribution as
-`todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md` (PR #986), which also
+`todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md` (PR #986), which also
 retracts the archived todo's stale "not currently a live bypass" line. **Do not re-derive
 occurrence-counting or grammar work for it** — that is the dead end this correction exists to
 prevent.
@@ -230,7 +230,7 @@ permanent posture for the two-token families, closing this todo as documentation
 
 The REST merge-route finding this investigation surfaced is **already resolved as a tracking
 question** — it is filed as
-`todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md` (PR #986, merged),
+`todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md` (PR #986, merged),
 with the corrected attribution. Do not call it a "psub-before-verb" finding: as the CORRECTED
 note above records, the ordering is irrelevant to it and the plainest spelling reproduces
 it.

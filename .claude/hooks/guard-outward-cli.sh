@@ -4987,11 +4987,37 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   #     NARROWS it (the outward guard now denies the bare form) but with the documented inline
   #     bypass in front, both guards allow it. Pre-existing; see merge-review-guard.sh's own
   #     note proposing a graphql-mutation-body detector.
+  #     AND THE OTHER DIRECTION, WHICH THE SENTENCE ABOVE DID NOT COVER: this arm has no endpoint
+  #     discriminator, so it denies every graphql READ as well -- a bare viewer/login query and
+  #     friends measured main ALLOW / here DENY (review, 2026-09-18). That is an OVER-denial
+  #     against main, in the safe direction but real, and the reason line's stated escape does not
+  #     rescue it: graphql's transport is always POST, so there is no explicit-read spelling of a
+  #     graphql call and the only route is the bypass. The reason line now says so.
+  #     Left as-is deliberately: exempting a graphql endpoint whose fields carry no `mutation`
+  #     keyword is new predicate logic in a fail-closed gate, and nothing in this repo issues a
+  #     graphql read today (swept 2026-09-18: the only mention in the tree is prose in a todo).
+  #   * A METHOD-SHAPED TOKEN IN ANOTHER FLAG'S VALUE SLOT disarms the negated conjunct, because
+  #     it genuinely reaches argv: a field flag followed by `--template -X` (also `-t`, and
+  #     `-p`/`--preview`) measured ALLOW on both guards, while the same carriers holding an
+  #     ordinary value denied -- so the decoy token is what flips the verdict. This is a DIFFERENT
+  #     vector from the comment/redirect pair filed in
+  #     todos/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md, and that
+  #     todo's remedy cannot close it: stripping text that never reaches argv leaves a real argv
+  #     token untouched. Covered in that todo's own value-position section. Filed, not closed.
+  #   * THE FIELD-FLAG CLOSER IS HAND-SPELLED `([[:space:]]|=|$)` and so misses a glued redirect:
+  #     the three LONG field flags followed immediately by a redirect operator stand this arm down
+  #     with no bypass token, on both guards, with argv identical to the spaced form that denies.
+  #     The short flags survive only because they carry no closer at all. NOT a regression (main
+  #     allowed the field-only form outright), so filed rather than fixed under the 2026-09-17
+  #     batched-guard decision. The structural lint that exists to catch exactly this greps for the
+  #     literal `([[:space:]]|$)` and is blind to the `|=|` variant, so it reports PASS on the line
+  #     it was written to catch -- widening that lint is step one of the filed fix, not a separate
+  #     cleanup.
   _GH_API_FIELD='(^|[[:space:]])(-[fF]|(--field|--raw-field|--input)([[:space:]]|=|$))'
   _GH_API_ANYMETHOD='(^|[[:space:]])(-X|--method([^-A-Za-z0-9]|$))'
   if [ -n "$GH_API_CLAUSE" ] && grep -Eq "$_GH_API_FIELD" <<< "$GH_API_CLAUSE" \
      && ! grep -Eq "$_GH_API_ANYMETHOD" <<< "$GH_API_CLAUSE"; then
-    deny "guard-outward-cli: command-position 'gh api' with a field parameter (-f/-F/--field/--raw-field) or --input and NO -X/--method flag is a POST, not a GET — gh's own api.go sets method=POST whenever a method was not passed and any parameter or input file is present, so this reaches the same arbitrary-mutation surface as an explicit -X POST (including a PR merge). An explicit read (-X GET/--method GET) with the same parameters is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: command-position 'gh api' with a field parameter (-f/-F/--field/--raw-field) or --input and NO -X/--method flag is a POST, not a GET — gh's own api.go sets method=POST whenever a method was not passed and any parameter or input file is present, so this reaches the same arbitrary-mutation surface as an explicit -X POST (including a PR merge). An explicit read (-X GET/--method GET) with the same parameters is unaffected -- EXCEPT for 'gh api graphql', whose transport is always POST, so there is no explicit-read spelling of it and a graphql READ is denied here too; its only route is the bypass. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
   # FIXED 2026-09-05 (found by this task's own mandated finding-A
   # co-occurrence test; distinct from the unreadable-method check on
