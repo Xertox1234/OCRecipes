@@ -5555,6 +5555,40 @@ assert_deny "a long flag after the run subcommand does not help either" \
   "railway"
 assert_allow "a flag after the run subcommand with an UNGATED target stays allowed" \
   "$(jsonc 'deno run -A ./scripts/task.ts')"
+
+# ROUND 7: TWO ADJACENT FAMILIES. (a) THE RUNNER ALTERNATION. A package.json script is reachable
+# by more runners than npm/pnpm/yarn: `bun run`, bare `bun`, `node --run` (separated and
+# `=`-glued) and `deno task` all execute it, and `update:production` ends in
+# `exec eas update --branch production --platform all` -- a production OTA through this repo's
+# own script. (b) THE `npm:` SPECIFIER, deno's documented way to run an npm CLI, in front of
+# package names the guard already gates.
+# THE FIRST FOUR ROWS ALSO PIN THE FASTPATH NEEDLE LIST, and that is deliberate: the deep clause
+# alone was dead code, because `*node*`/`*deno*` are not needles and the pre-filter exited first.
+# These rows fail if the `*update:preview*`/`*update:production*` needles are ever removed.
+assert_deny "node --run reaches the OTA script" \
+  "$(jsonc 'node --run update:production')" "update:preview/update:production"
+assert_deny "node --run= (glued) reaches the OTA script" \
+  "$(jsonc 'node --run=update:preview')" "update:preview/update:production"
+assert_deny "deno task reaches the OTA script" \
+  "$(jsonc 'deno task update:production')" "update:preview/update:production"
+assert_deny "bun run reaches the OTA script" \
+  "$(jsonc 'bun run update:production')" "update:preview/update:production"
+assert_deny "bare bun reaches the OTA script" \
+  "$(jsonc 'bun update:preview')" "update:preview/update:production"
+assert_deny "an npm: specifier in front of eas-cli reaches the OTA sink" \
+  "$(jsonc 'deno run -A npm:eas-cli update --branch production')" "eas"
+assert_deny "an npm: specifier survives a launcher" \
+  "$(jsonc 'npx npm:eas-cli update --branch production')" "eas"
+assert_deny "an npm: specifier in front of @railway/cli reaches a gated verb" \
+  "$(jsonc 'deno run npm:@railway/cli up')" "railway"
+assert_allow "an ungated script under node --run stays allowed" \
+  "$(jsonc 'node --run build')"
+assert_allow "an ungated script under bun run stays allowed" \
+  "$(jsonc 'bun run dev')"
+assert_allow "an ungated task under deno task stays allowed" \
+  "$(jsonc 'deno task build')"
+assert_allow "an npm: specifier for an UNGATED package stays allowed" \
+  "$(jsonc 'deno run -A npm:typescript --version')"
 # THE ROW THAT MATTERS MOST. `gh pr merge` is reached through _OUT_POS_PREFIX_LP, which this
 # change widens, and the merge clause is GRANT-shaped -- an empty clause cut DENIES. If the
 # chain widening ever reaches the count/clause pair wrong, this repo's own sanctioned /todo
@@ -5704,7 +5738,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1146
+EXPECTED_TOTAL=1158
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
