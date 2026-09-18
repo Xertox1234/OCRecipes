@@ -142,7 +142,14 @@ jobs:
   outward-cli-corpus:
     name: Outward-CLI guard corpus
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 20 -> 30 (2026-09-17). MEASURED, not padded: at 1967 rows this job ran 20m16s against a
+    # 20-minute cap and was killed. A timed-out job's conclusion is `cancelled`, which reads
+    # like someone pressed a button rather than like a failure -- the PR that tripped it showed
+    # ten green checks and one "cancelled", with no output explaining why. At 2031 rows the
+    # local run is ~17m and CI is ~1.24x local, so ~21m, leaving ~30% headroom. If a future axis
+    # needs more than that, cut rows rather than raise this again: the corpus is a REQUIRED
+    # check, so its budget is every PR's merge latency, not just this one's.
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v5

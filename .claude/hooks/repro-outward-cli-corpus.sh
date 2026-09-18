@@ -1797,9 +1797,15 @@ LP_CH_TARGET_CMDS=(
 )
 # One form per broken assumption: two hops; a launcher taking an argument; a bare package-manager
 # dispatch with no exec verb at all; and the already-covered single launcher as the control.
-LP_CH_CHAIN_IDS=(stack explore barepm lnchr)
+# `wsscope` and `wsforeach` were added by the round-1 security review of the PR that created
+# this axis: `yarn workspace <ws> <cmd>` and `yarn workspaces foreach exec <cmd>` were ALLOW on
+# main AND on that PR's first revision, which is the same argument-taking class as
+# `npm explore` -- the axis existed and simply had no row for them. They are chain FORMS here
+# for the same reason `explore` is: the scope selector sits between the manager and the target.
+LP_CH_CHAIN_IDS=(stack explore barepm lnchr wsscope wsforeach)
 LP_CH_CHAINS=(
   'npx pnpm dlx ' 'npm explore some-pkg -- ' 'pnpm ' 'npx '
+  'yarn workspace api ' 'yarn workspaces foreach exec '
 )
 # The wrapper word that may sit BETWEEN the chain and its target. `env` is in _OUT_WRAPPER_WORD,
 # which _OUT_POS_PREFIX_W has always admitted in COMMAND position -- the defect was that it was
@@ -1825,12 +1831,12 @@ for _ch_ti in "${!LP_CH_TARGET_IDS[@]}"; do
   done
 done
 LP_CH_ROWS_GENERATED=$(( ${#ROWS[@]} - LP_CH_ROWS_BEFORE ))
-# 4 targets x 4 chain forms x 4 path forms x 2 inter forms = 128, asserted against the array
+# 4 targets x 6 chain forms x 4 path forms x 2 inter forms = 192, asserted against the array
 # length the loop actually produced. No composition-order variants here: the chain forms already
 # carry their own internal ordering, and adding the order dimension on top would quadruple the
 # required check's runtime for a spelling the axis above already measures.
-if [ "$LP_CH_ROWS_GENERATED" -ne 128 ]; then
-  echo "FATAL: launcher-chain axis generated $LP_CH_ROWS_GENERATED rows, expected 4 x 4 x 4 x 2 = 128 -- a dimension silently iterated short" >&2
+if [ "$LP_CH_ROWS_GENERATED" -ne 192 ]; then
+  echo "FATAL: launcher-chain axis generated $LP_CH_ROWS_GENERATED rows, expected 4 x 6 x 4 x 2 = 192 -- a dimension silently iterated short" >&2
   exit 1
 fi
 
@@ -2859,7 +2865,14 @@ fi
 # expansion-token / brace-range checks the launcher grid never reaches.
 # 1839 -> 1967 (2026-09-17): +128 launcher-CHAIN rows. See that axis for why its cardinality is
 # deliberately small and why the `lnchr` form is a control rather than padding.
-EXPECTED_ROWS=1967
+# 1967 -> 2031 (2026-09-17, round 2): +64, the two yarn workspace-scope chain forms the round-1
+# security review found ALLOW. RUNTIME IS NOW THE BINDING CONSTRAINT, not row count: the 1967-row
+# revision took 16m25s locally and 20m16s in CI, against the corpus job's `timeout-minutes: 20`
+# -- it was CANCELLED, which GitHub reports as `cancelled`, NOT `failure`, so a required check
+# died and nothing in the PR's own output said so. The cap is raised to 30 in the same change.
+# Before adding another axis, measure the CI wall clock rather than the row count: the local
+# number understates it by ~1.24x, and a timeout does not look like a test failure.
+EXPECTED_ROWS=2031
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 787 of the 940 rows deny on the precise path; the other 153 are ALLOW there: 91
@@ -3017,6 +3030,13 @@ EXPECTED_ROWS=1967
 # at 24 across the same run -- and that 24 now MEANS something, because the grid can
 # finally express a path-qualified launcher. It could not before, which is why the
 # previous unchanged 24 was true and vacuous.
+# 1725 -> 1789 (2026-09-17, round 2): +64, the two yarn workspace-scope chain forms, every one
+# of which denies -- 32 `wsscope` and 32 `wsforeach` ids, ZERO removals, and no id in both
+# lists. The round-1 security review measured those shapes reaching the OTA sink on main AND on
+# this branch's first revision, so this is a gap the axis could express and simply had no row
+# for; the fix is _OUT_WS_SCOPE in the guard, not a new corpus dimension. Gap pins re-derived
+# from the same run and unchanged AGAIN at 62 / 358, with no membership drift in either
+# manifest. The manifest below is the run's own printed attribution section, pasted verbatim.
 # 1597 -> 1725 (2026-09-17): +128, the launcher-CHAIN axis in full -- every one of its rows
 # denies, so the attribution total moves by exactly the row delta and EXPECTED_ROWS moves by the
 # same 128. There are no over-denial controls in this axis to open a gap between the two numbers;
@@ -3062,7 +3082,7 @@ EXPECTED_ROWS=1967
 # failure that gets a guard switched off rather than fixed.
 # precise-path gaps held at 24 and all-path gaps at 306 across this change, with ZERO
 # membership drift in either manifest -- the 104 new rows agree on all four paths.
-EXPECTED_DENY_ATTRIB_ROWS=1725
+EXPECTED_DENY_ATTRIB_ROWS=1789
 
 # 7 + 17 + 21 + 17 = 62. This is the SAME decomposition as the "FULL ATTRIBUTION of
 # the remaining precise-path gaps" note further down, and the two must stay
@@ -5003,6 +5023,22 @@ lpch-easupd-lnchr-dotbin-noint : 'eas update/publish/submit' reached through a l
 lpch-easupd-lnchr-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lpch-easupd-lnchr-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lpch-easupd-lnchr-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lpch-npmpub-stack-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-stack-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-stack-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
@@ -5035,6 +5071,22 @@ lpch-npmpub-lnchr-dotbin-noint : 'npm publish' reached through a launcher or a p
 lpch-npmpub-lnchr-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-lnchr-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-lnchr-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-railup-stack-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-stack-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-stack-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
@@ -5067,6 +5119,22 @@ lpch-railup-lnchr-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete
 lpch-railup-lnchr-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-lnchr-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-lnchr-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-ghmerge-stack-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-stack-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-stack-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
@@ -5099,6 +5167,22 @@ lpch-ghmerge-lnchr-dotbin-noint : a gated 'gh' subcommand reached through a laun
 lpch-ghmerge-lnchr-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-lnchr-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-lnchr-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 pfx-none-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
 pfx-none-npmpub    : command-position 'npm publish' pushes a package to the registry.
 pfx-none-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/

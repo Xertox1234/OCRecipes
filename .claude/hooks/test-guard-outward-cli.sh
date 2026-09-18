@@ -5143,6 +5143,73 @@ assert_deny "npm explore composed with a parameter expansion denies" \
 assert_deny "a stacked launcher composed with a command substitution denies" \
   "$(jsonc 'npx pnpm dlx $(which eas) update')" "not literal"
 
+# A WORKSPACE SCOPE SELECTOR BETWEEN THE MANAGER AND ITS TARGET. Found by the round-1 security
+# review of this PR, measured ALLOW on origin/main AND on the first revision of this branch --
+# the same "launcher that takes an ARGUMENT before its target" class as `npm explore`, of which
+# the branch had implemented exactly one spelling while a comment beside it claimed `every
+# spelling`. `yarn workspace <ws> X` forwards X to yarn INSIDE that workspace, so the whole
+# grammar has to re-apply after the scope; _OUT_WS_SCOPE is therefore interpolated BOTH as a
+# launcher arm and as an absorber at the OTA-script anchors. The `run update:preview` row below
+# is the one that proves the second role is needed: after the launcher arm consumes the scope
+# there is no package-manager word left for that anchor to match, so a launcher arm alone
+# leaves it ALLOW.
+assert_deny "a yarn workspace scope in front of the OTA verb denies" \
+  "$(jsonc 'yarn workspace api eas update --branch preview')" "reached through a launcher"
+assert_deny "a yarn workspace scope with an explicit exec denies" \
+  "$(jsonc 'yarn workspace api exec eas update --branch preview')" "reached through a launcher"
+assert_deny "yarn workspaces foreach exec denies" \
+  "$(jsonc 'yarn workspaces foreach exec eas update --branch preview')" "reached through a launcher"
+assert_deny "yarn workspaces foreach with a flag before exec denies (the flag absorber applies here too)" \
+  "$(jsonc 'yarn workspaces foreach -A exec eas update --branch preview')" "reached through a launcher"
+assert_deny "a yarn workspace scope reaching a gated gh subcommand denies" \
+  "$(jsonc 'yarn workspaces foreach exec gh pr merge 42 --admin')" "gh"
+assert_deny "a yarn workspace scope reaching railway denies" \
+  "$(jsonc 'yarn workspaces foreach exec railway up')" "railway"
+assert_deny "a yarn workspace scope reaching npm publish denies" \
+  "$(jsonc 'yarn workspace api npm publish')" "npm publish"
+assert_deny "a launcher STACKED in front of a yarn workspace scope denies" \
+  "$(jsonc 'npx yarn workspace api eas update --branch preview')" "reached through a launcher"
+assert_deny "a wrapper word in front of a yarn workspace scope denies" \
+  "$(jsonc 'corepack yarn workspace api eas update --branch preview')" "reached through a launcher"
+assert_deny "a PRIVILEGE word in front of a yarn workspace scope denies" \
+  "$(jsonc 'sudo yarn workspace api eas update --branch preview')" "reached through a launcher"
+assert_deny "a path-qualified target after a yarn workspace scope denies" \
+  "$(jsonc 'yarn workspace api /opt/homebrew/bin/eas update --branch preview')" "reached through a launcher"
+# THE TWO OTA-SCRIPT ROWS. These do NOT go through the launcher arm -- they are why
+# _OUT_WS_SCOPE is also spliced into the four update:preview anchors, and why the crude
+# fastpath needed its own alternative (its package-manager patterns absorb only FLAGS between
+# the manager and its verb, and `workspace api` is not a flag, so without that alternative
+# these two never reach any anchor at all).
+assert_deny "a yarn workspace scope in front of the OTA SCRIPT denies" \
+  "$(jsonc 'yarn workspace api run update:preview')" "update:preview"
+assert_deny "a yarn workspace scope in front of the BARE OTA script denies" \
+  "$(jsonc 'yarn workspace api update:preview')" "update:preview"
+
+# ---------- over-denial controls for the workspace scope ----------
+# A monorepo is this repo's own shape, so `yarn workspace <ws> <ordinary thing>` is hourly
+# typing. Every row here was measured ALLOW after the change; the word AFTER the scope still
+# has to be a gated binary or verb, which is what keeps them clear.
+assert_allow "yarn workspace with an ordinary script stays allowed" \
+  "$(jsonc 'yarn workspace api build')"
+assert_allow "yarn workspace with an ordinary test script stays allowed" \
+  "$(jsonc 'yarn workspace api test')"
+assert_allow "yarn workspace add stays allowed" \
+  "$(jsonc 'yarn workspace api add lodash')"
+assert_allow "yarn workspace remove stays allowed" \
+  "$(jsonc 'yarn workspace api remove lodash')"
+assert_allow "yarn workspace run with a NON-OTA script stays allowed" \
+  "$(jsonc 'yarn workspace api run build')"
+assert_allow "yarn workspace exec with an ungated tool stays allowed" \
+  "$(jsonc 'yarn workspace api exec tsc --noEmit')"
+assert_allow "yarn workspaces foreach exec with an ungated tool stays allowed" \
+  "$(jsonc 'yarn workspaces foreach exec tsc --noEmit')"
+assert_allow "yarn workspaces foreach run with a NON-OTA script stays allowed" \
+  "$(jsonc 'yarn workspaces foreach run build')"
+assert_allow "yarn workspaces list stays allowed" \
+  "$(jsonc 'yarn workspaces list')"
+assert_allow "prose NAMING a workspace-scoped gated command stays allowed" \
+  "$(jsonc 'echo yarn workspace api eas update is the shape')"
+
 # ---------- over-denial controls for the launcher grammar ----------
 # This widening lands on npm/pnpm/yarn/npx, which is every JS developer's hourly typing. Over-
 # denial is the failure that gets a guard switched OFF rather than fixed, so the controls are
@@ -5317,7 +5384,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1022
+EXPECTED_TOTAL=1045
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

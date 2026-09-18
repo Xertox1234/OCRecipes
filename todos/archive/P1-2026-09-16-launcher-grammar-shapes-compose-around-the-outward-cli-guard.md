@@ -165,13 +165,22 @@ pair per cell BEFORE writing that the axis is closed.
   narrow-in-extractors must be >0 (non-vacuity), chain-in-booleans must be >0 (positive
   control). Measured 0 / 3 / 5.
 
-- **Two-sided, measured** (criterion 2). 26 rows fed to the hook, nothing executed: all five
-  shapes and their path/wrapper/privilege compositions DENY, and every named over-denial control
-  ALLOWs -- `npx prettier --write .`, `pnpm install`, `yarn install`, `npm run lint`,
-  `pnpm run build`, `npm explore some-pkg -- ls`, `npx tsc --noEmit`, `pnpm add lodash`,
-  `yarn add lodash`, `npm exec prettier -- --check .`, plus two prose rows that merely NAME a
-  gated command. 0 failures. `pnpm run eas` is ALLOW and pinned for the same reason: the word
-  after a bare `pnpm` is a package-manager verb there, not a gated binary.
+- **Two-sided, measured** (criterion 2). The evidence that SHIPS is the suite block, and the
+  count below is derived from it rather than from a scratchpad probe -- an earlier revision of
+  this bullet cited "26 rows" and four example commands (`npx tsc --noEmit`, `pnpm add lodash`,
+  `yarn add lodash`, `npm exec prettier -- --check .`) that came from an ad-hoc two-sided probe
+  and were never in `test-guard-outward-cli.sh` at all. The round-1 code review caught it by
+  grepping for the cited strings and finding none. **A measurement that is not in the tree is
+  not evidence a reader can check**, so the rule this leaves behind is: cite the shipped rows,
+  and derive the count with grep at the moment you write it.
+  The shipped block pins every one of the five shapes and their path / wrapper / privilege /
+  expansion compositions as DENY, and pairs them with over-denial controls that must keep
+  ALLOWing -- including `npx prettier --write .`, `pnpm install`, `yarn install`,
+  `npm run lint`, `pnpm run build`, `npm explore some-pkg -- ls`, `yarn dlx tsc --noEmit`,
+  `pnpm why lodash`, `yarn info lodash`, ordinary `yarn workspace <ws> <script>` usage, and
+  rows that merely NAME a gated command in prose. `pnpm run eas` is ALLOW and pinned for the
+  same reason: the word after a bare `pnpm` is a package-manager verb there, not a gated
+  binary.
 
 - **Combinatorial, with the dimension asserted** (criterion 3). 128 corpus rows =
   4 targets x 4 chain forms x 4 path forms x 2 inter forms, with a FATAL if the loop
@@ -198,7 +207,32 @@ pair per cell BEFORE writing that the axis is closed.
   re-measures instead of trusting the list: a SINGLE launcher in front of a brace token is
   already covered, it is the CHAIN that is not.
 
-- **Not attempted, and why** -- `_OUT_LAUNCHER_AMBIG_FLAG` was deliberately NOT widened: a bare
-  `pnpm|yarn` there would newly deny ordinary `yarn -p ...`. Named as a residual rather than
-  closed. The `xargs`-constructed shape this todo already recorded stays a residual too: the
+- **Not attempted, and why -- stated at the width the code actually has.**
+  `_OUT_LAUNCHER_AMBIG_FLAG`'s call site is still anchored on a SINGLE launcher hop, so the
+  whole chain slips it, not merely the bare package-manager arm. Measured ALLOW on both trees:
+  `npx npm exec -c '<otaverb>'`, `npx env npx -c '<otaverb>'`, `npx pnpm dlx npx -c '<otaverb>'`,
+  `npm explore some-pkg -- npx -c '<otaverb>'`, `pnpm npx -c '<otaverb>'`, and the
+  `--package=eas-cli` siblings of the first two. DENY on both trees, which is what makes the
+  gap specifically the CHAIN: `npx -c '<otaverb>'`, `npm exec -c '<otaverb>'`,
+  `npx --package=eas-cli -- tsc --version`, `yarn dlx --package=eas-cli -- tsc --version`, and
+  the discriminator `sudo npx -c '<otaverb>'` -- the already-closed command-position PREFIX axis
+  reaches that site, so the missing dimension is the chain and nothing else.
+  **The `yarn -p ...` over-denial cost is real but covers only ONE of the three pieces** -- the
+  bare `(pnpm|yarn)` arm. A stacked launcher or a wrapper word after a launcher is not ordinary
+  developer typing, so that cost argument does not reach them, and an earlier revision of this
+  bullet implied it did. Closing them needs a chain variant WITHOUT the bare package-manager
+  alternative, which is a new constant for one deny site; filed rather than built here.
+  The `xargs`-constructed shape this todo already recorded stays a residual too: the
   gated text never appears in the command, so no text matcher reaches it.
+
+- **FOUND IN REVIEW AND CLOSED IN THE SAME PR -- the yarn WORKSPACE SCOPE.** The round-1
+  security review measured `yarn workspace <ws> <cmd>` and `yarn workspaces foreach exec <cmd>`
+  reaching the OTA sink on `origin/main` AND on this branch's first revision, while the comment
+  beside `_OUT_LAUNCHER_ANY` claimed it covered `every spelling that hands the NEXT word to a
+real binary`. That is the same argument-taking class as `npm explore`, of which exactly one
+  spelling had been implemented -- so the universal was false and the residual block, which
+  covers brace tokens only, read as exhaustive over a live route. `_OUT_WS_SCOPE` now closes it
+  in both roles the shape needs (a launcher arm, and an absorber at the four OTA-script
+  anchors), the crude fastpath gained the one alternative that lets the script rows reach an
+  anchor at all, and the comment is enumerated rather than universal. 14 deny rows and 10
+  over-denial controls pin it; the 49-row invariant set showed ZERO movement.
