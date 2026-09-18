@@ -5543,6 +5543,18 @@ assert_allow "deno running an UNGATED path-qualified binary stays allowed" \
   "$(jsonc 'deno run /opt/homebrew/bin/tsc --noEmit')"
 assert_allow "an interpreter flag with an UNGATED target stays allowed" \
   "$(jsonc 'node -r ./reg /opt/homebrew/bin/tsc --noEmit')"
+
+# A FLAG AFTER the subcommand, not just before it. The first attempt at this arm absorbed flags
+# ahead of `run` but ended the `run` hop in a bare separator -- the same bare-separator defect one
+# slot further along, and a 125-row interpreter x flag-slot x target grid still allowed 20 rows.
+assert_deny "a flag AFTER deno's run subcommand does not help" \
+  "$(jsonc 'deno run -A /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "a long flag after the run subcommand does not help either" \
+  "$(jsonc 'deno run --allow-all ./node_modules/.bin/railway up')" \
+  "railway"
+assert_allow "a flag after the run subcommand with an UNGATED target stays allowed" \
+  "$(jsonc 'deno run -A ./scripts/task.ts')"
 # THE ROW THAT MATTERS MOST. `gh pr merge` is reached through _OUT_POS_PREFIX_LP, which this
 # change widens, and the merge clause is GRANT-shaped -- an empty clause cut DENIES. If the
 # chain widening ever reaches the count/clause pair wrong, this repo's own sanctioned /todo
@@ -5692,7 +5704,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1143
+EXPECTED_TOTAL=1146
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

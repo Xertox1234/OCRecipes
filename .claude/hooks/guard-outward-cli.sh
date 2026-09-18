@@ -2737,7 +2737,7 @@ _OUT_WS_SCOPE='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}
 # the failure that gets a guard switched off rather than fixed.
 _OUT_WS_SCOPE_NV='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'(foreach|run))('"$_OUT_SEP"'-{1,2}[^[:space:]]*)*'"$_OUT_SEP"'(exec'"$_OUT_SEP"')?'
 
-_OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|yarn'"$_OUT_FLAG_RUN"'('"$_OUT_WS_SCOPE"')+(run'"$_OUT_FLAG_RUN"')?|yarn'"$_OUT_FLAG_RUN"'run'"$_OUT_FLAG_RUN"'|(pnpm|yarn)'"$_OUT_FLAG_RUN"'|(node|bun|deno)'"$_OUT_FLAG_RUN"'(run'"$_OUT_SEP"')?)'
+_OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|yarn'"$_OUT_FLAG_RUN"'('"$_OUT_WS_SCOPE"')+(run'"$_OUT_FLAG_RUN"')?|yarn'"$_OUT_FLAG_RUN"'run'"$_OUT_FLAG_RUN"'|(pnpm|yarn)'"$_OUT_FLAG_RUN"'|(node|bun|deno)'"$_OUT_FLAG_RUN"'(run'"$_OUT_FLAG_RUN"')?)'
 
 # _OUT_LAUNCH_INTER -- what may sit BETWEEN a launcher and the next word. Deliberately the same
 # wrapper/privilege alternation _OUT_POS_PREFIX_W already admits in COMMAND position: a wrapper
