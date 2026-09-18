@@ -5489,6 +5489,35 @@ assert_allow "yarn workspaces list forwards nothing and stays allowed" \
   "$(jsonc 'yarn workspaces list --json')"
 assert_allow "yarn workspaces info forwards nothing and stays allowed" \
   "$(jsonc 'yarn workspaces info')"
+
+# THE INTERPRETER WORD, round 4. Running a gated CLI through its interpreter reaches the same
+# sink as running it directly, but `node`/`bun`/`deno` were admitted only in front of the literal
+# `eas-cli/` and `@railway/cli/` package-directory substrings. The INSTALLED shim is a symlink
+# INTO that package whose own path carries no such substring, so the check could not see it:
+# `node /opt/homebrew/bin/eas update` was ALLOW while the interpreter-less twin denied, here and
+# on main. The interpreter is now a launcher step, so the terminal-name anchors fire on any path.
+# The three controls are the boundary: the anchors still require a GATED terminal name AND verb.
+assert_deny "an interpreter in front of a path-qualified gated binary reaches the OTA sink" \
+  "$(jsonc 'node /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "bun substitutes for node identically" \
+  "$(jsonc 'bun /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "a wrapper word in front of the interpreter does not help" \
+  "$(jsonc 'env node /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "an interpreter reaches railway through a relative bin path" \
+  "$(jsonc 'node ./node_modules/.bin/railway up')" \
+  "railway"
+assert_deny "an interpreter reaches a gated gh subcommand" \
+  "$(jsonc 'node /usr/local/bin/gh pr merge 42 --admin')" \
+  "gh"
+assert_allow "an interpreter in front of an UNGATED path-qualified binary stays allowed" \
+  "$(jsonc 'node /opt/homebrew/bin/tsc --noEmit')"
+assert_allow "an interpreter running an ordinary repo script stays allowed" \
+  "$(jsonc 'node scripts/seed.js')"
+assert_allow "a bare interpreter invocation stays allowed" \
+  "$(jsonc 'node --version')"
 # THE ROW THAT MATTERS MOST. `gh pr merge` is reached through _OUT_POS_PREFIX_LP, which this
 # change widens, and the merge clause is GRANT-shaped -- an empty clause cut DENIES. If the
 # chain widening ever reaches the count/clause pair wrong, this repo's own sanctioned /todo
@@ -5638,7 +5667,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1128
+EXPECTED_TOTAL=1136
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

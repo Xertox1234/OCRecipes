@@ -236,8 +236,23 @@
 #     NARROWED 2026-09-16: until this round the IN-TREE, unmodified script was
 #     reachable too, by path-qualifying the interpreter or its wrapper word — no
 #     relocation required, so this bullet understated its own scope. Those two
-#     spellings now deny. What remains is genuinely only a copy that has LEFT the
-#     package directory the literal substring keys on.
+#     spellings now deny.
+#     THAT NARROWING WAS ITSELF TOO WIDE, and round 4 (2026-09-18) measured it.
+#     "Only a copy that has LEFT the package directory" was FALSE: the INSTALLED
+#     shim never left it. `/opt/homebrew/bin/eas` is a SYMLINK to
+#     `../lib/node_modules/eas-cli/bin/run`, so the script sits exactly where the
+#     substring expects while the path it is REACHED BY carries no `eas-cli/` at
+#     all — and a substring check cannot see through a symlink.
+#     `node /opt/homebrew/bin/eas update --branch production` was ALLOW on this
+#     branch AND on main, with its interpreter-less twin denying; `bun` and a
+#     wrapper word behaved identically. The interpreter word is now a launcher
+#     STEP (see _OUT_LAUNCHER_ANY), so the gated-bin and verb anchors fire on the
+#     TERMINAL NAME for ANY path spelling rather than for the two the literal
+#     substrings happen to name.
+#     What remains is narrower, and is stated as a property rather than a
+#     location: a copy reached under a name that is NOT a gated binary name
+#     (`cp .../bin/run /tmp/x && node /tmp/x update`). No name-based matcher can
+#     see that one, which is the invented-enumeration risk declined above.
 #   * `eas publish` does not exist in the installed eas-cli (20.1.0 at time of
 #     writing) — the pattern is kept anyway per the acceptance criteria's
 #     literal wording and to catch an older/different CLI version; a no-op
@@ -2609,6 +2624,20 @@ _OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD
 #     The accepted over-denial is narrow and was measured, not assumed: a repo script named like
 #     a gated binary still runs, because no gated VERB follows it (`yarn run eas` ALLOW,
 #     `yarn run railway` ALLOW); only `yarn run eas update` and its siblings deny.
+#   * THE INTERPRETER WORD (`node`/`bun`/`deno`). Running a gated CLI's script through its
+#     interpreter reaches the same sink as running the script: `node <path>/eas update` IS
+#     `eas update`. Before round 4 the interpreter was admitted ONLY in front of the literal
+#     `eas-cli/` and `@railway/cli/` package-directory substrings, so it closed
+#     `node .../node_modules/eas-cli/bin/run update` and left `node /opt/homebrew/bin/eas update`
+#     wide open -- the installed shim is a SYMLINK into that package whose own path carries no
+#     `eas-cli/` substring, so the substring check could never see it. Measured 2026-09-18 on a
+#     box where `/opt/homebrew/bin/eas -> ../lib/node_modules/eas-cli/bin/run` with an
+#     `#!/usr/bin/env node` shebang: the interpreter-less twin denied and the `node`-prefixed
+#     form ALLOWED, on this branch and on main alike. As a launcher STEP the existing gated-bin
+#     and verb anchors fire on the terminal name instead, so the route closes for ANY path
+#     spelling rather than for the two the substrings happen to name. Over-denial stays narrow
+#     because the anchors still require a GATED terminal name and its verb: `node <path>/tsc`,
+#     `node scripts/seed.js` and `node --version` are unaffected, and are pinned as controls.
 # EVERY ALTERNATIVE ENDS IN A SEPARATOR, which is what makes the group safe to repeat.
 # THE `workspaces` ARM IS AN ALTERNATION OF EXACTLY THE FORWARDING SUBCOMMANDS, which is a
 # property rather than a list that will keep growing: yarn forwards the remainder of the command
@@ -2690,7 +2719,7 @@ _OUT_WS_SCOPE='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}
 # the failure that gets a guard switched off rather than fixed.
 _OUT_WS_SCOPE_NV='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'(foreach|run))('"$_OUT_SEP"'-{1,2}[^[:space:]]*)*'"$_OUT_SEP"'(exec'"$_OUT_SEP"')?'
 
-_OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|yarn'"$_OUT_FLAG_RUN"'('"$_OUT_WS_SCOPE"')+(run'"$_OUT_FLAG_RUN"')?|yarn'"$_OUT_FLAG_RUN"'run'"$_OUT_FLAG_RUN"'|(pnpm|yarn)'"$_OUT_FLAG_RUN"')'
+_OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|yarn'"$_OUT_FLAG_RUN"'('"$_OUT_WS_SCOPE"')+(run'"$_OUT_FLAG_RUN"')?|yarn'"$_OUT_FLAG_RUN"'run'"$_OUT_FLAG_RUN"'|(pnpm|yarn)'"$_OUT_FLAG_RUN"'|(node|bun|deno)'"$_OUT_SEP"')'
 
 # _OUT_LAUNCH_INTER -- what may sit BETWEEN a launcher and the next word. Deliberately the same
 # wrapper/privilege alternation _OUT_POS_PREFIX_W already admits in COMMAND position: a wrapper
