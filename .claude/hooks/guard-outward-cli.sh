@@ -2637,6 +2637,26 @@ _OUT_WS_SCOPE='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}
 # reachable through a workspace scope, not a new one. Filed rather than patched; a fix belongs
 # at _OUT_FLAG_RUN itself, which every anchor in this file shares.
 #
+# THREE CONSUMERS, NOT TWO. `_OUT_WS_SCOPE` is also read by `_OUT_LAUNCHER_ANY`'s launcher arm,
+# which is neither anchor family. An earlier revision of this comment said the two anchor
+# families were its only consumers; a review found the third by grep. It correctly needed no
+# split -- measured on precise AND all three degraded paths, `yarn workspace api -A eas <otaverb>`
+# and `yarn --tag beta eas update` deny and `yarn workspace api -A tsc --noEmit` allows -- because
+# a gated BINARY NAME follows there, not a script name, so a swallowed word cannot be mistaken
+# for the target. Count the consumers before describing them; this file makes that cheap.
+#
+# ACCEPTED OVER-DENIAL (degraded paths only), following this file's existing convention for
+# them. The crude mirror never got the run-form/bare-script split, so the very rows the precise
+# path was fixed for still deny there: `yarn workspaces foreach -A test -- --grep <otascript>`,
+# `yarn workspace api --silent test -- --grep <otascript>` and
+# `yarn workspace api --message hi --grep <otascript>` are ALLOW on precise and DENY on nojq,
+# nolib and noawk. The flagless twin allows everywhere, and one non-flag word after the flag
+# (`--message wrote docs about <otascript> today`) allows everywhere -- it is a SECOND
+# flag-shaped token that restarts the crude absorber. Not split, for the reason the post-`run`
+# slot was not: each slot patched here has exposed the next, and the crude mirror is
+# deliberately the wider, fail-closed side. PINNED as degraded-path rows so the precise-path
+# `assert_allow`s cannot be read as path-independent.
+#
 # RESIDUAL, measured and deliberate: `<pm> workspace <ws> --flag <value> <otascript>` -- a flag
 # WITH a value and no `run` -- now ALLOWS on the precise path. The run-form spelling of the same
 # command denies, and the crude degraded mirror denies this one too, so it is narrow. It is the

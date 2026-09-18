@@ -5296,6 +5296,20 @@ assert_deny "ACCEPTED: a flag after run swallows the command word (pre-existing 
 assert_allow "the flagless twin of that row stays allowed" \
   "$(jsonc 'yarn workspace api run test -- --grep update:preview')"
 
+# THE SPLIT IS PRECISE-PATH ONLY, AND THESE ROWS SAY SO. The crude mirror never got it, so the
+# three precise-path `assert_allow` rows above are NOT path-independent -- they deny on the
+# degraded fixtures. Accepted rather than split (the crude mirror is the deliberately wider,
+# fail-closed side, and every slot patched in this area exposed the next), but asserted here so
+# the asymmetry is a pinned fact rather than something a reader infers from the absence of a row.
+check "no-jq: ACCEPTED degraded over-denial, flagged foreach naming the script" deny "$(nojq_hook "$(json 'yarn workspaces foreach -A test -- --grep update:preview')")"
+check "no-jq: ACCEPTED degraded over-denial, flagged workspace naming the script" deny "$(nojq_hook "$(json 'yarn workspace api --silent test -- --grep update:preview')")"
+check "no-jq: ACCEPTED degraded over-denial, a SECOND flag restarts the absorber" deny "$(nojq_hook "$(json 'yarn workspace api --message hi --grep update:preview')")"
+# The two rows that bound it: no flag at all, and one NON-flag word after the flag. Both allow
+# on every path, which is what makes the three rows above about the FLAG and not about the
+# script name merely appearing.
+check "no-jq: the flagless twin allows on the degraded path too" allow "$(nojq_hook "$(json 'yarn workspaces foreach test -- --grep update:preview')")"
+check "no-jq: one non-flag word after the flag allows on the degraded path too" allow "$(nojq_hook "$(json 'yarn workspace api --message wrote docs about update:preview today')")"
+
 # NAMED RESIDUAL of the split, pinned as ALLOW so it is visible: a flag WITH a value followed by
 # the BARE script and no `run` under-denies on the precise path. The run-form spelling above
 # denies, and the crude degraded mirror denies this one too, so it is narrow. If this flips to
@@ -5501,7 +5515,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1087
+EXPECTED_TOTAL=1092
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -301,9 +301,14 @@ real binary`. That is the same argument-taking class as `npm explore`, of which 
   unsourceable, blanking returned empty). It is load-bearing on those three paths only, where
   both OTA-script rows go base ALLOW / with-alternative DENY / without-alternative ALLOW.
   **Nothing pinned it there** -- the two normal-path rows would have passed with the line
-  deleted -- so thirty `nojq_hook`/`nolib_hook`/`noawk_hook` checks now do (derived with grep at the moment of
-  writing, not carried forward -- the figure said "ten" for two rounds after later commits
-  raised it, which is the same stale-count defect this file keeps producing), and the reason is
+  deleted -- so thirty `nojq_hook`/`nolib_hook`/`noawk_hook` rows now COVER it. **That is a raw row count, not
+  a discrimination count, and the distinction matters because the sentence it sits in is about
+  what would redden if the line were deleted.** Round 3's "ten" WAS a discrimination count,
+  verified by mutation; updating the number without re-checking what the number meant silently
+  changed the claim, and a review caught it by re-running the mutation over all thirty rows --
+  fewer than half of them flip. The count is re-derived with grep at the moment of writing
+  rather than carried forward, which fixes staleness but not this: **a number can be freshly
+  derived and still answer a different question than the sentence asks.**, and the reason is
   restated in the guard beside the regex. The lesson is sharper than the bug: a comment that
   justifies a line with a reason the suite can disprove makes that line EASIER to delete than
   no comment would. I applied four edits at once and measured the whole; isolating each role
