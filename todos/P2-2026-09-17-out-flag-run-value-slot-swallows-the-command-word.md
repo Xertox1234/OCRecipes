@@ -7,6 +7,8 @@ updated: 2026-09-17
 assignee:
 labels: [deferred, harness]
 github_issue:
+human_led: true
+blocked_reason: "The todo names TWO materially different fixes for the same defect -- a known-arity flag table, or a rule that the value slot may not consume a token when a gated name follows -- and does not choose. The choice lands on _OUT_FLAG_RUN, which every anchor in guard-outward-cli.sh shares, in the guard that exists because an agent once published an OTA update by accident. PR #993's own history is the argument: three separate rounds each patched one slot in this area, each patch exposed the next slot, and every one was found by a reviewer constructing an adversarial probe the corpus did not already contain -- not by the corpus. An unattended run would pick whichever direction is cheaper, verify it against that same corpus, and ship a narrowing or a widening of a security gate on that basis. The acceptance criteria are individually testable, which was equally true of all three superseded per-slot attempts."
 ---
 
 # One flag before a command word turns an incidental script name into a deny

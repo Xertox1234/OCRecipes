@@ -5309,6 +5309,21 @@ check "no-jq: ACCEPTED degraded over-denial, a SECOND flag restarts the absorber
 # script name merely appearing.
 check "no-jq: the flagless twin allows on the degraded path too" allow "$(nojq_hook "$(json 'yarn workspaces foreach test -- --grep update:preview')")"
 check "no-jq: one non-flag word after the flag allows on the degraded path too" allow "$(nojq_hook "$(json 'yarn workspace api --message wrote docs about update:preview today')")"
+# THE OTHER TWO DEGRADED ENTRY POINTS. The five rows above were nojq-only. All three fixtures
+# reach crude_smells_outward, but through DIFFERENT preconditions -- missing jq, an unsourceable
+# lib, a missing awk -- so a nojq-only pin covers the shared regex and nothing else: a change to
+# one of the other two entry paths would not redden. They behave identically today (measured),
+# which is exactly why the twins are cheap to add and worth having before that stops being true.
+check "no-lib: ACCEPTED degraded over-denial, flagged foreach naming the script" deny "$(nolib_hook "$(json 'yarn workspaces foreach -A test -- --grep update:preview')")"
+check "no-lib: ACCEPTED degraded over-denial, flagged workspace naming the script" deny "$(nolib_hook "$(json 'yarn workspace api --silent test -- --grep update:preview')")"
+check "no-lib: ACCEPTED degraded over-denial, a SECOND flag restarts the absorber" deny "$(nolib_hook "$(json 'yarn workspace api --message hi --grep update:preview')")"
+check "no-lib: the flagless twin allows" allow "$(nolib_hook "$(json 'yarn workspaces foreach test -- --grep update:preview')")"
+check "no-lib: one non-flag word after the flag allows" allow "$(nolib_hook "$(json 'yarn workspace api --message wrote docs about update:preview today')")"
+check "no-awk: ACCEPTED degraded over-denial, flagged foreach naming the script" deny "$(noawk_hook "$(json 'yarn workspaces foreach -A test -- --grep update:preview')")"
+check "no-awk: ACCEPTED degraded over-denial, flagged workspace naming the script" deny "$(noawk_hook "$(json 'yarn workspace api --silent test -- --grep update:preview')")"
+check "no-awk: ACCEPTED degraded over-denial, a SECOND flag restarts the absorber" deny "$(noawk_hook "$(json 'yarn workspace api --message hi --grep update:preview')")"
+check "no-awk: the flagless twin allows" allow "$(noawk_hook "$(json 'yarn workspaces foreach test -- --grep update:preview')")"
+check "no-awk: one non-flag word after the flag allows" allow "$(noawk_hook "$(json 'yarn workspace api --message wrote docs about update:preview today')")"
 
 # NAMED RESIDUAL of the split, pinned as ALLOW so it is visible: a flag WITH a value followed by
 # the BARE script and no `run` under-denies on the precise path. The run-form spelling above
@@ -5515,7 +5530,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1092
+EXPECTED_TOTAL=1102
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
