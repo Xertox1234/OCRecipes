@@ -8,7 +8,7 @@ assignee:
 labels: [deferred, harness]
 github_issue:
 human_led: true
-blocked_reason: "The todo names TWO materially different fixes for the same defect -- a known-arity flag table, or a rule that the value slot may not consume a token when a gated name follows -- and does not choose. The choice lands on _OUT_FLAG_RUN, which every anchor in guard-outward-cli.sh shares, in the guard that exists because an agent once published an OTA update by accident. PR #993's own history is the argument: three separate rounds each patched one slot in this area, each patch exposed the next slot, and every one was found by a reviewer constructing an adversarial probe the corpus did not already contain -- not by the corpus. An unattended run would pick whichever direction is cheaper, verify it against that same corpus, and ship a narrowing or a widening of a security gate on that basis. The acceptance criteria are individually testable, which was equally true of all three superseded per-slot attempts."
+blocked_reason: "The fix direction is UNSETTLED and the leading candidate is unproven. Three independent builds of the same one-sentence repair behaved three different ways, and the live lead -- admit one bare word in the post-run slot only when a flag precedes it and the gated literal immediately follows -- has two measurements that contradict each other, neither run against the project's own 2031-row corpus. The remaining choice is between re-deriving and proving that lookahead-conditioned rule and a known-arity flag table; an earlier version of this field also offered a third option the body now retracts as the inverse of what is wanted, which is its own argument for a human reading the body before starting. The choice lands on _OUT_FLAG_RUN, which every anchor in guard-outward-cli.sh shares, in the guard that exists because an agent once published an OTA update by accident. PR #993's own history is the argument: three separate rounds each patched one slot in this area, each patch exposed the next slot, and every one was found by a reviewer constructing an adversarial probe the corpus did not already contain -- not by the corpus. An unattended run would pick whichever direction is cheaper, verify it against that same corpus, and ship a narrowing or a widening of a security gate on that basis. The acceptance criteria are individually testable, which was equally true of all three superseded per-slot attempts."
 ---
 
 # One flag before a command word turns an incidental script name into a deny
@@ -58,16 +58,20 @@ part to trust:
 | `npm run --workspace api update:production`   | DENY → **ALLOW**     |
 | `npm run --workspace=api <otascript>` (glued) | stays DENY           |
 
-Those are the documented npm and pnpm spellings for running a workspace script. The first two
-are pinned as `assert_deny` in `test-guard-outward-cli.sh`, so narrowing that slot reddens
-immediately; the `-w` and `update:production` spellings are not yet pinned and should be.
+Those are the documented npm and pnpm spellings for running a workspace script. All four are pinned as `assert_deny` in `test-guard-outward-cli.sh`, so narrowing that slot
+reddens before it can ship. (An earlier revision of this sentence said the `-w` and
+`update:production` spellings "are not yet pinned and should be" — they were pinned in the same
+commit that wrote it. Inside the one document written to stop exactly this.)
 
 **Two earlier sentences here were wrong and are retracted, because a wrong rationale is worse
 than none — it tells the next implementer where not to look.**
 
-- It said the repair "does not remove the over-denials it was proposed for." Not supported: a
-  second implementation removed all six it was measured against. Whether a given candidate
-  removes them depends on the candidate, and mine and the reviewer's differed.
+- It said the repair "does not remove the over-denials it was proposed for." Not supported: two
+  further implementations each removed the over-denials they were measured against, including
+  the three named in the table above. Whether a given candidate removes them depends on the
+  candidate — three builds of "the same" repair behaved three different ways. (An earlier
+  revision said "all six", a number with no referent anywhere a reader can open; the rule this
+  file keeps re-learning is to cite something openable, and a bare count is not that.)
 - It said "the ambiguity is genuine: `<pm> run --flag X Y` cannot be resolved by a text matcher."
   **There is no evidence for that, and it would stop someone finding a fix that may well exist.**
 - It suggested "a rule that the value slot may not consume a token when a gated name follows."
