@@ -2119,6 +2119,15 @@ add lp-site-npmrunota    DENY '/usr/local/bin/npm run update:preview'
 add lp-site-railvar      DENY 'npx railway variable set FOO=bar'
 add lp-site-railsvcdel   DENY 'npx railway service delete foo'
 
+# axis: DENY-SITE COVERAGE (2026-09-18, round-8 security review). The interpreter
+# co-occurrence check has no other corpus row: every OTHER interpreter row in this file
+# supplies a LITERAL verb, and this check fires only when the verb slot is an EXPANSION and
+# `update:(preview|production)` co-occurs. Without this row `_pin_sites` would flag it as a
+# check a future deletion could remove invisibly -- which is exactly what it did on the first
+# run after the check was added, and is why the row is here rather than the count re-pinned.
+# Single-quoted so the `$( )` is inert text: the corpus feeds command STRINGS, it never runs them.
+add lp-site-interpexp    DENY 'node $(echo --run update:production)'
+
 # axis: AMBIGUOUS-TARGET LAUNCHER FLAGS (2026-09-16, round-2 security review of
 # this PR). --package/-p (npx/npm exec's own --package/-p invocation form) and
 # -c/--call (whose argument sits inside a quoted string this guard's own
@@ -2925,7 +2934,12 @@ fi
 # is what generates the shape. Runtime at 2159 rows: 16m46s locally, against 16m50s at 2127,
 # 16m29s at 2095 and 16m03s at 2031 on the same box -- four axis additions have cost ~45s in
 # total, and the 30m cap still has headroom; the CI number remains the one that binds.
-EXPECTED_ROWS=2159
+# 2159 -> 2160 (2026-09-18, round 8): +1, the `lp-site-interpexp` DENY-SITE COVERAGE row for the
+# interpreter/expansion co-occurrence check. Added because the run REFUSED the check without it:
+# `_pin_sites` reported "the guard can emit a deny NO corpus row reaches", which is the state in
+# which a future deletion of that check is invisible to every other check in this pin. The row,
+# not the count, is the fix -- the failure text says so explicitly.
+EXPECTED_ROWS=2160
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 787 of the 940 rows deny on the precise path; the other 153 are ALLOW there: 91
@@ -3157,7 +3171,9 @@ EXPECTED_ROWS=2159
 # controls (`node <path>/tsc`, `node scripts/seed.js`, `node --version` -- an interpreter in
 # front of an UNGATED terminal name) are ALLOW rows and so live in test-guard-outward-cli.sh,
 # since this axis generates DENY payloads only.
-EXPECTED_DENY_ATTRIB_ROWS=1917
+# 1917 -> 1918 (2026-09-18, round 8): +1, the same coverage row; it denies on the precise path
+# and is attributed to the new check.
+EXPECTED_DENY_ATTRIB_ROWS=1918
 
 # 7 + 17 + 21 + 17 = 62. This is the SAME decomposition as the "FULL ATTRIBUTION of
 # the remaining precise-path gaps" note further down, and the two must stay
@@ -3298,7 +3314,17 @@ EXPECTED_PRECISE_GAPS=62
 # (nojq/nolib/noawk) fallbacks cannot see it and deny. That is the SAME documented degraded-path
 # residual the launcher rows already carry, not a new gap -- verified by reading the 8 added
 # manifest tuples rather than inferring from the count.
-EXPECTED_ALLPATH_GAPS=358
+# 358 -> 359 (2026-09-18, round 8): +1, `lp-site-interpexp` at p=DENY j=ALLOW l=ALLOW a=ALLOW.
+# NAMED, not absorbed: the new check is PRECISE-PATH ONLY. On the degraded paths the crude smell
+# test is what fails closed, and it keys on GATED BINARY NAMES -- this command carries none, only
+# `node` and the script name, so the crude test does not recognise it. That is the same root fact
+# as the fastpath needle added in round 7 (the runner word is not a needle; the script name is),
+# and it is a precedented tuple rather than a new weakness class: `lp-verpin-easupd`,
+# `lp-verpin-easupdcolon` and `lp-verpin-easchannel` already sit in this pin with the IDENTICAL
+# four-path shape. Extending the crude smell test to the script name would close it on all four
+# paths, but that test is shared and fail-closed, so it is a change with its own blast radius and
+# its own round -- not something to slip in beside a pin bump.
+EXPECTED_ALLPATH_GAPS=359
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -3725,6 +3751,7 @@ vft-bang p=ALLOW j=DENY l=DENY a=DENY
 vft-fd p=ALLOW j=DENY l=DENY a=DENY
 vft-gt p=ALLOW j=DENY l=DENY a=DENY
 vft-in p=ALLOW j=DENY l=DENY a=DENY
+lp-site-interpexp p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -5586,6 +5613,7 @@ lp-site-easchannel : 'eas channel:/branch: create/edit/delete/rename' reached th
 lp-site-npmrunota  : 'npm run update:preview/update:production' (and the yarn/pnpm bare-scrip
 lp-site-railvar    : 'railway variable/vars/var set/delete' reached through a launcher or a p
 lp-site-railsvcdel : 'railway service/environment delete' reached through a launcher or a pat
+lp-site-interpexp  : an interpreter (node/bun/deno) sits in command position with an EXPANSIO
 lp-af-npx-pkgeq    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-af-npx-pkgsp    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-af-npx-peq      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
@@ -5773,7 +5801,10 @@ PIN_EXEMPT_EOF
 # 41 -> 42 (2026-09-17, MERGE with origin/main): +1, main's brace-LIST narrow-deny
 # site. Ancestor af0e27b2 had 28; this branch added 13 and main added 1, and the
 # merged tree MEASURES 42 -- additive, like every other pin in this merge.
-EXPECTED_EMIT_SITES=42
+# 42 -> 43 (2026-09-18, round 8): the interpreter/expansion co-occurrence check. Its coverage
+# row is `lp-site-interpexp` in the DENY-SITE COVERAGE axis above -- added, not exempted,
+# because command text CAN reach it.
+EXPECTED_EMIT_SITES=43
 
 PIN_FAIL=0
 

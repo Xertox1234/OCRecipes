@@ -407,9 +407,20 @@
 #     the `yarn`/`pnpm` bare-script equivalents, and — since the _OUT_FLAG_RUN
 #     fix — every FLAG spelling between the runner, `run`, and the script name
 #     (`-s`, `--silent`, `--flag=value`, and `--flag value` with a
-#     space-separated value). `bunx`/a shell alias/`corepack npm run …`/a direct
+#     space-separated value). Since round 7 the RUNNER set also covers `bun run`,
+#     bare `bun`, `node --run` (separated and `=`-glued) and `deno task`, and an
+#     interpreter whose verb slot is an EXPANSION is denied when the script name
+#     co-occurs. CORRECTED 2026-09-18: an earlier revision listed `bunx` and
+#     `corepack npm run …` as NOT covered. Measurement contradicts it - both DENY
+#     today (`corepack` is a privilege word, `bunx` a launcher). The error was in
+#     the SAFE direction, claiming less coverage than exists, which is how a
+#     later round comes to re-close something already closed.
+#     Still NOT covered: a shell alias; a direct
 #     `sh -c "$(node -p 'require("./package.json").scripts["update:preview"]')"`
-#     are not.
+#     (the quoted-span residual documented below); and a third-party script
+#     runner re-entering by bare argv (`npx turbo run update:production`,
+#     `npx lerna run ...`, `npx npm-run-all ...`, `dotenv -- npm run ...`) - an
+#     open enumeration this file deliberately does not chase. Filed, not closed.
 #   * QUOTED COMMAND WORDS — FIXED 2026-08-16, previously bypassed every check
 #     in this file. `cmd_bare` BLANKS quoted spans, but the shell word-splits
 #     `eas "update"` and concatenates `eas up"date"` into the argv `eas update`,
@@ -3710,6 +3721,27 @@ if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_GATED_BIN}${_OUT_SEP}
    || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_GATED_BIN}${_OUT_SEP}pr${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
    || grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}${_OUT_EXPANSION_TOKEN}${_OUT_SEP}${_OUT_GATED_VERB}${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: an outward-facing CLI is named in command position but the verb is not literal text (an expansion or substitution supplies it), so this hook cannot tell a read-only call from a mutating one — denying, per the 2026-09-03 narrow-deny ruling. A literal verb is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+fi
+
+# --- narrow deny: an INTERPRETER whose verb slot is an expansion, WITH the OTA script present -
+# `_OUT_GATED_BIN` above deliberately does NOT list node/bun/deno, and must not: that arm denies
+# a gated binary followed by ANY expansion, and `node $SCRIPT`, `node $(which tsx)` and
+# `deno run ${MOD}` are ordinary and everywhere. But once round 7 made those three recognised
+# runners of `update:(preview|production)`, their expansion slot became the one cell the
+# widening did not carry. Measured on the pre-fix tree: `npm $(echo run update:production)`
+# DENIED while `node $(echo --run update:production)`, `bun $(echo run update:production)` and
+# `deno $(echo task update:production)` all ALLOWED -- and that script execs
+# `eas update --branch production --platform all`, a real OTA to real users. A reviewer
+# confirmed by decoy that `$( )` genuinely delivers the verb under BOTH bash and zsh.
+# THE PREDICATE IS A CO-OCCURRENCE, the shape this file already uses for the unreadable-value
+# `gh api` case: an interpreter in command position whose next token cannot be read, AND the OTA
+# script name somewhere in the same rendering. BOTH halves are required, and that is precisely
+# what keeps ordinary interpreter use allowed -- `node $SCRIPT` and `node $(echo --run build)`
+# carry no script name and are pinned as controls. It keys on the same literal as the fastpath
+# needles added in the same round, so it is reachable by construction rather than by luck.
+if grep -Eq "${_OUT_POS_PREFIX_W}${_OUT_OPT_QUAL_CH}(node|bun|deno)${_OUT_SEP}${_OUT_EXPANSION_TOKEN}" <<< "$WORDS_SCAN" \
+   && grep -Eqi 'update:(preview|production)' <<< "$WORDS_SCAN"; then
+  deny "guard-outward-cli: an interpreter (node/bun/deno) sits in command position with an EXPANSION in its verb slot while 'update:preview/update:production' appears in the same command - that script execs 'eas update --branch production --platform all', a real OTA to real users. The expansion cannot be read, so the verb it supplies cannot be checked, and denying is the safe direction for the 2026-08-16 incident class. Ordinary interpreter use with an expansion is unaffected: this fires ONLY when the OTA script name co-occurs. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 # --- narrow deny: a gated binary/verb glued to a brace RANGE ({X..Y}) --------
