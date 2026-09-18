@@ -5285,6 +5285,15 @@ assert_deny "npm's own workspace run spelling still denies (separate-token flag 
   "$(jsonc 'npm run --workspace api update:preview')" "update:preview"
 assert_deny "pnpm's filter run spelling still denies (separate-token flag value)" \
   "$(jsonc 'pnpm run --filter api update:preview')" "update:preview"
+# The round-9 review named two further spellings the P2 had not: the SHORT `-w` form and the
+# production script. Pinned for the same reason as the two above -- a repair that opens them
+# is a repair that has to redden here first. Neither was in the P2's table until now, which is
+# itself the argument for pinning rather than describing: the description was incomplete and
+# nothing caught that, because prose has no gate.
+assert_deny "npm's SHORT workspace run spelling still denies" \
+  "$(jsonc 'npm run -w api update:preview')" "update:preview"
+assert_deny "the production script through a workspace run still denies" \
+  "$(jsonc 'npm run --workspace api update:production')" "update:production"
 # ACCEPTED OVER-DENIAL, pinned so it is a known cost rather than a surprise: a flag AFTER `run`
 # swallows the real command word, so an incidental script name in a test filter denies here even
 # though the scope-level twin was fixed. The unscoped form denies on origin/main too, so this is
@@ -5530,7 +5539,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1102
+EXPECTED_TOTAL=1104
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
