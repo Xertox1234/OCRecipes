@@ -5461,6 +5461,34 @@ assert_allow "an ungated sink behind two workspace hops still runs" \
   "$(jsonc 'yarn workspace api workspace foo build')"
 assert_allow "an ungated sink behind a mixed scope chain still runs" \
   "$(jsonc 'yarn workspace api workspaces foreach exec jest')"
+
+# THIRD SPELLING OF THE SAME SCOPE CLASS, found by the round-3 security review after the two
+# above were closed: `yarn workspaces run <cmd>` is yarn CLASSIC's forwarding form, where berry
+# spells it `workspaces foreach <cmd>`. It was ALLOW here, at this branch's parent, and on main.
+# The scope arm now carries the forwarding property -- both spellings and no others, because
+# `workspaces info` / `list` / `focus` forward nothing and cannot reach a sink. The final three
+# rows pin exactly that boundary: widening to a bare `workspaces <anything>` would deny them.
+assert_deny "yarn workspaces run reaches the OTA sink" \
+  "$(jsonc 'yarn workspaces run eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "yarn workspaces run reaches railway" \
+  "$(jsonc 'yarn workspaces run railway up')" \
+  "reached through a launcher"
+assert_deny "yarn workspaces run reaches a gated gh subcommand" \
+  "$(jsonc 'yarn workspaces run gh pr merge 42 --admin')" \
+  "gh"
+assert_deny "yarn workspaces run reaches the OTA script anchor" \
+  "$(jsonc 'yarn workspaces run update:production')" \
+  "update:preview/update:production"
+assert_deny "yarn workspaces run reaches a path-qualified gated binary" \
+  "$(jsonc 'yarn workspaces run ./node_modules/.bin/eas update')" \
+  "reached through a launcher"
+assert_allow "an ungated script still runs under yarn workspaces run" \
+  "$(jsonc 'yarn workspaces run build')"
+assert_allow "yarn workspaces list forwards nothing and stays allowed" \
+  "$(jsonc 'yarn workspaces list --json')"
+assert_allow "yarn workspaces info forwards nothing and stays allowed" \
+  "$(jsonc 'yarn workspaces info')"
 # THE ROW THAT MATTERS MOST. `gh pr merge` is reached through _OUT_POS_PREFIX_LP, which this
 # change widens, and the merge clause is GRANT-shaped -- an empty clause cut DENIES. If the
 # chain widening ever reaches the count/clause pair wrong, this repo's own sanctioned /todo
@@ -5610,7 +5638,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1120
+EXPECTED_TOTAL=1128
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

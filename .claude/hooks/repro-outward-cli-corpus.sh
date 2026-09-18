@@ -1811,11 +1811,17 @@ LP_CH_TARGET_CMDS=(
 # chain forms). Hand-written pins for these live in test-guard-outward-cli.sh, but a hand-written
 # list reproduces the blind spot that hid them; generating them here is what makes a future
 # widening that reopens the class fail the required check instead of passing it.
-LP_CH_CHAIN_IDS=(stack explore barepm lnchr wsscope wsforeach wsscope2 yarnrun)
+# `wsrun` followed in round 3, and its arrival is the argument for the axis rather than against
+# it: `yarn workspaces run <cmd>` is yarn CLASSIC's forwarding spelling of the same selector
+# berry spells `workspaces foreach <cmd>`, it was ALLOW on main and on both earlier revisions of
+# this branch, and no hand-written list had it. The scope arm now carries the forwarding
+# PROPERTY -- exactly `run` and `foreach`, because `info`/`list`/`focus` forward nothing -- so a
+# fourth spelling would have to be a new yarn feature rather than one more overlooked row.
+LP_CH_CHAIN_IDS=(stack explore barepm lnchr wsscope wsforeach wsscope2 yarnrun wsrun)
 LP_CH_CHAINS=(
   'npx pnpm dlx ' 'npm explore some-pkg -- ' 'pnpm ' 'npx '
   'yarn workspace api ' 'yarn workspaces foreach exec '
-  'yarn workspace api workspace foo ' 'yarn run '
+  'yarn workspace api workspace foo ' 'yarn run ' 'yarn workspaces run '
 )
 # The wrapper word that may sit BETWEEN the chain and its target. `env` is in _OUT_WRAPPER_WORD,
 # which _OUT_POS_PREFIX_W has always admitted in COMMAND position -- the defect was that it was
@@ -1841,12 +1847,12 @@ for _ch_ti in "${!LP_CH_TARGET_IDS[@]}"; do
   done
 done
 LP_CH_ROWS_GENERATED=$(( ${#ROWS[@]} - LP_CH_ROWS_BEFORE ))
-# 4 targets x 8 chain forms x 4 path forms x 2 inter forms = 256, asserted against the array
+# 4 targets x 9 chain forms x 4 path forms x 2 inter forms = 288, asserted against the array
 # length the loop actually produced. No composition-order variants here: the chain forms already
 # carry their own internal ordering, and adding the order dimension on top would quadruple the
 # required check's runtime for a spelling the axis above already measures.
-if [ "$LP_CH_ROWS_GENERATED" -ne 256 ]; then
-  echo "FATAL: launcher-chain axis generated $LP_CH_ROWS_GENERATED rows, expected 4 x 8 x 4 x 2 = 256 -- a dimension silently iterated short" >&2
+if [ "$LP_CH_ROWS_GENERATED" -ne 288 ]; then
+  echo "FATAL: launcher-chain axis generated $LP_CH_ROWS_GENERATED rows, expected 4 x 9 x 4 x 2 = 288 -- a dimension silently iterated short" >&2
   exit 1
 fi
 
@@ -2893,7 +2899,15 @@ fi
 # about: the 2095-row run completed locally in 16m29s, against 16m03s for the 2031-row run
 # immediately before it on the same box -- so the axis cost ~26s, not minutes. The 30m cap has
 # headroom, but per the paragraph above the CI number is the one that binds; check it.
-EXPECTED_ROWS=2095
+# 2095 -> 2127 (2026-09-18, round 3): +32, the `wsrun` chain form -- yarn CLASSIC's
+# `workspaces run <cmd>`, the forwarding spelling berry writes as `workspaces foreach <cmd>`.
+# ALLOW on main and on both earlier revisions of this branch; the third member of this class
+# found by review rather than by the grammar. The scope arm now carries the forwarding PROPERTY
+# (`run`|`foreach` and nothing else, because info/list/focus forward nothing), so a fourth
+# spelling would take a new yarn feature rather than another overlooked row. Runtime at 2127
+# rows: 16m50s locally, against 16m29s at 2095 and 16m03s at 2031 on the same box -- ~21s per
+# axis addition, still far inside the 30m cap, and still the CI number that binds.
+EXPECTED_ROWS=2127
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 787 of the 940 rows deny on the precise path; the other 153 are ALLOW there: 91
@@ -3111,7 +3125,14 @@ EXPECTED_ROWS=2095
 # these two forms live in test-guard-outward-cli.sh (npm/pnpm `run` must stay ALLOW, and an
 # ungated sink behind two hops must still run), because they are ALLOW rows and this axis
 # generates DENY payloads only.
-EXPECTED_DENY_ATTRIB_ROWS=1853
+# 1853 -> 1885 (2026-09-18, round 3): +32, again the FULL row delta -- every `wsrun` row denies
+# and none is an ALLOW control, so attribution moves exactly with EXPECTED_ROWS for the second
+# consecutive bump. Both gap totals HELD again at 62 precise / 358 all-path with no membership
+# drift, so closing the third spelling opened no residual on any path form. Its over-denial
+# controls (`yarn workspaces run build`, `workspaces list`, `workspaces info` -- the
+# non-forwarding subcommands) are ALLOW rows and so live in test-guard-outward-cli.sh, since
+# this axis generates DENY payloads only.
+EXPECTED_DENY_ATTRIB_ROWS=1885
 
 # 7 + 17 + 21 + 17 = 62. This is the SAME decomposition as the "FULL ATTRIBUTION of
 # the remaining precise-path gaps" note further down, and the two must stay
@@ -5084,6 +5105,14 @@ lpch-easupd-yarnrun-dotbin-noint : 'eas update/publish/submit' reached through a
 lpch-easupd-yarnrun-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lpch-easupd-yarnrun-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lpch-easupd-yarnrun-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lpch-npmpub-stack-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-stack-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-stack-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
@@ -5148,6 +5177,14 @@ lpch-npmpub-yarnrun-dotbin-noint : 'npm publish' reached through a launcher or a
 lpch-npmpub-yarnrun-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-yarnrun-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-yarnrun-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-railup-stack-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-stack-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-stack-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
@@ -5212,6 +5249,14 @@ lpch-railup-yarnrun-dotbin-noint : 'railway up/deploy/redeploy/restart/down/dele
 lpch-railup-yarnrun-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-yarnrun-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-yarnrun-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-ghmerge-stack-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-stack-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-stack-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
@@ -5276,6 +5321,14 @@ lpch-ghmerge-yarnrun-dotbin-noint : a gated 'gh' subcommand reached through a la
 lpch-ghmerge-yarnrun-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-yarnrun-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-yarnrun-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 pfx-none-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
 pfx-none-npmpub    : command-position 'npm publish' pushes a package to the registry.
 pfx-none-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/

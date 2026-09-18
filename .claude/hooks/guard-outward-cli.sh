@@ -2610,7 +2610,17 @@ _OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD
 #     a gated binary still runs, because no gated VERB follows it (`yarn run eas` ALLOW,
 #     `yarn run railway` ALLOW); only `yarn run eas update` and its siblings deny.
 # EVERY ALTERNATIVE ENDS IN A SEPARATOR, which is what makes the group safe to repeat.
-# _OUT_WS_SCOPE -- yarn's WORKSPACE SCOPE SELECTOR: `workspace <ws>` or `workspaces foreach`,
+# THE `workspaces` ARM IS AN ALTERNATION OF EXACTLY THE FORWARDING SUBCOMMANDS, which is a
+# property rather than a list that will keep growing: yarn forwards the remainder of the command
+# line in exactly two spellings -- `workspaces run <cmd>` (classic v1) and
+# `workspaces foreach <cmd>` (berry v2+). `workspaces info`, `workspaces list` and
+# `workspaces focus` forward nothing, so they cannot reach a sink and are deliberately absent;
+# over-denial rows in test-guard-outward-cli.sh pin that they keep ALLOWing. `run` was missing
+# here until the round-3 security review measured `yarn workspaces run <gated> <verb>` ALLOW at
+# this branch's head, at its parent AND on main, across all four path forms -- the THIRD member
+# of this same class found by review rather than by the grammar, which is why it is now spelled
+# as the forwarding property instead of one more remembered row.
+# _OUT_WS_SCOPE -- yarn's WORKSPACE SCOPE SELECTOR: `workspace <ws>` or `workspaces foreach/run`,
 # each optionally followed by `exec`. It is NOT a launcher verb and modelling it as one is the
 # mistake this constant exists to avoid: `yarn workspace <ws> X` forwards X to yarn INSIDE that
 # workspace, so the WHOLE grammar re-applies after it. That is why it is interpolated in two
@@ -2621,7 +2631,7 @@ _OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD
 # The workspace name is NOT allowed to start with `-`, so a flag can never be mistaken for it;
 # ordinary `yarn workspace api build` / `yarn workspaces foreach exec tsc --noEmit` are
 # unaffected, because the word after the scope still has to be a gated binary or verb.
-_OUT_WS_SCOPE='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'foreach)'"$_OUT_FLAG_RUN"'(exec'"$_OUT_SEP"')?'
+_OUT_WS_SCOPE='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'(foreach|run))'"$_OUT_FLAG_RUN"'(exec'"$_OUT_SEP"')?'
 
 # _OUT_WS_SCOPE_NV -- the same scope selector with a VALUE-LESS flag absorber, for the anchors
 # where the script name is the first word after the flags and therefore cannot be told apart
@@ -2678,7 +2688,7 @@ _OUT_WS_SCOPE='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}
 # command denies, and the crude degraded mirror denies this one too, so it is narrow. It is the
 # price of not denying every flagged workspace command that merely NAMES the script, which is
 # the failure that gets a guard switched off rather than fixed.
-_OUT_WS_SCOPE_NV='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'foreach)('"$_OUT_SEP"'-{1,2}[^[:space:]]*)*'"$_OUT_SEP"'(exec'"$_OUT_SEP"')?'
+_OUT_WS_SCOPE_NV='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'(foreach|run))('"$_OUT_SEP"'-{1,2}[^[:space:]]*)*'"$_OUT_SEP"'(exec'"$_OUT_SEP"')?'
 
 _OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|yarn'"$_OUT_FLAG_RUN"'('"$_OUT_WS_SCOPE"')+(run'"$_OUT_FLAG_RUN"')?|yarn'"$_OUT_FLAG_RUN"'run'"$_OUT_FLAG_RUN"'|(pnpm|yarn)'"$_OUT_FLAG_RUN"')'
 
