@@ -2970,7 +2970,7 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # tripwire-pinned residual as the permanent posture for the two-token families).
 # The more severe residual that investigation surfaced is NOT that decision and is
 # NOT on this ordering axis — it is already filed separately as
-# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+# todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
 # Two repair attempts were measured and rejected: a gh-api-style separator-safe grammar
 # (max()'d against the wide count, mirroring `_OUT_GH_GLOBALS_SEPSAFE`/`_OUT_SEP_SEPSAFE`
 # below) returns count=1 under BOTH grammars for this exact shape, because the nested
@@ -4805,8 +4805,15 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # the presence of fields alone.
   # DOCUMENTED RESIDUALS of this arm, named rather than discovered later:
   #   * AN UNREADABLE FIELD FLAG has no "cannot verify -> deny" mirror. The sibling arm denies an
-  #     unreadable METHOD value on the 2026-09-05 ruling, but `gh api $(printf -- -f) k=v <merge
-  #     endpoint>` is ALLOW here. A blanket `$`-in-clause deny is not available -- `gh api
+  #     unreadable METHOD value on the 2026-09-05 ruling, but an unreadable FIELD flag is
+  #     ALLOW here -- e.g. `gh api $(cat flagfile) k=v <merge endpoint>`, measured ALLOW
+  #     2026-09-18. THE EXAMPLE MATTERS: this comment previously used `$(printf -- -f)`,
+  #     which DENIES, because the literal source text carries the substring ` -f` and
+  #     satisfies the field pattern by accident -- the guard never resolved the
+  #     substitution. A reader testing that example to confirm the gap would have seen
+  #     DENY and concluded there was no gap. The residual is real; only the illustration
+  #     was self-defeating (review, 2026-09-18). A blanket `$`-in-clause deny is not
+  #     available -- `gh api
   #     repos/$OWNER/$REPO` must stay allowed, as this block's own comment says -- so the
   #     tractable form is a co-occurrence rule: a bare `key=value` positional beside an
   #     unreadable token, with no method flag, is the same implicit POST. Not built here.

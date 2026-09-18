@@ -392,7 +392,7 @@ add apicolfp-rootflag ALLOW 'gh -t x api repos/o/r'
 # owner. That todo is archived `status: done`, is about merge-review-guard.sh rather than
 # this guard, and its own text asserted this form was not a live bypass -- false for the
 # field-based spelling, and now retracted inline in that file. Owner is
-# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+# todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
 #
 # The discriminator is the ABSENT EXPLICIT METHOD, not the endpoint and not the row's
 # collapse shape: `gh` infers POST from the presence of -f/-F/--field/--raw-field, so this

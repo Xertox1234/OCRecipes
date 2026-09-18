@@ -228,6 +228,20 @@ denied "$out" && ok "the GLUED -F short form denies" \
               || bad "the GLUED -F short form denies" "$out"
 out=$(bash_payload 'gh api -XGET /repos/o/r/pulls/42/merge -f foo=bar' | run)
 assert_allowed "a GLUED -XGET with fields is an explicit read" "$out"
+# 3a-quater. A REDIRECT GLUED TO THE ENDPOINT. The discriminator originally closed on a
+# hand-spelled `([[:space:]]|$)`, which is not a word boundary in bash: `…/merge>/dev/null` puts
+# `>` right after `merge`, the pattern missed, and this gate's whole implicit-POST arm was skipped
+# for a command whose argv is an unmodified merge. Measured ALLOW before the fix, DENY after.
+# The SPACED row below is the non-vacuity control -- it denied BOTH before and after, so a green
+# pair here means the glued row is carrying the evidence, not the arm merely being on.
+out=$(bash_payload 'gh api -f merge_method=squash /repos/o/r/pulls/42/merge>/dev/null' | run)
+denied "$out" && ok "a redirect GLUED to the merge endpoint still denies" \
+              || bad "a redirect GLUED to the merge endpoint still denies" "$out"
+out=$(bash_payload 'gh api -f merge_method=squash /repos/o/r/pulls/42/merge >/dev/null' | run)
+denied "$out" && ok "the SPACED redirect control denies (non-vacuity for the row above)" \
+              || bad "the SPACED redirect control denies (non-vacuity for the row above)" "$out"
+out=$(bash_payload 'gh api /repos/o/r/pulls/42>/dev/null' | run)
+assert_allowed "a glued redirect on a NON-merge path is still not a merge" "$out"
 # THE ENDPOINT DISCRIMINATOR reads field VALUES, and this arm made that reachable for field-only
 # calls for the first time. A comment body quoting the endpoint was classified a merge.
 out=$(bash_payload "gh api repos/o/r/issues/12/comments -f body=see pulls/42/merge for context" | run)
@@ -236,7 +250,7 @@ out=$(bash_payload 'gh api repos/o/r/pulls -f title=merge cleanup' | run)
 assert_allowed "a field value containing the word merge is not a merge" "$out"
 
 # 3a-bis. DENY. gh's IMPLICIT POST — no method flag anywhere.
-# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md. cli/cli
+# todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md. cli/cli
 # pkg/cmd/api/api.go:329-330 sets method=POST when no method flag was passed AND there is any
 # field parameter or an --input file, so these name no method and are still merges. This gate is
 # fail-closed, so before this arm each was a SILENT ALLOW of a real merge route — the worst
@@ -1345,6 +1359,36 @@ else
 fi
 unset _mrg_src _mrg_conj_line _mrg_conj _mrg_missing _mrg_sym _mrg_lbl
 
+# THE CLOSER-CLASS INVARIANT, PORTED FROM THE SIBLING SUITE (2026-09-18, review round 3).
+# test-guard-outward-cli.sh has asserted this for guard-outward-cli.sh since the 2026-09-17
+# closer sweep, and its comment names the principle: fixing one arm and leaving its siblings is
+# the most repeated mistake in that file. The invariant was asserted WITHIN one file and never
+# ported ACROSS to this one -- the same mistake one level up, and precisely how round 3's
+# CRITICAL survived: the merge-endpoint discriminator hand-spelled `([[:space:]]|$)`, a glued
+# redirect walked past it, and a 151-assertion green suite had nothing to say about it.
+# A redirect operator terminates a word without whitespace, so `…/merge>/dev/null` presents `>`
+# where the hand-spelled class expects whitespace or end-of-string; ${_CMD_POS_SUFFIX} absorbs it.
+# COUNTS OCCURRENCES with `grep -o | wc -l`, never `grep -c` (which counts LINES and would read
+# two on one line as one). COMMENT LINES ARE EXCLUDED deliberately: this guard's own comments
+# quote the fragment verbatim when explaining the defect, and a check that counted prose would
+# force the explanation to be deleted to stay green.
+_mrgcloser_hits=$(grep -nE '\(\[\[:space:\]\]\|\$\)' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|\$\)' | wc -l | tr -d ' ')
+if [ "$_mrgcloser_hits" = "0" ]; then
+  echo "PASS: no code line in merge-review-guard.sh hand-spells a closer class that \${_CMD_POS_SUFFIX} provides"; PASS=$((PASS+1))
+else
+  echo "FAIL: $_mrgcloser_hits code-line closer class(es) hand-spelled as ([[:space:]]|\$) instead of \${_CMD_POS_SUFFIX} -- a glued < or > escapes them"; FAIL=$((FAIL+1))
+fi
+# NON-VACUITY, because a structural grep that matches nothing passes for the wrong reason just as
+# readily as one that matches nothing for the right one. The same pipeline over COMMENT lines must
+# still find the fragment, proving the pattern itself is live rather than silently broken.
+_mrgcloser_prose=$(grep -nE '\(\[\[:space:\]\]\|\$\)' "$HOOK" | grep -E '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|\$\)' | wc -l | tr -d ' ')
+if [ "$_mrgcloser_prose" -gt 0 ]; then
+  echo "PASS: the closer-class pattern still matches merge-review-guard.sh's own prose (check is live)"; PASS=$((PASS+1))
+else
+  echo "FAIL: the closer-class pattern matches nothing anywhere -- the structural check above is vacuous"; FAIL=$((FAIL+1))
+fi
+unset _mrgcloser_hits _mrgcloser_prose
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -1358,6 +1402,10 @@ unset _mrg_src _mrg_conj_line _mrg_conj _mrg_missing _mrg_sym _mrg_lbl
 # widened anchor.
 # 129 -> 130: +1 for the row that derives the preflight's required symbol set from the file
 # instead of trusting the comment that states it.
+# 151 -> 154 -> 156 (2026-09-18, review round 3): +3 behavioural rows for a redirect GLUED
+# to the merge endpoint (glued, a SPACED non-vacuity control, and a negative control on a
+# non-merge path), then +2 structural rows porting the closer-class invariant from the
+# sibling suite so the next hand-spelled closer in THIS file reddens instead of shipping.
 # 130 -> 131: +1 regime precondition for THE 64KB SIGPIPE ROW, which until now asserted its
 # DENY outcome with nothing asserting the input still reached the pipe buffer.
 # 131 -> 138 (2026-09-17, namespace->verb slot): +7. The three KNOWN GAP tripwire rows were
@@ -1366,7 +1414,7 @@ unset _mrg_src _mrg_conj_line _mrg_conj _mrg_missing _mrg_sym _mrg_lbl
 # row pinning the ALLOW side of a separator widening (the direction that invents denials, and
 # the one that killed the withdrawn raw-token predicate), and +3 rows pinning the BINARY
 # renderings that remain open so the block is not read as closing the whole class.
-EXPECTED_TOTAL=151
+EXPECTED_TOTAL=156
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

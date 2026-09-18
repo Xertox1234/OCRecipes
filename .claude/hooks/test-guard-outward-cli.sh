@@ -4275,7 +4275,7 @@ assert_deny "...opening at !" \
 # decision remaining is whether to accept this tripwire-pinned residual as the permanent
 # posture). The more severe residual that investigation surfaced is NOT on this ordering
 # axis and is already filed separately as
-# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+# todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
 assert_deny "TRIPWIRE: a hidden second pr merge is miscounted but still denies" \
   "$(json 'gh -a -c <(gh pr merge 7) pr merge 42')" \
   "without a REAL --auto flag"
@@ -4318,7 +4318,7 @@ assert_allow "a single read-only gh api behind a root flag stays allowed" \
 # The one-command mutating form is ALLOW on main too — pinned so a reader does not mistake
 # the rows above for a claim that this change closed it.
 #
-# Tracked by todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+# Tracked by todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
 # This pointer was REPOINTED 2026-09-17. It previously read "It is the P2 gh-api-route
 # todo's", naming an archived status:done todo about a DIFFERENT hook, whose own text
 # asserts guard-outward-cli denies this form — false for the field-based spelling. So the
@@ -4328,7 +4328,7 @@ assert_allow "a single read-only gh api behind a root flag stays allowed" \
 # spelling is a POST that never says so and the method check never sees one.
 # WAS an assert_allow deferring to a CLOSED P2 whose own text disclaimed the thing this pin
 # pinned. The pin and the todo each pointed at the other and the gap fell between them.
-# ---------- gh's IMPLICIT POST (todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md)
+# ---------- gh's IMPLICIT POST (todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md)
 # api.go:329-330 sets method=POST when NO method flag was passed and there is any field
 # parameter or --input. Every spelling below reached the arbitrary-mutation surface while naming
 # no method at all, and every one measured ALLOW before this arm existed.

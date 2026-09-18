@@ -383,8 +383,19 @@ case "$TOOL" in
           # quotes the FULL path (`body=see repos/o/r/pulls/42/merge …`) still matches. There is
           # no text-level way to tell that from the endpoint itself, and erring toward DENY is
           # the right direction for a merge gate.
+          #
+          # THE CLOSER IS ${_CMD_POS_SUFFIX}, NOT A HAND-SPELLED `([[:space:]]|$)`.
+          # A redirect operator terminates a word without whitespace, so
+          # `…/pulls/42/merge>/dev/null` puts `>` immediately after `merge` — neither
+          # whitespace nor end-of-string — and a hand-spelled closer does not match,
+          # skipping this entire arm for an argv that is an unmodified merge request.
+          # Measured ALLOW here before this fix, DENY after, with a SPACED control
+          # denying both times so the row is not vacuous (review, 2026-09-18).
+          # Identical defect fixed in guard-outward-cli.sh on 2026-09-05 for a glued
+          # `-XPOST>`; #992 swept the hand-spelled closers and this one was written
+          # new afterwards. Do not re-spell it.
           printf '%s' "$MRG_API_CLAUSE" \
-            | grep -qiE '(^|[[:space:]])/?[A-Za-z0-9._{}-]+(/[A-Za-z0-9._{}-]+)*/pulls/[^[:space:]/]+/merge([[:space:]]|$)' \
+            | grep -qiE "(^|[[:space:]])/?[A-Za-z0-9._{}-]+(/[A-Za-z0-9._{}-]+)*/pulls/[^[:space:]/]+/merge${_CMD_POS_SUFFIX}" \
             || continue
           # Two ways this clause proves a mutating method: the value is a recognized
           # literal (glued `-XPUT`, or separated by whitespace/redirect/`=`), OR a

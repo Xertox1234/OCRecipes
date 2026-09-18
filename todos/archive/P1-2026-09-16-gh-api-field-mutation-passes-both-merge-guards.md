@@ -262,9 +262,17 @@ the-gh-api-merge-route.md` — a CLOSED todo whose own line 39 read "guard-outwa
   both the added and removed lists — so no pre-existing row kept its verdict while rerouting.
 
 - **Mutation-verified (criterion 7):** with both guards reverted to the base commit and the new
-  test files kept, the suites go red — 11 failures in the outward suite and 20 in the merge
-  gate's. The rows assert the fix rather than passing incidentally.
+  test files kept, both suites go red, and every failure is named after the implicit-POST feature
+  rather than incidental. **The exact failure counts this note once carried (11 and 20) were
+  stale and are deliberately NOT restated.** They were written against the FIRST commit, and this
+  branch has changed the suites twice since; a later reader mutation-testing against a fixed
+  number would chase a gap that is only drift. A re-derivation on 2026-09-18 got 14 for the
+  outward suite, not 11 — and the merge-gate number could not be re-derived cleanly at all,
+  because reverting the guards in a directory without `.git` fails ~15 stamp/record tests that
+  fail identically with UNMODIFIED guards, i.e. artifacts of the layout, not of the revert.
+  **The live pins are the authority** (`EXPECTED_TOTAL` in each suite); the per-commit deltas are
+  in the commit messages.
 
-- Suites: `test-guard-outward-cli.sh` 1116 passed / 0 failed; `test-merge-review-guard.sh`
-  146 passed / 0 failed. Corpus: `rows=2031 precise-path gaps=62 all-path gaps=355; all 1792
-deny reasons attributed to the same checks as the pin`.
+- Corpus pins, independently reconfirmed by a completed run: `rows=2031 precise-path gaps=62
+all-path gaps=355; all 1792 deny reasons attributed to the same checks as the pin`, emit
+  sites 43.
