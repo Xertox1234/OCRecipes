@@ -427,11 +427,10 @@ type NutritionDetailParams = RootStackParamList["NutritionDetail"] & {
  * prevent. Both annotations (return type AND the local accumulator) must stay
  * derived, or the object literal is still checked against a stale hand-written
  * type. `RootStackParamList["NutritionDetail"]` is a discriminated union of
- * the three entry modes, and `barcode` is `?: never` (not merely absent) on
- * the itemId/imageUri arms — intersecting with `{ barcode: string }` selects
- * the barcode arm of that union rather than narrowing an independent
- * optional, which is what makes `barcode` required here for a completed
- * barcode session.
+ * the two entry modes, and `barcode` is `?: never` (not merely absent) on the
+ * imageUri arm — intersecting with `{ barcode: string }` selects the barcode
+ * arm of that union rather than narrowing an independent optional, which is
+ * what makes `barcode` required here for a completed barcode session.
  */
 export function buildNutritionDetailParams(
   phase: Extract<ScanPhase, { type: "SESSION_COMPLETE" }>,

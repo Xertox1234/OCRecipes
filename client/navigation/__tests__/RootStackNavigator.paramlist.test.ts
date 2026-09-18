@@ -3,9 +3,14 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 /**
  * Type-level evidence for `RootStackParamList["NutritionDetail"]`'s
- * discriminated union: illegal combinations of the three entry-mode
- * selectors (`barcode` / `itemId` / `imageUri`) must be COMPILE errors, not
- * merely undesirable at runtime.
+ * discriminated union: an illegal combination of the two entry-mode selectors
+ * (`barcode` / `imageUri`) must be a COMPILE error, not merely undesirable at
+ * runtime.
+ *
+ * A third `itemId` selector was removed 2026-09-17 along with the saved-item
+ * arm it discriminated (no producer since 2026-01-29 — see
+ * `todos/archive/P2-2026-08-16-nutritiondetail-itemid-branch-has-no-producer.md`),
+ * taking its two exclusivity cases with it.
  *
  * Per docs/solutions/conventions/vitest-transform-no-typecheck-use-tsc-for-type-evidence-2026-07-14.md,
  * Vitest's esbuild transform strips types without checking them, so these
@@ -17,7 +22,7 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
  * excess-property complaint on some other key.
  */
 describe("RootStackParamList NutritionDetail — mode exclusivity", () => {
-  it("accepts each of the three legal entry-mode shapes", () => {
+  it("accepts each of the two legal entry-mode shapes", () => {
     const barcodeOnly: RootStackParamList["NutritionDetail"] = {
       barcode: "0123456789012",
     };
@@ -27,33 +32,13 @@ describe("RootStackParamList NutritionDetail — mode exclusivity", () => {
       nutritionImageUri: "file:///nutrition.jpg",
       frontImageUri: "file:///front.jpg",
     };
-    const itemIdOnly: RootStackParamList["NutritionDetail"] = { itemId: 42 };
     const imageUriOnly: RootStackParamList["NutritionDetail"] = {
       imageUri: "file:///manual.jpg",
     };
 
     expect(barcodeOnly.barcode).toBe("0123456789012");
     expect(barcodeWithCompanions.ocrText).toBe("Calories 120");
-    expect(itemIdOnly.itemId).toBe(42);
     expect(imageUriOnly.imageUri).toBe("file:///manual.jpg");
-  });
-
-  it("rejects itemId combined with barcode at compile time", () => {
-    // @ts-expect-error — itemId and barcode are mutually-exclusive entry modes
-    const illegal: RootStackParamList["NutritionDetail"] = {
-      itemId: 42,
-      barcode: "0123456789012",
-    };
-    expect(illegal).toBeDefined();
-  });
-
-  it("rejects itemId combined with imageUri at compile time", () => {
-    // @ts-expect-error — itemId and imageUri are mutually-exclusive entry modes
-    const illegal: RootStackParamList["NutritionDetail"] = {
-      itemId: 42,
-      imageUri: "file:///manual.jpg",
-    };
-    expect(illegal).toBeDefined();
   });
 
   it("rejects barcode combined with imageUri at compile time", () => {
@@ -62,6 +47,15 @@ describe("RootStackParamList NutritionDetail — mode exclusivity", () => {
       barcode: "0123456789012",
       imageUri: "file:///manual.jpg",
     };
+    expect(illegal).toBeDefined();
+  });
+
+  it("rejects an itemId that no longer names an entry mode", () => {
+    // @ts-expect-error — the saved-item arm was removed; `itemId` is not a key
+    // on either surviving arm, so this is an excess-property error. Pins the
+    // removal: re-adding the arm would make this assignment legal and fail
+    // `check:types` on the unused suppression.
+    const illegal: RootStackParamList["NutritionDetail"] = { itemId: 42 };
     expect(illegal).toBeDefined();
   });
 });
