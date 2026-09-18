@@ -1875,6 +1875,20 @@ $_OUT_CRUDE_VANISHED"
   fi
   t=${t//\'/}; t=${t//\"/}; t=${t//\\/}; t=${t//\$/}
   # Command-word patterns — case-INSENSITIVE (macOS APFS resolves `EAS`).
+  #
+  # THE `workspaces?` ALTERNATIVE IS DEGRADED-PATH-ONLY, AND SAYING SO IS THE POINT.
+  # `(npm|pnpm|yarn)[^a-zA-Z]+workspaces?[^a-zA-Z][^;&|]*update:(preview|production)` covers
+  # `yarn workspace <ws> run update:preview` and its bare-script twin. It changes NOTHING on
+  # the normal path -- this whole function is reached only from the four degraded entry points
+  # (no jq, jq extraction failure, lib unsourceable, blanking returned empty), so the precise
+  # anchors handle those rows there via _OUT_WS_SCOPE. An earlier revision of the comment in
+  # test-guard-outward-cli.sh claimed this alternative was what let those rows reach an anchor
+  # AT ALL; a round-2 review mutation-tested it, removed just this alternative, and measured
+  # ZERO normal-path movement. A justification a maintainer can disprove in one test makes the
+  # line EASIER to delete than no justification, which is why it is restated here rather than
+  # merely corrected. What deleting it actually costs is measured and pinned: on all three
+  # degraded fixtures both rows go base ALLOW / with-alternative DENY / without-alternative
+  # ALLOW, asserted below through nojq_hook / nolib_hook / noawk_hook.
   grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)[^a-zA-Z]+workspaces?[^a-zA-Z][^;&|]*update:(preview|production)|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run(-s?c?r?i?p?t?)?|rum|ur|urn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
   # Flag-correlated patterns — case-SENSITIVE (a case-insensitive `-R` would
   # false-match the `-r` inside `--remove-reviewer`).

@@ -233,6 +233,18 @@ real binary`. That is the same argument-taking class as `npm explore`, of which 
   spelling had been implemented -- so the universal was false and the residual block, which
   covers brace tokens only, read as exhaustive over a live route. `_OUT_WS_SCOPE` now closes it
   in both roles the shape needs (a launcher arm, and an absorber at the four OTA-script
-  anchors), the crude fastpath gained the one alternative that lets the script rows reach an
-  anchor at all, and the comment is enumerated rather than universal. 14 deny rows and 10
-  over-denial controls pin it; the 49-row invariant set showed ZERO movement.
+  anchors), and the comment is enumerated rather than universal. 13 deny rows and 10
+  over-denial controls pin it on the normal path; the 49-row invariant set showed ZERO movement.
+
+  The crude fastpath also gained a `workspaces?` alternative, and what it is FOR was stated
+  wrongly at first: the round-2 review mutation-tested each claimed role, removed just that
+  alternative, and measured zero normal-path movement -- because `crude_smells_outward` has
+  four call sites and all four are DEGRADED entry points (no jq, jq extraction failure, lib
+  unsourceable, blanking returned empty). It is load-bearing on those three paths only, where
+  both OTA-script rows go base ALLOW / with-alternative DENY / without-alternative ALLOW.
+  **Nothing pinned it there** -- the two normal-path rows would have passed with the line
+  deleted -- so ten `nojq_hook`/`nolib_hook`/`noawk_hook` checks now do, and the reason is
+  restated in the guard beside the regex. The lesson is sharper than the bug: a comment that
+  justifies a line with a reason the suite can disprove makes that line EASIER to delete than
+  no comment would. I applied four edits at once and measured the whole; isolating each role
+  by mutation is what found it, and that is the test I should have run.

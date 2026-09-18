@@ -3231,6 +3231,28 @@ check "no-jq: railway run fails closed"       deny "$(nojq_hook "$(json 'railway
 check "no-jq: npm publish fails closed"       deny "$(nojq_hook "$(json 'npm publish')")"
 check "no-jq: npm run update:preview closed"  deny "$(nojq_hook "$(json 'npm run update:preview')")"
 check "no-jq: yarn update:preview closed"     deny "$(nojq_hook "$(json 'yarn update:preview')")"
+# WORKSPACE SCOPE ON THE DEGRADED PATHS. This is the only thing that makes the crude fastpath's
+# `workspaces?` alternative fail-visible: it is unreachable on the normal path, so the two
+# normal-path assert_deny rows above would pass with it deleted.
+# NON-VACUITY WAS ESTABLISHED BY MUTATION, and only TWO of the three deny rows below actually
+# discriminate -- stated because a row that passes for the wrong reason is worse than no row.
+# Measured on a NOLIB fixture against three trees (origin/main; HEAD; HEAD with ONLY this
+# alternative deleted): the `yarn workspace api run <otascript>` row and its bare-script twin
+# go ALLOW / DENY / ALLOW, so they redden if the line is removed. The `workspaces foreach exec`
+# row DENIES on all three, because it carries a literal that the PRE-EXISTING fastpath pattern
+# already matched -- it is coverage for the foreach spelling, NOT evidence about this
+# alternative, and must not be read as one. The `yarn workspace api build` rows are the
+# over-denial side.
+check "no-jq: yarn workspace run update:preview closed"  deny "$(nojq_hook "$(json 'yarn workspace api run update:preview')")"
+check "no-jq: yarn workspace bare update:preview closed" deny "$(nojq_hook "$(json 'yarn workspace api update:preview')")"
+check "no-jq: yarn workspaces foreach update:preview closed" deny "$(nojq_hook "$(json 'yarn workspaces foreach exec npm run update:preview')")"
+check "no-jq: yarn workspace ordinary script allowed"    allow "$(nojq_hook "$(json 'yarn workspace api build')")"
+check "no-lib: yarn workspace run update:preview closed"  deny "$(nolib_hook "$(json 'yarn workspace api run update:preview')")"
+check "no-lib: yarn workspace bare update:preview closed" deny "$(nolib_hook "$(json 'yarn workspace api update:preview')")"
+check "no-lib: yarn workspace ordinary script allowed"    allow "$(nolib_hook "$(json 'yarn workspace api build')")"
+check "no-awk: yarn workspace run update:preview closed"  deny "$(noawk_hook "$(json 'yarn workspace api run update:preview')")"
+check "no-awk: yarn workspace bare update:preview closed" deny "$(noawk_hook "$(json 'yarn workspace api update:preview')")"
+check "no-awk: yarn workspace ordinary script allowed"    allow "$(noawk_hook "$(json 'yarn workspace api build')")"
 check "no-jq: gh pr merge fails closed"       deny "$(nojq_hook "$(json 'gh pr merge 42')")"
 check "no-jq: gh release create fails closed" deny "$(nojq_hook "$(json 'gh release create v1.0.0')")"
 check "no-jq: gh api fails closed"            deny "$(nojq_hook "$(json 'gh api -X PUT repos/x/y')")"
@@ -5175,11 +5197,14 @@ assert_deny "a PRIVILEGE word in front of a yarn workspace scope denies" \
   "$(jsonc 'sudo yarn workspace api eas update --branch preview')" "reached through a launcher"
 assert_deny "a path-qualified target after a yarn workspace scope denies" \
   "$(jsonc 'yarn workspace api /opt/homebrew/bin/eas update --branch preview')" "reached through a launcher"
-# THE TWO OTA-SCRIPT ROWS. These do NOT go through the launcher arm -- they are why
-# _OUT_WS_SCOPE is also spliced into the four update:preview anchors, and why the crude
-# fastpath needed its own alternative (its package-manager patterns absorb only FLAGS between
-# the manager and its verb, and `workspace api` is not a flag, so without that alternative
-# these two never reach any anchor at all).
+# THE TWO OTA-SCRIPT ROWS. These do NOT go through the launcher arm: once it consumes the
+# scope there is no package-manager word left for the OTA-script anchor to match, which is why
+# _OUT_WS_SCOPE is ALSO spliced into the four update:preview anchors. The rows below exercise
+# the NORMAL path and that splice is what makes them deny.
+# The crude fastpath's `workspaces?` alternative is a SEPARATE, DEGRADED-PATH-ONLY matter --
+# an earlier revision of this comment said those two rows would not reach an anchor at all
+# without it, which a round-2 review disproved by removing just that alternative and measuring
+# zero normal-path movement. Its real effect is pinned in the degraded block further down.
 assert_deny "a yarn workspace scope in front of the OTA SCRIPT denies" \
   "$(jsonc 'yarn workspace api run update:preview')" "update:preview"
 assert_deny "a yarn workspace scope in front of the BARE OTA script denies" \
@@ -5384,7 +5409,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1045
+EXPECTED_TOTAL=1055
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

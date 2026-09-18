@@ -2866,12 +2866,15 @@ fi
 # 1839 -> 1967 (2026-09-17): +128 launcher-CHAIN rows. See that axis for why its cardinality is
 # deliberately small and why the `lnchr` form is a control rather than padding.
 # 1967 -> 2031 (2026-09-17, round 2): +64, the two yarn workspace-scope chain forms the round-1
-# security review found ALLOW. RUNTIME IS NOW THE BINDING CONSTRAINT, not row count: the 1967-row
-# revision took 16m25s locally and 20m16s in CI, against the corpus job's `timeout-minutes: 20`
-# -- it was CANCELLED, which GitHub reports as `cancelled`, NOT `failure`, so a required check
-# died and nothing in the PR's own output said so. The cap is raised to 30 in the same change.
-# Before adding another axis, measure the CI wall clock rather than the row count: the local
-# number understates it by ~1.24x, and a timeout does not look like a test failure.
+# security review found ALLOW. RUNTIME IS THE BINDING CONSTRAINT HERE, not row count. The
+# 1967-row revision was KILLED at the corpus job's `timeout-minutes: 20`, which GitHub reports
+# as `cancelled`, NOT `failure` -- a required check died and nothing in the PR's output said so.
+# The cap is 30 as of the same change. Do NOT derive a CI-to-local ratio from that killed job's
+# 20m16s: that is when it was stopped, not when it would have finished, and an earlier revision
+# of this note did exactly that. Completed measurements at 2031 rows: 17m25s in CI, 15m53s and
+# 17m31s locally -- a BIGGER corpus finished faster in CI than the smaller one managed before
+# being killed, so runner variance dominates the row-count effect. Before adding an axis,
+# measure a COMPLETED CI run.
 EXPECTED_ROWS=2031
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
