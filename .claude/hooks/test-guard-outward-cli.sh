@@ -3262,6 +3262,29 @@ check "no-jq: workspaces foreach run script closed"      deny "$(nojq_hook "$(js
 check "no-jq: workspaces foreach flag run script closed" deny "$(nojq_hook "$(json 'yarn workspaces foreach -A run update:preview')")"
 check "no-jq: workspace flag run script closed"          deny "$(nojq_hook "$(json 'yarn workspace api --silent run update:preview')")"
 check "no-jq: workspace run production script closed"    deny "$(nojq_hook "$(json 'yarn workspace api run update:production')")"
+# FLAG VALUES. The first bounded revision absorbed BARE flags only, so a flag whose value is a
+# separate LETTER-BEARING token broke it and the row slipped. The shape of that bug is the
+# lesson: `--jobs 4 run <script>` denied ANYWAY, because a digit is non-alphabetic and the
+# separator class swallows it -- so "I tested a flag with a value" would have been true and
+# useless. The value has to contain a letter to exercise the defect.
+check "no-jq: workspace flag+value run script closed"    deny "$(nojq_hook "$(json 'yarn workspace api --cwd packages/api run update:preview')")"
+check "no-jq: foreach flag+value run script closed"      deny "$(nojq_hook "$(json 'yarn workspaces foreach --since main run update:preview')")"
+check "no-jq: workspace flag+value bare script closed"   deny "$(nojq_hook "$(json 'yarn workspace api --cwd packages/api update:preview')")"
+check "no-jq: workspace numeric flag value still closed" deny "$(nojq_hook "$(json 'yarn workspaces foreach --jobs 4 run update:production')")"
+check "no-jq: scoped workspace name run script closed"   deny "$(nojq_hook "$(json 'yarn workspace @myorg/api run update:preview')")"
+# Over-denial side of the value slot, written to attack it rather than to confirm it.
+check "no-jq: workspace flag+value ordinary script allowed" allow "$(nojq_hook "$(json 'yarn workspace api --cwd packages/api run build')")"
+check "no-jq: foreach flag+value ordinary script allowed"   allow "$(nojq_hook "$(json 'yarn workspaces foreach --since main run lint')")"
+check "no-jq: flag value then prose naming the script allowed" allow "$(nojq_hook "$(json 'yarn workspace api --message wrote docs about update:preview today')")"
+check "no-jq: commit message naming the script allowed"     allow "$(nojq_hook "$(json 'yarn workspace api commit -m fix the update:preview script')")"
+check "no-jq: scoped workspace ordinary script allowed"     allow "$(nojq_hook "$(json 'yarn workspace @myorg/api build')")"
+# NAMED RESIDUAL, pinned as ALLOW so it is visible rather than forgotten: with no `workspace`
+# word at all the crude path's own flag absorber still cannot carry a value, so this slips on
+# the degraded paths. It is ALLOW on origin/main too -- a pre-existing asymmetry between
+# _OUT_FLAG_RUN and this crude mirror, not something this PR introduced, and wider than the
+# workspace arm can reach. If this row ever flips to DENY, that asymmetry was closed and this
+# pin should move with it.
+check "no-jq: RESIDUAL bare flag+value with no workspace word allows" allow "$(nojq_hook "$(json 'yarn --cwd packages/api run update:preview')")"
 check "no-lib: yarn workspace run update:preview closed"  deny "$(nolib_hook "$(json 'yarn workspace api run update:preview')")"
 check "no-lib: yarn workspace bare update:preview closed" deny "$(nolib_hook "$(json 'yarn workspace api update:preview')")"
 check "no-lib: yarn workspace ordinary script allowed"    allow "$(nolib_hook "$(json 'yarn workspace api build')")"
@@ -5226,6 +5249,37 @@ assert_deny "a yarn workspace scope in front of the BARE OTA script denies" \
   "$(jsonc 'yarn workspace api update:preview')" "update:preview"
 
 # ---------- over-denial controls for the workspace scope ----------
+# THE NORMAL PATH, AND THIS IS THE SET THAT WAS MISSING. Every control in this block used to
+# put the gated script name nowhere, or put it in prose with no flag before it. A review
+# generated the cross product instead and found that ONE flag after the scope flips the verdict:
+# _OUT_FLAG_RUN's iteration is `SEP -flag (SEP value)?`, so `--silent` swallows the real command
+# word `test` as its value, the trailing `-- --grep` absorb as further flags, and the anchor
+# lands on the incidentally-named script. The flagless twin allows, which is a one-token
+# difference and exactly the kind of pair a hand-written control set never contains.
+# Fixed by _OUT_WS_SCOPE_NV on the bare-script anchors only; the run-form keeps the full scope
+# because its literal `run` stops any value slot reaching the script.
+assert_allow "a flagged workspace scope naming the script in a test filter stays allowed" \
+  "$(jsonc 'yarn workspaces foreach -A test -- --grep update:preview')"
+assert_allow "the flagless twin of that row stays allowed (the one-token discriminator)" \
+  "$(jsonc 'yarn workspaces foreach test -- --grep update:preview')"
+assert_allow "a flagged single-workspace scope naming the script stays allowed" \
+  "$(jsonc 'yarn workspace api --silent test -- --grep update:preview')"
+assert_allow "a short-flag workspace scope naming the script in a message stays allowed" \
+  "$(jsonc 'yarn workspace api -s lint --message update:production notes')"
+assert_allow "a multi-flag foreach naming the script in a filter stays allowed" \
+  "$(jsonc 'yarn workspaces foreach -pt build -- --filter update:preview')"
+# The run-form MUST keep denying through all of that -- it is what the split preserves.
+assert_deny "a flagged foreach still denies the real run-form" \
+  "$(jsonc 'yarn workspaces foreach -A run update:preview')" "update:preview"
+assert_deny "a flag WITH A VALUE still denies the real run-form" \
+  "$(jsonc 'yarn workspace api --cwd packages/api run update:preview')" "update:preview"
+# NAMED RESIDUAL of the split, pinned as ALLOW so it is visible: a flag WITH a value followed by
+# the BARE script and no `run` under-denies on the precise path. The run-form spelling above
+# denies, and the crude degraded mirror denies this one too, so it is narrow. If this flips to
+# DENY the split was tightened and this pin moves with it.
+assert_allow "RESIDUAL: flag+value then the bare script under-denies on the precise path" \
+  "$(jsonc 'yarn workspace api --cwd packages/api update:preview')"
+
 # A monorepo is this repo's own shape, so `yarn workspace <ws> <ordinary thing>` is hourly
 # typing. Every row here was measured ALLOW after the change; the word AFTER the scope still
 # has to be a gated binary or verb, which is what keeps them clear.
@@ -5424,7 +5478,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1064
+EXPECTED_TOTAL=1083
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

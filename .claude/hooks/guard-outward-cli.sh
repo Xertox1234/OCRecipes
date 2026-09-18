@@ -1894,12 +1894,35 @@ $_OUT_CRUDE_VANISHED"
   # monorepo command that merely NAMES the script later in the same clause denied on the
   # degraded paths (a test filter, a lint `--message`). Four such rows were measured. Every
   # sibling alternative in this regex uses two-token adjacency or a REPEATED-FLAG absorber
-  # (`-{1,2}[^[:space:]]*`), never an arbitrary word gap, so the unbounded version was an
-  # outlier among its own neighbours -- which is the cheapest tell that a pattern here is
-  # wrong. The span now mirrors the precise _OUT_WS_SCOPE: ONE non-space workspace token, then
-  # flags only, then an optional `run`/`exec`, then flags only. Over-denial on a degraded path
+  # (`-{1,2}[^[:space:]]*`) -- CORRECTION, and the correction is the useful part: one sibling
+  # DOES use an arbitrary word gap, `eas[^a-zA-Z]+build[^;&|]*--auto-submit`, and it is fine.
+  # An earlier revision of this comment asserted the universal ("never an arbitrary word gap")
+  # and drew a rule from it; a review found the counter-example by exact-substring match. The
+  # real distinction is not the GAP, it is what sits on the far side of it. `--auto-submit` is
+  # a FLAG: it appears in a command only when someone means it, so spanning words to reach it
+  # cannot collide with prose. `update:(preview|production)` is a SCRIPT NAME, which shows up
+  # in test filters, `--grep` patterns, commit messages and lint output, so spanning words to
+  # reach it collides constantly. Ask what the far token is, not how wide the gap is. The span now mirrors the precise _OUT_WS_SCOPE: ONE non-space workspace token, then
+  # flag tokens, then an optional `run`/`exec`, then flag tokens. Over-denial on a degraded path
   # is still over-denial: it is the failure that gets a guard switched off rather than fixed.
-  grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)[^a-zA-Z]+workspaces?[^a-zA-Z]+[^;&|[:space:]]+([^a-zA-Z]+-{1,2}[^[:space:]]*)*([^a-zA-Z]+(run|exec))?([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run(-s?c?r?i?p?t?)?|rum|ur|urn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
+  #
+  # EACH FLAG TOKEN MAY CARRY A VALUE, and that is the second correction. The first bounded
+  # revision matched BARE flags only, so a flag whose value is a separate letter-bearing token
+  # broke the absorber and `<pm> workspace <ws> --cwd <dir> run <otascript>` slipped. Note the
+  # shape of that bug: `--jobs 4 run <otascript>` still denied, because a DIGIT is non-alphabetic
+  # and `[^a-zA-Z]+` swallows it -- so "I tested a flag with a value" would have been a true
+  # sentence and a useless test. The value must contain a LETTER to expose it.
+  # The root cause is an asymmetry between the two paths rather than anything about workspaces:
+  # the precise path's _OUT_FLAG_RUN has always absorbed flag+value pairs and this crude mirror
+  # never did. `yarn --cwd <dir> run <otascript>`, with no workspace word at all, is ALLOW on
+  # origin/main too -- the class predates this arm, and this fix closes it only where the
+  # workspace alternative reaches.
+  # ACCEPTED, MEASURED TRADE: `<pm> workspace <ws> --flag <oneword> <otascript>` now denies.
+  # That is the same token shape as `<pm> workspace <ws> --silent <otascript>`, which SHOULD
+  # deny -- a scope, a flag, and the OTA script as the final word -- so the crude path cannot
+  # tell them apart and takes the dangerous reading. Two words between the flag and the script
+  # (`--message wrote docs about <otascript> today`) allow, which is the ordinary prose case.
+  grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)[^a-zA-Z]+workspaces?[^a-zA-Z]+[^;&|[:space:]]+([^a-zA-Z]+-{1,2}[^[:space:]]*([^a-zA-Z]+[^-[:space:]][^[:space:]]*)?)*([^a-zA-Z]+(run|exec))?([^a-zA-Z]+-{1,2}[^[:space:]]*([^a-zA-Z]+[^-[:space:]][^[:space:]]*)?)*[^a-zA-Z]+update:(preview|production)|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run(-s?c?r?i?p?t?)?|rum|ur|urn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
   # Flag-correlated patterns — case-SENSITIVE (a case-insensitive `-R` would
   # false-match the `-r` inside `--remove-reviewer`).
   grep -Eq 'gh[^a-zA-Z]+pr[^a-zA-Z]+(create|comment)([^;&|]|&[0-9-]|&[<>]|[<>]&|&?[<>]+&?[|!])*(--repo|-R)' <<< "$t" && return 0
@@ -2578,6 +2601,24 @@ _OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD
 # ordinary `yarn workspace api build` / `yarn workspaces foreach exec tsc --noEmit` are
 # unaffected, because the word after the scope still has to be a gated binary or verb.
 _OUT_WS_SCOPE='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'foreach)'"$_OUT_FLAG_RUN"'(exec'"$_OUT_SEP"')?'
+
+# _OUT_WS_SCOPE_NV -- the same scope selector with a VALUE-LESS flag absorber, for the anchors
+# where the script name is the first word after the flags and therefore cannot be told apart
+# from a flag's value.
+#
+# WHY TWO VARIANTS RATHER THAN ONE CHOICE. _OUT_FLAG_RUN's iteration is `SEP -flag (SEP value)?`,
+# so ONE flag after the scope swallows the next word. Where a literal `run` follows the scope,
+# that is harmless -- the script has to come after `run`, and no value slot reaches past it, so
+# those anchors keep the full _OUT_WS_SCOPE and `--cwd <dir> run <otascript>` still denies.
+# Where the script name is the first word after the flags, the swallow is indistinguishable from
+# the real thing, and an ordinary `yarn workspace api --silent test -- --grep <otascript>` denied
+# because `test` became `--silent`'s value. Those anchors take this variant.
+# RESIDUAL, measured and deliberate: `<pm> workspace <ws> --flag <value> <otascript>` -- a flag
+# WITH a value and no `run` -- now ALLOWS on the precise path. The run-form spelling of the same
+# command denies, and the crude degraded mirror denies this one too, so it is narrow. It is the
+# price of not denying every flagged workspace command that merely NAMES the script, which is
+# the failure that gets a guard switched off rather than fixed.
+_OUT_WS_SCOPE_NV='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'foreach)('"$_OUT_SEP"'-{1,2}[^[:space:]]*)*'"$_OUT_SEP"'(exec'"$_OUT_SEP"')?'
 
 _OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|yarn'"$_OUT_FLAG_RUN"''"$_OUT_WS_SCOPE"'|(pnpm|yarn)'"$_OUT_FLAG_RUN"')'
 
@@ -3463,7 +3504,7 @@ fi
 # block, documenting every historical bypass this grammar closes, stays here
 # at its original site, right above its primary use site.
 if grep -Eqi "${_OUT_POS_PREFIX_W}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})?(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
-   || grep -Eqi "${_OUT_POS_PREFIX_W}(yarn|pnpm)${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})?update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+   || grep -Eqi "${_OUT_POS_PREFIX_W}(yarn|pnpm)${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE_NV})?update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
 
@@ -4824,7 +4865,7 @@ if grep -Eqi "${_OUT_POS_PREFIX_LP}npm${_OUT_PKG_VERSION_PIN}${_OUT_SEP}publish$
   deny "guard-outward-cli: 'npm publish' reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 if grep -Eqi "${_OUT_POS_PREFIX_LP}(npm|pnpm|yarn)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})?(run(-s?c?r?i?p?t?)?|rum|ur|urn)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN" \
-   || grep -Eqi "${_OUT_POS_PREFIX_LP}(yarn|pnpm)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE})?update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
+   || grep -Eqi "${_OUT_POS_PREFIX_LP}(yarn|pnpm)${_OUT_PKG_VERSION_PIN}${_OUT_FLAG_RUN}(${_OUT_WS_SCOPE_NV})?update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_SCAN"; then
   deny "guard-outward-cli: 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) reached through a launcher or a path-qualified invocation. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
 # VERSION-PIN on `gh` itself (2026-09-16, round-2 review correction): the

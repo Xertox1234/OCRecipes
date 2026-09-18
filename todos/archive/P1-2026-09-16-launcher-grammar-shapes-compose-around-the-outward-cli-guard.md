@@ -210,6 +210,21 @@ pair per cell BEFORE writing that the axis is closed.
   re-measures instead of trusting the list: a SINGLE launcher in front of a brace token is
   already covered, it is the CHAIN that is not.
 
+- **THE CRUDE PATH'S FLAG ABSORBER, closed where this arm reaches and NAMED where it does not.**
+  The bounded span first absorbed BARE flags only, so `yarn workspace api --cwd packages/api run
+<otascript>` slipped on the degraded paths. Two things about that are worth more than the fix.
+  First, the bug's SHAPE: `--jobs 4 run <otascript>` denied anyway, because a digit is
+  non-alphabetic and `[^a-zA-Z]+` swallows it -- a flag-with-a-value test using a numeric value
+  would have passed and proved nothing, so the value must contain a LETTER. Second, the root
+  cause is an ASYMMETRY BETWEEN THE TWO PATHS, not anything about workspaces: the precise
+  path's `_OUT_FLAG_RUN` has always absorbed flag+value pairs and this crude mirror never did.
+  `yarn --cwd packages/api run <otascript>`, with no workspace word at all, is ALLOW on
+  `origin/main` and on every revision of this branch -- so the class predates this PR and is
+  wider than the workspace arm. It is now pinned as an ALLOW residual so it is visible rather
+  than rediscovered. Accepted trade, measured: `<pm> workspace <ws> --flag <oneword>
+<otascript>` now denies, because that is the same token shape as
+  `<pm> workspace <ws> --silent <otascript>`, which should.
+
 - **OUTSIDE THE SCOPE CONTRACT, named rather than slipped in:** `.github/workflows/ci.yml`.
   The contract lists three hook files. The corpus job's `timeout-minutes` had to move because
   the in-scope row growth killed it -- a required check that dies takes every PR with it -- so
@@ -262,7 +277,9 @@ real binary`. That is the same argument-taking class as `npm explore`, of which 
   unsourceable, blanking returned empty). It is load-bearing on those three paths only, where
   both OTA-script rows go base ALLOW / with-alternative DENY / without-alternative ALLOW.
   **Nothing pinned it there** -- the two normal-path rows would have passed with the line
-  deleted -- so ten `nojq_hook`/`nolib_hook`/`noawk_hook` checks now do, and the reason is
+  deleted -- so thirty `nojq_hook`/`nolib_hook`/`noawk_hook` checks now do (derived with grep at the moment of
+  writing, not carried forward -- the figure said "ten" for two rounds after later commits
+  raised it, which is the same stale-count defect this file keeps producing), and the reason is
   restated in the guard beside the regex. The lesson is sharper than the bug: a comment that
   justifies a line with a reason the suite can disprove makes that line EASIER to delete than
   no comment would. I applied four edits at once and measured the whole; isolating each role
