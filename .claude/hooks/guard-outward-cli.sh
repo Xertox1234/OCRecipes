@@ -253,6 +253,13 @@
 #     location: a copy reached under a name that is NOT a gated binary name
 #     (`cp .../bin/run /tmp/x && node /tmp/x update`). No name-based matcher can
 #     see that one, which is the invented-enumeration risk declined above.
+#     ROUND 5 FOUND THAT SENTENCE TOO NARROW WHEN IT WAS WRITTEN, for the second
+#     time in two rounds: `deno run <path>/eas update` reached the sink under the
+#     REAL gated binary name, no copy and no rename involved, because the round-4
+#     arm ended in a bare separator and deno's working syntax needs an interior
+#     `run`. It is closed now and pinned. Treat the "what remains" line as the
+#     current best account rather than a proof -- on this file it has been wrong
+#     in four consecutive rounds.
 #   * `eas publish` does not exist in the installed eas-cli (20.1.0 at time of
 #     writing) — the pattern is kept anyway per the acceptance criteria's
 #     literal wording and to catch an older/different CLI version; a no-op
@@ -2638,6 +2645,17 @@ _OUT_POS_PREFIX_W="${_OUT_POS_PREFIX}(((${_OUT_PATH_PREFIX})?${_OUT_WRAPPER_WORD
 #     spelling rather than for the two the substrings happen to name. Over-denial stays narrow
 #     because the anchors still require a GATED terminal name and its verb: `node <path>/tsc`,
 #     `node scripts/seed.js` and `node --version` are unaffected, and are pinned as controls.
+#     THE ARM TAKES `_OUT_FLAG_RUN` AND AN OPTIONAL `run`, NOT A BARE SEPARATOR, and round 5
+#     measured why. `deno` does not accept a bare script path -- its real invocation is
+#     `deno run <path>` -- so an arm ending in a plain separator closed the spelling deno
+#     REJECTS and left the one that works ALLOW: `deno run /opt/homebrew/bin/eas update` was
+#     ALLOW while `deno /opt/homebrew/bin/eas update` denied. `bun run <path>` only escaped the
+#     same fate because `bun<sep>(x|run)` already sat in `_OUT_LAUNCHER`. Modelling the
+#     interpreter word on how it is actually TYPED rather than on the shortest form that parses
+#     is the lesson; `_OUT_FLAG_RUN` additionally absorbs interpreter flags, so
+#     `node -r ./reg <path>/eas update` and `deno --allow-all run <path>/eas update` close with
+#     it. `node` has no `run` subcommand, so admitting an optional one for all three costs only
+#     a nonsense spelling nobody types, and the ungated controls above still pass.
 # EVERY ALTERNATIVE ENDS IN A SEPARATOR, which is what makes the group safe to repeat.
 # THE `workspaces` ARM IS AN ALTERNATION OF EXACTLY THE FORWARDING SUBCOMMANDS, which is a
 # property rather than a list that will keep growing: yarn forwards the remainder of the command
@@ -2719,7 +2737,7 @@ _OUT_WS_SCOPE='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}
 # the failure that gets a guard switched off rather than fixed.
 _OUT_WS_SCOPE_NV='(workspace'"$_OUT_SEP"'[^-[:space:];&|()`{}<>][^[:space:];&|()`{}<>]*|workspaces'"$_OUT_SEP"'(foreach|run))('"$_OUT_SEP"'-{1,2}[^[:space:]]*)*'"$_OUT_SEP"'(exec'"$_OUT_SEP"')?'
 
-_OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|yarn'"$_OUT_FLAG_RUN"'('"$_OUT_WS_SCOPE"')+(run'"$_OUT_FLAG_RUN"')?|yarn'"$_OUT_FLAG_RUN"'run'"$_OUT_FLAG_RUN"'|(pnpm|yarn)'"$_OUT_FLAG_RUN"'|(node|bun|deno)'"$_OUT_SEP"')'
+_OUT_LAUNCHER_ANY='('"$_OUT_LAUNCHER"'|npm'"$_OUT_FLAG_RUN"'explore'"$_OUT_SEP"'[^[:space:];&|()`{}<>]+'"$_OUT_SEP"'(--'"$_OUT_SEP"')?|yarn'"$_OUT_FLAG_RUN"'('"$_OUT_WS_SCOPE"')+(run'"$_OUT_FLAG_RUN"')?|yarn'"$_OUT_FLAG_RUN"'run'"$_OUT_FLAG_RUN"'|(pnpm|yarn)'"$_OUT_FLAG_RUN"'|(node|bun|deno)'"$_OUT_FLAG_RUN"'(run'"$_OUT_SEP"')?)'
 
 # _OUT_LAUNCH_INTER -- what may sit BETWEEN a launcher and the next word. Deliberately the same
 # wrapper/privilege alternation _OUT_POS_PREFIX_W already admits in COMMAND position: a wrapper

@@ -5518,6 +5518,31 @@ assert_allow "an interpreter running an ordinary repo script stays allowed" \
   "$(jsonc 'node scripts/seed.js')"
 assert_allow "a bare interpreter invocation stays allowed" \
   "$(jsonc 'node --version')"
+
+# ROUND 5: THE INTERPRETER AS IT IS ACTUALLY TYPED. The round-4 arm ended in a bare separator,
+# which closed `deno <path>` -- a spelling deno REJECTS -- and left `deno run <path>`, the one
+# that works, ALLOW. `bun run <path>` escaped only because `bun<sep>(x|run)` already sat in
+# _OUT_LAUNCHER. The arm now takes _OUT_FLAG_RUN plus an optional `run`, which also absorbs
+# interpreter FLAGS. The ALLOW rows are the boundary: a gated terminal name and verb are still
+# required, so ordinary interpreter use is untouched.
+assert_deny "deno's real invocation syntax reaches the OTA sink" \
+  "$(jsonc 'deno run /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "deno flags before the run subcommand do not help" \
+  "$(jsonc 'deno --allow-all run /opt/homebrew/bin/eas update')" \
+  "reached through a launcher"
+assert_deny "an interpreter FLAG before the target does not help" \
+  "$(jsonc 'node -r ./reg /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "bun run reaches a path-qualified gated binary" \
+  "$(jsonc 'bun run /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_allow "deno running an ordinary repo script stays allowed" \
+  "$(jsonc 'deno run ./scripts/task.ts')"
+assert_allow "deno running an UNGATED path-qualified binary stays allowed" \
+  "$(jsonc 'deno run /opt/homebrew/bin/tsc --noEmit')"
+assert_allow "an interpreter flag with an UNGATED target stays allowed" \
+  "$(jsonc 'node -r ./reg /opt/homebrew/bin/tsc --noEmit')"
 # THE ROW THAT MATTERS MOST. `gh pr merge` is reached through _OUT_POS_PREFIX_LP, which this
 # change widens, and the merge clause is GRANT-shaped -- an empty clause cut DENIES. If the
 # chain widening ever reaches the count/clause pair wrong, this repo's own sanctioned /todo
@@ -5667,7 +5692,7 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1136
+EXPECTED_TOTAL=1143
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
