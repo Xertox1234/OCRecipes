@@ -69,26 +69,45 @@ intersection is the defect:
 
 ```bash
 # NESTED navigators' registered names, against every RootStackParamList key.
-# Excluding RootStackNavigator.tsx from the left side is load-bearing: it matches
-# a bare *Navigator.tsx glob, and its own registrations then intersect its own
-# ParamList, flagging every root route. Measured 2026-09-17 — the unexcluded
-# form reported all 33 root routes as collisions.
-NESTED=$(ls client/navigation/*Navigator.tsx | grep -v RootStackNavigator.tsx)
-comm -12 \
-  <(grep -rhoE 'name="[A-Za-z]+"' $NESTED \
-      | sed -E 's/name="([A-Za-z]+)"/\1/' | sort -u) \
-  <(sed -n '/export type RootStackParamList/,/^};/p' client/navigation/RootStackNavigator.tsx \
-      | grep -oE '^  [A-Za-z]+:' | tr -d ' :' | sort -u)
-# Any output is a shadowed route name. Print both input counts alongside it —
-# a mis-typed path makes one side empty, and `comm` then prints nothing, which
-# reads exactly like "no collisions".
+#
+# `xargs`, not an unquoted `$VAR`: zsh word-splits `$(cmd)` but NOT a parameter,
+# so `NESTED=$(ls ...); grep ... $NESTED` passes the newline-joined list to grep
+# as ONE non-existent filename. grep then matches nothing, `comm` prints
+# nothing, and the run reads as "no collisions" — the same false clean this
+# check exists to prevent. Measured 2026-09-17 under zsh: 0 left-side matches
+# via the parameter form, 34 via xargs.
+#
+# Excluding RootStackNavigator.tsx is the other half: it matches a bare
+# *Navigator.tsx glob, and its own registrations then intersect its own
+# ParamList. Measured 2026-09-17 — the unexcluded form reported all 33 root
+# routes as collisions.
+ls client/navigation/*Navigator.tsx | grep -v RootStackNavigator.tsx \
+  | xargs grep -hoE 'name="[A-Za-z]+"' \
+  | sed -E 's/name="([A-Za-z]+)"/\1/' | sort -u > /tmp/nav-names.txt
+
+sed -n '/export type RootStackParamList/,/^};/p' client/navigation/RootStackNavigator.tsx \
+  | grep -oE '^  [A-Za-z]+:' | tr -d ' :' | sort -u > /tmp/root-keys.txt
+
+# Print both counts BEFORE the verdict. A zero on either side makes `comm`
+# silent, which is indistinguishable from a clean result.
+echo "nested=$(wc -l < /tmp/nav-names.txt) root=$(wc -l < /tmp/root-keys.txt)"
+comm -12 /tmp/nav-names.txt /tmp/root-keys.txt    # any output = a shadowed name
 ```
 
-Verified 2026-09-17 against this repo: 6 nested navigator files, 33 nested
-names, 33 root keys (different sets that happen to be the same size), no
-collisions. Control: adding `NutritionDetail` to the nested-name set makes the
-pipeline print exactly that one name, so a clean run is a measurement and not a
-broken pattern.
+Verified 2026-09-17 against this repo, under both `bash` and `zsh`: `nested=33
+root=33` (different sets that happen to be the same size), `comm` empty — no
+collisions.
+
+Control the measurement, not just the pipeline. Appending an injected name
+downstream proves nothing, because the injection does not depend on the `grep`
+having worked — that control passes even when the left side is empty. Assert the
+LEFT-SIDE COUNT instead, then inject:
+
+```bash
+[ "$(wc -l < /tmp/nav-names.txt)" -gt 0 ] || { echo "PROBE BROKEN: left side empty"; exit 1; }
+(cat /tmp/nav-names.txt; echo NutritionDetail) | sort -u \
+  | comm -12 - /tmp/root-keys.txt    # must print exactly: NutritionDetail
+```
 
 Resolving the stranded branch is then an ordinary decision — wire a producer, or
 delete it. Before deleting, re-verify the "no producer" claim across **every**
@@ -106,6 +125,14 @@ imperative `navigationRef.navigate`, deep-link path config, and any
   each one's result. A regex sweep that returns zero needs a positive control —
   a synthetic input it *must* match — or an empty result is indistinguishable
   from a broken pattern.
+- **Quote the command that produced the number, and re-run THAT command.** Two
+  citations in this change shipped wrong because the figure came from a
+  near-miss variant of the command beside it: an md5 taken from a `$(...)`
+  capture through `printf '%s'` (command substitution strips the trailing
+  newline, so the digest differs entirely from piping the same bytes straight to
+  `md5`), and a detection pipeline verified with `$(cat file)` but committed with
+  an unquoted `$VAR`. Extract the snippet from the file you are about to commit
+  and run it — testing what you meant is not testing what you wrote.
 - **When a deletion forces a test onto a new fixture path, assert the
   precondition that makes the fixture reach the state under test.** Moving two
   guard tests onto a different path here looked correct and was not: the added

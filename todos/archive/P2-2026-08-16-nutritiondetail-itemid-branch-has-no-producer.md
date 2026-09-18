@@ -291,11 +291,16 @@ a character count an earlier draft of this record quoted from a review and could
 not reproduce:
 
 - The memo's code is unchanged. Extract it from either ref, drop comment and
-  blank lines, and hash it — 26 lines, `md5 3d1c6546d197779e9972ad0a0ceae34a` on
+  blank lines, and hash it — 26 lines, `md5 d172c32c8105935dc09b748aa455866b` on
   both `main` and this branch:
   `git show <ref>:client/hooks/useNutritionLookup.ts | sed -n '/const effectivePer100g = useMemo/,/^  }, \[/p' | grep -vE '^\s*//' | grep -vE '^\s*$' | md5`
   (print the line count alongside the hash — an extraction that silently matches
   nothing hashes to the empty-input digest on both sides and reads as a match).
+  Take the digest from THAT pipeline, not from a `$(...)` capture piped through
+  `printf '%s'`: command substitution strips the trailing newline, so the two
+  differ by one byte and produce completely different hashes. The first digest
+  published here was the `printf` variant's and did not match its own quoted
+  command — caught in review, corrected 2026-09-17.
 - The new reset-window test is attributable to THIS guard, not a sibling.
   Restoring the pre-fix `servingSizeGrams || 100` makes exactly that one test
   fail, with `calories: 236` (= 100 × 236/100) against the expected no-op `100`
