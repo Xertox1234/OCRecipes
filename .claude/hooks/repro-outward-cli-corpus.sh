@@ -1832,10 +1832,35 @@ LP_CH_TARGET_CMDS=(
 # main AND on that PR's first revision, which is the same argument-taking class as
 # `npm explore` -- the axis existed and simply had no row for them. They are chain FORMS here
 # for the same reason `explore` is: the scope selector sits between the manager and the target.
-LP_CH_CHAIN_IDS=(stack explore barepm lnchr wsscope wsforeach)
+# `wsscope2` and `yarnrun` were added by the round-2 review of THIS PR, and the pattern is the
+# same one a third time: the axis existed, the forms were absent, and both were silent ALLOWs on
+# main. `yarn workspace <ws> X` re-dispatches X through yarn's own top level, so a SECOND
+# `workspace <ws2>` carries no fresh `yarn` literal for the launcher repetition to catch; and
+# yarn's `run` falls back to node_modules/.bin, so `yarn run <gated> <verb>` reaches the same
+# sink as `yarn <gated> <verb>` (npm's and pnpm's `run` are script-only and are deliberately NOT
+# chain forms). Hand-written pins for these live in test-guard-outward-cli.sh, but a hand-written
+# list reproduces the blind spot that hid them; generating them here is what makes a future
+# widening that reopens the class fail the required check instead of passing it.
+# `wsrun` followed in round 3, and its arrival is the argument for the axis rather than against
+# it: `yarn workspaces run <cmd>` is yarn CLASSIC's forwarding spelling of the same selector
+# berry spells `workspaces foreach <cmd>`, it was ALLOW on main and on both earlier revisions of
+# this branch, and no hand-written list had it. The scope arm now carries the forwarding
+# PROPERTY -- exactly `run` and `foreach`, because `info`/`list`/`focus` forward nothing -- so a
+# fourth spelling would have to be a new yarn feature rather than one more overlooked row.
+# `interp` is round 4 and a DIFFERENT class, added here for the same reason rather than a
+# related one: running a gated CLI through `node`/`bun`/`deno` reaches the same sink as running
+# it, but the interpreter was admitted only in front of two literal package-directory
+# substrings. The installed shim is a symlink INTO that package whose own path carries no such
+# substring, so `node /opt/homebrew/bin/eas update` was ALLOW on main and on every earlier
+# revision of this branch while its interpreter-less twin denied. Crossing this chain form with
+# the existing path axis is exactly what generates that shape; the ungated controls for it are
+# ALLOW rows and live in test-guard-outward-cli.sh.
+LP_CH_CHAIN_IDS=(stack explore barepm lnchr wsscope wsforeach wsscope2 yarnrun wsrun interp)
 LP_CH_CHAINS=(
   'npx pnpm dlx ' 'npm explore some-pkg -- ' 'pnpm ' 'npx '
   'yarn workspace api ' 'yarn workspaces foreach exec '
+  'yarn workspace api workspace foo ' 'yarn run ' 'yarn workspaces run '
+  'node '
 )
 # The wrapper word that may sit BETWEEN the chain and its target. `env` is in _OUT_WRAPPER_WORD,
 # which _OUT_POS_PREFIX_W has always admitted in COMMAND position -- the defect was that it was
@@ -1861,12 +1886,12 @@ for _ch_ti in "${!LP_CH_TARGET_IDS[@]}"; do
   done
 done
 LP_CH_ROWS_GENERATED=$(( ${#ROWS[@]} - LP_CH_ROWS_BEFORE ))
-# 4 targets x 6 chain forms x 4 path forms x 2 inter forms = 192, asserted against the array
+# 4 targets x 10 chain forms x 4 path forms x 2 inter forms = 320, asserted against the array
 # length the loop actually produced. No composition-order variants here: the chain forms already
 # carry their own internal ordering, and adding the order dimension on top would quadruple the
 # required check's runtime for a spelling the axis above already measures.
-if [ "$LP_CH_ROWS_GENERATED" -ne 192 ]; then
-  echo "FATAL: launcher-chain axis generated $LP_CH_ROWS_GENERATED rows, expected 4 x 6 x 4 x 2 = 192 -- a dimension silently iterated short" >&2
+if [ "$LP_CH_ROWS_GENERATED" -ne 320 ]; then
+  echo "FATAL: launcher-chain axis generated $LP_CH_ROWS_GENERATED rows, expected 4 x 10 x 4 x 2 = 320 -- a dimension silently iterated short" >&2
   exit 1
 fi
 
@@ -2123,6 +2148,15 @@ add lp-site-easchannel   DENY 'npx eas channel:create foo'
 add lp-site-npmrunota    DENY '/usr/local/bin/npm run update:preview'
 add lp-site-railvar      DENY 'npx railway variable set FOO=bar'
 add lp-site-railsvcdel   DENY 'npx railway service delete foo'
+
+# axis: DENY-SITE COVERAGE (2026-09-18, round-8 security review). The interpreter
+# co-occurrence check has no other corpus row: every OTHER interpreter row in this file
+# supplies a LITERAL verb, and this check fires only when the verb slot is an EXPANSION and
+# `update:(preview|production)` co-occurs. Without this row `_pin_sites` would flag it as a
+# check a future deletion could remove invisibly -- which is exactly what it did on the first
+# run after the check was added, and is why the row is here rather than the count re-pinned.
+# Single-quoted so the `$( )` is inert text: the corpus feeds command STRINGS, it never runs them.
+add lp-site-interpexp    DENY 'node $(echo --run update:production)'
 
 # axis: AMBIGUOUS-TARGET LAUNCHER FLAGS (2026-09-16, round-2 security review of
 # this PR). --package/-p (npx/npm exec's own --package/-p invocation form) and
@@ -2905,7 +2939,37 @@ fi
 # 17m31s locally -- a BIGGER corpus finished faster in CI than the smaller one managed before
 # being killed, so runner variance dominates the row-count effect. Before adding an axis,
 # measure a COMPLETED CI run.
-EXPECTED_ROWS=2031
+# 2031 -> 2095 (2026-09-18, round 3): +64, the repeated workspace hop (`wsscope2`) and yarn's
+# `run` step (`yarnrun`) -- two chain forms the round-2 review found ALLOW on this branch AND on
+# main. They are generated here rather than pinned by hand because a hand-listed corpus
+# reproduces the blind spot that hid them; that is now three reviews running in which this axis
+# existed and simply had no row for the form. Runtime, which is the constraint this note cares
+# about: the 2095-row run completed locally in 16m29s, against 16m03s for the 2031-row run
+# immediately before it on the same box -- so the axis cost ~26s, not minutes. The 30m cap has
+# headroom, but per the paragraph above the CI number is the one that binds; check it.
+# 2095 -> 2127 (2026-09-18, round 3): +32, the `wsrun` chain form -- yarn CLASSIC's
+# `workspaces run <cmd>`, the forwarding spelling berry writes as `workspaces foreach <cmd>`.
+# ALLOW on main and on both earlier revisions of this branch; the third member of this class
+# found by review rather than by the grammar. The scope arm now carries the forwarding PROPERTY
+# (`run`|`foreach` and nothing else, because info/list/focus forward nothing), so a fourth
+# spelling would take a new yarn feature rather than another overlooked row. Runtime at 2127
+# rows: 16m50s locally, against 16m29s at 2095 and 16m03s at 2031 on the same box -- ~21s per
+# axis addition, still far inside the 30m cap, and still the CI number that binds.
+# 2127 -> 2159 (2026-09-18, round 4): +32, the `interp` chain form. A DIFFERENT class from the
+# three scope/launcher members above: running a gated CLI through `node`/`bun`/`deno` reaches the
+# same sink as running it, but the interpreter was admitted only in front of two literal
+# package-directory substrings, and the INSTALLED shim is a symlink into that package whose own
+# path carries no such substring -- so `node /opt/homebrew/bin/eas update` was ALLOW on main and
+# on every earlier revision of this branch. Crossing this chain form with the existing path axis
+# is what generates the shape. Runtime at 2159 rows: 16m46s locally, against 16m50s at 2127,
+# 16m29s at 2095 and 16m03s at 2031 on the same box -- four axis additions have cost ~45s in
+# total, and the 30m cap still has headroom; the CI number remains the one that binds.
+# 2159 -> 2160 (2026-09-18, round 8): +1, the `lp-site-interpexp` DENY-SITE COVERAGE row for the
+# interpreter/expansion co-occurrence check. Added because the run REFUSED the check without it:
+# `_pin_sites` reported "the guard can emit a deny NO corpus row reaches", which is the state in
+# which a future deletion of that check is invisible to every other check in this pin. The row,
+# not the count, is the fix -- the failure text says so explicitly.
+EXPECTED_ROWS=2160
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
 # 787 of the 940 rows deny on the precise path; the other 153 are ALLOW there: 91
@@ -3115,11 +3179,38 @@ EXPECTED_ROWS=2031
 # failure that gets a guard switched off rather than fixed.
 # precise-path gaps held at 24 and all-path gaps at 306 across this change, with ZERO
 # membership drift in either manifest -- the 104 new rows agree on all four paths.
-# 1789 -> 1792 (2026-09-18, gh-api-field-mutation): +3, the same three rows, now attributing to
+# 1789 -> 1853 (2026-09-18, round 3): +64, the FULL row delta this time. Unlike rounds 5 and 6
+# above, the two new chain forms carry no ALLOW controls, so every generated row denies and
+# attribution moves exactly with EXPECTED_ROWS. Both gap totals HELD -- precise 62, all-path 358,
+# no membership drift -- which is the load-bearing part: closing the repeated-hop and yarn-run
+# classes opened no new residual on any of the four path forms. The over-denial controls for
+# these two forms live in test-guard-outward-cli.sh (npm/pnpm `run` must stay ALLOW, and an
+# ungated sink behind two hops must still run), because they are ALLOW rows and this axis
+# generates DENY payloads only.
+# 1853 -> 1885 (2026-09-18, round 3): +32, again the FULL row delta -- every `wsrun` row denies
+# and none is an ALLOW control, so attribution moves exactly with EXPECTED_ROWS for the second
+# consecutive bump. Both gap totals HELD again at 62 precise / 358 all-path with no membership
+# drift, so closing the third spelling opened no residual on any path form. Its over-denial
+# controls (`yarn workspaces run build`, `workspaces list`, `workspaces info` -- the
+# non-forwarding subcommands) are ALLOW rows and so live in test-guard-outward-cli.sh, since
+# this axis generates DENY payloads only.
+# 1885 -> 1917 (2026-09-18, round 4): +32, the full row delta for the THIRD consecutive bump --
+# every `interp` row denies and none is an ALLOW control, so attribution moves exactly with
+# EXPECTED_ROWS again. Both gap totals HELD at 62 precise / 358 all-path with no membership
+# drift, so closing the interpreter class opened no residual on any path form. Its over-denial
+# controls (`node <path>/tsc`, `node scripts/seed.js`, `node --version` -- an interpreter in
+# front of an UNGATED terminal name) are ALLOW rows and so live in test-guard-outward-cli.sh,
+# since this axis generates DENY payloads only.
+# 1917 -> 1918 (2026-09-18, round 8): +1, the same coverage row; it denies on the precise path
+# and is attributed to the new check.
+# 1918 -> 1921 (2026-09-18, MERGE of main into batch-d): +3, the same three rows, now attributing to
 # the new implicit-POST deny. 3 added, 0 removed, and NO id in both lists -- so nothing closed
 # and no pre-existing row kept its verdict while rerouting to a different check. The manifest
 # below is the run's own printed attribution section, pasted verbatim.
-EXPECTED_DENY_ATTRIB_ROWS=1792
+# THE `1789 -> 1792` THIS BRANCH ORIGINALLY WROTE WAS AGAINST ITS OWN PRE-#993 BASE. Main
+# carried the pin to 1918 over rounds 3/4/8; the +3 is orthogonal to those rounds (different
+# rows, different check), so it re-applies additively. MEASURED on the merged tree, not derived.
+EXPECTED_DENY_ATTRIB_ROWS=1921
 
 # 7 + 17 + 21 + 17 = 62. This is the SAME decomposition as the "FULL ATTRIBUTION of
 # the remaining precise-path gaps" note further down, and the two must stay
@@ -3260,14 +3351,28 @@ EXPECTED_PRECISE_GAPS=62
 # (nojq/nolib/noawk) fallbacks cannot see it and deny. That is the SAME documented degraded-path
 # residual the launcher rows already carry, not a new gap -- verified by reading the 8 added
 # manifest tuples rather than inferring from the count.
-# 358 -> 355 (2026-09-18, gh-api-field-mutation): -3, and a DECREASE here is the unusual
+# 358 -> 359 (2026-09-18, round 8): +1, `lp-site-interpexp` at p=DENY j=ALLOW l=ALLOW a=ALLOW.
+# NAMED, not absorbed: the new check is PRECISE-PATH ONLY. On the degraded paths the crude smell
+# test is what fails closed, and it keys on GATED BINARY NAMES -- this command carries none, only
+# `node` and the script name, so the crude test does not recognise it. That is the same root fact
+# as the fastpath needle added in round 7 (the runner word is not a needle; the script name is),
+# and it is a precedented tuple rather than a new weakness class: `lp-verpin-easupd`,
+# `lp-verpin-easupdcolon` and `lp-verpin-easchannel` already sit in this pin with the IDENTICAL
+# four-path shape. Extending the crude smell test to the script name would close it on all four
+# paths, but that test is shared and fail-closed, so it is a change with its own blast radius and
+# its own round -- not something to slip in beside a pin bump.
+# 359 -> 356 (2026-09-18, MERGE of main into batch-d): -3, and a DECREASE here is the unusual
 # direction so it is worth stating why. The three rows are `apicolfp-oneshot`,
 # `c2-fp-methodology` and `c2-fp-backtick`, whose expected verdict moved ALLOW -> DENY because a
 # field parameter with no method flag is a POST (gh api.go:329-330). They read
 # `p=ALLOW j=DENY l=DENY a=DENY` before and DENY on all four paths after: the DEGRADED paths were
 # already denying them, and the precise path now agrees with its own fail-closed mirror, so the
 # rows stop being "dirty" at all. 3 removed, 0 added -- no pre-existing row moved.
-EXPECTED_ALLPATH_GAPS=355
+# BOTH MOVES SURVIVE THE MERGE AND THEY POINT OPPOSITE WAYS: main's round-8 +1 added
+# `lp-site-interpexp`; this branch's -3 removed `apicolfp-oneshot`, `c2-fp-methodology` and
+# `c2-fp-backtick`. Disjoint ids, so 359 + 0 - 3 = 356. The MEMBERSHIP pin below is what
+# actually proves that -- a net total could hold while rows swapped.
+EXPECTED_ALLPATH_GAPS=356
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
@@ -3691,6 +3796,7 @@ vft-bang p=ALLOW j=DENY l=DENY a=DENY
 vft-fd p=ALLOW j=DENY l=DENY a=DENY
 vft-gt p=ALLOW j=DENY l=DENY a=DENY
 vft-in p=ALLOW j=DENY l=DENY a=DENY
+lp-site-interpexp p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -5083,6 +5189,38 @@ lpch-easupd-wsforeach-dotbin-noint : 'eas update/publish/submit' reached through
 lpch-easupd-wsforeach-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lpch-easupd-wsforeach-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lpch-easupd-wsforeach-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lpch-npmpub-stack-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-stack-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-stack-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
@@ -5131,6 +5269,38 @@ lpch-npmpub-wsforeach-dotbin-noint : 'npm publish' reached through a launcher or
 lpch-npmpub-wsforeach-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-wsforeach-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-npmpub-wsforeach-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
 lpch-railup-stack-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-stack-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-stack-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
@@ -5179,6 +5349,38 @@ lpch-railup-wsforeach-dotbin-noint : 'railway up/deploy/redeploy/restart/down/de
 lpch-railup-wsforeach-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-wsforeach-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-railup-wsforeach-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
 lpch-ghmerge-stack-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-stack-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-stack-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
@@ -5227,6 +5429,38 @@ lpch-ghmerge-wsforeach-dotbin-noint : a gated 'gh' subcommand reached through a 
 lpch-ghmerge-wsforeach-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-wsforeach-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 lpch-ghmerge-wsforeach-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
 pfx-none-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
 pfx-none-npmpub    : command-position 'npm publish' pushes a package to the registry.
 pfx-none-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
@@ -5427,6 +5661,7 @@ lp-site-easchannel : 'eas channel:/branch: create/edit/delete/rename' reached th
 lp-site-npmrunota  : 'npm run update:preview/update:production' (and the yarn/pnpm bare-scrip
 lp-site-railvar    : 'railway variable/vars/var set/delete' reached through a launcher or a p
 lp-site-railsvcdel : 'railway service/environment delete' reached through a launcher or a pat
+lp-site-interpexp  : an interpreter (node/bun/deno) sits in command position with an EXPANSIO
 lp-af-npx-pkgeq    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-af-npx-pkgsp    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
 lp-af-npx-peq      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
@@ -5614,7 +5849,19 @@ PIN_EXEMPT_EOF
 # 41 -> 42 (2026-09-17, MERGE with origin/main): +1, main's brace-LIST narrow-deny
 # site. Ancestor af0e27b2 had 28; this branch added 13 and main added 1, and the
 # merged tree MEASURES 42 -- additive, like every other pin in this merge.
-EXPECTED_EMIT_SITES=43
+# 42 -> 43 (2026-09-18, round 8): the interpreter/expansion co-occurrence check. Its coverage
+# row is `lp-site-interpexp` in the DENY-SITE COVERAGE axis above -- added, not exempted,
+# because command text CAN reach it.
+# 43 -> 44 (2026-09-18, MERGE of main into batch-d): +1, THIS BRANCH'S gh-api implicit-POST
+# check. READ THIS BEFORE TRUSTING ANY MERGE OF THIS FILE: main and batch-d EACH took this pin
+# 42 -> 43, for DIFFERENT deny sites (main round 8's interpreter/expansion check; this branch's
+# implicit-POST arm). Git's 3-way merge saw base=42, ours=43, theirs=43, called it agreement and
+# merged the LINE with no conflict marker at all -- only the comment above it conflicted. The
+# merged guard emits 44. A pin both sides moved to the same number is invisible to the merge and
+# visible only to a run; this one is MEASURED. Coverage for the new site is the three
+# `apicolfp-oneshot`/`c2-fp-*` rows whose want moved ALLOW -> DENY, which are generated rows, so
+# `_pin_sites` reaches it without a new DENY-SITE COVERAGE entry.
+EXPECTED_EMIT_SITES=44
 
 PIN_FAIL=0
 

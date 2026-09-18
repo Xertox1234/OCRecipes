@@ -283,7 +283,21 @@ real binary`. That is the same argument-taking class as `npm explore`, of which 
   spelling had been implemented -- so the universal was false and the residual block, which
   covers brace tokens only, read as exhaustive over a live route. `_OUT_WS_SCOPE` now closes it
   in both roles the shape needs (a launcher arm, and an absorber at the four OTA-script
-  anchors), and the comment is enumerated rather than universal. 13 deny rows and 10
+  anchors), and the comment is enumerated rather than universal.
+  **THAT SENTENCE WAS NOT TRUE WHEN IT WAS WRITTEN, and took two further rounds to become
+  true -- which is the durable lesson of this bullet, not the fix it describes.** Round 2
+  measured two more members of the same class still ALLOW on this branch and on main: a
+  REPEATED scope hop (`yarn workspace <ws> workspace <ws2> <cmd>`, which needs no second `yarn`
+  literal because yarn re-dispatches the remainder through its own top level) and yarn's `run`
+  step (`yarn run <gated> <verb>`, which npm and pnpm do not have because their `run` is
+  script-only). Round 3 measured a third: `yarn workspaces run <cmd>`, yarn CLASSIC's forwarding
+  spelling of the same selector. Each round closed the rows it had been shown and restated the
+  class as closed; each following round found another spelling. The arm is now written as the
+  FORWARDING PROPERTY -- exactly `run` and `foreach`, because `info`/`list`/`focus` forward
+  nothing and cannot reach a sink -- and the corpus axis generates all three chain forms rather
+  than pinning remembered rows, so a fourth spelling would have to be a new yarn feature. Read
+  the trajectory before trusting any "closed" claim in this file: three consecutive rounds found
+  a live route that a careful reading of the same code had just declared covered. 13 deny rows and 10
   over-denial controls pin it on the normal path, and the corpus manifest moved by exactly the
   64 new rows with zero removals and no id in both lists -- which is the evidence that no
   pre-existing row silently rerouted. An earlier revision of this sentence cited "the 49-row

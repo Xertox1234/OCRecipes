@@ -5454,8 +5454,10 @@ assert_allow "npm explore running an ungated npm script stays allowed" \
   "$(jsonc 'npm explore some-pkg -- npm run build')"
 assert_allow "npm explore with no command at all stays allowed" \
   "$(jsonc 'npm explore some-pkg')"
-# A REPO SCRIPT WHOSE NAME COLLIDES WITH A GATED BINARY. `run` is neither a launcher word nor a
-# flag, so it terminates the chain and the gated name never reaches command position.
+# A REPO SCRIPT WHOSE NAME COLLIDES WITH A GATED BINARY. These stay ALLOW because NO GATED VERB
+# follows the name -- NOT because `run` terminates the chain. For npm/pnpm `run` really is
+# script-only; for YARN it falls back to node_modules/.bin, so `run` IS a launcher step there:
+# `yarn run railway up` denies while the bare `yarn run railway` below still allows.
 assert_allow "a repo script NAMED like a gated CLI stays allowed under pnpm run" \
   "$(jsonc 'pnpm run eas')"
 assert_allow "a repo script named like a gated CLI stays allowed under yarn run" \
@@ -5468,6 +5470,227 @@ assert_allow "pnpm dlx of an ungated tool stays allowed" \
   "$(jsonc 'pnpm dlx prettier --check .')"
 assert_allow "yarn dlx of an ungated tool stays allowed" \
   "$(jsonc 'yarn dlx tsc --noEmit')"
+
+# ---------------------------------------------------------------------------
+# TWO COMPOSITION CLOSURES, 2026-09-18. Both were live ALLOWs on origin/main and
+# both were pinned here as safe by prose that did not survive measurement, so the
+# pins below are behavioural: each asserts the guard's verdict, not a comment.
+#
+# (1) REPEATED WORKSPACE SCOPE. `yarn workspace <ws> X` forwards X to yarn inside
+#     that workspace, so a SECOND `workspace <ws2>` needs no fresh `yarn` literal
+#     and _OUT_LAUNCH_STEP's repetition could never see it. One hop denied; two
+#     did not.
+# (2) YARN'S `run`. npm/pnpm `run` is script-only, but yarn's falls back to
+#     node_modules/.bin, so `yarn run <gated> <verb>` reaches the same sink as
+#     `yarn <gated> <verb>`.
+#
+# The ALLOW rows are not decoration: each is the control that proves the widening
+# is specific. Without them a blanket new denial would pass every row above.
+assert_deny "yarn run reaches the OTA sink (yarn run is a launcher step, unlike npm/pnpm run)" \
+  "$(jsonc 'yarn run eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "yarn run reaches the OTA sink with a flag after run" \
+  "$(jsonc 'yarn run -s eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "yarn run reaches railway" \
+  "$(jsonc 'yarn run railway up')" \
+  "reached through a launcher"
+assert_deny "yarn run composed with a workspace scope reaches the OTA sink" \
+  "$(jsonc 'yarn workspace api run eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "TWO workspace hops reach the OTA sink" \
+  "$(jsonc 'yarn workspace api workspace foo eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "THREE workspace hops reach the OTA sink" \
+  "$(jsonc 'yarn workspace api workspace foo workspace bar eas update')" \
+  "reached through a launcher"
+assert_deny "workspaces foreach followed by a second scope reaches the OTA sink" \
+  "$(jsonc 'yarn workspaces foreach exec workspace foo eas update')" \
+  "reached through a launcher"
+assert_deny "two workspace hops reach npm publish" \
+  "$(jsonc 'yarn workspace api workspace foo npm publish')" \
+  "reached through a launcher"
+assert_deny "two workspace hops reach the run-form OTA script anchor" \
+  "$(jsonc 'yarn workspace api workspace foo run update:production')" \
+  "update:preview/update:production"
+assert_deny "two workspace hops reach the bare-script OTA anchor" \
+  "$(jsonc 'yarn workspace api workspace foo update:production')" \
+  "update:preview/update:production"
+# CONTROLS. `run` is a launcher step for YARN ONLY; npm and pnpm keep script-only
+# semantics, and an ungated sink behind any number of hops must still run.
+assert_allow "npm run does NOT become a launcher step" \
+  "$(jsonc 'npm run eas update')"
+assert_allow "pnpm run does NOT become a launcher step" \
+  "$(jsonc 'pnpm run eas update')"
+assert_allow "a gated binary name with NO gated verb still runs under yarn run" \
+  "$(jsonc 'yarn run eas')"
+assert_allow "an ungated script still runs under yarn run" \
+  "$(jsonc 'yarn run build')"
+assert_allow "an ungated sink behind two workspace hops still runs" \
+  "$(jsonc 'yarn workspace api workspace foo build')"
+assert_allow "an ungated sink behind a mixed scope chain still runs" \
+  "$(jsonc 'yarn workspace api workspaces foreach exec jest')"
+
+# THIRD SPELLING OF THE SAME SCOPE CLASS, found by the round-3 security review after the two
+# above were closed: `yarn workspaces run <cmd>` is yarn CLASSIC's forwarding form, where berry
+# spells it `workspaces foreach <cmd>`. It was ALLOW here, at this branch's parent, and on main.
+# The scope arm now carries the forwarding property -- both spellings and no others, because
+# `workspaces info` / `list` / `focus` forward nothing and cannot reach a sink. The final three
+# rows pin exactly that boundary: widening to a bare `workspaces <anything>` would deny them.
+assert_deny "yarn workspaces run reaches the OTA sink" \
+  "$(jsonc 'yarn workspaces run eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "yarn workspaces run reaches railway" \
+  "$(jsonc 'yarn workspaces run railway up')" \
+  "reached through a launcher"
+assert_deny "yarn workspaces run reaches a gated gh subcommand" \
+  "$(jsonc 'yarn workspaces run gh pr merge 42 --admin')" \
+  "gh"
+assert_deny "yarn workspaces run reaches the OTA script anchor" \
+  "$(jsonc 'yarn workspaces run update:production')" \
+  "update:preview/update:production"
+assert_deny "yarn workspaces run reaches a path-qualified gated binary" \
+  "$(jsonc 'yarn workspaces run ./node_modules/.bin/eas update')" \
+  "reached through a launcher"
+assert_allow "an ungated script still runs under yarn workspaces run" \
+  "$(jsonc 'yarn workspaces run build')"
+assert_allow "yarn workspaces list forwards nothing and stays allowed" \
+  "$(jsonc 'yarn workspaces list --json')"
+assert_allow "yarn workspaces info forwards nothing and stays allowed" \
+  "$(jsonc 'yarn workspaces info')"
+
+# THE INTERPRETER WORD, round 4. Running a gated CLI through its interpreter reaches the same
+# sink as running it directly, but `node`/`bun`/`deno` were admitted only in front of the literal
+# `eas-cli/` and `@railway/cli/` package-directory substrings. The INSTALLED shim is a symlink
+# INTO that package whose own path carries no such substring, so the check could not see it:
+# `node /opt/homebrew/bin/eas update` was ALLOW while the interpreter-less twin denied, here and
+# on main. The interpreter is now a launcher step, so the terminal-name anchors fire on any path.
+# The three controls are the boundary: the anchors still require a GATED terminal name AND verb.
+assert_deny "an interpreter in front of a path-qualified gated binary reaches the OTA sink" \
+  "$(jsonc 'node /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "bun substitutes for node identically" \
+  "$(jsonc 'bun /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "a wrapper word in front of the interpreter does not help" \
+  "$(jsonc 'env node /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "an interpreter reaches railway through a relative bin path" \
+  "$(jsonc 'node ./node_modules/.bin/railway up')" \
+  "railway"
+assert_deny "an interpreter reaches a gated gh subcommand" \
+  "$(jsonc 'node /usr/local/bin/gh pr merge 42 --admin')" \
+  "gh"
+assert_allow "an interpreter in front of an UNGATED path-qualified binary stays allowed" \
+  "$(jsonc 'node /opt/homebrew/bin/tsc --noEmit')"
+assert_allow "an interpreter running an ordinary repo script stays allowed" \
+  "$(jsonc 'node scripts/seed.js')"
+assert_allow "a bare interpreter invocation stays allowed" \
+  "$(jsonc 'node --version')"
+
+# ROUND 5: THE INTERPRETER AS IT IS ACTUALLY TYPED. The round-4 arm ended in a bare separator,
+# which closed `deno <path>` -- a spelling deno REJECTS -- and left `deno run <path>`, the one
+# that works, ALLOW. `bun run <path>` escaped only because `bun<sep>(x|run)` already sat in
+# _OUT_LAUNCHER. The arm now takes _OUT_FLAG_RUN plus an optional `run`, which also absorbs
+# interpreter FLAGS. The ALLOW rows are the boundary: a gated terminal name and verb are still
+# required, so ordinary interpreter use is untouched.
+assert_deny "deno's real invocation syntax reaches the OTA sink" \
+  "$(jsonc 'deno run /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "deno flags before the run subcommand do not help" \
+  "$(jsonc 'deno --allow-all run /opt/homebrew/bin/eas update')" \
+  "reached through a launcher"
+assert_deny "an interpreter FLAG before the target does not help" \
+  "$(jsonc 'node -r ./reg /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "bun run reaches a path-qualified gated binary" \
+  "$(jsonc 'bun run /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_allow "deno running an ordinary repo script stays allowed" \
+  "$(jsonc 'deno run ./scripts/task.ts')"
+assert_allow "deno running an UNGATED path-qualified binary stays allowed" \
+  "$(jsonc 'deno run /opt/homebrew/bin/tsc --noEmit')"
+assert_allow "an interpreter flag with an UNGATED target stays allowed" \
+  "$(jsonc 'node -r ./reg /opt/homebrew/bin/tsc --noEmit')"
+
+# A FLAG AFTER the subcommand, not just before it. The first attempt at this arm absorbed flags
+# ahead of `run` but ended the `run` hop in a bare separator -- the same bare-separator defect one
+# slot further along, and a 125-row interpreter x flag-slot x target grid still allowed 20 rows.
+assert_deny "a flag AFTER deno's run subcommand does not help" \
+  "$(jsonc 'deno run -A /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "a long flag after the run subcommand does not help either" \
+  "$(jsonc 'deno run --allow-all ./node_modules/.bin/railway up')" \
+  "railway"
+assert_allow "a flag after the run subcommand with an UNGATED target stays allowed" \
+  "$(jsonc 'deno run -A ./scripts/task.ts')"
+
+# ROUND 7: TWO ADJACENT FAMILIES. (a) THE RUNNER ALTERNATION. A package.json script is reachable
+# by more runners than npm/pnpm/yarn: `bun run`, bare `bun`, `node --run` (separated and
+# `=`-glued) and `deno task` all execute it, and `update:production` ends in
+# `exec eas update --branch production --platform all` -- a production OTA through this repo's
+# own script. (b) THE `npm:` SPECIFIER, deno's documented way to run an npm CLI, in front of
+# package names the guard already gates.
+# THE FIRST FOUR ROWS ALSO PIN THE FASTPATH NEEDLE LIST, and that is deliberate: the deep clause
+# alone was dead code, because `*node*`/`*deno*` are not needles and the pre-filter exited first.
+# These rows fail if the `*update:preview*`/`*update:production*` needles are ever removed.
+assert_deny "node --run reaches the OTA script" \
+  "$(jsonc 'node --run update:production')" "update:preview/update:production"
+assert_deny "node --run= (glued) reaches the OTA script" \
+  "$(jsonc 'node --run=update:preview')" "update:preview/update:production"
+assert_deny "deno task reaches the OTA script" \
+  "$(jsonc 'deno task update:production')" "update:preview/update:production"
+assert_deny "bun run reaches the OTA script" \
+  "$(jsonc 'bun run update:production')" "update:preview/update:production"
+assert_deny "bare bun reaches the OTA script" \
+  "$(jsonc 'bun update:preview')" "update:preview/update:production"
+assert_deny "an npm: specifier in front of eas-cli reaches the OTA sink" \
+  "$(jsonc 'deno run -A npm:eas-cli update --branch production')" "eas"
+assert_deny "an npm: specifier survives a launcher" \
+  "$(jsonc 'npx npm:eas-cli update --branch production')" "eas"
+assert_deny "an npm: specifier in front of @railway/cli reaches a gated verb" \
+  "$(jsonc 'deno run npm:@railway/cli up')" "railway"
+assert_allow "an ungated script under node --run stays allowed" \
+  "$(jsonc 'node --run build')"
+assert_allow "an ungated script under bun run stays allowed" \
+  "$(jsonc 'bun run dev')"
+assert_allow "an ungated task under deno task stays allowed" \
+  "$(jsonc 'deno task build')"
+assert_allow "an npm: specifier for an UNGATED package stays allowed" \
+  "$(jsonc 'deno run -A npm:typescript --version')"
+
+# ROUND 8: THE EXPANSION SLOT, the one cell the runner widening did not carry. `_OUT_GATED_BIN`
+# lists npm/pnpm/yarn, so `npm $(echo run update:production)` already denied; node/bun/deno are
+# deliberately NOT in it, because that arm fires on a gated binary followed by ANY expansion and
+# `node $SCRIPT` is everywhere. So the predicate is a CO-OCCURRENCE: interpreter + unreadable
+# verb AND the OTA script name in the same rendering. The four ALLOW rows are the whole reason
+# it is written that way -- widening _OUT_GATED_BIN instead would deny every one of them.
+assert_deny "an expansion in node's verb slot with the OTA script present" \
+  "$(jsonc 'node $(echo --run update:production)')" \
+  "interpreter (node/bun/deno)"
+assert_deny "an expansion in bun's verb slot with the OTA script present" \
+  "$(jsonc 'bun $(echo run update:production)')" \
+  "interpreter (node/bun/deno)"
+assert_deny "an expansion in deno's verb slot with the OTA script present" \
+  "$(jsonc 'deno $(echo task update:production)')" \
+  "interpreter (node/bun/deno)"
+assert_deny "a backtick substitution in the verb slot is the same route" \
+  "$(jsonc 'node `echo --run update:production`')" \
+  "interpreter (node/bun/deno)"
+assert_allow "an ordinary expansion after an interpreter stays allowed" \
+  "$(jsonc 'node $SCRIPT')"
+assert_allow "a command substitution resolving a tool path stays allowed" \
+  "$(jsonc 'node $(which tsx)')"
+assert_allow "an expansion with an UNGATED script name stays allowed" \
+  "$(jsonc 'node $(echo --run build)')"
+assert_allow "deno running an expansion-supplied module stays allowed" \
+  "$(jsonc 'deno run ${MOD}')"
+
+# ROUND 9: this arm was the only one of its family spelled case-SENSITIVE, and `/opt/homebrew/bin/
+# NODE` resolves on a case-insensitive filesystem, so the uppercase spelling really execs node.
+assert_deny "an uppercase interpreter is still an interpreter" \
+  "$(jsonc 'NODE $(echo --run update:production)')" \
+  "interpreter (node/bun/deno)"
 # THE ROW THAT MATTERS MOST. `gh pr merge` is reached through _OUT_POS_PREFIX_LP, which this
 # change widens, and the merge clause is GRANT-shaped -- an empty clause cut DENIES. If the
 # chain widening ever reaches the count/clause pair wrong, this repo's own sanctioned /todo
@@ -5617,7 +5840,10 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1122
+# 1167 (main, rounds 1-9) + 18 (this branch's gh-api implicit-POST rows, 1104 -> 1122 against
+# its own pre-#993 base) = 1185 on the merged tree. The two sets are disjoint, and this is the
+# MEASURED total from the merged run, not the sum -- the sum is only how it was predicted.
+EXPECTED_TOTAL=1185
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

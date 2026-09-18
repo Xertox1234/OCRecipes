@@ -88,19 +88,27 @@ export type RootStackParamList = {
     localOCRText?: string;
   };
   /**
-   * Three mutually-exclusive entry modes — barcode scan, saved-item reload,
-   * manual/image entry — encoded as a discriminated union so an illegal
-   * combination (e.g. `{ itemId, barcode }`) is a compile error rather than
-   * a convention `useNutritionLookup`'s dispatching effect had to police at
-   * runtime. Every arm declares all six keys: the two selectors the arm does
-   * NOT own, and the three barcode-only companions, are all typed `?: never`
-   * so `NutritionDetailScreen` can still destructure every field in one
+   * Two mutually-exclusive entry modes — barcode scan, manual/image entry —
+   * encoded as a discriminated union so an illegal combination (e.g.
+   * `{ imageUri, barcode }`) is a compile error rather than a convention
+   * `useNutritionLookup`'s dispatching effect had to police at runtime. Every
+   * arm declares all five keys: the selector the arm does NOT own, and the
+   * three barcode-only companions, are all typed `?: never` so
+   * `NutritionDetailScreen` can still destructure every field in one
    * `route.params || {}` statement without narrowing first.
+   *
+   * A third `itemId`/saved-item arm was removed 2026-09-17. No producer has
+   * targeted it since 2026-01-29 at the latest: `d8982797` registered
+   * `ItemDetailScreen` in the History stack under the name `NutritionDetail`,
+   * and `649af17b` renamed that route to `ItemDetail` and repointed the one
+   * call site that sent an `itemId`. Whether that call ever resolved to THIS
+   * route beforehand is unresolved, and does not bear on the removal:
+   * `ItemDetail` has been the saved-item screen for the ~8 months since. See
+   * `todos/archive/P2-2026-08-16-nutritiondetail-itemid-branch-has-no-producer.md`.
    */
   NutritionDetail:
     | {
         barcode: string;
-        itemId?: never;
         imageUri?: never;
         // STEP2 nutrition-label OCR, for label-vs-DB override. Three-valued:
         // `undefined` = no label step ran, `null` = a label was photographed
@@ -114,17 +122,8 @@ export type RootStackParamList = {
         frontImageUri?: string;
       }
     | {
-        itemId: number;
-        barcode?: never;
-        imageUri?: never;
-        ocrText?: never;
-        nutritionImageUri?: never;
-        frontImageUri?: never;
-      }
-    | {
         imageUri: string;
         barcode?: never;
-        itemId?: never;
         ocrText?: never;
         nutritionImageUri?: never;
         frontImageUri?: never;

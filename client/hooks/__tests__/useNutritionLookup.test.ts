@@ -718,32 +718,36 @@ describe("useNutritionLookup — unknown serving weight (direct-OFF fallback)", 
 });
 
 /**
- * The same `|| 100` defect shape as the block above, one layer up: this one is
- * in `effectivePer100g` rather than `recalculateNutrition`.
+ * `effectivePer100g`'s guard from #819, one layer up from
+ * `recalculateNutrition`'s own `> 0` check.
  *
- * These tests exist because the saved-item path has NO serving controls
- * (`showServingControls` is gated on `!itemId`, NutritionDetailScreen.tsx), so
- * the fabricated basis is computed every render and never read. The protection
- * is an accident of which components happen to render, not a guard — any
- * future consumer of the per-100g basis that runs with `itemId` set (FSA
- * traffic-light bands were the near miss) arms the bug with no test failure and
- * no visible signal. `recalculateNutrition` is the observable proxy: it is on
- * the hook's return surface, so a test can call it without `ServingControls`
- * ever mounting.
+ * Removing the saved-item branch (2026-09-17) removed the last STEADY producer
+ * of the guard's other arm — `validatedData === null` while
+ * `nutrition.calories` is defined. Every `setNutrition` that settles with
+ * calories now pairs with a `setValidatedData` on the same path (server-DB,
+ * label-override, OFF fallback, conflict/snapshot, manual-search), and the ones
+ * that do not — "Product Not Found", "Unknown Product", "Manual Entry" — carry
+ * no calories.
+ *
+ * The state is still reached IN TRANSIT, and the second test below pins it
+ * there: `fetchBarcodeData`'s per-lookup reset nulls `validatedData` without
+ * resetting `nutrition` or `servingSizeGrams`, so a re-fetch on a mounted
+ * instance holds the prior product's values with no validated basis for the
+ * duration of the new lookup. The two tests removed with the saved-item branch
+ * asserted this arm through the steady state; the one below asserts it through
+ * the window that survives.
  */
-describe("useNutritionLookup — per-100g basis on the saved-item path", () => {
+describe("useNutritionLookup — per-100g basis guard placement", () => {
   const mockServerFetch = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal("fetch", mockServerFetch);
-    // The micronutrients query fires on the itemId path — resolve it so it
-    // can't derail the assertions under test.
     mockApiRequest.mockResolvedValue({
       ok: true,
       json: async () => ({
         hasFrontLabelData: false,
-        foodName: "Organic Medium Chili",
+        foodName: "Kombucha, Ginger Lemon",
         micronutrients: [],
       }),
     });
@@ -751,87 +755,6 @@ describe("useNutritionLookup — per-100g basis on the saved-item path", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-  });
-
-  /**
-   * A `scanned_items` row as `/api/scanned-items/:id` returns it: PER-SERVING
-   * values against a `servingSize` TEXT column that carries the weight only as
-   * prose. Amy's chili — 680 mg of sodium in a 236 g can, whose true basis is
-   * 288 mg/100 g (a MEDIUM FSA band) but which a fabricated basis reports as
-   * 680 (HIGH).
-   *
-   * `calories` is load-bearing in this fixture. `effectivePer100g` bails
-   * earlier on `nutrition.calories === undefined`, so a fixture without them
-   * exercises that guard instead of the one under test and passes either way.
-   */
-  const SAVED_ITEM = {
-    id: 42,
-    productName: "Organic Medium Chili",
-    brandName: "Amy's",
-    servingSize: "1 can (236 g)",
-    calories: 280,
-    protein: 14,
-    carbs: 35,
-    fat: 9,
-    fiber: 10,
-    sugar: 6,
-    sodium: 680,
-  };
-
-  function renderSavedItem() {
-    const { wrapper, queryClient } = createQueryWrapper();
-    // The scanned-items query has no queryFn of its own — it reads the cache.
-    // Freeze it so mounting doesn't attempt a background refetch against a
-    // bare test QueryClient (mirrors the isBeverage saved-item test above).
-    queryClient.setQueryDefaults(["/api/scanned-items"], {
-      staleTime: Infinity,
-    });
-    queryClient.setQueryData(["/api/scanned-items", 42], SAVED_ITEM);
-    return renderHook(() => useNutritionLookup({ itemId: 42 }), { wrapper });
-  }
-
-  it("leaves the per-100g basis unresolvable when the saved item carries no gram weight", async () => {
-    const { result } = renderSavedItem();
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    // The exact state that arms the bug: the itemId branch calls only
-    // `setNutrition`, so `validatedData` and `servingSizeGrams` both keep
-    // their null initialisers while real per-serving values are on screen.
-    expect(result.current.validatedData).toBeNull();
-    expect(result.current.servingSizeGrams).toBeNull();
-    expect(result.current.nutrition?.calories).toBe(280);
-
-    const before = result.current.nutrition;
-
-    // Stand in for a future consumer resolving the can's real weight and
-    // asking for it. `|| 100` made the memo's factor exactly 1, handing back
-    // the CAN's values labelled per-100 g — so this rescaled 280 kcal to
-    // 660.8 for the very same can, wrong in the alarming direction.
-    act(() => result.current.recalculateNutrition(236, 1));
-
-    expect(result.current.nutrition).toEqual(before);
-    expect(result.current.nutrition?.calories).toBe(280);
-    // Not "236g" — the per-100g branch overwrites `servingSize`, so the
-    // product's own wording surviving is itself evidence the branch was
-    // never entered.
-    expect(result.current.nutrition?.servingSize).toBe("1 can (236 g)");
-  });
-
-  it("treats a zero gram basis as unresolvable, not as 100 g", async () => {
-    const { result } = renderSavedItem();
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    // No producer writes 0 on this path today, so drive it through the setter
-    // the hook exports — the guard has to reject a non-positive basis, not
-    // merely a null one. `0 || 100` is 100, so pre-fix a zero fabricated
-    // exactly like a null did.
-    act(() => result.current.setServingSizeGrams(0));
-    const before = result.current.nutrition;
-
-    act(() => result.current.recalculateNutrition(236, 1));
-
-    expect(result.current.nutrition).toEqual(before);
-    expect(result.current.nutrition?.calories).toBe(280);
   });
 
   it("regression: a validated per-100g basis still wins when the weight is unknown", async () => {
@@ -846,9 +769,12 @@ describe("useNutritionLookup — per-100g basis on the saved-item path", () => {
     // pin, not a bug reproduction — so its value rests on mutation evidence
     // rather than a natural RED. Executed 2026-08-15: hoisting the guard above
     // `if (validatedData) return validatedData.per100g;` turns THIS test red
-    // (calories stay at the pre-recalc 100 instead of reaching 21) while the
-    // two saved-item tests above stay green. Re-run that mutation before
-    // deleting or weakening this test.
+    // (calories stay at the pre-recalc 100 instead of reaching 21). That run
+    // also had two saved-item companions covering the guard's OTHER arm; they
+    // were removed with the saved-item branch on 2026-09-17 (see this
+    // describe's docblock — that arm no longer has a reachable input). The
+    // mutation has NOT been re-run since; re-run it before weakening this test,
+    // which is now the only coverage of the guard's placement.
     mockServerFetch
       .mockRejectedValueOnce(new Error("server unreachable"))
       .mockResolvedValueOnce({
@@ -891,6 +817,71 @@ describe("useNutritionLookup — per-100g basis on the saved-item path", () => {
     expect(result.current.nutrition?.calories).toBe(21);
     expect(result.current.nutrition?.carbs).toBe(5);
     expect(result.current.nutrition?.sugar).toBe(4);
+  });
+
+  it("returns no basis mid-re-fetch, when the reset has nulled validatedData but the prior values remain", async () => {
+    // The reset at the top of `fetchBarcodeData` nulls `validatedData` and
+    // resets NEITHER `nutrition` NOR `servingSizeGrams`. So between a new
+    // barcode arriving and its lookup landing, the hook holds the PRIOR
+    // product's per-serving values with no validated basis behind them — the
+    // exact pair this guard exists for, and the reason it is not merely
+    // defensive after the saved-item branch was removed.
+    //
+    // The first product is an OFF record whose serving is "1 bottle", so
+    // `servingSizeGrams` stays null and the BACK-CALCULATION arm is what has to
+    // fire here — not the `if (validatedData)` branch above it, which the
+    // preceding test pins.
+    mockServerFetch
+      .mockRejectedValueOnce(new Error("server unreachable"))
+      .mockResolvedValueOnce({
+        json: async () => ({
+          status: 1,
+          product: {
+            product_name: "Kombucha, Ginger Lemon",
+            brands: "GT's",
+            serving_size: "1 bottle",
+            nutriments: {
+              "energy-kcal_100g": 21,
+              proteins_100g: 0,
+              carbohydrates_100g: 5,
+              fat_100g: 0,
+              sugars_100g: 4,
+              "energy-kcal_serving": 100,
+              proteins_serving: 0,
+              carbohydrates_serving: 24,
+              fat_serving: 0,
+              sugars_serving: 19,
+            },
+          },
+        }),
+      });
+
+    const { wrapper } = createQueryWrapper();
+    const { result, rerender } = renderHook(
+      ({ barcode }: { barcode: string }) => useNutritionLookup({ barcode }),
+      { wrapper, initialProps: { barcode: "0722430900001" } },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.validatedData).not.toBeNull();
+    expect(result.current.servingSizeGrams).toBeNull();
+    expect(result.current.nutrition?.calories).toBe(100);
+
+    // Hold the second lookup in flight: the reset has run, nothing has landed.
+    mockServerFetch.mockReturnValue(new Promise(() => {}));
+    rerender({ barcode: "0000000000009" });
+
+    await waitFor(() => expect(result.current.validatedData).toBeNull());
+    expect(result.current.nutrition?.calories).toBe(100);
+    expect(result.current.servingSizeGrams).toBeNull();
+
+    const before = result.current.nutrition;
+    act(() => result.current.recalculateNutrition(236, 1));
+
+    // `|| 100` made the factor exactly 1, which would relabel the PRIOR
+    // product's per-serving values as per-100g on the card.
+    expect(result.current.nutrition).toEqual(before);
+    expect(result.current.nutrition?.calories).toBe(100);
   });
 });
 
@@ -940,7 +931,7 @@ describe("useNutritionLookup — isBeverage (Task 8)", () => {
     vi.clearAllMocks();
     vi.stubGlobal("fetch", mockServerFetch);
     // Non-critical follow-up calls inside fetchBarcodeData (front-label
-    // verification) and the micronutrients query (itemId path) — resolve
+    // verification) and the micronutrients query — resolve
     // them so they don't derail the isBeverage assertions under test.
     mockApiRequest.mockResolvedValue({
       ok: true,
@@ -1014,27 +1005,18 @@ describe("useNutritionLookup — isBeverage (Task 8)", () => {
     expect(result.current.isBeverage).toBeNull();
   });
 
-  it("exposes null on the saved-item path, which never runs the barcode handler", async () => {
-    const { wrapper, queryClient } = createQueryWrapper();
-    // The scanned-items query has no queryFn of its own (see
-    // useNutritionLookup.ts) — it relies on the cache. Freeze it via
-    // staleTime so mounting doesn't attempt a background refetch with no
-    // queryFn configured on this bare test QueryClient.
-    queryClient.setQueryDefaults(["/api/scanned-items"], {
-      staleTime: Infinity,
-    });
-    queryClient.setQueryData(["/api/scanned-items", 42], {
-      id: 42,
-      productName: "Leftover chili",
-    });
-
-    const { result } = renderHook(() => useNutritionLookup({ itemId: 42 }), {
-      wrapper,
-    });
+  it("exposes null on the image-entry path, which never runs the barcode handler", async () => {
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ imageUri: "file:///manual.jpg" }),
+      { wrapper },
+    );
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    // The itemId branch never calls fetchBarcodeData, so isBeverage keeps
-    // its null initialiser.
+    // The imageUri branch never calls fetchBarcodeData, so isBeverage keeps
+    // its null initialiser. This assertion moved off the saved-item path when
+    // that branch was removed (2026-09-17); imageUri is the surviving entry
+    // mode that reaches the hook without a barcode lookup.
     expect(result.current.isBeverage).toBeNull();
     expect(mockServerFetch).not.toHaveBeenCalled();
   });
