@@ -293,6 +293,12 @@ case "$TOOL" in
         # docs/solutions/conventions/one-axis-at-a-time-corpus-misses-co-occurrence-checks-2026-09-01.md).
         #
         # STILL OPEN, named rather than silently missed (security review, 2026-09-14):
+        # PARTLY CLOSED 2026-09-18 (#995): the REST field-parameter half (`-f merge_method=squash`
+        # with no method flag) and the `--input body.json` half below are now DENIED by the
+        # implicit-POST arm below, the `MRG_API_FIELD && ! MRG_API_ANYMETHOD` conjunct (a field
+        # flag or --input, and no -X/--method anywhere). Only the graphql-mutation-body shape remains open. The text below is kept
+        # as the record of each shape and of the settlement against gh's source -- read its
+        # "silent ALLOW" claims as PRE-#995 measurements, not the current tree.
         # `gh api --help` documents that the method defaults to POST, not GET, whenever
         # ANY `-f`/`-F`/`--raw-field`/`--field` is present, with no `-X`/`--method` token
         # anywhere in the text — so a call relying on that implicit POST reaches neither
@@ -331,8 +337,10 @@ case "$TOOL" in
         # this guard exists to prevent.
         #
         # Confirmed zero-delta from main:
-        # guard-outward-cli.sh (untouched by this change) allows the graphql construction
-        # too, so this gate did not remove coverage that existed. Already named, not yet
+        # guard-outward-cli.sh allowed the graphql construction too when this was written, so
+        # this gate did not remove coverage that existed. As of #995 that guard carries the same
+        # implicit-POST arm and DENIES the bare graphql form; the ALLOW_OUTWARD_CLI=1-prefixed
+        # form still passes both guards, which is the residual its arm names. Already named, not yet
         # closed, at todos/P1-2026-09-07-outward-cli-path-wrapper.md:387 ("gh api graphql,
         # which is a different shape"). Closing it needs either widening this conjunct to
         # `-f`/`-F` presence (mirroring the unreadable-value arm below) plus a SEPARATE
@@ -403,7 +411,11 @@ case "$TOOL" in
           # todos/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md.
           # DO NOT RE-NARROW THIS LINE WITHOUT THAT POSITIONAL MODEL IN HAND.
           #
-          # Kept from the anchored version because it is still true of every closer in this file:
+          # Kept from the anchored version because it is true of the ENDPOINT and METHOD closers
+          # in this file -- NOT of every closer: `MRG_API_FIELD` above still hand-spells
+          # `([[:space:]]|=|$)` after its long flags, a glued redirect escapes it, and that is
+          # filed rather than fixed (the P1 named in the sibling arm's residual block in
+          # guard-outward-cli.sh). For the closers that ARE swept:
           # THE CLOSER IS ${_CMD_POS_SUFFIX}, NOT A HAND-SPELLED `([[:space:]]|$)`. A redirect
           # operator terminates a word without whitespace, so a hand-spelled closer skips a glued
           # `>`; #992 swept these. Do not re-spell one.

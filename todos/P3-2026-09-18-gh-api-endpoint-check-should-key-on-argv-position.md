@@ -27,10 +27,13 @@ five main-DENY/branch-ALLOW shapes (`$`/`:` in segments, `#fragment`, quoted `#`
 `pulls//42/merge`) before being reverted. The full list, with the reason each attempt's own
 comment was wrong, is above the predicate in `merge-review-guard.sh`. Read it before starting.
 
-The over-denials are **low** priority because they deny (the safe direction for a merge gate), the
-`ALLOW_OUTWARD_CLI=1` bypass exists, and this repo's PR comments go through the GitHub MCP tools
-rather than field-carrying `gh api` calls. They are pinned as `ACCEPTED OVER-DENIAL` rows in
-`test-merge-review-guard.sh`; a fix must flip those rows deliberately, not silently.
+The over-denials are **low** priority because they deny (the safe direction for a merge gate), and
+this repo's PR comments go through the GitHub MCP tools rather than field-carrying `gh api` calls.
+The merge gate's only escape is `SKIP_MERGE_REVIEW=1` in the shell that launched Claude Code —
+`ALLOW_OUTWARD_CLI=1` is the sibling guard's and does **not** lift this gate; the suite pins that
+directly, and the first draft of this todo named the wrong one. They are pinned as
+`ACCEPTED OVER-DENIAL` rows in `test-merge-review-guard.sh`; a fix must flip those rows
+deliberately, not silently.
 
 ## Acceptance Criteria
 
@@ -40,8 +43,10 @@ rather than field-carrying `gh api` calls. They are pinned as `ACCEPTED OVER-DEN
       `MRG_API_FIELD` grammar already in the file; no new tokenizer.
 - [ ] The three `ACCEPTED OVER-DENIAL` rows flip back to `assert_allowed`, each with a paired
       DENY control (same endpoint in a positional slot) in the same block.
-- [ ] Every one of the 23 endpoint-spelling regression rows added under #995 still denies —
-      run them; they are the only corpus this file has.
+- [ ] The 18 genuine merge-endpoint rows in the `3a-quinquies`/`3a-sexies` blocks keep denying and
+      the 4 `assert_allowed` controls there keep allowing — run them; they are the only corpus this
+      file has. (The block's one `ACCEPTED OVER-DENIAL` row is governed by the criterion above,
+      not this one — the first draft said "all 23 still deny", which contradicted it.)
 - [ ] A generated corpus (endpoint spellings × quotings × field-flag placements) measures
       **0 main-DENY/new-ALLOW rows** before the change is proposed, with a mutation control that
       reproduces a non-zero count.
@@ -84,3 +89,6 @@ Editing `.claude/hooks/**` triggers the ~17-minute corpus job, but that corpus p
 ### 2026-09-18
 
 - Filed when the anchored predicate was reverted in PR #995 after its fifth fail-open shape.
+- Same day, review: named the wrong bypass (`ALLOW_OUTWARD_CLI=1` is the outward guard's; this
+  gate's is `SKIP_MERGE_REVIEW=1`) and mis-stated AC4 as "all 23 rows deny" when 4 are allow
+  controls and 1 is the over-denial pin AC3 flips. Both corrected.
