@@ -293,6 +293,12 @@ case "$TOOL" in
         # docs/solutions/conventions/one-axis-at-a-time-corpus-misses-co-occurrence-checks-2026-09-01.md).
         #
         # STILL OPEN, named rather than silently missed (security review, 2026-09-14):
+        # PARTLY CLOSED 2026-09-18 (#995): the REST field-parameter half (`-f merge_method=squash`
+        # with no method flag) and the `--input body.json` half below are now DENIED by the
+        # implicit-POST arm below, the `MRG_API_FIELD && ! MRG_API_ANYMETHOD` conjunct (a field
+        # flag or --input, and no -X/--method anywhere). Only the graphql-mutation-body shape remains open. The text below is kept
+        # as the record of each shape and of the settlement against gh's source -- read its
+        # "silent ALLOW" claims as PRE-#995 measurements, not the current tree.
         # `gh api --help` documents that the method defaults to POST, not GET, whenever
         # ANY `-f`/`-F`/`--raw-field`/`--field` is present, with no `-X`/`--method` token
         # anywhere in the text — so a call relying on that implicit POST reaches neither
@@ -331,8 +337,10 @@ case "$TOOL" in
         # this guard exists to prevent.
         #
         # Confirmed zero-delta from main:
-        # guard-outward-cli.sh (untouched by this change) allows the graphql construction
-        # too, so this gate did not remove coverage that existed. Already named, not yet
+        # guard-outward-cli.sh allowed the graphql construction too when this was written, so
+        # this gate did not remove coverage that existed. As of #995 that guard carries the same
+        # implicit-POST arm and DENIES the bare graphql form; the ALLOW_OUTWARD_CLI=1-prefixed
+        # form still passes both guards, which is the residual its arm names. Already named, not yet
         # closed, at todos/P1-2026-09-07-outward-cli-path-wrapper.md:387 ("gh api graphql,
         # which is a different shape"). Closing it needs either widening this conjunct to
         # `-f`/`-F` presence (mirroring the unreadable-value arm below) plus a SEPARATE
@@ -356,6 +364,14 @@ case "$TOOL" in
         # lowercase `x` placeholder cmd_words inserts for characters deleted from a quoted
         # span, so a quoted value merely containing enough letters could forge a match.
         MRG_API_M='([Pp][Oo][Ss][Tt]|[Pp][Uu][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])'
+        # gh's IMPLICIT POST. api.go:329-330 makes the method POST when NO method flag was
+        # passed AND there is at least one field parameter or an --input file. Both halves
+        # are needed: `-X GET ... -f a=b` is a GET in gh and must stay ALLOW here, so this
+        # arm is anchored on the ABSENCE of a method token exactly as gh anchors on
+        # `!opts.RequestMethodPassed`. Short flags are matched without a value because gh
+        # accepts `-f k=v` and `--field=k=v` alike and the VALUE is irrelevant to the method.
+        MRG_API_FIELD='(^|[[:space:]])(-[fF]|(--field|--raw-field|--input)([[:space:]]|=|$))'
+        MRG_API_ANYMETHOD='(^|[[:space:]])(-X|--method([^-A-Za-z0-9]|$))'
         set +o pipefail
         MRG_API_WORDS=$(cmd_words_deep "$CMD")
         MRG_API_CLAUSES=$(printf '%s' "$MRG_API_WORDS" | grep -ioE "$MRG_API_CUT")
@@ -363,6 +379,46 @@ case "$TOOL" in
         MRG_API_HIT=""
         while IFS= read -r MRG_API_CLAUSE; do
           [ -n "$MRG_API_CLAUSE" ] || continue
+          # THE ENDPOINT CHECK IS main's SUBSTRING TEST, ON PURPOSE, AND THIS IS THE RECORD OF WHY.
+          # This branch replaced `pulls.*merge` with an anchored path pattern, because the
+          # implicit-POST arm below made field-only calls reach this check for the first time and
+          # a field VALUE quoting the endpoint (`-f body='see pulls/42/merge …'` on an issues
+          # endpoint) was then classified a merge -- an over-denial this branch itself introduced.
+          # The precise pattern went through FOUR review rounds and FIVE fail-open shapes, every
+          # one main DENY / branch ALLOW, i.e. an unreviewed PR merge the gate on main would have
+          # stopped:
+          #   1. an enumerated segment class `[A-Za-z0-9._{}-]` excluded `$` and `:`, so
+          #      `repos/$OWNER/$REPO/…` and a full `https://` endpoint fell through;
+          #   2. a `?query`-only tail missed `#fragment`;
+          #   3. a `[?#]` tail, defended as EXHAUSTIVE over RFC 3986, was still false: this
+          #      predicate reads the `cmd_words_deep` rendering, not a URI, and a `#` inside a
+          #      QUOTED span becomes the placeholder character (60 of 144 generated rows, 48 quoted);
+          #   4. `merge/?` hand-counted the trailing slashes, so `merge//` escaped;
+          #   5. an unconstrained tail still required exactly one segment between `pulls/` and
+          #      `/merge`, so `pulls//42/merge` and `pulls/42//merge` escaped -- found by READING
+          #      the regex after four rounds of measurement, which is what settled it.
+          # Every "precise" spelling is an allowlist of shapes inside a DENY predicate, and every
+          # shape its author did not enumerate is an ALLOW. The substring test has no segments to
+          # get wrong and cannot regress against itself, so it is what stays.
+          #
+          # THE COST, ACCEPTED AND PINNED IN test-merge-review-guard.sh: three prose spellings deny
+          # that the anchored pattern allowed -- a field value quoting the endpoint, and
+          # `-f title=merge cleanup` on the pulls list. They deny, which is the direction a merge
+          # gate should err in; the bypass exists; and this repo's PR comments go through the
+          # GitHub MCP tools, not field-carrying api calls. The RIGHT discriminator is not path
+          # shape at all but ARGV POSITION -- an endpoint is a positional token, a field value
+          # follows -f/-F/--field -- and that is parser work with its own review, filed as
+          # todos/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md.
+          # DO NOT RE-NARROW THIS LINE WITHOUT THAT POSITIONAL MODEL IN HAND.
+          #
+          # Kept from the anchored version because it is true of the ENDPOINT and METHOD closers
+          # in this file -- NOT of every closer: `MRG_API_FIELD` above still hand-spells
+          # `([[:space:]]|=|$)` after its long flags, a glued redirect escapes it, and that is
+          # filed rather than fixed (the P1 named in the sibling arm's residual block in
+          # guard-outward-cli.sh). For the closers that ARE swept:
+          # THE CLOSER IS ${_CMD_POS_SUFFIX}, NOT A HAND-SPELLED `([[:space:]]|$)`. A redirect
+          # operator terminates a word without whitespace, so a hand-spelled closer skips a glued
+          # `>`; #992 swept these. Do not re-spell one.
           printf '%s' "$MRG_API_CLAUSE" | grep -qiE 'pulls.*merge' || continue
           # Two ways this clause proves a mutating method: the value is a recognized
           # literal (glued `-XPUT`, or separated by whitespace/redirect/`=`), OR a
@@ -375,7 +431,9 @@ case "$TOOL" in
           # match alone missed it — this second arm is what catches it.
           if printf '%s' "$MRG_API_CLAUSE" | grep -Eq "(^|[[:space:]])(-X${MRG_API_M}${_CMD_POS_SUFFIX}|(-X|--method)(${MRG_SEP}|=)${MRG_API_M}${_CMD_POS_SUFFIX})" \
              || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq '(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)' \
-                  && printf '%s' "$MRG_API_CLAUSE" | grep -qE '[$`]'; }; then
+                  && printf '%s' "$MRG_API_CLAUSE" | grep -qE '[$`]'; } \
+             || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq "$MRG_API_FIELD" \
+                  && ! printf '%s' "$MRG_API_CLAUSE" | grep -Eq "$MRG_API_ANYMETHOD"; }; then
             MRG_API_HIT=1
             break
           fi

@@ -909,8 +909,10 @@ assert_allow "a REAL --auto after a quoted body still allows (control)" \
 # The placeholder cmd_words inserts is alphanumeric, and the method check was
 # case-INSENSITIVE, so `-f "- post"` rendered as `-xpost` and `-X` matched `-x`.
 # The flag is case-sensitive now; the value stays case-insensitive.
-assert_allow "gh api -f \"- post\" allows (placeholder must not forge -X)" \
-  "$(jsonc 'gh api repos/o/r/x -f "- post"')"
+# Boundary preserved through the REASON: a guard that forged `-X` out of the `- post` VALUE
+# would deny for the wrong reason and fail this row.
+assert_deny "gh api -f with a dash-shaped VALUE denies as an implicit POST, NOT as a forged -X" \
+  "$(jsonc 'gh api repos/o/r/x -f "- post"')" "NO -X/--method flag"
 assert_deny "gh api -X post still denies (lowercase VALUE is a real spelling)" \
   "$(jsonc 'gh api -X post repos/o/r/pulls/1/merge')" \
   "gh api"
@@ -2667,10 +2669,14 @@ assert_allow "gh api -f field on an explicit literal GET stays allowed" \
   "$(json 'gh api repos/o/r -X GET -f name=value')"
 assert_allow "gh api -H header flag (no method flag) stays allowed" \
   "$(jsonc 'gh api repos/o/r -H "Accept: application/vnd.github+json"')"
-assert_allow "a longer flag sharing the --method prefix is not mistaken for the real flag (boundary precision — \$ elsewhere in the same clause must not trip on '"'"'--methodology'"'"')" \
-  "$(json 'gh api repos/o/r -f notes=$X --methodology=custom')"
-assert_allow "a literal backtick used as markdown formatting, no method flag, stays allowed" \
-  "$(jsonc 'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here')"
+# Boundary preserved through the REASON: denying via the METHOD-FLAG arm would mean
+# `--methodology` was mistaken for `--method`, which is a different message.
+assert_deny "--methodology WITH a field parameter denies as an implicit POST, not via the method flag" \
+  "$(json 'gh api repos/o/r -f notes=$X --methodology=custom')" "NO -X/--method flag"
+# Boundary preserved through the REASON: a guard that read the backticks as a substitution
+# would deny via the method-flag arm and fail this row.
+assert_deny "a markdown backtick WITH a field parameter denies as an implicit POST, not as a substitution" \
+  "$(jsonc 'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here')" "NO -X/--method flag"
 # DESIGN CHOICE, accepted over-denial (see the fix's own DESIGN CHOICE
 # comment on GH_API_CLAUSE): the predicate reads for a \$ or backtick
 # ANYWHERE in the clause once a method flag is present, not only inside the
@@ -4269,7 +4275,7 @@ assert_deny "...opening at !" \
 # decision remaining is whether to accept this tripwire-pinned residual as the permanent
 # posture). The more severe residual that investigation surfaced is NOT on this ordering
 # axis and is already filed separately as
-# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+# todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
 assert_deny "TRIPWIRE: a hidden second pr merge is miscounted but still denies" \
   "$(json 'gh -a -c <(gh pr merge 7) pr merge 42')" \
   "without a REAL --auto flag"
@@ -4312,7 +4318,7 @@ assert_allow "a single read-only gh api behind a root flag stays allowed" \
 # The one-command mutating form is ALLOW on main too — pinned so a reader does not mistake
 # the rows above for a claim that this change closed it.
 #
-# Tracked by todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+# Tracked by todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
 # This pointer was REPOINTED 2026-09-17. It previously read "It is the P2 gh-api-route
 # todo's", naming an archived status:done todo about a DIFFERENT hook, whose own text
 # asserts guard-outward-cli denies this form — false for the field-based spelling. So the
@@ -4320,8 +4326,71 @@ assert_allow "a single read-only gh api behind a root flag stays allowed" \
 # fell between the two records and went untracked. The discriminator is the absent
 # explicit method: gh infers POST from the presence of -f/-F/--field/--raw-field, so this
 # spelling is a POST that never says so and the method check never sees one.
-assert_allow "the ONE-command -f mutation is allowed here, as it is on main (pre-existing)" \
-  "$(json 'gh api -f a=b /repos/o/r/merges')"
+# WAS an assert_allow deferring to a CLOSED P2 whose own text disclaimed the thing this pin
+# pinned. The pin and the todo each pointed at the other and the gap fell between them.
+# ---------- gh's IMPLICIT POST (todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md)
+# api.go:329-330 sets method=POST when NO method flag was passed and there is any field
+# parameter or --input. Every spelling below reached the arbitrary-mutation surface while naming
+# no method at all, and every one measured ALLOW before this arm existed.
+# GLUED SHORT FORMS. The first revision of this arm required a trailing separator, so
+# `-fmerge_method=squash` never matched and the route this change exists to close stayed OPEN on
+# both guards. The file already knew: :4781 records the sibling flag's glued form as "the common
+# curl-style spelling; found bypassing a separator-only pattern in review round 2". Same
+# function, same lesson, written again.
+assert_deny "the GLUED -f short form denies (separator-only patterns miss it)" \
+  "$(json 'gh api -fmerge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "the GLUED -F short form denies" \
+  "$(json 'gh api -Fmerge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "the GLUED form against a templated endpoint denies" \
+  "$(json 'gh api -fmerge_method=squash repos/{owner}/{repo}/pulls/995/merge')" "NO -X/--method flag"
+# THE MIRROR-IMAGE BUG, on the NEGATIVE conjunct. The same separator requirement on the
+# method-flag pattern meant glued `-XGET` did not register as a method flag while the field
+# pattern did match — denying an explicit READ. gh's RequestMethodPassed is TRUE for `-XGET`.
+assert_allow "a GLUED -XGET with fields is an explicit read and stays allowed" \
+  "$(json 'gh api -XGET /repos/o/r/pulls/42/merge -f foo=bar')"
+assert_allow "a GLUED -XGET on a search endpoint with fields stays allowed" \
+  "$(json 'gh api -XGET search/issues -f q=repo:o/r')"
+assert_allow "--methodology is still not a method flag and needs no field to prove it" \
+  "$(json 'gh api --methodology=custom repos/o/r')"
+# WHY THERE ARE NO DEGRADED-PATH ROWS FOR THE GLUED FORMS, measured rather than assumed.
+# Four were written and removed. On the degraded fixtures the crude mirror denies ANY `gh api`
+# call — verified against the BASE guard, where both `gh api -fmerge_method=squash <merge
+# endpoint>` and a plain `gh api /repos/o/r/pulls/42` already DENY on nolib. So a glued-form
+# deny there passes with or without this fix: it is count, not coverage, and it would read to a
+# later maintainer as evidence the fix works on those paths. The discriminating rows are the
+# PRECISE-path ones above (base ALLOW -> head DENY). This note exists so the rows are not added
+# back for looking like a gap.
+
+assert_deny "gh api -f with no method flag denies (implicit POST)" \
+  "$(json 'gh api -f merge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "gh api -F with no method flag denies" \
+  "$(json 'gh api -F merge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "gh api --raw-field with no method flag denies" \
+  "$(json 'gh api --raw-field merge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "gh api --field with no method flag denies" \
+  "$(json 'gh api --field merge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "gh api --field=k=v GLUED with no method flag denies" \
+  "$(json 'gh api --field=merge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "gh api --input with no method flag denies (api.go:301 ties it to the same switch)" \
+  "$(json 'gh api /repos/o/r/pulls/42/merge --input body.json')" "NO -X/--method flag"
+assert_deny "an implicit POST to a NON-merge endpoint denies too (this guard gates any mutation)" \
+  "$(json 'gh api /repos/o/r/issues -f title=hello')" "NO -X/--method flag"
+# THE ALLOW SIDE IS WHAT MAKES THE ARM SAFE. gh's switch is `!RequestMethodPassed && params`, so
+# an EXPLICIT method wins and these are reads. Keying the arm on fields alone would deny them,
+# and a guard that denies reads gets switched off rather than fixed.
+assert_allow "an EXPLICIT -X GET with fields is a read and stays allowed" \
+  "$(json 'gh api -X GET /repos/o/r/pulls/42/merge -f foo=bar')"
+assert_allow "an EXPLICIT --method GET with fields stays allowed" \
+  "$(json 'gh api --method GET /repos/o/r/pulls/42/merge --field foo=bar')"
+assert_allow "a plain read with no fields and no method stays allowed" \
+  "$(json 'gh api /repos/o/r/pulls/42')"
+assert_allow "a read with --jq and no fields stays allowed" \
+  "$(json 'gh api repos/o/r/commits --jq .[0].sha')"
+assert_allow "the sanctioned automerge is untouched by this arm" \
+  "$(json 'gh pr merge --auto --squash --delete-branch 42')"
+
+assert_deny "the ONE-command -f mutation now denies (gh's implicit POST, api.go:329-330)" \
+  "$(json 'gh api -f a=b /repos/o/r/merges')" "NO -X/--method flag"
 
 # ---------- launcher-family / path-qualified invocation (2026-09-16) ----------
 # todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md
@@ -5771,7 +5840,10 @@ fi
 # gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
 # EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
 # so a passing pair cannot mean the widening was silently dropped.
-EXPECTED_TOTAL=1167
+# 1167 (main, rounds 1-9) + 18 (this branch's gh-api implicit-POST rows, 1104 -> 1122 against
+# its own pre-#993 base) = 1185 on the merged tree. The two sets are disjoint, and this is the
+# MEASURED total from the merged run, not the sum -- the sum is only how it was predicted.
+EXPECTED_TOTAL=1185
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

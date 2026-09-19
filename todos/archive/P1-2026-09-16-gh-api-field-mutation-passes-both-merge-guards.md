@@ -1,9 +1,9 @@
 ---
 title: "A field-based `gh api` mutation at the merge endpoint passes BOTH local guards — the merge-review gate never fires"
-status: backlog
+status: done
 priority: high
 created: 2026-09-16
-updated: 2026-09-16
+updated: 2026-09-18
 assignee:
 labels: [deferred, harness, security]
 github_issue:
@@ -85,20 +85,20 @@ Noted separately, out of scope, pre-existing, so it is not lost: `allow_force_pu
 
 ## Acceptance Criteria
 
-- [ ] `gh api -f merge_method=squash /repos/o/r/pulls/42/merge` is DENIED by
+- [x] `gh api -f merge_method=squash /repos/o/r/pulls/42/merge` is DENIED by
       `merge-review-guard.sh` when no valid review record exists for the head sha.
-- [ ] The same command is DENIED by `guard-outward-cli.sh`, or a written decision records why
+- [x] The same command is DENIED by `guard-outward-cli.sh`, or a written decision records why
       one layer is deliberately sufficient.
-- [ ] The `ALLOW_OUTWARD_CLI=1`-prefixed form is also denied by the merge gate — the merge gate
+- [x] The `ALLOW_OUTWARD_CLI=1`-prefixed form is also denied by the merge gate — the merge gate
       must not inherit the sibling guard's escape.
-- [ ] Two-sided control asserted in the same run: an ordinary read-only `gh api` call still
+- [x] Two-sided control asserted in the same run: an ordinary read-only `gh api` call still
       passes silently, and prose merely naming the endpoint is not denied.
-- [ ] `test-guard-outward-cli.sh`'s existing `assert_allow` pin for the one-command `-f`
+- [x] `test-guard-outward-cli.sh`'s existing `assert_allow` pin for the one-command `-f`
       mutation is UPDATED (it currently asserts the bug), and its comment no longer defers to a
       closed todo.
-- [ ] `repro-outward-cli-corpus.sh` passes with per-path verdicts and deny attribution
+- [x] `repro-outward-cli-corpus.sh` passes with per-path verdicts and deny attribution
       unchanged, or the pin is re-derived from a real run with the delta explained.
-- [ ] Mutation-verified: reverting the new branch leaves the suite red.
+- [x] Mutation-verified: reverting the new branch leaves the suite red.
 
 ## Implementation Notes
 
@@ -193,3 +193,97 @@ every open PR. Mutation-verify against the merge result (branch ⊕ main), never
 - Retracted the false "not currently a live bypass" line in
   `todos/archive/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md`
   in the same change.
+
+### 2026-09-18 - CLOSED. gh's implicit POST, modelled from the CLI's source
+
+- **The rule, not the spellings.** `gh api --help` says the method "defaults to GET normally and
+  POST if any parameters were added", which leaves `--input` ambiguous. The CLI's source does
+  not: cli/cli `pkg/cmd/api/api.go:329-330` reads
+  `if !opts.RequestMethodPassed && (len(params) > 0 || opts.RequestInputFile != "") { method = "POST" }`,
+  and `RequestInputFile` IS `--input` (api.go:301). So the condition implemented in both guards
+  is **a field parameter or `--input`, AND no method flag anywhere** — gh's own predicate, not a
+  list of flags someone thought of. This todo's own file had already settled that half against
+  the source; the fix is the settlement applied.
+
+- **BOTH HALVES OF THE CONDITION ARE LOAD-BEARING, and only one is obvious.** Keying on "a field
+  is present" alone would deny `gh api -X GET /repos/o/r/pulls/42/merge -f foo=bar` — an
+  EXPLICIT READ, because `RequestMethodPassed` is true and gh's switch never fires. A merge gate
+  that denies reads is the failure that gets a guard switched off rather than fixed, so both
+  guards anchor on the ABSENCE of a method token exactly as gh anchors on `!RequestMethodPassed`.
+  Pinned on both sides.
+
+- **The two guards needed DIFFERENT SCOPES for identical input**, which is easy to get backwards
+  in either direction. `gh api /repos/o/r/issues -f title=hello` is not a merge (merge gate:
+  ALLOW) but IS a mutating gh call (outward guard: DENY, matching what its explicit `-X POST`
+  twin already did). A merge gate denying issue creation, or an outward guard permitting it,
+  would each have been a defect.
+
+- **Spellings closed, measured:** `-f`, `-F`, `--field`, `--raw-field`, the glued `--field=k=v`
+  form, and `--input`. The todo's table named only `-f`; `-F`/`--raw-field`/`--input` and the
+  glued form were found by constructing the space rather than by reading the table.
+
+- **THE PIN THAT ASSERTED THE BUG, and why it survived so long.** `test-guard-outward-cli.sh`
+  carried `assert_allow "the ONE-command -f mutation is allowed here, as it is on main
+(pre-existing)"`, deferring to `todos/archive/P2-2026-09-12-merge-review-guard-does-not-model-
+the-gh-api-merge-route.md` — a CLOSED todo whose own line 39 read "guard-outward-cli.sh denies
+  both today, so this is not currently a live bypass", which is false for the `-f`-only form.
+  The pin pointed at the todo, the todo pointed away, and the gap lived between them. **A pin
+  that defers to a document, and a document that disclaims the pin, is a gap nothing can see.**
+
+- **THREE ROWS THE SUITE FLIPPED WERE NOT ABOUT THIS BEHAVIOUR AT ALL**, and converting them to
+  bare denies would have kept the suite green while deleting three checks. They test that a
+  `- post` VALUE is not read as a forged `-X`, that `--methodology` is not mistaken for
+  `--method`, and that a markdown backtick is not read as a substitution. All three are genuine
+  implicit POSTs so denying them is correct — but each now asserts the IMPLICIT-POST REASON, so
+  a guard that forged `-X` from a value, or misread `--methodology`, would fail the row by
+  denying for the wrong reason. The property is preserved against the mechanism that now carries
+  it.
+
+- **The corpus expectation change, stated so it is checkable rather than trusted.** Three rows
+  (`apicolfp-oneshot`, `c2-fp-methodology`, `c2-fp-backtick`) moved `want` from ALLOW to DENY.
+  Moving a `want` is also how one would bury a real over-denial, so: each is a field-parameter
+  call with no method flag, hence a POST by api.go:329-330; and the corpus's own per-path tuples
+  show every one reading `p=ALLOW j=DENY l=DENY a=DENY` before and DENY on all four paths after.
+  **That citation is the whole justification.** The three degraded paths were also already
+  denying them, and the precise path was brought into agreement with its own fail-closed mirror
+  — but a review showed that observation DOES NOT DISCRIMINATE: every `gh api` row in that
+  neighbourhood reads `j=DENY l=DENY a=DENY`, including rows that correctly stay ALLOW. It is
+  corroboration, not evidence, and it is demoted wherever it appears so nobody reuses it as a
+  standalone argument for moving a `want`. Three independent mechanisms converged on the same
+  three ids (the suite, the precise-gap list, the all-path dirty list), which is what makes the
+  change a convergence rather than moved goalposts. The `fp` in each id is kept on purpose so the
+  move stays visible.
+
+- **Pins re-derived from real runs, with the delta explained — THESE ARE PRE-MERGE NUMBERS,
+  measured against this branch's own pre-#993 base, and four of the five have since moved:**
+  `EXPECTED_ALLPATH_GAPS` 358 -> 355 (-3, those rows stop being dirty — a DECREASE, which is the
+  unusual direction and is annotated in place), `EXPECTED_DENY_ATTRIB_ROWS` 1789 -> 1792 (+3, they
+  now attribute to the new deny), `EXPECTED_EMIT_SITES` 42 -> 43 (one new message),
+  `EXPECTED_PRECISE_GAPS` unchanged at 62 once the expectations were corrected. Zero unexplained
+  movement, and NO id in both the added and removed lists — so no pre-existing row kept its verdict
+  while rerouting. **ON THE MERGED TREE the live pins are `EXPECTED_ROWS=2160`,
+  `EXPECTED_DENY_ATTRIB_ROWS=1921`, `EXPECTED_ALLPATH_GAPS=356`, `EXPECTED_EMIT_SITES=44`,
+  `EXPECTED_PRECISE_GAPS=62`** — main carried four of them further over #993's rounds 3/4/8, and
+  the deltas above re-applied additively on top. `EXPECTED_EMIT_SITES` is the one worth naming:
+  main and this branch EACH took it 42 -> 43, for different deny sites, so the merge saw two sides
+  agreeing on `43` and produced no conflict at all; the merged guard emits 44. Read the pins in
+  `repro-outward-cli-corpus.sh`, never these figures.
+
+- **Mutation-verified (criterion 7):** with both guards reverted to the base commit and the new
+  test files kept, both suites go red, and every failure is named after the implicit-POST feature
+  rather than incidental. **The exact failure counts this note once carried (11 and 20) were
+  stale and are deliberately NOT restated.** They were written against the FIRST commit, and this
+  branch has changed the suites twice since; a later reader mutation-testing against a fixed
+  number would chase a gap that is only drift. A re-derivation on 2026-09-18 got 14 for the
+  outward suite, not 11 — and the merge-gate number could not be re-derived cleanly at all,
+  because reverting the guards in a directory without `.git` fails ~15 stamp/record tests that
+  fail identically with UNMODIFIED guards, i.e. artifacts of the layout, not of the revert.
+  **The live pins are the authority** (`EXPECTED_TOTAL` in each suite); the per-commit deltas are
+  in the commit messages.
+
+- Corpus pins, independently reconfirmed by a completed run **on the pre-merge branch**:
+  `rows=2031 precise-path gaps=62 all-path gaps=355; all 1792 deny reasons attributed to the same
+checks as the pin`, emit sites 43. **Superseded by the completed run on the merged tree:**
+  `rows=2160 precise-path gaps=62 all-path gaps=356; precise manifest exact; all-path manifest
+exact INCLUDING per-path verdicts; all 1921 deny reasons attributed to the same checks as the
+pin`, emit sites 44.

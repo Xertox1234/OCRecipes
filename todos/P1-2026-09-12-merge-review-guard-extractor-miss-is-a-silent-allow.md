@@ -7,6 +7,8 @@ updated: 2026-09-17
 assignee:
 labels: [deferred, harness, security]
 github_issue:
+human_led: true
+blocked_reason: "Needs ONE ruling an unattended run must not make: may the shared renderer in .claude/hooks/lib/cmd-detect.sh emit a backslash-escaped NON-WHITESPACE character as that character (closing the two-layer bypass), while escaped whitespace keeps the placeholder? The current behaviour is deliberate — the comment block ending 'the documented backslash residual' records that rendering an escaped space as whitespace SPLIT a word the shell had JOINED and manufactured an --auto token that GRANTED a merge carve-out, and states the rule: emitting more tokens than argv contains is fatal for a grant-shaped check. The narrowing adds no tokens, but `if (c == BS)` occurs 10 times in that file in arms that disagree (3 of them render the escape as literal whitespace), so this is a ruling about which renderer may change, not a one-line edit. The file is consumed by git-safety.sh, merge-review-guard.sh and guard-outward-cli.sh, and moves pins in a required check. Three prior attempts at this todo were withdrawn for exactly the pattern of closing one family and opening another. A human decides before anyone writes it."
 ---
 
 # An extractor miss reaches the gate as "not a merge"
@@ -147,3 +149,52 @@ fails closed. Write that down in the code rather than rediscovering it.
 - Harness bound, stated because it limits the 44: rows whose separator is a literal TAB are
   unreliable (the tab collides with the measurement harness's own field delimiter) and are
   excluded. `sp2` covers non-single-space whitespace.
+
+### 2026-09-18 — RE-MEASURED on batch D's head, and GATED. No fix attempted.
+
+Re-ran the 13-rendering family against BOTH guards on this tree (PreToolUse envelopes on stdin,
+nothing executed). Numbers below are this run's, not the todo's original.
+
+**Mechanism (a), glued shell metacharacter — CLOSED.** All six spellings now DENY on both guards:
+`;`, `&&`, `||`, `|`, `(` and `&` glued to the binary. The todo attributes 192 of its 248 rows to
+this mechanism, so most of the original finding is gone. **This is a 6-row sample of a
+13-rendering family, not the family** — re-run the todo's own 537-row corpus before re-scoping.
+
+**Mechanism (b), a word between binary and verb — CLOSED** by #991: a redirect between the binary
+and its verb denies on both.
+
+**TWO LIVE TWO-LAYER ALLOWS** (both guards miss — this is the remaining scope):
+
+| rendering                                                 | outward | merge gate | note                                                                                 |
+| --------------------------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------ |
+| a backslash-escaped binary + merge verb                   | ALLOW   | ALLOW      | **no escape token needed** — bash strips the backslash, so this reaches the real CLI |
+| the documented escape var + a command-substitution binary | ALLOW   | ALLOW      | also the backtick and quoted spellings                                               |
+
+**TEN RENDERINGS MISS THE MERGE GATE ONLY** — the outward guard still denies them, so they are
+real extractor misses but not live bypasses today: an absolute path, `g"h"`, `g'h'`, `${gh_bin}`,
+`$gh_bin`, three command-substitution spellings, `./node_modules/.bin/…` and `../bin/…`.
+**Do not describe these as closed.** Each is one escape-variable away from live, which the rows
+above demonstrate. `command`- and `env`-prefixed forms deny on both.
+
+### Why no fix was attempted, and what the decision actually is
+
+The escaped binary renders without a visible command word because the unquoted-context arm emits
+a placeholder TWICE for `\\<anything>`. That is deliberate: the comment block directly above it
+(ending "the documented backslash residual") records that rendering an escaped space as
+whitespace SPLIT a word the shell had JOINED, manufacturing an `--auto` token that GRANTED the
+immediate-merge carve-out, and states the governing rule — **emitting more tokens than argv
+contains is harmless for a deny-shaped check and fatal for a grant-shaped one.**
+
+The candidate narrowing is: emit the escaped character when it is NOT whitespace; keep the
+placeholder for escaped whitespace and newline. It adds no tokens, so it does not obviously
+re-open that incident.
+
+**But it is not one line.** `if (c == BS)` occurs **10 times** in that file (lines [391, 413, 417, 537, 567, 572, 750, 870, 918, 1198]), and
+the arms disagree: **3 of them render the escape as literal whitespace** (lines [391, 413, 417]) — the
+very thing the comment forbids — presumably because they serve quoted-span passes where the
+shell's own treatment differs. Any fix must rule on which arms change and justify each against
+its lexical context. Those line numbers were true when this was written and move on every edit;
+re-derive with `grep -n 'if (c == BS)'` rather than trusting them.
+
+Combined with three prior withdrawals on this todo and a required-check pin re-derivation, that
+is a human's call, which is what `human_led` above records.

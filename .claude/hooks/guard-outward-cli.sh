@@ -3104,7 +3104,7 @@ _OUT_GH_GLOBALS_GRANT='(([[:space:]]+(-R[[:space:]]+[^[:space:];&|]+|--repo[[:sp
 # tripwire-pinned residual as the permanent posture for the two-token families).
 # The more severe residual that investigation surfaced is NOT that decision and is
 # NOT on this ordering axis — it is already filed separately as
-# todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+# todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
 # Two repair attempts were measured and rejected: a gh-api-style separator-safe grammar
 # (max()'d against the wide count, mirroring `_OUT_GH_GLOBALS_SEPSAFE`/`_OUT_SEP_SEPSAFE`
 # below) returns count=1 under BOTH grammars for this exact shape, because the nested
@@ -4953,6 +4953,72 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # `-xpost` and falsely denied (review, 2026-08-16). `-X post` is a real
   # spelling, so the value must stay case-insensitive.
   _GH_API_M='([Pp][Oo][Ss][Tt]|[Pp][Uu][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])'
+  # gh's IMPLICIT POST, modelled from the CLI's own source rather than from its help text.
+  # cli/cli pkg/cmd/api/api.go:329-330:
+  #     if !opts.RequestMethodPassed && (len(params) > 0 || opts.RequestInputFile != "") {
+  #         method = "POST"
+  #     }
+  # `params` is the field parameters (-f/--raw-field, -F/--field) and RequestInputFile is
+  # `--input` (api.go:301). So a field or an input file, with NO method flag anywhere, is a
+  # POST -- the same mutating surface the explicit arm below denies, reached without ever
+  # naming a method. Seven spellings measured ALLOW before this arm existed.
+  #
+  # BOTH HALVES OF THE CONDITION ARE LOAD-BEARING. `-X GET ... -f a=b` is a GET in gh
+  # (RequestMethodPassed is true, so the implicit switch never fires), and denying it would
+  # deny a READ -- the failure that gets a guard switched off. The arm is therefore anchored
+  # on the ABSENCE of a method token, exactly as gh anchors on !RequestMethodPassed, not on
+  # the presence of fields alone.
+  # DOCUMENTED RESIDUALS of this arm, named rather than discovered later:
+  #   * AN UNREADABLE FIELD FLAG has no "cannot verify -> deny" mirror. The sibling arm denies an
+  #     unreadable METHOD value on the 2026-09-05 ruling, but an unreadable FIELD flag is
+  #     ALLOW here -- e.g. `gh api $(cat flagfile) k=v <merge endpoint>`, measured ALLOW
+  #     2026-09-18. THE EXAMPLE MATTERS: this comment previously used `$(printf -- -f)`,
+  #     which DENIES, because the literal source text carries the substring ` -f` and
+  #     satisfies the field pattern by accident -- the guard never resolved the
+  #     substitution. A reader testing that example to confirm the gap would have seen
+  #     DENY and concluded there was no gap. The residual is real; only the illustration
+  #     was self-defeating (review, 2026-09-18). A blanket `$`-in-clause deny is not
+  #     available -- `gh api
+  #     repos/$OWNER/$REPO` must stay allowed, as this block's own comment says -- so the
+  #     tractable form is a co-occurrence rule: a bare `key=value` positional beside an
+  #     unreadable token, with no method flag, is the same implicit POST. Not built here.
+  #   * `gh api graphql -f query='mutation {...}'` is a GENUINE merge that carries neither a
+  #     path nor a method flag, so it is a different SHAPE than this arm parses. This change
+  #     NARROWS it (the outward guard now denies the bare form) but with the documented inline
+  #     bypass in front, both guards allow it. Pre-existing; see merge-review-guard.sh's own
+  #     note proposing a graphql-mutation-body detector.
+  #     AND THE OTHER DIRECTION, WHICH THE SENTENCE ABOVE DID NOT COVER: this arm has no endpoint
+  #     discriminator, so it denies every graphql READ as well -- a bare viewer/login query and
+  #     friends measured main ALLOW / here DENY (review, 2026-09-18). That is an OVER-denial
+  #     against main, in the safe direction but real, and the reason line's stated escape does not
+  #     rescue it: graphql's transport is always POST, so there is no explicit-read spelling of a
+  #     graphql call and the only route is the bypass. The reason line now says so.
+  #     Left as-is deliberately: exempting a graphql endpoint whose fields carry no `mutation`
+  #     keyword is new predicate logic in a fail-closed gate, and nothing in this repo issues a
+  #     graphql read today (swept 2026-09-18: the only mention in the tree is prose in a todo).
+  #   * A METHOD-SHAPED TOKEN IN ANOTHER FLAG'S VALUE SLOT disarms the negated conjunct, because
+  #     it genuinely reaches argv: a field flag followed by `--template -X` (also `-t`, and
+  #     `-p`/`--preview`) measured ALLOW on both guards, while the same carriers holding an
+  #     ordinary value denied -- so the decoy token is what flips the verdict. This is a DIFFERENT
+  #     vector from the comment/redirect pair filed in
+  #     todos/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md, and that
+  #     todo's remedy cannot close it: stripping text that never reaches argv leaves a real argv
+  #     token untouched. Covered in that todo's own value-position section. Filed, not closed.
+  #   * THE FIELD-FLAG CLOSER IS HAND-SPELLED `([[:space:]]|=|$)` and so misses a glued redirect:
+  #     the three LONG field flags followed immediately by a redirect operator stand this arm down
+  #     with no bypass token, on both guards, with argv identical to the spaced form that denies.
+  #     The short flags survive only because they carry no closer at all. NOT a regression (main
+  #     allowed the field-only form outright), so filed rather than fixed under the 2026-09-17
+  #     batched-guard decision. The structural lint that exists to catch exactly this greps for the
+  #     literal `([[:space:]]|$)` and is blind to the `|=|` variant, so it reports PASS on the line
+  #     it was written to catch -- widening that lint is step one of the filed fix, not a separate
+  #     cleanup.
+  _GH_API_FIELD='(^|[[:space:]])(-[fF]|(--field|--raw-field|--input)([[:space:]]|=|$))'
+  _GH_API_ANYMETHOD='(^|[[:space:]])(-X|--method([^-A-Za-z0-9]|$))'
+  if [ -n "$GH_API_CLAUSE" ] && grep -Eq "$_GH_API_FIELD" <<< "$GH_API_CLAUSE" \
+     && ! grep -Eq "$_GH_API_ANYMETHOD" <<< "$GH_API_CLAUSE"; then
+    deny "guard-outward-cli: command-position 'gh api' with a field parameter (-f/-F/--field/--raw-field) or --input and NO -X/--method flag is a POST, not a GET — gh's own api.go sets method=POST whenever a method was not passed and any parameter or input file is present, so this reaches the same arbitrary-mutation surface as an explicit -X POST (including a PR merge). An explicit read (-X GET/--method GET) with the same parameters is unaffected -- EXCEPT for 'gh api graphql', whose transport is always POST, so there is no explicit-read spelling of it and a graphql READ is denied here too; its only route is the bypass. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  fi
   # FIXED 2026-09-05 (found by this task's own mandated finding-A
   # co-occurrence test; distinct from the unreadable-method check on
   # GH_API_CLAUSE — the value here is fully literal, no `$`/backtick

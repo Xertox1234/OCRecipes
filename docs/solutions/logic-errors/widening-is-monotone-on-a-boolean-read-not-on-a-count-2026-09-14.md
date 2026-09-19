@@ -200,7 +200,7 @@ different hook — which is why it fell between the two records and went untrack
 
 It was found here, not fixed — out of scope for the todo that surfaced it. Now tracked with
 the correct attribution as
-`todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md`. **Do not reach for
+`todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md`. **Do not reach for
 occurrence counting or grammar narrowing there** — that is the dead end this correction
 exists to prevent.
 
@@ -227,7 +227,7 @@ instead. Any before/after comparison of a hook must run from inside `.claude/hoo
   check were tried and rejected, per the sections above). It separately surfaced a more
   severe residual at the REST merge route, which is NOT on this ordering axis at all — see
   the CORRECTED note above — and is now filed as
-  `todos/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md`
+  `todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md`
 
 ## See Also
 
