@@ -242,12 +242,19 @@ denied "$out" && ok "the SPACED redirect control denies (non-vacuity for the row
               || bad "the SPACED redirect control denies (non-vacuity for the row above)" "$out"
 out=$(bash_payload 'gh api /repos/o/r/pulls/42>/dev/null' | run)
 assert_allowed "a glued redirect on a NON-merge path is still not a merge" "$out"
-# THE ENDPOINT DISCRIMINATOR reads field VALUES, and this arm made that reachable for field-only
-# calls for the first time. A comment body quoting the endpoint was classified a merge.
+# THE ENDPOINT CHECK reads field VALUES, and the implicit-POST arm made that reachable for
+# field-only calls for the first time. An anchored path pattern was tried to keep prose out; it
+# failed open FIVE ways across four review rounds (the guard's own comment above its predicate
+# lists them) and was REVERTED to main's substring test. These rows now pin the ACCEPTED
+# over-denial: prose quoting the endpoint in a field value denies. That is the safe direction; the
+# real fix is positional (argv slot, not path shape):
+# todos/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md.
 out=$(bash_payload "gh api repos/o/r/issues/12/comments -f body=see pulls/42/merge for context" | run)
-assert_allowed "prose quoting the endpoint inside a field value is not a merge" "$out"
+denied "$out" && ok "ACCEPTED OVER-DENIAL: prose quoting the endpoint inside a field value denies under the substring test" \
+              || bad "ACCEPTED OVER-DENIAL: prose quoting the endpoint inside a field value denies under the substring test" "$out"
 out=$(bash_payload 'gh api repos/o/r/pulls -f title=merge cleanup' | run)
-assert_allowed "a field value containing the word merge is not a merge" "$out"
+denied "$out" && ok "ACCEPTED OVER-DENIAL: a field value containing the word merge on the pulls list denies" \
+              || bad "ACCEPTED OVER-DENIAL: a field value containing the word merge on the pulls list denies" "$out"
 
 # 3a-bis. DENY. gh's IMPLICIT POST — no method flag anywhere.
 # todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md. cli/cli
@@ -279,12 +286,15 @@ assert_allowed "an EXPLICIT --method GET with fields allows" "$out"
 out=$(bash_payload 'gh api /repos/o/r/issues -f title=hello' | run)
 assert_allowed "an implicit POST to a NON-merge endpoint is not this gate's business" "$out"
 
-# 3a-ter. ENDPOINT SPELLINGS THE SEGMENT-CLASS DISCRIMINATOR LET THROUGH (regression vs main,
+# 3a-quinquies. ENDPOINT SPELLINGS THE SEGMENT-CLASS DISCRIMINATOR LET THROUGH (regression vs main,
 # found by both reviewers independently, 2026-09-18). Each of these DENIED on main's
 # `pulls.*merge` substring test and ALLOWED once the class enumeration replaced it; the plain
 # `repos/o/r/...` rows above are their non-vacuity control and deny on both versions. There is no
 # combinatorial corpus behind this file -- repro-outward-cli-corpus.sh pins guard-outward-cli.sh
 # only -- so these rows ARE the coverage for this predicate.
+# LATER THE SAME DAY: after a FIFTH fail-open (`pulls//42/merge`) the anchored predicate was
+# reverted to main's substring test. Every row in this block and the next passes trivially under
+# it, and that is the point -- they are now the guard against anyone re-narrowing the check.
 out=$(bash_payload 'gh api -X PUT repos/$OWNER/$REPO/pulls/42/merge' | run)
 denied "$out" && ok "a merge endpoint spelled with shell variables is still an endpoint" \
               || bad "a merge endpoint spelled with shell variables is still an endpoint" "$out"
@@ -310,13 +320,17 @@ assert_allowed "an EXPLICIT read of a URL-spelled merge endpoint still allows" "
 out=$(bash_payload 'gh api repos/o/r/pulls/42/comments -f body=hi' | run)
 assert_allowed "a pulls/N/<other> path is still not a merge endpoint" "$out"
 
-# 3a-quater. THE FRAGMENT. The first version of the fix above allowed `/` and `?query` after the
-# endpoint but not `#fragment`, which is the SAME fail-open one layer down: `.../merge#frag` read
-# main DENY / fixed-arm ALLOW on all five prefix spellings, while `?x=1#frag` denied because the
-# query alternative swallowed the fragment -- which is what isolates the miss to a bare fragment.
-# A fragment is never placed on the wire (RFC 3986 s3.5), so the request that reaches GitHub is
-# the unmodified merge. `[?#]` is exhaustive, not another enumeration: a path can be followed
-# only by `?query` or `#fragment`.
+# 3a-sexies. THE TRAILING CONTENT, AND THE QUOTING AXIS THAT MADE TWO EARLIER FIXES LOOK DONE.
+# Constraining what may follow the endpoint failed open three times: `?query` only, then `[?#]`,
+# then `merge/?` hand-counting the slashes at one. The `[?#]` version was defended as EXHAUSTIVE
+# over RFC 3986 and was STILL false, because this predicate reads the `cmd_words_deep` rendering
+# rather than a URI -- a `#` inside a QUOTED span becomes the placeholder character, so
+# `"…/merge#frag"` renders `…/mergexfrag` and matched nothing. A 6 prefix x 8 trailing x 3 QUOTING
+# corpus measured 60 of 144 rows as main DENY / arm ALLOW, and 48 of those 60 were quoted.
+# EVERY ROW IN THE FIRST VERSION OF THIS BLOCK USED A BARE TOKEN, so the suite went green on
+# exactly the spellings that regressed. The tail is now unconstrained and the quoting axis is
+# pinned here rather than sampled.
+# THEN REVERTED: see the block above. These rows stay as the re-narrowing guard.
 out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge#frag' | run)
 denied "$out" && ok "a fragment glued to the endpoint does not end the match" \
               || bad "a fragment glued to the endpoint does not end the match" "$out"
@@ -337,6 +351,38 @@ out=$(bash_payload 'gh api -X GET repos/o/r/pulls/42/merge#frag' | run)
 assert_allowed "an EXPLICIT read of a fragment-suffixed endpoint still allows" "$out"
 out=$(bash_payload 'gh api -X GET repos/o/r/pulls/42/merge #frag' | run)
 assert_allowed "a SPACED hash is a shell comment, not a fragment, and is not a merge" "$out"
+
+# THE QUOTING AXIS. Double- and single-quoted spellings reach gh with byte-identical argv to the
+# bare form, and the rendering blanks a quoted `#` -- so these are the rows a bare-only block
+# cannot see. Each is paired with its quoted-WITHOUT-fragment control, so a failure here can never
+# be blamed on quoting alone.
+out=$(bash_payload 'gh api -X PUT "repos/o/r/pulls/42/merge#frag"' | run)
+denied "$out" && ok "a DOUBLE-QUOTED fragment endpoint still denies (the rendering blanks the hash)" \
+              || bad "a DOUBLE-QUOTED fragment endpoint still denies (the rendering blanks the hash)" "$out"
+out=$(bash_payload "gh api -X PUT 'repos/o/r/pulls/42/merge#frag'" | run)
+denied "$out" && ok "a SINGLE-QUOTED fragment endpoint still denies" \
+              || bad "a SINGLE-QUOTED fragment endpoint still denies" "$out"
+out=$(bash_payload 'gh api -X PUT "repos/o/r/pulls/42/merge/#frag"' | run)
+denied "$out" && ok "a quoted slash-then-fragment endpoint still denies" \
+              || bad "a quoted slash-then-fragment endpoint still denies" "$out"
+out=$(bash_payload 'gh api -X PUT "repos/o/r/pulls/42/merge"' | run)
+denied "$out" && ok "CONTROL: the same endpoint QUOTED with no fragment denies (quoting alone is not the cause)" \
+              || bad "CONTROL: the same endpoint QUOTED with no fragment denies (quoting alone is not the cause)" "$out"
+# AN EMPTY PATH SEGMENT IS MORE PATH, NOT CONTENT AFTER IT -- `merge/?` counted the slashes at one.
+out=$(bash_payload 'gh api -X PUT repos/o/r/pulls/42/merge//' | run)
+denied "$out" && ok "a doubled trailing slash is still the merge endpoint" \
+              || bad "a doubled trailing slash is still the merge endpoint" "$out"
+out=$(bash_payload 'gh api -X PUT repos/o/r/pulls/42/merge///' | run)
+denied "$out" && ok "and a tripled one, so the slash count is not enumerated either" \
+              || bad "and a tripled one, so the slash count is not enumerated either" "$out"
+out=$(bash_payload 'gh api -X PUT "repos/$OWNER/$REPO/pulls/42/merge//"' | run)
+denied "$out" && ok "variable segments, quoting and an empty segment together still deny" \
+              || bad "variable segments, quoting and an empty segment together still deny" "$out"
+# Under the substring test the quoted prose spelling denies too; pinned as the third accepted
+# over-denial so a future re-narrowing that "fixes" it has to say so here.
+out=$(bash_payload 'gh api repos/o/r/issues/12/comments -f body="see pulls/42/merge here"' | run)
+denied "$out" && ok "ACCEPTED OVER-DENIAL: a QUOTED prose mention of the endpoint in a field value denies" \
+              || bad "ACCEPTED OVER-DENIAL: a QUOTED prose mention of the endpoint in a field value denies" "$out"
 
 # 3b. DENY. -X spelling, path-only (no -f fields).
 out=$(bash_payload 'gh api -X PUT /repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
@@ -1473,7 +1519,7 @@ unset _mrgcloser_hits _mrgcloser_prose
 # row pinning the ALLOW side of a separator widening (the direction that invents denials, and
 # the one that killed the withdrawn raw-token predicate), and +3 rows pinning the BINARY
 # renderings that remain open so the block is not read as closing the whole class.
-EXPECTED_TOTAL=171
+EXPECTED_TOTAL=179
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -371,64 +371,43 @@ case "$TOOL" in
         MRG_API_HIT=""
         while IFS= read -r MRG_API_CLAUSE; do
           [ -n "$MRG_API_CLAUSE" ] || continue
-          # ENDPOINT, NOT TWO WORDS ANYWHERE IN THE CLAUSE. `pulls.*merge` reads field VALUES
-          # too, and the implicit-POST conjunct below made that reachable for field-only calls
-          # for the first time: `-f body='see pulls/42/merge for context'` on an ISSUES endpoint
-          # was classified a merge and denied, with a reason about resolving a PR number from a
-          # command that posts a comment. Measured ALLOW before that conjunct, DENY after — an
-          # over-denial this change introduced, not a pre-existing one.
-          # Requiring at least ONE PATH SEGMENT before `pulls/` is what separates them: a real
-          # endpoint is `repos/o/r/pulls/42/merge`, while a prose mention is a bare
-          # `pulls/42/merge` with a space in front. RESIDUAL, narrower and named: prose that
-          # quotes the FULL path (`body=see repos/o/r/pulls/42/merge …`) still matches. There is
-          # no text-level way to tell that from the endpoint itself, and erring toward DENY is
-          # the right direction for a merge gate.
+          # THE ENDPOINT CHECK IS main's SUBSTRING TEST, ON PURPOSE, AND THIS IS THE RECORD OF WHY.
+          # This branch replaced `pulls.*merge` with an anchored path pattern, because the
+          # implicit-POST arm below made field-only calls reach this check for the first time and
+          # a field VALUE quoting the endpoint (`-f body='see pulls/42/merge …'` on an issues
+          # endpoint) was then classified a merge -- an over-denial this branch itself introduced.
+          # The precise pattern went through FOUR review rounds and FIVE fail-open shapes, every
+          # one main DENY / branch ALLOW, i.e. an unreviewed PR merge the gate on main would have
+          # stopped:
+          #   1. an enumerated segment class `[A-Za-z0-9._{}-]` excluded `$` and `:`, so
+          #      `repos/$OWNER/$REPO/…` and a full `https://` endpoint fell through;
+          #   2. a `?query`-only tail missed `#fragment`;
+          #   3. a `[?#]` tail, defended as EXHAUSTIVE over RFC 3986, was still false: this
+          #      predicate reads the `cmd_words_deep` rendering, not a URI, and a `#` inside a
+          #      QUOTED span becomes the placeholder character (60 of 144 generated rows, 48 quoted);
+          #   4. `merge/?` hand-counted the trailing slashes, so `merge//` escaped;
+          #   5. an unconstrained tail still required exactly one segment between `pulls/` and
+          #      `/merge`, so `pulls//42/merge` and `pulls/42//merge` escaped -- found by READING
+          #      the regex after four rounds of measurement, which is what settled it.
+          # Every "precise" spelling is an allowlist of shapes inside a DENY predicate, and every
+          # shape its author did not enumerate is an ALLOW. The substring test has no segments to
+          # get wrong and cannot regress against itself, so it is what stays.
           #
-          # THE CLOSER IS ${_CMD_POS_SUFFIX}, NOT A HAND-SPELLED `([[:space:]]|$)`.
-          # A redirect operator terminates a word without whitespace, so
-          # `…/pulls/42/merge>/dev/null` puts `>` immediately after `merge` — neither
-          # whitespace nor end-of-string — and a hand-spelled closer does not match,
-          # skipping this entire arm for an argv that is an unmodified merge request.
-          # Measured ALLOW here before this fix, DENY after, with a SPACED control
-          # denying both times so the row is not vacuous (review, 2026-09-18).
-          # Identical defect fixed in guard-outward-cli.sh on 2026-09-05 for a glued
-          # `-XPOST>`; #992 swept the hand-spelled closers and this one was written
-          # new afterwards. Do not re-spell it.
+          # THE COST, ACCEPTED AND PINNED IN test-merge-review-guard.sh: three prose spellings deny
+          # that the anchored pattern allowed -- a field value quoting the endpoint, and
+          # `-f title=merge cleanup` on the pulls list. They deny, which is the direction a merge
+          # gate should err in; the bypass exists; and this repo's PR comments go through the
+          # GitHub MCP tools, not field-carrying api calls. The RIGHT discriminator is not path
+          # shape at all but ARGV POSITION -- an endpoint is a positional token, a field value
+          # follows -f/-F/--field -- and that is parser work with its own review, filed as
+          # todos/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md.
+          # DO NOT RE-NARROW THIS LINE WITHOUT THAT POSITIONAL MODEL IN HAND.
           #
-          # THE SEGMENT CLASS WAS THE BUG, AND IT MADE THIS ARM A REGRESSION AGAINST main.
-          # This started life as `/?[A-Za-z0-9._{}-]+(/[A-Za-z0-9._{}-]+)*/pulls/...`, replacing
-          # main's substring test `pulls.*merge`. Enumerating the legal characters of a path
-          # segment silently EXCLUDED the two that appear most often in a real command: `$`, so
-          # `repos/$OWNER/$REPO/pulls/42/merge` did not match, and `:`, so a full
-          # `https://api.github.com/...` endpoint did not either. Both are ordinary spellings --
-          # the sibling guard's own comment names `repos/$OWNER/$REPO` as the routine idiom --
-          # and both fell through to `continue`, i.e. ALLOW. Measured against main on 2026-09-18:
-          # main DENY / this arm ALLOW for the variable, quoted-variable and full-URL forms, with
-          # the plain `repos/o/r/...` form denying on BOTH as the non-vacuity control.
-          # The closer had the same shape of bug from the other end: `${_CMD_POS_SUFFIX}` is a
-          # SHELL word terminator, and `?` and `/` are neither shell terminators nor in it, so
-          # `.../merge?x=1` and `.../merge/` -- both valid endpoint spellings -- also fell through.
-          #
-          # So: match a non-space run before `/pulls/` instead of enumerating what may appear in
-          # it, and allow URL-legal trailing content before the real shell closer.
-          #
-          # THAT TRAILING CLASS IS `[?#]`, AND THE FIRST ATTEMPT AT THIS FIX SPELLED IT `\?` ALONE,
-          # WHICH WAS THE SAME BUG ONE LAYER DOWN. A FRAGMENT also follows a path, so
-          # `.../pulls/42/merge#frag` still fell through to ALLOW while main DENIED -- measured on
-          # all five prefix spellings, with `?x=1#frag` denying (the query alternative swallowed the
-          # fragment) which is what isolated the miss to a bare fragment. The fragment is never put
-          # on the wire (RFC 3986 section 3.5), so the request that reaches GitHub is the unmodified
-          # merge. `[?#]` is EXHAUSTIVE rather than another enumeration: by RFC 3986 a path can be
-          # followed only by `?query` or `#fragment` and nothing else, so there is no third
-          # character waiting to be discovered here.
-          # WHAT ACTUALLY SEPARATES AN ENDPOINT FROM PROSE IS THE SLASH, NOT THE CHARACTER SET --
-          # a prose mention is a bare `pulls/42/merge` with a space in front, and that still has
-          # no path segment before it, so it still allows. Do not narrow this back to an
-          # enumeration: an allowlist of characters in a deny predicate fails OPEN on every
-          # character its author did not think of, which is the whole defect above.
-          printf '%s' "$MRG_API_CLAUSE" \
-            | grep -qiE "(^|[[:space:]])[^[:space:]]+/pulls/[^[:space:]/]+/merge/?([?#][^[:space:]]*)?${_CMD_POS_SUFFIX}" \
-            || continue
+          # Kept from the anchored version because it is still true of every closer in this file:
+          # THE CLOSER IS ${_CMD_POS_SUFFIX}, NOT A HAND-SPELLED `([[:space:]]|$)`. A redirect
+          # operator terminates a word without whitespace, so a hand-spelled closer skips a glued
+          # `>`; #992 swept these. Do not re-spell one.
+          printf '%s' "$MRG_API_CLAUSE" | grep -qiE 'pulls.*merge' || continue
           # Two ways this clause proves a mutating method: the value is a recognized
           # literal (glued `-XPUT`, or separated by whitespace/redirect/`=`), OR a
           # -X/--method flag is present at all alongside a `$`/backtick anywhere in the
