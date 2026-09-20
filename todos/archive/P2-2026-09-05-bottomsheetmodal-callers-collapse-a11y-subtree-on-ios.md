@@ -140,3 +140,29 @@ rationale travels with each site.
   screens — filed as the todo above) and 3 SUGGESTIONs (test names tightened
   to not overclaim device-level proof; one comment-wording nit inherited from
   ConfirmationModal.tsx is out of this todo's scope).
+
+### 2026-09-20
+
+- `todos/P3-2026-09-14-bottomsheetmodal-background-trap-and-on-device-pass.md`
+  (the follow-up filed above) closed the background-trap gap for its own AC #1,
+  and in doing so corrected this todo's own site inventory: **only 3 of the 8
+  sites actually lacked an `accessibilityViewIsModal` background trap**, not 6.
+  `client/screens/HomeScreen.tsx`, `MealPlanHomeScreen.tsx`'s import-recipe
+  sheet, and `client/screens/meal-plan/RecipeEntryHubScreen.tsx` all render the
+  shared `ImportRecipeSheetContent` (`client/components/meal-plan/ImportRecipeSheet.tsx`),
+  which already carried the prop on its own content View (from the earlier
+  #485 fix, predating this todo) — that follow-up todo's own "Has none" list
+  for those 3 sites was itself incorrect, having grepped only the screen files
+  and missed the shared child component. The genuinely-untrapped sites were
+  `AddItemMenuSheet.tsx`, `QuickAddSheet.tsx`, and `SimpleEntrySheet.tsx`
+  (all consumed only by `MealPlanHomeScreen.tsx`); all 3 now set
+  `accessibilityViewIsModal` on their own content View.
+- **AC #2 (per-site Maestro `inspect_screen` on-device verification, listed
+  above) remains NOT performed.** This session could not reach it either:
+  `EXPO_PUBLIC_DOMAIN` was unset and no dev server was reachable
+  (`curl http://localhost:3000/api/health` failed to connect — no `.env` in
+  this worktree), so no simulator/E2E debugging was attempted per the
+  project's "check the API IP first" rule. AC #2 is still open; a session with
+  a working dev server + booted simulator needs to run it for all 8 sites
+  (5 leaf-collapse-only via `accessible={false}`, now all 8 also carry the
+  background trap via `accessibilityViewIsModal`).

@@ -225,7 +225,13 @@ function SimpleEntrySheetContentInner(
   const canAdd = dishName.trim().length > 0 && !isAdding && !isListening;
 
   return (
-    <View style={styles.content}>
+    // accessibilityViewIsModal must live on this inner View — BottomSheetModal
+    // typechecks the prop but never forwards it (verified in @gorhom/bottom-sheet
+    // source), so setting it on the modal is a silent no-op. iOS-only prop;
+    // traps VoiceOver focus so the screen behind the sheet is unreachable while
+    // it's presented. See docs/solutions/conventions/
+    // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
+    <View style={styles.content} accessibilityViewIsModal>
       {/* Header */}
       <View style={styles.header}>
         <View

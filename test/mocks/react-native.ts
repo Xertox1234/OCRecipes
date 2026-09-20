@@ -84,6 +84,23 @@ function ariaHiddenProps(
     : {};
 }
 
+/**
+ * `accessibilityViewIsModal` maps to its ARIA equivalent, `aria-modal`, for
+ * the same reason `ariaHiddenProps` above exists: unmapped, it falls through
+ * `...rest` as a raw camelCase attribute, which React silently drops (with a
+ * dev warning) rather than rendering — an empirically confirmed gap, not the
+ * "lowercased passthrough" `accessible`/`accessibilityActions` have (see
+ * docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md).
+ * Without this mapping the prop is invisible to jsdom entirely, in either
+ * direction. `undefined` is omitted by React when not set, matching the
+ * `aria-live` pattern above.
+ */
+function ariaModalProps(accessibilityViewIsModal: unknown): {
+  "aria-modal"?: true;
+} {
+  return accessibilityViewIsModal === true ? { "aria-modal": true } : {};
+}
+
 /** Helper to create a forwarding mock component that renders an HTML element. */
 function mockComponent(
   Element: string,
@@ -103,6 +120,7 @@ function mockComponent(
         accessibilityLiveRegion,
         accessibilityElementsHidden,
         importantForAccessibility,
+        accessibilityViewIsModal,
         ...rest
       },
       ref,
@@ -135,6 +153,7 @@ function mockComponent(
             accessibilityElementsHidden,
             importantForAccessibility,
           ),
+          ...ariaModalProps(accessibilityViewIsModal),
           ...rest,
         } as Record<string, unknown>,
         children as React.ReactNode,

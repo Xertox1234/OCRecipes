@@ -339,7 +339,17 @@ function QuickAddSheetContentInner(
   );
 
   return (
-    <>
+    // No existing single content root here (the sheet previously returned a
+    // bare Fragment of 3 siblings) — accessibilityViewIsModal needs one
+    // ancestor View spanning all of the sheet's own content for VoiceOver to
+    // trap focus inside it; a plain View (not BottomSheetView, which also
+    // registers itself as the sheet's scrollable driver and would conflict
+    // with BottomSheetFlatList's own registration below) with flex: 1
+    // preserves the previous column layout. iOS-only prop; BottomSheetModal
+    // typechecks it but never forwards it, so it must live on this inner
+    // View, not the modal. See docs/solutions/conventions/
+    // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
+    <View style={styles.rootContent} accessibilityViewIsModal>
       {/* Header */}
       <View style={styles.header}>
         <View
@@ -396,7 +406,7 @@ function QuickAddSheetContentInner(
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       />
-    </>
+    </View>
   );
 }
 
@@ -405,6 +415,13 @@ export const QuickAddSheetContent = React.memo(
 );
 
 const styles = StyleSheet.create({
+  // flex: 1 reproduces the pre-existing layout: this View simply replaces a
+  // bare Fragment (see the accessibilityViewIsModal comment above) as the
+  // ancestor of the same 3 siblings, so it must fill the same space they
+  // previously filled directly.
+  rootContent: {
+    flex: 1,
+  },
   header: {
     alignItems: "center",
     paddingTop: Spacing.sm,
