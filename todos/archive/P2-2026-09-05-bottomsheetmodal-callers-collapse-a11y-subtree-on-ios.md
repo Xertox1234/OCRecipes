@@ -54,7 +54,7 @@ address this leaf-collapse of the sheet's OWN content.
       evidence).
       **Deliberately left unchecked.** Not performed for any of the 8 sites.
       Carried forward by
-      `todos/P3-2026-09-14-bottomsheetmodal-background-trap-and-on-device-pass.md`,
+      `todos/archive/P3-2026-09-14-bottomsheetmodal-background-trap-and-on-device-pass.md`,
       which owns the device session. The mechanism itself is not unverified —
       the same code path was device-verified for `ConfirmationModal` in PR #924
       and re-derived from library source during review of this PR — but that is
@@ -143,7 +143,7 @@ rationale travels with each site.
 
 ### 2026-09-20
 
-- `todos/P3-2026-09-14-bottomsheetmodal-background-trap-and-on-device-pass.md`
+- `todos/archive/P3-2026-09-14-bottomsheetmodal-background-trap-and-on-device-pass.md`
   (the follow-up filed above) closed the background-trap gap for its own AC #1,
   and in doing so corrected this todo's own site inventory: **only 3 of the 8
   sites actually lacked an `accessibilityViewIsModal` background trap**, not 6.
@@ -164,8 +164,9 @@ rationale travels with each site.
   this worktree), so no simulator/E2E debugging was attempted per the
   project's "check the API IP first" rule. AC #2 is still open; a session with
   a working dev server + booted simulator needs to run it for all 8 sites
-  (5 leaf-collapse-only via `accessible={false}`, now all 8 also carry the
+  (3 leaf-collapse-only via `accessible={false}`, now all 8 also carry the
   background trap via `accessibilityViewIsModal` — **on iOS only**;
   `accessibilityViewIsModal` is an iOS-only prop, so the Android TalkBack
-  background-trap gap remains fully open across all 8 sites and is tracked
-  separately, not closed by this work).
+  background-trap gap remains fully open across all 8 sites and, as of
+  2026-09-20, is **not tracked by any open todo** — the previously cited Android todo covers the
+  hardware back button, not TalkBack. Not closed by this work).

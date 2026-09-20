@@ -71,14 +71,21 @@ When auditing which sheet sites already have this fix, grepping only the
 sheet's content via an imported, shared component
 (`ImportRecipeSheetContent`) whose own inner View already carries the prop —
 invisible to a screen-scoped grep. A prior audit
-(`todos/P3-2026-09-14-bottomsheetmodal-background-trap-and-on-device-pass.md`,
+(`todos/archive/P3-2026-09-14-bottomsheetmodal-background-trap-and-on-device-pass.md`,
 its original "Has none" list) miscounted 3 sites as missing the trap for
 exactly this reason. Always trace to the actual rendered content component
 before concluding a site lacks the fix.
 
 ## Exceptions
 
-- The prop is iOS-only either way; Android TalkBack can still reach behind-content — a pattern-wide gap tracked separately (see the Android back-button todo `todos/P3-2026-07-02-bottomsheet-android-back-dismiss.md` for the sibling Android parity issue).
+- The prop is iOS-only either way; Android TalkBack can still reach behind-content — a
+  pattern-wide gap that, as of 2026-09-20, **no open todo tracks** for the BottomSheetModal
+  sites. Verified rather than assumed: `todos/archive/P3-2026-07-02-bottomsheet-android-back-dismiss.md`
+  is about the hardware BACK BUTTON and contains zero TalkBack mentions;
+  `todos/archive/P3-2026-06-22-android-overlay-talkback-focus-trap.md` and
+  `todos/archive/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md` are both
+  `status: done`, and the latter is scoped to `ConfirmationModal.tsx` and its callers. File a todo
+  before citing one.
 - Since the modal's children don't mount until `.present()`, the content-level prop has no effect while the sheet is closed — no need to gate it.
 
 ## Related Files
