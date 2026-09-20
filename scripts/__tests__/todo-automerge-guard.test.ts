@@ -40,6 +40,27 @@ if [ "$1" = "api" ]; then
         echo "fake-gh: simulated pulls/files failure" >&2
         exit "$FAKE_GH_DIFF_EXIT"
       fi
+      # Multi-page simulation: \`gh api --paginate --jq\` re-runs the SAME filter once PER PAGE
+      # and concatenates raw output (\`gh help api\`: "Each page is a separate JSON array or
+      # object" -- --slurp is what would merge pages into one array first, and the guard does
+      # not pass it). FAKE_GH_PR_FILES_JSON_PAGES is a JSON array of page-arrays; loop and
+      # re-run the guard's own jq expression once per page, mirroring gh's own per-page
+      # semantics, so a test can prove the STRUCTURAL ROW COUNT check sums every "N " row
+      # rather than trusting only the first.
+      if [ -n "\${FAKE_GH_PR_FILES_JSON_PAGES:-}" ]; then
+        jqexpr=""; prev=""
+        for a in "$@"; do
+          if [ "$prev" = "--jq" ]; then jqexpr="$a"; fi
+          prev="$a"
+        done
+        page_count="$(printf '%s' "$FAKE_GH_PR_FILES_JSON_PAGES" | jq 'length')"
+        i=0
+        while [ "$i" -lt "$page_count" ]; do
+          printf '%s' "$FAKE_GH_PR_FILES_JSON_PAGES" | jq -c ".[$i]" | jq -r "\${jqexpr:-.}"
+          i=$((i + 1))
+        done
+        exit 0
+      fi
       # When a test supplies raw endpoint JSON, run the guard's OWN --jq over it, so the jq
       # expression is what is under test rather than a list the stub hands back. Otherwise fall
       # back to the post-jq list, which is what every pre-existing test supplies.
@@ -54,6 +75,16 @@ if [ "$1" = "api" ]; then
       fi
       # Emit the destination CLASS the guard now reads, so its completeness check counts FILES.
       # Tests keep supplying plain paths; the prefix is added here rather than in every row.
+      # The guard's STRUCTURAL ROW COUNT check now also expects one "N <count>" row ahead of
+      # the F rows (the page's own element count) -- without it every test on this branch
+      # would read total_N=0 against a non-zero raw F count and fail-closed at that check
+      # instead of exercising the behaviour under test. FAKE_GH_N_ROW overrides the emitted
+      # value (default: the real count) so a test can make the N row LIE, the one way to fire
+      # the STRUCTURAL ROW COUNT mismatch arm through this stub -- the real jq filter never
+      # produces a lying N row (that's what the B sentinel above prevents), so this is the
+      # only path that can exercise the arm at all.
+      _n="$(printf '%s\\n' "$FAKE_GH_DIFF_FILES" | sed -e '/^$/d' | grep -c . || true)"
+      printf 'N %s\\n' "\${FAKE_GH_N_ROW:-$_n}"
       printf '%s\\n' "$FAKE_GH_DIFF_FILES" | sed -e '/^$/d' -e 's/^/F /'
       exit 0
       ;;
@@ -1283,12 +1314,18 @@ describe("todo-automerge-guard.sh (fail-closed arms survive a payload larger tha
   });
 });
 
-describe("todo-automerge-guard.sh (a row that cannot be classed is refused, not silently dropped)", () => {
-  // The class strip discards whatever it cannot match, and the completeness check cannot notice:
-  // an unclassed row contributes no `F ` line, so seen and declared stay equal. A filename
-  // containing a newline is one way to produce one; the defect is the unchecked strip, so the
-  // refusal keys on the class rather than on that particular cause.
-  it("ERRORs (exit 2) when a row comes back without a recognisable class, instead of dropping the path it carried", () => {
+describe("todo-automerge-guard.sh (a filename carrying a literal newline is refused as B, not raw-printed)", () => {
+  // Was "a row that cannot be classed is refused" and asserted `stdout.toContain("class")`.
+  // The fixture below (a filename with an embedded newline, no "F "-look-alike tail) now hits
+  // the jq-level B sentinel BEFORE the row ever reaches the class-strip: `.filename | test("\n")`
+  // reads the structured JSON string directly and suppresses the F row entirely, so the row
+  // arrives already classed as "B" — the old generic "row came back without a recognisable
+  // class" arm is no longer what fires for this specific cause, only the more precise, dedicated
+  // B-sentinel diagnostic is. Re-fixturing and re-asserting rather than just flipping the old
+  // expectation, per docs/solutions/code-quality/flipped-test-expectation-must-recheck-which-gate-it-now-hits-2026-08-28.md:
+  // a bare `toBe(2)` can't tell "still generically unclassed" from "now specifically refused as a
+  // forged-newline risk", and this test exists to prove the LATTER.
+  it("ERRORs (exit 2) via the B sentinel when a filename contains a literal newline, instead of raw-printing it as a second (unclassed) line", () => {
     const { status, stdout } = runGuardRaw({
       FAKE_GH_PR_FILES_JSON: JSON.stringify([
         { filename: ARCHIVE_PATH },
@@ -1298,10 +1335,10 @@ describe("todo-automerge-guard.sh (a row that cannot be classed is refused, not 
       FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
     });
     expect(status).toBe(2);
-    expect(stdout).toContain("class");
+    expect(stdout).toContain("newline");
   });
 
-  it("control — ordinary rows all class cleanly and are gated normally, so the refusal above is attributable to the unclassed row", () => {
+  it("control — ordinary rows all class cleanly and are gated normally, so the refusal above is attributable to the newline-bearing row", () => {
     const { status } = runGuardRaw({
       FAKE_GH_PR_FILES_JSON: JSON.stringify([
         { filename: ARCHIVE_PATH },
@@ -1311,6 +1348,124 @@ describe("todo-automerge-guard.sh (a row that cannot be classed is refused, not 
       FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
     });
     expect(status).toBe(0);
+  });
+});
+
+describe("todo-automerge-guard.sh (a filename that forges a self-classing 'F ' row cannot inflate the completeness count)", () => {
+  // The exact shape from the P2 review that filed this todo: unlike the plain unclassed-row
+  // fixture above, this filename's embedded-newline TAIL is itself crafted to look like a real
+  // destination row ("F client/b.ts"). Under the pre-fix classing scheme that tail passed the
+  // class check trivially (it matches `^F `) and was counted as a genuine second destination,
+  // so `seen_files` reached the PR's declared total though only one real file — plus the
+  // archive — had actually been returned. Measured against the unfixed script (git history):
+  // declared 3, two real elements (archive + this one) => 3 raw "F " lines => rc 0 "guard: OK".
+  it("ERRORs (exit 2) — the self-classing tail is refused via B, not counted as a second destination", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: "client/a.ts\nF client/b.ts" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "3",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+    // Attributable to the newline arm specifically — several arms in this script exit 2, and a
+    // bare status check cannot tell this one from, say, the unrelated "truncated" arm.
+    expect(stdout).toContain("newline");
+  });
+
+  it("control — the same two paths with NO embedded newline, and a declared count that agrees with the real total, are gated normally", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: "client/a.ts" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "2",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).not.toBe(2);
+  });
+});
+
+describe("todo-automerge-guard.sh (a forged 'F todos/archive/...' tail cannot satisfy the TODO GATE for a file that is not really in the diff)", () => {
+  // The second consequence this todo closes: `files` (the TODO GATE's own input) is built from
+  // the SAME raw_files stream the completeness check reads, so a self-classing forged tail that
+  // spells a real todos/archive/*.md path used to let the TODO GATE "find" an archived todo that
+  // was never genuinely part of the diff — measured pre-fix: no real archive file, declared 1,
+  // one element whose filename forges an "F todos/archive/<path>" tail present in the PR head =>
+  // rc 0 "guard: OK", flipped from the correct rc 1 "no todos/archive/*.md in the diff" a plain
+  // version of the same input returns. This is now closed at the SAME B sentinel, not a second,
+  // new gate — the forged tail never reaches "F "-classed text at all, regardless of which
+  // downstream consumer (completeness count or TODO GATE) would have read it.
+  it("ERRORs (exit 2) — a forged 'F todos/archive/...' tail does not flip the guard to OK, or even to a TODO-GATE HOLD", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: `client/only-real-file.ts\nF ${ARCHIVE_PATH}` },
+      ]),
+      FAKE_GH_CHANGED_FILES: "1",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("newline");
+  });
+
+  it("control — the identical real file with NO forged tail correctly HOLDs at the TODO GATE (no archive in the diff), attributing the row above to the forgery alone", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: "client/only-real-file.ts" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "1",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(1);
+    expect(stdout).toContain("no todos/archive");
+  });
+});
+
+describe("todo-automerge-guard.sh (STRUCTURAL ROW COUNT sums every page's 'N' row, not just the first)", () => {
+  // `--paginate` re-runs the guard's --jq filter once PER PAGE (gh help api: "Each page is a
+  // separate JSON array or object"), so a >1-page response emits more than one "N <count>" row.
+  // Reading only the first would fail-closed on every ordinary PR whose file count crosses a
+  // page boundary — this pins the sum, using FAKE_GH_PR_FILES_JSON_PAGES to make the stub re-run
+  // the guard's real jq filter once per page, exactly mirroring gh's own semantics.
+  it("passes a two-page response (1 file + 2 files) whose declared total (3) matches the SUM of both pages' N rows", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON_PAGES: JSON.stringify([
+        [{ filename: ARCHIVE_PATH }],
+        [{ filename: "client/a.ts" }, { filename: "client/b.ts" }],
+      ]),
+      FAKE_GH_CHANGED_FILES: "3",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).not.toBe(2);
+  });
+});
+
+describe("todo-automerge-guard.sh (STRUCTURAL ROW COUNT mismatch arm actually fires)", () => {
+  // The real jq filter can never emit an "N" row that disagrees with the raw "F" row count —
+  // that's what the B sentinel guarantees (an arm that cannot be reached through production
+  // code is one this suite can only exercise by lying in the stub). FAKE_GH_N_ROW makes the
+  // fake `gh`'s emitted N row diverge from the true file count, which is the one way to prove
+  // the `-ne` comparison actually fires rather than being dead code — "an arm that cannot fail
+  // pins nothing."
+  it("ERRORs (exit 2) when the emitted N row disagrees with the raw 'F' row count", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, "client/a.ts"].join("\n"),
+      FAKE_GH_N_ROW: "5",
+      FAKE_GH_CHANGED_FILES: "2",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("does not match the count row");
+  });
+
+  it("control — the same files with NO N-row override are gated normally, so the ERROR above is attributable to the lying N row alone", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_DIFF_FILES: [ARCHIVE_PATH, "client/a.ts"].join("\n"),
+      FAKE_GH_CHANGED_FILES: "2",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).not.toBe(2);
   });
 });
 

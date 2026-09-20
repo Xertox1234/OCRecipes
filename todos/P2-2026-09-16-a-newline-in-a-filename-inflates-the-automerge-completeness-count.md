@@ -1,6 +1,6 @@
 ---
 title: "A newline inside a filename forges an extra destination row in todo-automerge-guard — it inflates the completeness count AND satisfies the TODO GATE with an archive file that is not in the diff"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-16
 updated: 2026-09-16
