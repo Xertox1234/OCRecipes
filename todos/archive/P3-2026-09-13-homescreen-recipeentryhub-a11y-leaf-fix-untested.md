@@ -1,9 +1,9 @@
 ---
 title: "HomeScreen.tsx and RecipeEntryHubScreen.tsx import sheets have no regression test for accessible={false}"
-status: backlog
+status: done
 priority: low
 created: 2026-09-13
-updated: 2026-09-13
+updated: 2026-09-20
 assignee:
 labels: [deferred, accessibility, testing, mobile]
 github_issue:
@@ -44,13 +44,13 @@ using the shared `test/mocks/gorhom-bottom-sheet.ts` mock (already aliased in
 
 ## Acceptance Criteria
 
-- [ ] `client/screens/HomeScreen.tsx`'s import-recipe sheet (`:540`) has a
+- [x] `client/screens/HomeScreen.tsx`'s import-recipe sheet (`:540`) has a
       test asserting `accessible={false}` is passed to the `BottomSheetModal`.
-- [ ] `client/screens/meal-plan/RecipeEntryHubScreen.tsx`'s import-recipe
+- [x] `client/screens/meal-plan/RecipeEntryHubScreen.tsx`'s import-recipe
       sheet (`:277`) has the same assertion.
-- [ ] Test name/comment states only what jsdom can prove (the prop was
+- [x] Test name/comment states only what jsdom can prove (the prop was
       passed) — do not claim it proves the native VoiceOver/Maestro behavior.
-- [ ] New/extended tests pass under `npx vitest run`.
+- [x] New/extended tests pass under `npx vitest run`.
 
 ## Implementation Notes
 
@@ -86,3 +86,42 @@ using the shared `test/mocks/gorhom-bottom-sheet.ts` mock (already aliased in
 
 - Initial creation from code-reviewer/mobile-reviewer findings on the
   BottomSheetModal a11y-leaf fix PR.
+
+### 2026-09-20
+
+- Added `client/screens/__tests__/HomeScreen.test.tsx` and
+  `client/screens/meal-plan/__tests__/RecipeEntryHubScreen.test.tsx`, each
+  rendering the real screen and asserting
+  `screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible") === "false"`
+  via the shared `test/mocks/gorhom-bottom-sheet.ts` mock, mirroring
+  `RecipeBrowserScreen.params.test.tsx`/`BeveragePickerSheet.test.tsx`. Line
+  numbers re-confirmed unchanged (`:540`/`:277`).
+- Mutation-tested both assertions by hand before review: temporarily reverted
+  each screen's `accessible={false}` to omitted and to `null`, confirmed both
+  mutations go red (`"undefined"`/`"null"` vs. the expected `"false"`), then
+  restored the originals byte-identical (`git diff` empty against both
+  screens).
+- `HomeScreen.test.tsx` needed one additional local
+  `vi.mock("react-native-reanimated", ...)` override, not listed in the Scope
+  Contract's mechanism list: the shared `test/mocks/react-native-reanimated.ts`
+  mock's `Animated` namespace only exports `View`/`Text`/`createAnimatedComponent`,
+  but `HomeScreen.tsx` (unlike any previously-tested screen) renders
+  `Animated.ScrollView` directly, which was `undefined` and crashed the
+  render. The override is scoped to the new test file only, reuses the
+  mock's existing `Animated.View` div-renderer as `ScrollView`, and does not
+  touch the shared mock file or introduce a new assertion mechanism. Flagged
+  explicitly for both reviewers as a judgment call; both agreed it is
+  in-scope, necessary collaborator plumbing (same class as the ~20 other
+  `vi.mock` calls already in the file), not a Scope Contract violation.
+- Reviewed by `code-reviewer` + `mobile-reviewer` (both verified by running
+  the new tests and by independently re-deriving the mutation-test claim from
+  the shared mock's source, rather than taking it on faith): no CRITICAL
+  findings. One WARNING (mobile-reviewer) — `HomeScreen.test.tsx`'s header
+  comment incorrectly cited `MealPlanHomeScreen.test.tsx` as sharing the
+  `data-accessible` assertion shape, when that file actually uses its own
+  local `@gorhom/bottom-sheet` override for a different (multi-sheet wiring)
+  test — fixed inline (kept the citation only for the unrelated
+  mocking-footprint comparison it was also attached to).
+- Full suite green: `npm run test:run` (536 files / 8527 tests), `npm run
+check:types`, `npm run lint` (3 pre-existing warnings, unrelated to this
+  diff).
