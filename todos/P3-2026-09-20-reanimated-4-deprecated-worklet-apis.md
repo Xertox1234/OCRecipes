@@ -95,7 +95,7 @@ Replacement targets, verbatim from
   are the smallest; `useCameraFocusAndZoom.ts` (7, camera) is the largest and riskiest.
 - Camera files cannot be verified in Expo Go — camera features need the dev-client build
   (`npx expo run:ios`). See the camera/upload gotchas before touching the four camera files.
-- Consider splitting into two PRs (`runOnUI` alone, then `runOnJS`); a single 10-file PR gives
+- Consider splitting into two PRs (`runOnUI` alone, then `runOnJS`); a single 11-file PR gives
   reviewers no way to isolate a regression.
 
 ## Scope Contract
