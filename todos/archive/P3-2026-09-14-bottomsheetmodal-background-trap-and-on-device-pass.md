@@ -1,6 +1,6 @@
 ---
 title: "3 of 8 BottomSheetModal sites have no background focus trap (corrected from an original count of 6), and the per-site on-device a11y pass was never run"
-status: in-progress
+status: done
 priority: low
 created: 2026-09-14
 updated: 2026-09-20
