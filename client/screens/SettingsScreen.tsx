@@ -316,186 +316,162 @@ export default function SettingsScreen() {
         paddingBottom: tabBarHeight + Spacing.xl,
       }}
     >
-      {/* Card (client/components/Card.tsx) doesn't forward
-          importantForAccessibility/accessibilityElementsHidden (no
-          rest-spread on its root). It's first-party, not the third-party
-          case docs/solutions/conventions/in-screen-overlay-needs-android-focus-trap-2026-06-22.md
-          carves an exception for — but Card.tsx is outside THIS todo's Scope
-          Contract file list, so adding a ProductChip-style passthrough prop
-          there is tracked separately by
-          todos/P3-2026-09-14-card-lacks-a11y-passthrough-props.md. This
-          single-purpose wrapper (no position/zIndex of its own; never wraps
-          <ConfirmationModal />) is the in-contract stand-in until then. */}
-      <View {...behindContentA11yProps}>
-        <Card elevation={1} style={styles.card}>
-          {visibleItems.map((item, index) => {
-            return (
-              <React.Fragment key={item.id}>
-                {index > 0 && (
-                  <View
-                    style={[styles.divider, { backgroundColor: theme.border }]}
+      <Card elevation={1} style={styles.card} {...behindContentA11yProps}>
+        {visibleItems.map((item, index) => {
+          return (
+            <React.Fragment key={item.id}>
+              {index > 0 && (
+                <View
+                  style={[styles.divider, { backgroundColor: theme.border }]}
+                />
+              )}
+              <Pressable
+                onPress={() => handlePress(item.id)}
+                accessibilityLabel={item.label}
+                accessibilityRole="button"
+                accessibilityHint="Tap to open"
+                style={({ pressed }) => [
+                  styles.settingsItem,
+                  pressed && { opacity: 0.7 },
+                ]}
+              >
+                <View style={styles.settingsItemLeft}>
+                  <Feather
+                    name={item.icon}
+                    size={20}
+                    color={item.danger ? theme.error : theme.textSecondary}
+                    accessible={false}
                   />
-                )}
-                <Pressable
-                  onPress={() => handlePress(item.id)}
-                  accessibilityLabel={item.label}
-                  accessibilityRole="button"
-                  accessibilityHint="Tap to open"
-                  style={({ pressed }) => [
-                    styles.settingsItem,
-                    pressed && { opacity: 0.7 },
-                  ]}
-                >
-                  <View style={styles.settingsItemLeft}>
+                  <ThemedText
+                    style={[
+                      styles.settingsLabel,
+                      item.danger && { color: theme.error },
+                    ]}
+                  >
+                    {item.label}
+                  </ThemedText>
+                </View>
+                <View style={styles.settingsItemRight}>
+                  {!item.danger && (
                     <Feather
-                      name={item.icon}
-                      size={20}
-                      color={item.danger ? theme.error : theme.textSecondary}
+                      name="chevron-right"
+                      size={18}
+                      color={theme.textSecondary}
                       accessible={false}
                     />
-                    <ThemedText
-                      style={[
-                        styles.settingsLabel,
-                        item.danger && { color: theme.error },
-                      ]}
-                    >
-                      {item.label}
-                    </ThemedText>
-                  </View>
-                  <View style={styles.settingsItemRight}>
-                    {!item.danger && (
-                      <Feather
-                        name="chevron-right"
-                        size={18}
-                        color={theme.textSecondary}
-                        accessible={false}
-                      />
-                    )}
-                  </View>
-                </Pressable>
-              </React.Fragment>
+                  )}
+                </View>
+              </Pressable>
+            </React.Fragment>
+          );
+        })}
+      </Card>
+
+      <Card elevation={1} style={styles.card} {...behindContentA11yProps}>
+        <View style={styles.unitSectionHeader}>
+          <Feather
+            name="sliders"
+            size={20}
+            color={theme.textSecondary}
+            accessible={false}
+          />
+          <ThemedText style={styles.settingsLabel}>Units</ThemedText>
+        </View>
+        <View
+          style={styles.unitOptionRow}
+          accessibilityRole="radiogroup"
+          accessibilityLabel="Measurement unit for body weight"
+        >
+          {MEASUREMENT_UNIT_OPTIONS.map((option) => {
+            const selected = measurementUnit === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => handleSelectMeasurementUnit(option.value)}
+                accessibilityRole="radio"
+                accessibilityLabel={option.label}
+                accessibilityState={{ selected }}
+                style={[
+                  styles.unitOption,
+                  {
+                    backgroundColor: selected
+                      ? withOpacity(theme.success, 0.12)
+                      : theme.backgroundSecondary,
+                    borderColor: selected ? theme.success : "transparent",
+                  },
+                ]}
+              >
+                <ThemedText
+                  style={[
+                    styles.unitOptionLabel,
+                    { color: selected ? theme.success : theme.text },
+                  ]}
+                >
+                  {option.label}
+                </ThemedText>
+              </Pressable>
             );
           })}
-        </Card>
-      </View>
+        </View>
+      </Card>
 
-      {/* Card doesn't forward importantForAccessibility/accessibilityElementsHidden
-          — see the wrapper note above the first Card. */}
-      <View {...behindContentA11yProps}>
-        <Card elevation={1} style={styles.card}>
-          <View style={styles.unitSectionHeader}>
+      <Card elevation={1} style={styles.card} {...behindContentA11yProps}>
+        <Pressable
+          onPress={() => openLegalUrl(PRIVACY_POLICY_URL, "our Privacy Policy")}
+          accessibilityLabel="Privacy Policy"
+          accessibilityRole="link"
+          accessibilityHint="Opens our Privacy Policy in your browser"
+          style={({ pressed }) => [
+            styles.settingsItem,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <View style={styles.settingsItemLeft}>
             <Feather
-              name="sliders"
+              name="shield"
               size={20}
               color={theme.textSecondary}
               accessible={false}
             />
-            <ThemedText style={styles.settingsLabel}>Units</ThemedText>
+            <ThemedText style={styles.settingsLabel}>Privacy Policy</ThemedText>
           </View>
-          <View
-            style={styles.unitOptionRow}
-            accessibilityRole="radiogroup"
-            accessibilityLabel="Measurement unit for body weight"
-          >
-            {MEASUREMENT_UNIT_OPTIONS.map((option) => {
-              const selected = measurementUnit === option.value;
-              return (
-                <Pressable
-                  key={option.value}
-                  onPress={() => handleSelectMeasurementUnit(option.value)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={option.label}
-                  accessibilityState={{ selected }}
-                  style={[
-                    styles.unitOption,
-                    {
-                      backgroundColor: selected
-                        ? withOpacity(theme.success, 0.12)
-                        : theme.backgroundSecondary,
-                      borderColor: selected ? theme.success : "transparent",
-                    },
-                  ]}
-                >
-                  <ThemedText
-                    style={[
-                      styles.unitOptionLabel,
-                      { color: selected ? theme.success : theme.text },
-                    ]}
-                  >
-                    {option.label}
-                  </ThemedText>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Card>
-      </View>
-
-      {/* Card doesn't forward importantForAccessibility/accessibilityElementsHidden
-          — see the wrapper note above the first Card. */}
-      <View {...behindContentA11yProps}>
-        <Card elevation={1} style={styles.card}>
-          <Pressable
-            onPress={() =>
-              openLegalUrl(PRIVACY_POLICY_URL, "our Privacy Policy")
-            }
-            accessibilityLabel="Privacy Policy"
-            accessibilityRole="link"
-            accessibilityHint="Opens our Privacy Policy in your browser"
-            style={({ pressed }) => [
-              styles.settingsItem,
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <View style={styles.settingsItemLeft}>
-              <Feather
-                name="shield"
-                size={20}
-                color={theme.textSecondary}
-                accessible={false}
-              />
-              <ThemedText style={styles.settingsLabel}>
-                Privacy Policy
-              </ThemedText>
-            </View>
+          <Feather
+            name="external-link"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
+        </Pressable>
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
+        <Pressable
+          onPress={() => openLegalUrl(TERMS_URL, "our Terms of Service")}
+          accessibilityLabel="Terms of Service"
+          accessibilityRole="link"
+          accessibilityHint="Opens our Terms of Service in your browser"
+          style={({ pressed }) => [
+            styles.settingsItem,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <View style={styles.settingsItemLeft}>
             <Feather
-              name="external-link"
-              size={18}
+              name="file-text"
+              size={20}
               color={theme.textSecondary}
               accessible={false}
             />
-          </Pressable>
-          <View style={[styles.divider, { backgroundColor: theme.border }]} />
-          <Pressable
-            onPress={() => openLegalUrl(TERMS_URL, "our Terms of Service")}
-            accessibilityLabel="Terms of Service"
-            accessibilityRole="link"
-            accessibilityHint="Opens our Terms of Service in your browser"
-            style={({ pressed }) => [
-              styles.settingsItem,
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <View style={styles.settingsItemLeft}>
-              <Feather
-                name="file-text"
-                size={20}
-                color={theme.textSecondary}
-                accessible={false}
-              />
-              <ThemedText style={styles.settingsLabel}>
-                Terms of Service
-              </ThemedText>
-            </View>
-            <Feather
-              name="external-link"
-              size={18}
-              color={theme.textSecondary}
-              accessible={false}
-            />
-          </Pressable>
-        </Card>
-      </View>
+            <ThemedText style={styles.settingsLabel}>
+              Terms of Service
+            </ThemedText>
+          </View>
+          <Feather
+            name="external-link"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
+        </Pressable>
+      </Card>
 
       {user && (
         <ThemedText
