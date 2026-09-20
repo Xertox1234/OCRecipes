@@ -794,6 +794,21 @@ describe("todo-automerge-guard.sh (xhigh review: research-delegation skip-gate c
     },
   );
 
+  // docs/legacy-patterns/ is new to SENSITIVE_OVERRIDE in THIS diff (Risks section of
+  // todos/archive/P3-2026-09-16-legacy-patterns-still-takes-the-automerge-markdown-
+  // exemption.md: "check both consumers, not just the PATH GATE"). Same reachability gap
+  // as the four rows above: the PATH GATE never reaches SENSITIVE_OVERRIDE for this path
+  // either (STRUCTURAL_SENSITIVE HOLDs and `continue`s first), so this skip-gate is the
+  // only consumer that would notice a regression here.
+  it("skips delegation for docs/legacy-patterns/security.md under a neutral title (new SENSITIVE_OVERRIDE entry, reachable only through this consumer)", () => {
+    expect(
+      skipGateShouldSkip(
+        ["docs/legacy-patterns/security.md"],
+        "Fix pagination bug",
+      ),
+    ).toBe(true);
+  });
+
   it("does NOT skip delegation for an ordinary client/ file under a neutral title (delegation still happens for genuinely non-sensitive work)", () => {
     expect(
       skipGateShouldSkip(
@@ -950,6 +965,26 @@ describe("todo-automerge-guard.sh (non-regression: all docs/rules/*.md still HOL
 
   it.each(rulesFiles)(
     "HOLDs %s (--paths-only, unchanged by the reorder)",
+    (file) => {
+      const { status } = runGuardPathsOnly([file]);
+      expect(status).toBe(1);
+    },
+  );
+});
+
+describe("todo-automerge-guard.sh (docs/legacy-patterns/ now HOLDs via STRUCTURAL_SENSITIVE + SENSITIVE_OVERRIDE, generated not hand-listed)", () => {
+  // The frozen pattern-documentation archive the newly-protected reviewer checklists cite
+  // as their reference body (todos/archive/P3-2026-09-16-legacy-patterns-still-takes-the-
+  // automerge-markdown-exemption.md) — previously took the markdown exemption like any
+  // ordinary doc, unlike its sibling docs/rules/.
+  const legacyPatternsFiles = gitLsFiles("docs/legacy-patterns");
+
+  it(`generated all ${legacyPatternsFiles.length} docs/legacy-patterns/*.md files via git ls-files`, () => {
+    expect(legacyPatternsFiles.length).toBeGreaterThan(0);
+  });
+
+  it.each(legacyPatternsFiles)(
+    "HOLDs %s (--paths-only) — the reference body the reviewer checklists cite",
     (file) => {
       const { status } = runGuardPathsOnly([file]);
       expect(status).toBe(1);
