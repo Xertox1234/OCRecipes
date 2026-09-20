@@ -1387,6 +1387,43 @@ describe("todo-automerge-guard.sh (a filename that forges a self-classing 'F ' r
   });
 });
 
+describe("todo-automerge-guard.sh (a filename that forges BOTH a self-classing row AND a compensating count row cannot survive the B sentinel)", () => {
+  // code-reviewer WARNING (P2 review round): every other forged-row test above is ALSO caught by
+  // the STRUCTURAL ROW COUNT check alone (N vs. raw F mismatches on a simple forged F-only tail),
+  // so none of them can tell "the shipped B-sentinel fix" apart from a weaker N-row-only
+  // implementation matching the Acceptance Criteria's literal text. This fixture is the one input
+  // that DOES discriminate: the filename embeds a forged "F " row AND a forged, compensating "N "
+  // row in the SAME payload ("client/a.ts\nF client/b.ts\nN 1"), chosen so that total_N and
+  // raw_F_count would BALANCE (3 == 3) under an N-row-only design with no B branch — measured by
+  // both the implementer and the code-reviewer round against a hand-built AC-literal filter. Only
+  // the B sentinel, which suppresses the ENTIRE item's F/N-shaped output the moment a newline is
+  // found (regardless of what the newline's tail spells), closes this.
+  it("ERRORs (exit 2) via B — a compensating forged 'N' row cannot make a forged 'F' row balance the structural count", () => {
+    const { status, stdout } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: "client/a.ts\nF client/b.ts\nN 1" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "3",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).toBe(2);
+    expect(stdout).toContain("newline");
+  });
+
+  it("control — the same two paths with NO embedded newline, and a declared count that agrees with the real total, are gated normally", () => {
+    const { status } = runGuardRaw({
+      FAKE_GH_PR_FILES_JSON: JSON.stringify([
+        { filename: ARCHIVE_PATH },
+        { filename: "client/a.ts" },
+      ]),
+      FAKE_GH_CHANGED_FILES: "2",
+      FAKE_GH_FRONTMATTER: GENERIC_LOW_TODO,
+    });
+    expect(status).not.toBe(2);
+  });
+});
+
 describe("todo-automerge-guard.sh (a forged 'F todos/archive/...' tail cannot satisfy the TODO GATE for a file that is not really in the diff)", () => {
   // The second consequence this todo closes: `files` (the TODO GATE's own input) is built from
   // the SAME raw_files stream the completeness check reads, so a self-classing forged tail that
