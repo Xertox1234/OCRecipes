@@ -342,9 +342,12 @@ function QuickAddSheetContentInner(
     // No existing single content root here (the sheet previously returned a
     // bare Fragment of 3 siblings) — accessibilityViewIsModal needs one
     // ancestor View spanning all of the sheet's own content for VoiceOver to
-    // trap focus inside it; a plain View (not BottomSheetView, which also
-    // registers itself as the sheet's scrollable driver and would conflict
-    // with BottomSheetFlatList's own registration below) with flex: 1
+    // trap focus inside it. Uses a plain View, not BottomSheetView: gorhom's
+    // BottomSheetView calls useFocusHook(handleSettingScrollable) on mount
+    // (node_modules/@gorhom/bottom-sheet BottomSheetView.tsx ~line 79), which
+    // registers itself as the sheet's SCROLLABLE_TYPE.VIEW scrollable driver —
+    // nesting the BottomSheetFlatList below inside it risks two components
+    // racing to claim that role. A plain View has no such registration. flex: 1
     // preserves the previous column layout. iOS-only prop; BottomSheetModal
     // typechecks it but never forwards it, so it must live on this inner
     // View, not the modal. See docs/solutions/conventions/

@@ -896,20 +896,24 @@ describe("NutritionDetailScreen — loading branch (2b characterisation)", () =>
 });
 
 // NutritionDetailScreen — modal focus containment (2b characterisation):
-// deliberately NOT a test. `accessibilityViewIsModal` reaches the DOM only
-// through mockComponent's `...rest` spread and is not one of the props the
-// mock special-cases, so — like the `accessible` boolean prop documented in
+// deliberately NOT a test. Written when `accessibilityViewIsModal` reached
+// the DOM only through mockComponent's `...rest` spread and was not one of
+// the props the mock special-cases, so — like the `accessible` boolean prop
+// documented in
 // docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md —
-// it never appears as an attribute on the rendered DOM node for either
-// branch. Empirically confirmed: `container.querySelectorAll("[accessibilityviewismodal]")`
+// it never appeared as an attribute on the rendered DOM node for either
+// branch. Empirically confirmed at the time: `container.querySelectorAll("[accessibilityviewismodal]")`
 // returned 0 on BOTH the main branch and the loading branch, so an assertion
-// of `.length === 1` could never fail and would pass vacuously regardless of
-// whether the screen (or an extracted component in Tasks 2-6) keeps the
-// prop. `accessibilityViewIsModal` on both
+// of `.length === 1` could never fail and would pass vacuously.
+// UPDATE (2026-09-20): `mockComponent` now maps `accessibilityViewIsModal`
+// to `aria-modal="true"` (see `test/mocks/react-native.ts`'s `ariaModalProps`
+// and the same jsdom solution doc's Exceptions section) — a direct assertion
+// via `container.querySelector('[aria-modal="true"]')` is possible for a
+// future pass on this file, though `accessibilityViewIsModal` on both
 // `<ThemedView style={styles.container} accessibilityViewIsModal>` tags in
-// NutritionDetailScreen.tsx — one per branch (loading and main) — is
-// therefore a diff-review obligation, not a test — verify on device with
-// VoiceOver per docs/rules/accessibility.md instead.
+// NutritionDetailScreen.tsx — one per branch (loading and main) — remains
+// untested here today; verify on device with VoiceOver per
+// docs/rules/accessibility.md in the meantime.
 
 describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
   function renderHero(nutrition: Record<string, unknown>) {
@@ -1810,13 +1814,13 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
    * Constraint 8: the bar must render INSIDE the `accessibilityViewIsModal`
    * root, or it falls outside the modal's iOS accessibility scope.
    *
-   * Asserted structurally, because `accessibilityViewIsModal` never reaches
-   * the DOM in this harness (React declines the unrecognised prop) — see the
-   * standing note above the product-hero suite. What IS assertable is the
-   * shape the constraint requires: the modal root has exactly two children,
-   * the ScrollView and then the bar, so the bar is an absolutely-positioned
-   * sibling AFTER the scroller and inside the same root. The prop itself
-   * stays a diff-review obligation.
+   * Asserted structurally rather than via the prop directly (this predates
+   * `mockComponent`'s 2026-09-20 `aria-modal` mapping — see the standing note
+   * above the product-hero suite for the update). What IS assertable here:
+   * the modal root has exactly two children, the ScrollView and then the bar,
+   * so the bar is an absolutely-positioned sibling AFTER the scroller and
+   * inside the same root. A future pass could additionally assert both via
+   * `[aria-modal="true"]`.
    */
   it("mounts the sticky bar inside the modal root, after the ScrollView", () => {
     const { container, getByTestId } = renderScan();

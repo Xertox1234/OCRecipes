@@ -87,9 +87,9 @@ describe("AddItemMenuSheet", () => {
   });
 
   it("passes accessibilityViewIsModal on the sheet's content root (traps VoiceOver focus behind the sheet; jsdom cannot verify the native trap itself, only that the prop is passed)", () => {
-    const { container } = renderComponent(
-      <AddItemMenuSheetContent {...defaultProps} />,
-    );
-    expect(container.querySelector('[aria-modal="true"]')).not.toBeNull();
+    renderComponent(<AddItemMenuSheetContent {...defaultProps} />);
+    expect(
+      screen.getByText("Add to Breakfast").closest('[aria-modal="true"]'),
+    ).not.toBeNull();
   });
 });

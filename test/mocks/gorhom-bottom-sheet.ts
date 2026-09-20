@@ -2,7 +2,7 @@
 // Mock @gorhom/bottom-sheet for recipe-builder sheet component tests.
 // Renders simple HTML equivalents so render assertions work in jsdom.
 import React from "react";
-import { createFlatListMock } from "./react-native";
+import { createFlatListMock, ariaModalProps } from "./react-native";
 
 // Re-export mocked RN primitives as BottomSheet equivalents
 export const BottomSheetTextInput = React.forwardRef<
@@ -28,23 +28,40 @@ export const BottomSheetFlatList = createFlatListMock("BottomSheetFlatList");
 export const BottomSheetScrollView = React.forwardRef<
   unknown,
   Record<string, unknown>
->(({ children, testID, ...rest }, ref) =>
+>(({ children, testID, accessibilityViewIsModal, ...rest }, ref) =>
   React.createElement(
     "div",
-    { ref, "data-testid": testID, ...rest },
+    {
+      ref,
+      "data-testid": testID,
+      ...ariaModalProps(accessibilityViewIsModal),
+      ...rest,
+    },
     children as React.ReactNode,
   ),
 );
 (BottomSheetScrollView as unknown as { displayName: string }).displayName =
   "BottomSheetScrollView";
 
+// accessibilityViewIsModal maps to aria-modal (test/mocks/react-native.ts's
+// ariaModalProps, shared with the plain-View mockComponent path) so a
+// BottomSheetView-based focus trap (e.g. RecipeBrowserScreen.tsx's filter
+// sheet) is pinnable in jsdom the same way — without this it falls into
+// `...rest` on a bare div and React silently drops the unrecognized
+// camelCase attribute, making the prop invisible to a `[aria-modal="true"]`
+// query even though the trap works correctly in production.
 export const BottomSheetView = React.forwardRef<
   unknown,
   Record<string, unknown>
->(({ children, testID, ...rest }, ref) =>
+>(({ children, testID, accessibilityViewIsModal, ...rest }, ref) =>
   React.createElement(
     "div",
-    { ref, "data-testid": testID, ...rest },
+    {
+      ref,
+      "data-testid": testID,
+      ...ariaModalProps(accessibilityViewIsModal),
+      ...rest,
+    },
     children as React.ReactNode,
   ),
 );

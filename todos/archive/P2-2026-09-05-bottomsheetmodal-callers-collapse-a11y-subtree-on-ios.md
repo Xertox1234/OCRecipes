@@ -165,4 +165,7 @@ rationale travels with each site.
   project's "check the API IP first" rule. AC #2 is still open; a session with
   a working dev server + booted simulator needs to run it for all 8 sites
   (5 leaf-collapse-only via `accessible={false}`, now all 8 also carry the
-  background trap via `accessibilityViewIsModal`).
+  background trap via `accessibilityViewIsModal` — **on iOS only**;
+  `accessibilityViewIsModal` is an iOS-only prop, so the Android TalkBack
+  background-trap gap remains fully open across all 8 sites and is tracked
+  separately, not closed by this work).

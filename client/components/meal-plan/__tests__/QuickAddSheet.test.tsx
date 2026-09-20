@@ -44,10 +44,16 @@ describe("QuickAddSheet", () => {
     expect(screen.getByText("Add to Breakfast")).toBeDefined();
   });
 
-  it("passes accessibilityViewIsModal on the sheet's content root (traps VoiceOver focus behind the sheet; jsdom cannot verify the native trap itself, only that the prop is passed). This sheet previously returned a bare Fragment with no single content root — a View was introduced to carry the prop", () => {
-    const { container } = renderComponent(
-      <QuickAddSheetContent {...defaultProps} />,
-    );
-    expect(container.querySelector('[aria-modal="true"]')).not.toBeNull();
+  it("wraps the header AND the search box (a later sibling) in the SAME accessibilityViewIsModal ancestor — traps VoiceOver focus behind the sheet; jsdom cannot verify the native trap itself, only that the prop is passed. This sheet previously returned a bare Fragment of 3 siblings with no single content root; accessibilityViewIsModal only suppresses EARLIER siblings on iOS (docs/solutions/logic-errors/accessibilityviewismodal-later-siblings-stay-accessible-2026-08-17.md), so a regression that re-flagged only the header — leaving the search box and results list as unflagged later siblings — must fail this test", () => {
+    renderComponent(<QuickAddSheetContent {...defaultProps} />);
+    const headerModalAncestor = screen
+      .getByText("Add to Breakfast")
+      .closest('[aria-modal="true"]');
+    const searchModalAncestor = screen
+      .getByLabelText("Search recipes")
+      .closest('[aria-modal="true"]');
+    expect(headerModalAncestor).not.toBeNull();
+    expect(searchModalAncestor).not.toBeNull();
+    expect(searchModalAncestor).toBe(headerModalAncestor);
   });
 });

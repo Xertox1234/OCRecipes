@@ -95,7 +95,7 @@ function ariaHiddenProps(
  * direction. `undefined` is omitted by React when not set, matching the
  * `aria-live` pattern above.
  */
-function ariaModalProps(accessibilityViewIsModal: unknown): {
+export function ariaModalProps(accessibilityViewIsModal: unknown): {
   "aria-modal"?: true;
 } {
   return accessibilityViewIsModal === true ? { "aria-modal": true } : {};
