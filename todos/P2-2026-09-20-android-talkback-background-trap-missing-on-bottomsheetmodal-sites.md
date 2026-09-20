@@ -85,8 +85,10 @@ Native `Modal`, not `@gorhom/bottom-sheet`.
       Two standing gotchas: `focusable=false` is **not** the same as excluded from the a11y tree, and
       **adb input does not drive TalkBack** — see the TalkBack verification notes before planning
       this step.
-- [ ] The two documents that previously made the false "tracked separately" claim are updated to
-      cite this todo, so the corrected text does not itself go stale.
+- [ ] The two places PR #1000 updated to say nothing tracks this — the solutions doc's Exceptions
+      bullet and the archived collapse todo's 2026-09-20 note — are updated to cite this todo, so
+      that text does not itself go stale. (Describing the target set by what PR #1000 DID, not by
+      the false claim: only the solutions doc ever made one.)
 
 ## Implementation Notes
 
@@ -128,6 +130,8 @@ Native `Modal`, not `@gorhom/bottom-sheet`.
 
 ### 2026-09-20
 
-- Filed after PR #1000's review established that no open todo covered this gap, despite two
-  documents claiming otherwise. Both citations, the two candidate todos, and the 8-site inventory
-  were verified against the tree before filing.
+- Filed after PR #1000's review established that no open todo covered this gap. The solutions doc
+  had claimed otherwise, citing a todo that is archived and about the hardware back button; the
+  archived collapse todo made no claim either way and PR #1000 added an accurate note to it. That
+  citation, the two candidate todos, and the 8-site inventory were each verified against the tree
+  before filing.
