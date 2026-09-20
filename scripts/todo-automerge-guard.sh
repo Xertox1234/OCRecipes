@@ -240,23 +240,43 @@ SENSITIVE_INTENT_KEYWORDS='auth|jwt|login|password|admin|premium|subscription|ia
 # exit 0 as "no review record required", so a short list is a MERGE-GATE bypass rather than
 # merely a missed auto-merge HOLD. The count check below is the actual completeness detector.
 # Error handling is unchanged: gh failure exits 2, empty output exits 2.
-# Rows are CLASSED on the way out: `F ` a destination (one per changed FILE), `P ` a rename
-# SOURCE, `X` a rename whose source is missing. The class is what lets the completeness check
-# below count FILES rather than LINES -- see the note there for why that distinction is the
-# whole point. `// ""` on previous_filename because jq truthiness treats "" as TRUE, so a
-# present-but-empty value would otherwise emit a blank path and skip the X arm.
+# Rows are CLASSED on the way out: `N ` the page's own element count (see the STRUCTURAL ROW
+# COUNT check below), `F ` a destination (one per changed FILE), `P ` a rename SOURCE, `X` a
+# rename whose source is missing, `B` a filename (or rename source) that itself contains a
+# literal newline. The class is what lets the completeness check below count FILES rather
+# than LINES -- see the note there for why that distinction is the whole point. `// ""` on
+# previous_filename because jq truthiness treats "" as TRUE, so a present-but-empty value
+# would otherwise emit a blank path and skip the X arm.
+#
+# B is not a new gate bolted onto this emission -- it IS "the existing jq emission", reading
+# `.filename`/`.previous_filename` for a literal newline while each is still a structured JSON
+# string, before any text-flattening happens. That ordering is what makes "the completeness
+# count no longer derives from flattened text" literally true: a newline-bearing name never
+# reaches "F "/"P " raw-printed text at all, so it can never forge a SECOND physical line that
+# looks like a class-matching row once jq's raw output is concatenated. Measured: the item
+# `{filename: "client/a.ts\nF client/b.ts"}` used to raw-print as TWO lines -- "F client/a.ts"
+# and "F client/b.ts" -- the second indistinguishable from a real destination row, since it
+# also matches `^F `. Under this filter the SAME item raw-prints as ONE line, "B"; neither the
+# real filename nor the forged one ever reaches output. `if/then/else`, not `select` plus the
+# unconditional branch: `select` alone would still fall through to the F/P/X branch on a
+# NON-match, but on a MATCH the F/P/X branch must be suppressed entirely for that item, not
+# merely joined by a warning row.
 raw_files="$(gh api "repos/{owner}/{repo}/pulls/$PR/files" --paginate \
-  --jq '.[] | ("F " + .filename), (select((.previous_filename // "") != "") | "P " + .previous_filename), (select(.status == "renamed" and ((.previous_filename // "") == "")) | "X")')" || {
+  --jq '("N " + (length|tostring)),
+        (.[] | if ((.filename // "") | test("\n")) or ((.previous_filename // "") | test("\n"))
+               then "B"
+               else ("F " + .filename),
+                    (select((.previous_filename // "") != "") | "P " + .previous_filename),
+                    (select(.status == "renamed" and ((.previous_filename // "") == "")) | "X")
+               end)')" || {
   echo "guard: ERROR PR #$PR — could not read changed files (gh error). Fail-closed."
   exit 2
 }
 # Every row must carry a class BEFORE anything is stripped. `sed -n 's/^[FP] //p'` DROPS what it
 # cannot match, and the completeness check cannot notice: an unclassed row contributes no `F `
-# line, so seen and declared stay equal and the path it carried is gated by nothing. Measured: a
-# filename containing a newline emits a second, unclassed line; the pre-classing revision HELD on
-# it (naming the protected path) while the classed revision returned OK. Refuse instead of
-# stripping. `X$` stays in the allowed set, or the sentinel row itself reads as unclassed and its
-# specific diagnostic below becomes unreachable.
+# line, so seen and declared stay equal and the path it carried is gated by nothing. `X$`, `B$`,
+# and `N [0-9]+$` all stay in the allowed set, or those sentinel rows themselves read as unclassed
+# and their specific diagnostics below become unreachable.
 # `-n` first: a here-string of an EMPTY value still yields one empty line, which is not a valid
 # class, so an empty read would trip this arm and mask the clearer "no file changes" error below.
 # rc captured explicitly rather than tested inline: a broken regex exits 2, and a bare `if` reads
@@ -264,11 +284,25 @@ raw_files="$(gh api "repos/{owner}/{repo}/pulls/$PR/files" --paginate \
 # matched". Mirrors the rc_struct/rc_sens idiom the PATH GATE already uses for the same reason —
 # the fail-closed direction should be structural, not incidental.
 rc_class=0
-grep -qvE '^([FP] |X$)' <<< "$raw_files" || rc_class=$?
+grep -qvE '^([FP] |X$|B$|N [0-9]+$)' <<< "$raw_files" || rc_class=$?
 if [ -n "$raw_files" ] && [ "$rc_class" -ne 1 ]; then
   echo "guard: ERROR PR #$PR — a changed-file row came back without a recognisable class, so the file list cannot be gated reliably. Fail-closed."
   exit 2
 fi
+
+# A changed file's name (or its rename source) that itself contains a literal newline is
+# refused outright, not merely dropped: see the B sentinel's comment above the jq filter for
+# why emitting "F "/"P " for it at all would let it forge a row the completeness check below
+# cannot tell from a real one. `X$` already does this for a missing rename source; `B$` is the
+# same fail-closed idiom applied to the cause this todo closes. Checked BEFORE the `files`
+# extraction/empty-check below: if every changed file in a PR happens to be newline-bearing,
+# stripping B rows first would leave `files` empty and surface the generic, less actionable
+# "no file changes" message instead of naming the real, more specific cause.
+if grep -qx 'B' <<< "$raw_files"; then
+  echo "guard: ERROR PR #$PR — a changed file's name (or its rename source) contains a literal newline, which could forge extra rows once the response is flattened to text. Fail-closed."
+  exit 2
+fi
+
 files="$(sed -n 's/^[FP] //p' <<< "$raw_files")"
 if [ -z "$files" ]; then
   echo "guard: ERROR PR #$PR — no file changes (nothing to evaluate)"
@@ -290,6 +324,48 @@ fi
 # Same family this file already remedies further down with here-strings.
 if grep -qx 'X' <<< "$raw_files"; then
   echo "guard: ERROR PR #$PR — a changed file is reported as renamed with no previous_filename, so its SOURCE path cannot be gated. Fail-closed."
+  exit 2
+fi
+
+# STRUCTURAL ROW COUNT. `--paginate` re-runs the SAME --jq filter once PER PAGE (`gh help api`:
+# "Each page is a separate JSON array or object" -- `--slurp` is what would merge them into one
+# array first, and this script does not pass it), so ONE "N <count>" row is emitted per page,
+# not once for the whole result set. Summing every "N " row -- not just the first -- is what
+# stays correct on an ordinary >30-file PR (this endpoint pages at 30, per the COMPLETENESS
+# comment below); reading only the first N row would fail-closed on every such PR, which is its
+# own bug (see this todo's Risks: over-tightening reaches the merge gate as "review required"
+# and reads as the gate itself being broken).
+#
+# This check is NOT what defeats the newline-forgery attack -- the B sentinel above is, by
+# construction: a refused item never reaches "F "/"N "-shaped text at all, so it cannot also
+# forge a compensating "N " row to keep this sum balanced. By the time this comparison runs, B
+# has already ruled out every newline-bearing name, so this is a second, independent structural
+# cross-check: `length` is jq's own count of the page's ACTUAL array elements, read from the
+# JSON before any flattening, so unlike a `grep -c` over raw text it cannot be inflated by
+# string content.
+#
+# Compared against the RAW (non-deduped) `F ` count, not the distinct count the COMPLETENESS
+# check below uses: every element emits exactly one F row unconditionally (unless refused as
+# B), so two real elements that happen to share a filename still contribute two real rows and
+# two real N-counted elements. Distinct-F is a deliberately LOOSER measure for a different
+# purpose (see the `sort -u` comment below); comparing distinct-F to N here would false-ERROR
+# the legitimate same-name-twice-across-a-page-boundary case.
+total_N="$(grep -oE '^N [0-9]+$' <<< "$raw_files" | awk '{s += $2} END {print s + 0}' || true)"
+raw_F_count="$(grep -c '^F ' <<< "$raw_files" || true)"
+case "$raw_F_count" in
+  ''|*[!0-9]*)
+    echo "guard: ERROR PR #$PR — could not count the flattened 'F' rows. Fail-closed."
+    exit 2
+    ;;
+esac
+case "$total_N" in
+  ''|*[!0-9]*)
+    echo "guard: ERROR PR #$PR — could not read the response's own count row(s). Fail-closed."
+    exit 2
+    ;;
+esac
+if [ "$raw_F_count" -ne "$total_N" ]; then
+  echo "guard: ERROR PR #$PR — the flattened output carries $raw_F_count 'F' rows but the response's own count row(s) total $total_N entries; the row count does not match the count row. Fail-closed."
   exit 2
 fi
 

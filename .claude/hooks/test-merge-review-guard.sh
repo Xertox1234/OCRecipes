@@ -106,6 +106,12 @@ if [ "${1:-}" = "api" ]; then
     # Destination CLASS, matching what the guard's own jq emits, so its completeness check
     # counts FILES rather than lines. The `pr diff` branch above is deliberately NOT classed:
     # merge-review-guard.sh consumes that one directly for its own changed-file digest.
+    # The guard's STRUCTURAL ROW COUNT check also expects one "N <count>" row ahead of the F
+    # rows (the page's own element count) -- without it every row through this stub would read
+    # total_N=0 against a non-zero raw F count and fail-closed there instead of exercising the
+    # merge-gate behaviour these tests are actually about.
+    _n="$(printf '%s\n' "${FAKE_FILES}" | sed -e '/^$/d' | grep -c . || true)"
+    printf 'N %s\n' "$_n"
     printf '%s\n' "${FAKE_FILES}" | sed -e '/^$/d' -e 's/^/F /'; exit 0
   fi
   [ -n "${FAKE_API_FAIL:-}" ] && exit 1
