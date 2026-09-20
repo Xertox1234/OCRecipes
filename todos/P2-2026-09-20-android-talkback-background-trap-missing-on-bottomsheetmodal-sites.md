@@ -20,13 +20,19 @@ already had the iOS trap. The iOS work is done; the Android half has never been 
 
 ## Background — filed because the gap was being cited as already tracked
 
-This todo exists because the gap was **documented as tracked when it was not**. Two places asserted
-the Android side was "tracked separately":
+This todo exists because the gap was **documented as tracked when it was not** — in exactly one
+place, which is worth stating precisely because an earlier draft of this file overstated it:
 
-- `docs/solutions/conventions/a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md`,
-  citing `todos/P3-2026-07-02-bottomsheet-android-back-dismiss.md`
-- `todos/archive/P2-2026-09-05-bottomsheetmodal-callers-collapse-a11y-subtree-on-ios.md`, with no
-  citation at all
+- `docs/solutions/conventions/a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md`
+  claimed the Android side was "tracked separately", citing
+  `todos/P3-2026-07-02-bottomsheet-android-back-dismiss.md`.
+
+`todos/archive/P2-2026-09-05-bottomsheetmodal-callers-collapse-a11y-subtree-on-ios.md` made **no
+such claim**. Checked directly at `fdb7e510^`: its only Android line was "Android is unaffected by
+the leaf-collapse ... so this is an iOS-only correctness fix" — a true statement about a **different**
+mechanism (the `accessible={false}` leaf-collapse fix from PR #959). That file was simply silent on
+the background-trap gap, and PR #1000 **added** the "not tracked by any open todo" note to it as new
+content rather than correcting anything.
 
 The cited todo is wrong twice over, verified 2026-09-20: the path does not resolve (it is archived at
 `todos/archive/P3-2026-07-02-bottomsheet-android-back-dismiss.md`), and its subject is the Android
@@ -41,8 +47,9 @@ Both other Android-TalkBack-focus-trap todos were checked and neither covers thi
 | `archive/P3-2026-06-22-android-overlay-talkback-focus-trap.md`                  | done   | 0 mentions of `BottomSheetModal`; scoped to in-screen overlays                         |
 | `archive/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md` | done   | Scope Contract names `ConfirmationModal.tsx` and its 8 callers — a different component |
 
-Both claims were corrected in PR #1000 to say plainly that nothing tracks this. This todo is what
-makes that statement obsolete in the right direction.
+PR #1000 corrected the solutions doc's false citation and added a matching note to the archived
+collapse todo, both saying plainly that nothing tracks this. This todo is what makes those statements
+obsolete in the right direction.
 
 ## The 8 sites
 

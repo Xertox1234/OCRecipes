@@ -7,6 +7,8 @@ updated: 2026-09-20
 assignee:
 labels: [deferred, harness]
 github_issue:
+human_led: true
+blocked_reason: "The acceptance criteria are a DECISION about a project-wide review convention, not a spec. The todo asks which way to resolve a stated tension -- a Scope Contract written before implementation can only guess where the fix lands, but one written loosely enough never to be wrong constrains nothing -- and the three candidate directions have materially different costs and opposite failure modes. Whatever is chosen is written into docs/AI_WORKFLOW.md's Tier handling section, which every reviewer dispatch and the generated Copilot instructions read, so it changes reviewer behaviour everywhere at once. An unattended run would pick whichever direction is cheapest to implement and record it as settled convention with no human in the loop -- and the specific risk is that it weakens 'scope-contract violation = CRITICAL' into decoration, which is the one outcome this todo exists to prevent. A human decides the direction before anyone writes it."
 ---
 
 # A Scope Contract that excludes the only workable fix
