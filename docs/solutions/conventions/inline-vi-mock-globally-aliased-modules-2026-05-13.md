@@ -6,6 +6,7 @@ module: client
 tags: [testing, vitest, react-native, mocks, alias, audit-triage]
 applies_to: [client/**/__tests__/**/*.test.ts, client/**/__tests__/**/*.test.tsx]
 created: '2026-05-13'
+last_updated: '2026-09-20'
 ---
 
 # When inline `vi.mock` of globally-aliased modules IS correct
@@ -29,6 +30,23 @@ The general guidance ("do NOT inline-mock `react-native` / `react-native-reanima
 2. **Stateful behavior the simple alias can't provide** — Tests of hooks like `useScrollLinkedHeader` or `useCollapsibleHeight` need `useSharedValue` to persist across re-renders (backed by `useRef`). The global alias returns a fresh `{value: init}` each call, which mutates fine but doesn't persist. The inline mock provides the ref-backed version.
 
 3. **Missing exports** — The global mock covers commonly-rendered APIs but not every RN export. `AppState`, `Share`, and certain platform APIs may not be in the global alias. Inline mock fills the gap.
+
+   **Worked example — `test/mocks/react-native-reanimated.ts`'s `Animated` namespace only exports `View`/`Text`/`createAnimatedComponent`.** `Animated.ScrollView`, `measure`, and `scrollTo` are absent. Rendering any screen that uses `<Animated.ScrollView>` directly (not via `createAnimatedComponent`) crashes with a misleading React error — `Element type is invalid: expected a string ... but got: undefined. You likely forgot to export your component from the file it's defined in` — that points at the SCREEN's own exports, not the mock's. `measure`/`scrollTo` being `undefined` only bites if a test actually drives the interaction path that calls them (e.g. a gesture handler invoking `runOnUI`); merely importing them from the mock is harmless. Fix locally in the affected test file, without touching the shared mock:
+
+   ```typescript
+   vi.mock("react-native-reanimated", async () => {
+     const actual =
+       await vi.importActual<typeof import("react-native-reanimated")>(
+         "react-native-reanimated",
+       );
+     return {
+       ...actual,
+       default: { ...actual.default, ScrollView: actual.default.View },
+     };
+   });
+   ```
+
+   Confirmed affected: `client/screens/HomeScreen.tsx` and `client/screens/ProfileScreen.tsx` both render `<Animated.ScrollView>` directly (`grep -rln "Animated\.ScrollView" client --include="*.tsx" | grep -v __tests__`); as of 2026-09-20 `HomeScreen.tsx` has a test file using this override, `ProfileScreen.tsx` still has none and will hit the same crash the first time it does. The durable fix (adding `ScrollView`/`measure`/`scrollTo` to the shared mock) is out of scope for a single-todo test-only PR — this per-file override is the correct interim shape until then.
 
 ## Inline mock is NOT correct when
 
