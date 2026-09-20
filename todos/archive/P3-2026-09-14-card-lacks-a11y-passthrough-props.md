@@ -1,6 +1,6 @@
 ---
 title: "Card.tsx does not forward importantForAccessibility/accessibilityElementsHidden, forcing wrapper Views at call sites"
-status: backlog
+status: done
 priority: low
 created: 2026-09-14
 updated: 2026-09-14
@@ -29,11 +29,11 @@ that auto-files without a gate.
 
 ## Acceptance Criteria
 
-- [ ] `Card` forwards `importantForAccessibility` and `accessibilityElementsHidden` to its
+- [x] `Card` forwards `importantForAccessibility` and `accessibilityElementsHidden` to its
       root, in the style of the existing `ProductChip` passthrough.
-- [ ] The three wrapper `View`s in `client/screens/SettingsScreen.tsx` are removed and the
+- [x] The three wrapper `View`s in `client/screens/SettingsScreen.tsx` are removed and the
       props are passed to `Card` directly.
-- [ ] Behaviour is unchanged for every other `Card` caller (the props are optional).
+- [x] Behaviour is unchanged for every other `Card` caller (the props are optional).
 
 ## Implementation Notes
 
