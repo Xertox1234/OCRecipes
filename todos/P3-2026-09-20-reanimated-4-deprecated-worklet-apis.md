@@ -1,5 +1,5 @@
 ---
-title: "Reanimated 4 deprecates runOnUI and runOnJS in favour of react-native-worklets — 10 non-test files still call them"
+title: "Reanimated 4 deprecates runOnUI and runOnJS in favour of react-native-worklets — 11 non-test files still reference them"
 status: backlog
 priority: low
 created: 2026-09-20
@@ -14,7 +14,7 @@ github_issue:
 ## Summary
 
 `react-native-reanimated@~4.3.1` marks both `runOnUI` and `runOnJS` `@deprecated`, redirecting to
-`runOnUISync` and `scheduleOnRN` from the separate `react-native-worklets` package. Both still work
+`scheduleOnUI` and `scheduleOnRN` from the separate `react-native-worklets` package. Both still work
 and `npm run check:types` reports **0 errors** — the deprecation is a JSDoc tag, not a type error —
 so this is maintenance ahead of removal, not a defect.
 
@@ -50,15 +50,22 @@ bare `*.tsx`:
 | `client/camera/hooks/useCameraFocusAndZoom-utils.ts` | 1           |
 | `client/hooks/useSheetBackHandler.ts`                | 1           |
 
-Ten distinct non-test files, 26 references total. The size is why this is filed rather than fixed
+Eleven distinct non-test files (2 + 9, no overlap), 26 references total (3 + 23). The size is why this is filed rather than fixed
 inline: it is low **severity** (works today) but not low **effort**, and four of the files are camera
 code, which carries its own gotchas.
 
 Replacement targets, verbatim from
 `node_modules/react-native-reanimated/lib/typescript/workletFunctions.d.ts`:
 
-- `runOnUI` → `runOnUISync` from `react-native-worklets` (line 20)
-- `runOnJS` → `scheduleOnRN` from `react-native-worklets` (line 30)
+- `runOnUI` → `scheduleOnUI` from `react-native-worklets` (deprecation block at lines 39-48)
+- `runOnJS` → `scheduleOnRN` from `react-native-worklets` (deprecation block at lines 29-38)
+
+> ⚠️ Read that file by DECLARATION, not by proximity. Each `@deprecated` block sits **above** the
+> symbol it documents, and the blocks are easy to misattribute by one: the block at line 20 saying
+> "use `runOnUISync`" documents `executeOnUIRuntimeSync` (line 28) — **not** `runOnUI`, which is
+> declared at line 48 under its own `scheduleOnUI` block. An earlier revision of this todo made
+> exactly that off-by-one and named the wrong target throughout; review caught it.
+
 - Migration guide: <https://docs.swmansion.com/react-native-reanimated/docs/guides/migration-from-3.x/>
 
 ## Acceptance Criteria
@@ -68,8 +75,10 @@ Replacement targets, verbatim from
 - [ ] `client/components/home/inline-drawer-utils.ts:6`'s comment no longer names `runOnUI` — it
       names whatever the call site actually uses afterwards. A migration that leaves this comment
       behind is a stale citation of a symbol the code no longer contains.
-- [ ] `react-native-worklets` is confirmed as a **direct** dependency in `package.json`, or added.
-      Importing from a merely transitive package passes locally and breaks on a clean install.
+- [ ] Imports come from `react-native-worklets`, which is **already a direct dependency** in
+      `package.json` (verified 2026-09-20) — so no dependency addition is expected. If that stops
+      being true, re-check before importing: a merely transitive package passes locally and breaks
+      on a clean install.
 - [ ] Behaviour verified, not just types: the inline-drawer glide (`HomeScreen`), Toast dismissal,
       SwipeableRow gestures, the scroll-linked header, and camera focus/zoom all still work. A
       rename that type-checks but changes _when_ the worklet runs shows up as a visual glitch, never
@@ -79,7 +88,7 @@ Replacement targets, verbatim from
 
 ## Implementation Notes
 
-- `runOnUISync` and `scheduleOnRN` are **not** guaranteed drop-in renames; the names imply a
+- `scheduleOnUI` and `scheduleOnRN` are **not** guaranteed drop-in renames; the names imply a
   sync/schedule split that `runOnUI`/`runOnJS` did not have. Read the migration guide before
   assuming a mechanical find-and-replace is safe.
 - Sequence the work by risk: `useSheetBackHandler.ts` (1) and `useCameraFocusAndZoom-utils.ts` (1)
@@ -93,8 +102,8 @@ Replacement targets, verbatim from
 
 - **Mechanisms to use:** the documented Reanimated 3.x→4.x migration only. No refactor of the
   surrounding gesture/animation logic.
-- **Files in scope:** exactly the ten listed in the tables above, plus `package.json` only if the
-  direct-dependency check requires it.
+- **Files in scope:** exactly the eleven listed in the tables above. `package.json` is NOT expected
+  to change, since `react-native-worklets` is already a direct dependency.
 - No new mechanisms, files, or abstractions beyond those listed.
 
 ## Dependencies
@@ -111,8 +120,9 @@ excluded — file separately if it is worth doing.
 ## Risks
 
 - Different scheduling semantics would surface as visual glitches, not test failures.
-- Adding a direct `react-native-worklets` dependency touches native module resolution: that is a
-  dev-client rebuild, **not** an OTA-safe JS-only change.
+- `react-native-worklets` is already a direct dependency, so no new native module is introduced.
+  If the migration turns out to need a newer version of it, that IS a dev-client rebuild, **not**
+  an OTA-safe JS-only change.
 - Four camera files are in scope, and camera behaviour cannot be verified in the simulator for
   capture paths.
 
