@@ -1,9 +1,9 @@
 ---
-title: "6 of 8 BottomSheetModal sites have no background focus trap, and the per-site on-device a11y pass was never run"
+title: "3 of 8 BottomSheetModal sites have no background focus trap (corrected from an original count of 6), and the per-site on-device a11y pass was never run"
 status: in-progress
 priority: low
 created: 2026-09-14
-updated: 2026-09-14
+updated: 2026-09-20
 assignee:
 labels: [deferred, accessibility, mobile]
 github_issue:
@@ -18,6 +18,11 @@ in code comments there but previously untracked:
 
 1. After that PR, only **2 of its 8** sheet sites isolate the content _behind_
    the sheet from the screen reader. The other 6 have no background trap.
+   **Correction during implementation (2026-09-20): this count was wrong.**
+   Only 3 of the 6 named "has none" sites actually lacked the trap — see
+   "Scope Contract — correction" below for the corrected inventory. The
+   original premise here undercounted `ImportRecipeSheetContent` (a shared
+   component 3 of the 6 sites render) as already having the fix.
 2. Acceptance criterion #2 of
    `todos/archive/P2-2026-09-05-bottomsheetmodal-callers-collapse-a11y-subtree-on-ios.md`
    — per-site Maestro `inspect_screen` verification on a booted sim — was not
