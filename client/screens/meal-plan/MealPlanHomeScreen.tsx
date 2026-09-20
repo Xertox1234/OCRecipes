@@ -1476,8 +1476,12 @@ export default function MealPlanHomeScreen() {
         // NOTE: `accessibilityViewIsModal` was here but @gorhom/bottom-sheet's
         // BottomSheet has no rest-spread, so it was silently dropped — a no-op /
         // false focus-trap assurance (same dead prop ConfirmationModal.tsx's own
-        // fix removed). These 4 sheets have no focus trap; that gap is tracked
-        // by todos/P3-2026-09-14-bottomsheetmodal-background-trap-and-on-device-pass.md.
+        // fix removed). The real fix lives on each sheet's own inner content
+        // View, not here: AddItemMenuSheetContent, ImportRecipeSheetContent
+        // (shared — already had it), QuickAddSheetContent, and
+        // SimpleEntrySheetContent all set accessibilityViewIsModal on their own
+        // root View. See docs/solutions/conventions/
+        // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
         // The other focus-trap todo
         // (P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md)
         // is scoped to ConfirmationModal.tsx and its useConfirmationModal()

@@ -6,7 +6,7 @@ module: client
 tags: [testing, accessibility, jsdom, render-tests, mocks]
 applies_to: [client/components/**/__tests__/*.test.tsx, client/screens/**/__tests__/*.test.tsx, test/mocks/react-native.ts]
 created: '2026-07-03'
-last_updated: '2026-08-17'
+last_updated: '2026-09-20'
 ---
 
 # jsdom RN render tests cannot assert a11y-tree hiding OR grouping — assert label absence/uniqueness and exact full-label composition instead
@@ -61,10 +61,29 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
   `accessibilityActions`/`onAccessibilityAction`) is UNCHANGED — those props still
   pass through untranslated, and the label-absence/composed-label patterns remain the
   only honest assertions for them.
+- **Partially executed 2026-09-20 (BottomSheetModal background-trap fix):** the
+  mocks now map `accessibilityViewIsModal` to `aria-modal="true"` on the DOM
+  node (`ariaModalProps` in `test/mocks/react-native.ts`, applied both to
+  plain RN primitives via `mockComponent` and, separately, to
+  `BottomSheetView`/`BottomSheetScrollView` in
+  `test/mocks/gorhom-bottom-sheet.ts`). So the sheet-content focus-trap prop
+  **is** now assertable: `element.closest('[aria-modal="true"]')` resolves to
+  the flagged ancestor (or `null` if absent/`false` — `ariaModalProps` omits
+  the attribute entirely unless the value is exactly `true`). Exemplars:
+  `client/components/meal-plan/__tests__/{AddItemMenuSheet,SimpleEntrySheet,QuickAddSheet}.test.tsx`
+  — the `QuickAddSheet` case additionally asserts multiple children
+  `.closest()` to the **same** node (ancestor-identity equality, not just
+  presence), guarding against a regression that flags only one sibling (see
+  `docs/solutions/logic-errors/accessibilityviewismodal-later-siblings-stay-accessible-2026-08-17.md`
+  — the prop only suppresses EARLIER siblings on iOS, so a partial flag is a
+  real, distinct failure mode from simple absence). Everything else this doc
+  says is unchanged.
 
 ## Related Files
 
-- `test/mocks/react-native.ts` — `mockComponent` spreads `accessible`, `accessibilityActions`, and `onAccessibilityAction` through untranslated (the harness gap)
+- `test/mocks/react-native.ts` — `mockComponent` spreads `accessible`, `accessibilityActions`, and `onAccessibilityAction` through untranslated (the harness gap); `ariaModalProps` maps `accessibilityViewIsModal` → `aria-modal` (2026-09-20)
+- `test/mocks/gorhom-bottom-sheet.ts` — `BottomSheetView`/`BottomSheetScrollView` reuse `ariaModalProps` for parity with the shared `mockComponent` path (2026-09-20)
+- `client/components/meal-plan/AddItemMenuSheet.tsx`, `SimpleEntrySheet.tsx`, `QuickAddSheet.tsx` — the `accessibilityViewIsModal` fix under test (2026-09-20); `QuickAddSheet.tsx` is also the exemplar for converting a Fragment-rooted sheet to a single content-root `View` when no existing root exists
 - `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — the exemplar test file for the hiding case and the accessibilityActions avoidance pattern
 - `client/components/home/CarouselRecipeCard.tsx` — the fix under test (label prefix + `accessible={false}` badge)
 - `client/components/__tests__/AllergenBadge.test.tsx` — test for `accessible={true}` grouping fix on AllergenBadge
