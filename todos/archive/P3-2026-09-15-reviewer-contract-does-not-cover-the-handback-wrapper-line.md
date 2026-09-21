@@ -215,11 +215,19 @@ short WRAPPER LINE you write after handing the report back", and adds the clause
 failure actually needed: _not even to say that findings you reported earlier are now resolved._
 That is exactly the shape #999's confirmation round wrote.
 
-It also corrects a mechanism error the old wording carried in all five files. The old text said a
-severity token anywhere in the reply "records verdict `findings`". That is true of the REPORT and
-false of the WRAPPER, where guard (a) fires and the hook exits before any record is written. The
-new text names both outcomes separately, because the remedies differ and "no record" is the one
-that reads to a human as "you never reviewed".
+It also names a distinction the old wording in all five files left out: the two detectors have
+DIFFERENT REACH as well as different outcomes. `$CRITICALS` (`review-stamp-writer.sh:305-307`)
+scans the REPORT and matches only the highest of the three, setting verdict `findings`; arm 2
+(`:161`) scans the WRAPPER, matches ANY of the three, and exits before a record is written at all.
+The old text said only the first half, so a reviewer had no way to learn that a wrapper costs the
+record entirely. "No record" is the outcome that reads to a human as "you never reviewed", which
+is why the two are now named separately.
+
+A first draft of this change over-corrected in the other direction — it said "one of those tokens
+in the REPORT records verdict `findings`", which is false for the lower two, and was a regression
+against the base wording ("the highest of the three"), which had been right. Caught in review and
+measured: a clean report whose notes name the middle token records `clean`, and a report whose only
+finding line carries it writes no record at all via residual 3. Neither produces `findings`.
 
 **Criterion 2, measured with a positive control.** All five new paragraphs extracted (4101 chars)
 and run through `review-stamp-writer.sh`'s literal arm-1, arm-2 and `$CRITICALS` predicates under
