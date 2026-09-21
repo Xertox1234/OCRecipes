@@ -143,7 +143,7 @@ If only one implementer is dispatched (no decomposition), its "assigned Acceptan
 
 ## Phase 6 — Verify + Review
 
-Follow `todo-executor.md` Steps 5 (as fixed in Task 2 — scoped-fast check via `scripts/preflight.sh --fast --uncommitted`, then the full CI-parity suite issued in the same turn as Step 6's reviewer dispatch) and 6 (reviewer selection/dispatch) exactly, unchanged from what those steps now specify. Every git command uses `git -C "$WORKTREE"`; every Bash command that isn't a git command (e.g. `npm run test:run`) runs with its cwd set to `$WORKTREE` (prefix with `(cd "$WORKTREE" && ...)` rather than a bare `cd` in your own session, so your own tracked cwd — which `guard-worktree-isolation.sh` checks — never drifts away from wherever Phase 0 started you).
+Follow `todo-executor.md` Steps 5 (scoped-fast check via `scripts/preflight.sh --fast --uncommitted`, then the **mandatory commit gate before any reviewer is dispatched**, then the full CI-parity suite issued in the same turn as Step 6's reviewer dispatch) and 6 (reviewer selection/dispatch — a **branch** review of `$BASE...HEAD`, since the commit gate has already committed) exactly, unchanged from what those steps now specify. Every git command uses `git -C "$WORKTREE"`; every Bash command that isn't a git command (e.g. `npm run test:run`) runs with its cwd set to `$WORKTREE` (prefix with `(cd "$WORKTREE" && ...)` rather than a bare `cd` in your own session, so your own tracked cwd — which `guard-worktree-isolation.sh` checks — never drifts away from wherever Phase 0 started you).
 
 ## Phase 7 — Address Feedback
 
@@ -159,7 +159,7 @@ Invoke the `/codify` skill directly (via the Skill tool) rather than following `
 
 ## Phase 10 — Push & PR
 
-Follow `todo-executor.md` Step 10 exactly (branch naming, non-fast-forward collision triage, PR body template, Copilot review request, `todo-automerge-guard.sh` eligibility check).
+Follow `todo-executor.md` Step 10 exactly (branch naming, non-fast-forward collision triage, PR body template, Copilot review request, `todo-automerge-guard.sh` eligibility check, and **step 7's confirmation review** binding a review record to the PR head — skipped only when auto-merge was armed).
 
 **One addition, after the guard eligibility check resolves:**
 
@@ -168,7 +168,7 @@ Follow `todo-executor.md` Step 10 exactly (branch naming, non-fast-forward colli
 
 ## Phase 11 — Report
 
-Same structured report as `todo-executor.md` Step 11 (`STATUS`, `COMMIT`, `BRANCH`, `PR_URL`, `MERGE_ELIGIBLE`, `CODIFICATION_COMMIT`, `SOLUTION_FILE`, `FILES_CHANGED`, `SHORT_CIRCUIT`, `REVIEW_ROUNDS`, `ADVISOR`, `DEFERRED_WARNINGS`), same `REASON_CODE` enum. Add two fields:
+Same structured report as `todo-executor.md` Step 11 (`STATUS`, `COMMIT`, `BRANCH`, `PR_URL`, `MERGE_ELIGIBLE`, `REVIEW_STAMP`, `CODIFICATION_COMMIT`, `SOLUTION_FILE`, `FILES_CHANGED`, `SHORT_CIRCUIT`, `REVIEW_ROUNDS`, `ADVISOR`, `DEFERRED_WARNINGS`), same `REASON_CODE` enum. Add two fields:
 
 ```
 SUB_TASKS: <N — 1 if no decomposition, 2-4 if Plan proposed a split>

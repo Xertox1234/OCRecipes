@@ -1,6 +1,6 @@
 ---
 title: "todo-executor commits the archive and the codification AFTER its review step, so no /todo PR is ever stamp-clean at its head and the merge review gate denies every one"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-20
 updated: 2026-09-20
@@ -78,15 +78,15 @@ confirmed. Investigate before fixing; do not assume.
 - [ ] A `/todo` PR produced by a clean executor run arrives at its head with a stamp whose SHA
       equals that head and whose verdict is clean — demonstrated end-to-end on a real run, not
       argued from the step list.
-- [ ] The chosen mechanism is recorded with its trade-off (see Implementation Notes — the three
+- [x] The chosen mechanism is recorded with its trade-off (see Implementation Notes — the three
       candidates cost very different amounts, and picking the cheapest silently is the failure mode
       this criterion exists to prevent).
-- [ ] The second anomaly is either explained or explicitly deferred with a reason: determine why the
+- [x] The second anomaly is either explained or explicitly deferred with a reason: determine why the
       round-2 (clean) reviews left no stamp. If it is a malformed `REVIEWED-SHA` block, the fix
       belongs with the reviewer contract, not here.
-- [ ] A regression check exists that would catch a future reordering of Steps 6–10 reintroducing the
+- [x] A regression check exists that would catch a future reordering of Steps 6–10 reintroducing the
       drift. A fix that only works until someone moves a step pins nothing.
-- [ ] Verified without weakening the gate. `merge-review-guard.sh` is fail-closed by design; a
+- [x] Verified without weakening the gate. `merge-review-guard.sh` is fail-closed by design; a
       change that makes "no record" anything other than a deny is a regression, not a fix.
 
 ## Implementation Notes
@@ -142,3 +142,126 @@ than collide.
 - Filed at the user's request after the gap blocked an agent-driven merge of #999 and #1000. Step
   ordering, the zero-match grep, the per-PR commit drift, and the stamp inventory were all measured
   before filing.
+
+### 2026-09-20 (investigation — the second anomaly is EXPLAINED, and it re-sequences this todo)
+
+**The round-2 no-stamp anomaly is residual 6 / the hand-back wrapper, confirmed per-case —
+not a malformed `REVIEWED-SHA` block.** Measured against the reviewer subagent transcripts at
+`~/.claude/projects/-Users-williamtower-projects-OCRecipes/bb8e9f55-*/subagents/`, which is
+where executor-dispatched reviewer replies actually live (they are NOT in the parent session
+transcript — every record there is `isSidechain: false`).
+
+#999's round-2 review (`agent-ab196e1c051f8e5cd.jsonl`) is **fully contract-compliant**:
+exactly one `SubagentHandback`, `REVIEWED-SHA: 51c0df0ab0ba6ceacf4e87cd652d2716bde6bef2`,
+last non-empty line `No findings.`. It wrote no record because the **delivered wrapper** reads:
+
+> Both prior findings (CRITICAL on the Scope Contract, WARNING on the mutation-discrimination
+> gap) are resolved, verified empirically rather than by trusting the implementer's writeup.
+
+Running `review-stamp-writer.sh`'s literal arm-2 predicate over that wrapper under bash 5.3.15
+FIRES; the control wrapper `Report delivered to caller.` does not. The block is reached because
+the wrapper lacks `^REVIEWED-SHA:`, which is the documented gate on guard (a).
+
+**Population, one session, 36 roster hand-backs each carrying a contract-compliant
+`REVIEWED-SHA`.** Every one was delivered asynchronously — in all 36 the final assistant text
+is a wrapper, never the report — so guard (a) governed every stamp decision in the run:
+
+|                         | own record written | none |
+| ----------------------- | ------------------ | ---- |
+| wrapper trips guard (a) | 4                  | 8    |
+| wrapper does not trip   | 19                 | 5    |
+
+The 4 top-left cells are **not** counter-examples and must not be read as "the guard sometimes
+allows": all four sit at the single SHA `902b6ecc`, which was reviewed repeatedly by the same
+two agent types, and each has a same-SHA same-agent NON-tripping sibling that wrote the record.
+Excluding that SHA the guard is exact — **8 of 8 tripping wrappers produced no record from that
+reviewer.** The 5 bottom-right cells all carry `clean=0` (no `No findings.` last line), i.e.
+residual 3 (WARNING-only findings), a different and already-documented cause.
+
+**Exactly one of the 8 was a genuinely clean review** — #999's round 2. That is the whole cost
+here: one denied merge per clean confirmation round.
+
+**Consequence for sequencing.** Of the 36 hand-backs, **16 carried a clean `No findings.`
+verdict; 15 of those wrote their record and 1 did not** — the one that tripped is #999's round 2.
+Of the two identifiable round-2 confirmation reviews, **one tripped (`51c0df0a`) and one did not
+(`52032f28`, code + mobile — those two carry `clean=0` and fall under residual 3 instead)**. So
+the rate is 1/16 over clean reviews and 1/2 over confirmation-shaped ones; do NOT read either as
+"confirmation reviews usually trip". What IS an argument rather than a rate: a confirmation
+wrapper naturally summarises the findings it just verified resolved, and naming them is exactly
+what arm 2 matches — which is the mechanism behind the single observed case.
+
+This makes `todos/P3-2026-09-15-reviewer-contract-does-not-cover-the-handback-wrapper-line.md`
+a **behavioural dependency, not a blocker**: the two todos share no line of text, and a stamping
+mechanism here succeeds in 15 of 16 measured clean cases without P3. The residual is closed
+cheaply by a runtime property check (below) plus one re-dispatch. Worth deciding explicitly: the
+_dispatch-prompt half_ of P3 — one paragraph telling the reviewer to keep the text it writes
+after the hand-back free of the three severity words — lands in `docs/AI_WORKFLOW.md`, which is
+already in this todo's scope, and it is what makes this todo's first acceptance criterion
+reliable rather than 15/16. P3 also now has the per-case wrapper attribution its own "Observed
+rate" section asked a future reader to capture before concluding.
+
+**Also measured, and not in the original filing:** under `todo-executor.md` as written the
+implementation is _uncommitted_ at Step 6 (Step 5a says so explicitly; Step 6 diffs `HEAD -- .`),
+so a spec-following run reports `REVIEWED-SHA` = the **base** commit, which does not contain the
+reviewed code. A second consequence follows **by construction** from `review_stamp_dir` keying the
+directory on the SHA alone plus the writer's non-atomic `> "$DIR/${AGENT_TYPE}.json"`, and was NOT
+observed in this run: up to 4 concurrent executors branching from one base would share a single
+stamp directory, one file per `agent_type`, and overwrite each other. The outcome is still
+fail-closed — their digests differ, so the gate denies on scope rather than allowing.
+The `wip:` commits in #999/#1000 appear nowhere in `todo-executor.md` or `todo-fast/SKILL.md`
+(`grep -n 'wip:'` returns nothing in either); the executors improvised them. "3 commits past" is
+therefore the improvised-BETTER case, and any fix must also mandate commit-before-dispatch.
+
+### 2026-09-20 (DECISION + implementation)
+
+**Direction 2, minimized** — one `code-reviewer` confirmation pass at the final head, placed after
+push + PR creation, skipped when auto-merge is armed. Chosen by the user after the analysis below;
+recorded here with its cost, which is the point of acceptance criterion 2.
+
+**Why not Direction 1 (reorder).** Not "cheap but incomplete" — _structurally incapable_. The gate
+digests `gh pr diff --name-only`, i.e. **every** file in the PR, and the archive move and the
+solution file are PR files. A record written before Step 9 can therefore never carry a matching
+digest no matter where the review sits. It also inverts a real dependency: Step 9 consumes
+`review_output` to decide what to codify, so codify cannot precede review.
+
+**Why not Direction 3 (carry the stamp forward).** It is an allowlist inside a deny predicate —
+the shape that failed open in #995 and is codified in
+`docs/solutions/logic-errors/an-allowlist-inside-a-deny-predicate-fails-open-2026-09-19.md`. And it
+is unimplementable as written: Step 9 also writes `.claude/agents/*.md` and `docs/rules/*.md`, so
+the carry-forward allowlist would have to whitelist the **reviewer definitions themselves**.
+
+**What Direction 2 actually costs, corrected.** The todo priced it as "a full roster dispatch to
+every todo". Measured against the gate: the record loop never filters `agent_type` and matches on
+**any single** clean record with the right digest (`merge-review-guard.sh` scope test), so the pass
+is **one** reviewer, not three — and it is skipped entirely whenever auto-merge is armed, since
+that path never consults the local gate. Residual cost: one `code-reviewer` dispatch per
+`held`/`unknown`/`review-required` todo. It also buys coverage that did not exist: Step 9's
+codification, written by `kimi-write` and read back by future executors at Step 3a, has until now
+shipped **completely unreviewed**.
+
+**Also fixed, beyond the original filing.** `todo-executor.md` left the implementation uncommitted
+at Step 6, so a spec-following run stamped the base commit. A new **commit gate** between Steps 5a
+and 5b commits before any reviewer is dispatched, Step 6 became a branch review of `$BASE...HEAD`,
+Step 7 commits fixes before re-review, and Step 8 is archive-only.
+
+**Files changed** (two beyond the Scope Contract's four, both disclosed):
+`.claude/agents/todo-executor.md`, `docs/AI_WORKFLOW.md` — in scope.
+`.claude/skills/todo-fast/SKILL.md` — **out of the stated contract**, three stale enumerations that
+mirror the steps changed here (Phase 6's sub-step list, Phase 10's Step-10 item list, Phase 11's
+field list). Left alone they would describe a pipeline that no longer exists.
+This todo file — the Updates entries above.
+`merge-review-guard.sh` and `review-stamp-writer.sh` were **not touched at all**, which is the
+strongest available form of acceptance criterion 5.
+
+**Acceptance criterion 1 is NOT met by this PR and is deliberately left unchecked.** It requires an
+end-to-end demonstration on a real `/todo` run; this change is to the instructions that drive that
+run. The first `/todo` execution after merge is the demonstration, and Step 11's new
+`REVIEW_STAMP:` field is where it reports. Close this todo only once a real run has shown
+`REVIEW_STAMP: clean at <sha>`.
+
+**On the regression check (criterion 4), stated without overclaim.** It is the runtime property
+check in Step 10 step 7c: the executor asserts a clean record exists at the PR's head SHA with a
+digest equal to the gate's own formula, and reports honestly when it does not. It pins the property
+the gate keys on rather than the position of a heading, so it survives rewording and fails on the
+very next run if a commit-producing step is moved after it. It is enforced **by the agent at
+runtime, not by CI** — nothing in the test suite executes this markdown.
