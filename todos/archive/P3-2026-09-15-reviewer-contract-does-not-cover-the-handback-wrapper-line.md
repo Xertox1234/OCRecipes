@@ -246,9 +246,16 @@ is a property of the inputs. The NOMATCH result and its firing control are what 
 criterion; the character count never did.
 
 **The drift risk this file's own Risks section named is measured away, not merely avoided.** The
-four non-`code-reviewer` blocks were byte-identical before the edit (`8db99e8be678`) and are
-byte-identical after it (`dcc87d5ea87f`). `code-reviewer.md` keeps its own longer paragraph, as
-it did before.
+four non-`code-reviewer` blocks were byte-identical to each other before the edit and are
+byte-identical to each other after it, checked by diffing `server-reviewer`'s block pairwise
+against each of the other three (`diff <(sed -n "${n}p" a) <(sed -n "${n}p" b)`, empty output on
+all three pairs). `code-reviewer.md` keeps its own longer paragraph, as it did before.
+
+Two frozen digest values stood here in an earlier revision and were dropped for the same reason
+the character count above was, one review round later and one paragraph away: a digest describes
+the tree at one instant, so the next edit to these files silently invalidates it while the claim
+it supports stays true. One of them had already gone stale exactly that way. A pairwise diff
+states the same property and cannot rot, which is what a closure record needs.
 
 **Criterion 3, with its stated asymmetry honoured.** The guard is untouched, so no row changes
 BEHAVIOUR — the test is whether the contract now forbids those wrappers. Row 1 (a wrapper naming
