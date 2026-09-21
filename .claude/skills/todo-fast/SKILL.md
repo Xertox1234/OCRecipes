@@ -159,7 +159,7 @@ Invoke the `/codify` skill directly (via the Skill tool) rather than following `
 
 ## Phase 10 — Push & PR
 
-Follow `todo-executor.md` Step 10 exactly (branch naming, non-fast-forward collision triage, PR body template, Copilot review request, `todo-automerge-guard.sh` eligibility check, and **step 7's confirmation review** binding a review record to the PR head — skipped only when auto-merge was armed).
+Follow `todo-executor.md` Step 10 exactly (branch naming, non-fast-forward collision triage, PR body template, Copilot review request, `todo-automerge-guard.sh` eligibility check, and **step 7's confirmation review** binding a review record to the PR head — skipped only for the guard-eligible PRs the merge gate never asks a record from).
 
 **One addition, after the guard eligibility check resolves:**
 

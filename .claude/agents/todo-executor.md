@@ -613,10 +613,15 @@ Todo: `todos/<filename>.md` (archived in this commit)
    Step 9 can never carry a matching digest. Without this step every `/todo` PR arrives at an
    agent-driven merge unstamped and is denied — structurally, on a flawless run.
 
-   **Skip this step entirely when step 5 reported `MERGE_ELIGIBLE: yes`** (auto-merge armed).
-   GitHub's native auto-merge does not consult the local gate, so a record buys nothing on that
-   path. Run it for `held`, `unknown` and `review-required` — the PRs a human or an agent merges
-   by hand, which is the whole blast radius of the gate.
+   **Skip this step entirely when step 5 reported `MERGE_ELIGIBLE: yes`** — including the
+   `auto-merge enable FAILED` variant, where the merge is manual. The reason is NOT that GitHub's
+   native auto-merge bypasses the local gate; that rationale is true but too narrow, and it does
+   not cover the FAILED variant. The real reason is that **the gate never asks these PRs for a
+   record at all**: `MERGE_ELIGIBLE: yes` is emitted only on rc 0 from the FULL guard, whose TODO
+   GATE is wrapped in `if [ -z "$PATHS_ONLY" ]` while its PATH GATE runs unconditionally — so a
+   full-mode rc 0 implies a `--paths-only` rc 0, and `merge-review-guard.sh` exits 0 on that at
+   stage 1 or 2, before it ever looks for a record. Run the pass for `held`, `unknown` and
+   `review-required`: those are exactly the PRs the gate does demand a record from.
 
    a. **Take the file list and digest from the gate's own commands.** Never assemble the list by
    hand and never derive it from `git diff --name-only`: the archive move in Step 8 rewrites
@@ -702,7 +707,7 @@ COMMIT: <commit hash>
 BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "null" if PR creation failed>
 MERGE_ELIGIBLE: <yes (auto-merge enabled — GitHub squash-merges automatically once CI is green, nothing further needed) | yes (auto-merge enable FAILED — needs manual gh pr merge --auto or individual review) | held (guard: <the guard's HOLD reason line — path or todo-frontmatter gate; needs individual review>) | review-required (medium/high/critical/security todo) | unknown (guard could not evaluate) | n/a (no PR created)>
-REVIEW_STAMP: <clean at <full head sha> (<agent_type> record, digest <16 hex>) | skipped — auto-merge armed | none at <full head sha> — <what you observed after the second attempt>>
+REVIEW_STAMP: <clean at <full head sha> (<agent_type> record, digest <16 hex>) | skipped — guard-eligible, no record required | none at <full head sha> — <what you observed after the second attempt>>
 CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from Step 9 step 6b>
 SOLUTION_FILE: <worktree-relative "docs/solutions/<...>.md" path whenever a solution file was written, passed the 6b sanity-check, and was committed in step 7, or "none" if no solution was codified>
 

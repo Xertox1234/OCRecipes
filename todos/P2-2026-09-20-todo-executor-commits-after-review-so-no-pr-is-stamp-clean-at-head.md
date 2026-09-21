@@ -244,12 +244,21 @@ at Step 6, so a spec-following run stamped the base commit. A new **commit gate*
 and 5b commits before any reviewer is dispatched, Step 6 became a branch review of `$BASE...HEAD`,
 Step 7 commits fixes before re-review, and Step 8 is archive-only.
 
-**Files changed** (two beyond the Scope Contract's four, both disclosed):
+**Files changed** (three beyond the Scope Contract's four, all disclosed):
 `.claude/agents/todo-executor.md`, `docs/AI_WORKFLOW.md` — in scope.
 `.claude/skills/todo-fast/SKILL.md` — **out of the stated contract**, three stale enumerations that
 mirror the steps changed here (Phase 6's sub-step list, Phase 10's Step-10 item list, Phase 11's
 field list). Left alone they would describe a pipeline that no longer exists.
+`todos/P3-2026-09-15-reviewer-contract-does-not-cover-the-handback-wrapper-line.md` — **out of the
+stated contract**, narrowed to its remaining half after the user's decision to absorb its
+dispatch-prompt paragraph here; its own 2026-09-20 entry records the split.
 This todo file — the Updates entries above.
+
+That list was originally written by hand and came out **one path short** — it omitted the P3 todo
+and said "two beyond" where the diff shows three. Caught in review. The irony is the point and is
+left recorded rather than quietly corrected: this is the PR that adds "never hand-assemble that
+list", and the hand-assembled list in its own todo reproduced the exact defect, one path short, in
+the same direction as PR #994's.
 `merge-review-guard.sh` and `review-stamp-writer.sh` were **not touched at all**, which is the
 strongest available form of acceptance criterion 5.
 
