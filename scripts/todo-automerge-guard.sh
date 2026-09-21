@@ -124,8 +124,10 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # that feature's OWN files are covered by name instead), SessionExpiryBridge, [Aa]dmin, and
 # [Pp]remium (case-classed to cover both server's lowercase-kebab and client's PascalCase
 # naming conventions — a bare `admin`/`Premium` literal missed half of each pair).
-# docs/rules/ and docs/legacy-patterns/ are the two whole-directory entries that are NOT
-# code: docs/rules/ files are this repo's BINDING review rules (security.md carries the
+# Several whole-directory entries are NOT code — docs/rules/, docs/legacy-patterns/ and
+# .claude/agents|skills/. Do not restate a count here: every prior version of this comment
+# stated one and was wrong, because the set grows without the prose being re-derived.
+# docs/rules/ files are this repo's BINDING review rules (security.md carries the
 # IDOR / JWT / rate-limiting / SSRF rules every reviewer and every injected-pattern hook
 # acts on; accessibility.md, database.md and the rest are equally binding, which is why
 # this is scoped to the whole directory and not to security.md alone — a per-file list

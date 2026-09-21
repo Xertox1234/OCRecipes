@@ -59,14 +59,18 @@ only through the guard, never unconditionally. The filters:
    tests, docs/todos); it HOLDs for **anything sensitive or unrecognized** — the whole
    `server/routes/` directory (held wholesale, the request/authz boundary — see below), the
    whole `server/middleware/` directory, `.github/`, `scripts/`, migrations,
-   `shared/schema.ts`, secrets, `docs/rules/` and `docs/legacy-patterns/` (the TWO docs
-   paths that HOLD — `docs/rules/` holds the repo's binding review rules, and Step 5b of
-   `todo-executor.md` appends CRITICAL/HIGH rule bullets to them from inside a `/todo` PR, so
-   without this a batch PR trimming `docs/rules/security.md`'s IDOR/JWT/rate-limiting/SSRF
-   rules would auto-merge overnight unreviewed; `docs/legacy-patterns/` is the frozen
-   pattern-reference archive those rules and the reviewer checklists cite, so editing it
-   unreviewed moves the reference the guards are written against. Every OTHER docs path —
-   `docs/solutions/`, `docs/research/`, runbooks — and all of `todos/` stays eligible), plus named-sensitive files (auth/session/email-verification
+   `shared/schema.ts`, secrets, the docs paths named in `STRUCTURAL_SENSITIVE` —
+   as of 2026-09-20 `docs/rules/`, `docs/legacy-patterns/`, `docs/AI_WORKFLOW.md` and
+   `docs/PATTERNS.md`. Do not restate a count here; re-derive the set from the constant, since
+   every prior version of this sentence understated it. `docs/rules/` holds the repo's binding
+   review rules, and Step 5b of `todo-executor.md` appends CRITICAL/HIGH rule bullets to them
+   from inside a `/todo` PR, so without this a batch PR trimming `docs/rules/security.md`'s
+   IDOR/JWT/rate-limiting/SSRF rules would auto-merge overnight unreviewed;
+   `docs/legacy-patterns/` is the frozen pattern-reference archive those rules and the reviewer
+   checklists cite, so editing it unreviewed moves the reference the guards are written against;
+   `docs/AI_WORKFLOW.md` and `docs/PATTERNS.md` are the review policy and knowledge-base layout
+   the whole pipeline reads. Docs paths outside that set — `docs/solutions/`, `docs/research/`,
+   runbooks — and all of `todos/` stay eligible), plus named-sensitive files (auth/session/email-verification
    (`VerifyEmailScreen`)/admin/premium/login/api-key surfaces, IAP/health) that live inside
    the otherwise-open `client/` and `server/storage/` roots — note the unrelated Verified
    Product API (`server/storage/verification.ts`, `VerificationBadge`, barcode/nutrition-data
