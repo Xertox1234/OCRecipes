@@ -244,13 +244,35 @@ Two passes: a scoped fast check after implementation and after every fix round (
 scripts/preflight.sh --fast --uncommitted
 ```
 
-This scopes lint and tests to files you've actually changed — working tree vs. `HEAD`, not `origin/main`, since your implementation isn't committed yet at this point (commit happens later, in Step 8). Whole-program `tsc` still runs in full; it can't be scoped. Must pass before proceeding to Step 5b.
+This scopes lint and tests to files you've actually changed — working tree vs. `HEAD`, not `origin/main`, since your implementation isn't committed yet at this point — the commit gate below commits it, before any reviewer is dispatched. Whole-program `tsc` still runs in full; it can't be scoped. Must pass before proceeding to the commit gate.
 
 If it fails: read the error output, fix the issue, re-run until it passes.
 
+### Commit gate — runs between Step 5a and Step 5b, before ANY reviewer is dispatched (mandatory)
+
+Commit what you just implemented. Do not dispatch a reviewer against an uncommitted tree:
+
+```bash
+git add <list of changed files>
+git commit -F <message file>     # see Step 8 for the label->type mapping; subject: "<type>: <todo title>"
+```
+
+**Why this is mandatory and not a tidiness preference.** A reviewer reports
+`REVIEWED-SHA: $(git rev-parse HEAD)` and `review-stamp-writer.sh` files its record under that
+SHA. Review an uncommitted tree and that SHA is the **base commit, which does not contain the
+code under review** — the record describes a tree nobody reviewed. It is also not yours alone:
+`review_stamp_dir` keys the directory on the SHA and nothing else, and the writer's
+`> "$DIR/<agent>.json"` is a plain truncating redirect, so up to four concurrent executors
+branched from one base would share a single directory and overwrite each other, one file per
+`agent_type`. Committing first makes the SHA unique to your branch and makes the review record
+describe the tree the reviewer actually read.
+
+Use `git commit -F <file>` with the message written via the Write tool — never `-m` with a
+message containing backticks, which the shell executes.
+
 ### Step 5b — Full suite, overlapped with review
 
-Once Step 5a passes, move to Step 6. In the SAME turn you dispatch Step 6's reviewer agents, ALSO issue these three commands as ordinary synchronous Bash tool calls — not backgrounded:
+Once the commit gate's commit exists, move to Step 6. In the SAME turn you dispatch Step 6's reviewer agents, ALSO issue these three commands as ordinary synchronous Bash tool calls — not backgrounded:
 
 ```bash
 npm run test:run
@@ -273,18 +295,24 @@ Review the working-tree changes using the **orchestrator-dispatched, domain-sele
 Capture the diff **and the worktree coordinates** in your own (correct) cwd — you run inside the todo worktree; a dispatched reviewer subagent does **not** inherit that cwd (see Review Policy → "Working-tree safety"):
 
 ```bash
-DIFF=$(git diff HEAD -- .)
+BASE=$(git merge-base origin/<base branch from your spawn prompt> HEAD)
+DIFF=$(git diff "$BASE"...HEAD -- .)
 WORKTREE=$(git rev-parse --show-toplevel)      # absolute path of THIS worktree
 BRANCH=$(git branch --show-current)            # the todo/<slug> branch
 HEAD_SHORT=$(git rev-parse --short HEAD)
-git diff HEAD --name-only                       # the changed-file list to hand each reviewer
+git diff "$BASE"...HEAD --name-only             # the changed-file list to hand each reviewer
 ```
+
+This is a **branch** review (`$BASE...HEAD`), not a working-tree one, because the commit gate already
+committed the implementation — `git diff HEAD` would now be empty and every reviewer would
+correctly return "No findings." on a diff of nothing. The Review Policy's dispatch prompt already
+carries the branch-review spelling; use it.
 
 If `$DIFF` is empty, skip and set `review_output=""`.
 
 Otherwise:
 
-1. **Inspect the diff** (`git diff HEAD -- .`) — file paths **and** content.
+1. **Inspect the diff** (`git diff "$BASE"...HEAD -- .`) — file paths **and** content.
 2. **Always include `code-reviewer`** (cross-cutting baseline), then **add the relevant domain reviewers** from the Review Policy roster — typically **1–2 more, so ≤3 total for a single todo** (review runs inside an already-parallel `/todo` batch, so keep fan-out small). Match reviewers by domain: path is a hint, content overrides (a JWT/ownership change → add `security-auditor`; a route, Drizzle query, or service-layering change → add `server-reviewer`; a screen, camera, accessibility, or client-perf change → add `mobile-reviewer`; an AI-service or nutrition-calculation change → add `ai-reviewer`; `any`/Zod/testing changes are already the `code-reviewer` baseline's lens). For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
 3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the dispatch prompt **from `docs/AI_WORKFLOW.md` → Review Policy — read it from that file; it is not restated here** (a previous inline copy drifted). Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run). **In this same message, also issue Step 5b's full-suite commands** (`npm run test:run`, `npm run check:types`, `npm run lint`) as parallel Bash tool calls alongside these Agent calls — see Step 5b for why. If the todo carries a **Scope Contract** section, paste it verbatim into every reviewer prompt, appending: "Diff every added mechanism/file against this Scope Contract; anything it excludes is a CRITICAL finding."
 
@@ -304,7 +332,8 @@ Process the code review findings. The project convention (see `CLAUDE.md` and `d
 3. **SUGGESTION** — informational only. Apply only if it lands in scope and is trivial; otherwise ignore.
 4. There is no tier below SUGGESTION — findings not marked CRITICAL, WARNING, or SUGGESTION can be ignored.
 5. After fixing, re-run Step 5a (scoped fast check) to confirm the fix didn't break anything.
-6. If fixes were non-trivial, run Step 6 again (second review round) — overlapped with a second Step 5b (full suite) pass, per Step 5b.
+6. **Commit the fixes before re-reviewing**, for the same reason the commit gate commits the implementation: round 2 must bind its record to a commit that contains the fixes, not to the pre-fix SHA. Subject: `wip: address review round <n> findings`.
+7. If fixes were non-trivial, run Step 6 again (second review round) against the NEW `$BASE...HEAD` — overlapped with a second Step 5b (full suite) pass, per Step 5b.
 
 **Cap at 2 review rounds.** Only unresolved **CRITICAL** issues after 2 rounds count as failure (enter the Failure Path). Remaining WARNINGs at the round-2 boundary go into the `DEFERRED_WARNINGS` report field — never into a todo — and are not a blocker.
 
@@ -330,15 +359,21 @@ After the `mv`, **verify**: re-read `todos/archive/<filename>.md` and confirm
 its frontmatter reads `status: done`. If it still says `in-progress`, the
 Step 4.0 status was never reset — fix the frontmatter now, before staging.
 
-2. **Stage all changes** (implementation files + archived todo):
+2. **Stage the archive move** (the implementation and every review fix are already committed by
+   the commit gate and Step 7; stage the archive move plus anything still uncommitted):
 
 ```bash
-git add <list of changed files> todos/<filename>.md todos/archive/<filename>.md
+git add <any files still uncommitted> todos/<filename>.md todos/archive/<filename>.md
 ```
 
 Both todo paths are required: `todos/<filename>.md` stages the deletion side of
 the rename, `todos/archive/<filename>.md` stages the added file. Git records
 the move only when both are staged.
+
+Note for Step 10 step 7: when an archive move also **rewrites** the todo's body — which this
+step does whenever you append an Updates entry — similarity detection fails and git records a
+**delete plus an add**, i.e. two paths in the PR's changed-file list, not one. Never hand-assemble
+that list; Step 10 step 7 takes it from `gh pr diff --name-only`.
 
 3. **Commit** with a conventional commit message. Map the todo's primary label to a commit type:
 
@@ -570,6 +605,84 @@ Todo: `todos/<filename>.md` (archived in this commit)
 
 6. **If PR creation fails** because a PR already exists for `todo/<todo-slug>`, call `mcp__github__list_pull_requests` (`state: open`) and match the PR whose head branch is `todo/<todo-slug>`. If a PR is found, use its URL as `PR_URL`, request Copilot review (step 4), then run step 5's eligibility check against it. If no open PR is found or the lookup fails for any other reason (network error, auth error, missing tool, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
 
+7. **Bind a review record to the PR head — the confirmation pass.** `merge-review-guard.sh` is
+   fail-closed and keys a review record to the PR's **exact head SHA _and_ a digest over the PR's
+   whole changed-file list**. Step 6's review cannot satisfy it on either count: Step 8's archive
+   commit and Step 9's codification commit move the head past the reviewed SHA, and the archived
+   todo and the solution file are themselves part of the PR's diff, so a record written before
+   Step 9 can never carry a matching digest. Without this step every `/todo` PR arrives at an
+   agent-driven merge unstamped and is denied — structurally, on a flawless run.
+
+   **Skip this step entirely when step 5 reported `MERGE_ELIGIBLE: yes`** — including the
+   `auto-merge enable FAILED` variant, where the merge is manual. The reason is NOT that GitHub's
+   native auto-merge bypasses the local gate; that rationale is true but too narrow, and it does
+   not cover the FAILED variant. The real reason is that **the gate never asks these PRs for a
+   record at all**: `MERGE_ELIGIBLE: yes` is emitted only on rc 0 from the FULL guard, whose TODO
+   GATE is wrapped in `if [ -z "$PATHS_ONLY" ]` while its PATH GATE runs unconditionally — so a
+   full-mode rc 0 implies a `--paths-only` rc 0, and `merge-review-guard.sh` exits 0 on that at
+   stage 1 or 2, before it ever looks for a record. Run the pass for `held`, `unknown` and
+   `review-required`: those are exactly the PRs the gate does demand a record from.
+
+   a. **Take the file list and digest from the gate's own commands.** Never assemble the list by
+   hand and never derive it from `git diff --name-only`: the archive move in Step 8 rewrites
+   the todo body, so git records a delete **plus** an add and any hand-built list is one path
+   short — the record then passes on verdict and fails on scope
+   (`docs/solutions/code-quality/an-archive-move-git-reads-as-delete-plus-add-mis-scopes-the-review-stamp-2026-09-17.md`).
+
+   ```bash
+   PR=<pr-number>
+   HEAD_SHA=$(gh pr view "$PR" --json headRefOid -q .headRefOid)
+   CHANGED=$(gh pr diff "$PR" --name-only | sed '/^$/d' | sort -u)
+   WANT_DIGEST=$(printf '%s\n' "$CHANGED" | shasum | cut -c1-16)
+   ```
+
+   b. **Dispatch ONE `code-reviewer`** using the dispatch prompt from `docs/AI_WORKFLOW.md` →
+   Review Policy, with `$CHANGED` verbatim as the changed-file list and
+   `git -C "$WORKTREE" diff <base>...HEAD -- <those files>` as the diff command. One reviewer
+   is enough: the gate sets its match on **any single** record with a clean verdict and a
+   matching digest and never filters `agent_type`. Do not dispatch the roster here — Step 6
+   already carried the domain lenses.
+
+   This is a real review, not a formality. It is the **only** review Step 9's codification ever
+   receives, and `docs/solutions/` is the corpus future executors short-circuit their research
+   onto at Step 3a, so an unreviewed solution file poisons it for every later run.
+
+   c. **Verify the record landed — measure the property, never assume it.**
+
+   ```bash
+   DIR=$( cd "$WORKTREE" && . .claude/hooks/lib/review-stamp-path.sh && review_stamp_dir "$HEAD_SHA" )
+   MATCH=$(find "$DIR" -maxdepth 1 -name '*.json' 2>/dev/null -exec jq -r \
+     --arg d "$WANT_DIGEST" --arg s "$HEAD_SHA" \
+     'select(.head_sha==$s and .verdict=="clean" and ((.unresolved//[])|length)==0 and .reviewed_files_digest==$d) | .agent_type' \
+     {} + 2>/dev/null | head -1)
+   ```
+
+   **This check is the regression check for Steps 6–10's ordering.** It asserts the property the
+   merge gate actually keys on rather than the position of a heading, so it survives any rewording
+   of these steps — and if anyone later moves a commit-producing step after this one, `$HEAD_SHA`
+   stops matching the reviewed SHA and the very next run fails here. It is enforced at runtime by
+   this agent, not by CI: nothing in the test suite executes this markdown, and claiming otherwise
+   would be the false-assurance this todo exists to remove.
+
+   d. **On `$MATCH` empty, re-dispatch once, then stop.** Report the outcome honestly either way —
+   never fabricate a record, and never work around a miss by re-running the check against an
+   older SHA.
+
+   The most likely cause of a miss after a genuinely clean review is **not** the review: if the
+   reviewer hands its report back through `SubagentHandback`, `review-stamp-writer.sh` reads the
+   short wrapper line it writes afterwards, and a wrapper naming any of the three bracketed
+   severity words from the findings format is read as an objection and writes **no record**
+   (that hook's residual 6). Measured 2026-09-20 across 36 hand-backs in one session: 16 carried
+   a clean verdict, 15 wrote a record, and the one that did not was a confirmation round whose
+   wrapper listed the findings it had just verified as resolved. The dispatch prompt now tells
+   reviewers to keep that wrapper clear of those words; if a miss still happens, re-dispatch and
+   say so explicitly in the prompt.
+
+   After the second attempt, report `REVIEW_STAMP: none at <sha> — <what you observed>` and
+   continue to Step 11 with `STATUS: success`. The implementation is done and the PR is open;
+   only the merge record is missing, and the gate denying that merge is the correct, fail-closed
+   outcome for a human to resolve — not a reason to call the todo failed.
+
 ---
 
 ## Step 11 — Report
@@ -594,6 +707,7 @@ COMMIT: <commit hash>
 BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "null" if PR creation failed>
 MERGE_ELIGIBLE: <yes (auto-merge enabled — GitHub squash-merges automatically once CI is green, nothing further needed) | yes (auto-merge enable FAILED — needs manual gh pr merge --auto or individual review) | held (guard: <the guard's HOLD reason line — path or todo-frontmatter gate; needs individual review>) | review-required (medium/high/critical/security todo) | unknown (guard could not evaluate) | n/a (no PR created)>
+REVIEW_STAMP: <clean at <full head sha> (<agent_type> record, digest <16 hex>) | skipped — guard-eligible, no record required | none at <full head sha> — <what you observed after the second attempt>>
 CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from Step 9 step 6b>
 SOLUTION_FILE: <worktree-relative "docs/solutions/<...>.md" path whenever a solution file was written, passed the 6b sanity-check, and was committed in step 7, or "none" if no solution was codified>
 
@@ -648,17 +762,57 @@ The three `ACTION NEEDED` codes keep their canonical Step 10 texts as the recomm
 
 If implementation fails at any point after Step 4 (verify fails, review has unresolvable issues, acceptance criteria cannot be met):
 
-> **Note:** This agent always runs in an isolated git worktree — the working tree starts clean. Revert operations (`git checkout -- <files>`) only affect this worktree and cannot touch the base branch.
+> **Note:** This agent always runs in an isolated git worktree — the working tree starts clean. Revert operations (`git reset --mixed`, `git checkout -- <files>`) only affect this worktree and its own branch, and cannot touch the base branch.
+
+**Reverting takes TWO commands now, and `git checkout --` alone is a no-op.** The commit gate
+commits your implementation before Step 6, and Step 7 item 6 commits every fix round, so by the
+time any realistic Failure Path entry is reached your work is **already committed** — the tree is
+clean and `git checkout -- <files>` restores each file to `HEAD`, which is the broken content you
+are trying to discard. Measured: after a commit-gate commit, `git checkout -- impl.ts` leaves
+`impl.ts` at the committed (wrong) content with zero uncommitted changes. Unwind the commits
+first:
+
+```bash
+BASE=$(git merge-base origin/<base branch from your spawn prompt> HEAD)
+git reset --mixed "$BASE"            # NEVER --hard; the project forbids it (CLAUDE.md)
+```
+
+`--mixed` moves the branch back to its base and leaves your edits in the working tree — but in
+**two different states, and `git checkout --` can only discard one of them.** A file that existed
+at `$BASE` returns as an unstaged modification (` M`) and `git checkout -- <file>` restores it. A
+file your failed attempt **created** returns as UNTRACKED (`??`), and `git checkout -- <file>`
+fails on it with `error: pathspec '<file>' did not match any file(s) known to git`, leaving the bad
+content sitting on disk. Measured under bash 5.3.15: after the reset, a pre-existing `existing.ts`
+reverted cleanly while a newly-created `created.ts` survived untouched. Step 8 then stages
+"anything still uncommitted", so that stray file rides into the PR — the exact class this revert
+exists to close. A `/todo` run creates new files routinely (a test file, a solution doc), so this
+is the common case, not the corner.
+
+Revert by existence at `$BASE`, not with one blanket command:
+
+```bash
+for f in <files you modified — the Step 4 tracked list>; do
+  if git cat-file -e "$BASE:$f" 2>/dev/null; then
+    git checkout -- "$f"     # existed at base — restore it
+  else
+    rm -f "$f"               # your attempt created it — remove that ONE named path
+  fi
+done
+```
+
+`rm -f "$f"` is a single named path — never `rm -rf`, never a glob; the project forbids the former
+outright. If nothing was committed yet, the reset is a harmless no-op and this loop still does the
+right thing. Do not skip either half, and do not substitute `--hard`.
 
 ### First failure
 
-1. **Revert only files you modified**: `git checkout -- <files you modified>` (use the list tracked in Step 4, which must include `todos/<filename>.md` since Step 4.0 set it to `in-progress`). Do not use `git checkout -- .` as it may revert unrelated changes.
+1. **Unwind, then revert only files you modified**: run the `git reset --mixed "$BASE"` above, then the existence-split loop above over the list tracked in Step 4 (which must include `todos/<filename>.md`, since Step 4.0 set it to `in-progress`). Do not use `git checkout -- .` as it may revert unrelated changes. Without the reset, attempt 2 starts on top of attempt 1: any file attempt 2 does not revisit silently keeps attempt 1's committed content and rides into the PR.
 2. **Analyze** what went wrong. Re-read the error output, the todo, and the relevant source files.
 3. **Retry** with a different approach — go back to Step 4 with the new understanding. This is attempt 2.
 
 ### Second failure
 
-1. **Revert only files you modified**: `git checkout -- <files you modified>` (use the list tracked in Step 4, which must include `todos/<filename>.md`). Do not use `git checkout -- .` as it may revert unrelated changes.
+1. **Unwind, then revert only files you modified**: run the same `git reset --mixed "$BASE"` and the same existence-split loop as above, over the list tracked in Step 4 (which must include `todos/<filename>.md`). Do not use `git checkout -- .` as it may revert unrelated changes. The reset is what makes step 3's "commit only the status update" true — without it the branch still carries both failed attempts' commits.
 2. **Update the todo** status to `blocked` and add a dated Updates entry explaining the failure:
 
 ```yaml

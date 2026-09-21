@@ -65,8 +65,9 @@ definition has no way to escape the loop from the message alone.
 
 ## Acceptance Criteria
 
-- [ ] The five agent definitions and `docs/AI_WORKFLOW.md`'s dispatch prompt state that the
-      severity-word rule covers the ENTIRE reply, including any hand-back wrapper line.
+- [x] ~~`docs/AI_WORKFLOW.md`'s dispatch prompt~~ — **absorbed into P2-2026-09-20** (see below).
+- [ ] The five agent definitions state that the severity-word rule covers the ENTIRE reply,
+      including any hand-back wrapper line.
 - [ ] The wording does not itself trip the detector — `code-reviewer.md` already solves this
       by deliberately not spelling the three words in that paragraph ("quoting it back must
       not be able to trip the gate"). Match that treatment.
@@ -167,3 +168,38 @@ addition to the dispatch prompt, which is what this todo asks for.
   "Measured" header — the standard row 2 had just been corrected to meet, applied
   inconsistently one row above. The class claim measured true; its case-sensitivity boundary
   is now recorded alongside.
+
+### 2026-09-20 (scope narrowed — the dispatch-prompt half is done, and the cause is now confirmed per-case)
+
+**The `docs/AI_WORKFLOW.md` half of criterion 1 is implemented in
+`todos/P2-2026-09-20-todo-executor-commits-after-review-so-no-pr-is-stamp-clean-at-head.md`'s PR**,
+by the user's explicit decision: that todo adds a confirmation review whose reliability depends on
+this wording, and `docs/AI_WORKFLOW.md` was already in its scope. The dispatch prompt now scopes the
+rule to the ENTIRE reply and carries a paragraph naming the hand-back wrapper specifically. It was
+tested against the writer's own arm-1, arm-2 and `$CRITICALS` predicates under bash 5.3.15 — all
+three NOMATCH, with a positive control that FIRES — so criterion 2 holds for that half.
+
+**What remains here:** the five agent definitions (`code-reviewer`, `server-reviewer`,
+`mobile-reviewer`, `ai-reviewer`, `security-auditor`), and the optional denial-text item 4. Nothing
+in P2's PR touches any of those five files, so there is no collision.
+
+**The Observed-rate section's open question is now answered.** That section asked a future reader to
+capture the delivered wrapper alongside the stamp outcome before attributing the rate to this
+mechanism. Done, 2026-09-20, from the reviewer subagent transcripts under
+`~/.claude/projects/-Users-williamtower-projects-OCRecipes/bb8e9f55-*/subagents/`:
+
+- 36 roster hand-backs in one session, **every one delivered asynchronously** — in all 36 the final
+  assistant text is a wrapper, never the report — so guard (a) governed every stamp decision.
+- 12 wrappers trip the guard. Excluding the single SHA `902b6ecc` (reviewed repeatedly by the same
+  two agent types, where a non-tripping sibling run wrote the record), **8 of 8 tripping wrappers
+  produced no record from that reviewer**; the 5 non-tripping misses all carry `clean=0` and are
+  residual 3 instead.
+- Of 16 clean (`No findings.`) hand-backs, **15 wrote a record and 1 did not**: PR #999's round 2 at
+  `51c0df0a`, a fully contract-compliant confirmation review whose wrapper read "Both prior findings
+  (… on the Scope Contract, … on the mutation-discrimination gap) are resolved". Running the
+  writer's literal arm-2 predicate over that exact wrapper FIRES; the control
+  `Report delivered to caller.` does not.
+
+So the mechanism is confirmed per-case, and its rate over clean reviews is **1 in 16**, not the
+3-in-4 the earlier population count might suggest — that count measured no-stamp outcomes for any
+reason, exactly as this file already warned.
