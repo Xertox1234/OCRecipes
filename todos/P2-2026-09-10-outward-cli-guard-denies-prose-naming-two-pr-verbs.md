@@ -3,7 +3,7 @@ title: "The outward-CLI guard denies ordinary prose that names two PR verbs, and
 status: backlog
 priority: medium
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-20
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -85,6 +85,106 @@ inverse of the "guard lexer needs matching redaction" pattern, not an instance o
 - A row-count change in the corpus pin is a signal, not a nuisance — investigate rather than
   re-pin to green.
 
+## Prior implementation — harvested from an abandoned branch, 2026-09-20
+
+A complete, reviewed implementation of this todo existed on
+`todo/P2-2026-09-10-outward-cli-guard-denies-prose-naming-two-pr-verbs` (tip `41931831`, four
+commits). It never got a PR, went stale, and the branch was deleted on 2026-09-20. **The design
+and the measurements below are its findings, preserved so the next attempt starts from them
+rather than rediscovering them — but every measurement must be RE-DERIVED, for the reason in
+"What invalidated it" below.**
+
+### The design that worked
+
+Compose a local classifier **at the REFUSE site** (`merge-review-guard.sh`, the
+`SUB_RC -ne 0` branch) from `cmd_is_gh_pr_create`'s own existing primitives —
+`_CMD_POS_PREFIX`, `_CMD_GH_GLOBALS`, `_CMD_POS_SUFFIX`, `cmd_words_deep`. Critically: **not** a
+new detector, and **no** widening of `cmd_gh_pr_write_subcommand` / `cmd_bare_deep`, which stay
+exactly as they are. That respects this todo's "do NOT fix this by narrowing the detector"
+section — the verdict is unchanged (both sub-cases still `deny`); only the message differs.
+
+**Compose from HARDENED sub-patterns, not just position anchors.** The branch cited
+`docs/solutions/conventions/compose-precise-detector-from-shared-primitives-without-widening-extractor-2026-09-14.md`
+for this — a pointer it had to defer at the time, because that doc landed with #964 and did not yet
+exist on the branch's base. Both exist on `main` now, so follow it: composing from primitives is
+**not** sufficient if the composition re-spells a sub-pattern the sibling already fixed. The doc's
+worked example is a hand-spelled `-X`/`--method` value separator (`([[:space:]]|=)*`) that
+independently re-derived the exact pre-fix, vulnerable shape `guard-outward-cli.sh` had already
+hardened. #964's own `gh api` implicit-POST arm, in this same file, is the in-repo precedent for
+doing it correctly.
+
+**The default, stated as the branch finally stated it — not as it first did.** The flag starts at 1
+(the original message) and flips to 0 **only when the capture actually runs `grep` and finds no
+command-position match**. It is **NOT a guarantee against every capture failure**, and the branch
+retracted its own earlier claim that "an uncertain read never mis-claims": if `cmd_words` were
+itself broken AND `$CMD` carried no command substitution, `cmd_words_deep`'s trailing
+`while read … done < <(…)` still returns 0 on zero iterations (confirmed empirically), so the
+capture "succeeds" with an empty string and flips to 0 — the LESS cautious message — not 1.
+
+That exposure is currently unreachable end-to-end, because a broken `cmd_words` also breaks
+`cmd_bare_deep`, so `cmd_gh_pr_write_subcommand` exits via `[ "$SUB" = "merge" ] || exit 0` before
+this branch runs. **But that is a property of the CALLER, not something this local default can rely
+on in isolation** — which matters if the classifier is ever composed at a call site that does not
+exit early. `cmd_is_gh_pr_create` carries the identical exposure and claims nothing stronger.
+
+This correction was itself a round-2 code-reviewer finding on the branch (2026-09-14). An earlier
+draft of this harvest restated the retracted, stronger version — preserved here in its corrected
+form so the overclaim is not reintroduced.
+
+`pr-verify.sh`, this todo's other named caller, needed no change — it already degrades to empty
+output on this same REFUSE, so there was nothing to make consistent.
+
+### The measured residuals, and why each was left open
+
+A heredoc body line whose write-verb sits at **column 0 with no leading prose** still matches
+command position under this repo's grep-per-line anchor semantics, so it keeps the pre-fix
+message even though nothing executes. Verdict stays `deny` either way, so the direction is safe.
+Closing it needs real heredoc-boundary parsing, which is outside this todo's Scope Contract.
+
+The branch pinned that residual as a **tripwire test row** rather than leaving it as a comment,
+on the principle that a measurement written only in a comment is not a guard: if a future change
+closes the gap, the row flips and forces an explicit decision instead of letting the improvement
+land silently. Reproduce that when reimplementing.
+
+**Residual (2) — a QUOTED heredoc delimiter.** `<<'EOF'` suppresses all expansion in its body, but
+the shared, unmodified `cmd_extract_substitutions` has no heredoc-redirection semantics and still
+reports an embedded `$(gh pr merge …)` as live — so the body gets the same stale "split it" message
+even though nothing executes. Confirmed on the branch by construction: a quoted-delimiter body and
+its unquoted control returned the identical message, though only the control genuinely executes.
+Verdict unaffected (still `deny`) in both.
+
+It was deliberately **not** given its own pinned row, and the reason matters: it produces the same
+message text rows 33/33b already assert, so a dedicated row would only re-assert an identical
+string. That is a real argument, not an oversight — but if a future change makes the two messages
+differ, it becomes worth pinning.
+
+**These are two independent mechanisms, not one gap described twice.** Both are library-level
+extraction gaps (`cmd_extract_substitutions` / `cmd_words`), not failures of the call site's own
+classification logic — which is why closing either one would mean widening the shared extractor,
+outside this todo's Scope Contract.
+
+### What invalidated it — read before reusing any number
+
+`_CMD_GH_GLOBALS` was **widened** after that branch was cut, by **#957** (`c96e22fd`), to accept
+value-taking flags (`-x value`) — its generic flag arm gained an optional trailing
+`([[:space:]]+[^-[:space:]][^[:space:]]*)?` group. Attribution checked with `git log -S` on that
+added text, which returns exactly that one commit; #995 touches `.claude/hooks/lib/cmd-detect.sh`
+zero times, and its `merge-review-guard.sh` changes land in the `gh api` implicit-POST arm, not
+the REFUSE region this classifier touches. The classifier above is composed FROM that primitive, so its behaviour has
+changed underneath the design even though the code still merges cleanly — a textual merge with no
+conflict marker, over semantics that moved. Every probe result the branch recorded must therefore
+be re-run, not inherited.
+
+Two concrete stale figures: the branch ended at `EXPECTED_TOTAL=86` in
+`test-merge-review-guard.sh`, where `main` is now at **179**; and its corpus pins
+(`rows=602, all-path gaps=243, deny-attribution=504`) predate several guard changes. Re-derive
+both.
+
+### Still live
+
+`main`'s REFUSE message is unchanged — the wrong advice ("Split it into one `gh pr` call per
+command and re-run") is present verbatim, so this todo has not been overtaken by any later PR.
+
 ## Updates
 
 ### 2026-09-10
@@ -92,3 +192,11 @@ inverse of the "guard lexer needs matching redaction" pattern, not an instance o
 - Filed during the merge-review-gate build after three independent occurrences in one session.
   Severity Medium: fail-closed, no correctness impact, but it costs real work on every hit and
   its advice actively misleads for the text-only case.
+
+### 2026-09-20
+
+- A finished implementation of this todo was found on an abandoned branch that never got a PR.
+  Rather than rebase it — its composed classifier reads a primitive (`_CMD_GH_GLOBALS`) that has
+  since been widened, so its verification would have had to be re-derived regardless — its design,
+  its measured residual and its stale figures were harvested into the section above and the branch
+  was deleted. Confirmed before deleting that the defect is still live on `main`.
