@@ -103,6 +103,16 @@ new detector, and **no** widening of `cmd_gh_pr_write_subcommand` / `cmd_bare_de
 exactly as they are. That respects this todo's "do NOT fix this by narrowing the detector"
 section — the verdict is unchanged (both sub-cases still `deny`); only the message differs.
 
+**Compose from HARDENED sub-patterns, not just position anchors.** The branch cited
+`docs/solutions/conventions/compose-precise-detector-from-shared-primitives-without-widening-extractor-2026-09-14.md`
+for this — a pointer it had to defer at the time, because that doc landed with #964 and did not yet
+exist on the branch's base. Both exist on `main` now, so follow it: composing from primitives is
+**not** sufficient if the composition re-spells a sub-pattern the sibling already fixed. The doc's
+worked example is a hand-spelled `-X`/`--method` value separator (`([[:space:]]|=)*`) that
+independently re-derived the exact pre-fix, vulnerable shape `guard-outward-cli.sh` had already
+hardened. #964's own `gh api` implicit-POST arm, in this same file, is the in-repo precedent for
+doing it correctly.
+
 **The default, stated as the branch finally stated it — not as it first did.** The flag starts at 1
 (the original message) and flips to 0 **only when the capture actually runs `grep` and finds no
 command-position match**. It is **NOT a guarantee against every capture failure**, and the branch
