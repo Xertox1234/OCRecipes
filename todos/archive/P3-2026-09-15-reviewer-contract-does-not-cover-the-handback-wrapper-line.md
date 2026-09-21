@@ -1,9 +1,9 @@
 ---
 title: "Reviewer contract scopes the severity-word rule to the report body, but the merge gate reads the hand-back wrapper"
-status: backlog
+status: done
 priority: low
 created: 2026-09-15
-updated: 2026-09-15
+updated: 2026-09-20
 assignee:
 labels: [deferred, harness, testing]
 github_issue:
@@ -66,17 +66,17 @@ definition has no way to escape the loop from the message alone.
 ## Acceptance Criteria
 
 - [x] ~~`docs/AI_WORKFLOW.md`'s dispatch prompt~~ — **absorbed into P2-2026-09-20** (see below).
-- [ ] The five agent definitions state that the severity-word rule covers the ENTIRE reply,
+- [x] The five agent definitions state that the severity-word rule covers the ENTIRE reply,
       including any hand-back wrapper line.
-- [ ] The wording does not itself trip the detector — `code-reviewer.md` already solves this
+- [x] The wording does not itself trip the detector — `code-reviewer.md` already solves this
       by deliberately not spelling the three words in that paragraph ("quoting it back must
       not be able to trip the gate"). Match that treatment.
-- [ ] Re-measure the three rows above afterwards. Rows 1 and 2 are shapes a contract-following
+- [x] Re-measure the three rows above afterwards. Rows 1 and 2 are shapes a contract-following
       reviewer should no longer write; row 3 must still stamp. NOTE the asymmetry: neither row 1
       nor row 2 changes BEHAVIOUR under this fix — the guard is untouched, so both still suppress
       the stamp. What the fix changes is whether a compliant reviewer ever EMITS them. So the
       test is "does the contract now forbid these wrappers", not "do these wrappers now stamp".
-- [ ] Consider whether `merge-review-guard.sh`'s denial text should name this cause. It
+- [x] Consider whether `merge-review-guard.sh`'s denial text should name this cause. It
       currently lists reasons a record may be missing; "the reply's wrapper named a severity
       word" is a real one and is invisible from the message.
 
@@ -203,3 +203,67 @@ mechanism. Done, 2026-09-20, from the reviewer subagent transcripts under
 So the mechanism is confirmed per-case, and its rate over clean reviews is **1 in 16**, not the
 3-in-4 the earlier population count might suggest — that count measured no-stamp outcomes for any
 reason, exactly as this file already warned.
+
+### 2026-09-20 — CLOSED
+
+All criteria met. The dispatch-prompt half shipped in PR #1005 (`a2aec06e`); this change completes
+the five agent definitions and takes the optional denial-text item.
+
+**Criterion 1.** The rule now reads "keep the three bracketed severity words out of everything
+except real finding lines — the notes prose, every other part of your reply, and above all any
+short WRAPPER LINE you write after handing the report back", and adds the clause the measured
+failure actually needed: _not even to say that findings you reported earlier are now resolved._
+That is exactly the shape #999's confirmation round wrote.
+
+It also names a distinction the old wording in all five files left out: the two detectors have
+DIFFERENT REACH as well as different outcomes. `$CRITICALS` (`review-stamp-writer.sh:305-307`)
+scans the REPORT and matches only the highest of the three, setting verdict `findings`; arm 2
+(`:161`) scans the WRAPPER, matches ANY of the three, and exits before a record is written at all.
+The old text said only the first half, so a reviewer had no way to learn that a wrapper costs the
+record entirely. "No record" is the outcome that reads to a human as "you never reviewed", which
+is why the two are now named separately.
+
+A first draft of this change over-corrected in the other direction — it said "one of those tokens
+in the REPORT records verdict `findings`", which is false for the lower two, and was a regression
+against the base wording ("the highest of the three"), which had been right. Caught in review and
+measured: a clean report whose notes name the middle token records `clean`, and a report whose only
+finding line carries it writes no record at all via residual 3. Neither produces `findings`.
+
+**Criterion 2, measured with a positive control.** The new clause was extracted from each of the
+five definitions — the span from `Keep the three bracketed severity words` to the wrapper exemplar
+that ends it — and each span was run through `review-stamp-writer.sh`'s literal arm-1, arm-2 and
+`$CRITICALS` predicates under bash 5.3.15. All three NOMATCH on all five. The control
+`[CRITICAL] server/routes/a.ts:12 — missing auth check` FIRES on all three, so the test
+discriminates rather than returning a vacuous pass.
+
+An earlier revision of this paragraph cited a bare character count for the extracted text. It was
+dropped rather than refreshed: it was the length of _this_ extraction (clause-(3) spans), not of
+the paragraphs as anyone else would delimit them, so a reviewer measuring whole blocks got a
+different figure and could not reconcile mine — and it went stale the moment the text was edited
+again. The repo's own dispatch prompt already states the rule it broke: quote a count together
+with the corpus that produced it, because a bare number reads as a property of the change when it
+is a property of the inputs. The NOMATCH result and its firing control are what carry this
+criterion; the character count never did.
+
+**The drift risk this file's own Risks section named is measured away, not merely avoided.** The
+four non-`code-reviewer` blocks were byte-identical to each other before the edit and are
+byte-identical to each other after it, checked by diffing `server-reviewer`'s block pairwise
+against each of the other three (`diff <(sed -n "${n}p" a) <(sed -n "${n}p" b)`, empty output on
+all three pairs). `code-reviewer.md` keeps its own longer paragraph, as it did before.
+
+Two frozen digest values stood here in an earlier revision and were dropped for the same reason
+the character count above was, one review round later and one paragraph away: a digest describes
+the tree at one instant, so the next edit to these files silently invalidates it while the claim
+it supports stays true. One of them had already gone stale exactly that way. A pairwise diff
+states the same property and cannot rot, which is what a closure record needs.
+
+**Criterion 3, with its stated asymmetry honoured.** The guard is untouched, so no row changes
+BEHAVIOUR — the test is whether the contract now forbids those wrappers. Row 1 (a wrapper naming
+two of the tags as bare tokens) and row 2 (case 32's second line opening with the bracketed tags)
+are both now explicitly forbidden, including row 1's "to say there were none" form. Row 3
+(`No blocking issues.`) is what the contract now tells reviewers to write, so it still stamps.
+
+**Criterion 4.** `merge-review-guard.sh`'s "no record exists" denial now names the wrapper cause
+and says what to do about it on a re-dispatch. **One line changed, inside a `deny()` string — no
+logic touched**: `git diff --stat` shows 1 insertion / 1 deletion, `bash -n` is clean, and
+`test-merge-review-guard.sh` passes 179 / fails 0.
