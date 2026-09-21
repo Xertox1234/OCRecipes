@@ -109,7 +109,7 @@ risking a false "nothing executes" claim.
 `pr-verify.sh`, this todo's other named caller, needed no change — it already degrades to empty
 output on this same REFUSE, so there was nothing to make consistent.
 
-### The measured residual, and why it was left open
+### The measured residuals, and why each was left open
 
 A heredoc body line whose write-verb sits at **column 0 with no leading prose** still matches
 command position under this repo's grep-per-line anchor semantics, so it keeps the pre-fix
@@ -121,10 +121,31 @@ on the principle that a measurement written only in a comment is not a guard: if
 closes the gap, the row flips and forces an explicit decision instead of letting the improvement
 land silently. Reproduce that when reimplementing.
 
+**Residual (2) — a QUOTED heredoc delimiter.** `<<'EOF'` suppresses all expansion in its body, but
+the shared, unmodified `cmd_extract_substitutions` has no heredoc-redirection semantics and still
+reports an embedded `$(gh pr merge …)` as live — so the body gets the same stale "split it" message
+even though nothing executes. Confirmed on the branch by construction: a quoted-delimiter body and
+its unquoted control returned the identical message, though only the control genuinely executes.
+Verdict unaffected (still `deny`) in both.
+
+It was deliberately **not** given its own pinned row, and the reason matters: it produces the same
+message text rows 33/33b already assert, so a dedicated row would only re-assert an identical
+string. That is a real argument, not an oversight — but if a future change makes the two messages
+differ, it becomes worth pinning.
+
+**These are two independent mechanisms, not one gap described twice.** Both are library-level
+extraction gaps (`cmd_extract_substitutions` / `cmd_words`), not failures of the call site's own
+classification logic — which is why closing either one would mean widening the shared extractor,
+outside this todo's Scope Contract.
+
 ### What invalidated it — read before reusing any number
 
-`_CMD_GH_GLOBALS` was **widened** after that branch was cut (#957, #995) to accept value-taking
-flags (`-x value`). The classifier above is composed FROM that primitive, so its behaviour has
+`_CMD_GH_GLOBALS` was **widened** after that branch was cut, by **#957** (`c96e22fd`), to accept
+value-taking flags (`-x value`) — its generic flag arm gained an optional trailing
+`([[:space:]]+[^-[:space:]][^[:space:]]*)?` group. Attribution checked with `git log -S` on that
+added text, which returns exactly that one commit; #995 touches `.claude/hooks/lib/cmd-detect.sh`
+zero times, and its `merge-review-guard.sh` changes land in the `gh api` implicit-POST arm, not
+the REFUSE region this classifier touches. The classifier above is composed FROM that primitive, so its behaviour has
 changed underneath the design even though the code still merges cleanly — a textual merge with no
 conflict marker, over semantics that moved. Every probe result the branch recorded must therefore
 be re-run, not inherited.
