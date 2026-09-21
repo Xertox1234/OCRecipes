@@ -777,19 +777,42 @@ BASE=$(git merge-base origin/<base branch from your spawn prompt> HEAD)
 git reset --mixed "$BASE"            # NEVER --hard; the project forbids it (CLAUDE.md)
 ```
 
-`--mixed` moves the branch back to its base and leaves your edits in the working tree as unstaged
-modifications, which the `git checkout --` below then discards file by file. If nothing was
-committed yet, this is a harmless no-op. Do not skip it and do not substitute `--hard`.
+`--mixed` moves the branch back to its base and leaves your edits in the working tree — but in
+**two different states, and `git checkout --` can only discard one of them.** A file that existed
+at `$BASE` returns as an unstaged modification (` M`) and `git checkout -- <file>` restores it. A
+file your failed attempt **created** returns as UNTRACKED (`??`), and `git checkout -- <file>`
+fails on it with `error: pathspec '<file>' did not match any file(s) known to git`, leaving the bad
+content sitting on disk. Measured under bash 5.3.15: after the reset, a pre-existing `existing.ts`
+reverted cleanly while a newly-created `created.ts` survived untouched. Step 8 then stages
+"anything still uncommitted", so that stray file rides into the PR — the exact class this revert
+exists to close. A `/todo` run creates new files routinely (a test file, a solution doc), so this
+is the common case, not the corner.
+
+Revert by existence at `$BASE`, not with one blanket command:
+
+```bash
+for f in <files you modified — the Step 4 tracked list>; do
+  if git cat-file -e "$BASE:$f" 2>/dev/null; then
+    git checkout -- "$f"     # existed at base — restore it
+  else
+    rm -f "$f"               # your attempt created it — remove that ONE named path
+  fi
+done
+```
+
+`rm -f "$f"` is a single named path — never `rm -rf`, never a glob; the project forbids the former
+outright. If nothing was committed yet, the reset is a harmless no-op and this loop still does the
+right thing. Do not skip either half, and do not substitute `--hard`.
 
 ### First failure
 
-1. **Unwind, then revert only files you modified**: run the `git reset --mixed "$BASE"` above, then `git checkout -- <files you modified>` (use the list tracked in Step 4, which must include `todos/<filename>.md` since Step 4.0 set it to `in-progress`). Do not use `git checkout -- .` as it may revert unrelated changes. Without the reset, attempt 2 starts on top of attempt 1: any file attempt 2 does not revisit silently keeps attempt 1's committed content and rides into the PR.
+1. **Unwind, then revert only files you modified**: run the `git reset --mixed "$BASE"` above, then the existence-split loop above over the list tracked in Step 4 (which must include `todos/<filename>.md`, since Step 4.0 set it to `in-progress`). Do not use `git checkout -- .` as it may revert unrelated changes. Without the reset, attempt 2 starts on top of attempt 1: any file attempt 2 does not revisit silently keeps attempt 1's committed content and rides into the PR.
 2. **Analyze** what went wrong. Re-read the error output, the todo, and the relevant source files.
 3. **Retry** with a different approach — go back to Step 4 with the new understanding. This is attempt 2.
 
 ### Second failure
 
-1. **Unwind, then revert only files you modified**: run the same `git reset --mixed "$BASE"` as above, then `git checkout -- <files you modified>` (use the list tracked in Step 4, which must include `todos/<filename>.md`). Do not use `git checkout -- .` as it may revert unrelated changes. The reset is what makes step 3's "commit only the status update" true — without it the branch still carries both failed attempts' commits.
+1. **Unwind, then revert only files you modified**: run the same `git reset --mixed "$BASE"` and the same existence-split loop as above, over the list tracked in Step 4 (which must include `todos/<filename>.md`). Do not use `git checkout -- .` as it may revert unrelated changes. The reset is what makes step 3's "commit only the status update" true — without it the branch still carries both failed attempts' commits.
 2. **Update the todo** status to `blocked` and add a dated Updates entry explaining the failure:
 
 ```yaml

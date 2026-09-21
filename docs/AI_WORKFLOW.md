@@ -71,7 +71,7 @@ Two mechanics make this cheap and correct, both read out of the hook rather than
   one path short and the record fails on scope while passing on verdict
   ([solution](solutions/code-quality/an-archive-move-git-reads-as-delete-plus-add-mis-scopes-the-review-stamp-2026-09-17.md)).
 
-Skip it when GitHub's native auto-merge is armed: that path never consults the local gate.
+Skip it whenever the pipeline's eligibility check returns `yes` — both the auto-merge-enabled and the auto-merge-enable-FAILED variants. The reason is not that auto-merge bypasses the local gate (true, but too narrow: the FAILED variant is merged by hand and the gate does run). It is that `merge-review-guard.sh` never asks those PRs for a record at all — `todo-automerge-guard.sh` gates its TODO GATE behind `--paths-only` while its PATH GATE runs unconditionally, so a full-mode rc 0 implies a `--paths-only` rc 0 and the gate exits 0 before the record lookup.
 
 #### Tier handling (project convention)
 
