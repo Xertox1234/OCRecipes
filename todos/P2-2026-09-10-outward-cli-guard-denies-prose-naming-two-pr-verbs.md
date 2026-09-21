@@ -103,8 +103,23 @@ new detector, and **no** widening of `cmd_gh_pr_write_subcommand` / `cmd_bare_de
 exactly as they are. That respects this todo's "do NOT fix this by narrowing the detector"
 section — the verdict is unchanged (both sub-cases still `deny`); only the message differs.
 
-Fail-safe default: an uncertain read (capture failure) keeps the ORIGINAL message, rather than
-risking a false "nothing executes" claim.
+**The default, stated as the branch finally stated it — not as it first did.** The flag starts at 1
+(the original message) and flips to 0 **only when the capture actually runs `grep` and finds no
+command-position match**. It is **NOT a guarantee against every capture failure**, and the branch
+retracted its own earlier claim that "an uncertain read never mis-claims": if `cmd_words` were
+itself broken AND `$CMD` carried no command substitution, `cmd_words_deep`'s trailing
+`while read … done < <(…)` still returns 0 on zero iterations (confirmed empirically), so the
+capture "succeeds" with an empty string and flips to 0 — the LESS cautious message — not 1.
+
+That exposure is currently unreachable end-to-end, because a broken `cmd_words` also breaks
+`cmd_bare_deep`, so `cmd_gh_pr_write_subcommand` exits via `[ "$SUB" = "merge" ] || exit 0` before
+this branch runs. **But that is a property of the CALLER, not something this local default can rely
+on in isolation** — which matters if the classifier is ever composed at a call site that does not
+exit early. `cmd_is_gh_pr_create` carries the identical exposure and claims nothing stronger.
+
+This correction was itself a round-2 code-reviewer finding on the branch (2026-09-14). An earlier
+draft of this harvest restated the retracted, stronger version — preserved here in its corrected
+form so the overclaim is not reintroduced.
 
 `pr-verify.sh`, this todo's other named caller, needed no change — it already degrades to empty
 output on this same REFUSE, so there was nothing to make consistent.
