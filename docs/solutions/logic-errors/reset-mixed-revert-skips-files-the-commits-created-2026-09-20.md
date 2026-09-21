@@ -108,8 +108,13 @@ case.
 
 - `.claude/agents/todo-executor.md` — the Failure Path revert this was found in, and the
   commit gate whose earlier commit point exposed it.
-- `.claude/skills/todo-fast/SKILL.md` — Phase 5's blanket revert, which is correct only
-  because it runs before that commit gate on a tree with nothing committed.
+- `.claude/skills/todo-fast/SKILL.md` — Phase 5's blanket `git checkout -- .` has this same
+  gap, and running before the commit gate does **not** save it. Measured on a tree with nothing
+  committed, one modified tracked file and one implementer-created file: it exits 0, reverts the
+  tracked file, and leaves the untracked one untouched. It is inert *today* only because that
+  path aborts the run and the shared worktree is force-removed straight after, so nothing it
+  leaves behind can reach a commit — a masked latent gap, not a closed case. Tracked as
+  `todos/P3-2026-09-20-todo-fast-phase-5-blanket-revert-leaves-implementer-created-files.md`.
 
 ## See Also
 
