@@ -757,17 +757,34 @@ The three `ACTION NEEDED` codes keep their canonical Step 10 texts as the recomm
 
 If implementation fails at any point after Step 4 (verify fails, review has unresolvable issues, acceptance criteria cannot be met):
 
-> **Note:** This agent always runs in an isolated git worktree — the working tree starts clean. Revert operations (`git checkout -- <files>`) only affect this worktree and cannot touch the base branch.
+> **Note:** This agent always runs in an isolated git worktree — the working tree starts clean. Revert operations (`git reset --mixed`, `git checkout -- <files>`) only affect this worktree and its own branch, and cannot touch the base branch.
+
+**Reverting takes TWO commands now, and `git checkout --` alone is a no-op.** The commit gate
+commits your implementation before Step 6, and Step 7 item 6 commits every fix round, so by the
+time any realistic Failure Path entry is reached your work is **already committed** — the tree is
+clean and `git checkout -- <files>` restores each file to `HEAD`, which is the broken content you
+are trying to discard. Measured: after a commit-gate commit, `git checkout -- impl.ts` leaves
+`impl.ts` at the committed (wrong) content with zero uncommitted changes. Unwind the commits
+first:
+
+```bash
+BASE=$(git merge-base origin/<base branch from your spawn prompt> HEAD)
+git reset --mixed "$BASE"            # NEVER --hard; the project forbids it (CLAUDE.md)
+```
+
+`--mixed` moves the branch back to its base and leaves your edits in the working tree as unstaged
+modifications, which the `git checkout --` below then discards file by file. If nothing was
+committed yet, this is a harmless no-op. Do not skip it and do not substitute `--hard`.
 
 ### First failure
 
-1. **Revert only files you modified**: `git checkout -- <files you modified>` (use the list tracked in Step 4, which must include `todos/<filename>.md` since Step 4.0 set it to `in-progress`). Do not use `git checkout -- .` as it may revert unrelated changes.
+1. **Unwind, then revert only files you modified**: run the `git reset --mixed "$BASE"` above, then `git checkout -- <files you modified>` (use the list tracked in Step 4, which must include `todos/<filename>.md` since Step 4.0 set it to `in-progress`). Do not use `git checkout -- .` as it may revert unrelated changes. Without the reset, attempt 2 starts on top of attempt 1: any file attempt 2 does not revisit silently keeps attempt 1's committed content and rides into the PR.
 2. **Analyze** what went wrong. Re-read the error output, the todo, and the relevant source files.
 3. **Retry** with a different approach — go back to Step 4 with the new understanding. This is attempt 2.
 
 ### Second failure
 
-1. **Revert only files you modified**: `git checkout -- <files you modified>` (use the list tracked in Step 4, which must include `todos/<filename>.md`). Do not use `git checkout -- .` as it may revert unrelated changes.
+1. **Unwind, then revert only files you modified**: run the same `git reset --mixed "$BASE"` as above, then `git checkout -- <files you modified>` (use the list tracked in Step 4, which must include `todos/<filename>.md`). Do not use `git checkout -- .` as it may revert unrelated changes. The reset is what makes step 3's "commit only the status update" true — without it the branch still carries both failed attempts' commits.
 2. **Update the todo** status to `blocked` and add a dated Updates entry explaining the failure:
 
 ```yaml
