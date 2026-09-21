@@ -16,6 +16,14 @@ const ARCHIVE_PATH = "todos/archive/P3-2026-07-08-example.md";
 
 const FAKE_GH_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
+# Large corpora arrive by FILE, not by environment variable. Linux caps a single envp/argv
+# string at MAX_ARG_STRLEN (32 * PAGE_SIZE = 131072 bytes); macOS does not, so an over-size
+# list passes locally and fails execve with E2BIG on CI, where spawnSync surfaces it as
+# status === null ("expected null to be +0") naming neither the size nor the limit.
+FAKE_GH_DIFF_FILES="\${FAKE_GH_DIFF_FILES:-}"
+if [ -n "\${FAKE_GH_DIFF_FILES_FILE:-}" ]; then
+  FAKE_GH_DIFF_FILES="$(cat "$FAKE_GH_DIFF_FILES_FILE")"
+fi
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
   # The guard compares its file-list read against the PR's DECLARED changed-file count so it can
   # refuse a truncated list. Default to the number of lines this test supplied, keeping the
@@ -819,6 +827,17 @@ describe("todo-automerge-guard.sh (xhigh review: research-delegation skip-gate c
   });
 });
 
+// Write the changed-file list to a file inside the stub's own temp dir and hand the fake gh
+// its PATH. Passing it in the environment instead caps the corpus at Linux's MAX_ARG_STRLEN
+// (131072 bytes) — a limit macOS does not share, so an over-size list passes locally and fails
+// only on CI. As of 2026-09-20 the docs/solutions/ + todos/ control corpus is ~131KB, i.e. at
+// that cliff, and it grows every time a solution doc or todo is added.
+function writeDiffFiles(dir: string, files: string[]): string {
+  const path = join(dir, "diff-files.txt");
+  writeFileSync(path, files.join("\n"));
+  return path;
+}
+
 function runGuardPathsOnly(files: string[]): {
   status: number | null;
   stdout: string;
@@ -833,7 +852,7 @@ function runGuardPathsOnly(files: string[]): {
     env: {
       ...process.env,
       PATH: `${dir}:${process.env.PATH ?? ""}`,
-      FAKE_GH_DIFF_FILES: files.join("\n"),
+      FAKE_GH_DIFF_FILES_FILE: writeDiffFiles(dir, files),
     },
   });
   return { status: result.status, stdout: result.stdout ?? "" };
@@ -853,7 +872,7 @@ function runGuardDefault(files: string[]): {
     env: {
       ...process.env,
       PATH: `${dir}:${process.env.PATH ?? ""}`,
-      FAKE_GH_DIFF_FILES: files.join("\n"),
+      FAKE_GH_DIFF_FILES_FILE: writeDiffFiles(dir, files),
     },
   });
   return { status: result.status, stdout: result.stdout ?? "" };
@@ -1133,7 +1152,7 @@ describe("todo-automerge-guard.sh (mutation-verified: STRUCTURAL_SENSITIVE's rc-
       env: {
         ...process.env,
         PATH: `${dir}:${process.env.PATH ?? ""}`,
-        FAKE_GH_DIFF_FILES: files.join("\n"),
+        FAKE_GH_DIFF_FILES_FILE: writeDiffFiles(dir, files),
       },
     });
     return { status: result.status };
