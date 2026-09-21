@@ -229,10 +229,21 @@ against the base wording ("the highest of the three"), which had been right. Cau
 measured: a clean report whose notes name the middle token records `clean`, and a report whose only
 finding line carries it writes no record at all via residual 3. Neither produces `findings`.
 
-**Criterion 2, measured with a positive control.** All five new paragraphs extracted (4101 chars)
-and run through `review-stamp-writer.sh`'s literal arm-1, arm-2 and `$CRITICALS` predicates under
-bash 5.3.15: all three NOMATCH. The control `[CRITICAL] server/routes/a.ts:12 — missing auth check`
-FIRES on all three, so the test discriminates rather than returning a vacuous pass.
+**Criterion 2, measured with a positive control.** The new clause was extracted from each of the
+five definitions — the span from `Keep the three bracketed severity words` to the wrapper exemplar
+that ends it — and each span was run through `review-stamp-writer.sh`'s literal arm-1, arm-2 and
+`$CRITICALS` predicates under bash 5.3.15. All three NOMATCH on all five. The control
+`[CRITICAL] server/routes/a.ts:12 — missing auth check` FIRES on all three, so the test
+discriminates rather than returning a vacuous pass.
+
+An earlier revision of this paragraph cited a bare character count for the extracted text. It was
+dropped rather than refreshed: it was the length of _this_ extraction (clause-(3) spans), not of
+the paragraphs as anyone else would delimit them, so a reviewer measuring whole blocks got a
+different figure and could not reconcile mine — and it went stale the moment the text was edited
+again. The repo's own dispatch prompt already states the rule it broke: quote a count together
+with the corpus that produced it, because a bare number reads as a property of the change when it
+is a property of the inputs. The NOMATCH result and its firing control are what carry this
+criterion; the character count never did.
 
 **The drift risk this file's own Risks section named is measured away, not merely avoided.** The
 four non-`code-reviewer` blocks were byte-identical before the edit (`8db99e8be678`) and are
