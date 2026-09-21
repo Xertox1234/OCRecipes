@@ -16,6 +16,14 @@ const ARCHIVE_PATH = "todos/archive/P3-2026-07-08-example.md";
 
 const FAKE_GH_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
+# Large corpora arrive by FILE, not by environment variable. Linux caps a single envp/argv
+# string at MAX_ARG_STRLEN (32 * PAGE_SIZE = 131072 bytes); macOS does not, so an over-size
+# list passes locally and fails execve with E2BIG on CI, where spawnSync surfaces it as
+# status === null ("expected null to be +0") naming neither the size nor the limit.
+FAKE_GH_DIFF_FILES="\${FAKE_GH_DIFF_FILES:-}"
+if [ -n "\${FAKE_GH_DIFF_FILES_FILE:-}" ]; then
+  FAKE_GH_DIFF_FILES="$(cat "$FAKE_GH_DIFF_FILES_FILE")"
+fi
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
   # The guard compares its file-list read against the PR's DECLARED changed-file count so it can
   # refuse a truncated list. Default to the number of lines this test supplied, keeping the
@@ -794,6 +802,21 @@ describe("todo-automerge-guard.sh (xhigh review: research-delegation skip-gate c
     },
   );
 
+  // docs/legacy-patterns/ is new to SENSITIVE_OVERRIDE in THIS diff (Risks section of
+  // todos/archive/P3-2026-09-16-legacy-patterns-still-takes-the-automerge-markdown-
+  // exemption.md: "check both consumers, not just the PATH GATE"). Same reachability gap
+  // as the four rows above: the PATH GATE never reaches SENSITIVE_OVERRIDE for this path
+  // either (STRUCTURAL_SENSITIVE HOLDs and `continue`s first), so this skip-gate is the
+  // only consumer that would notice a regression here.
+  it("skips delegation for docs/legacy-patterns/security.md under a neutral title (new SENSITIVE_OVERRIDE entry, reachable only through this consumer)", () => {
+    expect(
+      skipGateShouldSkip(
+        ["docs/legacy-patterns/security.md"],
+        "Fix pagination bug",
+      ),
+    ).toBe(true);
+  });
+
   it("does NOT skip delegation for an ordinary client/ file under a neutral title (delegation still happens for genuinely non-sensitive work)", () => {
     expect(
       skipGateShouldSkip(
@@ -803,6 +826,17 @@ describe("todo-automerge-guard.sh (xhigh review: research-delegation skip-gate c
     ).toBe(false);
   });
 });
+
+// Write the changed-file list to a file inside the stub's own temp dir and hand the fake gh
+// its PATH. Passing it in the environment instead caps the corpus at Linux's MAX_ARG_STRLEN
+// (131072 bytes) — a limit macOS does not share, so an over-size list passes locally and fails
+// only on CI. As of 2026-09-20 the docs/solutions/ + todos/ control corpus is ~131KB, i.e. at
+// that cliff, and it grows every time a solution doc or todo is added.
+function writeDiffFiles(dir: string, files: string[]): string {
+  const path = join(dir, "diff-files.txt");
+  writeFileSync(path, files.join("\n"));
+  return path;
+}
 
 function runGuardPathsOnly(files: string[]): {
   status: number | null;
@@ -818,7 +852,7 @@ function runGuardPathsOnly(files: string[]): {
     env: {
       ...process.env,
       PATH: `${dir}:${process.env.PATH ?? ""}`,
-      FAKE_GH_DIFF_FILES: files.join("\n"),
+      FAKE_GH_DIFF_FILES_FILE: writeDiffFiles(dir, files),
     },
   });
   return { status: result.status, stdout: result.stdout ?? "" };
@@ -838,7 +872,7 @@ function runGuardDefault(files: string[]): {
     env: {
       ...process.env,
       PATH: `${dir}:${process.env.PATH ?? ""}`,
-      FAKE_GH_DIFF_FILES: files.join("\n"),
+      FAKE_GH_DIFF_FILES_FILE: writeDiffFiles(dir, files),
     },
   });
   return { status: result.status, stdout: result.stdout ?? "" };
@@ -950,6 +984,26 @@ describe("todo-automerge-guard.sh (non-regression: all docs/rules/*.md still HOL
 
   it.each(rulesFiles)(
     "HOLDs %s (--paths-only, unchanged by the reorder)",
+    (file) => {
+      const { status } = runGuardPathsOnly([file]);
+      expect(status).toBe(1);
+    },
+  );
+});
+
+describe("todo-automerge-guard.sh (docs/legacy-patterns/ now HOLDs via STRUCTURAL_SENSITIVE + SENSITIVE_OVERRIDE, generated not hand-listed)", () => {
+  // The frozen pattern-documentation archive the newly-protected reviewer checklists cite
+  // as their reference body (todos/archive/P3-2026-09-16-legacy-patterns-still-takes-the-
+  // automerge-markdown-exemption.md) — previously took the markdown exemption like any
+  // ordinary doc, unlike its sibling docs/rules/.
+  const legacyPatternsFiles = gitLsFiles("docs/legacy-patterns");
+
+  it(`generated all ${legacyPatternsFiles.length} docs/legacy-patterns/*.md files via git ls-files`, () => {
+    expect(legacyPatternsFiles.length).toBeGreaterThan(0);
+  });
+
+  it.each(legacyPatternsFiles)(
+    "HOLDs %s (--paths-only) — the reference body the reviewer checklists cite",
     (file) => {
       const { status } = runGuardPathsOnly([file]);
       expect(status).toBe(1);
@@ -1098,7 +1152,7 @@ describe("todo-automerge-guard.sh (mutation-verified: STRUCTURAL_SENSITIVE's rc-
       env: {
         ...process.env,
         PATH: `${dir}:${process.env.PATH ?? ""}`,
-        FAKE_GH_DIFF_FILES: files.join("\n"),
+        FAKE_GH_DIFF_FILES_FILE: writeDiffFiles(dir, files),
       },
     });
     return { status: result.status };

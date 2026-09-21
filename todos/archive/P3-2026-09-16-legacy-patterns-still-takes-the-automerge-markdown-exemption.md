@@ -1,6 +1,6 @@
 ---
 title: "docs/legacy-patterns/ still takes the auto-merge markdown exemption, while being the reference body the newly-protected reviewer checklists point at"
-status: backlog
+status: done
 priority: low
 created: 2026-09-16
 updated: 2026-09-16

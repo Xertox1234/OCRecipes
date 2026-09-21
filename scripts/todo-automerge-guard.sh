@@ -17,10 +17,12 @@
 # server/routes/ directory (the request/authz boundary — see SAFE_ALLOWLIST's comment for
 # why this one root HOLDs wholesale instead of being enumerate-the-sensitive-ones), the
 # whole server/middleware/ directory, .github/ (the CI gates), scripts/ (incl. this
-# guard), migrations, shared/schema.ts, secrets/certs, docs/rules/, .claude/agents/,
-# .claude/skills/, docs/AI_WORKFLOW.md and docs/PATTERNS.md (the binding review rules and
-# the files that define what "reviewed" means — structural entries carved OUT of the
-# markdown pass-through; see STRUCTURAL_SENSITIVE, SENSITIVE_OVERRIDE, and PATH GATE step 2),
+# guard), migrations, shared/schema.ts, secrets/certs, docs/rules/, docs/legacy-patterns/,
+# .claude/agents/, .claude/skills/, docs/AI_WORKFLOW.md and docs/PATTERNS.md (the binding
+# review rules, the frozen pattern-documentation archive every roster reviewer's checklist
+# cites as its reference body, and the files that define what "reviewed" means — structural
+# entries carved OUT of the markdown pass-through; see STRUCTURAL_SENSITIVE,
+# SENSITIVE_OVERRIDE, and PATH GATE step 2),
 # plus explicit sensitive files named
 # in SENSITIVE_OVERRIDE that live inside the otherwise-open client/ and server/storage/
 # roots. server/routes/, .github/, scripts/, and migrations/ are held BOTH by SAFE_ALLOWLIST
@@ -73,9 +75,10 @@ PR="${1:?usage: todo-automerge-guard.sh [--paths-only] <pr-number>}"
 # all of client/ (UI, hooks, context, lib, screens, navigation, constants, ...) and all of
 # server/storage/ (minus the sensitive files named in SENSITIVE_OVERRIDE below),
 # business-logic services, shared pure modules (types / zod-schemas / constants / lib),
-# any test, an extracted *-utils file, and docs/todos/ markdown — except docs/rules/, which
-# stays matched by ^docs/ here but HOLDs on SENSITIVE_OVERRIDE below (binding review rules,
-# not ordinary docs). NOTE: server/routes/,
+# any test, an extracted *-utils file, and docs/todos/ markdown — except docs/rules/ and
+# docs/legacy-patterns/, which stay matched by ^docs/ here but HOLD on SENSITIVE_OVERRIDE
+# below (binding review rules / the frozen pattern-reference archive, not ordinary docs).
+# NOTE: server/routes/,
 # server/middleware/, migrations/, shared/schema.ts, .github/, scripts/, certs, .env are
 # deliberately ABSENT — they HOLD in full, not file-by-file. server/routes/ HOLDs
 # wholesale (2026-07-08, reverted from a brief whole-root widening) because it's the
@@ -121,20 +124,25 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # that feature's OWN files are covered by name instead), SessionExpiryBridge, [Aa]dmin, and
 # [Pp]remium (case-classed to cover both server's lowercase-kebab and client's PascalCase
 # naming conventions — a bare `admin`/`Premium` literal missed half of each pair).
-# docs/rules/ is the one whole-directory entry that is NOT code: those files are this repo's
-# BINDING review rules (security.md carries the IDOR / JWT / rate-limiting / SSRF rules every
-# reviewer and every injected-pattern hook acts on; accessibility.md, database.md and the rest are
-# equally binding, which is why this is scoped to the whole directory and not to security.md
-# alone — a per-file list would silently go stale the next time a rules file is added). It needs
+# Several whole-directory entries are NOT code — docs/rules/, docs/legacy-patterns/ and
+# .claude/agents|skills/. Do not restate a count here: every prior version of this comment
+# stated one and was wrong, because the set grows without the prose being re-derived.
+# docs/rules/ files are this repo's BINDING review rules (security.md carries the
+# IDOR / JWT / rate-limiting / SSRF rules every reviewer and every injected-pattern hook
+# acts on; accessibility.md, database.md and the rest are equally binding, which is why
+# this is scoped to the whole directory and not to security.md alone — a per-file list
+# would silently go stale the next time a rules file is added). It needs
 # BOTH this entry and the PATH GATE's STRUCTURAL_SENSITIVE check (step 2, below): SAFE_ALLOWLIST's
 # ^docs/ prefix already passes them, and the markdown exemption used to `continue` before any
 # sensitivity check was ever consulted, so a batch-generated PR trimming a binding security rule was
 # auto-merge eligible and could land overnight unreviewed — contradicting this repo's own rule
 # that security changes get individual review. This is a real path, not a hypothetical:
 # todo-executor.md Step 5b appends CRITICAL/HIGH rule bullets to docs/rules/{domain}.md from
-# inside the /todo PR itself. Every OTHER docs path (docs/solutions/, docs/research/, runbooks)
-# and all of todos/ keeps the exemption. Listing it here rather than only in STRUCTURAL_SENSITIVE
-# is what makes todo-executor.md's research-delegation skip-gate inherit it — that gate reads
+# inside the /todo PR itself. docs/legacy-patterns/ is covered for the same class of reason —
+# see STRUCTURAL_SENSITIVE's own comment below for its decision record and corpus measurement.
+# Every OTHER docs path (docs/solutions/, docs/research/, runbooks) and all of todos/ keeps
+# the exemption. Listing both here rather than only in STRUCTURAL_SENSITIVE
+# is what makes todo-executor.md's research-delegation skip-gate inherit them — that gate reads
 # SENSITIVE_OVERRIDE and never looks at SAFE_ALLOWLIST.
 # server/storage/verification.ts and client/components/VerificationBadge are the UNRELATED
 # Verified Product API (barcode/nutrition-data verification — see
@@ -168,7 +176,7 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # generically-named, allowlisted-directory file — named individually since none shares a
 # signature generic enough for the drift-detection test to generalize without becoming a
 # broad "security detector" (deliberately avoided — see that test's own comment).
-SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW(\.md$|/)|(^|/)docs/PATTERNS(\.md$|/)|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)docs/legacy-patterns/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW(\.md$|/)|(^|/)docs/PATTERNS(\.md$|/)|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
 
 # Structural subset of the above: whole-directory and exact-path entries ONLY, no
 # free-text keywords. Read by the PATH GATE's structural-sensitivity check (below)
@@ -198,7 +206,28 @@ SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)sub
 # split of AI_WORKFLOW.md or PATTERNS.md into a directory stays covered.
 # If `.claude/hooks/**` ever gains markdown, widen to `(^|/)\.claude/` wholesale: over-HOLD is
 # the cheap direction here, per this script's own header.
-STRUCTURAL_SENSITIVE='(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW(\.md$|/)|(^|/)docs/PATTERNS(\.md$|/)'
+#
+# docs/legacy-patterns/ (16 tracked files, 2026-09-20, `git ls-files docs/legacy-patterns`)
+# — DECIDED: COVERED, added to both this constant and SENSITIVE_OVERRIDE above. It is the
+# frozen pattern-documentation archive that the newly-protected reviewer checklists cite as
+# their reference body: `.claude/agents/code-reviewer.md` links into it 7 times and
+# `mobile-reviewer.md` 11 times (both counts include inline citations and each file's
+# closing reference list), and `security-auditor.md` names
+# `docs/legacy-patterns/security.md` as "Full security pattern documentation" in its own
+# reference list. That is the same "files that DEFINE what reviewed means" argument that put
+# `.claude/agents/` and `.claude/skills/` here — this directory is what those checklists
+# point AT. There is no current WRITE path to it today: `code-reviewer.md` explicitly calls
+# it a "frozen archive, retired as write target", and `grep -rn legacy-patterns
+# .claude/hooks/` finds it only in a corpus/fixture file and one code comment, never as an
+# injection target — so the exposure is latent, not active. Covering it now means it stays
+# HELD automatically the moment that changes, instead of needing a second pass to notice.
+# Measured over the full tracked corpus (`git ls-files`, re-derived, not assumed): all 16
+# docs/legacy-patterns/*.md paths flip PASS→HOLD; a same-run control batch
+# (docs/solutions/+todos/, the exemption's own high-volume case) stays 0 HOLD→PASS — see
+# scripts/__tests__/todo-automerge-guard.test.ts's generated-corpus and
+# docs/legacy-patterns/ blocks. Over-HOLD is the cheap direction here, per this script's own
+# header.
+STRUCTURAL_SENSITIVE='(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)docs/legacy-patterns/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW(\.md$|/)|(^|/)docs/PATTERNS(\.md$|/)'
 
 # Sensitive-domain keywords for the TODO gate's intent check (below): HOLDs any todo
 # whose own title/frontmatter names a sensitive domain, regardless of which file it ends
