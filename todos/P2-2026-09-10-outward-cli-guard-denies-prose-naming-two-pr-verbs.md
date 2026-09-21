@@ -3,7 +3,7 @@ title: "The outward-CLI guard denies ordinary prose that names two PR verbs, and
 status: backlog
 priority: medium
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-09-20
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -85,6 +85,60 @@ inverse of the "guard lexer needs matching redaction" pattern, not an instance o
 - A row-count change in the corpus pin is a signal, not a nuisance — investigate rather than
   re-pin to green.
 
+## Prior implementation — harvested from an abandoned branch, 2026-09-20
+
+A complete, reviewed implementation of this todo existed on
+`todo/P2-2026-09-10-outward-cli-guard-denies-prose-naming-two-pr-verbs` (tip `41931831`, four
+commits). It never got a PR, went stale, and the branch was deleted on 2026-09-20. **The design
+and the measurements below are its findings, preserved so the next attempt starts from them
+rather than rediscovering them — but every measurement must be RE-DERIVED, for the reason in
+"What invalidated it" below.**
+
+### The design that worked
+
+Compose a local classifier **at the REFUSE site** (`merge-review-guard.sh`, the
+`SUB_RC -ne 0` branch) from `cmd_is_gh_pr_create`'s own existing primitives —
+`_CMD_POS_PREFIX`, `_CMD_GH_GLOBALS`, `_CMD_POS_SUFFIX`, `cmd_words_deep`. Critically: **not** a
+new detector, and **no** widening of `cmd_gh_pr_write_subcommand` / `cmd_bare_deep`, which stay
+exactly as they are. That respects this todo's "do NOT fix this by narrowing the detector"
+section — the verdict is unchanged (both sub-cases still `deny`); only the message differs.
+
+Fail-safe default: an uncertain read (capture failure) keeps the ORIGINAL message, rather than
+risking a false "nothing executes" claim.
+
+`pr-verify.sh`, this todo's other named caller, needed no change — it already degrades to empty
+output on this same REFUSE, so there was nothing to make consistent.
+
+### The measured residual, and why it was left open
+
+A heredoc body line whose write-verb sits at **column 0 with no leading prose** still matches
+command position under this repo's grep-per-line anchor semantics, so it keeps the pre-fix
+message even though nothing executes. Verdict stays `deny` either way, so the direction is safe.
+Closing it needs real heredoc-boundary parsing, which is outside this todo's Scope Contract.
+
+The branch pinned that residual as a **tripwire test row** rather than leaving it as a comment,
+on the principle that a measurement written only in a comment is not a guard: if a future change
+closes the gap, the row flips and forces an explicit decision instead of letting the improvement
+land silently. Reproduce that when reimplementing.
+
+### What invalidated it — read before reusing any number
+
+`_CMD_GH_GLOBALS` was **widened** after that branch was cut (#957, #995) to accept value-taking
+flags (`-x value`). The classifier above is composed FROM that primitive, so its behaviour has
+changed underneath the design even though the code still merges cleanly — a textual merge with no
+conflict marker, over semantics that moved. Every probe result the branch recorded must therefore
+be re-run, not inherited.
+
+Two concrete stale figures: the branch ended at `EXPECTED_TOTAL=86` in
+`test-merge-review-guard.sh`, where `main` is now at **179**; and its corpus pins
+(`rows=602, all-path gaps=243, deny-attribution=504`) predate several guard changes. Re-derive
+both.
+
+### Still live
+
+`main`'s REFUSE message is unchanged — the wrong advice ("Split it into one `gh pr` call per
+command and re-run") is present verbatim, so this todo has not been overtaken by any later PR.
+
 ## Updates
 
 ### 2026-09-10
@@ -92,3 +146,11 @@ inverse of the "guard lexer needs matching redaction" pattern, not an instance o
 - Filed during the merge-review-gate build after three independent occurrences in one session.
   Severity Medium: fail-closed, no correctness impact, but it costs real work on every hit and
   its advice actively misleads for the text-only case.
+
+### 2026-09-20
+
+- A finished implementation of this todo was found on an abandoned branch that never got a PR.
+  Rather than rebase it — its composed classifier reads a primitive (`_CMD_GH_GLOBALS`) that has
+  since been widened, so its verification would have had to be re-derived regardless — its design,
+  its measured residual and its stale figures were harvested into the section above and the branch
+  was deleted. Confirmed before deleting that the defect is still live on `main`.
