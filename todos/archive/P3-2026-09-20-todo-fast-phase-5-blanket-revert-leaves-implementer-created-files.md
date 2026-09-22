@@ -1,9 +1,9 @@
 ---
 title: "todo-fast Phase 5's blanket `git checkout -- .` leaves every file an implementer CREATED, and is inert today only because the worktree is torn down straight after"
-status: backlog
+status: done
 priority: low
 created: 2026-09-20
-updated: 2026-09-20
+updated: 2026-09-21
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -63,12 +63,12 @@ The `SKILL.md` line itself predates PR #1005 (introduced in `11b49261`) and was 
 
 ## Acceptance Criteria
 
-- [ ] Phase 5's `BLOCKED` revert removes implementer-created files as well as reverting modified
+- [x] Phase 5's `BLOCKED` revert removes implementer-created files as well as reverting modified
       tracked ones, or the step documents explicitly that it does not and names the teardown as
       the thing that makes that safe.
-- [ ] Whatever is chosen is verified with a fixture that contains **a file the implementer
+- [x] Whatever is chosen is verified with a fixture that contains **a file the implementer
       created** — a fixture of pre-existing files only exercises the half that already works.
-- [ ] No `rm -rf` and no `git reset --hard` (CLAUDE.md). A single named `rm -f <path>`, or
+- [x] No `rm -rf` and no `git reset --hard` (CLAUDE.md). A single named `rm -f <path>`, or
       `git clean` scoped to the implementer's own reported file list, are both acceptable shapes.
 
 ## Implementation Notes
@@ -104,3 +104,39 @@ The `SKILL.md` line itself predates PR #1005 (introduced in `11b49261`) and was 
 
 - Filed from PR #1005's final review round, which measured the behaviour above rather than
   inferring it. Low priority because worktree teardown currently masks every consequence.
+
+### 2026-09-21
+
+- Chose the "document, don't widen the revert" branch of AC1: the Implementation Notes call the
+  per-implementer-file-list alternative "not a one-line fix," and the Risks section warns against
+  removing untracked paths without a reported list, so `.claude/agents/todo-fast-implementer.md`
+  was left untouched (Scope Contract only required touching it if that branch were taken).
+- Re-verified the claim independently (not just trusting this file's own 2026-09-20 measurement)
+  in a scratch fixture under `/usr/bin/git` on macOS (`git version 2.50.1 (Apple Git-155)`, this
+  session's shell is zsh but every command ran as a plain `git -C <path>` invocation, so shell
+  word-splitting is not in play): one commit with `existing.ts`, then `existing.ts` modified and
+  `created.ts` added untracked.
+
+  ```
+  --- status before revert ---
+   M existing.ts
+  ?? created.ts
+  --- git checkout -- .  exit=0 ---
+  --- status after ---
+  ?? created.ts
+  existing.ts content: "base content"        <- reverted
+  created.ts content:  "brand new file"      <- SURVIVES
+  ```
+
+  Same result as the original 2026-09-20 measurement: exit 0, no error, no output, tracked file
+  reverted, untracked created file untouched.
+
+- Edited `.claude/skills/todo-fast/SKILL.md`'s Phase 5 `BLOCKED` bullet to state the gap
+  explicitly at the point of use, name Cleanup's `git worktree remove --force` as what makes it
+  safe today, and give the trigger condition (the worktree staying alive past a `BLOCKED`
+  failure) that would require swapping in `todo-executor.md`'s existence-split loop before this
+  becomes a live defect. Also reconciled the Rules section's "reverts entirely" bullet, which
+  overstated what the revert command alone guarantees — the accurate claim is that the revert
+  plus Cleanup's teardown together guarantee nothing survives to a commit or PR.
+- Reviewed clean by `code-reviewer` (one SUGGESTION, a phase-range label precision fix, applied
+  inline; no CRITICAL or WARNING).
