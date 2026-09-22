@@ -63,6 +63,12 @@ the past tense is fine; a live citation ("see `<old path>`") is not. For a todo,
 - A reviewer who finds one stale citation should grep for the string before filing, so the finding
   names every occurrence and the fix needs one round, not two.
 
+- It recurred the same day this was written. PR #1009's codification extended a solution doc
+  with a sentence citing `todos/P3-2026-09-20-reanimated-4-deprecated-worklet-apis.md` in the
+  same diff that archived that todo; review found it, the only hit tree-wide. A `/todo`
+  executor's codification step runs AFTER its archive move, so any `todos/<slug>.md` path it
+  writes is already stale — cite the `todos/archive/` path from the start.
+
 ## Related Files
 
 - `docs/solutions/conventions/ci-cache-key-inputs-must-precede-mutating-step-2026-09-02.md` — the
