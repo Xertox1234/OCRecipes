@@ -167,8 +167,10 @@ unless `cmd_fastpath_has` carries a needle for it. `*gh*` is already a needle
   already the placeholder in this rendering, so the cut cannot reach it). ONLY the negated
   conjunct reads the cut view. The POSITIVE conjuncts — field presence, and the mutating-method
   literal arm above it — deliberately keep the full clause, so relative to main the change can
-  only ADD denials: removing text cannot invent a method token, and comment text could already
-  supply a field. `-f k=v -X GET # -X POST` therefore still denies (a pre-existing over-denial
+  only ADD denials: the cut removes a suffix at a space and the blank replaces a WORD-INITIAL
+  match with a space, so neither can alter the token before it, and comment text could already
+  supply a field (see the round-1 entry below for why the anchor is load-bearing).
+  `-f k=v -X GET # -X POST` therefore still denies (a pre-existing over-denial
   in the restrictive direction) and is pinned as ACCEPTED OVER-DENIAL so the boundary of the
   cut is a row rather than a memory. An uncuttable comment (a `#` inside a substitution that is
   followed by a real `-X GET`) truncates the argv view and denies — the cannot-verify criterion.
@@ -198,3 +200,30 @@ unless `cmd_fastpath_has` carries a needle for it. `*gh*` is already a needle
   `todos/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md` cited this todo's
   pre-archive path; it now cites the archive path and says to reuse the argv-cut view rather
   than deriving a second cut.
+
+### 2026-09-22 — PR #1012 review round 1 (one pass, `code-reviewer` + `security-auditor`)
+
+- **Fixed (a regression the first head introduced):** the blank was NOT monotone as first
+  written. `_CMD_REDIR` opens with an optional fd-digit prefix — right for the additive presence
+  checks it was written for, wrong for a subtractive use — so unanchored it ate the trailing
+  digit of `--method2>x` together with the operator and manufactured `--method `, which satisfies
+  the method closer: main DENY, first head ALLOW, on both guards (non-executable, since gh has no
+  such flag and pflag does not prefix-match, but a regression all the same). Reproduced
+  independently before fixing: the reviewer's base-copy layout under the scratchpad fed the same
+  25-row TSV, main DENY / first head ALLOW for `--method2>x`, `--method1>&2`, `--method0<x`, with
+  `--methodology>x` DENY on both. The blank is now anchored at `(^|[[:space:]])`, so it can never
+  alter the token before it — which is the property the monotonicity claim actually rests on,
+  and the claim is now stated that way at every site (both guards, both suite headers, here).
+- **The anchor's cost, pinned KNOWN-WRONG:** an operator GLUED to the preceding word with a
+  SPACED operand (`-f k=v> -X`) is not blanked and stays the ALLOW it is on main. Not a
+  regression; a pre-existing shape the anchor leaves open. Rows added to both suites: 3
+  manufactured-method denies, 2 controls, 1 KNOWN-WRONG residual — outward 1201 → 1207, merge
+  193 → 199; probe 25/25 against the anchored guard.
+- **Reviewer measurements worth keeping:** a backslash-newline does not continue a comment
+  (`… -f k=v # note \⏎-X GET` runs `-X GET` as its own command, so the joined rendering is an
+  implicit POST — main ALLOW, head DENY on both guards, closed incidentally by the cut, not
+  pinned); six quoted/escaped-hash explicit reads ALLOW on both sides; `>#foo` is a bash syntax
+  error. The two `/repos/o/r/merges` rows are outside the merge gate's `pulls…merge` scope on
+  main and head alike.
+- **Declined as out of scope for this fix:** tightening `_CMD_REDIR` itself — it is shared by
+  three guards and the corpus, and its fd-digit prefix is correct for every additive consumer.

@@ -345,6 +345,29 @@ assert_allowed "KNOWN-WRONG (residual): --template -X after a field is a live AL
 out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v --template x' | run)
 denied "$out" && ok "CONTROL: the same carrier holding an ordinary value denies (the decoy is what flips it)" \
               || bad "CONTROL: the same carrier holding an ordinary value denies (the decoy is what flips it)" "$out"
+# THE BLANK IS ANCHORED AT A WORD START (security review, 2026-09-22). `_CMD_REDIR`'s optional
+# fd-digit prefix is right for additive presence checks and wrong for a subtractive use: unanchored
+# it ate the trailing digit of `--method2>x` and manufactured `--method `, satisfying the method
+# closer -- main DENY, first head ALLOW. Anchored, the blank cannot alter the token before it.
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v --method2>x' | run)
+denied "$out" && ok "a digit glued between --method and a redirect is not a method flag (the blank cannot eat the digit)" \
+              || bad "a digit glued between --method and a redirect is not a method flag (the blank cannot eat the digit)" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v --method1>&2' | run)
+denied "$out" && ok "the fd-shaped digit before >&2 stays with the word" \
+              || bad "the fd-shaped digit before >&2 stays with the word" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v --method0<x' | run)
+denied "$out" && ok "the fd-shaped digit before an input redirect stays with the word" \
+              || bad "the fd-shaped digit before an input redirect stays with the word" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v --methodology>x' | run)
+denied "$out" && ok "CONTROL: a longer flag sharing the prefix, glued to a redirect, denies on both sides" \
+              || bad "CONTROL: a longer flag sharing the prefix, glued to a redirect, denies on both sides" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v >-X' | run)
+denied "$out" && ok "CONTROL: a word-initial operator with a GLUED decoy operand is still blanked" \
+              || bad "CONTROL: a word-initial operator with a GLUED decoy operand is still blanked" "$out"
+# THE COST OF THE ANCHOR: an operator glued to the preceding word with a SPACED operand is not
+# blanked. ALLOW on main, ALLOW here -- pre-existing, pinned so it stays visible.
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v> -X' | run)
+assert_allowed "KNOWN-WRONG (residual): an operator glued to the word with a spaced decoy operand is not blanked" "$out"
 
 # 3a-quinquies. ENDPOINT SPELLINGS THE SEGMENT-CLASS DISCRIMINATOR LET THROUGH (regression vs main,
 # found by both reviewers independently, 2026-09-18). Each of these DENIED on main's
@@ -1588,7 +1611,9 @@ unset _mrgcloser_hits _mrgcloser_prose
 # 179 -> 193 (2026-09-22, non-argv text in the implicit-POST arm, block 3a-bis-2): +14 = 3 deny
 # rows for the comment/redirect-operand decoys, 2 deny controls, 2 allow controls, 3 glued
 # field-closer denies with 1 deny + 1 allow control, and the value-slot decoy beside its control.
-EXPECTED_TOTAL=193
+# 193 -> 199 (2026-09-22, security review round 1): +6 = 3 manufactured-method rows the unanchored
+# blank flipped main-DENY -> head-ALLOW, 2 controls, and the anchor's cost pinned KNOWN-WRONG.
+EXPECTED_TOTAL=199
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

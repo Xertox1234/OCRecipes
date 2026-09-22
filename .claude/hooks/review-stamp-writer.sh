@@ -131,10 +131,15 @@ objection_in() {  # $1 = text; returns 0 when either arm matches
     || [ -n "$sev" ]
 }
 if [ -n "$TP" ] && [ -r "$TP" ] && grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
-  # `// empty` so an absent message contributes nothing rather than a literal `null`.
+  # `// empty` so an absent message contributes nothing rather than a literal `null`. A
+  # transcript jq cannot parse exits WITHOUT writing (the header's policy; case 42): the first
+  # version emptied the bodies and fell through to the text parse, which would stamp the text
+  # over an objection this hook could not read -- the fail-open direction, and the opposite of
+  # guard (b), whose jq failure yields no substitution and no record. The cost is one
+  # re-dispatch for a text-only review whose transcript is malformed (case 43).
   HB_BODIES=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
                        | select(.type=="tool_use" and .name=="SubagentHandback")
-                       | .input.message // empty] | join("\n")' "$TP" 2>/dev/null) || HB_BODIES=""
+                       | .input.message // empty] | join("\n")' "$TP" 2>/dev/null) || exit 0
   if [ -n "$HB_BODIES" ] && objection_in "$HB_BODIES"; then
     exit 0
   fi

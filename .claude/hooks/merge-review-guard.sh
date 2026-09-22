@@ -440,13 +440,20 @@ case "$TOOL" in
           # control denying. A comment starts at an unquoted word start and cmd_words has
           # already rendered a QUOTED `#` as the placeholder, so `[[:space:]]#` is the comment
           # boundary of this rendering; operands are blanked with the SAME `_CMD_REDIR` grammar
-          # MRG_SEP is built from. Only the NEGATED conjunct reads the cut view: the positive
-          # field test and the mutating-method literal above keep the full clause, so relative
-          # to main this can only ADD denials (removal cannot invent a method token). An
-          # uncuttable comment inside a substitution truncates the view and DENIES -- cannot
-          # verify -> deny. guard-outward-cli.sh carries this pipeline byte-for-byte.
+          # MRG_SEP is built from, ANCHORED at a word start. Only the NEGATED conjunct reads the
+          # cut view: the positive field test and the mutating-method literal above keep the
+          # full clause, so relative to main this can only ADD denials -- the cut removes a
+          # SUFFIX at a space and the blank replaces a WORD-INITIAL match with a space, so
+          # neither can alter the token before it. The anchor is load-bearing: `_CMD_REDIR`'s
+          # fd-digit prefix is right for the additive presence checks it serves and wrong for a
+          # subtractive use -- unanchored it ate the trailing digit of `--method2>x` and
+          # manufactured `--method ` (main DENY -> head ALLOW, caught in review). Its cost, an
+          # operator glued to the word with a spaced operand (`k=v> -X`), stays the ALLOW it is
+          # on main and is pinned KNOWN-WRONG. An uncuttable comment inside a substitution
+          # truncates the view and DENIES -- cannot verify -> deny. guard-outward-cli.sh carries
+          # this pipeline byte-for-byte.
           MRG_API_ARGV=$(printf '%s' "$MRG_API_CLAUSE" | sed -E 's/[[:space:]]#.*$//')
-          [ -n "${_CMD_REDIR:-}" ] && MRG_API_ARGV=$(printf '%s' "$MRG_API_ARGV" | sed -E "s/${_CMD_REDIR}/ /g")
+          [ -n "${_CMD_REDIR:-}" ] && MRG_API_ARGV=$(printf '%s' "$MRG_API_ARGV" | sed -E "s/(^|[[:space:]])${_CMD_REDIR}/\1 /g")
           if printf '%s' "$MRG_API_CLAUSE" | grep -Eq "(^|[[:space:]])(-X${MRG_API_M}${_CMD_POS_SUFFIX}|(-X|--method)(${MRG_SEP}|=)${MRG_API_M}${_CMD_POS_SUFFIX})" \
              || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq '(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)' \
                   && printf '%s' "$MRG_API_CLAUSE" | grep -qE '[$`]'; } \

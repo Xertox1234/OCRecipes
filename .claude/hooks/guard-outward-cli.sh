@@ -5018,10 +5018,20 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   #     clause, comment text included: `-f k=v -X GET # -X POST` denies, an accepted over-denial
   #     in the restrictive direction, because cutting a positive conjunct is the one edit that
   #     can turn a deny into an allow. Relative to main this change can therefore only ADD
-  #     denials: removing text cannot invent a method token, and comment text could already
-  #     supply a field. An UNCUTTABLE comment (a `#` inside a substitution that also carries a
-  #     later `-X GET`) truncates the argv view and DENIES -- cannot verify -> deny, the same
-  #     2026-09-05 ruling the unreadable-method arm applies.
+  #     denials, and the reason is narrower than "removing text cannot invent a token": the cut
+  #     removes a SUFFIX at a space and the blank replaces a WORD-INITIAL match with a space, so
+  #     neither can alter the token before it, and comment text could already supply a field.
+  #     The blank has to be ANCHORED for that to hold. `_CMD_REDIR` opens with an optional
+  #     fd-digit prefix -- right for the ADDITIVE presence checks it was written for, wrong for
+  #     a SUBTRACTIVE use: unanchored, it ate the trailing digit of `--method2>x` together with
+  #     the operator and manufactured `--method `, which satisfies the method closer -- a
+  #     main-DENY -> head-ALLOW regression caught in review (non-executable, since gh has no
+  #     such flag, but a regression all the same). The anchor's cost: an operator GLUED to the
+  #     preceding word with a SPACED operand (`-f k=v> -X`) is not blanked and stays the ALLOW
+  #     it is on main -- pinned KNOWN-WRONG in test-guard-outward-cli.sh. An UNCUTTABLE comment
+  #     (a `#` inside a substitution that also carries a later `-X GET`) truncates the argv view
+  #     and DENIES -- cannot verify -> deny, the same 2026-09-05 ruling the unreadable-method
+  #     arm applies.
   #   * THE FIELD-FLAG CLOSER -- CLOSED 2026-09-22. `_GH_API_FIELD` closed its three long flags on
   #     a hand-spelled `([[:space:]]|=|$)`, so a redirect glued to the flag (`--field>o k=v`) put
   #     `>` where that class expected whitespace and the arm stood down with no decoy token at
@@ -5035,10 +5045,11 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # comment starts at an unquoted word start, and cmd_words has already rendered a QUOTED `#`
   # as the placeholder, so `[[:space:]]#` is the comment boundary of this rendering. Redirect
   # operands are blanked with the SAME `_CMD_REDIR` grammar `_OUT_SEP` is built from, never a
-  # hand-spelled one; blanking to a space cannot fuse two tokens into a method flag.
+  # hand-spelled one, ANCHORED at a word start so the blank can never alter the token before it
+  # (the residual above records the `--method2>x` regression an unanchored blank produced).
   # merge-review-guard.sh carries this pipeline byte-for-byte for `MRG_API_ARGV`.
   _GH_API_ARGV=$(printf '%s' "$GH_API_CLAUSE" | sed -E 's/[[:space:]]#.*$//')
-  [ -n "${_CMD_REDIR:-}" ] && _GH_API_ARGV=$(printf '%s' "$_GH_API_ARGV" | sed -E "s/${_CMD_REDIR}/ /g")
+  [ -n "${_CMD_REDIR:-}" ] && _GH_API_ARGV=$(printf '%s' "$_GH_API_ARGV" | sed -E "s/(^|[[:space:]])${_CMD_REDIR}/\1 /g")
   if [ -n "$GH_API_CLAUSE" ] && grep -Eq "$_GH_API_FIELD" <<< "$GH_API_CLAUSE" \
      && ! grep -Eq "$_GH_API_ANYMETHOD" <<< "$_GH_API_ARGV"; then
     deny "guard-outward-cli: command-position 'gh api' with a field parameter (-f/-F/--field/--raw-field) or --input and NO -X/--method flag is a POST, not a GET — gh's own api.go sets method=POST whenever a method was not passed and any parameter or input file is present, so this reaches the same arbitrary-mutation surface as an explicit -X POST (including a PR merge). An explicit read (-X GET/--method GET) with the same parameters is unaffected -- EXCEPT for 'gh api graphql', whose transport is always POST, so there is no explicit-read spelling of it and a graphql READ is denied here too; its only route is the bypass. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."

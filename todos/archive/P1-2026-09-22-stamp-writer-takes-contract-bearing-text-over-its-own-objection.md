@@ -182,3 +182,24 @@ rather than filed" — this todo is the filing.
   Confirmation-pass paragraph stated that a plain-text re-issue "stamps whatever that text says
   over its own objection record". The tree now contradicts it, so the sentence was corrected in
   the same change (the rule it supports is unchanged). No other file outside the contract moved.
+
+### 2026-09-22 — PR #1012 review round 1 (one pass, `code-reviewer` + `security-auditor`)
+
+- **Fixed (a defect in the new guard, not pre-existing):** guard (c) emptied the hand-back bodies
+  on a jq parse failure and fell through to the text parse, stamping the text over an objection
+  the hook could not read — the fail-open direction and the opposite of guard (b). Now a
+  transcript jq cannot parse exits without writing, per the header's policy. Cases 42 (objection
+  - malformed line + contract text → no record) and 43 (malformed, no hand-back → no record; the
+    parse failure alone refuses, case 39 is the well-formed positive control). Suite 73 → 75.
+- **Declined:** letting (c) fall through when the delivered text ITSELF carries an objection, so
+  an objection hand-back plus a findings-bearing text keeps recording `findings` as on main. Both
+  outcomes deny, but the fall-through reopens laundering: a text with a standalone severity word
+  in prose and a terminal `No findings.` parses to `clean` (the writer keys on the last line, and
+  WARNING-class words do not block it), so the "text objects too" test cannot distinguish a real
+  objection from a clean report that names the format. The refusal stays unconditional on that
+  path; the cost is one shape whose deny now reads as "no record" instead of `findings`.
+- **Filed, pre-existing on main:** a later objection from the same reviewer cannot retract an
+  earlier clean record at the same head —
+  `todos/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md`.
+- **Doc completeness (baseline reviewer):** the solution doc's Rule section still narrated the
+  overwrite in present tense while its Exceptions bullet said closed; both now agree.

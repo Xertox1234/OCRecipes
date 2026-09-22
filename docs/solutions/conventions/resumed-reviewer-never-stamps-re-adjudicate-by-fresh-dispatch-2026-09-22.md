@@ -22,16 +22,20 @@ A resumed reviewer's second report lands in one of two shapes, and both are wron
   and refuses to choose between an objection and a later withdrawal, so it writes **nothing** —
   even when the second report carries both machine-parsed blocks and a literal `No findings.`
   last line. Measured live on PR #960.
-- **It re-issues the contract as plain text, with no second hand-back.** The writer takes
-  delivered text that carries `REVIEWED-SHA:` directly and never reaches the hand-back count, so
-  that text is stamped as-is — and because records are one file per agent type per head, it
-  **overwrites the same agent's earlier objection record** with a clean verdict. Measured on
-  constructed transcripts against the live hook during PR #1010's review (a live resumed reviewer
-  doing this was not observed); the structure is confirmed in the writer, where the whole
-  hand-back fallback sits inside the `! grep -q '^REVIEWED-SHA:'` branch.
+- **It re-issues the contract as plain text, with no second hand-back.** Until 2026-09-22 the
+  writer took delivered text that carries `REVIEWED-SHA:` directly and never reached the
+  hand-back count, so that text was stamped as-is — and because records are one file per agent
+  type per head, it **overwrote the same agent's earlier objection record** with a clean verdict.
+  Measured on constructed transcripts against the live hook during PR #1010's review (a live
+  resumed reviewer doing this was not observed). **Closed 2026-09-22**: the writer's guard (c) now
+  reads every hand-back body whenever the delivered text carries the contract, through the same
+  two objection arms, and an objection in any of them writes nothing — the earlier record stands.
+  What remains is the sliver both arms already shared: a hand-back objection that carries no
+  severity word at all is invisible to them (writer residual item 6).
 
-The first shape costs a review round. The second is the laundering the gate exists to refuse —
-and it is the orchestrator's resume that makes it possible. Either way, the fresh dispatch is the
+The first shape costs a review round. The second was the laundering the gate exists to refuse —
+and it was the orchestrator's resume that made it possible; now it costs a round too, because the
+refused record can only be replaced by a fresh dispatch. Either way, the fresh dispatch is the
 only path to a record you can trust.
 
 Corollary for every dispatch prompt: tell the reviewer to deliver its report **once, in a single
@@ -42,7 +46,8 @@ hand-back**.
 - A `SendMessage` to a reviewer's agent id after that agent has already handed a report back.
 - A clean `No findings.` reply visible in the conversation while `review_stamp_dir <sha>` prints
   a directory that does not exist — or, worse, one whose record was written **after** an
-  objection you can see in the same agent's transcript.
+  objection you can see in the same agent's transcript (since 2026-09-22 only reachable when that
+  objection carries no severity word at all; still worth the look).
 - "The reviewer agreed it was fine" offered as the reason a merge should now pass.
 
 ## Why

@@ -4400,9 +4400,12 @@ assert_deny "the ONE-command -f mutation now denies (gh's implicit POST, api.go:
 # Measured ALLOW on origin/main (8ff7cfd2) for every DENY row below except the two controls,
 # which denied on both sides -- so the decoy token, not the comment, is what flipped them.
 # The fix reads the NEGATED conjunct over an argv-cut clause (comment cut at an unquoted
-# word-start `#`, `_CMD_REDIR` operands blanked) and the POSITIVE field conjunct over the full
-# clause, so relative to main the change can only ADD denials: removing text cannot invent a
-# method token, and comment text could already supply a field before this change.
+# word-start `#`, word-initial `_CMD_REDIR` matches blanked) and the POSITIVE field conjunct over
+# the full clause, so relative to main the change can only ADD denials: the cut removes a suffix
+# at a space and the blank replaces a WORD-INITIAL match with a space, so neither can alter the
+# token before it, and comment text could already supply a field before this change. The anchor
+# is load-bearing -- the block after the value-slot rows below records the regression an
+# unanchored blank produced.
 assert_deny "a method flag inside a trailing COMMENT does not disarm the implicit-POST arm" \
   "$(json 'gh api repos/o/r/pulls/42/merge -f k=v # -X GET')" "NO -X/--method flag"
 assert_deny "the long-form method flag inside a trailing comment does not disarm it either" \
@@ -4451,6 +4454,29 @@ assert_allow "KNOWN-WRONG (residual): --template -X after a field is a live ALLO
   "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --template -X')"
 assert_deny "CONTROL: the same carrier holding an ordinary value denies (the decoy is what flips it)" \
   "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --template x')" "NO -X/--method flag"
+# THE BLANK IS ANCHORED AT A WORD START, AND THIS BLOCK IS WHY (security review, 2026-09-22).
+# `_CMD_REDIR` opens with an optional fd-digit prefix, which is right for the ADDITIVE presence
+# checks it was written for and wrong for a SUBTRACTIVE use: unanchored, it ate the trailing digit
+# of `--method2>x` together with the operator and manufactured `--method `, which satisfies the
+# method closer -- main DENY, first head ALLOW, a regression (non-executable, since gh has no
+# such flag and pflag does not prefix-match, but a regression all the same). Anchored at
+# `(^|[[:space:]])` the blank can never alter the token before it, which is the property the
+# monotonicity claim in the block header actually rests on.
+assert_deny "a digit glued between --method and a redirect is not a method flag (the blank cannot eat the digit)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --method2>x')" "NO -X/--method flag"
+assert_deny "the fd-shaped digit before >&2 stays with the word" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --method1>&2')" "NO -X/--method flag"
+assert_deny "the fd-shaped digit before an input redirect stays with the word" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --method0<x')" "NO -X/--method flag"
+assert_deny "CONTROL: a longer flag sharing the prefix, glued to a redirect, denies on both sides" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --methodology>x')" "NO -X/--method flag"
+assert_deny "CONTROL: a word-initial operator with a GLUED decoy operand is still blanked" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v >-X')" "NO -X/--method flag"
+# THE COST OF THE ANCHOR, pinned rather than remembered: an operator GLUED to the preceding word
+# with a SPACED operand is not blanked, so its operand can still carry the decoy. ALLOW on main,
+# ALLOW here -- a pre-existing gap the anchor leaves open, not a regression.
+assert_allow "KNOWN-WRONG (residual): an operator glued to the word with a spaced decoy operand is not blanked" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v> -X')"
 
 # ---------- launcher-family / path-qualified invocation (2026-09-16) ----------
 # todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md
@@ -5915,7 +5941,10 @@ fi
 # controls (explicit read + comment, interior redirect), 1 accepted-over-denial row stating the
 # boundary of the cut, 3 glued-redirect field-closer denies with 1 deny + 1 allow control, and
 # the value-slot decoy pinned KNOWN-WRONG beside its control.
-EXPECTED_TOTAL=1201
+# 1201 -> 1207 (2026-09-22, security review round 1): +6 = 3 manufactured-method rows the
+# unanchored blank flipped main-DENY -> head-ALLOW, 2 controls (a longer flag glued to a redirect,
+# a word-initial operator with a glued operand), and the anchor's cost pinned KNOWN-WRONG.
+EXPECTED_TOTAL=1207
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

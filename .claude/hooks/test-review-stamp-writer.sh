@@ -809,13 +809,41 @@ jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$ROSTER_OBJ_TP" \
   && ok "a roster-rendered (unbracketed) objection in the hand-back also blocks contract-bearing text" \
   || bad "a roster-rendered (unbracketed) objection in the hand-back also blocks contract-bearing text"
 
+# Case 42. A transcript jq cannot parse must FAIL CLOSED on the contract-bearing path too
+# (security review, 2026-09-22). The first version of guard (c) emptied the bodies on a jq
+# failure and fell through to the text parse -- a clean stamp over an objection the hook could
+# not read. The file's header policy is that an unparseable payload exits 0 writing nothing.
+MALFORMED_TP=$(async_transcript "$FINDINGS_MSG")
+printf 'not json\n' >>"$MALFORMED_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$MALFORMED_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 42
+[ ! -f "$ROOT/case-42/$SHA/code-reviewer.json" ] \
+  && ok "an unparseable transcript behind contract-bearing text writes no record (fail closed)" \
+  || bad "an unparseable transcript behind contract-bearing text writes no record (fail closed)"
+# Case 43 makes case 42 mean something: with the malformed line removed, case 42 is case 37 and
+# refuses because of the OBJECTION. A malformed transcript carrying NO hand-back at all behind the
+# same clean text must also write nothing -- the hook could not establish that no objection
+# exists, so the parse failure alone is what refuses. Case 39 is the well-formed positive control.
+MALFORMED_NOHB_TP=$(mktemp "$ROOT/transcript-malnohb-XXXX")
+jq -nc --arg w "$WRAPPER_LINE" '{type:"assistant", message:{content:[
+    {type:"text", text:$w}]}}' >"$MALFORMED_NOHB_TP"
+printf 'not json\n' >>"$MALFORMED_NOHB_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$MALFORMED_NOHB_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 43
+[ ! -f "$ROOT/case-43/$SHA/code-reviewer.json" ] \
+  && ok "an unparseable transcript with no hand-back at all also writes nothing (the parse failure is what refuses)" \
+  || bad "an unparseable transcript with no hand-back at all also writes nothing (the parse failure is what refuses)"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
 # 66 -> 73 (2026-09-22): +7, the prior-objection rows above (cases 36-41; case 36 asserts both stops).
-EXPECTED_TOTAL=73
+# 73 -> 75 (2026-09-22, security review round 1): +2, the unparseable-transcript rows (cases 42-43).
+EXPECTED_TOTAL=75
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
