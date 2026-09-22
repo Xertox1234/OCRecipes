@@ -176,9 +176,11 @@ rather than filed" — this todo is the filing.
   on exactly cases 36-stop-2, 37, 38 and 41 before the writer change with the three controls
   (36-stop-1, 39, 40) green, then 73/73 after it, under bash 5.3.15 via the suite's own
   `bash "$HOOK"` invocation. `merge-review-guard.sh` untouched by this todo.
-- **Residual left open, named in item 6:** an objection that carries no severity word at all is
+- **Residuals left open, named in item 6:** an objection that carries no severity word at all is
   invisible to both arms, as it always was for guard (a) — in either delivery shape, once the
-  confirmation round below widened (c) to prior report texts.
+  confirmation round below widened (c) to prior report texts; and a prior objection TEXT that
+  withheld the contract is not read as a prior report (pre-existing; folded into the P3 filed from
+  round 1 as its second class, see the round-2 entry below).
 - **Out of the stated Scope Contract, disclosed:** one sentence in `docs/AI_WORKFLOW.md`'s
   Confirmation-pass paragraph stated that a plain-text re-issue "stamps whatever that text says
   over its own objection record". The tree now contradicts it, so the sentence was corrected in
@@ -227,3 +229,36 @@ rather than filed" — this todo is the filing.
   in either guard, 144 new denials all word-initial, and every remaining implicit-POST ALLOW
   either the pinned anchor-cost class or a non-executable `--method{fd}` shape that main allows
   identically. Recorded in the trailing-comment todo's own entry as well.
+
+### 2026-09-22 — PR #1012 confirmation round 2 (fresh `code-reviewer` + `security-auditor` at 09ded935)
+
+- **Both reviewers found the same defect in the round-1 widening, fixed here:** the
+  exclusion-by-value compared `$MSG` (captured through `$(...)`, which strips every trailing
+  newline) against the transcript's raw `.text` (which keeps them), with CR normalisation running
+  later in the file — so a findings delivery ending in a newline, or differing from its transcript
+  copy by CR alone, re-entered `PRIOR_REPORTS` as its own prior report, tripped an arm, and lost
+  its `findings` record. Fail-closed only, and 0 of 434 real last assistant texts end in a
+  newline, but a regression against main on findings deliveries and a false sentence in the
+  guard's own comment. The security reviewer's 69-row generated probe (3 verdicts × 7 tail shapes
+  × 2 pre-existing records, plus CR-mismatch, byte-identical, contract-free and narration rows,
+  under bash 5.3.15 and 3.2.57) put the cost at 16 rows, all `curEqText=no`, and verified the
+  one-line fix restores every one with no other row changing. Both sides are now normalised
+  inside the jq comparison (`gsub("\r";"")`, `sub("\\s+$";"")`); cases 48-51 pin the newline,
+  the seeded-clean-record, the CR-only-mismatch and the trailing-space-control shapes, suite
+  80 → 85, RED on exactly the three strip-related rows before the change. Positional exclusion
+  of the last transcript entry was rejected on the reviewer's argument: a transcript flushed
+  before the delivery is appended would then drop a genuine prior report, the fail-open way.
+- **Second finding, prose wider than the code, rescoped not fixed:** guard (c) selects prior
+  texts by the contract marker (so narration is never mistaken for a report), so a prior
+  objection TEXT that WITHHELD the contract — a refusal — is not read, and a later clean text
+  re-issue stamps on main and here alike (rows `C-BR/RO/IND-nocontractObj-then-clean`).
+  Pre-existing, 0 real instances; named as a residual at every site and folded into
+  `todos/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md`
+  as its second class, with the candidate mechanism (also select prior texts matching arm 1) and
+  the narration cost it must decide.
+- **Real-data reach of guard (c)'s widening, measured by that review over 616 subagent
+  transcripts:** 123 deliveries carry the contract in the last text; 117 have no prior
+  contract-bearing text; 5 now refuse (4 findings texts behind an earlier objecting report —
+  denied either way — and 1 clean text at a NEW head from a reviewer resumed across three heads,
+  the refusal the solution doc prescribes); 1 has a prior clean report and stamps. Zero real
+  transcripts contain the same-head objection-then-clean laundering shape.

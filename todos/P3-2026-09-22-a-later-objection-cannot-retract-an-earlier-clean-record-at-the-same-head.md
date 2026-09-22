@@ -34,6 +34,19 @@ resume for a question must ask for prose without `REVIEWED-SHA`/`REVIEWED-FILES`
 A push invalidates every stamp on the old head anyway. So the exposure is a same-head window
 between a clean stamp and a merge, in which the same reviewer changes its mind.
 
+## Second class, added from PR #1012's confirmation round 2 (2026-09-22)
+
+A prior objection delivered as TEXT that **withheld the contract** — a refusal rather than a
+report, e.g. a bracketed or roster-rendered finding with no `REVIEWED-SHA:` line — is not read by
+guard (c), which selects prior texts by the contract marker so that working narration is never
+mistaken for a report. Stop 1 writes nothing (guard (a) exits), and a stop-2 clean contract text
+then stamps `clean` on both main and the batch E branch (rows `C-BR-nocontractObj-then-clean`,
+`C-RO-nocontractObj-then-clean`, `C-IND-nocontractObj-then-clean` in the round-2 security probe).
+Same-agent, same-head, pre-existing; 0 of 434 real last assistant texts had this shape. Candidate
+mechanism: additionally select prior texts that match arm 1 (a line-start bracketed tag), which
+the narration control (case 47) does not match — but decide the narration false-refusal cost
+explicitly, since a narration line that starts with a bracketed tag would then refuse.
+
 ## Acceptance Criteria
 
 - [ ] A same-type record at the same head with `verdict: clean` is REPLACED (or deleted) when the

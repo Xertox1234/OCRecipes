@@ -907,6 +907,61 @@ jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$NARRATION_TP" \
   && ok "prior narration naming the format, without the contract, does not refuse (only prior REPORTS are read)" \
   || bad "prior narration naming the format, without the contract, does not refuse (only prior REPORTS are read)"
 
+# --- the delivered text must exclude itself even when it is not byte-identical to its transcript
+# copy (confirmation round 2, 2026-09-22, both reviewers). `$MSG` is captured through `$(...)`,
+# which strips every trailing newline, while the transcript's `.text` keeps them; and CR
+# normalisation runs LATER in the writer than guard (c). So a findings delivery ending in a
+# newline, or differing from its transcript copy by CR alone, re-entered PRIOR_REPORTS as its own
+# prior report, tripped an arm, and lost its `findings` record -- fail-closed, but a regression
+# against main on findings deliveries. Both sides are now normalised inside the jq comparison.
+# Every fixture below is a single-stop FINDINGS delivery, because a clean delivery carries no
+# objection and never tripped this.
+# Case 48. Trailing newline in both fields: bash strips it from $MSG, the transcript keeps it.
+NL_TP=$(mktemp "$ROOT/transcript-nl-XXXX")
+text_msg "$FINDINGS_MSG"$'\n' >"$NL_TP"
+jq -n --arg t "code-reviewer" --arg m "$FINDINGS_MSG"$'\n' --arg p "$NL_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 48
+[ "$(jq -r .verdict "$ROOT/case-48/$SHA/code-reviewer.json" 2>/dev/null)" = "findings" ] \
+  && ok "a findings delivery ending in a newline still records findings (self-exclusion survives the newline strip)" \
+  || bad "a findings delivery ending in a newline still records findings (self-exclusion survives the newline strip)"
+# Case 49. The same, with a same-type CLEAN record already at the head: the findings delivery
+# must REPLACE it (the designed fresh-delivery path). Before the fix the guard refused and the
+# seeded clean record stood -- the retraction class the P3 files, reached from a single stop.
+async_payload "code-reviewer" "$(async_transcript "$CLEAN_MSG")" | run_hook 49
+[ "$(jq -r .verdict "$ROOT/case-49/$SHA/code-reviewer.json" 2>/dev/null)" = "clean" ] \
+  && ok "case 49 seed: a clean record exists at the head before the findings delivery" \
+  || bad "case 49 seed: a clean record exists at the head before the findings delivery"
+NL2_TP=$(mktemp "$ROOT/transcript-nl2-XXXX")
+text_msg "$FINDINGS_MSG"$'\n' >"$NL2_TP"
+jq -n --arg t "code-reviewer" --arg m "$FINDINGS_MSG"$'\n' --arg p "$NL2_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 49
+[ "$(jq -r .verdict "$ROOT/case-49/$SHA/code-reviewer.json" 2>/dev/null)" = "findings" ] \
+  && ok "a findings delivery ending in a newline replaces a seeded same-type clean record" \
+  || bad "a findings delivery ending in a newline replaces a seeded same-type clean record"
+# Case 50. CR-only mismatch: the payload carries CRLF line endings, the transcript copy LF.
+FINDINGS_CRLF=${FINDINGS_MSG//$'\n'/$'\r\n'}
+CR_TP=$(mktemp "$ROOT/transcript-cr-XXXX")
+text_msg "$FINDINGS_MSG" >"$CR_TP"
+jq -n --arg t "code-reviewer" --arg m "$FINDINGS_CRLF" --arg p "$CR_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 50
+[ "$(jq -r .verdict "$ROOT/case-50/$SHA/code-reviewer.json" 2>/dev/null)" = "findings" ] \
+  && ok "a CR-only payload/transcript mismatch still records findings" \
+  || bad "a CR-only payload/transcript mismatch still records findings"
+# Case 51. CONTROL: a trailing SPACE is not stripped by the capture, so both sides are
+# byte-identical and the delivery excluded itself before the fix too. Green on both sides, which
+# is what shows cases 48-50 are about the strip and not about trailing bytes in general.
+SP_TP=$(mktemp "$ROOT/transcript-sp-XXXX")
+text_msg "$FINDINGS_MSG " >"$SP_TP"
+jq -n --arg t "code-reviewer" --arg m "$FINDINGS_MSG " --arg p "$SP_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 51
+[ "$(jq -r .verdict "$ROOT/case-51/$SHA/code-reviewer.json" 2>/dev/null)" = "findings" ] \
+  && ok "CONTROL: a trailing space survives the capture, so the delivery excluded itself either way" \
+  || bad "CONTROL: a trailing space survives the capture, so the delivery excluded itself either way"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -916,7 +971,9 @@ jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$NARRATION_TP" \
 # 73 -> 75 (2026-09-22, security review round 1): +2, the unparseable-transcript rows (cases 42-43).
 # 75 -> 80 (2026-09-22, confirmation round): +5, the text-delivered prior objection (cases 44-47;
 # case 44 asserts both stops).
-EXPECTED_TOTAL=80
+# 80 -> 85 (2026-09-22, confirmation round 2): +5, the self-exclusion normalisation rows (cases
+# 48-51; case 49 asserts its seed).
+EXPECTED_TOTAL=85
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

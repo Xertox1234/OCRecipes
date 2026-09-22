@@ -150,10 +150,20 @@ if [ -n "$TP" ] && [ -r "$TP" ] && grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
   # with no hand-back anywhere in the transcript (cases 44-45). Only assistant text bodies that
   # THEMSELVES carry the contract are read: a prior REPORT, never the reviewer's working
   # narration, which names the format freely (case 47). The delivered text is excluded by
-  # value, or a single-stop findings report would refuse its own record (case 44, stop 1).
+  # value, or a single-stop findings report would refuse its own record (case 44, stop 1) --
+  # and the comparison normalises BOTH sides, because the two copies are not byte-identical
+  # in general: `$MSG` came through `$(...)`, which strips every trailing newline, while the
+  # transcript's `.text` keeps them, and this file's CR normalisation runs below, after this
+  # guard. Compared raw, a findings delivery ending in a newline (or differing by CR alone)
+  # re-entered as its own prior report, tripped an arm, and lost its record -- fail-closed,
+  # but a regression on findings deliveries (confirmation round 2; cases 48-51). NOT replaced
+  # by positional exclusion of the last transcript entry: a transcript flushed before the
+  # delivery is appended would then drop a genuine prior report, the fail-open direction.
   PRIOR_REPORTS=$(jq -rs --arg cur "$MSG" '[.[] | select(.type=="assistant") | .message.content[]?
                        | select(.type=="text") | (.text // empty)
-                       | select(test("(^|\n)REVIEWED-SHA:")) | select(. != $cur)]
+                       | select(test("(^|\n)REVIEWED-SHA:"))
+                       | select((. | gsub("\r"; "") | sub("\\s+$"; ""))
+                                != ($cur | gsub("\r"; "") | sub("\\s+$"; "")))]
                       | join("\n")' "$TP" 2>/dev/null) || exit 0
   if { [ -n "$HB_BODIES" ] && objection_in "$HB_BODIES"; } \
      || { [ -n "$PRIOR_REPORTS" ] && objection_in "$PRIOR_REPORTS"; }; then
@@ -540,8 +550,15 @@ fi
 #    or a prior report -- one clean hand-back plus a clean text stamps (case 40), a prior clean
 #    report text stamps (case 46), an objection hand-back behind a plain wrapper still records
 #    `findings` through (b) (case 36), and the text-only single-stop majority is unchanged
-#    (cases 39 and 44 stop 1). Residual left OPEN by (c), same as (a): an objection that carries
-#    no severity word at all is invisible to both arms, in either delivery shape.
+#    (cases 39 and 44 stop 1). Residuals left OPEN by (c): an objection that carries no severity
+#    word at all is invisible to both arms in either delivery shape, same as (a); and a prior
+#    objection TEXT that WITHHELD the contract -- a refusal rather than a report -- is not read,
+#    because prior texts are selected by the contract marker so that working narration is never
+#    mistaken for a report. That second one is pre-existing (a stop-1 refusal text writes
+#    nothing on main too) and is tracked as the second class of
+#    todos/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md,
+#    with the candidate widening (also select prior texts matching arm 1) and the narration
+#    cost it has to decide.
 #
 #    An earlier version of this item claimed more than that — that all five agent
 #    definitions forbid the severity words in clean prose, so "a reviewer following the

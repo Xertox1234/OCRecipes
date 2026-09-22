@@ -31,9 +31,12 @@ A resumed reviewer's second report lands in one of two shapes, and both are wron
   reads every hand-back body AND every prior contract-bearing text in the transcript whenever the
   delivered text carries the contract, through the same two objection arms, and an objection in
   any of them writes nothing — the earlier record stands. Both delivery shapes of the first
-  report are covered (hand-back, or a text that was itself a report). What remains is the sliver
-  both arms already shared: an objection that carries no severity word at all is invisible to
-  them, in either shape (writer residual item 6).
+  report are covered (hand-back, or a text that was itself a report). What remains, named in the
+  writer's residual item 6: an objection that carries no severity word at all is invisible to
+  both arms in either shape, and a prior objection TEXT that withheld the contract (a refusal
+  rather than a report) is not read as a prior report and so does not block a later clean
+  re-issue — pre-existing, tracked in
+  `todos/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md`.
 
 The first shape costs a review round. The second was the laundering the gate exists to refuse —
 and it was the orchestrator's resume that made it possible; now it costs a round too, because the
