@@ -1,9 +1,9 @@
 ---
 title: "Reanimated 4 deprecates runOnUI and runOnJS in favour of react-native-worklets — 11 non-test files still reference them"
-status: backlog
+status: done
 priority: low
 created: 2026-09-20
-updated: 2026-09-20
+updated: 2026-09-21
 assignee:
 labels: [deferred, mobile]
 github_issue:
@@ -70,20 +70,21 @@ Replacement targets, verbatim from
 
 ## Acceptance Criteria
 
-- [ ] `grep -rn "runOnUI\|runOnJS" client/ --include='*.ts' --include='*.tsx'` returns no non-test
+- [x] `grep -rn "runOnUI\|runOnJS" client/ --include='*.ts' --include='*.tsx'` returns no non-test
       hits, and the now-unused imports are removed from every file in the table above.
-- [ ] `client/components/home/inline-drawer-utils.ts:6`'s comment no longer names `runOnUI` — it
+- [x] `client/components/home/inline-drawer-utils.ts:6`'s comment no longer names `runOnUI` — it
       names whatever the call site actually uses afterwards. A migration that leaves this comment
       behind is a stale citation of a symbol the code no longer contains.
-- [ ] Imports come from `react-native-worklets`, which is **already a direct dependency** in
+- [x] Imports come from `react-native-worklets`, which is **already a direct dependency** in
       `package.json` (verified 2026-09-20) — so no dependency addition is expected. If that stops
       being true, re-check before importing: a merely transitive package passes locally and breaks
       on a clean install.
 - [ ] Behaviour verified, not just types: the inline-drawer glide (`HomeScreen`), Toast dismissal,
       SwipeableRow gestures, the scroll-linked header, and camera focus/zoom all still work. A
       rename that type-checks but changes _when_ the worklet runs shows up as a visual glitch, never
-      as a red test.
-- [ ] Full suite green, with the test **count** compared against the pre-change baseline — not just
+      as a red test. **Partially verified on-device (see Updates below) — left unchecked because
+      not every listed behaviour was exercised.**
+- [x] Full suite green, with the test **count** compared against the pre-change baseline — not just
       "all green".
 
 ## Implementation Notes
@@ -133,3 +134,47 @@ excluded — file separately if it is worth doing.
 - Filed from editor diagnostics during an unrelated `/todo` run. Deprecation text, replacement
   targets, per-file occurrence counts, and the pre-existing provenance (`e79d0427`/#959) all
   verified against `main` before filing.
+
+### 2026-09-21
+
+- Implemented. Verified `scheduleOnUI`/`scheduleOnRN` behavior against the installed
+  `react-native-worklets@0.8.3` source directly (`lib/module/threads.native.js`): `runOnUI`/`runOnJS`
+  are thin curried wrappers that already delegate to `scheduleOnUI`/`scheduleOnRN` with identical
+  arguments, so `runOnUI(fn)(...args)` → `scheduleOnUI(fn, ...args)` and `runOnJS(fn)(...args)` →
+  `scheduleOnRN(fn, ...args)` is behavior-identical for every call site in this codebase (all are
+  immediately-invoked; none store the curried function for later reuse).
+- Scope Contract deviation (necessary, documented, all fixed in this PR — not deferred): the
+  Vitest mock for `react-native-reanimated` had no `scheduleOnUI`/`scheduleOnRN` exports and
+  `vitest.config.ts` had no alias for `react-native-worklets`, so the migrated imports would have
+  resolved to the real native package under Vitest and broken every test exercising a migrated call
+  site. Added both mock exports plus one alias line (`vitest.config.ts`, `test/mocks/react-native-reanimated.ts`).
+  Round-1 mobile-reviewer review then found (constructed + ran a probe) that
+  `scripts/worklet-directive-guard.ts`'s `WORKLET_CALLBACK_HOOKS` set recognized only the literal
+  name `"runOnUI"`, so migrating `HomeScreen.tsx`'s call to `scheduleOnUI` made that guard silently
+  stop inspecting the one real `runOnUI`-turned-`scheduleOnUI` worklet body in the app for missing
+  `"worklet"` directives on cross-file callees — a coverage regression for exactly the crash class
+  (`docs/solutions/runtime-errors/reanimated-worklet-util-needs-directive-across-imports-2026-06-27.md`)
+  that guard exists to catch. Fixed with a one-line Set addition (CRITICAL, fixed). Round-2 review
+  found two WARNINGs, both fixed inline: `useScrollLinkedHeader.test.ts`'s local
+  `vi.mock("react-native-reanimated")` factory was missing `scheduleOnRN` (masked today because no
+  existing test scrolls past the threshold that reaches that branch, but would break the next test
+  that does); the guard's own suite had no regression test pinning the `scheduleOnUI` fix (added
+  one, mutation-tested by hand to confirm it fails when the fix is reverted).
+- On-device verification (iOS Simulator, dev-client, Metro from this worktree): the HomeScreen
+  inline-drawer glide (`scheduleOnUI`, the only true former-`runOnUI` call site in the app) was
+  exercised directly — tapped a closed accordion section open, which calls `glideRowToTop` →
+  `scheduleOnUI(...)` with `measure`/`scrollTo`/`glideToTopOffset` inside; no crash, no redbox, the
+  drawer opened and the view scrolled correctly. Toast dismissal, SwipeableRow gestures, the
+  scroll-linked header, and camera focus/zoom were **not** exercised on-device this run (no running
+  backend to trigger a mutation-error Toast; the Plan-tab date-strip swipe attempt did not enter the
+  gesture's `activeOffsetX` regime — selection was unchanged before/after, a failed positive control,
+  not evidence either way; camera and SwipeableRow list rows were not reached). Acceptance criterion
+  4 left unchecked for that reason. The `scheduleOnUI`/`scheduleOnRN` equivalence proof from the
+  library's own source (above) is the reason the unexercised sites carry the same low risk profile
+  as the one that was exercised — offered as supporting context, not a substitute for verification.
+- Full suite: pre-change baseline 704 failed / 7731 passed (8435 total, 40/538 files failing) →
+  post-change 704 failed / 7732 passed (8436 total, 40/538 files failing). The +1 pass is the new
+  guard regression test added during review; every one of the 704 failures, both before and after,
+  is `error: database "williamtower" does not exist` from `test/db-test-utils.ts:78` (no
+  `DATABASE_URL` in this `Agent(isolation:"worktree")` sandbox) — pre-existing and unrelated to this
+  diff, which touches zero server/DB files.

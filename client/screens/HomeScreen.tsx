@@ -21,9 +21,9 @@ import Animated, {
   FadeInDown,
   useAnimatedRef,
   measure,
-  runOnUI,
   scrollTo,
 } from "react-native-reanimated";
+import { scheduleOnUI } from "react-native-worklets";
 import { Feather } from "@expo/vector-icons";
 import { BottomSheetModal, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
@@ -258,7 +258,7 @@ export default function HomeScreen() {
       if (!rowRef) return;
       const currentY = scrollY.value;
       const animated = !reducedMotion;
-      runOnUI(() => {
+      scheduleOnUI(() => {
         "worklet";
         const m = measure(rowRef);
         if (m === null) return;
@@ -268,7 +268,7 @@ export default function HomeScreen() {
           glideToTopOffset(currentY, m.pageY, collapsedBarHeight),
           animated,
         );
-      })();
+      });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- animated refs + shared value are stable
     [collapsedBarHeight, reducedMotion],

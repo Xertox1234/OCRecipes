@@ -11,9 +11,9 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
-  runOnJS,
   SlideInUp,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -84,7 +84,7 @@ export function Toast({
         onDismiss();
       } else {
         opacity.value = withTiming(0, toastExitTimingConfig, (finished) => {
-          if (finished) runOnJS(onDismiss)();
+          if (finished) scheduleOnRN(onDismiss);
         });
       }
     }, dismissMs);
@@ -101,7 +101,7 @@ export function Toast({
       if (e.translationY < SWIPE_DISMISS_THRESHOLD) {
         translateY.value = withTiming(-200, toastExitTimingConfig);
         opacity.value = withTiming(0, toastExitTimingConfig, (finished) => {
-          if (finished) runOnJS(onDismiss)();
+          if (finished) scheduleOnRN(onDismiss);
         });
       } else {
         translateY.value = withSpring(0, toastSpringConfig);

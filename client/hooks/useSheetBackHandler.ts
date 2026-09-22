@@ -20,8 +20,8 @@ export interface UseSheetBackHandlerResult {
    * once an animation *completes* — during the opening animation (a few
    * hundred ms of spring/timing motion) `onSheetChange` hasn't run yet, so a
    * back press in that window would fall through and reproduce the exact bug
-   * this hook exists to fix. `onAnimate` fires (via `runOnJS`, one frame —
-   * not truly synchronous) when the animation *starts*, well before
+   * this hook exists to fix. `onAnimate` fires (bridged from the UI thread on
+   * a schedule, one frame — not truly synchronous) when the animation *starts*, well before
    * `onChange` fires on completion, so this flips the ref open immediately.
    * Closing is still left to `onSheetChange` (never flips the ref closed here) — biasing
    * toward "still open" during a close animation means a back press just

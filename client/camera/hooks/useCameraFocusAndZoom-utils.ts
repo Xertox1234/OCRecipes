@@ -12,7 +12,7 @@ import type { CameraDevice, MeteringMode } from "react-native-vision-camera";
  * `focusTo`'s own docs require of callers passing an explicit `modes` array.
  *
  * No `"worklet"` directive: unlike `clampZoom` below, this is called from
- * `runFocus` on the JS thread (via `runOnJS`), never inside a worklet body.
+ * `runFocus` on the JS thread (via `scheduleOnRN`), never inside a worklet body.
  */
 export function supportedMeteringModes(device: CameraDevice): MeteringMode[] {
   const modes: MeteringMode[] = [];

@@ -118,6 +118,13 @@ export default defineConfig({
         __dirname,
         "./test/mocks/react-native-reanimated.ts",
       ),
+      // react-native-worklets carries the (still-current) scheduleOnUI/scheduleOnRN
+      // APIs that replace reanimated's deprecated runOnUI/runOnJS — same mock file,
+      // since it already exports both the old and new names.
+      "react-native-worklets": path.resolve(
+        __dirname,
+        "./test/mocks/react-native-reanimated.ts",
+      ),
       "react-native-safe-area-context": path.resolve(
         __dirname,
         "./test/mocks/react-native-safe-area-context.ts",

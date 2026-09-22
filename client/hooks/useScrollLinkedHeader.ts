@@ -5,8 +5,8 @@ import {
   useAnimatedScrollHandler,
   interpolate,
   Extrapolation,
-  runOnJS,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 
 /**
  * Hook for scroll-linked collapsing headers.
@@ -66,7 +66,7 @@ export function useScrollLinkedHeader({
         event.contentOffset.y > collapseThreshold * 0.5;
       if (barShouldBeVisible !== lastBarVisible.value) {
         lastBarVisible.value = barShouldBeVisible;
-        runOnJS(updateBarVisibility)(barShouldBeVisible);
+        scheduleOnRN(updateBarVisibility, barShouldBeVisible);
       }
     },
   });
