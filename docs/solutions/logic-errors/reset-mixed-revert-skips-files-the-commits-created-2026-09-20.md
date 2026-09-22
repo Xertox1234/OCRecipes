@@ -8,6 +8,7 @@ applies_to: [".claude/agents/*.md", ".claude/skills/**/*.md"]
 symptoms: ["A revert reports success and leaves the bad file on disk", "git checkout -- <file> exits 1 with pathspec did not match any file(s) known to git", "A retry attempt inherits the previous attempt's content for files it did not revisit", "A stray file from a failed attempt appears in the PR diff", "The revert was measured and still missed the common case"]
 created: 2026-09-20
 severity: medium
+last_updated: 2026-09-21
 ---
 
 # A `git reset --mixed` revert only unwinds files that existed at base
@@ -113,8 +114,11 @@ case.
   committed, one modified tracked file and one implementer-created file: it exits 0, reverts the
   tracked file, and leaves the untracked one untouched. It is inert *today* only because that
   path aborts the run and the shared worktree is force-removed straight after, so nothing it
-  leaves behind can reach a commit — a masked latent gap, not a closed case. Tracked as
-  `todos/P3-2026-09-20-todo-fast-phase-5-blanket-revert-leaves-implementer-created-files.md`.
+  leaves behind can reach a commit — a masked latent gap, not a closed case. As of 2026-09-21 the
+  Phase 5 `BLOCKED` bullet documents this explicitly at the point of use and names Cleanup's
+  `git worktree remove --force` as what makes it safe today, per
+  `todos/archive/P3-2026-09-20-todo-fast-phase-5-blanket-revert-leaves-implementer-created-files.md`
+  — the gap itself is unchanged, only now written down where the next reader hits it.
 
 ## See Also
 
