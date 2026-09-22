@@ -102,6 +102,74 @@ fi
 #       real transcripts, the honest shape is exactly one. Anything else is ambiguous, so
 #       refuse to choose — not substituting leaves $MSG as the wrapper, the sha parse below
 #       finds nothing, and the hook exits without a record. Fail closed.
+#
+#   (c) A PRIOR OBJECTION IN A HAND-BACK OR IN A PRIOR REPORT TEXT, WHEN THE DELIVERED TEXT
+#       CARRIES THE CONTRACT. Guards (a) and (b) live inside the `$MSG lacks ^REVIEWED-SHA:`
+#       block below, so a final text that CARRIES the contract was parsed directly and the
+#       transcript was never consulted. That is the fail-open shape (b)'s own comment refuses,
+#       reached by a route it did not consider: a resumed reviewer that objected in its
+#       hand-back and then re-issued a clean report as plain TEXT wrote `verdict: clean` over
+#       its own `verdict: findings` record at that head (measured 2026-09-22 on constructed
+#       transcripts, PR #1010 gate-lens review; pinned as cases 36-41), and a reviewer whose
+#       first report was itself a contract-bearing TEXT laundered the same way with no
+#       hand-back anywhere (PR #1012 confirmation review; cases 44-47). This guard keys on an
+#       OBJECTION in any hand-back body or any prior contract-bearing text, never on the mere
+#       presence of one: one clean hand-back plus a clean text contradicts nothing and still
+#       stamps (case 40), a prior clean report text does not refuse (case 46), and an objection
+#       hand-back behind a plain WRAPPER still records `findings` through (b) below (case 36,
+#       stop 1), which is why this check is scoped to the contract-bearing-text path rather
+#       than run unconditionally. It reads the same `.input.message` bodies (b)'s count reads,
+#       through the same two arms (a) uses, so the three guards cannot drift on what an
+#       objection is.
+#
+# The two objection arms, defined ONCE for guards (a) and (c). Arm 1 is the marker-tolerant
+# BRACKET form, case-INSENSITIVE; arm 2 is ANY standalone severity word, case-SENSITIVE — the
+# comment at guard (a)'s call site below records why the two differ and why neither may be
+# narrowed. Arm 2 is captured into a variable rather than piped into `grep -q`: under
+# `pipefail` an early-exiting reader makes the writer take SIGPIPE and the pipeline reports
+# failure even though the read succeeded.
+objection_in() {  # $1 = text; returns 0 when either arm matches
+  local sev
+  sev=$(grep -E '(^|[^A-Za-z0-9_])(CRITICAL|WARNING|SUGGESTION)($|[^A-Za-z0-9_])' <<<"$1" || true)
+  grep -qiE '^[[:space:]]*(([-*+>#]+|[0-9]+[.)])[[:space:]]*)*\[(CRITICAL|WARNING|SUGGESTION)\]' <<<"$1" \
+    || [ -n "$sev" ]
+}
+if [ -n "$TP" ] && [ -r "$TP" ] && grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
+  # `// empty` so an absent message contributes nothing rather than a literal `null`. A
+  # transcript jq cannot parse exits WITHOUT writing (the header's policy; case 42): the first
+  # version emptied the bodies and fell through to the text parse, which would stamp the text
+  # over an objection this hook could not read -- the fail-open direction, and the opposite of
+  # guard (b), whose jq failure yields no substitution and no record. The cost is one
+  # re-dispatch for a text-only review whose transcript is malformed (case 43).
+  HB_BODIES=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
+                       | select(.type=="tool_use" and .name=="SubagentHandback")
+                       | .input.message // empty] | join("\n")' "$TP" 2>/dev/null) || exit 0
+  # PRIOR REPORTS DELIVERED AS TEXT COUNT TOO (confirmation review, 2026-09-22). A reviewer that
+  # delivered its objection as a contract-bearing TEXT -- the majority delivery shape -- was
+  # resumed, and re-issued a clean contract text launders exactly as the hand-back shape did,
+  # with no hand-back anywhere in the transcript (cases 44-45). Only assistant text bodies that
+  # THEMSELVES carry the contract are read: a prior REPORT, never the reviewer's working
+  # narration, which names the format freely (case 47). The delivered text is excluded by
+  # value, or a single-stop findings report would refuse its own record (case 44, stop 1) --
+  # and the comparison normalises BOTH sides, because the two copies are not byte-identical
+  # in general: `$MSG` came through `$(...)`, which strips every trailing newline, while the
+  # transcript's `.text` keeps them, and this file's CR normalisation runs below, after this
+  # guard. Compared raw, a findings delivery ending in a newline (or differing by CR alone)
+  # re-entered as its own prior report, tripped an arm, and lost its record -- fail-closed,
+  # but a regression on findings deliveries (confirmation round 2; cases 48-51). NOT replaced
+  # by positional exclusion of the last transcript entry: a transcript flushed before the
+  # delivery is appended would then drop a genuine prior report, the fail-open direction.
+  PRIOR_REPORTS=$(jq -rs --arg cur "$MSG" '[.[] | select(.type=="assistant") | .message.content[]?
+                       | select(.type=="text") | (.text // empty)
+                       | select(test("(^|\n)REVIEWED-SHA:"))
+                       | select((. | gsub("\r"; "") | sub("\\s+$"; ""))
+                                != ($cur | gsub("\r"; "") | sub("\\s+$"; "")))]
+                      | join("\n")' "$TP" 2>/dev/null) || exit 0
+  if { [ -n "$HB_BODIES" ] && objection_in "$HB_BODIES"; } \
+     || { [ -n "$PRIOR_REPORTS" ] && objection_in "$PRIOR_REPORTS"; }; then
+    exit 0
+  fi
+fi
 if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
   # Match the marker-tolerant BRACKET form OR the roster's own UNBRACKETED rendering.
   # Both, because they live in different documents and only one of them is what the
@@ -158,9 +226,9 @@ if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
   # and "a critical path in the reducer" all NOMATCH, while `[critical]` and `- [Critical]`
   # both match. Arm 2 stays case-SENSITIVE: unanchored, it is exactly where residual 4's
   # prose problem lives.
-  SEV=$(grep -E '(^|[^A-Za-z0-9_])(CRITICAL|WARNING|SUGGESTION)($|[^A-Za-z0-9_])' <<<"$MSG" || true)
-  if grep -qiE '^[[:space:]]*(([-*+>#]+|[0-9]+[.)])[[:space:]]*)*\[(CRITICAL|WARNING|SUGGESTION)\]' <<<"$MSG" \
-     || [ -n "$SEV" ]; then
+  # Both arms live in objection_in (defined above guard (c)), shared with that guard so the
+  # two sites cannot drift on what an objection looks like.
+  if objection_in "$MSG"; then
     exit 0
   fi
   NHB=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
@@ -466,6 +534,31 @@ fi
 #    `$MSG` lacking `^REVIEWED-SHA:`, so a clean report that CARRIES the contract never
 #    reaches either arm. The set of contract-shaped clean reports arm 2 can eat is empty by
 #    construction.
+#
+#    THAT IS A NO-FALSE-DENY PROPERTY OF THIS BLOCK, AND NOTHING MORE. An earlier revision of
+#    this item read it as "skipping the fallback on contract-bearing text is safe", which was
+#    true of the false-deny direction and FALSE of the fail-open one: a contract-bearing clean
+#    text was parsed with the transcript never consulted, so a resumed reviewer that objected
+#    in a hand-back and then re-issued its report as plain text OVERWROTE its own `findings`
+#    record at that head (measured 2026-09-22 on constructed transcripts, PR #1010 review).
+#    Guard (c) above closes it on that path: whenever `$MSG` carries the contract, every
+#    hand-back body AND every prior contract-bearing text in the transcript is read through the
+#    SAME two arms, and an objection in any of them writes nothing. So the set arm 2 can eat is
+#    still empty, AND a prior objection is no longer invisible in either delivery shape (the
+#    text-delivered shape was missed by the first version and caught in PR #1012's confirmation
+#    review; cases 44-47). Guard (c) keys on an objection, never on the presence of a hand-back
+#    or a prior report -- one clean hand-back plus a clean text stamps (case 40), a prior clean
+#    report text stamps (case 46), an objection hand-back behind a plain wrapper still records
+#    `findings` through (b) (case 36), and the text-only single-stop majority is unchanged
+#    (cases 39 and 44 stop 1). Residuals left OPEN by (c): an objection that carries no severity
+#    word at all is invisible to both arms in either delivery shape, same as (a); and a prior
+#    objection TEXT that WITHHELD the contract -- a refusal rather than a report -- is not read,
+#    because prior texts are selected by the contract marker so that working narration is never
+#    mistaken for a report. That second one is pre-existing (a stop-1 refusal text writes
+#    nothing on main too) and is tracked as the second class of
+#    todos/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md,
+#    with the candidate widening (also select prior texts matching arm 1) and the narration
+#    cost it has to decide.
 #
 #    An earlier version of this item claimed more than that — that all five agent
 #    definitions forbid the severity words in clean prose, so "a reviewer following the

@@ -1,5 +1,5 @@
 ---
-title: "Never resume a reviewer to re-adjudicate a finding — a second hand-back is refused, and a plain-text re-issue stamps over its own objection; dispatch a FRESH reviewer that carries the evidence"
+title: "Never resume a reviewer to re-adjudicate a finding — a second hand-back is refused, and a plain-text re-issue is refused too (or stamps clean after a contract-free objection); dispatch a FRESH reviewer that carries the evidence"
 track: knowledge
 category: conventions
 module: shared
@@ -8,7 +8,7 @@ applies_to: [".claude/hooks/**", ".claude/agents/*.md", ".claude/skills/**"]
 created: '2026-09-22'
 ---
 
-# Never resume a reviewer to re-adjudicate a finding — a second hand-back is refused, and a plain-text re-issue stamps over its own objection; dispatch a FRESH reviewer that carries the evidence
+# Never resume a reviewer to re-adjudicate a finding — a second hand-back is refused, and a plain-text re-issue is refused too (or stamps clean after a contract-free objection); dispatch a FRESH reviewer that carries the evidence
 
 ## Rule
 
@@ -22,16 +22,25 @@ A resumed reviewer's second report lands in one of two shapes, and both are wron
   and refuses to choose between an objection and a later withdrawal, so it writes **nothing** —
   even when the second report carries both machine-parsed blocks and a literal `No findings.`
   last line. Measured live on PR #960.
-- **It re-issues the contract as plain text, with no second hand-back.** The writer takes
-  delivered text that carries `REVIEWED-SHA:` directly and never reaches the hand-back count, so
-  that text is stamped as-is — and because records are one file per agent type per head, it
-  **overwrites the same agent's earlier objection record** with a clean verdict. Measured on
-  constructed transcripts against the live hook during PR #1010's review (a live resumed reviewer
-  doing this was not observed); the structure is confirmed in the writer, where the whole
-  hand-back fallback sits inside the `! grep -q '^REVIEWED-SHA:'` branch.
+- **It re-issues the contract as plain text, with no second hand-back.** Until 2026-09-22 the
+  writer took delivered text that carries `REVIEWED-SHA:` directly and never reached the
+  hand-back count, so that text was stamped as-is — and because records are one file per agent
+  type per head, it **overwrote the same agent's earlier objection record** with a clean verdict.
+  Measured on constructed transcripts against the live hook during PR #1010's review (a live
+  resumed reviewer doing this was not observed). **Closed 2026-09-22**: the writer's guard (c) now
+  reads every hand-back body AND every prior contract-bearing text in the transcript whenever the
+  delivered text carries the contract, through the same two objection arms, and an objection in
+  any of them writes nothing — the earlier record stands. Both delivery shapes of the first
+  report are covered (hand-back, or a text that was itself a report). What remains, named in the
+  writer's residual item 6: an objection that carries no severity word at all is invisible to
+  both arms in either shape, and a prior objection TEXT that withheld the contract (a refusal
+  rather than a report) is not read as a prior report and so does not block a later clean
+  re-issue — pre-existing, tracked in
+  `todos/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md`.
 
-The first shape costs a review round. The second is the laundering the gate exists to refuse —
-and it is the orchestrator's resume that makes it possible. Either way, the fresh dispatch is the
+The first shape costs a review round. The second was the laundering the gate exists to refuse —
+and it was the orchestrator's resume that made it possible; now it costs a round too, because the
+refused record can only be replaced by a fresh dispatch. Either way, the fresh dispatch is the
 only path to a record you can trust.
 
 Corollary for every dispatch prompt: tell the reviewer to deliver its report **once, in a single
@@ -42,15 +51,20 @@ hand-back**.
 - A `SendMessage` to a reviewer's agent id after that agent has already handed a report back.
 - A clean `No findings.` reply visible in the conversation while `review_stamp_dir <sha>` prints
   a directory that does not exist — or, worse, one whose record was written **after** an
-  objection you can see in the same agent's transcript.
+  objection you can see in the same agent's transcript (since 2026-09-22 reachable only when that
+  objection carries no severity word at all, or was delivered as a text that withheld the contract
+  — the second residual above; still worth the look).
 - "The reviewer agreed it was fine" offered as the reason a merge should now pass.
 
 ## Why
 
 `.claude/hooks/review-stamp-writer.sh` (SubagentStop) reads the agent's delivered text as `$MSG`.
-If `$MSG` already carries `^REVIEWED-SHA:`, it is parsed directly. Only when it does not — the
-hand-back case, where the delivered text is a short wrapper line — does the writer fall back to
-the transcript: it refuses if the wrapper itself objects, then counts `SubagentHandback` entries
+If `$MSG` already carries `^REVIEWED-SHA:`, the writer first reads every hand-back body and every
+prior contract-bearing text in the transcript (guard (c), since 2026-09-22) and writes nothing if
+any of them carries an objection; otherwise `$MSG` is parsed directly. Only when `$MSG` does not
+carry the contract — the hand-back case, where the delivered text is a short wrapper line — does
+the writer fall back to the transcript: it refuses if the wrapper itself objects, then counts
+`SubagentHandback` entries
 and substitutes the report only when there is **exactly one**. Any other count leaves `$MSG` as
 the contract-less wrapper, the sha parse yields nothing, and the hook exits without writing. The
 writer's own comment block ("EXACTLY ONE HANDBACK") records the refusal as deliberate: taking the
@@ -107,10 +121,18 @@ Then measure, never assume:
   is the second shape above.
 - If the finding is **real**, fix it and push. The push invalidates every stamp on the old head
   anyway, and the confirmation pass at the new head is a fresh dispatch by construction.
-- The writer-side gap that makes the second shape possible (contract-bearing text bypasses the
-  one-hand-back check and replaces the same agent's earlier record) is unchanged code, surfaced at
-  codify time rather than filed. Until it is closed, this rule is what stands between a resumed
-  reviewer and a laundered record.
+- The writer-side gap that made the second shape possible (contract-bearing text bypassed the
+  one-hand-back check and replaced the same agent's earlier record) is **closed** as of
+  2026-09-22: `review-stamp-writer.sh`'s guard (c) reads every hand-back body and every prior
+  contract-bearing text whenever the delivered text carries the contract, and writes nothing if
+  any of them carries an objection
+  (`todos/archive/P1-2026-09-22-stamp-writer-takes-contract-bearing-text-over-its-own-objection.md`).
+  A plain-text re-issue over a prior objection delivered as a hand-back or as a contract-bearing
+  text now leaves the objection record standing; a prior objection text that withheld the
+  contract never wrote a record and is not read (the second residual, tracked in the P3 named
+  under Rule). The rule
+  above stands anyway, for the **cost** reason rather than the safety one: a refused record costs
+  a full re-dispatch round, and a resumed reviewer's second hand-back is still refused outright.
 
 ## Related Files
 

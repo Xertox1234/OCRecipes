@@ -1,6 +1,6 @@
 ---
 title: "A trailing comment or redirect operand disarms every grant-shaped negated predicate in both merge guards"
-status: backlog
+status: done
 priority: high
 created: 2026-09-18
 updated: 2026-09-18
@@ -94,24 +94,24 @@ the next `|=|` spelling equally invisible.
 
 ## Acceptance Criteria
 
-- [ ] Both negated conjuncts evaluate over a clause with **non-argv text removed**: cut at an
+- [x] Both negated conjuncts evaluate over a clause with **non-argv text removed**: cut at an
       unquoted `[[:space:]]#`, and blank redirect-operator operands.
-- [ ] The cut reuses the `_CMD_REDIR` / `_OUT_SEP` grammar already exported by `lib/cmd-detect.sh`
+- [x] The cut reuses the `_CMD_REDIR` / `_OUT_SEP` grammar already exported by `lib/cmd-detect.sh`
       rather than hand-spelling a new redirect grammar.
-- [ ] If the clause carries a field flag **and** a comment that cannot be cleanly cut, the guards
+- [x] If the clause carries a field flag **and** a comment that cannot be cleanly cut, the guards
       DENY (cannot verify → deny, matching the 2026-09-05 unreadable-method ruling).
-- [ ] Both sites fixed in the **same change** — `guard-outward-cli.sh` and `merge-review-guard.sh`
+- [x] Both sites fixed in the **same change** — `guard-outward-cli.sh` and `merge-review-guard.sh`
       carry byte-identical patterns, and fixing one is exactly the cross-file miss that the
       closer-class invariant in `test-merge-review-guard.sh` (`_mrgcloser_hits`) exists to prevent.
-- [ ] Suite rows added for both vectors on both guards, **each with the benign-comment control**,
+- [x] Suite rows added for both vectors on both guards, **each with the benign-comment control**,
       so a future regression cannot pass by denying for the wrong reason.
-- [ ] `guard-outward-cli.sh`'s `DOCUMENTED RESIDUALS` block updated so the written accounting is no
+- [x] `guard-outward-cli.sh`'s `DOCUMENTED RESIDUALS` block updated so the written accounting is no
       longer narrower than the code.
-- [ ] Corpus DENY-SITE COVERAGE / pins re-derived from a real run if any deny site moves.
-- [ ] The closer in `_GH_API_FIELD` / `MRG_API_FIELD` uses the exported suffix constant rather
+- [x] Corpus DENY-SITE COVERAGE / pins re-derived from a real run if any deny site moves.
+- [x] The closer in `_GH_API_FIELD` / `MRG_API_FIELD` uses the exported suffix constant rather
       than a hand-spelled class, and the structural closer-class lint in BOTH suites is widened
       first so it actually flags the `|=|` variant before the fix silences it.
-- [ ] Value-position decoys (`--template -X` and the other consuming carriers) are either closed
+- [x] Value-position decoys (`--template -X` and the other consuming carriers) are either closed
       or named in the `DOCUMENTED RESIDUALS` block with the carriers graded by confidence.
 
 ## Implementation Notes
@@ -158,3 +158,90 @@ unless `cmd_fastpath_has` carries a needle for it. `*gh*` is already a needle
 
 - Filed from the one-pass roster review of PR #995 at `f129c2da`, per the binding 2026-09-17
   batched-guard decision. Evidence above re-measured independently before filing.
+
+### 2026-09-22 — CLOSED (guard batch E, with the stamp-writer P1)
+
+- **Comment and redirect-operand vectors closed on both guards, byte-for-byte.** The NEGATED
+  conjunct now reads `_GH_API_ARGV` / `MRG_API_ARGV`: the clause with everything from an
+  unquoted `[[:space:]]#` cut and every `_CMD_REDIR` match blanked to a space (a quoted `#` is
+  already the placeholder in this rendering, so the cut cannot reach it). ONLY the negated
+  conjunct reads the cut view. The POSITIVE conjuncts — field presence, and the mutating-method
+  literal arm above it — deliberately keep the full clause, so relative to main the change can
+  only ADD denials: the cut removes a suffix at a space and the blank replaces a WORD-INITIAL
+  match with a space, so neither can alter the token before it, and comment text could already
+  supply a field (see the round-1 entry below for why the anchor is load-bearing).
+  `-f k=v -X GET # -X POST` therefore still denies (a pre-existing over-denial
+  in the restrictive direction) and is pinned as ACCEPTED OVER-DENIAL so the boundary of the
+  cut is a row rather than a memory. An uncuttable comment (a `#` inside a substitution that is
+  followed by a real `-X GET`) truncates the argv view and denies — the cannot-verify criterion.
+- **Field-flag closer closed; the lint was widened first.** Both suites' closer lint now admits
+  one extra alternative between the space class and `$`. Run standalone against both guards it
+  flagged exactly one code line each (`_GH_API_FIELD`, `MRG_API_FIELD`) and nothing else, the
+  prose non-vacuity counts stayed at 4 and 2, and both suites went RED on that row before the
+  closers moved to `${_OUT_POS_SUFFIX}` / `${_CMD_POS_SUFFIX}` plus `=`.
+- **Value-slot decoy (vector a) stays OPEN, graded.** `--template`/`-t` and `-p`/`--preview` are
+  confident carriers (pflag takes the next argument as the value with no leading-dash check,
+  and the value is used only after the response returns); `--jq`/`-q` are UNVERIFIED against
+  api.go. Named in the arm's DOCUMENTED RESIDUALS block and pinned KNOWN-WRONG beside a control
+  in both suites. Closing it needs a flag-arity table this guard does not have.
+- **Measured (bash 5.3.15).** A 20-row probe fed to `guard-outward-cli.sh` on stdin from a
+  file, at 8ff7cfd2 and after the change: the 7 bypass rows (two comment decoys, the spaced
+  redirect operand, the corpus one-shot shape with a comment, three glued long-flag redirects)
+  flipped ALLOW → DENY; every control kept its verdict, including the quoted-hash row, the
+  explicit-read-with-comment row and the interior-redirect explicit read.
+  `test-guard-outward-cli.sh` 1185 → 1201 (1201/1201); `test-merge-review-guard.sh` 179 → 193
+  (RED on 7 — the 6 new deny rows and the widened lint — then 193/193).
+- **Corpus: no row flipped and no pin moved.** `repro-outward-cli-corpus.sh` run locally
+  against the edited guard reported rows=2160, precise-path gaps=62, all-path gaps=356, both
+  manifests exact including per-path verdicts. The corpus carries no comment or
+  redirect-operand rows for the api field arm, so it is a no-regression check here, not the
+  evidence — the suite rows are.
+- **Out of the stated Scope Contract, disclosed:** the sibling
+  `todos/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md` cited this todo's
+  pre-archive path; it now cites the archive path and says to reuse the argv-cut view rather
+  than deriving a second cut.
+
+### 2026-09-22 — PR #1012 review round 1 (one pass, `code-reviewer` + `security-auditor`)
+
+- **Fixed (a regression the first head introduced):** the blank was NOT monotone as first
+  written. `_CMD_REDIR` opens with an optional fd-digit prefix — right for the additive presence
+  checks it was written for, wrong for a subtractive use — so unanchored it ate the trailing
+  digit of `--method2>x` together with the operator and manufactured `--method `, which satisfies
+  the method closer: main DENY, first head ALLOW, on both guards (non-executable, since gh has no
+  such flag and pflag does not prefix-match, but a regression all the same). Reproduced
+  independently before fixing: the reviewer's base-copy layout under the scratchpad fed the same
+  25-row TSV, main DENY / first head ALLOW for `--method2>x`, `--method1>&2`, `--method0<x`, with
+  `--methodology>x` DENY on both. The blank is now anchored at `(^|[[:space:]])`, so it can never
+  alter the token before it — which is the property the monotonicity claim actually rests on,
+  and the claim is now stated that way at every site (both guards, both suite headers, here).
+- **The anchor's cost, pinned KNOWN-WRONG:** an operator GLUED to the preceding word with a
+  SPACED operand (`-f k=v> -X`) is not blanked and stays the ALLOW it is on main. Not a
+  regression; a pre-existing shape the anchor leaves open. Rows added to both suites: 3
+  manufactured-method denies, 2 controls, 1 KNOWN-WRONG residual — outward 1201 → 1207, merge
+  193 → 199; probe 25/25 against the anchored guard.
+- **Reviewer measurements worth keeping:** a backslash-newline does not continue a comment
+  (`… -f k=v # note \⏎-X GET` runs `-X GET` as its own command, so the joined rendering is an
+  implicit POST — main ALLOW, head DENY on both guards, closed incidentally by the cut, not
+  pinned); six quoted/escaped-hash explicit reads ALLOW on both sides; `>#foo` is a bash syntax
+  error. The two `/repos/o/r/merges` rows are outside the merge gate's `pulls…merge` scope on
+  main and head alike.
+- **Declined as out of scope for this fix:** tightening `_CMD_REDIR` itself — it is shared by
+  three guards and the corpus, and its fd-digit prefix is correct for every additive consumer.
+
+### 2026-09-22 — PR #1012 confirmation round (fresh `code-reviewer` + `security-auditor` at f0a4e622)
+
+- **No findings on this todo's change.** The security confirmation generated a 2304-row corpus
+  over both guards (2 positions × 6 preceding words × 2 operator glues × 3 fd prefixes × 8
+  operator families × 2 operand glues × 2 operands, argv ground truth from a stub `gh` under bash
+  5.3.15 and zsh 5.9, guards run under bash 5.3.15 with rows fed from a file): main-vs-head
+  crosstab 1248 ALLOW/ALLOW, 144 ALLOW→DENY, 912 DENY/DENY, **0 DENY→ALLOW in either guard**;
+  expected-vs-head 0 ALLOW/DENY (no over-denial). Every one of the 144 new denials has a
+  word-initial operator. Of the 220 remaining implicit-POST ALLOWs, 144 are the pinned
+  anchor-cost class (operator glued to the word, spaced `-X` operand — ALLOW on main too) and 76
+  are `--method{fd}…` shapes main allows identically, non-executable (gh rejects the flag). No
+  row both shells execute disagrees on method-flag presence. The base copies were `cmp`-verified
+  against `git show origin/main:` exports, and `lib/cmd-detect.sh` is byte-identical across.
+- BSD `sed` anchor semantics were checked directly (`2>a --method2>x` under the anchored blank
+  leaves the digit with the word). The round-1 55-row extension re-run shows 16 main-ALLOW →
+  head-DENY rows and 39 identical, with the three digit-glued rows DENY on both sides.
+- The one confirmation finding concerned the stamp-writer todo's prose and is recorded there.

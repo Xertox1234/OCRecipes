@@ -4997,26 +4997,61 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   #     keyword is new predicate logic in a fail-closed gate, and nothing in this repo issues a
   #     graphql read today (swept 2026-09-18: the only mention in the tree is prose in a todo).
   #   * A METHOD-SHAPED TOKEN IN ANOTHER FLAG'S VALUE SLOT disarms the negated conjunct, because
-  #     it genuinely reaches argv: a field flag followed by `--template -X` (also `-t`, and
-  #     `-p`/`--preview`) measured ALLOW on both guards, while the same carriers holding an
-  #     ordinary value denied -- so the decoy token is what flips the verdict. This is a DIFFERENT
-  #     vector from the comment/redirect pair filed in
-  #     todos/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md, and that
-  #     todo's remedy cannot close it: stripping text that never reaches argv leaves a real argv
-  #     token untouched. Covered in that todo's own value-position section. Filed, not closed.
-  #   * THE FIELD-FLAG CLOSER IS HAND-SPELLED `([[:space:]]|=|$)` and so misses a glued redirect:
-  #     the three LONG field flags followed immediately by a redirect operator stand this arm down
-  #     with no bypass token, on both guards, with argv identical to the spaced form that denies.
-  #     The short flags survive only because they carry no closer at all. NOT a regression (main
-  #     allowed the field-only form outright), so filed rather than fixed under the 2026-09-17
-  #     batched-guard decision. The structural lint that exists to catch exactly this greps for the
-  #     literal `([[:space:]]|$)` and is blind to the `|=|` variant, so it reports PASS on the line
-  #     it was written to catch -- widening that lint is step one of the filed fix, not a separate
-  #     cleanup.
-  _GH_API_FIELD='(^|[[:space:]])(-[fF]|(--field|--raw-field|--input)([[:space:]]|=|$))'
+  #     it genuinely reaches argv: a field flag followed by `--template -X` measured ALLOW on
+  #     both guards, while the same carrier holding an ordinary value denied -- so the decoy
+  #     token is what flips the verdict. Stripping text that never reaches argv (the fix below)
+  #     cannot touch a token that does, so this stays OPEN; closing it needs the flag-arity
+  #     table this guard does not have. Carriers graded 2026-09-22: `--template`/`-t` and
+  #     `-p`/`--preview` are CONFIDENT (pflag takes the next argument as the value with no
+  #     leading-dash check, and the value is consumed only after the response returns);
+  #     `--jq`/`-q` additionally assume the filter runs after the request is issued and are
+  #     UNVERIFIED against api.go. Pinned KNOWN-WRONG in test-guard-outward-cli.sh beside its
+  #     control. Filed under
+  #     todos/archive/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md.
+  #   * NON-ARGV TEXT -- CLOSED 2026-09-22 FOR THE NEGATED CONJUNCT ONLY. The clause this arm
+  #     reads keeps an unquoted trailing comment and every redirect OPERAND, neither of which
+  #     reaches argv, so `-f k=v # -X GET` and `-f k=v > -X` made the negated conjunct false and
+  #     the arm stood down (measured ALLOW on both guards at 8ff7cfd2; the benign-comment
+  #     control denied). The negated conjunct now reads `_GH_API_ARGV`, the clause with the
+  #     comment cut and `_CMD_REDIR` operands blanked. The POSITIVE conjuncts -- the field test
+  #     here and the mutating-method literal arm above -- deliberately still read the FULL
+  #     clause, comment text included: `-f k=v -X GET # -X POST` denies, an accepted over-denial
+  #     in the restrictive direction, because cutting a positive conjunct is the one edit that
+  #     can turn a deny into an allow. Relative to main this change can therefore only ADD
+  #     denials, and the reason is narrower than "removing text cannot invent a token": the cut
+  #     removes a SUFFIX at a space and the blank replaces a WORD-INITIAL match with a space, so
+  #     neither can alter the token before it, and comment text could already supply a field.
+  #     The blank has to be ANCHORED for that to hold. `_CMD_REDIR` opens with an optional
+  #     fd-digit prefix -- right for the ADDITIVE presence checks it was written for, wrong for
+  #     a SUBTRACTIVE use: unanchored, it ate the trailing digit of `--method2>x` together with
+  #     the operator and manufactured `--method `, which satisfies the method closer -- a
+  #     main-DENY -> head-ALLOW regression caught in review (non-executable, since gh has no
+  #     such flag, but a regression all the same). The anchor's cost: an operator GLUED to the
+  #     preceding word with a SPACED operand (`-f k=v> -X`) is not blanked and stays the ALLOW
+  #     it is on main -- pinned KNOWN-WRONG in test-guard-outward-cli.sh. An UNCUTTABLE comment
+  #     (a `#` inside a substitution that also carries a later `-X GET`) truncates the argv view
+  #     and DENIES -- cannot verify -> deny, the same 2026-09-05 ruling the unreadable-method
+  #     arm applies.
+  #   * THE FIELD-FLAG CLOSER -- CLOSED 2026-09-22. `_GH_API_FIELD` closed its three long flags on
+  #     a hand-spelled `([[:space:]]|=|$)`, so a redirect glued to the flag (`--field>o k=v`) put
+  #     `>` where that class expected whitespace and the arm stood down with no decoy token at
+  #     all, argv identical to the spaced form. It now closes on `${_OUT_POS_SUFFIX}` plus `=`
+  #     (the glued-value spelling). The structural lint at the end of test-guard-outward-cli.sh
+  #     was blind to the `|=|` variant and reported PASS on this line; it was widened FIRST and
+  #     watched go red here before the closer was changed.
+  _GH_API_FIELD="(^|[[:space:]])(-[fF]|(--field|--raw-field|--input)(=|${_OUT_POS_SUFFIX}))"
   _GH_API_ANYMETHOD='(^|[[:space:]])(-X|--method([^-A-Za-z0-9]|$))'
+  # THE NEGATED CONJUNCT READS ARGV, NOT THE CLAUSE (see the NON-ARGV TEXT residual above). A
+  # comment starts at an unquoted word start, and cmd_words has already rendered a QUOTED `#`
+  # as the placeholder, so `[[:space:]]#` is the comment boundary of this rendering. Redirect
+  # operands are blanked with the SAME `_CMD_REDIR` grammar `_OUT_SEP` is built from, never a
+  # hand-spelled one, ANCHORED at a word start so the blank can never alter the token before it
+  # (the residual above records the `--method2>x` regression an unanchored blank produced).
+  # merge-review-guard.sh carries this pipeline byte-for-byte for `MRG_API_ARGV`.
+  _GH_API_ARGV=$(printf '%s' "$GH_API_CLAUSE" | sed -E 's/[[:space:]]#.*$//')
+  [ -n "${_CMD_REDIR:-}" ] && _GH_API_ARGV=$(printf '%s' "$_GH_API_ARGV" | sed -E "s/(^|[[:space:]])${_CMD_REDIR}/\1 /g")
   if [ -n "$GH_API_CLAUSE" ] && grep -Eq "$_GH_API_FIELD" <<< "$GH_API_CLAUSE" \
-     && ! grep -Eq "$_GH_API_ANYMETHOD" <<< "$GH_API_CLAUSE"; then
+     && ! grep -Eq "$_GH_API_ANYMETHOD" <<< "$_GH_API_ARGV"; then
     deny "guard-outward-cli: command-position 'gh api' with a field parameter (-f/-F/--field/--raw-field) or --input and NO -X/--method flag is a POST, not a GET — gh's own api.go sets method=POST whenever a method was not passed and any parameter or input file is present, so this reaches the same arbitrary-mutation surface as an explicit -X POST (including a PR merge). An explicit read (-X GET/--method GET) with the same parameters is unaffected -- EXCEPT for 'gh api graphql', whose transport is always POST, so there is no explicit-read spelling of it and a graphql READ is denied here too; its only route is the bypass. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
   # FIXED 2026-09-05 (found by this task's own mandated finding-A

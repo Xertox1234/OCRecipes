@@ -572,16 +572,25 @@ async_payload "code-reviewer" "$NOHB_TP" | run_hook 21
   || bad "async envelope with no handback writes no stamp"
 
 # CONTROL (precedence): when last_assistant_message ALREADY carries the contract (the
-# synchronous shape), it must win. A transcript handback saying something different must
-# not override a valid direct report — otherwise the fix would silently re-route the sync
-# path through the transcript and this suite's other 47 assertions would stop covering it.
-MIXED_TP=$(async_transcript "$FINDINGS_MSG")
+# synchronous shape), it is what gets parsed. A transcript handback for a DIFFERENT head must
+# not override a valid direct report — otherwise a fix could silently re-route the sync path
+# through the transcript and this suite's other assertions would stop covering it.
+# RE-PINNED 2026-09-22, and the flip is the point: this control used to pair the direct clean
+# report with a FINDINGS handback and assert that the direct report won. That pairing is the
+# laundering shape guard (c) now refuses — an objection anywhere in the transcript plus a clean
+# contract in the text writes nothing (case 37 holds that exact fixture with the opposite
+# verdict). The precedence property survives with a handback that carries no objection: a
+# clean report for ANOTHER head. The record must land at the direct report's sha, and nothing
+# may land at the handback's.
+OTHER_CLEAN_MSG=${CLEAN_MSG/1234567890abcdef1234567890abcdef12345678/feedfacefeedfacefeedfacefeedfacefeedface}
+MIXED_TP=$(async_transcript "$OTHER_CLEAN_MSG")
 jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$MIXED_TP" \
   '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
     last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 22
 [ "$(jq -r .verdict "$ROOT/case-22/$SHA/code-reviewer.json" 2>/dev/null)" = "clean" ] \
-  && ok "a direct report still wins over a transcript handback" \
-  || bad "a direct report still wins over a transcript handback"
+  && [ ! -f "$ROOT/case-22/feedfacefeedfacefeedfacefeedfacefeedface/code-reviewer.json" ] \
+  && ok "a direct report still wins over a clean transcript handback for another head" \
+  || bad "a direct report still wins over a clean transcript handback for another head"
 
 # --- the substitution must not manufacture consent the reviewer withheld ----------------
 # The transcript probe fires precisely BECAUSE the delivered message lacks the contract —
@@ -710,12 +719,261 @@ async_payload "code-reviewer" "$QUOTE_TP" | run_hook 33
   && ok "the same transcript stamps behind a one-line wrapper (residual 6 control)" \
   || bad "the same transcript stamps behind a one-line wrapper (residual 6 control)"
 
+# --- a prior OBJECTION hand-back must survive a contract-bearing final text ----------------
+# todos/archive/P1-2026-09-22-stamp-writer-takes-contract-bearing-text-over-its-own-objection.md
+# Guards (a) and (b) live INSIDE `! grep -q '^REVIEWED-SHA:' <<<"$MSG"`, so a final text that
+# CARRIES the contract was parsed directly and the transcript's hand-backs were never consulted.
+# The reachable shape is a resumed reviewer that objected in its hand-back and then re-issued a
+# clean report as plain text: the clean parse OVERWROTE the same agent's `verdict: findings`
+# record at that head. Measured 2026-09-22 (PR #1010 gate-lens review) on constructed
+# transcripts; every row below is one of those rows or its control.
+
+# Case 36. One objection hand-back, then the clean contract re-issued as the final TEXT. Run as
+# the two stops a resumed reviewer actually produces, into ONE private root: stop 1 (hand-back
+# behind a plain wrapper) legitimately records `findings`; stop 2 (same transcript, delivered
+# text now carries the contract) must leave that record standing. Before the fix stop 2 wrote
+# `verdict: clean` over it.
+OBJ_THEN_TEXT_TP=$(async_transcript "$FINDINGS_MSG")
+async_payload "code-reviewer" "$OBJ_THEN_TEXT_TP" | run_hook 36
+f36="$ROOT/case-36/$SHA/code-reviewer.json"
+[ "$(jq -r .verdict "$f36" 2>/dev/null)" = "findings" ] \
+  && ok "stop 1: one objection hand-back behind a plain wrapper records findings (control)" \
+  || bad "stop 1: one objection hand-back behind a plain wrapper records findings (control)"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$OBJ_THEN_TEXT_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 36
+[ "$(jq -r .verdict "$f36" 2>/dev/null)" = "findings" ] \
+  && ok "stop 2: contract-bearing clean text does NOT overwrite the same agent's objection record" \
+  || bad "stop 2: contract-bearing clean text does NOT overwrite the same agent's objection record"
+
+# Case 37. The same shape with NO prior record on disk -- the objection exists only in the
+# transcript. Nothing may be written: "no record" is a deny at the gate, and that is the honest
+# outcome for a transcript that contradicts itself.
+OBJ_TEXT_FRESH_TP=$(async_transcript "$FINDINGS_MSG")
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$OBJ_TEXT_FRESH_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 37
+[ ! -f "$ROOT/case-37/$SHA/code-reviewer.json" ] \
+  && ok "an objection hand-back plus contract-bearing clean text writes no record" \
+  || bad "an objection hand-back plus contract-bearing clean text writes no record"
+
+# Case 38. HYBRID: two hand-backs (objection, then clean) AND the clean contract as the final
+# text. Guard (b) already refuses this transcript behind a wrapper (case 25); it must refuse it
+# behind contract-bearing text too, or the second delivery route launders the first.
+HYB_TP=$(mktemp "$ROOT/transcript-hyb-XXXX")
+jq -nc --arg m "$FINDINGS_MSG" '{type:"assistant", message:{content:[
+    {type:"tool_use", name:"SubagentHandback", input:{message:$m}}]}}' >"$HYB_TP"
+jq -nc --arg m "$CLEAN_MSG" '{type:"assistant", message:{content:[
+    {type:"tool_use", name:"SubagentHandback", input:{message:$m}}]}}' >>"$HYB_TP"
+jq -nc --arg w "$WRAPPER_LINE" '{type:"assistant", message:{content:[
+    {type:"text", text:$w}]}}' >>"$HYB_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$HYB_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 38
+[ ! -f "$ROOT/case-38/$SHA/code-reviewer.json" ] \
+  && ok "the hybrid shape (two hand-backs, then contract-bearing text) writes no record" \
+  || bad "the hybrid shape (two hand-backs, then contract-bearing text) writes no record"
+
+# Case 39. CONTROL, the majority population (88 of 281 roster transcripts on 2026-09-14): ZERO
+# hand-backs, contract in the final text. Must stamp exactly as before this change -- asserted
+# with a fixture rather than by omission, because the new check runs on this path too.
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$NOHB_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 39
+[ "$(jq -r .verdict "$ROOT/case-39/$SHA/code-reviewer.json" 2>/dev/null)" = "clean" ] \
+  && ok "text-only delivery (no hand-backs, contract in the text) still stamps clean" \
+  || bad "text-only delivery (no hand-backs, contract in the text) still stamps clean"
+
+# Case 40. DECIDED, not accidental: one CLEAN hand-back plus a contract-bearing clean text keeps
+# stamping clean. The refusal keys on an OBJECTION in a hand-back, never on the mere presence
+# of one -- a reviewer that handed back clean and also wrote the report as text contradicted
+# nothing, and refusing it would cost a re-dispatch for no safety gain.
+CLEAN_HB_TEXT_TP=$(async_transcript "$CLEAN_MSG")
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$CLEAN_HB_TEXT_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 40
+[ "$(jq -r .verdict "$ROOT/case-40/$SHA/code-reviewer.json" 2>/dev/null)" = "clean" ] \
+  && ok "one CLEAN hand-back plus contract-bearing clean text still stamps clean (decided shape)" \
+  || bad "one CLEAN hand-back plus contract-bearing clean text still stamps clean (decided shape)"
+
+# Case 41. The hand-back objection rendered the way the ROSTER mandates -- a bare severity word
+# with a citation (arm 2) rather than a bracketed tag (arm 1). Both arms must be consulted on
+# hand-back bodies, exactly as they are on the wrapper; a bracket-only check would repeat the
+# four-of-five miss that case 27 pinned for the wrapper.
+ROSTER_OBJ_TP=$(async_transcript 'client/a.ts:74 — missing check — add it. CRITICAL
+Withholding the trailer deliberately.')
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$ROSTER_OBJ_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 41
+[ ! -f "$ROOT/case-41/$SHA/code-reviewer.json" ] \
+  && ok "a roster-rendered (unbracketed) objection in the hand-back also blocks contract-bearing text" \
+  || bad "a roster-rendered (unbracketed) objection in the hand-back also blocks contract-bearing text"
+
+# Case 42. A transcript jq cannot parse must FAIL CLOSED on the contract-bearing path too
+# (security review, 2026-09-22). The first version of guard (c) emptied the bodies on a jq
+# failure and fell through to the text parse -- a clean stamp over an objection the hook could
+# not read. The file's header policy is that an unparseable payload exits 0 writing nothing.
+MALFORMED_TP=$(async_transcript "$FINDINGS_MSG")
+printf 'not json\n' >>"$MALFORMED_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$MALFORMED_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 42
+[ ! -f "$ROOT/case-42/$SHA/code-reviewer.json" ] \
+  && ok "an unparseable transcript behind contract-bearing text writes no record (fail closed)" \
+  || bad "an unparseable transcript behind contract-bearing text writes no record (fail closed)"
+# Case 43 makes case 42 mean something: with the malformed line removed, case 42 is case 37 and
+# refuses because of the OBJECTION. A malformed transcript carrying NO hand-back at all behind the
+# same clean text must also write nothing -- the hook could not establish that no objection
+# exists, so the parse failure alone is what refuses. Case 39 is the well-formed positive control.
+MALFORMED_NOHB_TP=$(mktemp "$ROOT/transcript-malnohb-XXXX")
+jq -nc --arg w "$WRAPPER_LINE" '{type:"assistant", message:{content:[
+    {type:"text", text:$w}]}}' >"$MALFORMED_NOHB_TP"
+printf 'not json\n' >>"$MALFORMED_NOHB_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$MALFORMED_NOHB_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 43
+[ ! -f "$ROOT/case-43/$SHA/code-reviewer.json" ] \
+  && ok "an unparseable transcript with no hand-back at all also writes nothing (the parse failure is what refuses)" \
+  || bad "an unparseable transcript with no hand-back at all also writes nothing (the parse failure is what refuses)"
+
+# --- a prior objection delivered as contract-bearing TEXT counts too (confirmation review,
+# 2026-09-22). Guard (c) first read only hand-back bodies, so a reviewer that delivered its
+# objection as a contract-bearing text (the majority delivery shape), was resumed, and
+# re-issued a clean contract text laundered exactly as the hand-back shape did -- with no
+# hand-back anywhere in the transcript. Guard (c) now also reads prior assistant TEXT bodies that
+# themselves carry the contract (a prior REPORT, never working narration), excluding the
+# delivered text itself. Transcripts below carry the delivered text as their last assistant
+# text, the way the harness writes them.
+text_msg() {  # $1 = assistant text -> one transcript line on stdout
+  jq -nc --arg t "$1" '{type:"assistant", message:{content:[{type:"text", text:$t}]}}'
+}
+
+# Case 44. Stop 1 delivers a bracketed objection as text (record `findings`); stop 2, same agent
+# and transcript, delivers the clean contract as text. The objection record must stand.
+TT_TP=$(mktemp "$ROOT/transcript-tt-XXXX")
+text_msg "$FINDINGS_MSG" >"$TT_TP"
+jq -n --arg t "code-reviewer" --arg m "$FINDINGS_MSG" --arg p "$TT_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 44
+f44="$ROOT/case-44/$SHA/code-reviewer.json"
+[ "$(jq -r .verdict "$f44" 2>/dev/null)" = "findings" ] \
+  && ok "stop 1: a findings report delivered as text, present in its own transcript, still records findings" \
+  || bad "stop 1: a findings report delivered as text, present in its own transcript, still records findings"
+text_msg "$CLEAN_MSG" >>"$TT_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$TT_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 44
+[ "$(jq -r .verdict "$f44" 2>/dev/null)" = "findings" ] \
+  && ok "stop 2: a clean contract text does NOT overwrite the same agent's text-delivered objection" \
+  || bad "stop 2: a clean contract text does NOT overwrite the same agent's text-delivered objection"
+
+# Case 45. The roster's unbracketed rendering of the same text-delivered objection, fresh root,
+# no prior record: nothing may be written.
+ROSTER_TT_TP=$(mktemp "$ROOT/transcript-rtt-XXXX")
+text_msg 'REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+client/a.ts
+
+client/a.ts:74 — missing check — add it. CRITICAL' >"$ROSTER_TT_TP"
+text_msg "$CLEAN_MSG" >>"$ROSTER_TT_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$ROSTER_TT_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 45
+[ ! -f "$ROOT/case-45/$SHA/code-reviewer.json" ] \
+  && ok "a roster-rendered objection delivered as prior text also blocks the clean re-issue" \
+  || bad "a roster-rendered objection delivered as prior text also blocks the clean re-issue"
+
+# Case 46. CONTROL: a prior contract-bearing text that carries NO objection (a clean report for
+# another head) does not refuse -- the check keys on an objection, not on a prior report.
+PRIOR_CLEAN_TP=$(mktemp "$ROOT/transcript-pct-XXXX")
+text_msg "$OTHER_CLEAN_MSG" >"$PRIOR_CLEAN_TP"
+text_msg "$CLEAN_MSG" >>"$PRIOR_CLEAN_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$PRIOR_CLEAN_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 46
+[ "$(jq -r .verdict "$ROOT/case-46/$SHA/code-reviewer.json" 2>/dev/null)" = "clean" ] \
+  && ok "a prior clean report text does not refuse the clean delivery (keys on an objection)" \
+  || bad "a prior clean report text does not refuse the clean delivery (keys on an objection)"
+
+# Case 47. CONTROL: prior assistant text WITHOUT the contract is working narration, not a report,
+# even when it names the format -- it must not refuse. Pins the "carries the contract" filter.
+NARRATION_TP=$(mktemp "$ROOT/transcript-narr-XXXX")
+text_msg 'Scanning the diff for anything that would warrant a CRITICAL or WARNING line.' >"$NARRATION_TP"
+text_msg "$CLEAN_MSG" >>"$NARRATION_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$NARRATION_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 47
+[ "$(jq -r .verdict "$ROOT/case-47/$SHA/code-reviewer.json" 2>/dev/null)" = "clean" ] \
+  && ok "prior narration naming the format, without the contract, does not refuse (only prior REPORTS are read)" \
+  || bad "prior narration naming the format, without the contract, does not refuse (only prior REPORTS are read)"
+
+# --- the delivered text must exclude itself even when it is not byte-identical to its transcript
+# copy (confirmation round 2, 2026-09-22, both reviewers). `$MSG` is captured through `$(...)`,
+# which strips every trailing newline, while the transcript's `.text` keeps them; and CR
+# normalisation runs LATER in the writer than guard (c). So a findings delivery ending in a
+# newline, or differing from its transcript copy by CR alone, re-entered PRIOR_REPORTS as its own
+# prior report, tripped an arm, and lost its `findings` record -- fail-closed, but a regression
+# against main on findings deliveries. Both sides are now normalised inside the jq comparison.
+# Every fixture below is a single-stop FINDINGS delivery, because a clean delivery carries no
+# objection and never tripped this.
+# Case 48. Trailing newline in both fields: bash strips it from $MSG, the transcript keeps it.
+NL_TP=$(mktemp "$ROOT/transcript-nl-XXXX")
+text_msg "$FINDINGS_MSG"$'\n' >"$NL_TP"
+jq -n --arg t "code-reviewer" --arg m "$FINDINGS_MSG"$'\n' --arg p "$NL_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 48
+[ "$(jq -r .verdict "$ROOT/case-48/$SHA/code-reviewer.json" 2>/dev/null)" = "findings" ] \
+  && ok "a findings delivery ending in a newline still records findings (self-exclusion survives the newline strip)" \
+  || bad "a findings delivery ending in a newline still records findings (self-exclusion survives the newline strip)"
+# Case 49. The same, with a same-type CLEAN record already at the head: the findings delivery
+# must REPLACE it (the designed fresh-delivery path). Before the fix the guard refused and the
+# seeded clean record stood -- the retraction class the P3 files, reached from a single stop.
+async_payload "code-reviewer" "$(async_transcript "$CLEAN_MSG")" | run_hook 49
+[ "$(jq -r .verdict "$ROOT/case-49/$SHA/code-reviewer.json" 2>/dev/null)" = "clean" ] \
+  && ok "case 49 seed: a clean record exists at the head before the findings delivery" \
+  || bad "case 49 seed: a clean record exists at the head before the findings delivery"
+NL2_TP=$(mktemp "$ROOT/transcript-nl2-XXXX")
+text_msg "$FINDINGS_MSG"$'\n' >"$NL2_TP"
+jq -n --arg t "code-reviewer" --arg m "$FINDINGS_MSG"$'\n' --arg p "$NL2_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 49
+[ "$(jq -r .verdict "$ROOT/case-49/$SHA/code-reviewer.json" 2>/dev/null)" = "findings" ] \
+  && ok "a findings delivery ending in a newline replaces a seeded same-type clean record" \
+  || bad "a findings delivery ending in a newline replaces a seeded same-type clean record"
+# Case 50. CR-only mismatch: the payload carries CRLF line endings, the transcript copy LF.
+FINDINGS_CRLF=${FINDINGS_MSG//$'\n'/$'\r\n'}
+CR_TP=$(mktemp "$ROOT/transcript-cr-XXXX")
+text_msg "$FINDINGS_MSG" >"$CR_TP"
+jq -n --arg t "code-reviewer" --arg m "$FINDINGS_CRLF" --arg p "$CR_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 50
+[ "$(jq -r .verdict "$ROOT/case-50/$SHA/code-reviewer.json" 2>/dev/null)" = "findings" ] \
+  && ok "a CR-only payload/transcript mismatch still records findings" \
+  || bad "a CR-only payload/transcript mismatch still records findings"
+# Case 51. CONTROL: a trailing SPACE is not stripped by the capture, so both sides are
+# byte-identical and the delivery excluded itself before the fix too. Green on both sides, which
+# is what shows cases 48-50 are about the strip and not about trailing bytes in general.
+SP_TP=$(mktemp "$ROOT/transcript-sp-XXXX")
+text_msg "$FINDINGS_MSG " >"$SP_TP"
+jq -n --arg t "code-reviewer" --arg m "$FINDINGS_MSG " --arg p "$SP_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 51
+[ "$(jq -r .verdict "$ROOT/case-51/$SHA/code-reviewer.json" 2>/dev/null)" = "findings" ] \
+  && ok "CONTROL: a trailing space survives the capture, so the delivery excluded itself either way" \
+  || bad "CONTROL: a trailing space survives the capture, so the delivery excluded itself either way"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
 # Same caveat as the sibling pin: this catches a MISSING assertion, not an assertion that
 # never ran because the process died before reaching it.
-EXPECTED_TOTAL=66
+# 66 -> 73 (2026-09-22): +7, the prior-objection rows above (cases 36-41; case 36 asserts both stops).
+# 73 -> 75 (2026-09-22, security review round 1): +2, the unparseable-transcript rows (cases 42-43).
+# 75 -> 80 (2026-09-22, confirmation round): +5, the text-delivered prior objection (cases 44-47;
+# case 44 asserts both stops).
+# 80 -> 85 (2026-09-22, confirmation round 2): +5, the self-exclusion normalisation rows (cases
+# 48-51; case 49 asserts its seed).
+EXPECTED_TOTAL=85
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
