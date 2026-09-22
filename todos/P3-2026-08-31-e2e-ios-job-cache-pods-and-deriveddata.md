@@ -3,10 +3,12 @@ title: "E2E iOS job: cache Pods + DerivedData so the ~34-minute cold build stops
 status: backlog
 priority: medium
 created: 2026-08-31
-updated: 2026-09-03
+updated: 2026-09-13
 assignee:
 labels: [deferred, testing]
 github_issue:
+human_led: true
+blocked_reason: "needs a human-triggered workflow_dispatch on main to close the one remaining AC (green run with the cache warm); blocked behind issue #925 (iOS job red) until that resolves — never autonomously dispatched, per this todo's own history of being closed done before its measurement criteria were actually met"
 ---
 
 # E2E iOS job: cache Pods + DerivedData so the ~34-minute cold build stops dominating the nightly
@@ -31,12 +33,27 @@ deterministic and may need `-derivedDataPath` pinning to be cacheable at all).
 ## Acceptance Criteria
 
 - [x] `ios/Pods` restored from `actions/cache` keyed on `ios/Podfile.lock` + `package-lock.json` + the selected Xcode version; a lockfile change misses cleanly.
-- [ ] DerivedData cached (pinned `-derivedDataPath`, or documented as not worth it after
+- [x] DerivedData cached (pinned `-derivedDataPath`, or documented as not worth it after
       measurement) with a key that includes the Xcode version and a source hash coarse enough to
-      hit across docs-only changes.
-- [ ] Measured: cache-hit build step time recorded in the workflow comment, and the step/job
+      hit across docs-only changes. **Satisfied via the "documented as not worth it" branch**:
+      two independent exact-hit warm measurements (51m01s, 47m17s) both landed above the 39m03s
+      cold run — DerivedData caching was removed 2026-09-13, keeping only the Pods cache. See
+      the 2026-09-13 Updates entry below.
+- [x] Measured: cache-hit build step time recorded in the workflow comment, and the step/job
       timeouts re-derived from the new numbers (the arithmetic lives in the workflow comments).
-- [ ] One green `workflow_dispatch` on `main` with the cache warm.
+      Re-derived 2026-09-13 in `.github/workflows/e2e-regression.yml` — both the step-level 70m
+      and job-level 160m bounds were confirmed to still hold against the real measured range
+      (36m48s-51m01s), so neither value changed, but the comments no longer cite the stale
+      pre-cache ~34m estimate.
+- [ ] One green `workflow_dispatch` on `main` with the cache warm. **Still unmet — deliberately
+      not attempted this run.** The iOS job is still red, independent of caching: issue #908
+      (the alert-timing hypothesis, candidate fix PR #919, closed with that hypothesis
+      disproven) was closed 2026-09-04, but the iOS job regressed again the very next day and is
+      tracked live as **issue #925** (open, most recently updated 2026-09-12 — verified fresh
+      just now, not carried over from #908). No `workflow_dispatch` was triggered by this
+      session, and no red run should be read as evidence about caching either way. This is the
+      only remaining criterion; close it with a green dispatch once #925 (or whatever supersedes
+      it) resolves.
 
 ## Implementation Notes
 
@@ -104,14 +121,14 @@ This todo was archived `done` before its two measurement criteria could be satis
 code half looked finished, and the numbers only exist after a `workflow_dispatch`. They now
 exist, and DerivedData caching appears to be a **net loss**.
 
-Three `workflow_dispatch` runs, iOS `Build and install iOS app` step, same runner pool:
+Four `workflow_dispatch` runs, iOS `Build and install iOS app` step, same runner pool:
 
-| Run         | Cache state at build                                 | Build time  |
-| ----------- | ---------------------------------------------------- | ----------- |
-| 33790849004 | cold — nothing stored                                | **39m 03s** |
-| 33796820565 | DerivedData `restore-keys` PREFIX hit, Pods MISS     | **36m 48s** |
-| 33802822765 | exact hit on BOTH (save steps `skipped`, proving it) | **51m 01s** |
-| 33826146222 | exact hit on BOTH (save steps `skipped`, proving it) | **47m 17s** |
+| Run         | Cache state at build                                                       | Build time  |
+| ----------- | -------------------------------------------------------------------------- | ----------- |
+| 33790849004 | cold — nothing stored                                                      | **39m 03s** |
+| 33796820565 | DerivedData `restore-keys` PREFIX hit, Pods MISS                           | **36m 48s** |
+| 33802822765 | exact hit on BOTH (build succeeded; save steps `skipped`, proving the hit) | **51m 01s** |
+| 33826146222 | exact hit on BOTH (build succeeded; save steps `skipped`, proving the hit) | **47m 17s** |
 
 The genuinely warm run was **~12 minutes SLOWER than cold**. Restoring 1.6 GiB of
 DerivedData, plus whatever Xcode spends validating and then discarding most of it, costs
@@ -170,3 +187,43 @@ It would matter for a KEEP decision, so re-measure cold before choosing that bra
   `2/9` on attempt 1, with the same two flows and the same assertion text. There was no
   regression at that boundary. Any future claim here about a run's outcome should cite
   per-flow attempt-1 results, never `conclusion`.
+
+### 2026-09-13 — DerivedData dropped, arithmetic re-derived; green-dispatch criterion remains genuinely blocked
+
+Acted on the reopening per the two measured warm runs (51m01s, 47m17s), both above the
+39m03s cold run:
+
+- **Dropped Xcode DerivedData caching, kept CocoaPods caching.** Removed the `Set custom
+DerivedData location`, `Restore Xcode DerivedData cache`, and `Save Xcode DerivedData
+cache` steps and the `DD_CACHE_KEY`/`DD_CACHE_KEY_PREFIX` computation from
+  `.github/workflows/e2e-regression.yml`; renamed the remaining step to `Compute Pods
+cache key`. Pods caching (132 MiB, exact-match only, ~4s restore) is unchanged.
+- **Re-derived the timeout arithmetic.** Both the step-level `timeout-minutes: 70` (Build
+  and install iOS app) and job-level `timeout-minutes: 160` comments were rewritten
+  against the real measured range (36m48s-51m01s) instead of the stale pre-cache ~34m
+  estimate. Neither numeric bound changed, but this is NOT a comfortable re-derivation —
+  see the step-level comment's own caveat: applying its pre-existing "2x the measured
+  build" formula to the new representative cold baseline (~39m) computes ~78m, ABOVE the
+  70m bound, so 70m is kept on empirical/variance grounds (every real dispatch, including
+  the two DerivedData-inflated warm runs this change eliminates, landed under it) rather
+  than as a strict formula match. The post-drop steady state (Pods-hit, no-DerivedData-
+  cache) has not itself been directly measured; the comment recommends re-measuring it on
+  the next real dispatch rather than trusting this extrapolation indefinitely.
+- **Green-`workflow_dispatch` criterion (last one) confirmed still blocked, and NOT
+  attempted.** No `workflow_dispatch` was triggered this session. Verified fresh (not
+  carried over from the orchestrator's briefing, which cited issue #908): #908 itself was
+  closed 2026-09-04, but the iOS job regressed again the very next day and is tracked live
+  as **issue #925**, open, most recently updated 2026-09-12. The iOS suite is still red
+  independent of this todo's scope, so this criterion cannot close from this session's
+  work.
+- **This todo is intentionally NOT archived.** Its own history (archived `done` once
+  already, then reopened when the archived version's measurement criteria turned out
+  unmet) is the reason: re-archiving with one criterion still unmet would repeat exactly
+  that mistake. Status is reset to `backlog` rather than `done`; the file stays in
+  `todos/`. The remaining criterion is a green `workflow_dispatch`, which needs a human
+  trigger once #925 (or whatever supersedes it) resolves.
+- **Codified**: a `restore-keys` prefix hit does not set a restore step's `cache-hit`
+  output to `'true'`, so a run that only got a prefix hit is not a warm measurement — this
+  is what made one of the four dispatch runs look almost-cold-fast and could have been
+  misread as "caching mostly isn't hurting." See
+  `docs/solutions/conventions/actions-cache-restore-keys-hit-is-not-a-warm-measurement-2026-09-13.md`.

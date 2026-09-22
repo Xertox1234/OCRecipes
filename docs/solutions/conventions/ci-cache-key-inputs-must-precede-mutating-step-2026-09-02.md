@@ -6,6 +6,7 @@ module: shared
 tags: [harness, ci, github-actions, testing, architecture, actions-cache, caching, cocoapods, xcode, idempotency, tooling]
 applies_to: [".github/workflows/**"]
 created: '2026-09-02'
+last_updated: '2026-09-13'
 ---
 
 # A CI cache key must be captured before the step it gates can mutate its own inputs — and never retype a toolchain version it can read live
@@ -42,7 +43,7 @@ created: '2026-09-02'
 
 Both failure modes were caught empirically while adding `ios/Pods` +
 Xcode DerivedData caching to this repo's `e2e-regression.yml` iOS job
-(`todos/archive/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md`):
+(`todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md`):
 
 - Running `pod install` **twice, back-to-back, locally**, with `ios/Pods`
   already fully populated from the first run, modified `ios/Podfile.lock`
@@ -113,12 +114,19 @@ toolchain variable used in the primary key.
 
 ## Related Files
 
-- `.github/workflows/e2e-regression.yml` — `Compute Pods/DerivedData cache
-  keys`, `Restore Xcode DerivedData cache`, `Restore CocoaPods cache`,
-  `Save Xcode DerivedData cache`, `Save CocoaPods cache` steps
-- `todos/archive/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md`
+- `.github/workflows/e2e-regression.yml` — `Compute Pods cache key`,
+  `Restore CocoaPods cache`, `Save CocoaPods cache` steps (the Xcode
+  DerivedData restore/save steps this rule was originally written against
+  were removed 2026-09-13 after measurement showed DerivedData caching was a
+  net loss — see the "restore-keys hit is not a warm measurement" solution
+  below; the key-capture rule itself still applies to the surviving Pods
+  cache)
+- `todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md` (reopened
+  2026-09-03 after the archived version's measurement criteria turned out
+  unmet — not under `todos/archive/` at the time of this update)
 
 ## See Also
 
 - [verify-lockfile-churn-semantically-not-by-diff-line-count](verify-lockfile-churn-semantically-not-by-diff-line-count-2026-06-23.md) — a different angle on the same "a lockfile diff is not what it looks like" family
 - [an in-place patch surviving reinstall](../logic-errors/in-place-dep-patch-survives-reinstall-teardown-false-green-2026-07-26.md) — the companion CocoaPods fact this change leaned on: a pod is only re-extracted when its spec checksum changes, which is what makes an exact-key Pods cache hit equivalent to a warm local `pod install`
+- [a restore-keys hit is not a warm measurement](actions-cache-restore-keys-hit-is-not-a-warm-measurement-2026-09-13.md) — what this same cache's DerivedData half turned out to teach once it was actually measured
