@@ -70,11 +70,12 @@ Three mechanics make this cheap and correct, all read out of the hook rather tha
   archive move whose body was rewritten is a delete **plus** an add, so a hand-assembled list is
   one path short and the record fails on scope while passing on verdict
   ([solution](solutions/code-quality/an-archive-move-git-reads-as-delete-plus-add-mis-scopes-the-review-stamp-2026-09-17.md)).
-- **The record comes from a fresh dispatch only.** Re-adjudicating a finding by resuming the
-  reviewer (`SendMessage`) never stamps, even when the resumed reply carries both blocks and a
-  clean last line: the writer requires exactly one hand-back per agent transcript and refuses to
-  choose when an objection precedes a withdrawal (fail-closed by design). Dispatch a **new**
-  reviewer that carries the evidence and may still disagree
+- **The record comes from a fresh dispatch only.** Never re-adjudicate a finding by resuming the
+  reviewer (`SendMessage`). A resumed reviewer that hands back a second time never stamps — the
+  writer requires exactly one hand-back per transcript and refuses to choose between an objection
+  and a withdrawal — and one that re-issues the contract as plain text stamps whatever that text
+  says over its own objection record, which is the laundering the gate exists to refuse. Dispatch
+  a **new** reviewer that carries the evidence and may still disagree
   ([solution](solutions/conventions/resumed-reviewer-never-stamps-re-adjudicate-by-fresh-dispatch-2026-09-22.md)).
 
 Skip it whenever the pipeline's eligibility check returns `yes` — both the auto-merge-enabled and the auto-merge-enable-FAILED variants. The reason is not that auto-merge bypasses the local gate (true, but too narrow: the FAILED variant is merged by hand and the gate does run). It is that `merge-review-guard.sh` never asks those PRs for a record at all — `todo-automerge-guard.sh` gates its TODO GATE behind `--paths-only` while its PATH GATE runs unconditionally, so a full-mode rc 0 implies a `--paths-only` rc 0 and the gate exits 0 before the record lookup.

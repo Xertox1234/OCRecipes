@@ -38,8 +38,8 @@ occurrence, or none.
 Measured on PR #960 (reviewed 2026-09-21). The E2E-cache todo had been un-archived by PR #918, so
 `todos/archive/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md` no longer existed. The PR
 corrected that path in the companion solution doc's `## Related Files` (with a note explaining the
-un-archive) and left the identical string in the same file's `## Why` section, forty-odd lines
-above. Review found the second; the fix was one commit (`fb1ae735`) and one extra review round.
+un-archive) and left the identical string in the same file's `## Why` section, earlier in the
+same file. Review found the second; the fix was one commit (`fb1ae735`) and one extra review round.
 
 ## Solution
 
@@ -66,7 +66,7 @@ the past tense is fine; a live citation ("see `<old path>`") is not. For a todo,
 ## Related Files
 
 - `docs/solutions/conventions/ci-cache-key-inputs-must-precede-mutating-step-2026-09-02.md` — the
-  file with one fixed and one missed citation (both corrected in PR #960, `fb1ae735`)
+  file with one fixed and one missed citation (PR #960: the Related Files one fixed by `138b9091`, the missed Why one by `fb1ae735`)
 - `scripts/check-solution-frontmatter.js` — validates frontmatter only; body citations are not
   checked by anything
 
