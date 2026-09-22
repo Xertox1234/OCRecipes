@@ -1,0 +1,145 @@
+---
+title: "review-stamp-writer.sh takes a contract-bearing final text at face value, so a reviewer that objected in a hand-back and then re-issues a clean report as text overwrites its own objection — the one-hand-back refusal never runs on that path"
+status: backlog
+priority: high
+created: 2026-09-22
+updated: 2026-09-22
+assignee:
+labels: [harness, security]
+github_issue:
+---
+
+# The stamp writer's objection check is skipped whenever the delivered text carries the contract
+
+## Summary
+
+`.claude/hooks/review-stamp-writer.sh` gates its whole hand-back fallback — including the
+"exactly one hand-back" refusal and the wrapper-objection refusal — on the delivered text
+**lacking** `^REVIEWED-SHA:` (line 105). A transcript in which the same agent first handed back an
+objection and then wrote a contract-shaped clean report as plain text is therefore parsed from the
+text alone, and the clean verdict **overwrites** the agent's earlier `verdict: findings` record at
+that head. That is the fail-open direction the writer's own "EXACTLY ONE HANDBACK" comment says it
+refuses, reached through a shape that comment does not consider.
+
+## Background
+
+Found during the review of PR #1010 (2026-09-22) by the gate-lens reviewer, which ran the live
+writer under bash 5.3.15 with `REVIEW_STAMP_ROOT` pointed at a scratch directory, on constructed
+transcripts, four rows with controls:
+
+| Transcript shape                                                         | Record written                           |
+| ------------------------------------------------------------------------ | ---------------------------------------- |
+| one objection hand-back + plain wrapper (positive control)               | `verdict: findings, unresolved: 1`       |
+| two hand-backs (objection, then clean) + plain wrapper                   | objection record left standing (refused) |
+| one objection hand-back, then the clean contract re-issued as final text | **overwritten with `verdict: clean`**    |
+| two hand-backs AND the clean contract as final text (hybrid)             | **overwritten with `verdict: clean`**    |
+
+Every row is what the code predicts: the count check at lines 166-174 and the wrapper-objection
+arm at lines 161-165 sit inside `if ... ! grep -q '^REVIEWED-SHA:' <<<"$MSG"` (line 105), so a
+final text that carries the contract is parsed directly and the record is written to
+`$DIR/${AGENT_TYPE}.json` (line 534), one file per agent type per head. A live resumed reviewer
+delivering this shape has **not** been observed; the two live resumed reviewers measured so far
+(PR #960, 2026-09-22) both handed back a second time and were correctly refused. Reachability is
+inferred from the hand-back tool's own description ("use it once"): a resumed reviewer following
+that description would write its second report as text.
+
+The residuals comment (item 6, around lines 465-468) states the structural gate as a **no-false-
+deny** property — "a clean report that CARRIES the contract never reaches either arm" — which is
+true, and is exactly why a prior objection in the same transcript is never consulted on that path.
+
+Orchestrator-side mitigation is codified and does not close the gap:
+`docs/solutions/conventions/resumed-reviewer-never-stamps-re-adjudicate-by-fresh-dispatch-2026-09-22.md`
+(never resume a reviewer to re-adjudicate; resume for a question only with "answer in prose, no
+REVIEWED-SHA/REVIEWED-FILES"). Its Exceptions section names this gap as "unchanged code, surfaced
+rather than filed" — this todo is the filing.
+
+## Acceptance Criteria
+
+- [ ] A transcript with at least one `SubagentHandback` whose message carries an objection (a
+      standalone bracketed severity token, detected with the SAME two arms the wrapper check at
+      lines 161-165 already uses), followed by a final text that carries the contract and ends
+      with `No findings.`, writes **no record** — regardless of how many hand-backs there are.
+- [ ] The hybrid shape (two hand-backs, then contract-bearing final text) writes no record.
+- [ ] The positive and negative controls keep their measured behaviour in the same test run: one
+      clean hand-back + plain wrapper → `verdict: clean`; one objection hand-back + plain wrapper
+      → `verdict: findings`; two hand-backs + plain wrapper → no record.
+- [ ] A text-only delivery (zero hand-backs, contract in the final text) stamps exactly as today.
+      This is the majority population (88 of 281 roster transcripts on 2026-09-14) and must not
+      regress — assert it with a fixture, not by omission.
+- [ ] The shape "one CLEAN hand-back plus a contract-bearing final text" is decided explicitly, not
+      by accident: either it keeps stamping clean (the fix keys on an objection, not on the mere
+      presence of a hand-back), or the todo's Updates entry records why it must be refused and
+      the measured count of that shape in the roster-transcript population.
+- [ ] The residuals comment block (item 6) is corrected to name the new check, and no longer
+      implies that skipping the fallback on contract-bearing text is safe with respect to a
+      prior objection.
+- [ ] All existing cases in `.claude/hooks/test-review-stamp-writer.sh` still pass via
+      `scripts/run-hook-tests.sh`, plus the new fixtures above, and `EXPECTED_TOTAL` is updated.
+      The suite needs a real `.git` (`git init` the sandbox — a `git archive` sandbox reads one
+      assertion short).
+- [ ] `docs/solutions/conventions/resumed-reviewer-never-stamps-re-adjudicate-by-fresh-dispatch-2026-09-22.md`
+      Exceptions bullet is updated in the same PR: the plain-text re-issue shape is now refused,
+      and the orchestrator rule stands for the cost reason (a refused record costs a round) rather
+      than the safety reason.
+
+## Implementation Notes
+
+- **Key on the transcript, not on the record path.** A fresh same-type dispatch at the same head
+  legitimately replaces `${AGENT_TYPE}.json` (a false finding withdrawn by a NEW reviewer — the
+  designed re-review path, used on PR #960 at `fb1ae735`). Do not "fix" the overwrite at line 534;
+  the defect is that the SAME agent's earlier objection is never consulted when its final text
+  carries the contract.
+- Minimal shape: compute, unconditionally and before the line-105 gate, whether ANY
+  `SubagentHandback` message in `$TP` carries an objection (reuse the exact arm-1 anchored
+  case-insensitive regex and arm-2 case-sensitive standalone regex from lines 161-165 — do not
+  write a third variant, item 4 of the residuals explains why the two arms differ). If so, exit 0
+  without writing, whatever `$MSG` looks like. Leave every other branch as it is.
+- Detection must run over the hand-back `.input.message` bodies, i.e. the same `jq -rs` selection
+  the count at lines 166-168 already uses; extract with `// empty` (the harness rule: `jq -r` on
+  an absent key prints literal `null`).
+- Bash 3.2 target (stock macOS): no `mapfile`, no associative arrays; guard empty arrays under
+  `set -u`. Hooks fail open and silent on infrastructure errors (`exit 0`), which here is also the
+  safe direction — no record is a deny at the gate.
+- Fixtures: the writer's test file already builds synthetic transcripts; add the four rows from
+  the Background table verbatim as cases, named for their shape, each asserting the record's
+  presence/absence AND its verdict, not just exit status.
+- Population measurement for the "one clean hand-back + contract text" shape, if wanted: the
+  roster-transcript corpus used on 2026-09-14 (SubagentStop transcripts of the five reviewer
+  agent types under the Claude projects directory). Constructed fixtures satisfy the acceptance
+  criteria on their own; the population count only informs the fifth criterion's choice.
+
+## Scope Contract
+
+- **Mechanisms to use:** the writer's existing transcript parse (`jq -rs` over `$TP`) and its
+  existing two objection-detection arms. No new hook, no new file, no change to the record
+  format, no change to `merge-review-guard.sh`.
+- **Files in scope:** `.claude/hooks/review-stamp-writer.sh`,
+  `.claude/hooks/test-review-stamp-writer.sh`, and the one Exceptions bullet in
+  `docs/solutions/conventions/resumed-reviewer-never-stamps-re-adjudicate-by-fresh-dispatch-2026-09-22.md`.
+- No new mechanisms, files, or abstractions beyond those listed.
+
+## Dependencies
+
+- None. The orchestrator-side rule (fresh dispatch, never resume) is already merged (#1010) and
+  stays in force regardless.
+
+## Risks
+
+- The writer is on the merge path of every PR: a defect that makes it write nothing for a
+  legitimate clean review wedges every open PR (fail-closed, so confusing rather than dangerous,
+  but expensive). The text-only and single-clean-hand-back fixtures exist to catch exactly that.
+- `.claude/hooks/**` is off the automerge allowlist and this todo carries the `security` label, so
+  the PR is always reviewed by a human; the merge-review guard classifies it as risk and demands a
+  clean record at its final head — which this very writer produces. Verify the record on disk
+  before merging, per `docs/AI_WORKFLOW.md` → Confirmation pass.
+- Edits to `.claude/hooks/*.sh` take effect on the next hook invocation, but reviewer agent
+  behaviour only changes on session reload — do not claim the end-to-end shape works from the
+  editing session alone; the hook test suite is the evidence.
+
+## Updates
+
+### 2026-09-22
+
+- Filed at the user's request after the PR #1010 gate-lens review measured the four shapes above.
+  The orchestrator-side mitigation was codified in the same PR; this todo tracks the writer-side
+  fix.
