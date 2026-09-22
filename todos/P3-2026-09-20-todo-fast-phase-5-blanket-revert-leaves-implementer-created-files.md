@@ -1,6 +1,6 @@
 ---
 title: "todo-fast Phase 5's blanket `git checkout -- .` leaves every file an implementer CREATED, and is inert today only because the worktree is torn down straight after"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-20
 updated: 2026-09-20
