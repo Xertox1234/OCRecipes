@@ -107,10 +107,14 @@ Then measure, never assume:
   is the second shape above.
 - If the finding is **real**, fix it and push. The push invalidates every stamp on the old head
   anyway, and the confirmation pass at the new head is a fresh dispatch by construction.
-- The writer-side gap that makes the second shape possible (contract-bearing text bypasses the
-  one-hand-back check and replaces the same agent's earlier record) is unchanged code, surfaced at
-  codify time rather than filed. Until it is closed, this rule is what stands between a resumed
-  reviewer and a laundered record.
+- The writer-side gap that made the second shape possible (contract-bearing text bypassed the
+  one-hand-back check and replaced the same agent's earlier record) is **closed** as of
+  2026-09-22: `review-stamp-writer.sh`'s guard (c) reads every hand-back body whenever the
+  delivered text carries the contract, and writes nothing if any of them carries an objection
+  (`todos/archive/P1-2026-09-22-stamp-writer-takes-contract-bearing-text-over-its-own-objection.md`).
+  A plain-text re-issue over a prior objection now leaves the objection record standing. The rule
+  above stands anyway, for the **cost** reason rather than the safety one: a refused record costs
+  a full re-dispatch round, and a resumed reviewer's second hand-back is still refused outright.
 
 ## Related Files
 

@@ -1,6 +1,6 @@
 ---
 title: "A trailing comment or redirect operand disarms every grant-shaped negated predicate in both merge guards"
-status: backlog
+status: done
 priority: high
 created: 2026-09-18
 updated: 2026-09-18
@@ -94,24 +94,24 @@ the next `|=|` spelling equally invisible.
 
 ## Acceptance Criteria
 
-- [ ] Both negated conjuncts evaluate over a clause with **non-argv text removed**: cut at an
+- [x] Both negated conjuncts evaluate over a clause with **non-argv text removed**: cut at an
       unquoted `[[:space:]]#`, and blank redirect-operator operands.
-- [ ] The cut reuses the `_CMD_REDIR` / `_OUT_SEP` grammar already exported by `lib/cmd-detect.sh`
+- [x] The cut reuses the `_CMD_REDIR` / `_OUT_SEP` grammar already exported by `lib/cmd-detect.sh`
       rather than hand-spelling a new redirect grammar.
-- [ ] If the clause carries a field flag **and** a comment that cannot be cleanly cut, the guards
+- [x] If the clause carries a field flag **and** a comment that cannot be cleanly cut, the guards
       DENY (cannot verify → deny, matching the 2026-09-05 unreadable-method ruling).
-- [ ] Both sites fixed in the **same change** — `guard-outward-cli.sh` and `merge-review-guard.sh`
+- [x] Both sites fixed in the **same change** — `guard-outward-cli.sh` and `merge-review-guard.sh`
       carry byte-identical patterns, and fixing one is exactly the cross-file miss that the
       closer-class invariant in `test-merge-review-guard.sh` (`_mrgcloser_hits`) exists to prevent.
-- [ ] Suite rows added for both vectors on both guards, **each with the benign-comment control**,
+- [x] Suite rows added for both vectors on both guards, **each with the benign-comment control**,
       so a future regression cannot pass by denying for the wrong reason.
-- [ ] `guard-outward-cli.sh`'s `DOCUMENTED RESIDUALS` block updated so the written accounting is no
+- [x] `guard-outward-cli.sh`'s `DOCUMENTED RESIDUALS` block updated so the written accounting is no
       longer narrower than the code.
-- [ ] Corpus DENY-SITE COVERAGE / pins re-derived from a real run if any deny site moves.
-- [ ] The closer in `_GH_API_FIELD` / `MRG_API_FIELD` uses the exported suffix constant rather
+- [x] Corpus DENY-SITE COVERAGE / pins re-derived from a real run if any deny site moves.
+- [x] The closer in `_GH_API_FIELD` / `MRG_API_FIELD` uses the exported suffix constant rather
       than a hand-spelled class, and the structural closer-class lint in BOTH suites is widened
       first so it actually flags the `|=|` variant before the fix silences it.
-- [ ] Value-position decoys (`--template -X` and the other consuming carriers) are either closed
+- [x] Value-position decoys (`--template -X` and the other consuming carriers) are either closed
       or named in the `DOCUMENTED RESIDUALS` block with the carriers graded by confidence.
 
 ## Implementation Notes
@@ -158,3 +158,43 @@ unless `cmd_fastpath_has` carries a needle for it. `*gh*` is already a needle
 
 - Filed from the one-pass roster review of PR #995 at `f129c2da`, per the binding 2026-09-17
   batched-guard decision. Evidence above re-measured independently before filing.
+
+### 2026-09-22 — CLOSED (guard batch E, with the stamp-writer P1)
+
+- **Comment and redirect-operand vectors closed on both guards, byte-for-byte.** The NEGATED
+  conjunct now reads `_GH_API_ARGV` / `MRG_API_ARGV`: the clause with everything from an
+  unquoted `[[:space:]]#` cut and every `_CMD_REDIR` match blanked to a space (a quoted `#` is
+  already the placeholder in this rendering, so the cut cannot reach it). ONLY the negated
+  conjunct reads the cut view. The POSITIVE conjuncts — field presence, and the mutating-method
+  literal arm above it — deliberately keep the full clause, so relative to main the change can
+  only ADD denials: removing text cannot invent a method token, and comment text could already
+  supply a field. `-f k=v -X GET # -X POST` therefore still denies (a pre-existing over-denial
+  in the restrictive direction) and is pinned as ACCEPTED OVER-DENIAL so the boundary of the
+  cut is a row rather than a memory. An uncuttable comment (a `#` inside a substitution that is
+  followed by a real `-X GET`) truncates the argv view and denies — the cannot-verify criterion.
+- **Field-flag closer closed; the lint was widened first.** Both suites' closer lint now admits
+  one extra alternative between the space class and `$`. Run standalone against both guards it
+  flagged exactly one code line each (`_GH_API_FIELD`, `MRG_API_FIELD`) and nothing else, the
+  prose non-vacuity counts stayed at 4 and 2, and both suites went RED on that row before the
+  closers moved to `${_OUT_POS_SUFFIX}` / `${_CMD_POS_SUFFIX}` plus `=`.
+- **Value-slot decoy (vector a) stays OPEN, graded.** `--template`/`-t` and `-p`/`--preview` are
+  confident carriers (pflag takes the next argument as the value with no leading-dash check,
+  and the value is used only after the response returns); `--jq`/`-q` are UNVERIFIED against
+  api.go. Named in the arm's DOCUMENTED RESIDUALS block and pinned KNOWN-WRONG beside a control
+  in both suites. Closing it needs a flag-arity table this guard does not have.
+- **Measured (bash 5.3.15).** A 20-row probe fed to `guard-outward-cli.sh` on stdin from a
+  file, at 8ff7cfd2 and after the change: the 7 bypass rows (two comment decoys, the spaced
+  redirect operand, the corpus one-shot shape with a comment, three glued long-flag redirects)
+  flipped ALLOW → DENY; every control kept its verdict, including the quoted-hash row, the
+  explicit-read-with-comment row and the interior-redirect explicit read.
+  `test-guard-outward-cli.sh` 1185 → 1201 (1201/1201); `test-merge-review-guard.sh` 179 → 193
+  (RED on 7 — the 6 new deny rows and the widened lint — then 193/193).
+- **Corpus: no row flipped and no pin moved.** `repro-outward-cli-corpus.sh` run locally
+  against the edited guard reported rows=2160, precise-path gaps=62, all-path gaps=356, both
+  manifests exact including per-path verdicts. The corpus carries no comment or
+  redirect-operand rows for the api field arm, so it is a no-regression check here, not the
+  evidence — the suite rows are.
+- **Out of the stated Scope Contract, disclosed:** the sibling
+  `todos/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md` cited this todo's
+  pre-archive path; it now cites the archive path and says to reuse the argv-cut view rather
+  than deriving a second cut.

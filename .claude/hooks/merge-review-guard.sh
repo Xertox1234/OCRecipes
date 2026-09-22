@@ -370,7 +370,12 @@ case "$TOOL" in
         # arm is anchored on the ABSENCE of a method token exactly as gh anchors on
         # `!opts.RequestMethodPassed`. Short flags are matched without a value because gh
         # accepts `-f k=v` and `--field=k=v` alike and the VALUE is irrelevant to the method.
-        MRG_API_FIELD='(^|[[:space:]])(-[fF]|(--field|--raw-field|--input)([[:space:]]|=|$))'
+        # THE LONG-FLAG CLOSER IS ${_CMD_POS_SUFFIX} PLUS `=`, not a hand-spelled
+        # `([[:space:]]|=|$)` (closed 2026-09-22): a redirect glued to the flag (`--field>o k=v`)
+        # put `>` where that class expected whitespace, the field went unseen, and this arm
+        # stood down with no decoy token at all -- argv identical to the spaced form. The closer
+        # lint in test-merge-review-guard.sh was blind to the `|=|` variant and was widened first.
+        MRG_API_FIELD="(^|[[:space:]])(-[fF]|(--field|--raw-field|--input)(=|${_CMD_POS_SUFFIX}))"
         MRG_API_ANYMETHOD='(^|[[:space:]])(-X|--method([^-A-Za-z0-9]|$))'
         set +o pipefail
         MRG_API_WORDS=$(cmd_words_deep "$CMD")
@@ -411,11 +416,10 @@ case "$TOOL" in
           # todos/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md.
           # DO NOT RE-NARROW THIS LINE WITHOUT THAT POSITIONAL MODEL IN HAND.
           #
-          # Kept from the anchored version because it is true of the ENDPOINT and METHOD closers
-          # in this file -- NOT of every closer: `MRG_API_FIELD` above still hand-spells
-          # `([[:space:]]|=|$)` after its long flags, a glued redirect escapes it, and that is
-          # filed rather than fixed (the P1 named in the sibling arm's residual block in
-          # guard-outward-cli.sh). For the closers that ARE swept:
+          # Kept from the anchored version because it is true of EVERY closer in this file:
+          # the ENDPOINT and METHOD closers since #992, and `MRG_API_FIELD`'s long-flag closer
+          # since 2026-09-22 (it hand-spelled `([[:space:]]|=|$)` until then, a glued redirect
+          # escaped it, and the closer lint was blind to that one-alternative variant).
           # THE CLOSER IS ${_CMD_POS_SUFFIX}, NOT A HAND-SPELLED `([[:space:]]|$)`. A redirect
           # operator terminates a word without whitespace, so a hand-spelled closer skips a glued
           # `>`; #992 swept these. Do not re-spell one.
@@ -429,11 +433,25 @@ case "$TOOL" in
           # 2026-09-14): `gh api -X "$(echo PUT)" repos/o/r/pulls/938/merge` renders the
           # value as the cmd_words placeholder text, not the literal "PUT", so the literal
           # match alone missed it — this second arm is what catches it.
+          # THE NEGATED CONJUNCT READS ARGV, NOT THE CLAUSE (closed 2026-09-22). The clause keeps
+          # an unquoted trailing comment and every redirect OPERAND, neither of which reaches
+          # argv, so `-f k=v # -X GET` and `-f k=v > -X` made `! MRG_API_ANYMETHOD` false and the
+          # implicit-POST arm stood down -- measured ALLOW at 8ff7cfd2 with the benign-comment
+          # control denying. A comment starts at an unquoted word start and cmd_words has
+          # already rendered a QUOTED `#` as the placeholder, so `[[:space:]]#` is the comment
+          # boundary of this rendering; operands are blanked with the SAME `_CMD_REDIR` grammar
+          # MRG_SEP is built from. Only the NEGATED conjunct reads the cut view: the positive
+          # field test and the mutating-method literal above keep the full clause, so relative
+          # to main this can only ADD denials (removal cannot invent a method token). An
+          # uncuttable comment inside a substitution truncates the view and DENIES -- cannot
+          # verify -> deny. guard-outward-cli.sh carries this pipeline byte-for-byte.
+          MRG_API_ARGV=$(printf '%s' "$MRG_API_CLAUSE" | sed -E 's/[[:space:]]#.*$//')
+          [ -n "${_CMD_REDIR:-}" ] && MRG_API_ARGV=$(printf '%s' "$MRG_API_ARGV" | sed -E "s/${_CMD_REDIR}/ /g")
           if printf '%s' "$MRG_API_CLAUSE" | grep -Eq "(^|[[:space:]])(-X${MRG_API_M}${_CMD_POS_SUFFIX}|(-X|--method)(${MRG_SEP}|=)${MRG_API_M}${_CMD_POS_SUFFIX})" \
              || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq '(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)' \
                   && printf '%s' "$MRG_API_CLAUSE" | grep -qE '[$`]'; } \
              || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq "$MRG_API_FIELD" \
-                  && ! printf '%s' "$MRG_API_CLAUSE" | grep -Eq "$MRG_API_ANYMETHOD"; }; then
+                  && ! printf '%s' "$MRG_API_ARGV" | grep -Eq "$MRG_API_ANYMETHOD"; }; then
             MRG_API_HIT=1
             break
           fi

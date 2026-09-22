@@ -4392,6 +4392,66 @@ assert_allow "the sanctioned automerge is untouched by this arm" \
 assert_deny "the ONE-command -f mutation now denies (gh's implicit POST, api.go:329-330)" \
   "$(json 'gh api -f a=b /repos/o/r/merges')" "NO -X/--method flag"
 
+# ---------- non-argv text must not disarm the ABSENCE-shaped conjunct (2026-09-22) ----------
+# todos/archive/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md
+# The implicit-POST arm is anchored on the ABSENCE of a method flag, and the clause it read kept
+# text that never reaches argv: an unquoted trailing comment and a redirect operand. One
+# method-shaped token in either made the negated conjunct false and the arm stood down.
+# Measured ALLOW on origin/main (8ff7cfd2) for every DENY row below except the two controls,
+# which denied on both sides -- so the decoy token, not the comment, is what flipped them.
+# The fix reads the NEGATED conjunct over an argv-cut clause (comment cut at an unquoted
+# word-start `#`, `_CMD_REDIR` operands blanked) and the POSITIVE field conjunct over the full
+# clause, so relative to main the change can only ADD denials: removing text cannot invent a
+# method token, and comment text could already supply a field before this change.
+assert_deny "a method flag inside a trailing COMMENT does not disarm the implicit-POST arm" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v # -X GET')" "NO -X/--method flag"
+assert_deny "the long-form method flag inside a trailing comment does not disarm it either" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v # --method GET')" "NO -X/--method flag"
+assert_deny "a method-shaped REDIRECT OPERAND does not disarm the implicit-POST arm" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v > -X')" "NO -X/--method flag"
+assert_deny "the corpus one-shot merge row with a comment decoy stays denied (apicolfp-oneshot's shape)" \
+  "$(json 'gh api /repos/o/r/merges -f base=main -f head=x # -X GET')" "NO -X/--method flag"
+assert_deny "CONTROL: a benign trailing comment denies (the decoy token is what flipped the rows above)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v # harmless note')" "NO -X/--method flag"
+assert_deny "CONTROL: a QUOTED hash is not a comment, so the field still counts" \
+  "$(json "gh api repos/o/r/pulls/42/merge -f body='a # b'")" "NO -X/--method flag"
+assert_allow "an EXPLICIT read followed by a comment stays allowed (the cut removes only non-argv text)" \
+  "$(json 'gh api -X GET repos/o/r/pulls/42/merge -f k=v # note')"
+assert_allow "an EXPLICIT read with an interior redirect stays allowed (blanking an operand invents no token)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v 2>&1 -X GET')"
+# ACCEPTED OVER-DENIAL, pre-existing on main and deliberately NOT changed here: the POSITIVE
+# mutating-method literal arm still reads the full clause, comment text included, so a mutating
+# method named in a comment after an explicit read denies. That is the restrictive direction
+# (the operator drops the comment), and cutting the POSITIVE conjuncts is what could turn a
+# deny into an allow -- the one direction this change must not take. Pinned so the boundary of
+# the cut is stated by a row rather than remembered.
+assert_deny "ACCEPTED OVER-DENIAL: a mutating method named in a comment after an explicit read still denies (positive arm reads the full clause)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v -X GET # -X POST')" "mutating HTTP method"
+# THE FIELD-FLAG CLOSER. `--field`, `--raw-field` and `--input` closed on a hand-spelled
+# `([[:space:]]|=|$)`; a redirect glued to the flag put `>` where that class expected whitespace,
+# the field went unseen, and the arm stood down with NO decoy token at all -- argv identical to
+# the spaced form that denies. `${_OUT_POS_SUFFIX}` (plus `=` for the glued-value spelling)
+# absorbs it. The structural lint at the end of this file was blind to the `|=|` spelling; it
+# was widened FIRST and watched go red on that line before the closer was fixed.
+assert_deny "a redirect GLUED to --field is still a field (closer widened to the exported suffix)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge --field>o k=v')" "NO -X/--method flag"
+assert_deny "a redirect glued to --raw-field is still a field" \
+  "$(json 'gh api repos/o/r/pulls/42/merge --raw-field>o k=v')" "NO -X/--method flag"
+assert_deny "a redirect glued to --input is still an input file" \
+  "$(json 'gh api repos/o/r/pulls/42/merge --input>o body.json')" "NO -X/--method flag"
+assert_deny "CONTROL: the spaced long flag denied before and after (non-vacuity for the glued rows)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge --field k=v')" "NO -X/--method flag"
+assert_allow "CONTROL: a longer flag sharing the prefix is still not a field (the closer did not over-widen)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge --fieldx k=v')"
+# VALUE-POSITION DECOY -- a method-shaped token that genuinely REACHES argv as another flag's
+# value (`--template -X`; also `-t`, `-p`/`--preview`). Neither the cut nor the closer can see
+# it; closing it needs the flag-arity table this guard does not have. Pinned KNOWN-WRONG beside
+# its control so the gap stays visible instead of being rediscovered.
+assert_allow "KNOWN-WRONG (residual): --template -X after a field is a live ALLOW (value-slot decoy)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --template -X')"
+assert_deny "CONTROL: the same carrier holding an ordinary value denies (the decoy is what flips it)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --template x')" "NO -X/--method flag"
+
 # ---------- launcher-family / path-qualified invocation (2026-09-16) ----------
 # todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md
 # Representative rows for direct developer feedback; the full GENERATED
@@ -5796,16 +5856,23 @@ _PIN_RAN=1
 # two on one line as one) and never `grep -m1`. COMMENT LINES ARE EXCLUDED deliberately: this
 # file's header quotes these fragments verbatim when explaining the defect, and a check that
 # counted prose would force the explanation to be deleted to stay green.
-_closer_hits=$(grep -nE '\(\[\[:space:\]\]\|\$\)' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|\$\)' | wc -l | tr -d ' ')
+# WIDENED 2026-09-22: the literal grep saw only `([[:space:]]|$)`, so the field-flag closer
+# `([[:space:]]|=|$)` -- the same defect with one extra alternative -- reported PASS on the very
+# line this check was written to catch. The pattern now admits ONE extra alternative between the
+# space class and `$` (anything without `|` or `)`), which still cannot match the exported
+# `_OUT_POS_SUFFIX` definition itself (its middle alternative is a bracket expression containing
+# both). Widened FIRST and watched go red on that line before the closer was fixed:
+# todos/archive/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md.
+_closer_hits=$(grep -nE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' | wc -l | tr -d ' ')
 if [ "$_closer_hits" = "0" ]; then
   echo "PASS: no code line hand-spells a closer class that _OUT_POS_SUFFIX already provides"; PASS=$((PASS+1))
 else
-  echo "FAIL: $_closer_hits code-line closer class(es) hand-spelled as ([[:space:]]|\$) instead of \${_OUT_POS_SUFFIX} -- a glued < or > escapes them"; FAIL=$((FAIL+1))
+  echo "FAIL: $_closer_hits code-line closer class(es) hand-spelled as ([[:space:]]|\$) or a one-alternative variant such as ([[:space:]]|=|\$) instead of \${_OUT_POS_SUFFIX} -- a glued < or > escapes them"; FAIL=$((FAIL+1))
 fi
 # NON-VACUITY, because a structural grep that matches nothing passes for the wrong reason just
 # as readily as one that matches nothing for the right one. The same pipeline over the file's
 # COMMENT lines must still find the fragment, proving the pattern itself is live.
-_closer_prose=$(grep -nE '\(\[\[:space:\]\]\|\$\)' "$HOOK" | grep -E '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|\$\)' | wc -l | tr -d ' ')
+_closer_prose=$(grep -nE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' "$HOOK" | grep -E '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' | wc -l | tr -d ' ')
 if [ "$_closer_prose" -gt 0 ]; then
   echo "PASS: the closer-class pattern still matches this file's own prose (the check is live, not vacuous)"; PASS=$((PASS+1))
 else
@@ -5843,7 +5910,12 @@ fi
 # 1167 (main, rounds 1-9) + 18 (this branch's gh-api implicit-POST rows, 1104 -> 1122 against
 # its own pre-#993 base) = 1185 on the merged tree. The two sets are disjoint, and this is the
 # MEASURED total from the merged run, not the sum -- the sum is only how it was predicted.
-EXPECTED_TOTAL=1185
+# 1185 -> 1201 (2026-09-22, non-argv text in the implicit-POST arm): +16 = 4 deny rows for the
+# comment/redirect-operand decoys, 2 deny controls (benign comment, quoted hash), 2 allow
+# controls (explicit read + comment, interior redirect), 1 accepted-over-denial row stating the
+# boundary of the cut, 3 glued-redirect field-closer denies with 1 deny + 1 allow control, and
+# the value-slot decoy pinned KNOWN-WRONG beside its control.
+EXPECTED_TOTAL=1201
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

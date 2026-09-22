@@ -1,6 +1,6 @@
 ---
 title: "review-stamp-writer.sh takes a contract-bearing final text at face value, so a reviewer that objected in a hand-back and then re-issues a clean report as text overwrites its own objection — the one-hand-back refusal never runs on that path"
-status: backlog
+status: done
 priority: high
 created: 2026-09-22
 updated: 2026-09-22
@@ -55,30 +55,30 @@ rather than filed" — this todo is the filing.
 
 ## Acceptance Criteria
 
-- [ ] A transcript with at least one `SubagentHandback` whose message carries an objection (a
+- [x] A transcript with at least one `SubagentHandback` whose message carries an objection (a
       standalone bracketed severity token, detected with the SAME two arms the wrapper check at
       lines 161-165 already uses), followed by a final text that carries the contract and ends
       with `No findings.`, writes **no record** — regardless of how many hand-backs there are.
-- [ ] The hybrid shape (two hand-backs, then contract-bearing final text) writes no record.
-- [ ] The positive and negative controls keep their measured behaviour in the same test run: one
+- [x] The hybrid shape (two hand-backs, then contract-bearing final text) writes no record.
+- [x] The positive and negative controls keep their measured behaviour in the same test run: one
       clean hand-back + plain wrapper → `verdict: clean`; one objection hand-back + plain wrapper
       → `verdict: findings`; two hand-backs + plain wrapper → no record.
-- [ ] A text-only delivery (zero hand-backs, contract in the final text) stamps exactly as today.
+- [x] A text-only delivery (zero hand-backs, contract in the final text) stamps exactly as today.
       This is the majority population (88 of 281 roster transcripts on 2026-09-14, a session
       measurement recorded in auto-memory rather than in the tree) and must not
       regress — assert it with a fixture, not by omission.
-- [ ] The shape "one CLEAN hand-back plus a contract-bearing final text" is decided explicitly, not
+- [x] The shape "one CLEAN hand-back plus a contract-bearing final text" is decided explicitly, not
       by accident: either it keeps stamping clean (the fix keys on an objection, not on the mere
       presence of a hand-back), or the todo's Updates entry records why it must be refused and
       the measured count of that shape in the roster-transcript population.
-- [ ] The residuals comment block (item 6) is corrected to name the new check, and no longer
+- [x] The residuals comment block (item 6) is corrected to name the new check, and no longer
       implies that skipping the fallback on contract-bearing text is safe with respect to a
       prior objection.
-- [ ] All existing cases in `.claude/hooks/test-review-stamp-writer.sh` still pass via
+- [x] All existing cases in `.claude/hooks/test-review-stamp-writer.sh` still pass via
       `scripts/run-hook-tests.sh`, plus the new fixtures above, and `EXPECTED_TOTAL` is updated.
       The suite needs a real `.git` (`git init` the sandbox — a `git archive` sandbox reads one
       assertion short).
-- [ ] `docs/solutions/conventions/resumed-reviewer-never-stamps-re-adjudicate-by-fresh-dispatch-2026-09-22.md`
+- [x] `docs/solutions/conventions/resumed-reviewer-never-stamps-re-adjudicate-by-fresh-dispatch-2026-09-22.md`
       Exceptions bullet is updated in the same PR: the plain-text re-issue shape is now refused,
       and the orchestrator rule stands for the cost reason (a refused record costs a round) rather
       than the safety reason.
@@ -144,3 +144,41 @@ rather than filed" — this todo is the filing.
 - Filed at the user's request after the PR #1010 gate-lens review measured the four shapes above.
   The orchestrator-side mitigation was codified in the same PR; this todo tracks the writer-side
   fix.
+
+### 2026-09-22 — CLOSED (guard batch E, with the trailing-comment P1)
+
+- **Mechanism.** A third guard, (c), runs BEFORE the existing `$MSG lacks ^REVIEWED-SHA:` block
+  and only on its complement: when the delivered text CARRIES the contract, every
+  `SubagentHandback` body in the transcript is read (the same `jq -rs` selection guard (b)'s
+  count uses, `// empty` for an absent message) and if any body carries an objection the hook
+  exits without writing. The two objection arms were hoisted into one `objection_in` function
+  shared by guards (a) and (c), so the sites cannot drift.
+- **The Implementation Notes and acceptance criterion 3 disagreed, and the criterion won.** The
+  notes said to exit "whatever `$MSG` looks like"; criterion 3 requires an objection hand-back
+  behind a plain WRAPPER to keep recording `findings`. Those cannot both hold, because an
+  unconditional check would swallow the wrapper path's only honest record. Guard (c) is
+  therefore scoped to the contract-bearing-text path — the one where the transcript was never
+  consulted — and the wrapper path still flows through (b). Case 36 asserts both stops of the
+  real resumed-reviewer sequence into one stamp root: stop 1 records `findings`, stop 2 (contract
+  text) leaves it standing.
+- **Criterion 5 decided: the "one CLEAN hand-back plus contract-bearing text" shape keeps
+  stamping clean** (case 40). The check keys on an objection, not on the presence of a hand-back;
+  a reviewer that handed back clean and also wrote the report as text contradicted nothing, and
+  refusing it would buy no safety for one re-dispatch per occurrence. No population count was
+  taken — the constructed fixtures decide the criterion on their own, as the notes allowed.
+- **A pre-existing control pinned the laundering shape and had to flip.** Case 22 ("a direct
+  report still wins over a transcript handback") paired a FINDINGS hand-back with a clean
+  contract text and asserted the clean stamp — exactly the shape this todo closes. It is
+  re-pinned with a clean hand-back for ANOTHER head (record lands at the direct report's sha,
+  nothing at the hand-back's), which keeps the precedence property it existed for; case 37 now
+  holds the old fixture with the opposite verdict.
+- **Measured:** `test-review-stamp-writer.sh` 66 → 73 assertions (`EXPECTED_TOTAL` moved), RED
+  on exactly cases 36-stop-2, 37, 38 and 41 before the writer change with the three controls
+  (36-stop-1, 39, 40) green, then 73/73 after it, under bash 5.3.15 via the suite's own
+  `bash "$HOOK"` invocation. `merge-review-guard.sh` untouched by this todo.
+- **Residual left open, named in item 6:** a hand-back objection that carries no severity word at
+  all is invisible to both arms, as it always was for guard (a).
+- **Out of the stated Scope Contract, disclosed:** one sentence in `docs/AI_WORKFLOW.md`'s
+  Confirmation-pass paragraph stated that a plain-text re-issue "stamps whatever that text says
+  over its own objection record". The tree now contradicts it, so the sentence was corrected in
+  the same change (the rule it supports is unchanged). No other file outside the contract moved.

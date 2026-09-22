@@ -81,8 +81,10 @@ Editing `.claude/hooks/**` triggers the ~17-minute corpus job, but that corpus p
 
 - Removing field flags and their values from the clause is itself a small parser; a glued
   `--field=k=v`, a quoted value containing spaces, and a value that is itself `-X` all need rows.
-- The three filed vectors in `todos/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md`
-  read the same clause; coordinate so the two changes do not each re-cut it differently.
+- The three vectors filed in `todos/archive/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md`
+  (two closed 2026-09-22 by an argv-cut of the clause for the NEGATED conjunct only; the
+  value-slot decoy left open) read the same clause; the positional model here must not re-cut it
+  differently — reuse `_GH_API_ARGV` / `MRG_API_ARGV` rather than deriving a second cut.
 
 ## Updates
 
