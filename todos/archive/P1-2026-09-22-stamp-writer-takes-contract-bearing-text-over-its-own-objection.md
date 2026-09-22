@@ -176,8 +176,9 @@ rather than filed" — this todo is the filing.
   on exactly cases 36-stop-2, 37, 38 and 41 before the writer change with the three controls
   (36-stop-1, 39, 40) green, then 73/73 after it, under bash 5.3.15 via the suite's own
   `bash "$HOOK"` invocation. `merge-review-guard.sh` untouched by this todo.
-- **Residual left open, named in item 6:** a hand-back objection that carries no severity word at
-  all is invisible to both arms, as it always was for guard (a).
+- **Residual left open, named in item 6:** an objection that carries no severity word at all is
+  invisible to both arms, as it always was for guard (a) — in either delivery shape, once the
+  confirmation round below widened (c) to prior report texts.
 - **Out of the stated Scope Contract, disclosed:** one sentence in `docs/AI_WORKFLOW.md`'s
   Confirmation-pass paragraph stated that a plain-text re-issue "stamps whatever that text says
   over its own objection record". The tree now contradicts it, so the sentence was corrected in
@@ -203,3 +204,26 @@ rather than filed" — this todo is the filing.
   `todos/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md`.
 - **Doc completeness (baseline reviewer):** the solution doc's Rule section still narrated the
   overwrite in present tense while its Exceptions bullet said closed; both now agree.
+
+### 2026-09-22 — PR #1012 confirmation round (fresh `code-reviewer` + `security-auditor` at f0a4e622)
+
+- **Baseline: no findings**, record on disk at the head with the gate's digest.
+- **Security: one finding, a claim wider than the code.** Guard (c) read only hand-back bodies,
+  so an objection delivered as a contract-bearing TEXT (the majority delivery shape), followed by
+  a clean text re-issue, still overwrote `findings` with `clean` — measured identically on main
+  and the branch (cases c11/c12), a PRE-EXISTING route; what was new was prose here, in the
+  writer's residual item 6 and in the solution doc, saying the plain-text re-issue was closed
+  with only the no-severity-word hand-back left. **Closed rather than rescoped**, because it is
+  the same laundering as this todo with the first report's delivery shape swapped, and filing it
+  would have meant a High-severity sibling of this very todo: guard (c) now also reads every
+  prior assistant TEXT body that itself carries the contract (a prior REPORT, never working
+  narration — case 47 pins that a narration line naming the format does not refuse), excluding
+  the delivered text by value (case 44 stop 1 pins that a single-stop findings report still
+  records `findings`). Cases 44-47, suite 75 → 80, RED on exactly the two laundering shapes
+  before the change with the three controls green.
+- **Also confirmed by that review:** a generated 2304-row corpus over both guards (2 positions ×
+  6 preceding words × 2 glues × 3 fd prefixes × 8 operator families × 2 operand glues × 2
+  operands, argv ground truth from a stub under bash 5.3.15 and zsh 5.9) found 0 DENY→ALLOW rows
+  in either guard, 144 new denials all word-initial, and every remaining implicit-POST ALLOW
+  either the pinned anchor-cost class or a non-executable `--method{fd}` shape that main allows
+  identically. Recorded in the trailing-comment todo's own entry as well.

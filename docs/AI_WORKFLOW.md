@@ -74,8 +74,9 @@ Three mechanics make this cheap and correct, all read out of the hook rather tha
   reviewer (`SendMessage`). A resumed reviewer that hands back a second time never stamps — the
   writer requires exactly one hand-back per transcript and refuses to choose between an objection
   and a withdrawal — and one that re-issues the contract as plain text is refused too whenever
-  any hand-back in its transcript carried an objection (closed 2026-09-22; before that it stamped
-  whatever the text said over its own objection record). Neither route yields a record. Dispatch
+  any hand-back or prior contract-bearing text in its transcript carried an objection (closed
+  2026-09-22; before that it stamped whatever the text said over its own objection record).
+  Neither route yields a record. Dispatch
   a **new** reviewer that carries the evidence and may still disagree
   ([solution](solutions/conventions/resumed-reviewer-never-stamps-re-adjudicate-by-fresh-dispatch-2026-09-22.md)).
 

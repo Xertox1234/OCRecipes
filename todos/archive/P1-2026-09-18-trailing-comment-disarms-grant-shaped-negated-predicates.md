@@ -227,3 +227,21 @@ unless `cmd_fastpath_has` carries a needle for it. `*gh*` is already a needle
   main and head alike.
 - **Declined as out of scope for this fix:** tightening `_CMD_REDIR` itself — it is shared by
   three guards and the corpus, and its fd-digit prefix is correct for every additive consumer.
+
+### 2026-09-22 — PR #1012 confirmation round (fresh `code-reviewer` + `security-auditor` at f0a4e622)
+
+- **No findings on this todo's change.** The security confirmation generated a 2304-row corpus
+  over both guards (2 positions × 6 preceding words × 2 operator glues × 3 fd prefixes × 8
+  operator families × 2 operand glues × 2 operands, argv ground truth from a stub `gh` under bash
+  5.3.15 and zsh 5.9, guards run under bash 5.3.15 with rows fed from a file): main-vs-head
+  crosstab 1248 ALLOW/ALLOW, 144 ALLOW→DENY, 912 DENY/DENY, **0 DENY→ALLOW in either guard**;
+  expected-vs-head 0 ALLOW/DENY (no over-denial). Every one of the 144 new denials has a
+  word-initial operator. Of the 220 remaining implicit-POST ALLOWs, 144 are the pinned
+  anchor-cost class (operator glued to the word, spaced `-X` operand — ALLOW on main too) and 76
+  are `--method{fd}…` shapes main allows identically, non-executable (gh rejects the flag). No
+  row both shells execute disagrees on method-flag presence. The base copies were `cmp`-verified
+  against `git show origin/main:` exports, and `lib/cmd-detect.sh` is byte-identical across.
+- BSD `sed` anchor semantics were checked directly (`2>a --method2>x` under the anchored blank
+  leaves the digit with the word). The round-1 55-row extension re-run shows 16 main-ALLOW →
+  head-DENY rows and 39 identical, with the three digit-glued rows DENY on both sides.
+- The one confirmation finding concerned the stamp-writer todo's prose and is recorded there.

@@ -836,6 +836,77 @@ jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$MALFORMED_NOHB_TP" 
   && ok "an unparseable transcript with no hand-back at all also writes nothing (the parse failure is what refuses)" \
   || bad "an unparseable transcript with no hand-back at all also writes nothing (the parse failure is what refuses)"
 
+# --- a prior objection delivered as contract-bearing TEXT counts too (confirmation review,
+# 2026-09-22). Guard (c) first read only hand-back bodies, so a reviewer that delivered its
+# objection as a contract-bearing text (the majority delivery shape), was resumed, and
+# re-issued a clean contract text laundered exactly as the hand-back shape did -- with no
+# hand-back anywhere in the transcript. Guard (c) now also reads prior assistant TEXT bodies that
+# themselves carry the contract (a prior REPORT, never working narration), excluding the
+# delivered text itself. Transcripts below carry the delivered text as their last assistant
+# text, the way the harness writes them.
+text_msg() {  # $1 = assistant text -> one transcript line on stdout
+  jq -nc --arg t "$1" '{type:"assistant", message:{content:[{type:"text", text:$t}]}}'
+}
+
+# Case 44. Stop 1 delivers a bracketed objection as text (record `findings`); stop 2, same agent
+# and transcript, delivers the clean contract as text. The objection record must stand.
+TT_TP=$(mktemp "$ROOT/transcript-tt-XXXX")
+text_msg "$FINDINGS_MSG" >"$TT_TP"
+jq -n --arg t "code-reviewer" --arg m "$FINDINGS_MSG" --arg p "$TT_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 44
+f44="$ROOT/case-44/$SHA/code-reviewer.json"
+[ "$(jq -r .verdict "$f44" 2>/dev/null)" = "findings" ] \
+  && ok "stop 1: a findings report delivered as text, present in its own transcript, still records findings" \
+  || bad "stop 1: a findings report delivered as text, present in its own transcript, still records findings"
+text_msg "$CLEAN_MSG" >>"$TT_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$TT_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 44
+[ "$(jq -r .verdict "$f44" 2>/dev/null)" = "findings" ] \
+  && ok "stop 2: a clean contract text does NOT overwrite the same agent's text-delivered objection" \
+  || bad "stop 2: a clean contract text does NOT overwrite the same agent's text-delivered objection"
+
+# Case 45. The roster's unbracketed rendering of the same text-delivered objection, fresh root,
+# no prior record: nothing may be written.
+ROSTER_TT_TP=$(mktemp "$ROOT/transcript-rtt-XXXX")
+text_msg 'REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+client/a.ts
+
+client/a.ts:74 — missing check — add it. CRITICAL' >"$ROSTER_TT_TP"
+text_msg "$CLEAN_MSG" >>"$ROSTER_TT_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$ROSTER_TT_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 45
+[ ! -f "$ROOT/case-45/$SHA/code-reviewer.json" ] \
+  && ok "a roster-rendered objection delivered as prior text also blocks the clean re-issue" \
+  || bad "a roster-rendered objection delivered as prior text also blocks the clean re-issue"
+
+# Case 46. CONTROL: a prior contract-bearing text that carries NO objection (a clean report for
+# another head) does not refuse -- the check keys on an objection, not on a prior report.
+PRIOR_CLEAN_TP=$(mktemp "$ROOT/transcript-pct-XXXX")
+text_msg "$OTHER_CLEAN_MSG" >"$PRIOR_CLEAN_TP"
+text_msg "$CLEAN_MSG" >>"$PRIOR_CLEAN_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$PRIOR_CLEAN_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 46
+[ "$(jq -r .verdict "$ROOT/case-46/$SHA/code-reviewer.json" 2>/dev/null)" = "clean" ] \
+  && ok "a prior clean report text does not refuse the clean delivery (keys on an objection)" \
+  || bad "a prior clean report text does not refuse the clean delivery (keys on an objection)"
+
+# Case 47. CONTROL: prior assistant text WITHOUT the contract is working narration, not a report,
+# even when it names the format -- it must not refuse. Pins the "carries the contract" filter.
+NARRATION_TP=$(mktemp "$ROOT/transcript-narr-XXXX")
+text_msg 'Scanning the diff for anything that would warrant a CRITICAL or WARNING line.' >"$NARRATION_TP"
+text_msg "$CLEAN_MSG" >>"$NARRATION_TP"
+jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$NARRATION_TP" \
+  '{hook_event_name:"SubagentStop", agent_id:"a1", agent_type:$t,
+    last_assistant_message:$m, agent_transcript_path:$p}' | run_hook 47
+[ "$(jq -r .verdict "$ROOT/case-47/$SHA/code-reviewer.json" 2>/dev/null)" = "clean" ] \
+  && ok "prior narration naming the format, without the contract, does not refuse (only prior REPORTS are read)" \
+  || bad "prior narration naming the format, without the contract, does not refuse (only prior REPORTS are read)"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -843,7 +914,9 @@ jq -n --arg t "code-reviewer" --arg m "$CLEAN_MSG" --arg p "$MALFORMED_NOHB_TP" 
 # never ran because the process died before reaching it.
 # 66 -> 73 (2026-09-22): +7, the prior-objection rows above (cases 36-41; case 36 asserts both stops).
 # 73 -> 75 (2026-09-22, security review round 1): +2, the unparseable-transcript rows (cases 42-43).
-EXPECTED_TOTAL=75
+# 75 -> 80 (2026-09-22, confirmation round): +5, the text-delivered prior objection (cases 44-47;
+# case 44 asserts both stops).
+EXPECTED_TOTAL=80
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

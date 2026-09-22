@@ -28,10 +28,12 @@ A resumed reviewer's second report lands in one of two shapes, and both are wron
   type per head, it **overwrote the same agent's earlier objection record** with a clean verdict.
   Measured on constructed transcripts against the live hook during PR #1010's review (a live
   resumed reviewer doing this was not observed). **Closed 2026-09-22**: the writer's guard (c) now
-  reads every hand-back body whenever the delivered text carries the contract, through the same
-  two objection arms, and an objection in any of them writes nothing — the earlier record stands.
-  What remains is the sliver both arms already shared: a hand-back objection that carries no
-  severity word at all is invisible to them (writer residual item 6).
+  reads every hand-back body AND every prior contract-bearing text in the transcript whenever the
+  delivered text carries the contract, through the same two objection arms, and an objection in
+  any of them writes nothing — the earlier record stands. Both delivery shapes of the first
+  report are covered (hand-back, or a text that was itself a report). What remains is the sliver
+  both arms already shared: an objection that carries no severity word at all is invisible to
+  them, in either shape (writer residual item 6).
 
 The first shape costs a review round. The second was the laundering the gate exists to refuse —
 and it was the orchestrator's resume that made it possible; now it costs a round too, because the
@@ -114,10 +116,12 @@ Then measure, never assume:
   anyway, and the confirmation pass at the new head is a fresh dispatch by construction.
 - The writer-side gap that made the second shape possible (contract-bearing text bypassed the
   one-hand-back check and replaced the same agent's earlier record) is **closed** as of
-  2026-09-22: `review-stamp-writer.sh`'s guard (c) reads every hand-back body whenever the
-  delivered text carries the contract, and writes nothing if any of them carries an objection
+  2026-09-22: `review-stamp-writer.sh`'s guard (c) reads every hand-back body and every prior
+  contract-bearing text whenever the delivered text carries the contract, and writes nothing if
+  any of them carries an objection
   (`todos/archive/P1-2026-09-22-stamp-writer-takes-contract-bearing-text-over-its-own-objection.md`).
-  A plain-text re-issue over a prior objection now leaves the objection record standing. The rule
+  A plain-text re-issue over a prior objection, whichever way that objection was delivered, now
+  leaves the objection record standing. The rule
   above stands anyway, for the **cost** reason rather than the safety one: a refused record costs
   a full re-dispatch round, and a resumed reviewer's second hand-back is still refused outright.
 
