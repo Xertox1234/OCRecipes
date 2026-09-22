@@ -107,10 +107,10 @@ Items 1 and 2 are implemented and committed on branch
   job keeps only its two iOS-specific vars
   (`MAESTRO_DRIVER_STARTUP_TIMEOUT`, `SENTRY_ALLOW_FAILURE`), and the
   Android job's `env:` block is now empty and removed. Fail-loud contract
-  (REG*BODY capture, token-stripped error echo, PROF_CODE check,
+  (`REG_BODY` capture, token-stripped error echo, `PROF_CODE` check,
   `::error::` + exit 1) is unchanged; the only behavioral delta is the
   script's `set -uo pipefail` (no `-e`) vs. the workflow step's implicit
-  `bash -eo pipefail` — a curl \_transport* failure now falls through to the
+  `bash -eo pipefail` — a curl transport failure now falls through to the
   existing `if [ -z "$TOKEN" ]` / `PROF_CODE != 200` branches and exits 1
   with a message, instead of aborting opaquely. That's a strengthening of
   the fail-loud contract, not drift from it.

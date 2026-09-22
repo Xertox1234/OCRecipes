@@ -7,8 +7,6 @@ updated: 2026-09-22
 assignee:
 labels: [deferred, harness, security]
 github_issue:
-human_led: true
-blocked_reason: "Needs ONE ruling an unattended run must not make: may the shared renderer in .claude/hooks/lib/cmd-detect.sh emit a backslash-escaped NON-WHITESPACE character as that character (closing the two-layer bypass), while escaped whitespace keeps the placeholder? The current behaviour is deliberate — the comment block ending 'the documented backslash residual' records that rendering an escaped space as whitespace SPLIT a word the shell had JOINED and manufactured an --auto token that GRANTED a merge carve-out, and states the rule: emitting more tokens than argv contains is fatal for a grant-shaped check. The narrowing adds no tokens, but `if (c == BS)` occurs 10 times in that file in arms that disagree (3 of them render the escape as literal whitespace), so this is a ruling about which renderer may change, not a one-line edit. The file is consumed by git-safety.sh, merge-review-guard.sh and guard-outward-cli.sh, and moves pins in a required check. Three prior attempts at this todo were withdrawn for exactly the pattern of closing one family and opening another. A human decides before anyone writes it."
 ---
 
 # An extractor miss reaches the gate as "not a merge"
@@ -220,3 +218,15 @@ is a human's call, which is what `human_led` above records.
   placeholder in every arm, pin both directions per arm, and re-derive the corpus pins. A "no"
   means: accept the two-layer ALLOW on escaped verbs as a documented residual and close this
   todo as documentation.
+
+### 2026-09-22 — user ruling: YES
+
+- The user, having read the brief above, ruled **yes**: an escaped NON-whitespace character
+  renders as itself in every `if (c == BS)` arm of the shared renderer, and escaped WHITESPACE
+  keeps the placeholder in every arm. Implementation shape, so the three withdrawn attempts are
+  not repeated: change the ten arms in ONE commit, pin BOTH directions per arm (`\r` → `r` and
+  `\ ` → placeholder), re-run the two-layer probe that measured the two ALLOW renderings and the
+  ten merge-gate misses, re-derive the corpus pins from a completed run, and keep the grant-shaped
+  `--auto` carve-out row in the verdict-diff set so a re-split word cannot pass unnoticed.
+  `human_led` and `blocked_reason` removed on that in-session ruling; nothing else in the
+  frontmatter changed.

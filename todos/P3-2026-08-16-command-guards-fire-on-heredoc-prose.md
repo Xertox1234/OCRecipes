@@ -7,8 +7,6 @@ updated: 2026-09-22
 assignee:
 labels: [deferred, harness, agents]
 github_issue:
-human_led: true
-blocked_reason: "AC #1 is a decision, not a spec: whether heredoc bodies should be blanked like quoted spans (option a) or deliberately left visible with `--body-file` as the documented pattern (option b). The two options differ by roughly an order of magnitude in cost — (a) needs a parser that knows which command consumes the redirect, (b) is a comment and a deny-message line — and (a) weakens a real attack surface, since a heredoc piped into `bash`/`eval` IS an invocation. An unattended run would pick whichever is cheaper and write it up as a settled decision record for a security guard. The eventual PR would touch `.claude/hooks/**/*.sh`, which is NOT on todo-automerge-guard's SAFE_ALLOWLIST, so the guard would HOLD it — but the guard cannot stop the decision itself from being invented."
 ---
 
 # A heredoc body reads as command position, so documenting a deny trips the deny
@@ -131,3 +129,12 @@ and the direction is still safe (an over-DENY, never an allow).
   breaks nothing and costs an hour is **(b)**: the deny message names `--body-file` and the
   Write-tool-plus-`-F` pattern, and the guard is otherwise untouched. (a) needs its own ruling
   because it changes what the guard can see. Proceeding with (b) on the user's confirmation.
+
+### 2026-09-22 — user ruling: (b)
+
+- Confirmed **(b)**: acceptance criterion 1 resolves to "document, do not blank". The deny
+  message for a text-only hit names `--body-file` (and, for commit messages, the Write tool plus
+  `git commit -F`) as the pattern, with one comment at the deny site saying why heredoc bodies
+  stay visible to the guard (a heredoc piped into `bash`/`eval` IS an invocation). No parser
+  change. `human_led` and `blocked_reason` removed on that in-session ruling; nothing else in the
+  frontmatter changed.

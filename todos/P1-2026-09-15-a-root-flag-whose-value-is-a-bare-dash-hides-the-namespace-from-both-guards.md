@@ -2,8 +2,6 @@
 title: "A root-position flag whose VALUE is a bare dash hides the namespace from both merge guards — gh's own documented stdin spelling"
 status: backlog
 priority: high
-human_led: true
-blocked_reason: "Closing this is a DESIGN decision, not a spec. Telling `gh --no-color pr merge 42` (no-arg flag, namespace next) apart from `gh -F - pr merge 42` (value-taking flag whose value is a dash) requires the tool's FLAG TABLE — which flags consume an argument — and a regex does not have one. The two candidate directions have opposite costs and neither is obviously right: (a) re-name the separate-arg flags, which re-imports the enumeration the whole root-position fix exists to avoid and goes stale the next time `gh` ships a flag; (b) let the value arm accept a leading dash, which breaks the no-arg case that is currently pinned as a two-sided control (`gh --no-color pr merge 42` would stop resolving) and re-opens a different family. An unattended run would pick whichever is cheaper to implement and write it up as a settled decision record — for a merge gate, on lib/cmd-detect.sh, which feeds main's required Outward-CLI guard corpus check."
 created: 2026-09-15
 updated: 2026-09-22
 assignee:
@@ -79,7 +77,7 @@ two-sided control in `test-cmd-detect.sh`. Any fix must keep it.
       for the outward guard rather than a generic one.
 - [ ] `gh -F - pr merge 42` and `gh --body-file - pr merge 42` are DENIED by both layers.
 - [ ] The three tripwire rows in `test-cmd-detect.sh` (search `KNOWN GAP: a documented stdin
-  value`) are **converted**, not deleted — they currently pin the gap as open.
+value`) are **converted**, not deleted — they currently pin the gap as open.
 - [ ] Two-sided in the same run, all still ALLOW/resolve: `gh --no-color pr merge 42`,
       `gh -q -v --no-color pr close 42`, `gh -R o/r pr list`, `gh -t x pr view 42`, and a commit
       message naming the shape.
@@ -153,3 +151,13 @@ three tripwire rows plus an isolating control in `test-cmd-detect.sh` on
   out-flag-run todo the same day. **Implied direction: (a).** The gate stays until the user
   confirms in one word that (a) is what "drop it if it breaks something" means here; a `drop`
   answer instead closes this as an accepted, tripwire-pinned residual like the two-token todo.
+
+### 2026-09-22 — user ruling: (a), the known-arity table
+
+- Confirmed **(a)**: name the separate-arg root flags in a known-arity table derived from
+  `gh --help` (cited per flag, never invented), so `gh -F - pr merge 42 -R other/org` resolves
+  the namespace past the value-taking `-F` while `gh --no-color pr merge 42` keeps resolving.
+  The table shares one shape with the post-`run` table the out-flag-run todo now calls for, and
+  its test pins the derivation so a new `gh` root flag shows up as a red row rather than a silent
+  miss. `human_led` and `blocked_reason` removed on that in-session ruling; nothing else in the
+  frontmatter changed.
