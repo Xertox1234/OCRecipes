@@ -68,6 +68,13 @@ export type AliasRoots = Record<string, string>;
 
 const WORKLET_CALLBACK_HOOKS = new Set([
   "runOnUI",
+  // scheduleOnUI (react-native-worklets) replaces the deprecated runOnUI —
+  // same calling convention (callback is always the first argument), so it
+  // needs the same worklet-context coverage. Without this entry the guard
+  // silently stops inspecting any scheduleOnUI body for cross-file callees
+  // missing a "worklet" directive — see
+  // docs/solutions/runtime-errors/reanimated-worklet-util-needs-directive-across-imports-2026-06-27.md.
+  "scheduleOnUI",
   "useAnimatedStyle",
   "useAnimatedProps",
   "useAnimatedScrollHandler",
