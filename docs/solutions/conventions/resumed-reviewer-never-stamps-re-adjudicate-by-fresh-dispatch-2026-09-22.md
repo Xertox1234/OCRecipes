@@ -1,5 +1,5 @@
 ---
-title: "Never resume a reviewer to re-adjudicate a finding — a second hand-back is refused, and a plain-text re-issue stamps over its own objection; dispatch a FRESH reviewer that carries the evidence"
+title: "Never resume a reviewer to re-adjudicate a finding — a second hand-back is refused, and a plain-text re-issue is refused too (or stamps clean after a contract-free objection); dispatch a FRESH reviewer that carries the evidence"
 track: knowledge
 category: conventions
 module: shared
@@ -8,7 +8,7 @@ applies_to: [".claude/hooks/**", ".claude/agents/*.md", ".claude/skills/**"]
 created: '2026-09-22'
 ---
 
-# Never resume a reviewer to re-adjudicate a finding — a second hand-back is refused, and a plain-text re-issue stamps over its own objection; dispatch a FRESH reviewer that carries the evidence
+# Never resume a reviewer to re-adjudicate a finding — a second hand-back is refused, and a plain-text re-issue is refused too (or stamps clean after a contract-free objection); dispatch a FRESH reviewer that carries the evidence
 
 ## Rule
 
@@ -51,16 +51,20 @@ hand-back**.
 - A `SendMessage` to a reviewer's agent id after that agent has already handed a report back.
 - A clean `No findings.` reply visible in the conversation while `review_stamp_dir <sha>` prints
   a directory that does not exist — or, worse, one whose record was written **after** an
-  objection you can see in the same agent's transcript (since 2026-09-22 only reachable when that
-  objection carries no severity word at all; still worth the look).
+  objection you can see in the same agent's transcript (since 2026-09-22 reachable only when that
+  objection carries no severity word at all, or was delivered as a text that withheld the contract
+  — the second residual above; still worth the look).
 - "The reviewer agreed it was fine" offered as the reason a merge should now pass.
 
 ## Why
 
 `.claude/hooks/review-stamp-writer.sh` (SubagentStop) reads the agent's delivered text as `$MSG`.
-If `$MSG` already carries `^REVIEWED-SHA:`, it is parsed directly. Only when it does not — the
-hand-back case, where the delivered text is a short wrapper line — does the writer fall back to
-the transcript: it refuses if the wrapper itself objects, then counts `SubagentHandback` entries
+If `$MSG` already carries `^REVIEWED-SHA:`, the writer first reads every hand-back body and every
+prior contract-bearing text in the transcript (guard (c), since 2026-09-22) and writes nothing if
+any of them carries an objection; otherwise `$MSG` is parsed directly. Only when `$MSG` does not
+carry the contract — the hand-back case, where the delivered text is a short wrapper line — does
+the writer fall back to the transcript: it refuses if the wrapper itself objects, then counts
+`SubagentHandback` entries
 and substitutes the report only when there is **exactly one**. Any other count leaves `$MSG` as
 the contract-less wrapper, the sha parse yields nothing, and the hook exits without writing. The
 writer's own comment block ("EXACTLY ONE HANDBACK") records the refusal as deliberate: taking the
@@ -123,8 +127,10 @@ Then measure, never assume:
   contract-bearing text whenever the delivered text carries the contract, and writes nothing if
   any of them carries an objection
   (`todos/archive/P1-2026-09-22-stamp-writer-takes-contract-bearing-text-over-its-own-objection.md`).
-  A plain-text re-issue over a prior objection, whichever way that objection was delivered, now
-  leaves the objection record standing. The rule
+  A plain-text re-issue over a prior objection delivered as a hand-back or as a contract-bearing
+  text now leaves the objection record standing; a prior objection text that withheld the
+  contract never wrote a record and is not read (the second residual, tracked in the P3 named
+  under Rule). The rule
   above stands anyway, for the **cost** reason rather than the safety one: a refused record costs
   a full re-dispatch round, and a resumed reviewer's second hand-back is still refused outright.
 

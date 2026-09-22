@@ -42,7 +42,12 @@ guard (c), which selects prior texts by the contract marker so that working narr
 mistaken for a report. Stop 1 writes nothing (guard (a) exits), and a stop-2 clean contract text
 then stamps `clean` on both main and the batch E branch (rows `C-BR-nocontractObj-then-clean`,
 `C-RO-nocontractObj-then-clean`, `C-IND-nocontractObj-then-clean` in the round-2 security probe).
-Same-agent, same-head, pre-existing; 0 of 434 real last assistant texts had this shape. Candidate
+Same-agent, same-head, pre-existing. Two independent scans of the 616 subagent transcripts under
+the project's Claude directory found no real instance of this laundering shape (the second scan
+found one contract-free last text with a column-0 bracketed line — a scoped re-review quoting
+writer fixture rows, no contract requested — and 58 contract-free last texts carrying a standalone
+severity word, all wrappers or narration, residual 6's class; none followed by a clean re-issue at
+the same head). Candidate
 mechanism: additionally select prior texts that match arm 1 (a line-start bracketed tag), which
 the narration control (case 47) does not match — but decide the narration false-refusal cost
 explicitly, since a narration line that starts with a bracketed tag would then refuse.

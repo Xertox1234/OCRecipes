@@ -237,8 +237,10 @@ rather than filed" — this todo is the filing.
   newline) against the transcript's raw `.text` (which keeps them), with CR normalisation running
   later in the file — so a findings delivery ending in a newline, or differing from its transcript
   copy by CR alone, re-entered `PRIOR_REPORTS` as its own prior report, tripped an arm, and lost
-  its `findings` record. Fail-closed only, and 0 of 434 real last assistant texts end in a
-  newline, but a regression against main on findings deliveries and a false sentence in the
+  its `findings` record. Fail-closed only, and no real last assistant text across the 616
+  subagent transcripts scanned ends in a newline (two independent scans; the first quoted a
+  434-text denominator the second could not reproduce, the second counted 613 non-empty last
+  texts — the zero holds in both), but a regression against main on findings deliveries and a false sentence in the
   guard's own comment. The security reviewer's 69-row generated probe (3 verdicts × 7 tail shapes
   × 2 pre-existing records, plus CR-mismatch, byte-identical, contract-free and narration rows,
   under bash 5.3.15 and 3.2.57) put the cost at 16 rows, all `curEqText=no`, and verified the
@@ -256,6 +258,30 @@ rather than filed" — this todo is the filing.
   `todos/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md`
   as its second class, with the candidate mechanism (also select prior texts matching arm 1) and
   the narration cost it must decide.
+
+### 2026-09-22 — PR #1012 confirmation round 3 (fresh reviewers at 6c809f81)
+
+- **Code clean, three ways.** A baseline reviewer with the gate's verbatim 13-path list (the
+  archived todo had crossed git's rename threshold after three rounds of entries, so the old path
+  reappeared as a delete) returned no findings and its record is on disk with the gate's digest.
+  A second baseline reviewer ran a mutation check (the new suite against the pre-fix writer: RED
+  on exactly the three strip rows) and the suite under bash 3.2.57. The security reviewer built a
+  1024-row grid (4 prior-text shapes × 8 tails × 4 delivery shapes × 8 tails, transcript =
+  [prior, delivery]) with an independent bash oracle per row: 0 mismatches against the oracle,
+  618 main→head differences all record→none in the deny direction, 0 main-none→head-record, and
+  no clean delivery refused that 09ded935 did not refuse (raw equality implies normalised
+  equality, so the retained set only shrank). Its structural argument for the normalisation: the
+  strip deletes only CRs and one trailing whitespace run, so two texts can compare equal only if
+  they agree on every other byte — a prior text excluded this way carries exactly the delivery's
+  own objection content, never a different one.
+- **Prose fixed (baseline-doc finding):** the solution doc's title, H1 and Why paragraph still
+  described the pre-fix writer, and two bullets claimed closure for "whichever way that objection
+  was delivered"; all now state the hand-back-or-contract-text scope and the contract-free
+  residual.
+- **Filed, unreachable-regime regression:** guard (c) passes the delivered text to jq as one argv
+  string, so a delivery above the platform's argv limit (measured: 1,105,119 bytes on macOS)
+  fails the call and writes no record where main stamped — 23× the largest real delivery.
+  `todos/P3-2026-09-22-guard-c-passes-the-delivered-text-as-one-argv-string-so-a-1mib-delivery-writes-no-record.md`.
 - **Real-data reach of guard (c)'s widening, measured by that review over 616 subagent
   transcripts:** 123 deliveries carry the contract in the last text; 117 have no prior
   contract-bearing text; 5 now refuse (4 findings texts behind an earlier objecting report —
