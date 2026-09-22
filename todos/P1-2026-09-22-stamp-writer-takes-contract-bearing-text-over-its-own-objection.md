@@ -38,8 +38,8 @@ Every row is what the code predicts: the count check at lines 166-174 and the wr
 arm at lines 161-165 sit inside `if ... ! grep -q '^REVIEWED-SHA:' <<<"$MSG"` (line 105), so a
 final text that carries the contract is parsed directly and the record is written to
 `$DIR/${AGENT_TYPE}.json` (line 534), one file per agent type per head. A live resumed reviewer
-delivering this shape has **not** been observed; the two live resumed reviewers measured so far
-(PR #960, 2026-09-22) both handed back a second time and were correctly refused. Reachability is
+delivering this shape has **not** been observed; the one live resumed reviewer measured so far
+(PR #960, 2026-09-22) handed back a second time and was correctly refused. Reachability is
 inferred from the hand-back tool's own description ("use it once"): a resumed reviewer following
 that description would write its second report as text.
 
@@ -64,7 +64,8 @@ rather than filed" — this todo is the filing.
       clean hand-back + plain wrapper → `verdict: clean`; one objection hand-back + plain wrapper
       → `verdict: findings`; two hand-backs + plain wrapper → no record.
 - [ ] A text-only delivery (zero hand-backs, contract in the final text) stamps exactly as today.
-      This is the majority population (88 of 281 roster transcripts on 2026-09-14) and must not
+      This is the majority population (88 of 281 roster transcripts on 2026-09-14, a session
+      measurement recorded in auto-memory rather than in the tree) and must not
       regress — assert it with a fixture, not by omission.
 - [ ] The shape "one CLEAN hand-back plus a contract-bearing final text" is decided explicitly, not
       by accident: either it keeps stamping clean (the fix keys on an objection, not on the mere
