@@ -227,3 +227,22 @@ cache key`. Pods caching (132 MiB, exact-match only, ~4s restore) is unchanged.
   is what made one of the four dispatch runs look almost-cold-fast and could have been
   misread as "caching mostly isn't hurting." See
   `docs/solutions/conventions/actions-cache-restore-keys-hit-is-not-a-warm-measurement-2026-09-13.md`.
+
+### 2026-09-22 — the remaining criterion's SUBSTANCE is met by a scheduled run; closing is the human's call
+
+- #960 merged 2026-09-21 22:35 MDT as `d6e921a2`. Issue #925 closed 2026-09-15. The nightly
+  `E2E Regression` run **35705554848** on `main` at 2026-09-22 08:34 UTC (post-merge, `schedule`
+  event) had the iOS job GREEN (08:34:44 → 09:29:42) with the Pods cache restored from a key
+  byte-identical to the computed primary key
+  (`pods-macOS-xcode26.3-9d4d7fe15cb91065e1f1aded7e2c691511fd207f3f10…`, "Cache hit for" and
+  "Cache restored from key" both naming it) and the `Save CocoaPods cache` step **skipped** — which
+  only happens on an exact primary-key hit, per this todo's own codified lesson that a
+  `restore-keys` prefix hit does not set `cache-hit`. `Build and install iOS app` ran 08:39:30 →
+  09:15:50 (36m20s), inside the measured 36m48s–51m01s warm range. The preceding nightly on
+  2026-09-21 (pre-merge) was red.
+- The unchecked criterion names a `workflow_dispatch`; this is a `schedule` run, and this todo is
+  `human_led` with a stated history of premature closure. So the evidence is recorded here and
+  the status is NOT changed by the agent that gathered it. If the scheduled green run is
+  accepted as equivalent, flip `status: done` and move this file to `todos/archive/`; if a
+  literal dispatch is still wanted, `gh workflow run e2e-regression.yml --ref main` is the
+  command, and the next run's Pods step must again show the exact-key hit and the skipped save.

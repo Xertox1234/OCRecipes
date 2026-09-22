@@ -2,10 +2,10 @@
 title: "A test named for a property but asserting a literal snapshot pins the bug it claims to prevent"
 track: bug
 category: code-quality
-tags: [testing, typescript, api, ai-prompting, schema, silent-failure]
+tags: [testing, typescript, api, ai-prompting, schema, silent-failure, harness]
 module: server
-applies_to: [server/services/__tests__/**/*.ts, shared/schemas/__tests__/**/*.ts]
-symptoms: ["A test name claims a relationship (schema-aligned, matches the contract, in sync) while its body compares against a hardcoded object", "A defect survives repeated review passes in a file that visibly has test coverage", "Fixing the production bug turns a green test red, and the test looks 'correct' before the fix", "Two artifacts are described as kept in sync by hand, and the only test over them snapshots one side"]
+applies_to: [server/services/__tests__/**/*.ts, shared/schemas/__tests__/**/*.ts, ".claude/hooks/test-*.sh"]
+symptoms: ["A test name claims a relationship (schema-aligned, matches the contract, in sync) while its body compares against a hardcoded object", "A defect survives repeated review passes in a file that visibly has test coverage", "Fixing the production bug turns a green test red, and the test looks 'correct' before the fix", "Two artifacts are described as kept in sync by hand, and the only test over them snapshots one side", "A structural lint named for a CLASS of defect greps for the one literal spelling that bit before, and passes on the variant it exists to catch"]
 created: '2026-08-31'
 severity: medium
 ---
@@ -89,6 +89,18 @@ Two rules of thumb:
 2. **When two artifacts are hand-synced across a boundary, the test must exercise the
    boundary** — parse with the real schema, import the real type, call the real validator. A
    literal transcribed from one side proves only that someone once typed it correctly.
+
+### The same trap in a structural shell lint (2026-09-22)
+
+Both guard suites carry a lint asserting that no code line in the guard "hand-spells a closer
+class that `_OUT_POS_SUFFIX` provides". It was implemented as a grep for the ONE literal spelling
+that had bitten before, `([[:space:]]|$)`, so the field-flag closer `([[:space:]]|=|$)` — the same
+defect with one extra alternative — reported PASS on the very line the lint existed to catch,
+and a glued redirect walked past it on both guards (PR #1012). The lint was named for a property
+and asserted a literal. The fix widened the pattern to admit one extra alternative between the
+space class and `$` (`\(\[\[:space:\]\]\|([^|)]+\|)?\$\)`, which still cannot match the exported
+constant's own definition), was watched go RED on exactly the two field-flag lines FIRST, and
+only then were the closers changed — the order is the evidence that the lint now sees the class.
 
 ## Prevention
 

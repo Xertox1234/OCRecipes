@@ -74,6 +74,17 @@ printf '%s\n' "$CHANGED" | shasum | cut -c1-16     # the digest the gate will de
 Do not build the list from `git diff --stat`, from the PR body, or by hand — each of those
 can apply rename detection, or simply omit a path, and produce a list that looks right.
 
+**And re-derive it after EVERY push, before EVERY dispatch — the set changes mid-PR without
+any file being added.** On PR #1012 (2026-09-22) the archived todo was a 71%-similarity rename
+at the first head; three review rounds of dated Updates entries pushed its body past the
+threshold, and the gate's list grew from 12 to 13 paths (the old path reappearing as a delete)
+on a push that touched no new file. Two confirmation reviewers had been dispatched "in parallel
+with the list check", on the reasoning that the set could not have changed; both echoed the stale
+12-path list in their `REVIEWED-FILES` block, so the one that returned clean was bound to a
+digest the gate would not accept, and a third dispatch with the verbatim 13-path list produced
+the record that was used (no merge was attempted against the stale one). The derivation is one
+command and the dispatch must wait for it.
+
 ## Prevention
 
 **Run the digest as a positive control before you rely on any stamp.** One command settles
