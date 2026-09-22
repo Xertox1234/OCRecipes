@@ -3,7 +3,7 @@ title: "merge-review-guard.sh: an extractor MISS is indistinguishable from 'not 
 status: backlog
 priority: high
 created: 2026-09-12
-updated: 2026-09-17
+updated: 2026-09-22
 assignee:
 labels: [deferred, harness, security]
 github_issue:
@@ -198,3 +198,25 @@ re-derive with `grep -n 'if (c == BS)'` rather than trusting them.
 
 Combined with three prior withdrawals on this todo and a required-check pin re-derivation, that
 is a human's call, which is what `human_led` above records.
+
+### 2026-09-22 — user asked for more information before ruling; gate left in place
+
+- The ruling in plain terms. The shared renderer in `lib/cmd-detect.sh` decides what a
+  backslash-escaped character becomes in the text every guard reads. Today an escaped character
+  becomes a PLACEHOLDER, whichever character it was. That is deliberate for escaped WHITESPACE:
+  rendering `\ ` as a real space once split one word into two and manufactured an `--auto`
+  token, which GRANTED the automerge carve-out — fail-open on a grant-shaped check. The cost of
+  the same rule for escaped NON-whitespace is that `gh p\r merge 42` renders as a placeholder
+  where `pr` should be, so neither guard sees the verb: measured, two renderings ALLOW on both
+  layers and ten more miss the merge gate and are caught only by the outward guard.
+- The question is therefore: **may an escaped non-whitespace character render as itself (`\r`
+  → `r`, closing those renderings), while escaped whitespace keeps the placeholder?** Rendering
+  a non-whitespace character as itself adds no token, so the grant-shaped failure cannot
+  recur from it. What makes it a ruling rather than an edit: `if (c == BS)` occurs ten times in
+  that file and the arms disagree — three already render an escape as literal whitespace — so
+  the change is a per-context decision across ten renderers in a file three guards and the
+  required corpus read, and three prior attempts each closed one family and opened another.
+- A "yes" means: render escaped non-whitespace as itself in every arm, keep the whitespace
+  placeholder in every arm, pin both directions per arm, and re-derive the corpus pins. A "no"
+  means: accept the two-layer ALLOW on escaped verbs as a documented residual and close this
+  todo as documentation.

@@ -1,9 +1,9 @@
 ---
 title: "The two-token gh needles miscount occurrences through a process substitution, so a hidden second merge is invisible to the ambiguity refusal"
-status: blocked
+status: done
 priority: medium
 created: 2026-09-14
-updated: 2026-09-16
+updated: 2026-09-22
 assignee:
 labels: [deferred, harness, security]
 github_issue:
@@ -163,7 +163,7 @@ first occurrence, e.g.`gh pr merge 7 -c <(gh pr merge 42)` — where it is unnee
 42`) legitimately contain the same anchor bytes as ordinary redirect/glue syntax, and the
    check could not distinguish that from a genuinely nested second invocation. No narrower,
    still-general signal was found. **Reverted in full** — the guard file is back to
-   byte-identical with `main` (`git diff` on `guard-outward-cli.sh` is empty).
+   byte-identical with `main` at the time of that entry (re-run the diff if the guard changes).
 
 Both attempts, the measurements, and the reasoning are written up in
 `docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md`
@@ -215,7 +215,7 @@ independently twice (by the orchestrator re-measuring, and by this PR's own revi
   check never sees one.
 - It is also **not novel**. The identical bare form is already pinned as pre-existing on
   `main` in `test-guard-outward-cli.sh` ("the ONE-command -f mutation is allowed here, as it
-  is on main (pre-existing)"), about 35 lines below this PR's own tripwire block, attributed
+  is on main (pre-existing)"), in the ONE-command `-f` mutation row below this PR's own tripwire block, attributed
   there to an archived `status: done` todo about a different hook.
 
 Now filed with the correct attribution as
@@ -234,3 +234,14 @@ question** — it is filed as
 with the corrected attribution. Do not call it a "psub-before-verb" finding: as the CORRECTED
 note above records, the ordering is irrelevant to it and the plainest spelling reproduces
 it.
+
+### 2026-09-22 — CLOSED as documentation by the user
+
+- The one remaining decision ("whether to accept the tripwire-pinned residual as the permanent
+  posture for the two-token families") was put to the user in session and answered yes. The
+  three TRIPWIRE rows in `test-guard-outward-cli.sh` stay as the pinned posture, the two
+  measured dead ends stay recorded in
+  `docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md`,
+  and no further occurrence-counting or grammar work is to be attempted for this class.
+  `status: done`, moved to `todos/archive/`. The acceptance criteria above remain unticked on
+  purpose: they were proved unreachable as worded, not met.

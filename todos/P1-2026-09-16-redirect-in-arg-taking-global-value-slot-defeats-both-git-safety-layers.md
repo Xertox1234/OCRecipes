@@ -3,7 +3,7 @@ title: "SHAPE 2 ONLY (shapes 1/1b closed 2026-09-17): a parameter expansion in t
 status: backlog
 priority: high
 created: 2026-09-16
-updated: 2026-09-17
+updated: 2026-09-22
 assignee:
 labels: [deferred, harness, security]
 github_issue:
@@ -266,3 +266,13 @@ and `main` allows every one identically, so none is a regression.
   failure this todo was filed about. Class numbering was kept (marked CLOSED in place) rather
   than renumbered, since `test-git-safety.sh` cites the numbers.
 - Shape 2 remains. Its acceptance criteria below are UNCHECKED on purpose.
+
+### 2026-09-22 — corpus budget ruled: make the corpus fast first
+
+- Shape 2 wants a new corpus axis; the required corpus check took 17–27 minutes per push this
+  week (26m32s on one head of PR #1012) against a 30-minute cap. Put to the user as decision 10;
+  answer: "whatever is fastest — 26 min is too long; I may even drop it if a commit takes that
+  long." Filed as
+  `todos/P1-2026-09-22-outward-cli-corpus-runs-17-to-27-minutes-on-every-push-shard-it-and-gate-it-on-hook-changes.md`.
+  **Sequence: that todo lands first**; shape 2's axis is then added under the sharded budget (or,
+  if the corpus is demoted to a nightly, under no per-push budget at all).

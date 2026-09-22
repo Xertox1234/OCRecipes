@@ -3,7 +3,7 @@ title: "Writing ABOUT a guarded command in a commit message or PR body trips the
 status: backlog
 priority: low
 created: 2026-08-16
-updated: 2026-08-16
+updated: 2026-09-22
 assignee:
 labels: [deferred, harness, agents]
 github_issue:
@@ -121,3 +121,13 @@ So the practical shape of this todo has changed: writing a commit message in mar
 code spans, is now the common way to hit it — not just naming a guarded command on its own
 line. The workaround is unchanged (`--body-file`, or `ALLOW_OUTWARD_CLI=1` for one command),
 and the direction is still safe (an over-DENY, never an allow).
+
+### 2026-09-22 — user answered "yes"; clarification needed, gate left in place
+
+- Put to the user in session as "(a) blank heredoc bodies like quoted spans — parser work, and it
+  weakens a real attack surface since a heredoc piped into `bash`/`eval` IS an invocation — or
+  (b) document `--body-file` as the pattern, one comment plus one deny-message line?" The answer
+  was "yes", which does not pick between (a) and (b). If "yes" meant "go ahead", the option that
+  breaks nothing and costs an hour is **(b)**: the deny message names `--body-file` and the
+  Write-tool-plus-`-F` pattern, and the guard is otherwise untouched. (a) needs its own ruling
+  because it changes what the guard can see. Proceeding with (b) on the user's confirmation.

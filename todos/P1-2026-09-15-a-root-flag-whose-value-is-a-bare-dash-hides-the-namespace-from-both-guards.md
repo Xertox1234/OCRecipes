@@ -5,7 +5,7 @@ priority: high
 human_led: true
 blocked_reason: "Closing this is a DESIGN decision, not a spec. Telling `gh --no-color pr merge 42` (no-arg flag, namespace next) apart from `gh -F - pr merge 42` (value-taking flag whose value is a dash) requires the tool's FLAG TABLE — which flags consume an argument — and a regex does not have one. The two candidate directions have opposite costs and neither is obviously right: (a) re-name the separate-arg flags, which re-imports the enumeration the whole root-position fix exists to avoid and goes stale the next time `gh` ships a flag; (b) let the value arm accept a leading dash, which breaks the no-arg case that is currently pinned as a two-sided control (`gh --no-color pr merge 42` would stop resolving) and re-opens a different family. An unattended run would pick whichever is cheaper to implement and write it up as a settled decision record — for a merge gate, on lib/cmd-detect.sh, which feeds main's required Outward-CLI guard corpus check."
 created: 2026-09-15
-updated: 2026-09-15
+updated: 2026-09-22
 assignee:
 labels: [deferred, harness, security]
 github_issue:
@@ -79,7 +79,7 @@ two-sided control in `test-cmd-detect.sh`. Any fix must keep it.
       for the outward guard rather than a generic one.
 - [ ] `gh -F - pr merge 42` and `gh --body-file - pr merge 42` are DENIED by both layers.
 - [ ] The three tripwire rows in `test-cmd-detect.sh` (search `KNOWN GAP: a documented stdin
-    value`) are **converted**, not deleted — they currently pin the gap as open.
+  value`) are **converted**, not deleted — they currently pin the gap as open.
 - [ ] Two-sided in the same run, all still ALLOW/resolve: `gh --no-color pr merge 42`,
       `gh -q -v --no-color pr close 42`, `gh -R o/r pr list`, `gh -t x pr view 42`, and a commit
       message naming the shape.
@@ -139,3 +139,17 @@ than auto-filed, per the repo's never-auto-file bar. Independently reproduced by
 session during a review sweep before filing. Disclosed in `lib/cmd-detect.sh` and pinned with
 three tripwire rows plus an isolating control in `test-cmd-detect.sh` on
 `fix/gh-root-flag-property-arm`; this todo is the tracking half of that disclosure.
+
+### 2026-09-22 — user ruling, conditional; gate left in place
+
+- Put to the user in session (with the note that memory records direction (b) as chosen on
+  2026-09-17). Answer: "I don't know what to choose here. If it means something gets broken then
+  drop it." Applied to the two directions: **(b)** — let the value arm accept a leading dash —
+  breaks the pinned two-sided control `gh --no-color pr merge 42` (that spelling would stop
+  resolving and the merge gate would deny it for "cannot tell which PR"), so (b) is out under
+  that ruling. **(a)** — name the separate-arg root flags in a known-arity table — breaks nothing
+  today and goes stale only when `gh` ships a new value-taking root flag, which the table's own
+  test can pin against `gh --help`. (a) is also the direction the user chose for the sibling
+  out-flag-run todo the same day. **Implied direction: (a).** The gate stays until the user
+  confirms in one word that (a) is what "drop it if it breaks something" means here; a `drop`
+  answer instead closes this as an accepted, tripwire-pinned residual like the two-token todo.
