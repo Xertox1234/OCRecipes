@@ -43,7 +43,7 @@ last_updated: '2026-09-13'
 
 Both failure modes were caught empirically while adding `ios/Pods` +
 Xcode DerivedData caching to this repo's `e2e-regression.yml` iOS job
-(`todos/archive/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md`):
+(`todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md`):
 
 - Running `pod install` **twice, back-to-back, locally**, with `ios/Pods`
   already fully populated from the first run, modified `ios/Podfile.lock`

@@ -121,7 +121,7 @@ This todo was archived `done` before its two measurement criteria could be satis
 code half looked finished, and the numbers only exist after a `workflow_dispatch`. They now
 exist, and DerivedData caching appears to be a **net loss**.
 
-Three `workflow_dispatch` runs, iOS `Build and install iOS app` step, same runner pool:
+Four `workflow_dispatch` runs, iOS `Build and install iOS app` step, same runner pool:
 
 | Run         | Cache state at build                                                       | Build time  |
 | ----------- | -------------------------------------------------------------------------- | ----------- |
