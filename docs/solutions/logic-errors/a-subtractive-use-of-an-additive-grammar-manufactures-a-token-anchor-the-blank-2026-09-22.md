@@ -26,8 +26,9 @@ of the preceding word in `--method2>x`, the blank removed `2>x` together, and wh
 `--method ` — a string that satisfies the method closer `--method([^-A-Za-z0-9]|$)`. The negated
 conjunct went false, the implicit-POST arm stood down, and a row that main DENIED read ALLOW on
 the branch. Measured by the one-pass security review on both guards for `--method2>x`,
-`--method1>&2` and `--method0<x`, with `--methodology>x` and `--method2x` denying on both sides
-as controls.
+`--method1>&2` and `--method0<x`, with `--methodology>x` (a longer flag sharing the prefix, glued
+to a redirect) denying on both sides as the control — the rows now pinned in both suites beside a
+second control, the word-initial glued decoy `-f k=v >-X`, which the anchored blank still blanks.
 
 The change had been described, in the guard, the suite headers and the todo, as monotone in the
 deny direction — "removing text cannot invent a method token". That sentence was false as
