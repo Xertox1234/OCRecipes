@@ -20,8 +20,8 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  runOnJS,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { BottomSheetModal, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -1084,9 +1084,9 @@ export default function MealPlanHomeScreen() {
         })
         .onEnd((e) => {
           if (e.translationX < -dateStripSwipeThreshold) {
-            runOnJS(handleNextWeek)();
+            scheduleOnRN(handleNextWeek);
           } else if (e.translationX > dateStripSwipeThreshold) {
-            runOnJS(handlePrevWeek)();
+            scheduleOnRN(handlePrevWeek);
           }
           dateStripTranslateX.value = withSpring(0, {
             damping: 20,

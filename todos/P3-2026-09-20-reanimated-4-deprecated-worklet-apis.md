@@ -1,6 +1,6 @@
 ---
 title: "Reanimated 4 deprecates runOnUI and runOnJS in favour of react-native-worklets — 11 non-test files still reference them"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-20
 updated: 2026-09-20

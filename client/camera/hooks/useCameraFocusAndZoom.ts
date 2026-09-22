@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { Gesture } from "react-native-gesture-handler";
-import { useSharedValue, runOnJS } from "react-native-reanimated";
+import { useSharedValue } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import type { CameraDevice, CameraRef } from "react-native-vision-camera";
 import { logger } from "@/lib/logger";
 import {
@@ -116,7 +117,7 @@ export function useCameraFocusAndZoom({
   // doesn't install (it's snapshot-only OCR, no frame processors). Passing
   // an animated zoom SharedValue as a prop throws inside Camera's own
   // effect ("react-native-vision-camera-worklets is not installed"),
-  // silently killing the whole preview. Bridging via runOnJS on every pinch
+  // silently killing the whole preview. Bridging via scheduleOnRN on every pinch
   // update costs a JS-thread hop per frame but avoids that dependency.
   const setCameraZoom = useCallback(
     (value: number) => {
@@ -129,7 +130,7 @@ export function useCameraFocusAndZoom({
           zoomFailureReportedRef.current = false;
         })
         .catch((error: unknown) => {
-          // Latched: setZoom is invoked via runOnJS on EVERY pinch-gesture
+          // Latched: setZoom is invoked via scheduleOnRN on EVERY pinch-gesture
           // frame (not once per tap, like runFocus's focusTo) — unlatched,
           // one dragged pinch on a broken zoom would emit dozens of Sentry
           // events. NOTE: the bound is "one report per success→failure
@@ -148,7 +149,7 @@ export function useCameraFocusAndZoom({
     [cameraRef, device],
   );
 
-  // Bridged from the pinch worklet on every update via runOnJS — shows a live
+  // Bridged from the pinch worklet on every update via scheduleOnRN — shows a live
   // "1.8x" readout during the gesture, fades out ~600ms after it stops
   // changing. Re-arms the hide timer on each call rather than debouncing, so
   // the label stays visible for the whole gesture and only starts its
@@ -168,7 +169,7 @@ export function useCameraFocusAndZoom({
   }, []);
 
   const tapGesture = Gesture.Tap().onEnd((e) => {
-    runOnJS(runFocus)(e.x, e.y);
+    scheduleOnRN(runFocus, e.x, e.y);
   });
 
   const pinchGesture = Gesture.Pinch()
@@ -182,8 +183,8 @@ export function useCameraFocusAndZoom({
         device.minZoom,
         device.maxZoom,
       );
-      runOnJS(setCameraZoom)(zoom.value);
-      runOnJS(showZoomLabel)(zoom.value);
+      scheduleOnRN(setCameraZoom, zoom.value);
+      scheduleOnRN(showZoomLabel, zoom.value);
     });
 
   return { focusPoint, zoomLabel, tapGesture, pinchGesture };
