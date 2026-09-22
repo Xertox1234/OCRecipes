@@ -3,7 +3,7 @@ title: "E2E suite dedup: shared CI seed script, credential-entry helper, non-reg
 status: review
 priority: low
 created: 2026-08-30
-updated: 2026-09-01
+updated: 2026-09-22
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -107,10 +107,10 @@ Items 1 and 2 are implemented and committed on branch
   job keeps only its two iOS-specific vars
   (`MAESTRO_DRIVER_STARTUP_TIMEOUT`, `SENTRY_ALLOW_FAILURE`), and the
   Android job's `env:` block is now empty and removed. Fail-loud contract
-  (REG_BODY capture, token-stripped error echo, PROF_CODE check,
+  (`REG_BODY` capture, token-stripped error echo, `PROF_CODE` check,
   `::error::` + exit 1) is unchanged; the only behavioral delta is the
   script's `set -uo pipefail` (no `-e`) vs. the workflow step's implicit
-  `bash -eo pipefail` — a curl _transport_ failure now falls through to the
+  `bash -eo pipefail` — a curl transport failure now falls through to the
   existing `if [ -z "$TOKEN" ]` / `PROF_CODE != 200` branches and exits 1
   with a message, instead of aborting opaquely. That's a strengthening of
   the fail-loud contract, not drift from it.
@@ -184,3 +184,19 @@ mode the parent E2E-commissioning history already paid for once. Once a
 human confirms item 3 (fix or delete `edit-profile.yaml`) and item 4 (a
 green `workflow_dispatch` on this branch, or on `main` after merge), flip
 `status: done` and move this file to `todos/archive/`.
+
+### 2026-09-22 — user rulings on items 3 and 4
+
+- **Item 4 is met.** PR #903 merged 2026-09-03; the scheduled `E2E Regression` runs on `main`
+  since then have been green on 2026-09-17, 18, 19, 20 and 22 (the 09-21 iOS failure predates
+  #960's cache fix and is unrelated to this refactor). That is more than the one green run the
+  criterion asked for.
+- **Item 3: FIX, not delete** — the user's ruling. The flow is `[profile]`-tagged only and never
+  runs in CI, asserts strings from two different screens, and references a section that exists
+  nowhere, so the fix is: boot the simulator, capture a live hierarchy dump of the Profile
+  screen per
+  `docs/solutions/best-practices/diagnose-e2e-from-debug-output-artifacts-first-2026-08-30.md`,
+  rewrite the four assertions against what is actually rendered, decide whether the flow
+  belongs under `regression` or `smoke`, and run it green once locally. Needs a simulator and a
+  running backend, so it is a task for a session with the dev loop up. Status stays `review`
+  until then.

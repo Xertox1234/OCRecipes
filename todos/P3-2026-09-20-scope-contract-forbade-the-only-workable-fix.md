@@ -3,12 +3,10 @@ title: "PR #1000's Scope Contract forbade the only structurally possible fix —
 status: backlog
 priority: low
 created: 2026-09-20
-updated: 2026-09-20
+updated: 2026-09-22
 assignee:
 labels: [deferred, harness]
 github_issue:
-human_led: true
-blocked_reason: "The acceptance criteria are a DECISION about a project-wide review convention, not a spec. The todo asks which way to resolve a stated tension -- a Scope Contract written before implementation can only guess where the fix lands, but one written loosely enough never to be wrong constrains nothing -- and the three candidate directions have materially different costs and opposite failure modes. Whatever is chosen is written into docs/AI_WORKFLOW.md's Tier handling section, which every reviewer dispatch and the generated Copilot instructions read, so it changes reviewer behaviour everywhere at once. An unattended run would pick whichever direction is cheapest to implement and record it as settled convention with no human in the loop -- and the specific risk is that it weakens 'scope-contract violation = CRITICAL' into decoration, which is the one outcome this todo exists to prevent. A human decides the direction before anyone writes it."
 ---
 
 # A Scope Contract that excludes the only workable fix
@@ -112,3 +110,17 @@ usually a sign the process is missing a step rather than that both authors erred
 - Filed at the user's request when ratifying PR #1000's deviation at merge. The three impossibility
   findings were verified against `@gorhom/bottom-sheet` source by two reviewers before this was
   filed, not inferred from the complaint.
+
+### 2026-09-22 — user ruling: "as per best practices"
+
+- Put to the user in session; the answer delegates the direction to best practice rather than
+  picking one of the three. The direction that follows from how this repo already behaves (PR
+  #1012's four out-of-contract doc edits were each disclosed in the todo's Updates and none was
+  treated as a violation): **a Scope Contract binds MECHANISMS and forbids CATEGORIES (no new
+  gate, no new store, no new abstraction); its file list is the author's expectation, not a
+  fence. A deviation that is DISCLOSED in the todo's Updates with the reason it was necessary is
+  not a violation; an UNDISCLOSED file or mechanism outside the contract stays CRITICAL.** That
+  keeps "scope-contract violation = CRITICAL" as a rule about honesty rather than about guessing
+  file paths before implementation. Lands in `docs/AI_WORKFLOW.md` → Tier handling and in the
+  todo template's Scope Contract section. `human_led` removed on that in-session ruling; nothing
+  else in the frontmatter changed.

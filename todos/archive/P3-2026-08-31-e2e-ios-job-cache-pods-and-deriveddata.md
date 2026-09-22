@@ -1,9 +1,9 @@
 ---
 title: "E2E iOS job: cache Pods + DerivedData so the ~34-minute cold build stops dominating the nightly"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-31
-updated: 2026-09-13
+updated: 2026-09-22
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -45,7 +45,7 @@ deterministic and may need `-derivedDataPath` pinning to be cacheable at all).
       and job-level 160m bounds were confirmed to still hold against the real measured range
       (36m48s-51m01s), so neither value changed, but the comments no longer cite the stale
       pre-cache ~34m estimate.
-- [ ] One green `workflow_dispatch` on `main` with the cache warm. **Still unmet — deliberately
+- [x] One green `workflow_dispatch` on `main` with the cache warm. **Still unmet — deliberately
       not attempted this run.** The iOS job is still red, independent of caching: issue #908
       (the alert-timing hypothesis, candidate fix PR #919, closed with that hypothesis
       disproven) was closed 2026-09-04, but the iOS job regressed again the very next day and is
@@ -246,3 +246,10 @@ cache key`. Pods caching (132 MiB, exact-match only, ~4s restore) is unchanged.
   accepted as equivalent, flip `status: done` and move this file to `todos/archive/`; if a
   literal dispatch is still wanted, `gh workflow run e2e-regression.yml --ref main` is the
   command, and the next run's Pods step must again show the exact-key hit and the skipped save.
+
+### 2026-09-22 — CLOSED by the user
+
+- The user, in session, ruled "flip the status" on the evidence above: the scheduled green run
+  with the exact-key Pods hit is accepted as satisfying the last criterion. `status: done`,
+  moved to `todos/archive/`. The `human_led` gate is left in the frontmatter as history; it is
+  inert under `todos/archive/`.

@@ -3,7 +3,7 @@ title: "Put the outward-facing CLIs behind a PATH wrapper, so the guard stops be
 status: backlog
 priority: high
 created: 2026-09-07
-updated: 2026-09-13
+updated: 2026-09-22
 assignee:
 labels: [security, harness]
 github_issue:
@@ -516,3 +516,15 @@ Consequences, both binding:
   **CLOSED 2026-09-07** (`status: done`). This bullet previously called it "the one open guard
   defect that survives the Model A ruling"; that was stale and is corrected here 2026-09-13.
   Nothing in this todo should be read as depending on it being open.
+
+### 2026-09-22 — user ruling: BUILD IT
+
+- Put to the user in session as "review the level-(b) proof and green-light building, plus hand
+  off the settings `env` key and restart needed to measure levels (a) and (c)?" — answer:
+  **yes**. The 2026-09-17 "proof only, do not build" hold is lifted. Sequence for the
+  implementing session: (1) stage the `.claude/settings.json` `env` addition as a file and hand
+  the user a `cp` (never a manual JSON edit), restart, then measure levels (a) and (c) exactly as
+  level (b) was measured (stubs that echo their resolution directory; nothing outward-facing
+  executed); (2) add the check the proof memo asked for — fail if `eas`, `railway` or `gh` ever
+  appears in `node_modules/.bin`, since level (b) holds only while they are absent; (3) build the
+  wrapper per the ruled design (beside-not-replace, argv-not-delegate, deny-by-default).

@@ -3,12 +3,10 @@ title: "_OUT_FLAG_RUN's value slot swallows the real command word, so an inciden
 status: backlog
 priority: medium
 created: 2026-09-17
-updated: 2026-09-17
+updated: 2026-09-22
 assignee:
 labels: [deferred, harness]
 github_issue:
-human_led: true
-blocked_reason: "The fix direction is UNSETTLED and the leading candidate is unproven. Three independent builds of the same one-sentence repair behaved three different ways, and the live lead -- admit one bare word in the post-run slot only when a flag precedes it and the gated literal immediately follows -- has two measurements that contradict each other, neither run against the project's own 2031-row corpus. The remaining choice is between re-deriving and proving that lookahead-conditioned rule and a known-arity flag table; an earlier version of this field also offered a third option the body now retracts as the inverse of what is wanted, which is its own argument for a human reading the body before starting. The choice lands on _OUT_FLAG_RUN, which every anchor in guard-outward-cli.sh shares, in the guard that exists because an agent once published an OTA update by accident. PR #993's own history is the argument: three separate rounds each patched one slot in this area, each patch exposed the next slot, and every one was found by a reviewer constructing an adversarial probe the corpus did not already contain -- not by the corpus. An unattended run would pick whichever direction is cheaper, verify it against that same corpus, and ship a narrowing or a widening of a security gate on that basis. The acceptance criteria are individually testable, which was equally true of all three superseded per-slot attempts."
 ---
 
 # One flag before a command word turns an incidental script name into a deny
@@ -128,3 +126,14 @@ change, deliberately and in writing.
   `.claude/hooks/test-guard-outward-cli.sh`, `.claude/hooks/repro-outward-cli-corpus.sh`.
 - **Out of scope:** the workspace-scope grammar (closed in #993) and the crude mirror's absorber,
   which is a separate constant with its own residuals.
+
+### 2026-09-22 — user ruling on the gated decision: KNOWN-ARITY FLAG TABLE
+
+- Put to the user in session as "re-derive and prove the lookahead-conditioned rule, or build a
+  known-arity flag table?" — answer: **known-arity flag table**. The implementation replaces the
+  bare-word admission in `_OUT_FLAG_RUN`'s value slot with a table of which post-`run` flags
+  consume a following argument (derived from the launchers' own help output, cited per flag, not
+  invented — the `an-invented-enumeration-is-not-the-space` rule applies), and keeps the existing
+  measured probes as the RED set. This is the same direction the user chose for the bare-dash
+  sibling's root-flag question, so the two tables should share one shape. `human_led` removed on
+  that in-session ruling; nothing else in the frontmatter changed.

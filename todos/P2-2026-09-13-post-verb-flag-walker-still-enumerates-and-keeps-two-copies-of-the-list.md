@@ -2,10 +2,8 @@
 title: "cmd_gh_pr_ref's POST-verb flag walker still enumerates gh's flags, in two separate copies, and one real flag is missing from both"
 status: backlog
 priority: medium
-human_led: true
-blocked_reason: "The middle acceptance criterion is a DECISION, not a spec: what an UNLISTED value-taking flag should do in the post-verb slot. Resolving the first non-dash token (today's behaviour) is fail-OPEN — the gate classifies a DIFFERENT PR's review record; refusing when a bare-dash token is followed by two or more non-dash tokens is fail-CLOSED, and turns some legitimate commands into denials on a gate with NO per-command escape. The two directions have opposite costs and neither is obviously right. An unattended run would pick whichever is cheaper to implement and write it into this file as a settled decision record — for a security gate, on `lib/cmd-detect.sh`, which this todo's own Risks section notes will wedge every open PR if edited carelessly. The property trick that closed the sibling P0 does NOT transfer here, so there is no safe default to fall back on."
 created: 2026-09-13
-updated: 2026-09-13
+updated: 2026-09-22
 assignee:
 labels: [deferred, harness, security]
 github_issue:
@@ -137,3 +135,13 @@ Filed from the advisor review of the P0's closing change, which asked whether th
 construct one slot over was complete. It was not. The reusable lesson is already codified at
 `docs/solutions/logic-errors/an-invented-enumeration-is-not-the-space-ask-the-tool-2026-09-13.md`
 — this todo is that doc's own prescription applied to the site it did not reach.
+
+### 2026-09-22 — user ruling on the gated decision: STAY FAIL-OPEN
+
+- Put to the user in session as "an unlisted value-taking flag after the verb: stay fail-open
+  (may classify the wrong PR's record) or go fail-closed (some legitimate commands deny with no
+  escape hatch)?" — answer: **stay fail-open**. The middle acceptance criterion is therefore
+  resolved as "keep resolving the first non-dash token", documented as an accepted posture
+  rather than changed. The other two criteria (one copy of the flag list, and the real flag that
+  is missing from both) are ordinary implementation work and can proceed. `human_led` removed
+  on that in-session ruling; nothing else in the frontmatter changed.
