@@ -66,9 +66,12 @@ Three mechanics make this cheap and correct, all read out of the hook rather tha
 - **One reviewer is enough.** The gate's record loop never filters `agent_type` and sets its match
   on any single record whose verdict is clean and whose digest matches. The confirmation pass is
   not a second roster dispatch.
-- **The file list must come from the gate's own command** — `gh pr diff <N> --name-only`. An
-  archive move whose body was rewritten is a delete **plus** an add, so a hand-assembled list is
-  one path short and the record fails on scope while passing on verdict
+- **The file list must come from the gate's own command** — `gh pr diff <N> --name-only` — and
+  be **re-derived after every push, before every dispatch**. An archive move whose body was
+  rewritten is a delete **plus** an add, so a hand-assembled list is one path short and the
+  record fails on scope while passing on verdict; and a todo archived at the first head can
+  cross that threshold on a LATER push once its Updates entries grow, so the set changes with no
+  file added
   ([solution](solutions/code-quality/an-archive-move-git-reads-as-delete-plus-add-mis-scopes-the-review-stamp-2026-09-17.md)).
 - **The record comes from a fresh dispatch only.** Never re-adjudicate a finding by resuming the
   reviewer (`SendMessage`). A resumed reviewer that hands back a second time never stamps — the
