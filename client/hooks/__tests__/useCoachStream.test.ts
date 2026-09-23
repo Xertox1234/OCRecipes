@@ -67,6 +67,11 @@ const { mockTokenStorage, mockGetApiUrl } = vi.hoisted(() => ({
 
 vi.mock("@/lib/token-storage", () => ({ tokenStorage: mockTokenStorage }));
 vi.mock("@/lib/query-client", () => ({ getApiUrl: mockGetApiUrl }));
+// An explicit zone, not the ambient one: a test that reads the runner's own
+// zone passes on a UTC CI box whether or not the header is sent.
+vi.mock("@/lib/timezone", () => ({
+  getDeviceTimezone: () => "America/Los_Angeles",
+}));
 vi.mock("@/components/coach/coach-chat-utils", () => ({
   stripCoachBlocksFence: (s: string) => s.trim(),
   filterValidBlocks: (arr: unknown[]) => arr,
@@ -375,5 +380,17 @@ describe("useCoachStream safety_override", () => {
       expect.stringContaining("harmful advice"),
       undefined,
     );
+  });
+});
+
+describe("useCoachStream request headers", () => {
+  // The server anchors notebook follow-up dates and the coach's "today" in
+  // the zone this header names. Without it `parseTimezone` falls back to
+  // UTC, so every UTC-negative user's follow-up fires hours early.
+  it("sends X-Timezone with the device timezone", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    expect(mockXhr.headers["X-Timezone"]).toBe("America/Los_Angeles");
   });
 });

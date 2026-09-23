@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { renderHook, act } from "@testing-library/react";
 
-import { useSendMessage } from "../useChat";
+import {
+  useSendMessage,
+  useCreateNotebookEntry,
+  useUpdateNotebookEntry,
+} from "../useChat";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 const { mockApiRequest, mockGetApiUrl, mockTokenStorage } = vi.hoisted(() => ({
@@ -22,6 +26,12 @@ vi.mock("@/lib/query-client", () => ({
 
 vi.mock("@/lib/token-storage", () => ({
   tokenStorage: mockTokenStorage,
+}));
+
+// An explicit zone, not the ambient one: a test that reads the runner's own
+// zone passes on a UTC CI box whether or not the header is sent.
+vi.mock("@/lib/timezone", () => ({
+  getDeviceTimezone: () => "Asia/Tokyo",
 }));
 
 // XHR mock — sendMessage uses XMLHttpRequest instead of fetch for SSE streaming
@@ -333,5 +343,71 @@ describe("useSendMessage", () => {
     });
 
     expect(result.current.requestError).toBeNull();
+  });
+});
+
+// The server anchors notebook follow-up dates (and the coach's "today") in
+// the zone X-Timezone names; without it `parseTimezone` falls back to UTC.
+// Each writer of a follow-up date must send it, or two writers anchor the
+// same calendar day at different instants.
+describe("X-Timezone header", () => {
+  it("useSendMessage sends X-Timezone on the stream request", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("test-token");
+
+    const { result } = renderHook(() => useSendMessage(7), { wrapper });
+
+    await act(async () => {
+      const p = result.current.sendMessage("hello");
+      await Promise.resolve();
+      await Promise.resolve();
+      xhrInstance.simulateChunks(['data: {"done":true}\n']);
+      await p;
+    });
+
+    expect(xhrInstance.setRequestHeader).toHaveBeenCalledWith(
+      "X-Timezone",
+      "Asia/Tokyo",
+    );
+  });
+
+  it("useCreateNotebookEntry sends X-Timezone", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValue({ json: async () => ({ id: 1 }) });
+
+    const { result } = renderHook(() => useCreateNotebookEntry(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        type: "commitment",
+        content: "Check in",
+        followUpDate: "2026-09-05",
+      });
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/coach/notebook",
+      expect.objectContaining({ followUpDate: "2026-09-05" }),
+      { headers: { "X-Timezone": "Asia/Tokyo" } },
+    );
+  });
+
+  it("useUpdateNotebookEntry sends X-Timezone", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValue({ json: async () => ({ id: 3 }) });
+
+    const { result } = renderHook(() => useUpdateNotebookEntry(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ id: 3, followUpDate: "2026-09-05" });
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/coach/notebook/3",
+      { followUpDate: "2026-09-05" },
+      { headers: { "X-Timezone": "Asia/Tokyo" } },
+    );
   });
 });

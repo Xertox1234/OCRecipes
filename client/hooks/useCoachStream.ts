@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
+import { getDeviceTimezone } from "@/lib/timezone";
 import {
   stripCoachBlocksFence,
   filterValidBlocks,
@@ -194,6 +195,11 @@ export function useCoachStream({
           xhr.open("POST", url, true);
           xhr.setRequestHeader("Content-Type", "application/json");
           if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+          // Required, not decorative: the server anchors notebook follow-up
+          // dates and the coach's "today" in this zone, and falls back to UTC
+          // without it. This raw XHR bypasses `apiRequest`, which adds no
+          // header either — every caller passes it explicitly.
+          xhr.setRequestHeader("X-Timezone", getDeviceTimezone());
 
           let lastProcessedIndex = 0;
 

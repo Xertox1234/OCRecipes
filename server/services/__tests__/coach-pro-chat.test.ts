@@ -30,8 +30,13 @@ import { fireAndForget } from "../../lib/fire-and-forget";
 import { sanitizeContextField } from "../../lib/ai-safety";
 import { extractNotebookEntries } from "../notebook-extraction";
 import { civilDateToInstant } from "../../lib/civil-date";
+import express from "express";
+import request from "supertest";
+import { register as registerNotebookRoutes } from "../../routes/notebook";
 
 // ── Mocks ───────────────────────────────────────────────────
+
+vi.mock("../../middleware/auth");
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -47,6 +52,7 @@ vi.mock("../../storage", () => ({
     createChatMessage: vi.fn(),
     updateChatConversationTitle: vi.fn(),
     createNotebookEntries: vi.fn(),
+    createNotebookEntry: vi.fn(),
     archiveOldEntries: vi.fn(),
   },
 }));
@@ -1102,6 +1108,56 @@ describe("handleCoachChat", () => {
       expect(
         writtenFollowUpDate.getTime() > oneHourAfterNaiveAnchor.getTime(),
       ).toBe(true);
+    });
+
+    // Two writers of `coachNotebook.followUpDate`: this extraction path and
+    // the manual add-entry route. Each has its own anchoring test, but only
+    // this one fails if they drift onto different bases. Both are driven
+    // through their entry points: the route receives the zone as a real
+    // request header, and extraction receives the same zone the chat route
+    // would parse from that header.
+    it("a chat-extracted commitment and a manually added one for the same calendar day land on the same instant", async () => {
+      const tz = "America/Los_Angeles";
+      const dateStr = "2026-09-05";
+
+      vi.mocked(generateCoachProResponse).mockReturnValue(
+        fakeStream(["Let's check in."]),
+      );
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "Let's check in.",
+        blocks: [],
+      });
+      vi.mocked(extractNotebookEntries).mockResolvedValue([
+        { type: "commitment", content: "Check in", followUpDate: dateStr },
+      ]);
+      await collectEvents(
+        handleCoachChat(makeParams({ isCoachPro: true, tz })),
+      );
+      await flushNotebookExtraction();
+      const viaChat = vi.mocked(storage.createNotebookEntries).mock
+        .calls[0][0][0].followUpDate;
+
+      vi.mocked(storage.createNotebookEntry).mockResolvedValue(
+        createMockCoachNotebookEntry(),
+      );
+      const app = express();
+      app.use(express.json());
+      registerNotebookRoutes(app);
+      const res = await request(app)
+        .post("/api/coach/notebook")
+        .set("Authorization", "Bearer valid-token")
+        .set("X-Timezone", tz)
+        .send({
+          type: "commitment",
+          content: "Check in",
+          followUpDate: dateStr,
+        });
+      expect(res.status).toBe(201);
+      const viaRoute = vi.mocked(storage.createNotebookEntry).mock.calls[0][0]
+        .followUpDate;
+
+      expect(viaRoute).toEqual(viaChat);
+      expect(viaRoute).toEqual(new Date("2026-09-05T07:00:00.000Z"));
     });
   });
 

@@ -7,9 +7,11 @@ import {
   handleRouteError,
   parsePositiveIntParam,
   parseQueryInt,
+  parseTimezone,
 } from "./_helpers";
 import { crudRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
+import { civilDateToInstant } from "../lib/civil-date";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
   notebookEntryTypes,
@@ -106,7 +108,16 @@ export function register(app: Express): void {
           type,
           content,
           status: "active",
-          followUpDate: followUpDate ? new Date(followUpDate) : null,
+          // Local midnight in the user's zone, not `new Date(followUpDate)`
+          // (UTC midnight): the reminder reads `lte(followUpDate, now)`, and
+          // the chat-extraction writer (coach-pro-chat.ts) anchors the same
+          // column this way. Both writers must share one basis.
+          followUpDate: followUpDate
+            ? civilDateToInstant(
+                followUpDate,
+                parseTimezone(req.headers["x-timezone"]),
+              )
+            : null,
           sourceConversationId: null,
           dedupeKey: null,
         });
@@ -145,7 +156,13 @@ export function register(app: Express): void {
           ...(content !== undefined && { content }),
           ...(type !== undefined && { type }),
           ...(followUpDate !== undefined && {
-            followUpDate: followUpDate ? new Date(followUpDate) : null,
+            // Same basis as the POST handler above.
+            followUpDate: followUpDate
+              ? civilDateToInstant(
+                  followUpDate,
+                  parseTimezone(req.headers["x-timezone"]),
+                )
+              : null,
           }),
           ...(status !== undefined && { status }),
         });
