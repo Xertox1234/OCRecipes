@@ -17,8 +17,8 @@ Review Policy → One review pass per PR).
 
 ## Still open as todos (not frozen, they cost time on every PR)
 
-- `todos/P1-2026-09-22-outward-cli-corpus-runs-17-to-27-minutes-…`: the corpus run takes 17–27
-  minutes on every push.
+- Corpus latency: SHIPPED in #1016 (sharded + relevance-gated, 7m48s measured on a hook PR; skipped on others).
+
 - `todos/P2-2026-09-20-todo-executor-commits-after-review-…`: forces a confirmation review on
   every `/todo` PR.
 

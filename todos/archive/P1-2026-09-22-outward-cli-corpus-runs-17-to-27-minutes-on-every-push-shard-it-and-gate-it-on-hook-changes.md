@@ -1,9 +1,9 @@
 ---
 title: "The Outward-CLI guard corpus is a required check that runs 17–27 minutes on EVERY pull-request push, including docs-only ones — shard it across runners and gate it on .claude/hooks/** changes behind an always-reporting status job"
-status: backlog
+status: done
 priority: high
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 assignee:
 labels: [harness, ci, testing]
 github_issue:
@@ -28,32 +28,32 @@ day."
 The corpus is the only thing that pins the guard's per-row verdicts and deny-site attribution;
 dropping it outright re-opens the class of silent regressions it was built to catch (PR #957 and
 after). But its cost lands on every merge, and the todos that want new axes
-(`todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md`,
+(`todos/archive/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md`,
 shape 2) are blocked on budget. Two independent levers exist and both are standard GitHub
 Actions patterns.
 
 ## Acceptance Criteria
 
-- [ ] **Gate on relevance without breaking the required check.** The corpus job itself gets a
+- [x] **Gate on relevance without breaking the required check.** The corpus job itself gets a
       `paths` condition (or a `dorny/paths-filter`-style step) so it runs only when the PR
       touches `.claude/hooks/**` or the corpus script; a SEPARATE always-running job with
       `if: always()` becomes the required check, succeeds when the corpus job was `skipped` or
       `success`, and fails when it `failure`/`cancelled`/`timed_out`. The required-check NAME
       moves to that status job (a renamed required check leaves the old one pending forever —
       update branch protection in the same change, and say so in the PR).
-- [ ] **Shard the corpus** so that when it does run it finishes in a fraction of the time: a
+- [x] **Shard the corpus** so that when it does run it finishes in a fraction of the time: a
       matrix of N runners each taking a deterministic slice of the row ids (the script already
       keys rows by id), with the pins checked ONCE over the union (the per-id manifests and
       the row/gap totals must be aggregated, not checked per shard — a per-shard total pin is
       meaningless). Measure the completed wall time of the sharded run in CI and record it.
-- [ ] Both levers land together or the shim lands first; never the path filter alone on the
+- [x] Both levers land together or the shim lands first; never the path filter alone on the
       required job.
-- [ ] The corpus still runs unsharded on a schedule (nightly) as the drift backstop, since a
+- [x] The corpus still runs unsharded on a schedule (nightly) as the drift backstop, since a
       sharding bug that drops a slice would otherwise read as green.
-- [ ] `.github/workflows/ci.yml`'s ALWAYS-ON comment block is rewritten to describe the new
+- [x] `.github/workflows/ci.yml`'s ALWAYS-ON comment block is rewritten to describe the new
       shape; `docs/rules/harness.md` and the guard-PR mechanics memory are updated: "every
       `.claude/hooks/**` edit triggers the corpus" stays true, "every push does" stops being.
-- [ ] If neither lever brings a hook-touching PR under ~8 minutes, propose the fallback the user
+- [x] If neither lever brings a hook-touching PR under ~8 minutes, propose the fallback the user
       named — demote the full corpus to nightly and keep a fast required subset — as its own
       decision rather than shipping it silently.
 
@@ -99,3 +99,20 @@ else exit 1; fi`. Name it what branch protection requires.
 
 - Filed on the user's in-session ruling (decision 10 of the harness survey). Priority `high` on
   the user's own words about commit throughput, not on defect severity.
+
+### 2026-09-23
+
+- Shipped in PR #1016 (`9a162a83` shard + gate, `2410f485` review round 1: `--no-renames` so a
+  file moved OUT of `.claude/hooks` still runs the corpus, plus `.gitattributes` relevance).
+  The original `/todo-fast` session closed before the PR; finished from its worktree.
+- Required-check name unchanged ("Outward-CLI guard corpus" is the status job), so branch
+  protection was NOT edited.
+- **Measured, PR #1016 CI (one run, hook-touching):** relevance check → required status job
+  7m48s end-to-end (11:40:25 → 11:48:13Z); shards 4m43s / 5m13s / 6m12s / 6m44s; aggregate
+  10s. Previously 16m23s–26m32s. Under the ~8-minute bar, narrowly, on ONE run — runner
+  variance dominates, so the fallback (nightly-only full corpus + fast required subset) is NOT
+  proposed now; revisit if later hook PRs routinely exceed 8 minutes. A non-hook PR skips the
+  corpus entirely.
+- Negative controls: `--aggregate` over an empty shard dir and over a dir holding one empty
+  record file both fail closed, reporting 2160 of 2160 ids "in NO shard record".
+- Non-corpus long pole observed on the same run: "Lint · Types · Patterns" took 10m42s.
