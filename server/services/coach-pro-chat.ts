@@ -914,14 +914,12 @@ export async function* handleCoachChat(
               // every UTC-negative user, so `getDueCommitmentsAllUsers` /
               // `getCommitmentsWithDueFollowUp` (coach-notebook.ts) — both
               // plain `lte(followUpDate, now)` instant comparisons — fire the
-              // push reminder hours early. Anchoring correctly HERE fixes
-              // both reads for rows written through THIS path — neither read
-              // needs its own timezone-aware comparison logic. It does NOT
-              // fix `server/routes/notebook.ts`'s POST/PATCH handlers (the
-              // manual add/edit-entry screen), which still do the identical
-              // `new Date(followUpDate)` — a separate defect, out of this
-              // todo's scope — nor does it retroactively fix rows already
-              // written with the old UTC-midnight anchoring.
+              // push reminder hours early. Anchoring correctly at write time
+              // fixes both reads — neither needs its own timezone-aware
+              // comparison. `server/routes/notebook.ts`'s POST/PATCH handlers
+              // (the manual add/edit-entry screen) write the same column on
+              // the same basis; a cross-surface test pins that they agree.
+              // Rows written before either fix keep their UTC-midnight anchor.
               followUpDate: e.followUpDate
                 ? civilDateToInstant(e.followUpDate, tz)
                 : null,

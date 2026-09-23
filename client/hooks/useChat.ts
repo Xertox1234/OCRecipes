@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl, type QueryErrorMeta } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
+import { getDeviceTimezone } from "@/lib/timezone";
 import { useCallback, useState, useRef } from "react";
 
 export interface ChatConversation {
@@ -147,8 +148,12 @@ export function useSendMessage(conversationId: number | null) {
           baseUrl,
         );
         const token = await tokenStorage.get();
+        // X-Timezone is required, not decorative: a coach conversation's
+        // notebook follow-up dates and "today" are anchored in this zone on
+        // the server, which falls back to UTC without it.
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
+          "X-Timezone": getDeviceTimezone(),
         };
         if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -435,7 +440,14 @@ export function useCreateNotebookEntry() {
       content: string;
       followUpDate?: string | null;
     }) => {
-      const res = await apiRequest("POST", "/api/coach/notebook", data);
+      // X-Timezone is required here, not decorative: the server anchors
+      // `followUpDate` (a calendar day) at local midnight in THIS zone, the
+      // same basis the chat-extraction writer uses. `apiRequest` does not
+      // add the header automatically, so omitting it silently anchors at
+      // UTC midnight and the reminder fires early for UTC-negative users.
+      const res = await apiRequest("POST", "/api/coach/notebook", data, {
+        headers: { "X-Timezone": getDeviceTimezone() },
+      });
       return (await res.json()) as NotebookEntry;
     },
     onSuccess: () => {
@@ -461,6 +473,9 @@ export function useUpdateNotebookEntry() {
         "PATCH",
         `/api/coach/notebook/${id}`,
         updates,
+        // Same reason as useCreateNotebookEntry: the server anchors an edited
+        // `followUpDate` in this zone.
+        { headers: { "X-Timezone": getDeviceTimezone() } },
       );
       return (await res.json()) as NotebookEntry;
     },

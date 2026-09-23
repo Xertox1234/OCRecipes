@@ -1,9 +1,9 @@
 ---
 title: "The coach stream never sends X-Timezone, so the notebook follow-up date anchor merged in PR #901 is a no-op in production — and wiring it alone makes two writers of followUpDate diverge"
-status: backlog
+status: done
 priority: high
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-23
 assignee:
 labels: [deferred, server, client, coach]
 github_issue:
@@ -64,25 +64,25 @@ the header is required and not decorative. Copy that pattern rather than inventi
 
 ## Acceptance Criteria
 
-- [ ] `client/hooks/useCoachStream.ts` sends `X-Timezone: getDeviceTimezone()` on its XHR,
+- [x] `client/hooks/useCoachStream.ts` sends `X-Timezone: getDeviceTimezone()` on its XHR,
       matching the six existing call sites.
-- [ ] `server/routes/notebook.ts:109` and `:148` are converted onto the same civil-date
+- [x] `server/routes/notebook.ts:109` and `:148` are converted onto the same civil-date
       basis (`civilDateToInstant` with the route's parsed timezone) **in this same change**.
       Shipping the client header without this is the specific outcome this todo exists to
       prevent — say so in the PR body.
-- [ ] The notebook route parses `X-Timezone` (it does not today) and its client callers send
+- [x] The notebook route parses `X-Timezone` (it does not today) and its client callers send
       it. **Verify by execution that the header actually arrives** — do not infer it from
       the server parsing it. That inference is the exact error that made PR #901's fix a
       no-op, and repeating it here would make this fix a no-op too.
-- [ ] Tests at BOTH offset signs (one UTC-negative, one UTC-positive zone), with the zone
+- [x] Tests at BOTH offset signs (one UTC-negative, one UTC-positive zone), with the zone
       passed as explicit data rather than ambient `process.env.TZ`, and not built in a
       `describe.each` table (tables evaluate before hooks).
-- [ ] Two-sided mutation test: reverting each half independently must make assertions FAIL.
+- [x] Two-sided mutation test: reverting each half independently must make assertions FAIL.
       In particular there must be a test that fails if the client header is dropped — the
       current suite passes with it absent, which is why this shipped.
-- [ ] A cross-surface test: a commitment created via chat extraction and one created via the
+- [x] A cross-surface test: a commitment created via chat extraction and one created via the
       manual notebook route, for the SAME stated calendar day, land on the same instant.
-- [ ] Zero follow-ups.
+- [x] Zero follow-ups.
 
 ## Implementation Notes
 
@@ -111,3 +111,30 @@ the header is required and not decorative. Copy that pattern rather than inventi
   on is actually sent". This todo is that bullet going unheeded once.
 - `todos/P2-2026-09-03-batch-scan-grocery-list-uses-utc-calendar-day.md` — same defect class,
   different surface, independently fixable.
+
+## Updates
+
+### 2026-09-23 — done (branch `fix/coach-timezone-header`)
+
+- **Scope grew by one sender.** `client/hooks/useChat.ts:useSendMessage` is a second raw XHR to
+  the same `/api/chat/conversations/:id/messages` endpoint, also without `X-Timezone`.
+  `ChatScreen` (Coach tab) uses it on a `coach` conversation, which reaches the same Pro
+  extraction writer. Fixing only `useCoachStream.ts` would have left two writers diverging, so
+  both streams send the header now. `useChat.ts` was already in scope for the notebook mutations.
+- `server/routes/notebook.ts` POST/PATCH anchor with `civilDateToInstant(date,
+parseTimezone(req.headers["x-timezone"]))`. `parseTimezone`'s UTC fallback is unchanged
+  (pinned by a no-header test).
+- **`users.timezone`: left unread on purpose.** Using it as the header-absent fallback changes
+  the fallback semantics this todo's scope contract freezes.
+- **Header verified by execution:**
+  `client/hooks/__tests__/notebook-timezone.integration.test.ts` runs the real hook through the
+  real `apiRequest` and real `fetch` to the real route on a live socket. Dropping the header
+  from either mutation makes it store `00:00Z` instead of `07:00Z` (both controls run red).
+- **Mutations, each run on its own and each red:** the header dropped from `useCoachStream`, the
+  header dropped from `useSendMessage`, extraction reverted to `new Date`, notebook POST
+  reverted, notebook PATCH reverted.
+- The cross-surface test lives in `server/services/__tests__/coach-pro-chat.test.ts`. It
+  drives the real notebook route over supertest and the extraction path for the same day and
+  zone, and asserts one instant.
+- Rows written before this fix keep their UTC-midnight anchor. No backfill: a stored instant
+  cannot recover which zone the user meant.
