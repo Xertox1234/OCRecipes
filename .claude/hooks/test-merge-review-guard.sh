@@ -600,8 +600,8 @@ out=$(mcp_payload 938 | run)
 denied "$out" && ok "sensitive paths deny with no record" || bad "sensitive paths deny with no record" "$out"
 
 # 7. The no-record message must not read as "you never reviewed": a reviewer whose
-#    findings were all WARNING/SUGGESTION writes NO record (review-stamp-writer.sh
-#    residual 3), so absence has more than one cause and more than one fix.
+#    findings were all WARNING/SUGGESTION and omitted "No blocking findings." writes NO
+#    record (review-stamp-writer.sh residual 3), so absence has more than one cause and more than one fix.
 r=$(reason "$out")
 if grep -qi 'no review record' <<<"$r" && grep -qi 'warning' <<<"$r"; then
   ok "no-record deny names the WARNING-only cause"

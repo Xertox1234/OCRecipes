@@ -14,8 +14,8 @@
 # switches the gate off, which costs the same coverage more slowly. So each deny below
 # names a CAUSE and a FIX, and the three stage-3 denials are deliberately three distinct
 # messages — "no record", "wrong scope" and "unresolved findings" have different causes
-# and different remedies, and a reviewer who found only WARNINGs writes no record at all
-# (review-stamp-writer.sh residual 3), so "no record" must never read as "you never
+# and different remedies, and a reviewer who found only WARNINGs writes no record unless it
+# ends "No blocking findings." (review-stamp-writer.sh residual 3), so "no record" must never read as "you never
 # reviewed".
 set -uo pipefail
 
