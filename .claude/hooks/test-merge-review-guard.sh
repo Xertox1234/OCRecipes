@@ -254,7 +254,7 @@ assert_allowed "a glued redirect on a NON-merge path is still not a merge" "$out
 # lists them) and was REVERTED to main's substring test. These rows now pin the ACCEPTED
 # over-denial: prose quoting the endpoint in a field value denies. That is the safe direction; the
 # real fix is positional (argv slot, not path shape):
-# todos/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md.
+# todos/archive/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md.
 out=$(bash_payload "gh api repos/o/r/issues/12/comments -f body=see pulls/42/merge for context" | run)
 denied "$out" && ok "ACCEPTED OVER-DENIAL: prose quoting the endpoint inside a field value denies under the substring test" \
               || bad "ACCEPTED OVER-DENIAL: prose quoting the endpoint inside a field value denies under the substring test" "$out"
@@ -625,6 +625,18 @@ stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
 out=$(mcp_payload 938 | run)
 assert_allowed "clean record matching the 2-file digest literal allows" "$out"
 
+# 9a. ALLOW. An ADVISORY record (WARNING/SUGGESTION-only, findings filed — 2026-09-22 ruling)
+#     passes like a clean one. 9b is its control: any OTHER non-clean verdict still denies.
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" advisory code-reviewer
+out=$(mcp_payload 938 | run)
+assert_allowed "advisory record matching the digest allows" "$out"
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" maybe code-reviewer
+out=$(mcp_payload 938 | run)
+denied "$out" && ok "control: an unknown verdict with no unresolved entries still denies" \
+              || bad "control: an unknown verdict with no unresolved entries still denies" "$out"
+
 # 10. DENY. Mis-scoped review: the record describes ONE file, the PR changes TWO. Same
 #     SHA, same reviewer, clean verdict — only the scope is wrong.
 clear_stamps
@@ -970,7 +982,7 @@ denied "$out" && ok "ambiguous gh pr verb fails closed" || bad "ambiguous gh pr 
 #    used by the fail-closed and cwd-independence sections further down) ─────────────────────
 # These rows assert the CURRENT, KNOWN-INCOMPLETE behaviour so the gap is visible in the
 # suite instead of invisible. It is filed as
-# todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md with its
+# todos/archive/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md with its
 # 537-row corpus. WHEN THAT TODO IS IMPLEMENTED THESE ROWS WILL FAIL, which is the point:
 # the fix must come here and convert them to deny rows rather than land silently.
 #
@@ -1613,7 +1625,8 @@ unset _mrgcloser_hits _mrgcloser_prose
 # field-closer denies with 1 deny + 1 allow control, and the value-slot decoy beside its control.
 # 193 -> 199 (2026-09-22, security review round 1): +6 = 3 manufactured-method rows the unanchored
 # blank flipped main-DENY -> head-ALLOW, 2 controls, and the anchor's cost pinned KNOWN-WRONG.
-EXPECTED_TOTAL=199
+# 199 -> 201 (2026-09-22, advisory verdict): +2 = advisory allows (9a) and its unknown-verdict control (9b).
+EXPECTED_TOTAL=201
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -36,7 +36,7 @@ A resumed reviewer's second report lands in one of two shapes, and both are wron
   both arms in either shape, and a prior objection TEXT that withheld the contract (a refusal
   rather than a report) is not read as a prior report and so does not block a later clean
   re-issue — pre-existing, tracked in
-  `todos/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md`.
+  `todos/archive/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md`.
 
 The first shape costs a review round. The second was the laundering the gate exists to refuse —
 and it was the orchestrator's resume that made it possible; now it costs a round too, because the

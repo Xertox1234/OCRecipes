@@ -71,7 +71,7 @@ level up. Search for the quoted text:
   full sentence wraps mid-phrase in the corpus and a longer quote returns 0.
 - "generated 272 rows from 5 glue POSITIONS" — past-tense experiment record
 - "both sides see the same 427 rows" — a differential record, scoped to a named baseline
-  (`origin/main` at a9d77417, PR #930) two lines above it
+  (`origin/main` at a9d77417, PR #930) two lines above it [staleness-ok]
 - "372, expected" — illustrative error-message text inside quotes, not a live count. Same
   reason for the short quote: the full phrase wraps at "expected".
 

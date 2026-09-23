@@ -4932,7 +4932,7 @@ assert_allow "an ordinary npm run script stays allowed (only the two publish scr
 # the suite was re-run on the resolved tree and reported the 739 itself; the
 # arithmetic is a check on the measurement, not a substitute for it.
 # 739 -> 784 (2026-09-15, merge of the root-position-flag-PROPERTY branch
-# todos/P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list.md
+# todos/archive/P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list.md
 # into a main that had meanwhile reached 739): +45 for that branch's assertions.
 # It was at 735 on the SAME base of 690, i.e. the same +45, and main's own route
 # from 690 was +49. The two branches added DISJOINT assertions, so the totals

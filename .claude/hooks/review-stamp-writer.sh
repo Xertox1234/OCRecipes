@@ -413,6 +413,11 @@ if [ -n "$CRITICALS" ]; then
   VERDICT=findings
 elif [ "$LAST_LINE" = "No findings." ] || [ "$LAST_LINE" = "No findings" ]; then
   VERDICT=clean
+elif [ "$LAST_LINE" = "No blocking findings." ] || [ "$LAST_LINE" = "No blocking findings" ]; then
+  # ADVISORY (2026-09-22 user ruling): WARNING/SUGGESTION findings are FILED, not fixed and
+  # re-reviewed, so they must not block the merge. Same positive-terminal rule as `clean`:
+  # a truncated review never reaches this literal and writes nothing. Supersedes residual 3.
+  VERDICT=advisory
 else
   exit 0   # no findings section -> not a contract-compliant review -> write nothing
 fi
@@ -556,7 +561,7 @@ fi
 #    because prior texts are selected by the contract marker so that working narration is never
 #    mistaken for a report. That second one is pre-existing (a stop-1 refusal text writes
 #    nothing on main too) and is tracked as the second class of
-#    todos/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md,
+#    todos/archive/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md,
 #    with the candidate widening (also select prior texts matching arm 1) and the narration
 #    cost it has to decide.
 #

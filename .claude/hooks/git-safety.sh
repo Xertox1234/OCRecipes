@@ -312,7 +312,7 @@ git_c_target() {
       # the shell rather than a special case for one slot. The brace-fd spelling
       # (`git -C {fd} >o <main> commit`) is the same defect one token over and is closed by the
       # same move, because the brace class below also now precedes these arms.
-      # Filed as todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-…
+      # Filed as todos/archive/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-…
       # A brace-ONLY word with no operator in it (`{fd}`, `{9}`). This is the WHITESPACE axis of
       # _CMD_REDIR (`[}][[:space:]]*`), which the rpre class below can never see: rpre is the
       # prefix of a SINGLE word before its first operator, and this word has no operator at all.
@@ -768,7 +768,7 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     #      makes it a cross-guard change whose corpus pins must be re-derived, and it is tracked
     #      separately rather than smuggled into a git-safety-only PR. Still pinned in
     #      test-git-safety.sh as KNOWN-WRONG rows. Folded into
-    #      todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
+    #      todos/archive/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
     #
     #   6. A bare brace DECOY word ahead of a second brace-fd redirect
     #      (`git {fd} {9}>o -C <main> commit`). This one fails at the COARSE PRE-FILTER, before
