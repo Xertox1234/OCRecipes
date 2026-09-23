@@ -94,7 +94,9 @@ const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   // forwards it into FrontLabelConfirm and LabelAnalysis's verification
   // submit, and a Coach-chosen barcode would credit the user's label photo to
   // a product the model picked. Deep links drop it too (client/navigation/
-  // linking.ts), so NutritionDetail's in-app CTAs are its only setters.
+  // linking.ts), so it only comes from in-app navigation: NutritionDetail's
+  // CTAs set it, and LabelAnalysis's front-label CTA and FrontLabelConfirm's
+  // Retake forward that same barcode.
   Scan: z.object({
     mode: z.enum(["label", "front-label"]).optional().catch(undefined),
     returnAfterLog: z.boolean().optional().catch(undefined),
