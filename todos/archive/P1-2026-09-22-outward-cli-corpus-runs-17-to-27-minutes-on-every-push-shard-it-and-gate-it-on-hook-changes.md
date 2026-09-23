@@ -107,9 +107,11 @@ else exit 1; fi`. Name it what branch protection requires.
   The original `/todo-fast` session closed before the PR; finished from its worktree.
 - Required-check name unchanged ("Outward-CLI guard corpus" is the status job), so branch
   protection was NOT edited.
-- **Measured, PR #1016 CI (one run, hook-touching):** relevance check → required status job
-  7m48s end-to-end (11:40:25 → 11:48:13Z); shards 4m43s / 5m13s / 6m12s / 6m44s; aggregate
-  10s. Previously 16m23s–26m32s. Under the ~8-minute bar, narrowly, on ONE run — runner
+- **Measured, PR #1016 CI (two runs, hook-touching):** relevance check → required status job
+  7m48s end-to-end (11:40:25 → 11:48:13Z); shards 4m43s / 5m13s / 6m08s / 6m44s; aggregate
+  10s. Second run (archive commit, same PR): 6m53s end-to-end (12:02:09 → 12:09:02Z). Previously
+  17m25s–26m32s (Summary above; recent single-job main runs 24–25 min). Under the ~8-minute bar on
+  both runs (range 6m53s–7m48s) — runner
   variance dominates, so the fallback (nightly-only full corpus + fast required subset) is NOT
   proposed now; revisit if later hook PRs routinely exceed 8 minutes. A non-hook PR skips the
   corpus entirely.
