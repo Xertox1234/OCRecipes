@@ -74,7 +74,7 @@ deterministic and may need `-derivedDataPath` pinning to be cacheable at all).
 
 ## Dependencies
 
-- None. Independent of `todos/P3-2026-08-30-e2e-suite-dedup-and-maintainability-followups.md`
+- None. Independent of `todos/archive/P3-2026-08-30-e2e-suite-dedup-and-maintainability-followups.md`
   (touches different parts of the same file — coordinate merge order, not content).
 
 ## Risks

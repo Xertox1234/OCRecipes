@@ -218,4 +218,4 @@ condition. It took three hardening PRs after the commission (#881 strand recover
 #882 build-and-install retry, #883 300s driver budget + Metro pre-warm + pinned Maestro) to
 get past three consecutive iOS simulator-layer contention failures on the shared macOS runner.
 All five acceptance criteria met; schedule re-enabled in the archiving PR. Deferred refactors
-live in todos/P3-2026-08-30-e2e-suite-dedup-and-maintainability-followups.md.
+live in todos/archive/P3-2026-08-30-e2e-suite-dedup-and-maintainability-followups.md.

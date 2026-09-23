@@ -52,13 +52,13 @@ The `/code-review high` review of PR #880 (2026-08-30) confirmed:
       `testID` to the register header rather than matching marketing copy).
 - [x] Non-regression flows (`edit-profile.yaml` first) swept against live
       hierarchy dumps per docs/solutions/best-practices/diagnose-e2e-from-debug-output-artifacts-first-2026-08-30.md
-      — or explicitly deleted if not worth keeping. NOT MET — see 2026-09-01
-      Updates entry for the static findings gathered instead and why a live
-      dump wasn't produced this run.
+      — or explicitly deleted if not worth keeping. Met 2026-09-23 (#1022):
+      rewritten from a live dump and tagged `regression`; see that Updates
+      entry.
 - [x] One green `workflow_dispatch` run after the refactor (the whole point
       of deferring was not to invalidate a green without buying one back).
-      NOT MET — requires a human-triggered dispatch after this PR's branch
-      exists on origin; see 2026-09-01 Updates entry for the exact command.
+      Met 2026-09-22: scheduled `E2E Regression` runs on `main` went green
+      after #903 merged; see that Updates entry.
 
 ## Implementation Notes
 
