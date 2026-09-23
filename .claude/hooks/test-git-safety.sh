@@ -753,7 +753,7 @@ assert_deny "value slot: value GLUED to a redirect (<main>>o) still DENIES — n
 # (iv) A parameter expansion in the fd slot. MATCHER miss rather than tokenizer miss: the
 #     _CMD_REDIR fd-prefix group admits neither `${nope}` nor `$nope`, so the segment never
 #     matches at all. Real main-mutating argv under BOTH bash and zsh; main ALLOWs identically.
-# FOLDED INTO: todos/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
+# FOLDED INTO: todos/archive/P1-2026-09-16-redirect-in-arg-taking-global-value-slot-defeats-both-git-safety-layers.md
 assert_allow "KNOWN-WRONG (filed): braced param expansion in the fd slot — real -C <main> mutation MISSED" \
   "$(json "$SESSION" "$WT_A" "git \${nope}>o -C $MAIN commit -m x")"
 assert_allow "KNOWN-WRONG (filed): unbraced param expansion in the fd slot — real -C <main> mutation MISSED" \

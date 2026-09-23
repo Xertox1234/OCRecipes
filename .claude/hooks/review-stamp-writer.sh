@@ -413,6 +413,11 @@ if [ -n "$CRITICALS" ]; then
   VERDICT=findings
 elif [ "$LAST_LINE" = "No findings." ] || [ "$LAST_LINE" = "No findings" ]; then
   VERDICT=clean
+elif [ "$LAST_LINE" = "No blocking findings." ] || [ "$LAST_LINE" = "No blocking findings" ]; then
+  # ADVISORY (2026-09-22 user ruling): WARNING/SUGGESTION findings are FILED, not fixed and
+  # re-reviewed, so they must not block the merge. Same positive-terminal rule as `clean`:
+  # a truncated review never reaches this literal and writes nothing. Supersedes residual 3.
+  VERDICT=advisory
 else
   exit 0   # no findings section -> not a contract-compliant review -> write nothing
 fi
@@ -442,12 +447,10 @@ fi
 #    -> NO STAMP). The merge outcome is unchanged (both deny); only which residual class
 #    it lands in changed, and no-stamp is the more honest of the two.
 #
-# 3. Pre-existing gate-blindness: a review whose only findings are WARNING/SUGGESTION tags
-#    (no CRITICAL match, and the literal "No findings." is never written because real
-#    issues WERE found) writes no stamp either — nothing in this file distinguishes "the
-#    reviewer found only minor issues" from "the reviewer never ran." Both deny; that is
-#    the same fail-closed direction as everything else here, but worth naming since a human
-#    reading a denied merge has no way to tell the two apart from this stamp alone.
+# 3. WARNING/SUGGESTION-only reviews (NARROWED 2026-09-22): ending with the literal
+#    "No blocking findings." records `advisory`, which the gate accepts. One that ends with
+#    neither literal still writes no stamp, so "the reviewer found only minor issues but
+#    omitted the terminal line" still reads like "the reviewer never ran". Both deny.
 #
 # 4. CRITICAL-detection stays case-SENSITIVE by design: "Critical"/"critical" never counts,
 #    on purpose — a known, deliberate narrowing, not an oversight, and is NOT to be "fixed"
@@ -556,7 +559,7 @@ fi
 #    because prior texts are selected by the contract marker so that working narration is never
 #    mistaken for a report. That second one is pre-existing (a stop-1 refusal text writes
 #    nothing on main too) and is tracked as the second class of
-#    todos/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md,
+#    todos/archive/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md,
 #    with the candidate widening (also select prior texts matching arm 1) and the narration
 #    cost it has to decide.
 #

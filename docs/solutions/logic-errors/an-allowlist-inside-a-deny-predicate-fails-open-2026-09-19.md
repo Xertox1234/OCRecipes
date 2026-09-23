@@ -68,7 +68,7 @@ head ALLOW, **48 of them quoted**. A correct argument about the wrong string is 
 revert the line to main's `pulls.*merge` byte-for-byte; the three prose spellings that now deny are
 pinned as `ACCEPTED OVER-DENIAL` rows so a future re-narrowing has to say so in the suite. The
 correct discriminator — an endpoint is a _positional_ argv token, a field value follows `-f` — is
-filed as `todos/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md`, because it is
+filed as `todos/archive/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md`, because it is
 parser work with its own review, not round six of this one.
 
 How the decision was made measurable rather than argued, which is the reusable part:
