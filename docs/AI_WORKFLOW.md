@@ -27,9 +27,10 @@ review-until-clean:
 - **CRITICAL** → fix it, then **one** `code-reviewer` confirmation pass at the new head. That is
   the maximum: two review dispatches per PR.
 - **WARNING / SUGGESTION** → do **not** fix-and-re-review. File as a todo per the CLAUDE.md
-  tier rule (or, for `.claude/hooks/**`, add to `docs/harness-residuals.md`), or fix in the
-  same commit **without** re-dispatching. The reviewer ends with `No blocking findings.`, which
-  records `verdict: advisory`, and the merge gate accepts it.
+  tier rule (or, for `.claude/hooks/**`, add to `docs/harness-residuals.md`), or fix it in a
+  **follow-up PR**. Never fix it on the reviewed branch: a record binds to one head sha, so any
+  new commit needs a fresh review — the loop this rule removes. The reviewer ends with
+  `No blocking findings.`, which records `verdict: advisory`, and the merge gate accepts it.
 - A **confirmation pass** exists only to bind a record to the final head. It never reopens
   review: its non-CRITICAL findings are filed, not fixed.
 
