@@ -142,12 +142,17 @@ jobs:
   # status job (`if: always()`) rather than on `corpus-detect`/`corpus-shard`/
   # `corpus-aggregate` directly -- those jobs skip by design in the no-op case.
   #
-  # "Every `.claude/hooks/**` edit triggers the corpus" still holds: corpus-detect diffs
-  # the PR (or, on push, always runs it) and matches
-  # `^(\.claude/hooks/|\.github/workflows/ci\.yml$)`. "Every push does" no longer holds:
-  # a push/PR touching neither path makes corpus-detect emit run=false, corpus-shard/
-  # corpus-aggregate report skipped, and no corpus runner minutes are spent at all --
-  # only corpus-detect's own quick diff-and-grep runs.
+  # "Every `.claude/hooks/**` edit triggers the corpus" still holds: on pull_request,
+  # corpus-detect diffs the PR with --no-renames (so a file moved OUT of the hooks dir
+  # still lists its old path) and matches
+  # `^(\.claude/hooks/|\.github/workflows/ci\.yml$|(.*/)?\.gitattributes$)`.
+  # "Every PR push does" no longer holds: a pull_request touching none of those makes
+  # corpus-detect emit run=false, corpus-shard/corpus-aggregate report skipped, and only
+  # detect's quick diff-and-grep runs. A push to main is NOT diff-gated -- detect's
+  # `push)` branch always emits run=true -- EXCEPT that the workflow-level
+  # `on.push.paths-ignore` (**/*.md, docs/**, todos/**) still skips the whole workflow,
+  # corpus included, for a push touching only those paths. No such push can change a
+  # verdict.
   #
   # NIGHTLY BACKSTOP: `corpus-nightly` (below, after this job graph) runs the ORIGINAL
   # no-arg, unsharded script on `on.schedule` (default-branch only -- scheduled
@@ -215,13 +220,18 @@ jobs:
               git rev-parse --verify "$HEAD_SHA^{commit}" >/dev/null
               # three-dot = merge-base..head, so a moved base branch does not pull
               # in unrelated upstream changes (same rule as mutation-goal-safety.yml).
-              CHANGED="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+              # --no-renames: rename detection lists only a moved file's DESTINATION,
+              # so moving a guard dependency OUT of .claude/hooks/ would read as
+              # run=false. With it, a move lists both the old and the new path.
+              CHANGED="$(git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA")"
               echo "Changed files in this PR:"
               echo "$CHANGED"
               # Here-string, NOT a pipe into grep -q: under `set -o pipefail`,
               # grep -q closes the pipe on first match and the upstream command
               # can take SIGPIPE, which would flip this required gate to fail-open.
-              if grep -qE '^(\.claude/hooks/|\.github/workflows/ci\.yml$)' <<< "$CHANGED"; then
+              # .gitattributes: it changes the bytes checkout writes for the hooks
+              # (e.g. eol=crlf) without touching any path under .claude/hooks/.
+              if grep -qE '^(\.claude/hooks/|\.github/workflows/ci\.yml$|(.*/)?\.gitattributes$)' <<< "$CHANGED"; then
                 echo "run=true" >> "$GITHUB_OUTPUT"
               else
                 echo "run=false" >> "$GITHUB_OUTPUT"
