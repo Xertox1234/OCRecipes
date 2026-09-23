@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback } from "react";
 import {
   StyleSheet,
+  View,
   Pressable,
   AccessibilityInfo,
   Platform,
@@ -47,6 +48,8 @@ interface ToastProps {
 
 const AUTO_DISMISS_MS = 3000;
 const ACTION_DISMISS_MS = 5000;
+// A screen-reader user has to swipe to the action before activating it.
+const SCREEN_READER_ACTION_DISMISS_MS = 10000;
 const SWIPE_DISMISS_THRESHOLD = -50;
 
 export function Toast({
@@ -57,12 +60,16 @@ export function Toast({
   action,
 }: ToastProps) {
   const insets = useSafeAreaInsets();
-  const { reducedMotion } = useAccessibility();
+  const { reducedMotion, screenReaderEnabled } = useAccessibility();
   const translateY = useSharedValue(0);
   const opacity = useSharedValue(1);
   const colors = getToastColors(variant, theme);
   const a11yRole = getToastAccessibilityRole(variant);
-  const dismissMs = action ? ACTION_DISMISS_MS : AUTO_DISMISS_MS;
+  const dismissMs = !action
+    ? AUTO_DISMISS_MS
+    : screenReaderEnabled
+      ? SCREEN_READER_ACTION_DISMISS_MS
+      : ACTION_DISMISS_MS;
 
   const handleAction = useCallback(() => {
     action?.onPress();
@@ -130,25 +137,32 @@ export function Toast({
             backgroundColor: colors.background,
           },
         ]}
-        accessible
-        accessibilityRole={a11yRole}
-        accessibilityLabel={message}
-        accessibilityLiveRegion="polite"
       >
-        <Feather
-          name={colors.icon as "check-circle" | "alert-circle" | "info"}
-          size={20}
-          color={colors.text}
-          accessible={false}
-        />
-        <ThemedText
-          type="small"
-          maxScale={MAX_FONT_SCALE_CONSTRAINED}
-          style={[styles.message, { color: colors.text }]}
-          numberOfLines={2}
+        {/* The message is one grouped focus stop; the action stays a SIBLING
+            so screen readers can reach it (an `accessible` node collapses its
+            whole subtree into a single element). */}
+        <View
+          style={styles.messageGroup}
+          accessible
+          accessibilityRole={a11yRole}
+          accessibilityLabel={message}
+          accessibilityLiveRegion="polite"
         >
-          {message}
-        </ThemedText>
+          <Feather
+            name={colors.icon as "check-circle" | "alert-circle" | "info"}
+            size={20}
+            color={colors.text}
+            accessible={false}
+          />
+          <ThemedText
+            type="small"
+            maxScale={MAX_FONT_SCALE_CONSTRAINED}
+            style={[styles.message, { color: colors.text }]}
+            numberOfLines={2}
+          >
+            {message}
+          </ThemedText>
+        </View>
         {action && (
           <Pressable
             onPress={handleAction}
@@ -189,6 +203,12 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.card,
     zIndex: 9999,
+  },
+  messageGroup: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
   },
   message: {
     flex: 1,

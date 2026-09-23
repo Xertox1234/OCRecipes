@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import { Toast } from "../Toast";
 import { Colors } from "@/constants/theme";
@@ -15,6 +16,7 @@ describe("Toast", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("renders message text", () => {
@@ -114,5 +116,84 @@ describe("Toast", () => {
     vi.advanceTimersByTime(2000);
     // Should dismiss at 5s
     expect(mockDismiss).toHaveBeenCalled();
+  });
+
+  // An `accessible` node collapses its whole subtree into one screen-reader
+  // focus stop, so the action must NOT live under the node that carries the
+  // message label. jsdom can't see `accessible` itself (see
+  // docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md);
+  // the label travels with it, so its position is the observable proxy.
+  describe("screen-reader reachability", () => {
+    it("keeps the action button outside the labelled message group", () => {
+      renderComponent(
+        <Toast
+          message="Upload failed"
+          variant="error"
+          theme={Colors.light}
+          onDismiss={mockDismiss}
+          action={{ label: "Retry", onPress: vi.fn() }}
+        />,
+      );
+      const groups = screen.getAllByLabelText("Upload failed");
+      expect(groups).toHaveLength(1);
+      const button = screen.getByRole("button", { name: "Retry" });
+      expect(groups[0].contains(button)).toBe(false);
+      // The group still owns the live region and the message text.
+      expect(groups[0].getAttribute("aria-live")).toBe("polite");
+      expect(groups[0].textContent).toContain("Upload failed");
+    });
+
+    it("exposes exactly one labelled node for an action-less toast", () => {
+      renderComponent(
+        <Toast
+          message="Item saved"
+          variant="success"
+          theme={Colors.light}
+          onDismiss={mockDismiss}
+        />,
+      );
+      const groups = screen.getAllByLabelText("Item saved");
+      expect(groups).toHaveLength(1);
+      expect(groups[0].getAttribute("aria-live")).toBe("polite");
+      expect(groups[0].textContent).toContain("Item saved");
+    });
+
+    it("holds an action toast longer while a screen reader is on", async () => {
+      vi.spyOn(RN.AccessibilityInfo, "isScreenReaderEnabled").mockResolvedValue(
+        true,
+      );
+      renderComponent(
+        <Toast
+          message="Upload failed"
+          variant="error"
+          theme={Colors.light}
+          onDismiss={mockDismiss}
+          action={{ label: "Retry", onPress: vi.fn() }}
+        />,
+      );
+      // Let useAccessibility's isScreenReaderEnabled promise settle.
+      await act(async () => {});
+      vi.advanceTimersByTime(5000);
+      expect(mockDismiss).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(5000);
+      expect(mockDismiss).toHaveBeenCalled();
+    });
+
+    it("keeps the 3s timeout for an action-less toast under a screen reader", async () => {
+      vi.spyOn(RN.AccessibilityInfo, "isScreenReaderEnabled").mockResolvedValue(
+        true,
+      );
+      renderComponent(
+        <Toast
+          message="Item saved"
+          variant="success"
+          theme={Colors.light}
+          onDismiss={mockDismiss}
+        />,
+      );
+      await act(async () => {});
+      vi.advanceTimersByTime(3000);
+      expect(mockDismiss).toHaveBeenCalled();
+    });
   });
 });
