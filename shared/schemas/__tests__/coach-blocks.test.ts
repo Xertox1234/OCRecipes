@@ -227,6 +227,28 @@ describe("Scan navigate params from the Coach", () => {
     });
   });
 
+  it("strips verifyBarcode via the suggestion_list call site too", () => {
+    const parsed = suggestionListSchema.parse({
+      type: "suggestion_list",
+      items: [
+        {
+          title: "Scan a label",
+          subtitle: "Nutrition panel",
+          action: {
+            type: "navigate",
+            screen: "Scan",
+            params: { mode: "front-label", verifyBarcode: "0778918011332" },
+          },
+        },
+      ],
+    });
+    const action = parsed.items[0]?.action;
+    if (!action || action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(action.params).toEqual({ mode: "front-label" });
+  });
+
   it("drops an unknown mode instead of failing the card", () => {
     const parsed = actionCardSchema.parse(scanCard({ mode: "selfie" }));
     if (parsed.action.type !== "navigate") {

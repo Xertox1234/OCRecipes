@@ -93,7 +93,8 @@ const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   // `verifyBarcode` is deliberately NOT listed, so it is stripped: ScanScreen
   // forwards it into FrontLabelConfirm and LabelAnalysis's verification
   // submit, and a Coach-chosen barcode would credit the user's label photo to
-  // a product the model picked. Only the UI's own CTAs set it.
+  // a product the model picked. Deep links drop it too (client/navigation/
+  // linking.ts), so NutritionDetail's in-app CTAs are its only setters.
   Scan: z.object({
     mode: z.enum(["label", "front-label"]).optional().catch(undefined),
     returnAfterLog: z.boolean().optional().catch(undefined),

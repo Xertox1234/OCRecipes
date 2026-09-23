@@ -40,7 +40,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
       },
       AllConversations: "conversation-list",
       NutritionDetail: "nutrition/:barcode",
-      Scan: "scan",
+      // Query params land in route.params unfiltered unless `parse` handles
+      // them. ScanScreen forwards verifyBarcode into FrontLabelConfirm and the
+      // verification submit, so a link must not choose the barcode a user's
+      // label photo is credited to: drop it. `mode` stays linkable.
+      Scan: {
+        path: "scan",
+        parse: { verifyBarcode: () => undefined },
+      },
       // Drives the verify-email landing's success CTA (ocrecipes://login) to the
       // sign-in screen — pure navigation, no auth side effect.
       Login: "login",
