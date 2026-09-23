@@ -158,6 +158,30 @@ describe("Toast", () => {
       expect(groups[0].textContent).toContain("Item saved");
     });
 
+    // Android does NOT collapse an `accessible` wrapper (device-verified
+    // 2026-08-04, see CapturedPhotos.tsx), so TalkBack would read the group
+    // label and then the raw message text again. The text must leave the
+    // Android tree; the group label already carries the same string.
+    it("hides the raw message text from the Android tree", () => {
+      renderComponent(
+        <Toast
+          message="Upload failed"
+          variant="error"
+          theme={Colors.light}
+          onDismiss={mockDismiss}
+          action={{ label: "Retry", onPress: vi.fn() }}
+        />,
+      );
+      const group = screen.getByLabelText("Upload failed");
+      const text = screen.getByText("Upload failed");
+      expect(group.contains(text)).toBe(true);
+      expect(text.closest("[aria-hidden]")).not.toBeNull();
+      expect(group.hasAttribute("aria-hidden")).toBe(false);
+      expect(
+        screen.getByRole("button", { name: "Retry" }).closest("[aria-hidden]"),
+      ).toBeNull();
+    });
+
     it("holds an action toast longer while a screen reader is on", async () => {
       vi.spyOn(RN.AccessibilityInfo, "isScreenReaderEnabled").mockResolvedValue(
         true,
