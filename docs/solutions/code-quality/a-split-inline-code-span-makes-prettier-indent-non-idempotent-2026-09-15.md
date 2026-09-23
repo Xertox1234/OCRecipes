@@ -110,7 +110,7 @@ Three identical runs means idempotent. One run tells you nothing: the old form a
 
 ## Related Files
 
-- `todos/P3-2026-09-14-site-upd-cb-verbs-still-hand-listed-not-extracted.md` — where this was found
+- `todos/archive/P3-2026-09-14-site-upd-cb-verbs-still-hand-listed-not-extracted.md` — where this was found
 - `.prettierignore` — `docs/solutions/` is listed here; `todos/` deliberately is not
 
 ## See Also

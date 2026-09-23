@@ -129,7 +129,7 @@ text contains no `pr` substring at all, so it never passed the fast path's origi
 returns "" for it — that function is built to read `gh pr <verb>`, and a `gh api` call
 genuinely is not one. This was never an extractor *miss*; it was the wrong extractor for the
 shape (contrast the sibling
-`todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md`, where
+`todos/archive/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md`, where
 `cmd_gh_pr_write_subcommand` IS the right extractor and simply fails to parse some
 renderings of the shape it targets).
 

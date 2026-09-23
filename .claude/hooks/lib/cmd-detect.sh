@@ -191,7 +191,7 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C'"$_CMD_GIT_ARGVAL"'|-c'"$_CMD_GIT_ARGVAL"'|-
 # including one retargeted at THIS repository, and it skipped pr-preflight-guard.sh's stamp
 # gate as well. See todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-
 # both-merge-guards.md; the redirect arm additionally closes mechanism (b) of
-# todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
+# todos/archive/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
 #
 # Grammar follows _CMD_GIT_GLOBALS arm for arm, with ONE deliberate divergence: the
 # arg-taking flags named explicitly (`-R`/`--repo`), then a generic `-…` arm that covers the
@@ -305,7 +305,7 @@ _CMD_GIT_GLOBALS='(([[:space:]]+(-C'"$_CMD_GIT_ARGVAL"'|-c'"$_CMD_GIT_ARGVAL"'|-
 # missing from both. The property trick above does NOT transfer there: making that walker's
 # bare-dash arm consume a following token would swallow the REF, so `gh pr merge --squash 42`
 # would refuse. The ambiguity is genuine and needs its own design.
-# todos/P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list.md
+# todos/archive/P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list.md
 #
 # Naming `-R`/`--repo` explicitly is what keeps THOSE TWO retarget flags out of the residual —
 # BUT ONLY IN THE UNQUOTED RENDERING, and the scope of that sentence is load-bearing.
@@ -2462,7 +2462,7 @@ cmd_gh_pr_write_subcommand() {
 # the quoted span) and a lone close gained nothing. Widening a DENY-direction read cannot
 # subtract denies, which is what makes the union safe here and would not make a substitution
 # safe. The residual extractor-miss class is still tracked in
-# todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md; this closes the
+# todos/archive/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md; this closes the
 # glued-separator part of it AT THIS CALL SITE, AND ONLY FOR THE OPENERS
 # _CMD_POS_PREFIX MODELS. `)` is not in that class, so a case-arm spelling still slips both
 # layers: `case 1 in 1)gh pr merge 42 --squash;; esac` delivers argv

@@ -962,6 +962,31 @@ jq -n --arg t "code-reviewer" --arg m "$FINDINGS_MSG " --arg p "$SP_TP" \
   && ok "CONTROL: a trailing space survives the capture, so the delivery excluded itself either way" \
   || bad "CONTROL: a trailing space survives the capture, so the delivery excluded itself either way"
 
+# 52-54. ADVISORY verdict (2026-09-22 user ruling: one review pass, non-blocking findings are
+# FILED, not fixed-and-re-reviewed). A review whose only findings are WARNING/SUGGESTION and whose
+# last line is the literal `No blocking findings.` records `advisory`, which the gate accepts. The
+# terminal literal is required for the same reason `No findings.` is: a transcript truncated
+# before its end must write nothing, not a permissive record.
+ADVISORY_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
+REVIEWED-FILES:
+client/hooks/useNutritionLookup.ts
+
+[WARNING] client/hooks/useNutritionLookup.ts:42 — stale closure over basis
+[SUGGESTION] client/hooks/useNutritionLookup.ts:88 — rename for clarity
+No blocking findings.'
+payload "code-reviewer" "$ADVISORY_MSG" | run_hook 52
+[ "$(jq -r '.verdict + ":" + (.unresolved | length | tostring)' "$(case_stamp 52)" 2>/dev/null)" = "advisory:0" ] \
+  && ok "advisory: WARNING/SUGGESTION-only review ending 'No blocking findings.' records advisory" \
+  || bad "advisory: WARNING/SUGGESTION-only review ending 'No blocking findings.' records advisory"
+payload "code-reviewer" "$FINDINGS_MSG"$'\n'"No blocking findings." | run_hook 53
+[ "$(jq -r .verdict "$(case_stamp 53)" 2>/dev/null)" = "findings" ] \
+  && ok "advisory: a CRITICAL still wins over a trailing 'No blocking findings.'" \
+  || bad "advisory: a CRITICAL still wins over a trailing 'No blocking findings.'"
+payload "code-reviewer" "${ADVISORY_MSG%$'\n'No blocking findings.}" | run_hook 54
+[ ! -e "$(case_stamp 54)" ] \
+  && ok "advisory: WARNING-only review WITHOUT the terminal literal (truncation) writes nothing" \
+  || bad "advisory: WARNING-only review WITHOUT the terminal literal (truncation) writes nothing"
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -973,7 +998,8 @@ jq -n --arg t "code-reviewer" --arg m "$FINDINGS_MSG " --arg p "$SP_TP" \
 # case 44 asserts both stops).
 # 80 -> 85 (2026-09-22, confirmation round 2): +5, the self-exclusion normalisation rows (cases
 # 48-51; case 49 asserts its seed).
-EXPECTED_TOTAL=85
+# 85 -> 88 (2026-09-22): +3, the advisory verdict (cases 52-54).
+EXPECTED_TOTAL=88
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

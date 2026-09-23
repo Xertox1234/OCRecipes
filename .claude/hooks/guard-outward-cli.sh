@@ -191,7 +191,7 @@
 #     So the RANGE spelling inherits this branch's prefix axis and the LIST spelling does not.
 #     ALLOW on origin/main identically, so pre-existing rather than a regression, and the LIST
 #     mechanism always expands to two or more words, so no well-formed argv path to a sink was
-#     confirmed. Recorded in todos/P2-2026-09-16-brace-list-at-flag-position-reconstructs-a-gated-flag.md.
+#     confirmed. Recorded in todos/archive/P2-2026-09-16-brace-list-at-flag-position-reconstructs-a-gated-flag.md.
 #     NOT fixed here, for the same reason the bullet above gives: widening a matcher on the
 #     strength of one round's probe is what produced the preceding rounds. It needs the four
 #     narrow sites converted TOGETHER with their extractors, and its own corpus axis.
@@ -207,7 +207,7 @@
 #     open only for `bun` -- main's brace-LIST machinery keys on `_OUT_GATED_BIN`,
 #     which has no `bun` entry, so the npm/pnpm/yarn interior rows deny. ALLOW on
 #     `origin/main` too, hence pre-existing rather than a regression from this PR, and
-#     tracked in todos/P2-2026-09-16-brace-list-at-flag-position-reconstructs-a-gated-flag.md.
+#     tracked in todos/archive/P2-2026-09-16-brace-list-at-flag-position-reconstructs-a-gated-flag.md.
 #     Not fixed here because widening a matcher on the strength of one round's probe is
 #     what produced the last four rounds; it needs its own axis and its own controls.
 #   * ROUND-2 CLOSED, 2026-09-16 (same todo, security review, second pass).
@@ -1236,7 +1236,7 @@
 #     RECLASSIFIED 2026-09-07), and it is NOT measured by any row: the corpus's
 #     r4brange-verb-* axis generates from FAM_IDS, which carries no third-word
 #     family. Tracked at
-#     todos/P3-2026-09-15-brace-range-third-word-verb-unreachable.md
+#     todos/archive/P3-2026-09-15-brace-range-third-word-verb-unreachable.md
 #     Within that bound it is CLOSED as a solitary construction and against BOTH
 #     adversarial decoy shapes found by review: `eas up{d..d}ate --branch
 #     preview` and `gh pr me{r..r}ge 42` DENY on all four paths (a narrow
@@ -1266,7 +1266,7 @@
 #     forbids that ("no widening of the fast path's sigil class"). Still
 #     allows on all four paths. Tracked by `repro-outward-cli-corpus.sh`'s
 #     `r4brange-tool-*` rows (7, ALL EXPECTED-DENY, all `GAP` by design) and
-#     `todos/P1-2026-09-07-outward-cli-path-wrapper.md`, which attacks PATH
+#     `todos/archive/P1-2026-09-07-outward-cli-path-wrapper.md`, which attacks PATH
 #     resolution rather than command text and so covers this residual without
 #     reading the command at all.
 #
@@ -1292,7 +1292,7 @@
 #     first-verb-word / `gh pr <verb>`-only reach applies — a gated verb in the
 #     THIRD word of a non-`gh pr` namespace is unreachable by this block for the
 #     same structural reason (tracked by the RANGE entry's own
-#     `todos/P3-2026-09-15-brace-range-third-word-verb-unreachable.md`, which
+#     `todos/archive/P3-2026-09-15-brace-range-third-word-verb-unreachable.md`, which
 #     that todo's own scope did not extend to this mechanism — flagged, not
 #     silently assumed covered). NEVER EVALUATES the list (which alternative
 #     bash would pick is not computed); an empty alternative (`up{,x}date` ->
@@ -1406,7 +1406,7 @@
 #     same "no widening of the fast path's sigil class" bound. Tracked by
 #     `r4brlist-tool-*` (7, ALL EXPECTED-DENY, all `GAP` by design) and, like
 #     its RANGE sibling, covered without reading the command at all by
-#     `todos/P1-2026-09-07-outward-cli-path-wrapper.md`.
+#     `todos/archive/P1-2026-09-07-outward-cli-path-wrapper.md`.
 #
 #   * ACCEPTED COST, not a gap (2026-09-06, round 3): the fast path DECLINES its
 #     cheap exit for any command containing `${`, `$(` or a backtick, so those

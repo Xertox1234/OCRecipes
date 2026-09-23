@@ -14,8 +14,8 @@
 # switches the gate off, which costs the same coverage more slowly. So each deny below
 # names a CAUSE and a FIX, and the three stage-3 denials are deliberately three distinct
 # messages — "no record", "wrong scope" and "unresolved findings" have different causes
-# and different remedies, and a reviewer who found only WARNINGs writes no record at all
-# (review-stamp-writer.sh residual 3), so "no record" must never read as "you never
+# and different remedies, and a reviewer who found only WARNINGs writes no record unless it
+# ends "No blocking findings." (review-stamp-writer.sh residual 3), so "no record" must never read as "you never
 # reviewed".
 set -uo pipefail
 
@@ -167,7 +167,7 @@ case "$TOOL" in
         deny "Blocked: this command mentions more than one \`gh pr\` write subcommand, so merge-review-guard cannot tell which one executes or which PR it targets. Split it into one \`gh pr\` call per command and re-run. $BYPASS"
       fi
       # AN EXTRACTOR MISS IS INDISTINGUISHABLE FROM "NOT A MERGE" HERE, AND THAT IS A
-      # KNOWN, MEASURED GAP - see todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
+      # KNOWN, MEASURED GAP - see todos/archive/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
       # cmd_gh_pr_write_subcommand signals REFUSE with rc 1 (handled above) but signals
       # "I could not see it" with the SAME empty string and rc 0 it uses for "there is no
       # merge here", so every rendering it cannot parse arrives at this line as "".
@@ -327,7 +327,7 @@ case "$TOOL" in
         # `RequestInputFile` IS `--input` (api.go:301) and `RequestMethodPassed` is
         # `c.Flags().Changed("method")` (api.go:236). So `--input` alone flips the default
         # to POST exactly like a field parameter — it is a confirmed mutating shape, not an
-        # unverified one, and todos/P1-2026-09-07-outward-cli-path-wrapper.md:387 already
+        # unverified one, and todos/archive/P1-2026-09-07-outward-cli-path-wrapper.md:387 already
         # classifies it that way for the same reason.
         #
         # What remains genuinely open is narrower and worth stating precisely so nobody
@@ -341,7 +341,7 @@ case "$TOOL" in
         # this gate did not remove coverage that existed. As of #995 that guard carries the same
         # implicit-POST arm and DENIES the bare graphql form; the ALLOW_OUTWARD_CLI=1-prefixed
         # form still passes both guards, which is the residual its arm names. Already named, not yet
-        # closed, at todos/P1-2026-09-07-outward-cli-path-wrapper.md:387 ("gh api graphql,
+        # closed, at todos/archive/P1-2026-09-07-outward-cli-path-wrapper.md:387 ("gh api graphql,
         # which is a different shape"). Closing it needs either widening this conjunct to
         # `-f`/`-F` presence (mirroring the unreadable-value arm below) plus a SEPARATE
         # graphql-mutation-body detector — a different scope than this todo's stated REST
@@ -413,7 +413,7 @@ case "$TOOL" in
           # GitHub MCP tools, not field-carrying api calls. The RIGHT discriminator is not path
           # shape at all but ARGV POSITION -- an endpoint is a positional token, a field value
           # follows -f/-F/--field -- and that is parser work with its own review, filed as
-          # todos/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md.
+          # todos/archive/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md.
           # DO NOT RE-NARROW THIS LINE WITHOUT THAT POSITIONAL MODEL IN HAND.
           #
           # Kept from the anchored version because it is true of EVERY closer in this file:
@@ -662,7 +662,7 @@ declare -F review_stamp_dir >/dev/null \
 DIR=$(review_stamp_dir "$HEAD_SHA")
 RECORDS=$(find "$DIR" -maxdepth 1 -name '*.json' 2>/dev/null | sort)
 [ -n "$RECORDS" ] \
-  || deny "Blocked: PR #$PR changes risk-classified files and no review record exists for head ${HEAD_SHA:0:7}. This is NOT proof that no review ran — a reviewer whose findings were all WARNING or SUGGESTION writes no record at all; a review delivered through a hand-back whose short WRAPPER LINE names one of the three severity tags is read as an objection and writes nothing either, even when the report itself is clean (review-stamp-writer.sh residual 6 — so if you are re-dispatching after a review that WAS clean, tell the reviewer to keep that wrapper free of those words or the re-dispatch reproduces this denial); and a review that reported a DIFFERENT SHA files its record under that SHA instead (an abbreviated one is refused outright by the writer, so it writes nothing). Dispatch the reviewer roster (docs/AI_WORKFLOW.md) against this exact commit; its report must carry a full 40-character REVIEWED-SHA and a REVIEWED-FILES block covering the PR's changed files. $BYPASS"
+  || deny "Blocked: PR #$PR changes risk-classified files and no review record exists for head ${HEAD_SHA:0:7}. This is NOT proof that no review ran — a reviewer whose findings were all WARNING or SUGGESTION writes no record unless its last line is exactly 'No blocking findings.' (which records 'advisory' and passes); a review delivered through a hand-back whose short WRAPPER LINE names one of the three severity tags is read as an objection and writes nothing either, even when the report itself is clean (review-stamp-writer.sh residual 6 — so if you are re-dispatching after a review that WAS clean, tell the reviewer to keep that wrapper free of those words or the re-dispatch reproduces this denial); and a review that reported a DIFFERENT SHA files its record under that SHA instead (an abbreviated one is refused outright by the writer, so it writes nothing). Dispatch the reviewer roster (docs/AI_WORKFLOW.md) against this exact commit; its report must carry a full 40-character REVIEWED-SHA and a REVIEWED-FILES block covering the PR's changed files. $BYPASS"
 
 # WANT_DIGEST must use the SAME formula review-stamp-writer.sh uses — sorted, de-duplicated
 # file list, one per line, `shasum`, first 16 hex characters — or every record mismatches
@@ -740,7 +740,8 @@ while IFS= read -r rec; do
   VERDICT=$(jq -r '.verdict // empty' "$rec" 2>/dev/null)
   NLEFT=$(jq -r '(.unresolved // []) | length' "$rec" 2>/dev/null)
   case "$NLEFT" in ''|*[!0-9]*) NLEFT=1 ;; esac   # unparseable ⇒ treat as unresolved
-  if [ "$VERDICT" != "clean" ] || [ "$NLEFT" -ne 0 ]; then
+  # `advisory` = WARNING/SUGGESTION-only, findings filed rather than fixed (2026-09-22 ruling).
+  if { [ "$VERDICT" != "clean" ] && [ "$VERDICT" != "advisory" ]; } || [ "$NLEFT" -ne 0 ]; then
     WHO=$(jq -r '.agent_type // "a reviewer"' "$rec" 2>/dev/null)
     FIRST=$(jq -r '(.unresolved // []) | if length > 0 then (.[0] | tostring) else "" end' "$rec" 2>/dev/null)
     [ -n "$FIRST" ] || FIRST="(no detail recorded)"

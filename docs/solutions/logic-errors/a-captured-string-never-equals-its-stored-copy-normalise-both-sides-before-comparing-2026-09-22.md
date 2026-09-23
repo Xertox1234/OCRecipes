@@ -89,7 +89,7 @@ before and after — which is what shows the other rows are about the strip).
 - `.claude/hooks/test-review-stamp-writer.sh` — cases 48-51
 - `todos/archive/P1-2026-09-22-stamp-writer-takes-contract-bearing-text-over-its-own-objection.md`
   — confirmation round 2 entry
-- `todos/P3-2026-09-22-guard-c-passes-the-delivered-text-as-one-argv-string-so-a-1mib-delivery-writes-no-record.md`
+- `todos/archive/P3-2026-09-22-guard-c-passes-the-delivered-text-as-one-argv-string-so-a-1mib-delivery-writes-no-record.md`
   — the argv-limit follow-up on the same `--arg` call
 
 ## See Also

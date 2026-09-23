@@ -28,7 +28,7 @@ the result:
 
 - `lib/cmd-detect.sh` — `local value_flags='--author-email|--body-file|…'` (18 long forms),
   interpolated into the `full_match` regex.
-- the same file, ~40 lines later — a `case "$prev" in` listing **the same 18 long forms
+- the same file, ~40 lines later — a `case "$prev" in` listing **the same 18 long forms [staleness-ok]
   plus the short forms** `-A|-b|-F|-t|-c|-B`, which `return 1` (refuse).
 
 That duplication is the hazard this repo already records: _"Two literal copies of one grammar
