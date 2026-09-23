@@ -109,7 +109,7 @@ the header is required and not decorative. Copy that pattern rather than inventi
 - `docs/solutions/logic-errors/a-date-cannot-express-a-calendar-day-2026-08-31.md` — its
   Prevention section already carries the bullet "check that a header the server now depends
   on is actually sent". This todo is that bullet going unheeded once.
-- `todos/P2-2026-09-03-batch-scan-grocery-list-uses-utc-calendar-day.md` — same defect class,
+- `todos/archive/P2-2026-09-03-batch-scan-grocery-list-uses-utc-calendar-day.md` — same defect class,
   different surface, independently fixable.
 
 ## Updates
