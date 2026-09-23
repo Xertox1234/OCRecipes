@@ -367,12 +367,24 @@ DIGEST=$(printf '%s\n' "$FILES" | shasum 2>/dev/null | cut -c1-16)
 # else.
 #
 # DIRECTION: when in doubt, over-detect. A false "findings" blocks a merge and a human
-# unblocks it; a false "clean" ships unreviewed code past the gate. This also fires on
-# prose that merely mentions the word CRITICAL (e.g. "No CRITICAL issues found.") — a
-# deliberate choice, pinned by this writer's own test suite, not an oversight.
+# unblocks it; a false "clean" ships unreviewed code past the gate. (Until 2026-09-23 this
+# also fired on prose that merely mentions the word; see NARROWED below for why that was
+# dropped and why the terminal literal keeps the direction safe.)
+#
+# NARROWED 2026-09-23 (user ruling), superseding the prose over-detection above: a line
+# counts only when, after optional list markers, it STARTS with the tag (`[CRITICAL]`,
+# `**CRITICAL**`, `CRITICAL:`) or with a `file:line` citation (`a.ts:42 — … (CRITICAL)`).
+# Prose that mentions the word — "a CRITICAL match still wins" — mis-recorded 2 of 5
+# clean reviews and cost a re-dispatch each. Why this cannot open the gate: `clean` and
+# `advisory` ALSO require the last line to be the exact literal, so a real finding written
+# as prose only slips through if the reviewer then declares there are none — the same
+# contradiction residual 1 already names. The shape filter still keeps the
+# `client/hooks/CRITICAL.ts` REVIEWED-FILES line out (no citation, no leading tag), and the
+# hyphen-packed `path:10-CRITICAL-x` line in (citation first).
+_CRIT_LEAD='^[[:space:]]*(([-*+>#]+|[0-9]+[.)])[[:space:]]*)*'
 CRITICALS=$(printf '%s\n' "$MSG" \
   | grep -E '(^|[^A-Za-z0-9_])CRITICAL($|[^A-Za-z0-9_])' \
-  | grep -E '[[:space:]]|:[0-9]|^\[CRITICAL\]$' || true)
+  | grep -E "${_CRIT_LEAD}"'((\*\*|__)?\[?CRITICAL\]?(\*\*|__)?([^A-Za-z0-9_]|$)|`?[^[:space:]`]+:[0-9]+)' || true)
 
 # `clean` must be a POSITIVE signal, never the absence of one. The earlier `else clean`
 # fallback made every non-review cause of a missing/mismatched CRITICAL tag — transcript
@@ -609,8 +621,8 @@ mkdir -p "$DIR" 2>/dev/null || exit 0
 # (Task 5 recomputes/consumes it under this name) — but its CONTENTS are wider than the
 # name suggests: every line that survived the union-CRITICAL detection above, i.e. every
 # line that caused VERDICT=findings. That can be a bracketed `[CRITICAL] ...` finding, an
-# unbracketed agent-definition finding, or — by the over-detect direction this writer
-# deliberately takes — a bare sentence of prose that merely mentions the word CRITICAL.
+# unbracketed agent-definition finding, or any line that STARTS with the tag or a
+# `file:line` citation and names the word (see NARROWED above).
 # Do not read a non-empty `unresolved` as "the list of CRITICAL findings" and do not
 # filter/render it assuming every entry is a `file:line — issue — fix` shape; a consumer
 # that does (e.g. `select(startswith("[CRITICAL]"))`) will silently see it as empty on a
