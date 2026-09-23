@@ -90,10 +90,21 @@ import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
+import { parseFrontLabelFromOCR } from "@/lib/front-label-ocr-parser";
 import { pickTopSafetyFlag } from "@shared/types/scan-flags";
 import type { ScanFlag } from "@shared/types/scan-flags";
 
 const TORCH_ICON_COLOR = "#FFFFFF"; // hardcoded — camera overlay
+
+// FrontLabelConfirm's seed when there is no on-device read of the package
+// front; the screen runs the AI extraction itself when sessionId is null.
+const EMPTY_FRONT_LABEL: FrontLabelExtractionResult = {
+  brand: null,
+  productName: null,
+  netWeight: null,
+  claims: [],
+  confidence: 0,
+};
 
 export default function ScanScreen() {
   const navigation = useNavigation<ScanScreenNavigationProp>();
@@ -113,6 +124,7 @@ export default function ScanScreen() {
   const isLabelMode = route.params?.mode === "label";
   // front-label uses FrontLabelConfirm AI flow — OCR frame processor not needed there
   const isFrontLabelMode = route.params?.mode === "front-label";
+  const verifyBarcode = route.params?.verifyBarcode;
   const toast = useToast();
 
   const [scanPhase, dispatch] = useReducer(scanPhaseReducer, { type: "IDLE" });
@@ -496,6 +508,30 @@ export default function ScanScreen() {
         }
         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
 
+        // Front-label mode (the "Add product details" CTA and FrontLabelConfirm's
+        // Retake): hand the photo and the product's barcode to FrontLabelConfirm,
+        // which runs the AI extraction itself because sessionId is null. On-device
+        // OCR only seeds a preview, so its failure is non-fatal.
+        if (isFrontLabelMode && verifyBarcode) {
+          let data = EMPTY_FRONT_LABEL;
+          try {
+            const ocrResult = await recognizeTextFromPhoto(photo.uri);
+            if (ocrResult.text) data = parseFrontLabelFromOCR(ocrResult.text);
+          } catch (err) {
+            logger.error(
+              "[ScanScreen front-label OCR] recognition failed; navigating without preview",
+              err,
+            );
+          }
+          navigation.navigate("FrontLabelConfirm", {
+            imageUri: photo.uri,
+            barcode: verifyBarcode,
+            sessionId: null,
+            data,
+          });
+          return;
+        }
+
         // Label mode: skip smart classification, go directly to LabelAnalysis.
         // On-device snapshot OCR pre-fills an instant preview; the server does the
         // authoritative analysis, so OCR failure here is non-fatal (preview absent).
@@ -574,7 +610,7 @@ export default function ScanScreen() {
     } finally {
       isCapturingRef.current = false;
     }
-  }, [isLabelMode, navigation, haptics]);
+  }, [isLabelMode, isFrontLabelMode, verifyBarcode, navigation, haptics]);
 
   // Permission screens
   if (!permission || permission.status === "undetermined") {
@@ -811,18 +847,11 @@ export default function ScanScreen() {
         }}
         onEditStep3={() => {
           if (scanPhase.type === "STEP3_REVIEWING") {
-            const emptyFrontLabel: FrontLabelExtractionResult = {
-              brand: null,
-              productName: null,
-              netWeight: null,
-              claims: [],
-              confidence: 0,
-            };
             navigation.navigate("FrontLabelConfirm", {
               imageUri: scanPhase.frontImageUri,
               barcode: scanPhase.barcode,
               sessionId: null,
-              data: emptyFrontLabel,
+              data: EMPTY_FRONT_LABEL,
             });
           }
         }}
