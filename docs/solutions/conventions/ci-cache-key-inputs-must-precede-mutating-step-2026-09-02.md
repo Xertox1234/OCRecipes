@@ -43,7 +43,7 @@ last_updated: '2026-09-13'
 
 Both failure modes were caught empirically while adding `ios/Pods` +
 Xcode DerivedData caching to this repo's `e2e-regression.yml` iOS job
-(`todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md`):
+(`todos/archive/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md`):
 
 - Running `pod install` **twice, back-to-back, locally**, with `ios/Pods`
   already fully populated from the first run, modified `ios/Podfile.lock`
@@ -121,7 +121,7 @@ toolchain variable used in the primary key.
   net loss — see the "restore-keys hit is not a warm measurement" solution
   below; the key-capture rule itself still applies to the surviving Pods
   cache)
-- `todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md` (reopened
+- `todos/archive/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md` (reopened
   2026-09-03 after the archived version's measurement criteria turned out
   unmet — not under `todos/archive/` at the time of this update)
 

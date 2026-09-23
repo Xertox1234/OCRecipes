@@ -126,7 +126,7 @@ jobs:
     # net loss and was removed 2026-09-13 (see docs/solutions/conventions/
     # actions-cache-restore-keys-hit-is-not-a-warm-measurement-2026-09-13.md
     # for the full record and
-    # todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md for the
+    # todos/archive/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md for the
     # decision). CocoaPods caching is kept — 132 MiB compressed cache entry,
     # exact-match only, ~4s restore.
     #
@@ -227,7 +227,7 @@ jobs:
       # cost more than it saved. See docs/solutions/conventions/
       # actions-cache-restore-keys-hit-is-not-a-warm-measurement-2026-09-13.md
       # for the full measurement record and
-      # todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md for the
+      # todos/archive/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md for the
       # decision. Pods, by contrast, is a clear win: 132 MiB compressed
       # cache entry, exact-match only, restores in ~4s.
       - name: Compute Pods cache key
@@ -375,7 +375,7 @@ jobs:
       #
       # Re-measured 2026-09-03/13 after adding, then removing, DerivedData
       # caching (see the "Compute Pods cache key" step's comment and
-      # todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md): the
+      # todos/archive/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md): the
       # post-drop steady state (Pods exact-hit, no DerivedData cache at all)
       # was never itself directly measured, but its two closest analogs —
       # both effectively cold Xcode compiles, since neither run got a

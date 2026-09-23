@@ -49,7 +49,7 @@ created: '2026-09-13'
 
 Caught while re-measuring `.github/workflows/e2e-regression.yml`'s iOS build
 step after adding CocoaPods + Xcode DerivedData caching
-(`todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md`). Four
+(`todos/archive/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md`). Four
 `workflow_dispatch` runs, same job, same runner pool:
 
 | Run         | Cache state at build                                 | Build time  |
@@ -97,7 +97,7 @@ measurement."
 - `.github/workflows/e2e-regression.yml` — `Compute Pods cache key`,
   `Restore CocoaPods cache`, `Save CocoaPods cache` steps, and the
   `timeout-minutes` comments this measurement fed
-- `todos/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md`
+- `todos/archive/P3-2026-08-31-e2e-ios-job-cache-pods-and-deriveddata.md`
 
 ## See Also
 
