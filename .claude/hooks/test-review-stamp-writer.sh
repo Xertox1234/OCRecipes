@@ -1005,6 +1005,31 @@ crit_case 58 'CRITICAL: client/a.ts:1 — missing check' findings:1
 crit_case 59 '- client/a.ts:74 — missing check — add it (CRITICAL)' findings:1
 crit_case 60 '1. `client/a.ts:74` — CRITICAL — missing check' findings:1
 
+# 61-76. Finding renderings PR #1018's review constructed that the first narrowing missed
+# (all were `findings` on the pre-#1018 writer): table rows, wrapped leading tags, a
+# `Severity:`/`File:` label, non-colon line citations, unicode bullets, lettered markers, and
+# a severity on its own sub-line. 77 pins the one shape left open on purpose.
+crit_case 61 '| CRITICAL | client/a.ts:42 | missing check |' findings:1
+crit_case 62 '| client/a.ts:42 | CRITICAL | missing check |' findings:1
+crit_case 63 '(CRITICAL) client/a.ts:42 — missing check' findings:1
+crit_case 64 '`[CRITICAL]` client/a.ts:42 — missing check' findings:1
+crit_case 65 '🔴 CRITICAL client/a.ts:42 — missing check' findings:1
+crit_case 66 'Severity: CRITICAL — client/a.ts:42 missing check' findings:1
+crit_case 67 '`client/a.ts`:42 — CRITICAL — missing check' findings:1
+crit_case 68 'client/a.ts line 42 — CRITICAL' findings:1
+crit_case 69 'client/a.ts (line 42) — CRITICAL' findings:1
+crit_case 70 'client/a.ts#L42 — CRITICAL' findings:1
+crit_case 71 'client/a.ts:L42 — CRITICAL' findings:1
+crit_case 72 'File: client/a.ts:42 — CRITICAL' findings:1
+crit_case 73 '• CRITICAL: client/foo.ts:10 issue' findings:1
+crit_case 74 '• client/foo.ts:10 — CRITICAL — issue' findings:1
+crit_case 75 'a) CRITICAL: file.ts:10 issue' findings:1
+crit_case 76 '1. **client/a.ts:42** — missing check — add it
+   - **Severity:** CRITICAL' findings:1
+# KNOWN OPEN (residual 7): a path with NO line reference cannot be told from prose that opens
+# with a filename (case 56 opens "AI_WORKFLOW.md one-pass wording ..."), so it is not counted.
+crit_case 77 'client/a.ts — CRITICAL — missing check' clean:0
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -1018,7 +1043,8 @@ crit_case 60 '1. `client/a.ts:74` — CRITICAL — missing check' findings:1
 # 48-51; case 49 asserts its seed).
 # 85 -> 88 (2026-09-22): +3, the advisory verdict (cases 52-54).
 # 88 -> 94 (2026-09-23, finding-line CRITICAL detection): case 8 keeps 2 rows (re-pinned), +6 (cases 55-60).
-EXPECTED_TOTAL=94
+# 94 -> 111 (2026-09-23, #1018 review follow-up): +17, finding-line shapes (cases 61-77).
+EXPECTED_TOTAL=111
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
