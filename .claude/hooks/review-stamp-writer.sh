@@ -333,8 +333,8 @@ DIGEST=$(printf '%s\n' "$FILES" | shasum 2>/dev/null | cut -c1-16)
 #
 # Fix: match a STANDALONE CRITICAL token anywhere on a line (word-bounded via a
 # bracket-class boundary, not `\b` — BSD grep on macOS doesn't support `\b`), which
-# catches both renderings by construction — no special-casing the brackets needed — plus
-# any other position a reviewer's own prose puts the tag in.
+# catches both renderings by construction — no special-casing the brackets needed. (HISTORY:
+# it also caught the tag in any prose position until the 2026-09-23 NARROWED block below.)
 #
 # That alone would also match a REVIEWED-FILES entry whose path happens to contain the
 # word (e.g. `client/hooks/CRITICAL.ts`). Excluded not by scoping to a parsed region (see
@@ -342,6 +342,8 @@ DIGEST=$(printf '%s\n' "$FILES" | shasum 2>/dev/null | cut -c1-16)
 # task-3 contract requires a REVIEWED-FILES line be a bare path with no whitespace at all
 # ("no leading whitespace, bullets, numbering, backticks, or trailing commentary").
 #
+# (HISTORY — the whitespace/citation exclusion in the next two paragraphs was replaced by the
+# line-START shape filter in the NARROWED block below; kept for the reasoning.)
 # A single "no whitespace at all" exclusion is NOT enough on its own — constructing the
 # adversarial input (not just measuring real transcripts, see
 # docs/solutions/logic-errors/union-over-renderings-does-not-cover-selection-within-one-2026-09-07.md)
@@ -376,15 +378,26 @@ DIGEST=$(printf '%s\n' "$FILES" | shasum 2>/dev/null | cut -c1-16)
 # `**CRITICAL**`, `CRITICAL:`) or with a `file:line` citation (`a.ts:42 — … (CRITICAL)`).
 # Prose that mentions the word — "a CRITICAL match still wins" — mis-recorded 2 of 5
 # clean reviews and cost a re-dispatch each. Why this cannot open the gate: `clean` and
-# `advisory` ALSO require the last line to be the exact literal, so a real finding written
-# as prose only slips through if the reviewer then declares there are none — the same
-# contradiction residual 1 already names. The shape filter still keeps the
+# `advisory` ALSO require the last line to be the exact literal, so an uncounted finding
+# slips through only if the reviewer ALSO ends with the literal the contract reserves for a
+# report with nothing blocking — the contradiction residual 1 names. Which finding SHAPES go
+# uncounted is residual 7 (the first version of this paragraph said "only prose"; PR #1018's
+# review measured table rows and wrapped tags too, now counted — see WIDENED below). The shape filter still keeps the
 # `client/hooks/CRITICAL.ts` REVIEWED-FILES line out (no citation, no leading tag), and the
 # hyphen-packed `path:10-CRITICAL-x` line in (citation first).
-_CRIT_LEAD='^[[:space:]]*(([-*+>#]+|[0-9]+[.)])[[:space:]]*)*'
+#
+# WIDENED the same day after PR #1018's review constructed finding renderings the first
+# narrowing missed (tests 61-76): the lead now absorbs ANY run of non-alphanumerics (table
+# pipes, `(`, backticks, bold, unicode bullets, emoji), `1.`/`1)` and lettered `a)` markers,
+# and an optional `Severity:`/`File:` label; a citation may be `:42`, `:L42`, `#L42` or
+# `line 42`, with the path optionally backticked. Still OPEN, by design (residual 7): a path
+# with NO line reference, which cannot be told from prose that opens with a filename.
+_CRIT_LEAD='^([^A-Za-z0-9]|[0-9]+[.)]|[A-Za-z][.)][[:space:]])*((Severity|SEVERITY|severity|File|FILE|file)[^A-Za-z0-9]*)?'
+_CRIT_TAG='CRITICAL([^A-Za-z0-9_]|$)'
+_CRIT_CITE='[^[:space:]`|]+(`?:L?[0-9]+|#L[0-9]+|`?[[:space:]]+\(?line[[:space:]]+[0-9]+)'
 CRITICALS=$(printf '%s\n' "$MSG" \
   | grep -E '(^|[^A-Za-z0-9_])CRITICAL($|[^A-Za-z0-9_])' \
-  | grep -E "${_CRIT_LEAD}"'((\*\*|__)?\[?CRITICAL\]?(\*\*|__)?([^A-Za-z0-9_]|$)|`?[^[:space:]`]+:[0-9]+)' || true)
+  | grep -E "${_CRIT_LEAD}(${_CRIT_TAG}|${_CRIT_CITE})" || true)
 
 # `clean` must be a POSITIVE signal, never the absence of one. The earlier `else clean`
 # fallback made every non-review cause of a missing/mismatched CRITICAL tag — transcript
@@ -507,6 +520,12 @@ fi
 #    containing a space" on its own is the OLD, pre-round-5 boundary, and a reviewer who
 #    leaves a space-only separator and infers from that shorter wording that the block
 #    already ended reaches every row of the table above with a `clean` verdict.
+
+# 7. UNCOUNTED FINDING SHAPE (fail-open only together with residual 1): a top-severity line
+#    that neither starts with the tag (after punctuation, list markers, `Severity:`/`File:`)
+#    nor with a path plus line reference is not counted — chiefly `a.ts — CRITICAL — x` with
+#    no line number, which cannot be told apart from prose opening with a filename. Pinned
+#    as test case 77. It matters only if the reply ALSO ends with a clean literal.
 
 # 6. Objection-guard false-DENY class (fail-closed; introduced by the async handback
 #    fallback, widened by its roster-rendering fix, named here rather than narrowed).
