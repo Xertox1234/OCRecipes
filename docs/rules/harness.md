@@ -23,6 +23,8 @@ Binding for the repo's own tooling — `.claude/hooks/**`, `.claude/skills/**`, 
 - Hooks fail open and silent: `exit 0` on unparseable input or a missing field; never block a tool call on an infrastructure error. Side-effecting telemetry needs an env kill switch, and every self-test must set it (`PATTERN_INJECT_NO_LOG=1`) so tests never write the shared lab DB.
 - Run hook self-tests via `scripts/run-hook-tests.sh` — never re-implement its loop. It strips the git env (`env -u GIT_DIR ...`); an inherited absolute `GIT_DIR` overrides `git -C <tmp>` and mutates the real repo.
 - A gate test needs a two-sided negative control: assert the gate FIRES on a bad payload, not only that it passes a good one. If mutating the code under test leaves the suite green, the test is a decoration — fix the claim rather than adding a second decoration.
+- **The outward-CLI guard corpus (`corpus-detect` + `repro-outward-cli-corpus.sh`) is relevance-gated, not push-gated:** every `.claude/hooks/**` edit still triggers it; every push to `main` always runs it; other PRs skip it. It runs sharded (`--shard I/N`) — only re-pin from a completed `--aggregate` run over the shard union (or a local no-arg run), never from one shard's totals. A nightly unsharded run is the drift backstop.
+- **A required-check gate keys on `corpus-detect`'s output, never on bare `skipped`** — `skipped` covers both "not relevant" and "aggregate never completed"; only the former should pass. See `.github/workflows/ci.yml`'s job comments for the full shape.
 
 ## Knowledge-base plumbing
 

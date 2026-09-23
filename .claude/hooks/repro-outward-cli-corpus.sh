@@ -8,11 +8,84 @@
 # "lived in a session scratchpad and are NOT durable". This file is the
 # replacement: regenerate the matrix by running it.
 #
-# Usage: bash .claude/hooks/repro-outward-cli-corpus.sh
+# Usage (three modes; exit codes and pin semantics are identical in all of them):
+#
+#   bash .claude/hooks/repro-outward-cli-corpus.sh
+#       FULL run, unsharded: evaluate every row, print the table, check the pin.
+#       Exit 0 pin-pass / 1 pin-fail. The nightly backstop and local runs use this.
+#
+#   bash .claude/hooks/repro-outward-cli-corpus.sh --shard I/N --out PATH
+#       Build the FULL ROWS array (every definition-time FATAL still runs), then
+#       evaluate only rows whose 0-based index k satisfies k % N == I-1 (I is
+#       1-based, 1..N) and write one record per evaluated row to PATH. NO pins run
+#       here -- a per-shard total is meaningless. Exit 0 once PATH is written;
+#       non-zero on bad args or a definition-time FATAL.
+#
+#   bash .claude/hooks/repro-outward-cli-corpus.sh --aggregate DIR
+#       Read every regular file directly under DIR (non-recursive, any name),
+#       rebuild ROWS (definitions only, no guard calls) for the canonical id set,
+#       assert the records cover that set EXACTLY ONCE, re-derive every piece of
+#       union state the pin consumes from the records, and fall into the SAME pin
+#       block the full run uses. Exit 0 pin-pass / 1 pin-fail or integrity fail.
+#       DIR must hold shard records ONLY: any other regular file in it (a
+#       .DS_Store, a log) is read as records and fails the aggregate closed.
+#
+# Record format (one line per row, fields separated by 0x1f, the unit separator):
+#   k  id  expected  precise  nojq  nolib  noawk  fingerprint  full-reason
+# COMMAND is never written: some commands contain newlines, which would break the
+# one-line-per-row invariant the aggregate's duplicate/missing checks depend on.
+# The full reason is LAST so `read` hands it everything after the eighth separator
+# -- it is guard output that can echo analysed command text -- and `reason()`
+# already folds its newlines to spaces. fingerprint/full-reason are empty on a row
+# whose precise verdict is ALLOW.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$HERE/guard-outward-cli.sh"
+
+# ---- mode selection (before anything else, so bad args fail fast) ----------
+MODE=full; SHARD_I=; SHARD_N=; SHARD_OUT=; AGG_DIR=
+_usage_fail() {
+  echo "repro-outward-cli-corpus: $1" >&2
+  echo "usage: $0 [--shard I/N --out PATH | --aggregate DIR]" >&2
+  exit 2
+}
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --shard)
+      [ "$#" -ge 2 ] || _usage_fail "--shard needs I/N"
+      MODE=shard
+      case "$2" in
+        */*) SHARD_I=${2%%/*}; SHARD_N=${2#*/} ;;
+        *) _usage_fail "--shard wants I/N, got '$2'" ;;
+      esac
+      shift 2 ;;
+    --out)
+      [ "$#" -ge 2 ] || _usage_fail "--out needs a path"
+      SHARD_OUT=$2; shift 2 ;;
+    --aggregate)
+      [ "$#" -ge 2 ] || _usage_fail "--aggregate needs a directory"
+      MODE=aggregate; AGG_DIR=$2; shift 2 ;;
+    *) _usage_fail "unknown argument '$1'" ;;
+  esac
+done
+if [ "$MODE" = shard ]; then
+  case "$SHARD_I" in ''|*[!0-9]*) _usage_fail "shard index '$SHARD_I' is not a positive integer" ;; esac
+  case "$SHARD_N" in ''|*[!0-9]*) _usage_fail "shard count '$SHARD_N' is not a positive integer" ;; esac
+  # Base-10 explicitly: a leading zero would otherwise be read as octal.
+  SHARD_I=$((10#$SHARD_I)); SHARD_N=$((10#$SHARD_N))
+  [ "$SHARD_N" -ge 1 ] || _usage_fail "shard count must be >= 1, got $SHARD_N"
+  { [ "$SHARD_I" -ge 1 ] && [ "$SHARD_I" -le "$SHARD_N" ]; } \
+    || _usage_fail "shard index must be in 1..$SHARD_N, got $SHARD_I"
+  [ -n "$SHARD_OUT" ] || _usage_fail "--shard requires --out PATH"
+  [ -z "$AGG_DIR" ] || _usage_fail "--shard and --aggregate are exclusive"
+elif [ "$MODE" = aggregate ]; then
+  [ -z "$SHARD_OUT" ] || _usage_fail "--out is only valid with --shard"
+  [ -z "$SHARD_I$SHARD_N" ] || _usage_fail "--shard and --aggregate are exclusive"
+  [ -d "$AGG_DIR" ] || _usage_fail "--aggregate: '$AGG_DIR' is not a directory"
+elif [ -n "$SHARD_OUT" ]; then
+  _usage_fail "--out is only valid with --shard"
+fi
 
 # ---- degraded-path fixtures (same shape as test-guard-outward-cli.sh) -------
 NOJQ_BIN=$(mktemp -d)
@@ -2334,9 +2407,13 @@ add lp-fpneedle-callnoNeedle DENY "npx --package=my-tool -c 'update --branch pre
 add lp-fpneedle-pkgnoNeedle  DENY 'npx -p my-tool -- update --branch preview'
 add lp-gap1-discriminating   DENY 'npx --package=eas-cli -- tsc --version'
 
-printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' \
-  ID EXPECT PRECISE NOJQ NOLIB NOAWK NOTE
-printf '%s\n' '-------------------+--------+---------+--------+--------+--------+------'
+_table_header() {
+  printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' \
+    ID EXPECT PRECISE NOJQ NOLIB NOAWK NOTE
+  printf '%s\n' '-------------------+--------+---------+--------+--------+--------+------'
+}
+# The aggregate prints its header after its integrity denominator, not here.
+[ "$MODE" = aggregate ] || _table_header
 
 GAPS=0
 ALLGAPS=0
@@ -2361,17 +2438,25 @@ IDS=(); EXPS=(); CMDS=(); PS=(); JS=(); LS=(); AS=()
 # 356" beats sixteen `+` lines), not by covering a case membership misses. See that
 # block.
 PRECISE_GAP_IDS=(); ALLPATH_DIRTY_IDS=(); DENY_ATTRIB=(); DENY_FP=(); DENY_FULL=()
-for row in "${ROWS[@]}"; do
-  # Parameter expansion, NOT awk: awk is line-oriented, so a row whose COMMAND
-  # contains a newline had only its first line extracted. That silently excluded
-  # every multi-line construction from this corpus -- including a `#` comment
-  # inside a substitution, which needs a newline to terminate and which was a
-  # live DENY->ALLOW regression no row here could see (2026-09-06 security
-  # review). Parameter expansion is newline-safe and needs no subprocess.
-  id=${row%% @@ *}; _rest=${row#* @@ }
-  exp=${_rest%% @@ *}; cmd=${_rest#* @@ }
-  p=$(decide precise "$cmd"); j=$(decide nojq "$cmd")
-  l=$(decide nolib "$cmd");   a=$(decide noawk "$cmd")
+# The per-row work is split in two so the shard and aggregate modes run the SAME
+# code the full run does, not a second copy of it:
+#   _eval_row       -- the only part that calls the guard (sets p j l a _rf _fpv)
+#   _accumulate_row -- folds one evaluated row into the union state the pin reads
+#                      and prints its table line (reads id exp cmd p j l a _rf _fpv)
+# The full run calls both per row; a shard calls both for its slice and writes a
+# record; the aggregate calls only _accumulate_row, from the records.
+_eval_row() {  # $1=command
+  p=$(decide precise "$1"); j=$(decide nojq "$1")
+  l=$(decide nolib "$1");   a=$(decide noawk "$1")
+  _rf=; _fpv=
+  # The precise-DENY reason is captured HERE, from the same command, so a shard
+  # record carries it; see the WHY comment in _accumulate_row for what it is for.
+  if [ "$p" = DENY ]; then
+    _rf=$(reason precise "$1"); _fpv=$(_fp "$_rf")
+  fi
+}
+
+_accumulate_row() {
   if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); PRECISE_GAP_IDS+=("$id"); fi
   if [ "$p" != "$exp" ] || [ "$j" != "$exp" ] || [ "$l" != "$exp" ] || [ "$a" != "$exp" ]; then
     ALLGAPS=$((ALLGAPS+1)); ALLPATH_DIRTY_IDS+=("$id p=$p j=$j l=$l a=$a")
@@ -2393,17 +2478,151 @@ for row in "${ROWS[@]}"; do
   # with a diff that looks identical on both sides. An earlier revision of this
   # comment claimed "both sides of the comparison are produced by this one line",
   # which was simply not true of the pinned side.
+  #
+  # _rf/_fpv were set by _eval_row (full run, shard) or from a record (aggregate).
   if [ "$p" = DENY ]; then
-    _rf=$(reason precise "$cmd"); _fpv=$(_fp "$_rf")
     DENY_FULL+=("$_rf"); DENY_FP+=("$_fpv")
     DENY_ATTRIB+=("$(printf '%-18s : %s' "$id" "$_fpv")")
   fi
   IDS+=("$id"); EXPS+=("$exp"); CMDS+=("$cmd"); PS+=("$p"); JS+=("$j"); LS+=("$l"); AS+=("$a")
   printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' "$id" "$exp" "$p" "$j" "$l" "$a" "$note"
-done
+}
+
+_split_row() {  # $1=row -> id exp cmd
+  # Parameter expansion, NOT awk: awk is line-oriented, so a row whose COMMAND
+  # contains a newline had only its first line extracted. That silently excluded
+  # every multi-line construction from this corpus -- including a `#` comment
+  # inside a substitution, which needs a newline to terminate and which was a
+  # live DENY->ALLOW regression no row here could see (2026-09-06 security
+  # review). Parameter expansion is newline-safe and needs no subprocess.
+  id=${1%% @@ *}; _rest=${1#* @@ }
+  exp=${_rest%% @@ *}; cmd=${_rest#* @@ }
+}
+
+US=$'\x1f'
+if [ "$MODE" = full ]; then
+  for row in "${ROWS[@]}"; do
+    _split_row "$row"
+    _eval_row "$cmd"
+    _accumulate_row
+  done
+  ROWS_ACTUAL=${#ROWS[@]}
+
+elif [ "$MODE" = shard ]; then
+  # Written to a temp file beside PATH and renamed at the end, so a killed shard
+  # leaves no file at PATH rather than a truncated one. (A leftover temp file in the
+  # aggregate dir fails closed there: its ids duplicate the rerun's.)
+  _shard_tmp="$SHARD_OUT.partial.$$"
+  : > "$_shard_tmp" || { echo "FATAL: cannot write shard output $_shard_tmp" >&2; exit 1; }
+  _shard_k=0; _shard_n=0
+  for row in "${ROWS[@]}"; do
+    if [ $((_shard_k % SHARD_N)) -eq $((SHARD_I - 1)) ]; then
+      _split_row "$row"
+      _eval_row "$cmd"
+      _accumulate_row
+      printf '%s\n' "$_shard_k$US$id$US$exp$US$p$US$j$US$l$US$a$US$_fpv$US$_rf" >> "$_shard_tmp" \
+        || { echo "FATAL: write to $_shard_tmp failed at row $_shard_k" >&2; rm -f "$_shard_tmp"; exit 1; }
+      _shard_n=$((_shard_n + 1))
+    fi
+    _shard_k=$((_shard_k + 1))
+  done
+  mv -f "$_shard_tmp" "$SHARD_OUT" || { echo "FATAL: cannot move shard output to $SHARD_OUT" >&2; exit 1; }
+  echo ""
+  echo "shard $SHARD_I/$SHARD_N: evaluated $_shard_n of ${#ROWS[@]} rows -> $SHARD_OUT (no pins in shard mode; run --aggregate over every shard's file)"
+  exit 0
+
+else  # aggregate
+  NROWS=${#ROWS[@]}
+  AGG_FILES=0; AGG_RECS=0; AGG_BAD=0; AGG_BAD_MSGS=""; AGG_DUP_IDX=""; REC_IDS=""
+  REC_SEEN=(); R_P=(); R_J=(); R_L=(); R_A=(); R_FP=(); R_RF=()
+  shopt -s nullglob
+  _agg_files=("$AGG_DIR"/* "$AGG_DIR"/.[!.]* "$AGG_DIR"/..?*)
+  shopt -u nullglob
+  _agg_bad() { AGG_BAD=$((AGG_BAD + 1)); [ "$AGG_BAD" -le 20 ] && AGG_BAD_MSGS="$AGG_BAD_MSGS    $1"$'\n'; }
+  if [ "${#_agg_files[@]}" -gt 0 ]; then
+    for f in "${_agg_files[@]}"; do
+      [ -f "$f" ] || continue
+      AGG_FILES=$((AGG_FILES + 1))
+      # `|| [ -n "$k" ]` keeps a final line that lacks its newline.
+      while IFS="$US" read -r k rid rexp rp rj rl ra rfp rrf || [ -n "$k" ]; do
+        AGG_RECS=$((AGG_RECS + 1))
+        REC_IDS="$REC_IDS$rid"$'\n'
+        case "$k" in ''|*[!0-9]*) _agg_bad "$f: record $AGG_RECS has a non-numeric index '$k'"; continue ;; esac
+        k=$((10#$k))
+        if [ "$k" -ge "$NROWS" ]; then _agg_bad "$f: index $k is out of range (rows=$NROWS)"; continue; fi
+        _split_row "${ROWS[$k]}"
+        if [ "$rid" != "$id" ] || [ "$rexp" != "$exp" ]; then
+          _agg_bad "$f: index $k is '$rid' want $rexp, but this script's row $k is '$id' want $exp -- a shard from a different corpus revision"
+          continue
+        fi
+        for _v in "$rp" "$rj" "$rl" "$ra"; do
+          case "$_v" in ALLOW|DENY) ;; *) _agg_bad "$f: $rid has verdict '$_v'"; continue 2 ;; esac
+        done
+        if [ "$rp" = DENY ]; then
+          { [ -n "$rfp" ] && [ -n "$rrf" ]; } || { _agg_bad "$f: $rid is a precise DENY with no fingerprint/reason"; continue; }
+        else
+          { [ -z "$rfp" ] && [ -z "$rrf" ]; } || { _agg_bad "$f: $rid is a precise ALLOW carrying a reason"; continue; }
+        fi
+        if [ -n "${REC_SEEN[$k]:-}" ]; then AGG_DUP_IDX="$AGG_DUP_IDX    $rid ($f)"$'\n'; continue; fi
+        REC_SEEN[$k]=1
+        R_P[$k]=$rp; R_J[$k]=$rj; R_L[$k]=$rl; R_A[$k]=$ra; R_FP[$k]=$rfp; R_RF[$k]=$rrf
+      done < "$f"
+    done
+  fi
+
+  # The canonical id set comes from the REBUILT ROWS, never from the records.
+  _canon_ids=""
+  for row in "${ROWS[@]}"; do _canon_ids="$_canon_ids${row%% @@ *}"$'\n'; done
+  _rec_sorted=$(printf '%s' "$REC_IDS" | grep -v '^$' | LC_ALL=C sort -u)
+  _canon_sorted=$(printf '%s' "$_canon_ids" | LC_ALL=C sort -u)
+  AGG_DISTINCT=$(grep -c . <<< "$_rec_sorted")
+  AGG_MISSING=$(LC_ALL=C comm -23 <(printf '%s\n' "$_canon_sorted") <(printf '%s\n' "$_rec_sorted") | grep -v '^$')
+  AGG_UNEXPECTED=$(LC_ALL=C comm -13 <(printf '%s\n' "$_canon_sorted") <(printf '%s\n' "$_rec_sorted") | grep -v '^$')
+
+  # The denominator, printed EVERY run -- a clean aggregate means nothing without it.
+  echo "aggregate: files read=$AGG_FILES  records read=$AGG_RECS  distinct ids=$AGG_DISTINCT  rebuilt rows=$NROWS  (dir: $AGG_DIR)"
+  AGG_FAIL=0
+  if [ "$AGG_FILES" -eq 0 ]; then
+    echo "FAIL: aggregate: no regular files under $AGG_DIR -- there is nothing to aggregate"; AGG_FAIL=1
+  fi
+  if [ "$AGG_BAD" -gt 0 ]; then
+    echo "FAIL: aggregate: $AGG_BAD malformed or mismatched record(s) (first 20):"; printf '%s' "$AGG_BAD_MSGS"; AGG_FAIL=1
+  fi
+  if [ -n "$AGG_DUP_IDX" ]; then
+    echo "FAIL: aggregate: rows recorded MORE THAN ONCE (a duplicated or overlapping shard file):"; printf '%s' "$AGG_DUP_IDX"; AGG_FAIL=1
+  fi
+  if [ "$AGG_RECS" -ne "$AGG_DISTINCT" ]; then
+    echo "FAIL: aggregate: $AGG_RECS records but $AGG_DISTINCT distinct ids -- every row must be recorded exactly once"; AGG_FAIL=1
+  fi
+  if [ -n "$AGG_MISSING" ]; then
+    echo "FAIL: aggregate: $(grep -c . <<< "$AGG_MISSING") row id(s) in the corpus but in NO shard record (a dropped slice reads as green without this):"
+    sed 's/^/    -/' <<< "$AGG_MISSING"; AGG_FAIL=1
+  fi
+  if [ -n "$AGG_UNEXPECTED" ]; then
+    echo "FAIL: aggregate: $(grep -c . <<< "$AGG_UNEXPECTED") record id(s) that are NOT rows of this corpus:"
+    sed 's/^/    +/' <<< "$AGG_UNEXPECTED"; AGG_FAIL=1
+  fi
+  [ "$AGG_FAIL" -eq 0 ] || exit 1
+
+  # Fold the records into the union state in CANONICAL row order, so the table
+  # below reads exactly as a full run's does. COMMAND is not in a record, so
+  # CMDS holds empty strings; only the print-only degraded-reason section reads it.
+  _table_header
+  _k=0
+  while [ "$_k" -lt "$NROWS" ]; do
+    _split_row "${ROWS[$_k]}"; cmd=
+    p=${R_P[$_k]}; j=${R_J[$_k]}; l=${R_L[$_k]}; a=${R_A[$_k]}
+    _rf=${R_RF[$_k]}; _fpv=${R_FP[$_k]}
+    _accumulate_row
+    _k=$((_k + 1))
+  done
+  # The `rows` pin reads the RECORD count, never ${#ROWS[@]}: the rebuilt array
+  # is the same size whether or not any shard ran.
+  ROWS_ACTUAL=$AGG_RECS
+fi
 
 echo ""
-echo "rows=${#ROWS[@]}  precise-path gaps=$GAPS  all-path gaps=$ALLGAPS"
+echo "rows=$ROWS_ACTUAL  precise-path gaps=$GAPS  all-path gaps=$ALLGAPS"
 echo ""
 echo "=== precise-clean, degraded-dirty (hidden from precise-path gaps; invisible in a summary count) ==="
 HIDDEN=0
@@ -2413,13 +2632,18 @@ for i in "${!IDS[@]}"; do
     printf '%-18s : want %-5s  precise=%-5s nojq=%-5s nolib=%-5s noawk=%-5s\n' "$id" "$exp" "$p" "$j" "$l" "$a"
     # attribution on the degraded columns too -- a DENY there is no more
     # evidence the intended check fired than a DENY on precise is.
+    # Needs COMMAND and re-invokes the guard, so a full run only: an aggregate's
+    # records carry no command (see the note printed after this section).
+    if [ "$MODE" = full ]; then
     [ "$j" = DENY ] && printf '%-18s   nojq  reason: %s\n'  '' "$(reason nojq "$cmd")"
     [ "$l" = DENY ] && printf '%-18s   nolib reason: %s\n'  '' "$(reason nolib "$cmd")"
     [ "$a" = DENY ] && printf '%-18s   noawk reason: %s\n'  '' "$(reason noawk "$cmd")"
+    fi
     HIDDEN=$((HIDDEN+1))
   fi
 done
 [ "$HIDDEN" -eq 0 ] && echo "(none)"
+[ "$MODE" = aggregate ] && echo "(aggregate mode: degraded-path deny REASONS are omitted -- unpinned, and they need the command text a shard record does not carry; the unsharded nightly run prints them)"
 echo ""
 echo "=== deny-reason attribution (which check actually fired) ==="
 # Printed from what the main loop captured. Same lines, same order, 448 fewer
@@ -5975,7 +6199,7 @@ PRECISE_DENY_COUNT=$(printf '%s\n' "${PS[@]}" | grep -c '^DENY$')
 
 echo ""
 echo "=== pin ==="
-_pin_count "rows"              "$EXPECTED_ROWS"         "${#ROWS[@]}"
+_pin_count "rows"              "$EXPECTED_ROWS"         "$ROWS_ACTUAL"
 _pin_count "precise-path gaps" "$EXPECTED_PRECISE_GAPS" "$GAPS"
 _pin_count "all-path gaps"     "$EXPECTED_ALLPATH_GAPS" "$ALLGAPS"
 _pin_members "precise-path gap" "$EXPECTED_PRECISE_GAP_IDS"   "$ACTUAL_PRECISE_GAP_IDS"

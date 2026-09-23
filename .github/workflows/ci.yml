@@ -9,15 +9,26 @@ on:
       - "todos/**"
   pull_request:
     branches: ["**"]
+  schedule:
+    # Nightly unsharded outward-CLI corpus run (drift backstop for the sharded
+    # path below) at a quiet UTC hour. Scheduled workflows only ever run
+    # against the default branch's tip -- see the corpus-nightly job.
+    - cron: "17 7 * * *"
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # event_name is part of the group so a push to main can never cancel an
+  # in-flight nightly run (they land in different groups) -- see the
+  # CANCEL-IN-PROGRESS RESIDUAL note above the outward-CLI corpus job graph.
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   checks:
     name: Lint · Types · Patterns
     runs-on: ubuntu-latest
+    # Scheduled runs exist only to drive corpus-nightly; every other job here
+    # would otherwise re-run the whole CI suite nightly for no reason.
+    if: github.event_name != 'schedule'
 
     steps:
       - uses: actions/checkout@v5
@@ -75,89 +86,258 @@ jobs:
       - name: Hook self-tests (.claude/hooks/test-*.sh)
         run: bash scripts/run-hook-tests.sh
 
-  # The outward-CLI guard's executable ground truth: 448 constructions x 4 execution
-  # paths (precise / no-jq / no-lib / no-awk). Nothing ran this file until 2026-09-07 --
-  # scripts/run-hook-tests.sh globs `.claude/hooks/test-*.sh` and the corpus's filename
-  # does not match -- so its numbers drifted into prose about a program nobody executed.
-  # See todos/P2-2026-09-07-repro-corpus-never-runs-in-ci-and-has-no-pin.md
+  # ---------------------------------------------------------------------------------------
+  # Outward-CLI guard corpus: detect / shard / aggregate / status job graph.
   #
-  # ITS OWN JOB, and the filename deliberately still NOT `test-*.sh`. Measured
-  # 2026-09-07 on darwin/arm64 across four full runs: 1m56s-2m02s warm, 3m37s cold.
-  # MEASURED HERE: the first real run of this job took 2m10s on ubuntu-latest -- inside
-  # the warm darwin range, not near the cold figure. Against 2m18s for the entire 34-test
-  # hook suite, folding the corpus into that glob would roughly DOUBLE the
-  # preflight:fast hook gate, which fires on every push touching .claude/hooks/,
-  # .husky/ or scripts/*.sh -- a pre-push cost for a signal that does not need to be
-  # pre-push. As its own job it runs concurrently with the test shards, so it adds
-  # ~no CI wall-clock.
+  # The corpus is the outward-CLI guard's executable ground truth (currently 2160
+  # constructions x 4 execution paths -- precise / no-jq / no-lib / no-awk) and pins
+  # guard-outward-cli.sh's per-row verdicts and deny-site attribution; nothing else in
+  # CI runs it (scripts/run-hook-tests.sh globs `.claude/hooks/test-*.sh`, and this
+  # script's filename deliberately does not match -- see
+  # todos/P2-2026-09-07-repro-corpus-never-runs-in-ci-and-has-no-pin.md). It has been
+  # ONE OF MAIN'S REQUIRED CHECKS since 2026-09-08: a red corpus BLOCKS every merge, so
+  # a careless edit to .claude/hooks/** can wedge the repository -- mutation-verify
+  # before pushing.
   #
-  # THIS IS ONE OF MAIN'S REQUIRED CHECKS (added 2026-09-08, the 9th). A red corpus now
-  # BLOCKS every merge, so a careless edit to .claude/hooks/** can wedge the repository.
-  # Mutation-verify before pushing. An earlier revision of this comment said the opposite
-  # ("NOT one of main's eight required checks ... does not yet BLOCK a merge"), which was
-  # true when written and false the same week.
+  # WHY FOUR JOBS INSTEAD OF ONE: as a single always-on job the corpus ran 17-27 minutes
+  # on EVERY pull_request push, including docs-only ones that cannot change a verdict
+  # (measured on PR #1013 -- see the MEASURED note at the bottom). `corpus-detect`
+  # decides, from the actual diff, whether this push could touch a verdict;
+  # `corpus-shard` runs the corpus across a parallel matrix ONLY when detect says yes;
+  # `corpus-aggregate` re-derives every pin (row count, both gap totals, both per-ID
+  # manifests, deny-site attribution) from the UNION of the shards' output -- never
+  # per-shard, since a per-shard total pin is meaningless; and the `outward-cli-corpus`
+  # job below is a small always-on status job reporting the combined result under the
+  # SAME required-check name the single-job shape used.
   #
-  # *** THE `name:` BELOW IS AN API CONTRACT. DO NOT PUT A CHANGING VALUE IN IT. ***
-  # Branch protection stores the required check as an exact STRING and matches on it. A
-  # renamed job does not fail the requirement -- it never satisfies it, so the check sits
-  # permanently "expected" and NOTHING can merge. That is not hypothetical: this name used
-  # to read "(427 rows x 4 paths)", the corpus grew to 448, the name was updated to match,
-  # and PR #935 was refused with `Required status check "Outward-CLI guard corpus (427
-  # rows x 4 paths)" is expected`. The row count now lives in the comment above, where it
-  # can be corrected without an admin touching branch protection.
+  # *** THE `name:` ON THE `outward-cli-corpus` JOB BELOW IS AN API CONTRACT. DO NOT PUT
+  # A CHANGING VALUE IN IT. *** Branch protection stores the required check as an exact
+  # STRING ("Outward-CLI guard corpus") and matches on it -- a renamed job does not fail
+  # the requirement, it never satisfies it, so the check sits permanently "expected" and
+  # NOTHING can merge. Not hypothetical: this name once read "(427 rows x 4 paths)", the
+  # corpus grew, the name was updated to match, and PR #935 was refused with `Required
+  # status check "Outward-CLI guard corpus (427 rows x 4 paths)" is expected`. That is
+  # why the row count now lives only in this comment, never in the `name:`, and why this
+  # PR reuses the exact same string and does NOT touch branch protection. If the name
+  # ever MUST change: push the rename, PATCH /branches/main/protection/required_status_checks
+  # (the narrow sub-resource -- the top-level /protection endpoint REPLACES the whole
+  # config and would silently drop enforce_admins and the PR-review requirement), then
+  # merge, with the PR queue empty in between.
   #
-  # If this job's name ever MUST change, the order is: push the rename, PATCH
-  # /branches/main/protection/required_status_checks (the narrow sub-resource -- the
-  # top-level /protection endpoint REPLACES the whole config and would silently drop
-  # enforce_admins and the PR-review requirement), then merge. Every open PR is blocked
-  # in between, so do it when the queue is empty.
+  # PASS CONDITION (implemented in the `outward-cli-corpus` job's single step): detect
+  # must have SUCCEEDED, and either detect said run=false (nothing relevant changed) or
+  # aggregate SUCCEEDED. `skipped` is never treated as a pass by itself -- a job skipped
+  # because an upstream job FAILED reports the same "skipped" as one skipped by design,
+  # so the status step reads the literal `result` strings and the literal `run` value,
+  # failing closed if `run` is anything other than exactly "true" or "false".
   #
-  # One residual, now that it is required: the workflow sets concurrency.cancel-in-progress,
-  # so a superseded run leaves this job CANCELLED rather than red. A cancelled required
-  # check blocks rather than passing, which is the safe direction, but it means a stale
-  # cancellation looks like a wedge -- re-run it rather than hunting the corpus. The
-  # `integration-http` job below is advisory for the opposite reason (it is flaky -- real
-  # Postgres, real bcrypt); this one is deterministic and guards a security control, so
-  # the precedent does not transfer.
+  # TWO DIFFERENT KINDS OF "SKIPPED", DO NOT CONFUSE THEM: a JOB skipped by a job-level
+  # `if` (corpus-shard/corpus-aggregate when detect says run=false) reports "success" to
+  # branch protection and does not block merging. A WHOLE WORKFLOW skipped by path
+  # filters is different -- GitHub never sends a status for it, so an associated
+  # required check stays "Pending" forever and blocks merging ("Avoid requiring
+  # workflows that can be skipped") -- see
+  # https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks
+  # That is exactly why the required check lives on the always-on `outward-cli-corpus`
+  # status job (`if: always()`) rather than on `corpus-detect`/`corpus-shard`/
+  # `corpus-aggregate` directly -- those jobs skip by design in the no-op case.
   #
-  # ALWAYS-ON, with no job-level `paths:` filter, deliberately: a path-filtered job
-  # reports "skipped" rather than "success", which would sit permanently pending if
-  # this is ever added to main's required checks.
+  # "Every `.claude/hooks/**` edit triggers the corpus" still holds: corpus-detect diffs
+  # the PR (or, on push, always runs it) and matches
+  # `^(\.claude/hooks/|\.github/workflows/ci\.yml$)`. "Every push does" no longer holds:
+  # a push/PR touching neither path makes corpus-detect emit run=false, corpus-shard/
+  # corpus-aggregate report skipped, and no corpus runner minutes are spent at all --
+  # only corpus-detect's own quick diff-and-grep runs.
   #
-  # "Always-on" is exact for pull_request (that trigger carries no filter, which is
-  # where gating happens) and is the one caveat worth stating for push: the
-  # WORKFLOW-level `paths-ignore` above still applies, so a push to main touching
-  # only **/*.md, docs/** or todos/** skips the whole workflow, this job included.
-  # Pre-existing, not introduced here, and harmless while the job is advisory.
+  # NIGHTLY BACKSTOP: `corpus-nightly` (below, after this job graph) runs the ORIGINAL
+  # no-arg, unsharded script on `on.schedule` (default-branch only -- scheduled
+  # workflows only ever run against the default branch's tip) as the drift check: a
+  # sharding bug that silently dropped a slice would otherwise read as green forever on
+  # the sharded path alone. VISIBILITY: per
+  # https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#schedule ,
+  # GitHub Actions sends scheduled-workflow failure notifications to the user who LAST
+  # MODIFIED THE CRON SYNTAX in the workflow file -- i.e. whoever next edits the
+  # `cron:` line under `on:` above inherits being the notified party. Nothing else
+  # watches this job: it is not a required check (a schedule event carries no PR to
+  # gate), so a silent nightly failure is caught only by that one person noticing the
+  # notification.
   #
-  # No setup-node and no `npm ci`: neither guard-outward-cli.sh nor .claude/hooks/lib/*
-  # invokes node, npx or git (verified 2026-09-07 -- every `git` occurrence in the guard is
-  # a regex matching analysed TEXT, so verdicts cannot vary with the runner's detached
-  # HEAD). The corpus itself needs bash, jq, grep, sed, sort, comm, tr, wc, head, env,
-  # dirname, mktemp, ln and cp -- all present on ubuntu-latest.
+  # CANCEL-IN-PROGRESS RESIDUAL: concurrency.cancel-in-progress is still on, now scoped
+  # by `${{ github.event_name }}` too so a push to main cannot cancel an in-flight
+  # nightly run (different groups). Within one event kind, a superseded run can still
+  # cancel an in-flight corpus-shard leg; that leaves corpus-aggregate missing one
+  # shard's artifact, and its own id-set/row-count check (the union must cover
+  # EXPECTED_ROWS exactly, not just "no shard reported failure") fails closed, so the
+  # status job blocks. Same safe direction as the single-job shape had.
   #
-  # The script exits non-zero on drift from its own pin: rows, both gap totals, and both
-  # per-ID manifests. Running the corpus and ignoring its exit code would be worth
-  # nothing -- that is precisely the bug this job closes.
+  # No setup-node and no `npm ci` on any of these jobs -- unchanged from the single-job
+  # shape: neither guard-outward-cli.sh nor .claude/hooks/lib/* invokes node, npx or
+  # git-as-a-tool (every `git` occurrence in the guard is a regex matching analysed
+  # TEXT, so verdicts cannot vary with the runner's detached HEAD). The corpus needs
+  # only bash, coreutils and jq -- all present on ubuntu-latest.
+  #
+  # MEASURED (single-job shape, retired by this PR): 2031 rows finished in 17m25s in CI
+  # (run 35298588804); the corpus later grew to its current 2160 rows and completed in
+  # 22m40s and 26m32s on two further CI runs this month. 30-minute cap: an earlier,
+  # smaller corpus at 1967 rows was KILLED at the then-20-minute cap -- runner-to-runner
+  # variance dominates the row-count effect, so the cap budgets for variance, not for
+  # headroom to add rows.
+  # Sharded wall time (N=4): TO BE MEASURED on this PR's CI runs.
+  # ---------------------------------------------------------------------------------------
+  corpus-detect:
+    name: Outward-CLI corpus relevance check
+    runs-on: ubuntu-latest
+    # Cheap and on-theme for a merge-latency-focused PR: this job feeds the
+    # required check via a full-history checkout + diff, so a hung fetch
+    # should not leave that check pending for GitHub's 360-minute default.
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.detect.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # need the merge-base for the three-dot diff below
+
+      - name: Detect .claude/hooks/** or ci.yml changes
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request)
+              # FAIL LOUD, never fail-open: resolve the diff in its own statement
+              # so a git error (missing SHA / no merge-base) fails this required
+              # gate instead of being swallowed and defaulting to a false "skip".
+              git rev-parse --verify "$BASE_SHA^{commit}" >/dev/null
+              git rev-parse --verify "$HEAD_SHA^{commit}" >/dev/null
+              # three-dot = merge-base..head, so a moved base branch does not pull
+              # in unrelated upstream changes (same rule as mutation-goal-safety.yml).
+              CHANGED="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+              echo "Changed files in this PR:"
+              echo "$CHANGED"
+              # Here-string, NOT a pipe into grep -q: under `set -o pipefail`,
+              # grep -q closes the pipe on first match and the upstream command
+              # can take SIGPIPE, which would flip this required gate to fail-open.
+              if grep -qE '^(\.claude/hooks/|\.github/workflows/ci\.yml$)' <<< "$CHANGED"; then
+                echo "run=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "run=false" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            push)
+              # push to main is the only run against the real merged tree: branch
+              # protection's required-checks setting is strict:false, so a PR's
+              # green corpus run can predate main's current tip -- always run.
+              echo "run=true" >> "$GITHUB_OUTPUT"
+              ;;
+            schedule)
+              # corpus-nightly (below) is the drift backstop for schedule events;
+              # the sharded path does not also need to run.
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "run=true" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+  corpus-shard:
+    name: Outward-CLI corpus (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    needs: corpus-detect
+    if: needs.corpus-detect.outputs.run == 'true'
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Guard corpus shard ${{ matrix.shard }}/${{ strategy.job-total }}
+        run: |
+          bash .claude/hooks/repro-outward-cli-corpus.sh \
+            --shard ${{ matrix.shard }}/${{ strategy.job-total }} \
+            --out corpus-shard-${{ matrix.shard }}.rec
+
+      - name: Upload shard records
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: corpus-shard-${{ matrix.shard }}
+          path: corpus-shard-${{ matrix.shard }}.rec
+          retention-days: 3
+          if-no-files-found: error
+
+  corpus-aggregate:
+    name: Outward-CLI corpus aggregate + pin
+    runs-on: ubuntu-latest
+    needs: [corpus-detect, corpus-shard]
+    if: always() && needs.corpus-detect.outputs.run == 'true'
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5 # aggregate reads the guard source (_pin_sites)
+
+      - name: Download shard records
+        uses: actions/download-artifact@v8
+        with:
+          pattern: corpus-shard-*
+          merge-multiple: true
+          path: corpus-shards/
+
+      - name: Aggregate + pin (rows, gap totals, per-ID manifests, deny-site attribution)
+        # Deliberately not gated on needs.corpus-shard.result: a cancelled or
+        # otherwise-incomplete shard leg is caught here instead, by the union
+        # failing to cover EXPECTED_ROWS -- that id-set check is the integrity
+        # guarantee, not the upstream job's own conclusion. See the block above.
+        run: bash .claude/hooks/repro-outward-cli-corpus.sh --aggregate corpus-shards
+
   outward-cli-corpus:
     name: Outward-CLI guard corpus
     runs-on: ubuntu-latest
-    # 20 -> 30 (2026-09-17). MEASURED, and the headroom is for VARIANCE, not for rows.
-    # At 1967 rows this job was KILLED at the 20-minute cap. A timed-out job's conclusion is
-    # `cancelled`, which reads like someone pressed a button rather than like a failure -- the
-    # PR that tripped it showed ten green checks and one "cancelled" with nothing saying why.
-    # Do NOT read that job's 20m16s as its runtime: it is when GitHub stopped it, so it means
-    # only ">20m", and an earlier revision of this comment divided it by the local time to get
-    # a "1.24x CI-to-local ratio" and projected ~21m. That ratio was arithmetic on a truncated
-    # measurement and is withdrawn.
-    # The completed numbers: 2031 rows finished in 17m25s in CI (run 35298588804) and 15m53s
-    # and 17m31s locally. So a LARGER corpus completed faster in CI than a smaller one managed
-    # before being killed -- runner-to-runner variance is bigger than the row-count effect, and
-    # 30 minutes is sized to absorb that, not to buy room for more rows. Before adding an axis,
-    # measure a COMPLETED CI run; a cap that a job dies against tells you nothing about how long
-    # it needed. The corpus is a REQUIRED check, so its budget is every PR's merge latency.
-    timeout-minutes: 30
+    needs: [corpus-detect, corpus-aggregate]
+    if: always()
+    steps:
+      - name: Evaluate corpus-detect + corpus-aggregate results
+        env:
+          DETECT_RESULT: ${{ needs.corpus-detect.result }}
+          DETECT_RUN: ${{ needs.corpus-detect.outputs.run }}
+          AGGREGATE_RESULT: ${{ needs.corpus-aggregate.result }}
+        run: |
+          set -euo pipefail
+          if [ "$DETECT_RESULT" != "success" ]; then
+            echo "corpus-detect did not succeed (result: $DETECT_RESULT)" >&2
+            exit 1
+          fi
+          case "$DETECT_RUN" in
+            true)
+              if [ "$AGGREGATE_RESULT" != "success" ]; then
+                echo "corpus-detect requested a run (run=true) but corpus-aggregate did not succeed (result: $AGGREGATE_RESULT)" >&2
+                exit 1
+              fi
+              ;;
+            false)
+              : # nothing relevant changed; corpus-shard/corpus-aggregate skipped by design
+              ;;
+            *)
+              echo "corpus-detect produced an invalid run output: '$DETECT_RUN' (expected exactly 'true' or 'false')" >&2
+              exit 1
+              ;;
+          esac
+          echo "Outward-CLI guard corpus: pass (detect=$DETECT_RESULT run=$DETECT_RUN aggregate=$AGGREGATE_RESULT)"
 
+  # Nightly drift backstop: the ORIGINAL no-arg, unsharded script, run once a day
+  # against main regardless of what changed. See the corpus-detect block above for
+  # why this exists and who is notified on failure.
+  corpus-nightly:
+    name: Outward-CLI guard corpus (nightly, unsharded)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
@@ -168,6 +348,7 @@ jobs:
     name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
     needs: checks
+    if: github.event_name != 'schedule'
 
     strategy:
       fail-fast: false
@@ -223,6 +404,7 @@ jobs:
     name: Real-DB HTTP integration (auth) — advisory
     runs-on: ubuntu-latest
     needs: checks
+    if: github.event_name != 'schedule'
     # Advisory only — deliberately NOT added to required status checks in
     # branch protection (that omission, not continue-on-error, is what keeps
     # it non-blocking: a job's pass/fail can only gate a merge if a human
@@ -290,6 +472,7 @@ jobs:
     name: Coverage thresholds
     runs-on: ubuntu-latest
     needs: checks
+    if: github.event_name != 'schedule'
 
     services:
       postgres:
