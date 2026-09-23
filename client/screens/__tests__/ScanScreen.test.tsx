@@ -8,6 +8,8 @@ import ScanScreen from "../ScanScreen";
 import { useBarcodeScannerOutput } from "react-native-vision-camera-barcode-scanner";
 import * as Haptics from "expo-haptics";
 import { AccessibilityInfo } from "react-native";
+import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
+import { parseFrontLabelFromOCR } from "@/lib/front-label-ocr-parser";
 
 const {
   mockGoBack,
@@ -961,5 +963,63 @@ describe("ScanScreen — the shutter captures from LABEL_PROMPTED (whole-branch 
       },
       { timeout: 3000 },
     );
+  });
+});
+
+describe("ScanScreen — front-label mode forwards verifyBarcode to FrontLabelConfirm", () => {
+  // The "Add product details" CTA (NutritionDetail), LabelAnalysis's CTA and
+  // FrontLabelConfirm's own Retake all open Scan with
+  // { mode: "front-label", verifyBarcode }. #46's capture-handler rewrite
+  // dropped the branch that read verifyBarcode, so the capture fell into smart
+  // photo classification and the barcode was lost. FrontLabelConfirm runs the
+  // front-label upload itself when sessionId is null, so ScanScreen only has
+  // to hand over the photo, the barcode and a local OCR seed.
+  const BARCODE = "0778918011332";
+
+  const shootInFrontLabelMode = async () => {
+    mockRouteParams.value = { mode: "front-label", verifyBarcode: BARCODE };
+    renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+  };
+
+  it("navigates to FrontLabelConfirm with the barcode, seeded from on-device OCR", async () => {
+    const ocrText = "ORGANIC VALLEY\nWhole Milk\n1 L\nUSDA Organic";
+    mockRecognizeText.mockResolvedValue({ text: ocrText, blocks: [] });
+
+    await shootInFrontLabelMode();
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("FrontLabelConfirm", {
+        imageUri: "file:///label.jpg",
+        barcode: BARCODE,
+        sessionId: null,
+        data: parseFrontLabelFromOCR(ocrText),
+      });
+    });
+    expect(vi.mocked(uploadPhotoForAnalysis)).not.toHaveBeenCalled();
+  });
+
+  it("still navigates with an empty seed when on-device OCR fails", async () => {
+    mockRecognizeText.mockRejectedValue(new Error("mlkit unavailable"));
+
+    await shootInFrontLabelMode();
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("FrontLabelConfirm", {
+        imageUri: "file:///label.jpg",
+        barcode: BARCODE,
+        sessionId: null,
+        data: {
+          brand: null,
+          productName: null,
+          netWeight: null,
+          claims: [],
+          confidence: 0,
+        },
+      });
+    });
+    expect(vi.mocked(uploadPhotoForAnalysis)).not.toHaveBeenCalled();
   });
 });
