@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+// @react-navigation/core is a hard dependency of @react-navigation/native;
+// importing native itself pulls React Native sources the node env cannot load.
+import { getStateFromPath } from "@react-navigation/core";
 import { linking } from "../linking";
 
 describe("linking config", () => {
@@ -34,8 +37,23 @@ describe("linking config", () => {
     expect(linking.config!.screens.NutritionDetail).toBe("nutrition/:barcode");
   });
 
-  it("configures Scan as a path string", () => {
-    expect(linking.config!.screens.Scan).toBe("scan");
+  // Query params on a deep link land in route.params unfiltered unless the
+  // screen's `parse` config transforms them. ScanScreen forwards
+  // verifyBarcode into FrontLabelConfirm and the verification submit, so a
+  // link must not be able to pick the barcode a user's label photo is
+  // credited to. Run through React Navigation's own parser, not the config
+  // shape, so the assertion is on what the app actually receives.
+  it("opens Scan from a deep link but drops a link-supplied verifyBarcode", () => {
+    const state = getStateFromPath(
+      "scan?mode=label&verifyBarcode=0778918011332",
+      linking.config,
+    );
+    const route = state?.routes[0];
+    expect(route?.name).toBe("Scan");
+    expect(route?.params).toMatchObject({ mode: "label" });
+    expect(
+      (route?.params as Record<string, unknown> | undefined)?.verifyBarcode,
+    ).toBeUndefined();
   });
 
   it("configures AllConversations as a path string", () => {

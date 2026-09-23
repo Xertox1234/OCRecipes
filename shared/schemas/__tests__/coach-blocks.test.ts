@@ -197,6 +197,67 @@ describe("Coach Block Schemas", () => {
   });
 });
 
+describe("Scan navigate params from the Coach", () => {
+  // ScanScreen forwards `verifyBarcode` into FrontLabelConfirm (#1025) and
+  // into LabelAnalysis's verification submit (#1028), so a Coach-authored
+  // barcode would credit the user's label photo to a product the model chose.
+  // Only the UI's own CTAs may set it; the Coach keeps `mode`/`returnAfterLog`.
+  const scanCard = (params: Record<string, unknown>) => ({
+    type: "action_card",
+    title: "Scan a label",
+    subtitle: "Point the camera at the nutrition panel",
+    action: { type: "navigate", screen: "Scan", params },
+    actionLabel: "Scan",
+  });
+
+  it("strips verifyBarcode but keeps mode and returnAfterLog", () => {
+    const parsed = actionCardSchema.parse(
+      scanCard({
+        mode: "label",
+        verifyBarcode: "0778918011332",
+        returnAfterLog: true,
+      }),
+    );
+    if (parsed.action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(parsed.action.params).toEqual({
+      mode: "label",
+      returnAfterLog: true,
+    });
+  });
+
+  it("strips verifyBarcode via the suggestion_list call site too", () => {
+    const parsed = suggestionListSchema.parse({
+      type: "suggestion_list",
+      items: [
+        {
+          title: "Scan a label",
+          subtitle: "Nutrition panel",
+          action: {
+            type: "navigate",
+            screen: "Scan",
+            params: { mode: "front-label", verifyBarcode: "0778918011332" },
+          },
+        },
+      ],
+    });
+    const action = parsed.items[0]?.action;
+    if (!action || action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(action.params).toEqual({ mode: "front-label" });
+  });
+
+  it("drops an unknown mode instead of failing the card", () => {
+    const parsed = actionCardSchema.parse(scanCard({ mode: "selfie" }));
+    if (parsed.action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(parsed.action.params).toEqual({});
+  });
+});
+
 describe("validateNavigateParams stripping", () => {
   // The next two tests are bug-reproduction tests: they fail without
   // `val.params = result.data` in validateNavigateParams (verified RED

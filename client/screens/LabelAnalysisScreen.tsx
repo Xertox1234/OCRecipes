@@ -702,7 +702,10 @@ export default function LabelAnalysisScreen() {
         ]}
       >
         {verificationResult ? (
-          <Button onPress={() => navigation.goBack()} style={{ flex: 1 }}>
+          // Verification opens Scan from NutritionDetail, so goBack() would
+          // land on that Scan's live camera. pop(2) returns to the product,
+          // as FrontLabelConfirm's "Add product details" flow does.
+          <Button onPress={() => navigation.pop(2)} style={{ flex: 1 }}>
             Done
           </Button>
         ) : (
