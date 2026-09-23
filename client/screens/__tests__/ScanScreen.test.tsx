@@ -1023,3 +1023,48 @@ describe("ScanScreen — front-label mode forwards verifyBarcode to FrontLabelCo
     expect(vi.mocked(uploadPhotoForAnalysis)).not.toHaveBeenCalled();
   });
 });
+
+describe("ScanScreen — label mode forwards verifyBarcode to LabelAnalysis", () => {
+  // NutritionDetail's "Help verify this product" CTA opens Scan with
+  // { mode: "label", verifyBarcode }. LabelAnalysis only submits a
+  // verification (POST /api/verification/submit) when it receives
+  // verificationMode + verifyBarcode. #46 dropped the forwarding, so every
+  // verification label scan logged food instead.
+  const BARCODE = "0778918011332";
+  const OCR = "Nutrition Facts\nCalories 250";
+
+  const shootInLabelMode = async (params: Record<string, unknown>) => {
+    mockRecognizeText.mockResolvedValue({ text: OCR, blocks: [] });
+    mockRouteParams.value = params;
+    renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+  };
+
+  it("hands the barcode to LabelAnalysis in verification mode", async () => {
+    await shootInLabelMode({ mode: "label", verifyBarcode: BARCODE });
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("LabelAnalysis", {
+        imageUri: "file:///label.jpg",
+        localOCRText: OCR,
+        barcode: BARCODE,
+        verificationMode: true,
+        verifyBarcode: BARCODE,
+      });
+    });
+    expect(vi.mocked(uploadPhotoForAnalysis)).not.toHaveBeenCalled();
+  });
+
+  it("keeps a plain label scan out of verification mode", async () => {
+    await shootInLabelMode({ mode: "label" });
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("LabelAnalysis", {
+        imageUri: "file:///label.jpg",
+        localOCRText: OCR,
+      });
+    });
+  });
+});

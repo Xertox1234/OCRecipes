@@ -535,6 +535,8 @@ export default function ScanScreen() {
         // Label mode: skip smart classification, go directly to LabelAnalysis.
         // On-device snapshot OCR pre-fills an instant preview; the server does the
         // authoritative analysis, so OCR failure here is non-fatal (preview absent).
+        // With a verifyBarcode (NutritionDetail's "Help verify this product"),
+        // LabelAnalysis submits a verification for that barcode instead of logging.
         if (isLabelMode) {
           let localOCRText: string | undefined;
           try {
@@ -549,6 +551,13 @@ export default function ScanScreen() {
           navigation.navigate("LabelAnalysis", {
             imageUri: photo.uri,
             localOCRText,
+            ...(verifyBarcode
+              ? {
+                  barcode: verifyBarcode,
+                  verificationMode: true,
+                  verifyBarcode,
+                }
+              : {}),
           });
           return;
         }

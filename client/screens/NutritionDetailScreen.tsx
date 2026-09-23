@@ -565,6 +565,12 @@ export default function NutritionDetailScreen() {
                 verifyBarcode: barcode,
               })
             }
+            onVerifyLabel={() =>
+              navigation.navigate("Scan", {
+                mode: "label",
+                verifyBarcode: barcode,
+              })
+            }
           />
         )}
 

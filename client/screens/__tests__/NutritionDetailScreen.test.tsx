@@ -699,18 +699,6 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
       announceSpy.mockRestore();
     }
   });
-
-  // D4 fix (Task 8): the CTA navigated to Scan with mode: "label" — asking
-  // for the nutrition-label photo that step 2 of the main flow already
-  // collects. Uses renderScanRoute (barcode route) because the verification
-  // section only renders under `barcode && nutrition`; the default image-entry
-  // route would keep this text out of the tree regardless of whether the CTA
-  // still existed, making the assertion vacuous.
-  it("does not render the obsolete Help verify this product CTA", () => {
-    const { queryByText } = renderScanRoute({ kind: "open" });
-
-    expect(queryByText("Help verify this product")).toBeNull();
-  });
 });
 
 describe("NutritionDetailScreen — captured photos", () => {
@@ -1072,6 +1060,45 @@ describe("NutritionDetailScreen — verification panel (2b characterisation)", (
 
     expect(mockNavigate).toHaveBeenCalledWith("Scan", {
       mode: "front-label",
+      verifyBarcode: "06772408",
+    });
+  });
+
+  // The label-verify CTA is the ONLY entry to POST /api/verification/submit
+  // (LabelAnalysis's verification mode). #736 removed it as redundant with the
+  // barcode flow's step 2, but step 2 never submits a verification, so no
+  // product's verification count could advance.
+  it.each(["unverified", "single_verified"])(
+    "offers the label-verify CTA for a %s product",
+    (verificationLevel) => {
+      const { queryByText } = renderVerification({
+        verificationLevel,
+        hasFrontLabelData: false,
+      });
+
+      expect(queryByText("Help verify this product")).toBeTruthy();
+    },
+  );
+
+  it("withholds the label-verify CTA for a verified product", () => {
+    const { queryByText } = renderVerification({
+      verificationLevel: "verified",
+      hasFrontLabelData: false,
+    });
+
+    expect(queryByText("Help verify this product")).toBeNull();
+  });
+
+  it("opens the label scan with the barcode when the label-verify CTA is pressed", () => {
+    const { getByText } = renderVerification({
+      verificationLevel: "unverified",
+      hasFrontLabelData: false,
+    });
+
+    fireEvent.click(getByText("Help verify this product"));
+
+    expect(mockNavigate).toHaveBeenCalledWith("Scan", {
+      mode: "label",
       verifyBarcode: "06772408",
     });
   });
