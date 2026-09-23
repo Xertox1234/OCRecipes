@@ -139,8 +139,12 @@ export function Toast({
         ]}
       >
         {/* The message is one grouped focus stop; the action stays a SIBLING
-            so screen readers can reach it (an `accessible` node collapses its
-            whole subtree into a single element). */}
+            so screen readers can reach it. On iOS an `accessible` node
+            collapses its whole subtree into one element. Android does not
+            (device-verified 2026-08-04, see CapturedPhotos.tsx), so the icon
+            and the text leave the Android tree explicitly; otherwise TalkBack
+            reads the group label and then the message again. On a leaf,
+            "no-hide-descendants" behaves like "no". */}
         <View
           style={styles.messageGroup}
           accessible
@@ -153,12 +157,14 @@ export function Toast({
             size={20}
             color={colors.text}
             accessible={false}
+            importantForAccessibility="no-hide-descendants"
           />
           <ThemedText
             type="small"
             maxScale={MAX_FONT_SCALE_CONSTRAINED}
             style={[styles.message, { color: colors.text }]}
             numberOfLines={2}
+            importantForAccessibility="no-hide-descendants"
           >
             {message}
           </ThemedText>
