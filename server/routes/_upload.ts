@@ -1,5 +1,5 @@
 /**
- * Multer upload configuration for image uploads.
+ * Multer upload configurations for image and audio uploads.
  */
 import multer from "multer";
 

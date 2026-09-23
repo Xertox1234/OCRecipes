@@ -11,9 +11,10 @@ import { createImageUpload, audioUpload } from "../_upload";
 // append-field allocate a max-length sparse array and then iterate it, pinning
 // the event loop. multer >= 2.3.0 only closes this when
 // `limits.fieldArrayIndexLimit` is set. The clients send plain field names
-// (photo, photos, audio, intent, barcode), so every upload rejects any
-// bracketed array index. A small index keeps the test fast: it proves the
-// limit is configured without triggering the CPU blow-up itself.
+// (photo, photos, audio, intent, barcode), so every upload sets the limit
+// to 0: any array index above 0 is rejected (`items[0]` still passes, which
+// can only build a length-1 array). A small index keeps the test fast: it
+// proves the limit is configured without triggering the CPU blow-up itself.
 
 // Mirrors server/routes.ts's MulterError -> 400 mapping.
 function appWith(middleware: express.RequestHandler) {
