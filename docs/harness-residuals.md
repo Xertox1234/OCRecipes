@@ -48,6 +48,14 @@ Review Policy → One review pass per PR).
 
 Workaround for all three: commit messages and PR bodies go through the Write tool + `-F`.
 
+Review-stamp writer, recorded from the #1019 review (no todo filed):
+
+- The top severity word as the FIRST word of a prose line, followed by a space or period, still
+  records `findings` (`_CRIT_TAG` accepts any non-alphanumeric after the word). The
+  NARROWED comment in `review-stamp-writer.sh` lists only `[TAG]`, `**TAG**` and `TAG:`, so it
+  describes less than the code counts. The error is deny-only. Workaround: don't open a prose
+  line with the word (the dispatch prompt already says not to use it in prose).
+
 ### Structural / hygiene
 
 | Todo                                                                 | Gap                                                           |
