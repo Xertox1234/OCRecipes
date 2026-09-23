@@ -160,29 +160,26 @@ i="$ROOT/$SHA/security-auditor.json"
   && ok "a CRITICAL-named path in REVIEWED-FILES does not by itself trigger findings" \
   || bad "a CRITICAL-named path in REVIEWED-FILES does not by itself trigger findings"
 
-# 8. PINNED DIRECTION: a review whose prose merely MENTIONS the word CRITICAL (not a
-#    bracketed or agent-definition finding line) also produces verdict:findings. This is
-#    a deliberate over-detection choice, not an oversight — see the writer's own "when in
-#    doubt, over-detect" comment. A false "findings" blocks a merge and a human unblocks
-#    it; a false "clean" ships unreviewed code past the gate, so the writer errs toward
-#    flagging ambiguous prose rather than parsing it away.
+# 8. RE-PINNED 2026-09-23 (user ruling: count CRITICAL only on FINDING lines). Prose that
+#    merely MENTIONS the word is no longer a finding. This message still writes NOTHING —
+#    its last line is not the exact literal — so it denies; the second fixture moves the
+#    same prose above a literal `No findings.` and now stamps clean. Superseded pin: this
+#    case used to assert verdict:findings (the old "over-detect prose" direction), which
+#    cost a re-dispatch on 2 of 5 clean reviews (#1015, #1017).
 PROSE_MSG='REVIEWED-SHA: 1234567890abcdef1234567890abcdef12345678
 REVIEWED-FILES:
 client/hooks/useNutritionLookup.ts
 
 No findings. No CRITICAL issues were found in this diff.'
-payload "code-reviewer" "$PROSE_MSG" | run_hook   # reuses code-reviewer; case 1 already asserted
-j="$ROOT/$SHA/code-reviewer.json"
-[ "$(jq -r .verdict "$j" 2>/dev/null)" = "findings" ] \
-  && ok "prose mentioning CRITICAL is over-detected as findings (pinned direction)" \
-  || bad "prose mentioning CRITICAL is over-detected as findings (pinned direction)"
-# `unresolved` is "every line that triggered the verdict", not "the bracketed CRITICAL
-# findings" (that narrower reading was case 3's). Pin the shape here so it's explicit,
-# not incidental: the prose sentence itself lands in `unresolved` verbatim.
-[ "$(jq -r '.unresolved | length' "$j" 2>/dev/null)" = "1" ] \
-  && [ "$(jq -r '.unresolved[0]' "$j" 2>/dev/null)" = "No findings. No CRITICAL issues were found in this diff." ] \
-  && ok "unresolved holds the triggering prose line verbatim (widened semantics, pinned)" \
-  || bad "unresolved holds the triggering prose line verbatim (widened semantics, pinned)"
+payload "code-reviewer" "$PROSE_MSG" | run_hook 8a
+[ ! -e "$(case_stamp 8a)" ] \
+  && ok "prose CRITICAL on a non-literal last line writes nothing (still denies)" \
+  || bad "prose CRITICAL on a non-literal last line writes nothing (still denies)"
+payload "code-reviewer" "${PROSE_MSG%No findings. No CRITICAL*}No CRITICAL issues were found in this diff.
+No findings." | run_hook 8b
+[ "$(jq -r '.verdict + ":" + (.unresolved | length | tostring)' "$(case_stamp 8b)" 2>/dev/null)" = "clean:0" ] \
+  && ok "prose CRITICAL above a literal 'No findings.' stamps clean" \
+  || bad "prose CRITICAL above a literal 'No findings.' stamps clean"
 
 # --- CRITICAL fix: verdict:clean must be a POSITIVE signal, never the absence of one ---
 # docs/AI_WORKFLOW.md's contract: "If there are no issues, write exactly: No findings."
@@ -987,6 +984,27 @@ payload "code-reviewer" "${ADVISORY_MSG%$'\n'No blocking findings.}" | run_hook 
   && ok "advisory: WARNING-only review WITHOUT the terminal literal (truncation) writes nothing" \
   || bad "advisory: WARNING-only review WITHOUT the terminal literal (truncation) writes nothing"
 
+# 55-60. FINDING-LINE detection (2026-09-23). A CRITICAL counts only on a line that STARTS
+# (after list markers) with the tag or with a `file:line` citation. 55/56 are the two real
+# clean reviews the old whole-reply scan mis-recorded as findings, verbatim in shape; 57-60
+# are the finding renderings that must still block.
+crit_case() {  # $1 = case, $2 = body line, $3 = expected "verdict:unresolved-count"
+  payload "code-reviewer" "REVIEWED-SHA: $SHA
+REVIEWED-FILES:
+client/a.ts
+
+$2
+No findings." | run_hook "$1"
+  [ "$(jq -r '.verdict + ":" + (.unresolved | length | tostring)' "$(case_stamp "$1")" 2>/dev/null)" = "$3" ] \
+    && ok "finding-line detect: case $1 -> $3" || bad "finding-line detect: case $1 -> $3"
+}
+crit_case 55 'Correctly-implemented patterns verified: the new elif sits below the existing "No findings."/CRITICAL arms, so a CRITICAL match still wins — I traced this through the loop at merge-review-guard.sh:744-759.' clean:0
+crit_case 56 'AI_WORKFLOW.md one-pass wording (docs/AI_WORKFLOW.md:30-32): consistent with the CRITICAL-bullet carve-out.' clean:0
+crit_case 57 '**CRITICAL** client/a.ts:1 — missing check' findings:1
+crit_case 58 'CRITICAL: client/a.ts:1 — missing check' findings:1
+crit_case 59 '- client/a.ts:74 — missing check — add it (CRITICAL)' findings:1
+crit_case 60 '1. `client/a.ts:74` — CRITICAL — missing check' findings:1
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -999,7 +1017,8 @@ payload "code-reviewer" "${ADVISORY_MSG%$'\n'No blocking findings.}" | run_hook 
 # 80 -> 85 (2026-09-22, confirmation round 2): +5, the self-exclusion normalisation rows (cases
 # 48-51; case 49 asserts its seed).
 # 85 -> 88 (2026-09-22): +3, the advisory verdict (cases 52-54).
-EXPECTED_TOTAL=88
+# 88 -> 94 (2026-09-23, finding-line CRITICAL detection): case 8 keeps 2 rows (re-pinned), +6 (cases 55-60).
+EXPECTED_TOTAL=94
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
