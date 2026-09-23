@@ -1064,8 +1064,9 @@ describe("NutritionDetailScreen — verification panel (2b characterisation)", (
     });
   });
 
-  // The label-verify CTA is the ONLY entry to POST /api/verification/submit
-  // (LabelAnalysis's verification mode). #736 removed it as redundant with the
+  // The label-verify CTA is the only UI entry to POST /api/verification/submit
+  // (LabelAnalysis's verification mode); the Coach's Scan navigate has
+  // verifyBarcode stripped by coach-blocks' screenParamSchemas. #736 removed it as redundant with the
   // barcode flow's step 2, but step 2 never submits a verification, so no
   // product's verification count could advance.
   it.each(["unverified", "single_verified"])(

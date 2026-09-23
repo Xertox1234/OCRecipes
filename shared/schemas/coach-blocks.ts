@@ -90,6 +90,14 @@ const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
     remixSourceRecipeId: z.number().optional().catch(undefined),
     remixSourceRecipeTitle: z.string().optional().catch(undefined),
   }),
+  // `verifyBarcode` is deliberately NOT listed, so it is stripped: ScanScreen
+  // forwards it into FrontLabelConfirm and LabelAnalysis's verification
+  // submit, and a Coach-chosen barcode would credit the user's label photo to
+  // a product the model picked. Only the UI's own CTAs set it.
+  Scan: z.object({
+    mode: z.enum(["label", "front-label"]).optional().catch(undefined),
+    returnAfterLog: z.boolean().optional().catch(undefined),
+  }),
   // `.strict()` — unlike the entries above (which STRIP unknown keys), an
   // unknown or misspelled field here is REJECTED. This screen's whole defect
   // class was a param nothing read: `date` was declared on RootStackParamList

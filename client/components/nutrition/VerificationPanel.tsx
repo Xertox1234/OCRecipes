@@ -41,19 +41,31 @@ export function VerificationPanel({
             { backgroundColor: withOpacity(theme.info, 0.08) },
           ]}
         >
-          <Feather name="camera" size={18} color={theme.info} />
+          <Feather
+            name="camera"
+            size={18}
+            color={theme.info}
+            accessible={false}
+          />
           <View style={{ flex: 1 }}>
+            {/* textSecondary, not info: theme.info fails AA as light-mode
+                text (~2.9:1 on backgroundRoot). info stays on the icon. */}
             <ThemedText
               type="body"
-              style={{ color: theme.info, fontWeight: "600" }}
+              style={{ color: theme.textSecondary, fontWeight: "600" }}
             >
               Help verify this product
             </ThemedText>
-            <ThemedText type="small" style={{ color: theme.info }}>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
               Scan the nutrition label to confirm data
             </ThemedText>
           </View>
-          <Feather name="chevron-right" size={18} color={theme.info} />
+          <Feather
+            name="chevron-right"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
         </Pressable>
       )}
 
@@ -68,7 +80,12 @@ export function VerificationPanel({
             { backgroundColor: withOpacity(theme.textSecondary, 0.06) },
           ]}
         >
-          <Feather name="package" size={18} color={theme.textSecondary} />
+          <Feather
+            name="package"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
           <View style={{ flex: 1 }}>
             <ThemedText
               type="body"
@@ -80,7 +97,12 @@ export function VerificationPanel({
               Scan front of package
             </ThemedText>
           </View>
-          <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+          <Feather
+            name="chevron-right"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
         </Pressable>
       )}
     </View>
