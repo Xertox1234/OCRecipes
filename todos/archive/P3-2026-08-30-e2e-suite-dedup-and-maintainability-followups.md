@@ -1,9 +1,9 @@
 ---
 title: "E2E suite dedup: shared CI seed script, credential-entry helper, non-regression flow selector sweep"
-status: review
+status: done
 priority: low
 created: 2026-08-30
-updated: 2026-09-22
+updated: 2026-09-23
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -50,12 +50,12 @@ The `/code-review high` review of PR #880 (2026-08-30) confirmed:
 - [x] The onboarding credential-entry sequence is one `runFlow` helper shared
       by the main block and the retry loop; blur uses a stable handle (add a
       `testID` to the register header rather than matching marketing copy).
-- [ ] Non-regression flows (`edit-profile.yaml` first) swept against live
+- [x] Non-regression flows (`edit-profile.yaml` first) swept against live
       hierarchy dumps per docs/solutions/best-practices/diagnose-e2e-from-debug-output-artifacts-first-2026-08-30.md
       — or explicitly deleted if not worth keeping. NOT MET — see 2026-09-01
       Updates entry for the static findings gathered instead and why a live
       dump wasn't produced this run.
-- [ ] One green `workflow_dispatch` run after the refactor (the whole point
+- [x] One green `workflow_dispatch` run after the refactor (the whole point
       of deferring was not to invalidate a green without buying one back).
       NOT MET — requires a human-triggered dispatch after this PR's branch
       exists on origin; see 2026-09-01 Updates entry for the exact command.
@@ -200,3 +200,23 @@ green `workflow_dispatch` on this branch, or on `main` after merge), flip
   belongs under `regression` or `smoke`, and run it green once locally. Needs a simulator and a
   running backend, so it is a task for a session with the dev loop up. Status stays `review`
   until then.
+
+### 2026-09-23 — item 3 done, todo closed (branch `fix/e2e-edit-profile-flow`)
+
+- **Live hierarchy dump taken** (iOS 26.5 sim, iPhone 17, demo account, local backend). The
+  Profile tab renders `Your Library` (shown uppercase), the library tiles (a11y
+  `<Label>: N items`, plus `. Premium feature, locked` on a premium tile for a free-tier
+  account), `Dietary Profile` and `Appearance: <mode>`. Of the old four assertions, only
+  "Dietary Profile" exists there. "Weight Tracking", "Nutrition Goals" and "Sign Out" do not.
+- **Dietary Profile opens "Edit Preferences",** a native `presentation: "modal"` with
+  Allergies, Health Conditions and Save Changes. The old closing `back` is Android-only in
+  Maestro, so on iOS it left the sheet open for the next flow. The flow now dismisses per
+  platform (a downward swipe on iOS, `back` on Android) and ends asserting Profile is showing
+  and the sheet is gone.
+- **Tagged `regression`,** not `smoke`: smoke is the short launch/login/tab set, and this is a
+  screen-content check.
+- **Evidence:** green twice on a cold start with the Maestro CLI (exit 0). A control copy with
+  the dismiss steps removed fails at the post-dismiss `YOUR LIBRARY` wait (exit 1), so the exit
+  contract depends on the dismiss.
+- **Not run on Android locally** (no Android device). The Android job of the scheduled
+  E2E Regression run on `main` is the first Android execution of this flow.
