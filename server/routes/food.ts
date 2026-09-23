@@ -1,6 +1,6 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
-import multer from "multer";
+import { audioUpload } from "./_upload";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -14,27 +14,6 @@ import { parseNaturalLanguageFood } from "../services/food-nlp";
 import { transcribeAudio } from "../services/voice-transcription";
 import { logger, toError } from "../lib/logger";
 import { detectAudioMimeType } from "../lib/audio-mime";
-
-const audioUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
-  fileFilter: (_req, file, cb) => {
-    const allowedTypes = [
-      "audio/m4a",
-      "audio/mp4",
-      "audio/mpeg",
-      "audio/wav",
-      "audio/x-m4a",
-      "audio/aac",
-      "audio/ogg",
-    ];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Invalid file type. Only audio files are accepted."));
-    }
-  },
-});
 
 const parseTextSchema = z.object({
   text: z.string().min(1).max(1000),
