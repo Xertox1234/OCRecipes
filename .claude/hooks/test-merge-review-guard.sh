@@ -608,6 +608,11 @@ if grep -qi 'no review record' <<<"$r" && grep -qi 'warning' <<<"$r"; then
 else
   bad "no-record deny names the WARNING-only cause" "$r"
 fi
+# The advisory exit must reach the reader intact: backticks inside the double-quoted deny
+# string were command substitutions that ran `No`/`advisory` from PATH and blanked the literal.
+grep -q 'No blocking findings\.' <<<"$r" \
+  && ok "no-record deny names the 'No blocking findings.' exit verbatim" \
+  || bad "no-record deny names the 'No blocking findings.' exit verbatim" "$r"
 
 # ── Stage 3: stamp scope ─────────────────────────────────────────────────────
 
@@ -1626,7 +1631,8 @@ unset _mrgcloser_hits _mrgcloser_prose
 # 193 -> 199 (2026-09-22, security review round 1): +6 = 3 manufactured-method rows the unanchored
 # blank flipped main-DENY -> head-ALLOW, 2 controls, and the anchor's cost pinned KNOWN-WRONG.
 # 199 -> 201 (2026-09-22, advisory verdict): +2 = advisory allows (9a) and its unknown-verdict control (9b).
-EXPECTED_TOTAL=201
+# 201 -> 202 (2026-09-22, review round 1): +1, case 7 asserts the advisory literal survives the deny string.
+EXPECTED_TOTAL=202
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
