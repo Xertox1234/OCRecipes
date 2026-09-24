@@ -7,6 +7,8 @@ updated: 2026-09-24
 assignee:
 labels: [deferred, reliability, ai]
 github_issue:
+human_led: true
+blocked_reason: "GET /messages needs a product decision before dispatch: return the newest 100, or add pagination (nearLimit/messageCount already exist)."
 ---
 
 # getChatMessages(limit) returns the OLDEST N messages — coach/recipe context and chat history drop the newest turns in long conversations

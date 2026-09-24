@@ -7,6 +7,8 @@ updated: 2026-09-24
 assignee:
 labels: [deferred, reliability, product-decision]
 github_issue:
+human_led: true
+blocked_reason: "Needs a product decision first: keep finish-and-save on disconnect, or abort + refund when nothing was streamed (remix quota counts distinct conversations)."
 ---
 
 # Recipe/remix chat keeps generating after the client disconnects — decide an abort + quota policy
