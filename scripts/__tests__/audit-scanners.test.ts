@@ -265,6 +265,19 @@ describe("sweepFileLengths", () => {
     expect(findings[0].files).toContain("server/big.ts");
     expect(findings[0].description).toContain(String(FILE_LENGTH_THRESHOLD));
   });
+
+  it("orders findings by line count descending so a per-tool cap keeps the biggest files, not the alphabetically-first ones", () => {
+    const findings = sweepFileLengths([
+      { path: "client/aFile.ts", lines: FILE_LENGTH_THRESHOLD + 10 },
+      { path: "client/zBigFile.ts", lines: FILE_LENGTH_THRESHOLD + 1000 },
+      { path: "client/mMidFile.ts", lines: FILE_LENGTH_THRESHOLD + 100 },
+    ]);
+    expect(findings.map((f) => f.files)).toEqual([
+      "client/zBigFile.ts",
+      "client/mMidFile.ts",
+      "client/aFile.ts",
+    ]);
+  });
 });
 
 describe("capFindings", () => {
@@ -300,6 +313,22 @@ describe("capFindings", () => {
     ];
     const { kept } = capFindings(findings);
     expect(kept.some((f) => f.severity === "Critical")).toBe(true);
+  });
+
+  it("returns the dropped findings themselves as `hidden`, so a caller can list what the cap hid", () => {
+    const many: ScannerFinding[] = Array.from({ length: 25 }, (_, i) => ({
+      tool: "file-length",
+      severity: "Low",
+      description: `finding ${i}`,
+      files: `f${i}.ts`,
+      verification: "re-run: npx tsx scripts/audit-scanners.ts <scope>",
+    }));
+    const { kept, dropped, hidden } = capFindings(many);
+    expect(hidden).toHaveLength(dropped);
+    const keptFiles = new Set(kept.map((f) => f.files));
+    for (const f of hidden) {
+      expect(keptFiles.has(f.files)).toBe(false);
+    }
   });
 });
 
