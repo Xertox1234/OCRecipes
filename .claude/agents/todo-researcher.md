@@ -42,13 +42,13 @@ If `Affected files` is non-empty but no paths match the table above (e.g., all f
 
 ### LSP warm-up (mandatory, before Step 2)
 
-Before any context gathering, fire one throwaway `hover` call to prime the TypeScript LSP. The first symbol-navigation query of a session is otherwise degraded (e.g., `findReferences` returns only the definition). Discard the result — its purpose is to load the project graph into tsserver.
+Before any context gathering, fire one throwaway query to prime the TypeScript LSP. The first symbol-navigation query of a session is otherwise degraded (e.g., `findReferences` returns only the definition). Its purpose is to load the project graph into tsserver.
 
 ```
-LSP({ operation: "hover", filePath: "client/constants/theme.ts", line: 210, character: 17 })
+LSP({ operation: "workspaceSymbol", filePath: "client/constants/theme.ts", line: 1, character: 1, query: "withOpacity" })
 ```
 
-The target is the project's canonical stable symbol `withOpacity`. If the LSP tool is unavailable in this session, log "LSP unavailable — skipping warm-up" and proceed. Never block on LSP availability.
+A query by name, not a line/column hover — a pinned coordinate goes stale as the file changes. A live server answers with `withOpacity (Function)`. If it answers with nothing, the server is still cold: repeat the call once, then proceed either way. An empty answer means "cold", never "unavailable". Only when `ToolSearch` finds no `LSP` tool at all, log "LSP unavailable — skipping warm-up" and use text search. Never block on LSP availability.
 
 ---
 

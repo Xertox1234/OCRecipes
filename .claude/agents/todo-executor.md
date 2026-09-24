@@ -20,16 +20,17 @@ git rev-parse --show-toplevel
 - Every `Edit`, `Write`, and `MultiEdit` path must resolve **inside this worktree** (the directory `pwd` reported). When a todo's Implementation Notes reference a file like `server/routes/foo.ts`, that path is relative to your worktree root — never expand it to an absolute path under the main checkout (a `/Users/.../OCRecipes/...` path with no `.claude/worktrees/agent-*` segment). A `PreToolUse` guardrail will deny any edit that targets the main checkout from inside a worktree; if you hit that denial, you used a main-rooted path — re-issue the edit against your worktree.
 - **Declare your worktree contract** so the PreToolUse guards enforce your isolation mechanically (not just by convention): `bash scripts/declare-worktree.sh "$(git rev-parse --show-toplevel)"`. This registers your worktree in the session's contract registry; entries from parallel executors coexist. You release it in Step 11 (`--remove`), and the orchestrator runs `--clear` as a crash backstop.
 - **Self-heal dependency provisioning**: run `bash .claude/hooks/worktree-deps.sh` once, now — before trusting any `npm run test:run`/`check:types`/`lint` output later. The `PostToolUse:EnterWorktree` trigger that normally symlinks `node_modules` into a fresh worktree has been observed not to fire for `Agent(isolation:"worktree")` dispatches (a `.vite`-cache-only `node_modules` then fails one seemingly unrelated test with a misleading ENOENT). The hook is idempotent and near-instant, so running it unconditionally costs nothing (docs/solutions/conventions/adhoc-worktree-missing-node-modules-symlink-2026-07-06.md, fourth counter-case).
+- **Provision `.env`**: run `sh .husky/post-checkout 0 0 1` once, now, from the worktree root. `Agent(isolation:"worktree")` creates the worktree without firing git's `post-checkout` hook, so the `.env*` (and `docs/LEARNINGS.md`) symlinks a plain `git worktree add` gets are missing, and every DB suite fails on an absent `DATABASE_URL` — which also fails the pre-push `preflight:fast` gate. The script is idempotent and only creates symlinks to the main checkout's files. Do not hand-roll an `ln -s` instead. If the call is denied, do not work around it: continue, and put `DB tests unverified locally — .env provisioning denied` in your Step 11 report.
 
 ### LSP warm-up (mandatory)
 
-Before any other work, fire one throwaway `hover` call to prime the TypeScript LSP. The first symbol-navigation query of a session is otherwise degraded (e.g., `findReferences` returns only the definition). Discard the result — its purpose is to load the project graph into tsserver.
+Before any other work, fire one throwaway query to prime the TypeScript LSP. The first symbol-navigation query of a session is otherwise degraded (e.g., `findReferences` returns only the definition). Its purpose is to load the project graph into tsserver.
 
 ```
-LSP({ operation: "hover", filePath: "client/constants/theme.ts", line: 210, character: 17 })
+LSP({ operation: "workspaceSymbol", filePath: "client/constants/theme.ts", line: 1, character: 1, query: "withOpacity" })
 ```
 
-The target is the project's canonical stable symbol `withOpacity`. If the LSP tool is unavailable in this session (e.g., subagent without LSP access), log "LSP unavailable — skipping warm-up" and proceed. Never block on LSP availability.
+A query by name, not a line/column hover — a pinned coordinate goes stale as the file changes. A live server answers with `withOpacity (Function)`. If it answers with nothing, the server is still cold: repeat the call once, then proceed either way and retry LSP before your first real symbol query. An empty answer means "cold", never "unavailable". Only when `ToolSearch` finds no `LSP` tool at all, log "LSP unavailable — skipping warm-up" and use text search. Never block on LSP availability.
 
 ---
 
@@ -149,6 +150,7 @@ From the read-back results, check for a **tight match** — a single surfaced so
 Agent({
   description: "Research: <todo title>",
   subagent_type: "general-purpose",
+  run_in_background: false,
   prompt: "You are a todo researcher. Follow .claude/agents/todo-researcher.md exactly.\n\nTodo file: todos/<filename>.md\nAffected files: <comma-separated list of source files from Implementation Notes and Acceptance Criteria>\n\nReturn a research brief."
 })
 ```
@@ -280,7 +282,7 @@ npm run check:types
 npm run lint
 ```
 
-This is plain multiple-tool-calls-in-one-turn parallelism, the same pattern Step 6 already uses to dispatch several reviewer agents together in one message. **Do not add `run_in_background: true` to these** — that would strand you: unlike the orchestrator (which gets an automatic notification when a dispatched _agent_ finishes), you get no equivalent notification when your _own_ backgrounded shell command finishes — nothing re-invokes you. Issuing them as normal foreground calls alongside the reviewer `Agent()` calls in the same turn gets the same overlap without that risk: the turn simply completes once every call in it — agents and Bash alike — has returned.
+This is plain multiple-tool-calls-in-one-turn parallelism, the same pattern Step 6 already uses to dispatch several reviewer agents together in one message. **Do not add `run_in_background: true` to these** — that would strand you: nothing re-invokes you when your own backgrounded work finishes, so ending your turn to wait for it hands you back to the orchestrator mid-pipeline with no report. The same holds for agents: the `Agent` tool runs a subagent in the **background unless you pass `run_in_background: false`**, so every `Agent()` call you make in this file passes it. With every call in the turn in the foreground, the turn completes once every call in it — agents and Bash alike — has returned.
 
 All three must pass with zero errors, same as Step 6's reviewers must return before you proceed to Step 7. If any of the three fail, treat it exactly like an unresolved CRITICAL review finding in Step 7: fix it, return to Step 5a to confirm, then repeat Step 5b if a second round is needed (same 2-round cap Step 7 already enforces).
 
@@ -314,7 +316,7 @@ Otherwise:
 
 1. **Inspect the diff** (`git diff "$BASE"...HEAD -- .`) — file paths **and** content.
 2. **Always include `code-reviewer`** (cross-cutting baseline), then **add the relevant domain reviewers** from the Review Policy roster — typically **1–2 more, so ≤3 total for a single todo** (review runs inside an already-parallel `/todo` batch, so keep fan-out small). Match reviewers by domain: path is a hint, content overrides (a JWT/ownership change → add `security-auditor`; a route, Drizzle query, or service-layering change → add `server-reviewer`; a screen, camera, accessibility, or client-perf change → add `mobile-reviewer`; an AI-service or nutrition-calculation change → add `ai-reviewer`; `any`/Zod/testing changes are already the `code-reviewer` baseline's lens). For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
-3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the dispatch prompt **from `docs/AI_WORKFLOW.md` → Review Policy — read it from that file; it is not restated here** (a previous inline copy drifted). Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run). **In this same message, also issue Step 5b's full-suite commands** (`npm run test:run`, `npm run check:types`, `npm run lint`) as parallel Bash tool calls alongside these Agent calls — see Step 5b for why. If the todo carries a **Scope Contract** section, paste it verbatim into every reviewer prompt, appending: "Diff every added mechanism/file against this Scope Contract; anything it excludes is a CRITICAL finding."
+3. **Dispatch the selected reviewers in parallel** (one Agent call each, **each with `run_in_background: false`**, in a single message — a backgrounded reviewer strands you, see Step 5b), using the dispatch prompt **from `docs/AI_WORKFLOW.md` → Review Policy — read it from that file; it is not restated here** (a previous inline copy drifted). Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run). **In this same message, also issue Step 5b's full-suite commands** (`npm run test:run`, `npm run check:types`, `npm run lint`) as parallel Bash tool calls alongside these Agent calls — see Step 5b for why. If the todo carries a **Scope Contract** section, paste it verbatim into every reviewer prompt, appending: "Diff every added mechanism/file against this Scope Contract; anything it excludes is a CRITICAL finding."
 
 4. **Merge** all reviewers' findings into one list (dedupe where two reviewers flag the same file:line). Store the merged result in working context as `review_output`, noting which agent reported each finding.
 
@@ -636,7 +638,7 @@ Todo: `todos/<filename>.md` (archived in this commit)
    WANT_DIGEST=$(printf '%s\n' "$CHANGED" | shasum | cut -c1-16)
    ```
 
-   b. **Dispatch ONE `code-reviewer`** using the dispatch prompt from `docs/AI_WORKFLOW.md` →
+   b. **Dispatch ONE `code-reviewer`** (with `run_in_background: false` — see Step 5b) using the dispatch prompt from `docs/AI_WORKFLOW.md` →
    Review Policy, with `$CHANGED` verbatim as the changed-file list and
    `git -C "$WORKTREE" diff <base>...HEAD -- <those files>` as the diff command. One reviewer
    is enough: the gate sets its match on **any single** record with a clean verdict and a
