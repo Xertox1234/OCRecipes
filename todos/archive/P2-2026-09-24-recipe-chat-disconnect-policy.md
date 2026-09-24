@@ -1,6 +1,6 @@
 ---
 title: "Recipe/remix chat: make finish-and-save on disconnect explicit, and show the finished reply when the user returns"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-24
 updated: 2026-09-24
@@ -40,3 +40,12 @@ Deferred from the H6 fix (`todos/P1-2026-09-23-ask-coach-dismiss-mid-stream-burn
 ### 2026-09-24
 
 - **Product decision (user):** keep finishing; the user must see the finished message when returning to the chat or browsing previous chats. Gate removed; ready for `/todo`.
+
+### 2026-09-24 (implemented)
+
+- **Client:** `useSendMessage` (`client/hooks/useChat.ts`) now exposes `abortStream()` (wraps the in-flight XHR via a ref) and, on an intentional abort, marks both `[/api/chat/conversations/:id/messages]` and `[/api/chat/conversations]` stale via `invalidateQueries({ refetchType: "none" })` instead of skipping invalidation entirely — same pattern as `CoachOverlayContent`/`CoachChat` (#1060). `RecipeChatScreen.tsx` calls `abortStream()` from an unmount effect.
+- **Server:** no behavior change — `server/routes/chat.ts` already finished and saved on the recipe/remix path (`isCoachPath` gates the H6 `res.on("close")` handler). Added comments at the two `if (!aborted && …)` persistence gates and the loop-break check documenting that `aborted` there can now only trip via the SSE timeout or the byte-limit guard, never a disconnect.
+- **Server test:** `postAndDisconnect` (`server/routes/__tests__/chat.test.ts`) gained an optional `onServerClose` hook — the recipe/remix generator receives no `AbortSignal` (unlike coach's `untilAborted(signal)`), so the new pin test pauses its fake generator on the harness's own `res.on("close")` observation instead. **Non-vacuity measured**: temporarily removing the `|| !isCoachPath` guard made the new test fail (`assistantWrites()` length 0 instead of 1) before reverting.
+- **Client test:** `useChat.test.ts` covers the stale-mark-on-abort path (and a no-op-when-idle control); `RecipeChatScreen.test.tsx` covers the unmount → `abortStream()` wiring.
+- **Review:** `code-reviewer` + `server-reviewer` + `mobile-reviewer`, one pass, no CRITICAL findings. Two non-blocking notes carried to the PR: (1) a narrow timing gap — an unmount during `sendMessage`'s `tokenStorage.get()` await (before the XHR exists) makes `abortStream()` a no-op for that turn, no data loss, just misses that turn's stale-mark; (2) `xhrRef` is last-write-wins across overlapping `sendMessage` calls on one hook instance (same shape as `useCoachStream.ts`'s existing `abortStream`; not reachable via the UI since the send button disables while streaming).
+- **Known residual (accepted, not fixed here):** `refetchType: "none"` marks stale but only refetches on the next query mount. Recipe/remix generation runs for tens of seconds (recipe + image), longer than coach's near-instant settle, so a user who reopens the conversation before generation finishes still sees the pre-completion snapshot for the remaining `staleTime` window. Same shape as the accepted #1060 behavior, just a longer window on this path.
