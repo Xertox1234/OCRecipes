@@ -991,6 +991,15 @@ export default function ScanScreen() {
                   case "NutritionDetail":
                     navigation.navigate("NutritionDetail", action.route.params);
                     break;
+                  default: {
+                    // Exhaustiveness guard: a new ClassificationRoute member must
+                    // be handled here — a silent no-op is exactly the bug the
+                    // outer switch's own guard above exists to prevent.
+                    const _exhaustive: never = action.route;
+                    throw new Error(
+                      `unhandled classification route: ${String(_exhaustive)}`,
+                    );
+                  }
                 }
                 break;
               case "blocked":
