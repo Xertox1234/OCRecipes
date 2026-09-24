@@ -1,6 +1,6 @@
 ---
 title: "Front-end scanner residuals: unused ServingStepperChip export, duplicated prod blocks, and 26 client files over 600 lines"
-status: in-progress
+status: done
 priority: low
 created: 2026-09-23
 updated: 2026-09-23
