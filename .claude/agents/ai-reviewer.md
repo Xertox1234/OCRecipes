@@ -120,6 +120,7 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 
 - [ ] Every `break` inside the streaming tool-call loop yields a short closing message to the user before the break — budget overshoot, max-iteration cap, retry exhaustion. A silent `break` leaves the client with whatever already streamed (often empty); yield e.g. "I've gathered enough to answer" so the user gets closure (Ref: audit 2026-04-18 H6)
 - [ ] The closing text is appended to `fullResponse` so it flows through `containsDangerousDietaryAdvice` and DB persistence — the persisted response matches what the user saw
+- [ ] Any path that saves or caches a streamed **prefix** (abort, disconnect, timeout, error) re-runs the output safety check on that prefix. The free-tier `generateCoachResponse` yields deltas BEFORE its end-of-stream `containsUnsafeCoachAdvice`, so a cut-off prefix was never vetted. See `docs/solutions/logic-errors/partial-of-post-hoc-vetted-stream-bypasses-safety-check-2026-09-24.md`
 
 ### Architecture
 
