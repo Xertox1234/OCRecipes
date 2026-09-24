@@ -167,6 +167,8 @@ rationale travels with each site.
   (3 leaf-collapse-only via `accessible={false}`, now all 8 also carry the
   background trap via `accessibilityViewIsModal` — **on iOS only**;
   `accessibilityViewIsModal` is an iOS-only prop, so the Android TalkBack
-  background-trap gap remains fully open across all 8 sites and, as of
-  2026-09-20, is **not tracked by any open todo** — the previously cited Android todo covers the
-  hardware back button, not TalkBack. Not closed by this work).
+  background-trap gap remains fully open across all 8 sites. Not closed by
+  this work — tracked by
+  `todos/archive/P2-2026-09-20-android-talkback-background-trap-missing-on-bottomsheetmodal-sites.md`
+  (filed 2026-09-20, correcting this note's own prior claim that no open
+  todo covered it).

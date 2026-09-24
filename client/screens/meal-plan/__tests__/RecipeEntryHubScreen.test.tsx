@@ -17,7 +17,7 @@
 // the shared test/mocks/gorhom-bottom-sheet.ts mock reflects the `accessible`
 // prop onto a `data-accessible` DOM attribute.
 import React from "react";
-import { screen } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import RecipeEntryHubScreen from "../RecipeEntryHubScreen";
 
@@ -28,8 +28,16 @@ vi.mock("@react-navigation/native", () => ({
   useIsFocused: () => true,
 }));
 
+// Renders a real close trigger (not `() => null`) so the Android-trap-release
+// test can exercise the same `.dismiss()` → BottomSheetModal `onDismiss` path
+// production code uses, rather than calling a prop function directly.
 vi.mock("@/components/meal-plan/ImportRecipeSheet", () => ({
-  ImportRecipeSheetContent: () => null,
+  ImportRecipeSheetContent: ({ onDismiss }: { onDismiss: () => void }) =>
+    React.createElement(
+      "button",
+      { onClick: onDismiss, "data-testid": "close-import-sheet" },
+      "Close",
+    ),
   IMPORT_RECIPE_SNAP_POINTS: ["import-recipe"],
 }));
 
@@ -39,5 +47,39 @@ describe("RecipeEntryHubScreen — iOS a11y-leaf fix", () => {
     expect(
       screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible"),
     ).toBe("false");
+  });
+});
+
+// Android TalkBack focus trap: iOS already has a working trap via
+// accessibilityViewIsModal on the sheet's own content root (PR #1000); the
+// Android lever is importantForAccessibility="no-hide-descendants" on the
+// screen's OWN background content, applied only while the sheet is open.
+// jsdom can't assert real a11y-tree exclusion — it maps the hiding-prop pair
+// to aria-hidden (test/mocks/react-native.ts's ariaHiddenProps), so these
+// tests pin THAT, per docs/solutions/conventions/
+// jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md.
+describe("RecipeEntryHubScreen — Android TalkBack background trap", () => {
+  it("does not hide the background content before the import sheet opens", () => {
+    renderComponent(<RecipeEntryHubScreen />);
+    expect(
+      screen.getByTestId("recipe-entry-hub-scroll").getAttribute("aria-hidden"),
+    ).toBeNull();
+  });
+
+  it("hides the background content from the Android accessibility tree while the import sheet is open", () => {
+    renderComponent(<RecipeEntryHubScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Import a Recipe" }));
+    expect(
+      screen.getByTestId("recipe-entry-hub-scroll").getAttribute("aria-hidden"),
+    ).toBe("true");
+  });
+
+  it("releases the background trap once the import sheet is dismissed — a trap that never releases makes the screen unusable to TalkBack", () => {
+    renderComponent(<RecipeEntryHubScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Import a Recipe" }));
+    fireEvent.click(screen.getByTestId("close-import-sheet"));
+    expect(
+      screen.getByTestId("recipe-entry-hub-scroll").getAttribute("aria-hidden"),
+    ).toBeNull();
   });
 });

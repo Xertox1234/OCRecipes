@@ -36,7 +36,7 @@
 // order actually decides which listener wins), so reordering those 4 call
 // sites would NOT fail this test.
 import React from "react";
-import { act, cleanup } from "@testing-library/react";
+import { act, cleanup, screen, fireEvent } from "@testing-library/react";
 import * as RN from "react-native";
 import { renderComponent } from "../../../../test/utils/render-component";
 import MealPlanHomeScreen from "../MealPlanHomeScreen";
@@ -45,27 +45,38 @@ import { TIER_FEATURES } from "@shared/types/premium";
 type CapturedSheet = {
   onChange?: (index: number) => void;
   onAnimate?: (fromIndex: number, toIndex: number) => void;
+  onDismiss?: () => void;
   dismiss: ReturnType<typeof vi.fn>;
   accessible?: boolean;
 };
 
-const { mockApiRequest, capturedSheets, hookCalls } = vi.hoisted(() => ({
-  mockApiRequest: vi.fn(),
-  capturedSheets: new Map<string, CapturedSheet>(),
-  // Recorded so the date-basis tests below can assert the ACTUAL query window
-  // the screen requested, rather than re-deriving it (which would just restate
-  // the implementation).
-  hookCalls: {
-    mealPlanItems: [] as unknown[][],
-    dailyBudget: [] as unknown[][],
-  },
-}));
+const { mockApiRequest, capturedSheets, hookCalls, mealPlanItemsData } =
+  vi.hoisted(() => ({
+    mockApiRequest: vi.fn(),
+    capturedSheets: new Map<string, CapturedSheet>(),
+    // Recorded so the date-basis tests below can assert the ACTUAL query window
+    // the screen requested, rather than re-deriving it (which would just restate
+    // the implementation).
+    hookCalls: {
+      mealPlanItems: [] as unknown[][],
+      dailyBudget: [] as unknown[][],
+    },
+    // Defaults to [] (every existing describe block relies on the empty-state
+    // branch). The Android-trap-release block below is the only one that
+    // populates this, to reach the per-meal-type sections (and their "Add
+    // item" buttons) instead of the empty state's "Browse Recipes" CTA.
+    mealPlanItemsData: { value: [] as unknown[] },
+  }));
 
 // ── Data hooks — collaborators of the screen, not the SUT ──────────────────
 vi.mock("@/hooks/useMealPlan", () => ({
   useMealPlanItems: (...args: unknown[]) => {
     hookCalls.mealPlanItems.push(args);
-    return { data: [], isLoading: false, isRefetching: false };
+    return {
+      data: mealPlanItemsData.value,
+      isLoading: false,
+      isRefetching: false,
+    };
   },
   useAddMealPlanItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRemoveMealPlanItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -177,6 +188,7 @@ vi.mock("@gorhom/bottom-sheet", () => {
       snapPoints?: string[];
       onChange?: (index: number) => void;
       onAnimate?: (fromIndex: number, toIndex: number) => void;
+      onDismiss?: () => void;
       accessible?: boolean;
     },
     ref: React.Ref<{ present: () => void; dismiss: () => void }>,
@@ -186,6 +198,11 @@ vi.mock("@gorhom/bottom-sheet", () => {
     capturedSheets.set(key, {
       onChange: props.onChange,
       onAnimate: props.onAnimate,
+      // Captured (not invoked by dismissSpy — see the file-header comment)
+      // so the Android-trap-release test can call it directly to simulate
+      // the sheet becoming fully dismissed, the same way capturedFilterSheetRef
+      // does for RecipeBrowserScreen's imperative sheet.
+      onDismiss: props.onDismiss,
       dismiss: dismissSpy.current,
       accessible: props.accessible,
     });
@@ -470,4 +487,105 @@ describe("MealPlanHomeScreen — iOS a11y-leaf fix (4 sheets)", () => {
       expect(target!.accessible).toBe(false);
     },
   );
+});
+
+// Android TalkBack background focus trap: iOS already has a working trap via
+// accessibilityViewIsModal on each sheet's own content root (PR #1000); the
+// Android lever is importantForAccessibility="no-hide-descendants" on the
+// screen's OWN background ScrollView, applied while ANY of the 4 sheets is
+// open — derived as a union of the 4 existing xxxMealType !== null booleans
+// (no new state; these are the same booleans already passed as `isOpen` to
+// each sheet's own useSheetBackHandler call). jsdom can't assert real
+// a11y-tree exclusion — it maps the hiding-prop pair to aria-hidden
+// (test/mocks/react-native.ts's ariaHiddenProps, via the plain ScrollView's
+// mockComponent), so these tests pin THAT, per docs/solutions/conventions/
+// jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md.
+//
+// Only the add-item-menu sheet is reachable through this file's mocking
+// footprint: this file's own local @gorhom/bottom-sheet override (above)
+// renders BottomSheetModal as `return null` (needed for its own onChange/
+// onAnimate wiring-integrity tests), so no sheet's children ever mount —
+// the other 3 sheets (importRecipe/quickAdd/simpleEntry) are only opened
+// from callbacks passed into AddItemMenuSheetContent, itself mocked to
+// `() => null`. Exercising add-item-menu's boolean is still a real,
+// mutation-sensitive proof of the union expression (all 4 booleans compose
+// identically via `!== null` — see MealPlanHomeScreen.tsx's isAnySheetOpen).
+//
+// The "Add item" button only renders once its meal-type section is
+// expanded AND selectedDayItems is non-empty (otherwise the screen shows
+// the "No meals planned yet" empty state instead of the per-meal-type
+// sections) — so this block pins the clock the same way the
+// "planned_date is keyed to the local calendar day" block above does
+// (00:30 Europe/Berlin -> local calendar day 2026-09-02, hour 0 ->
+// getAutoExpandedMealType() auto-expands "breakfast") and seeds one fake
+// breakfast item for that exact date via mealPlanItemsData.
+describe("MealPlanHomeScreen — Android TalkBack background trap", () => {
+  const originalTz = process.env.TZ;
+  const INSTANT = new Date("2026-09-01T22:30:00Z");
+  const FAKE_BREAKFAST_ITEM = {
+    id: 1,
+    userId: "test-user",
+    recipeId: null,
+    scannedItemId: null,
+    plannedDate: "2026-09-02",
+    mealType: "breakfast",
+    servings: "1",
+    sortOrder: 0,
+    createdAt: INSTANT,
+    recipe: null,
+    scannedItem: null,
+  };
+
+  beforeAll(() => {
+    process.env.TZ = "Europe/Berlin";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(INSTANT);
+  });
+
+  afterAll(() => {
+    vi.useRealTimers();
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+
+  beforeEach(() => {
+    capturedSheets.clear();
+    mockApiRequest.mockReset();
+    mockApiRequest.mockResolvedValue({ json: async () => ({}) });
+    mealPlanItemsData.value = [FAKE_BREAKFAST_ITEM];
+  });
+
+  afterEach(() => {
+    mealPlanItemsData.value = [];
+    cleanup();
+  });
+
+  it("does not hide the background content before any sheet opens", () => {
+    renderComponent(<MealPlanHomeScreen />);
+    expect(
+      screen.getByTestId("meal-plan-home-scroll").getAttribute("aria-hidden"),
+    ).toBeNull();
+  });
+
+  it("hides the background content from the Android accessibility tree while the add-item-menu sheet is open", () => {
+    renderComponent(<MealPlanHomeScreen />);
+    fireEvent.click(screen.getByRole("button", { name: /^Add \w+ item$/ }));
+    expect(
+      screen.getByTestId("meal-plan-home-scroll").getAttribute("aria-hidden"),
+    ).toBe("true");
+  });
+
+  it("releases the background trap once the add-item-menu sheet is dismissed — a trap that never releases makes the screen unusable to TalkBack", () => {
+    renderComponent(<MealPlanHomeScreen />);
+    fireEvent.click(screen.getByRole("button", { name: /^Add \w+ item$/ }));
+    expect(
+      screen.getByTestId("meal-plan-home-scroll").getAttribute("aria-hidden"),
+    ).toBe("true");
+    act(() => {
+      capturedSheets.get("add-item-menu")!.onDismiss?.();
+    });
+    expect(
+      screen.getByTestId("meal-plan-home-scroll").getAttribute("aria-hidden"),
+    ).toBeNull();
+  });
 });

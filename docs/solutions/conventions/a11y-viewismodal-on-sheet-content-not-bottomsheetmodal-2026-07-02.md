@@ -7,7 +7,7 @@ tags: [accessibility, gorhom-bottom-sheet, bottom-sheet, voiceover, react-native
 symptoms: [VoiceOver can swipe out of an open bottom sheet into the screen content behind it, accessibilityViewIsModal present on a BottomSheetModal element with no effect]
 applies_to: [client/screens/**/*.tsx, client/components/**/*.tsx]
 created: '2026-07-02'
-last_updated: '2026-09-20'
+last_updated: '2026-09-23'
 ---
 
 # accessibilityViewIsModal must go on the sheet's content View, not on BottomSheetModal
@@ -78,14 +78,16 @@ before concluding a site lacks the fix.
 
 ## Exceptions
 
-- The prop is iOS-only either way; Android TalkBack can still reach behind-content — a
-  pattern-wide gap that, as of 2026-09-20, **no open todo tracks** for the BottomSheetModal
-  sites. Verified rather than assumed: `todos/archive/P3-2026-07-02-bottomsheet-android-back-dismiss.md`
-  is about the hardware BACK BUTTON and contains zero TalkBack mentions;
-  `todos/archive/P3-2026-06-22-android-overlay-talkback-focus-trap.md` and
-  `todos/archive/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md` are both
-  `status: done`, and the latter is scoped to `ConfirmationModal.tsx` and its callers. File a todo
-  before citing one.
+- The prop is iOS-only either way; Android TalkBack can still reach behind-content. Closed for
+  7 of the 8 sites by
+  `todos/archive/P2-2026-09-20-android-talkback-background-trap-missing-on-bottomsheetmodal-sites.md`
+  (correcting this bullet's earlier claim that no open todo tracked the gap) via
+  `importantForAccessibility="no-hide-descendants"` applied to each screen's own background
+  content — the Android lever hides the BACKGROUND (opposite direction from this doc's iOS
+  mechanism, which marks the sheet's content as the modal). That todo's site #8
+  (`BeveragePickerSheet.tsx`) was deferred: its actual background host is
+  `client/screens/PhotoAnalysisScreen.tsx`, outside that todo's Scope Contract, so it still has
+  no Android trap.
 - Since the modal's children don't mount until `.present()`, the content-level prop has no effect while the sheet is closed — no need to gate it.
 
 ## Related Files
@@ -94,6 +96,7 @@ before concluding a site lacks the fix.
 - `client/screens/meal-plan/RecipeBrowserScreen.tsx` — pre-existing `BottomSheetView` example
 - `client/components/meal-plan/QuickAddSheet.tsx` — the Fragment-to-plain-View conversion (2026-09-20), with the sourced `useFocusHook` comment
 - `client/components/meal-plan/AddItemMenuSheet.tsx`, `SimpleEntrySheet.tsx` — the existing-single-root case (2026-09-20)
+- `client/screens/HomeScreen.tsx`, `client/screens/meal-plan/RecipeEntryHubScreen.tsx`, `client/screens/meal-plan/RecipeBrowserScreen.tsx`, `client/screens/meal-plan/MealPlanHomeScreen.tsx` — the Android `importantForAccessibility` background trap (2026-09-20), gated by a per-site `useState` (imperative hosts) or a derived union of existing state (MealPlanHomeScreen's 4 sheets)
 
 ## See Also
 

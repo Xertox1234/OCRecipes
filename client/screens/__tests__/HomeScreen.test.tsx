@@ -23,7 +23,7 @@
 // BeveragePickerSheet.test.tsx) — the shared test/mocks/gorhom-bottom-sheet.ts
 // mock reflects the `accessible` prop onto a `data-accessible` DOM attribute.
 import React from "react";
-import { screen } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import HomeScreen from "../HomeScreen";
 
@@ -92,8 +92,16 @@ vi.mock("@/hooks/useScrollLinkedHeader", () => ({
   }),
 }));
 
+// Renders a real close trigger (not `() => null`) so the Android-trap-release
+// test can exercise the same `.dismiss()` → BottomSheetModal `onDismiss` path
+// production code uses, rather than calling a prop function directly.
 vi.mock("@/components/meal-plan/ImportRecipeSheet", () => ({
-  ImportRecipeSheetContent: () => null,
+  ImportRecipeSheetContent: ({ onDismiss }: { onDismiss: () => void }) =>
+    React.createElement(
+      "button",
+      { onClick: onDismiss, "data-testid": "close-import-sheet" },
+      "Close",
+    ),
   IMPORT_RECIPE_SNAP_POINTS: ["import-recipe"],
 }));
 
@@ -118,9 +126,31 @@ vi.mock("@/components/home/CuratedRecipeCarousel", () => ({
 vi.mock("@/components/home/RecentActionsRow", () => ({
   RecentActionsRow: () => null,
 }));
-vi.mock("@/components/home/DiscoveryCarousel", () => ({
-  DiscoveryCarousel: () => null,
-}));
+// Renders one real button (not `() => null`) that invokes onActionPress with
+// the real "import-recipe" HomeAction — the only UI path in this heavily
+// stubbed screen that can trigger the import sheet for the background-trap
+// tests below. action-config itself is NOT mocked, so this is the real action.
+vi.mock("@/components/home/DiscoveryCarousel", async () => {
+  const { HOME_ACTIONS } = await vi.importActual<
+    typeof import("@/components/home/action-config")
+  >("@/components/home/action-config");
+  const importAction = HOME_ACTIONS.find((a) => a.id === "import-recipe");
+  return {
+    DiscoveryCarousel: ({
+      onActionPress,
+    }: {
+      onActionPress: (action: unknown) => void;
+    }) =>
+      React.createElement(
+        "button",
+        {
+          onClick: () => onActionPress(importAction),
+          "data-testid": "open-import-sheet",
+        },
+        "Import a Recipe",
+      ),
+  };
+});
 vi.mock("@/components/home/CollapsibleSection", () => ({
   CollapsibleSection: () => null,
 }));
@@ -143,5 +173,49 @@ describe("HomeScreen — iOS a11y-leaf fix", () => {
     expect(
       screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible"),
     ).toBe("false");
+  });
+});
+
+// Android TalkBack background focus trap: iOS already has a working trap via
+// accessibilityViewIsModal on the sheet's own content root (PR #1000); the
+// Android lever is importantForAccessibility="no-hide-descendants" on the
+// screen's OWN background content, applied only while the sheet is open.
+// The background root here is Animated.ScrollView — the shared reanimated
+// mock's mapA11yProps does NOT translate accessibilityElementsHidden/
+// importantForAccessibility to aria-hidden (only test/mocks/react-native.ts's
+// plain-component mockComponent does), so this pins the raw, untranslated
+// attribute directly instead of aria-hidden. That's still a real,
+// mutation-sensitive assertion (arguably more so — the value changes on every
+// mutation, not just presence/absence) — see docs/solutions/conventions/
+// jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md.
+describe("HomeScreen — Android TalkBack background trap", () => {
+  it("does not hide the background content before the import sheet opens", () => {
+    renderComponent(<HomeScreen />);
+    expect(
+      screen
+        .getByTestId("home-scroll")
+        .getAttribute("importantforaccessibility"),
+    ).toBe("auto");
+  });
+
+  it("hides the background content from the Android accessibility tree while the import sheet is open", () => {
+    renderComponent(<HomeScreen />);
+    fireEvent.click(screen.getByTestId("open-import-sheet"));
+    expect(
+      screen
+        .getByTestId("home-scroll")
+        .getAttribute("importantforaccessibility"),
+    ).toBe("no-hide-descendants");
+  });
+
+  it("releases the background trap once the import sheet is dismissed — a trap that never releases makes the screen unusable to TalkBack", () => {
+    renderComponent(<HomeScreen />);
+    fireEvent.click(screen.getByTestId("open-import-sheet"));
+    fireEvent.click(screen.getByTestId("close-import-sheet"));
+    expect(
+      screen
+        .getByTestId("home-scroll")
+        .getAttribute("importantforaccessibility"),
+    ).toBe("auto");
   });
 });

@@ -1,6 +1,6 @@
 ---
 title: "Android TalkBack can still reach behind-sheet content on all 8 BottomSheetModal sites — accessibilityViewIsModal is iOS-only and nothing covers the Android side"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-20
 updated: 2026-09-20

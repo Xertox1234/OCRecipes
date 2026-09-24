@@ -135,6 +135,17 @@ export default function HomeScreen() {
     onSheetAnimate: handleImportSheetAnimate,
   } = useSheetBackHandler(importSheetRef);
 
+  // Android TalkBack background focus trap (iOS already trapped via
+  // accessibilityViewIsModal on the sheet's own content root, set inside
+  // ImportRecipeSheetContent). Opened synchronously alongside .present() in
+  // handleActionPress; released only once BottomSheetModal's own onDismiss
+  // confirms the sheet has fully closed (post close-animation, the same
+  // asymmetric bias useSheetBackHandler uses) — never released early.
+  const [isImportSheetOpen, setIsImportSheetOpen] = useState(false);
+  const handleImportSheetClosed = useCallback(() => {
+    setIsImportSheetOpen(false);
+  }, []);
+
   const renderImportSheetBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
@@ -245,6 +256,7 @@ export default function HomeScreen() {
       recordAction(action.id);
       if (action.id === "import-recipe") {
         importSheetRef.current?.present();
+        setIsImportSheetOpen(true);
         return;
       }
       navigateAction(action, navigation);
@@ -435,12 +447,21 @@ export default function HomeScreen() {
       </Animated.View>
 
       <Animated.ScrollView
+        testID="home-scroll"
         ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={scrollContentContainerStyle}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
+        // Android TalkBack background focus trap while the import sheet is
+        // open — see docs/solutions/conventions/
+        // in-screen-overlay-needs-android-focus-trap-2026-06-22.md. iOS is
+        // already trapped separately via accessibilityViewIsModal on the
+        // sheet's own content root, so no accessibilityElementsHidden here.
+        importantForAccessibility={
+          isImportSheetOpen ? "no-hide-descendants" : "auto"
+        }
         onScroll={scrollHandler}
         onScrollBeginDrag={() => {
           if (switchTimerRef.current) {
@@ -546,6 +567,7 @@ export default function HomeScreen() {
         handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onChange={handleImportSheetChange}
         onAnimate={handleImportSheetAnimate}
+        onDismiss={handleImportSheetClosed}
         // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
         // "Bottom Sheet" on the DraggableView that WRAPS these children. On
         // new-arch Fabric that makes the wrapper an accessibility LEAF
