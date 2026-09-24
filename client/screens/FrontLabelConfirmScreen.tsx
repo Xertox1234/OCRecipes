@@ -177,8 +177,14 @@ export default function FrontLabelConfirmScreen() {
 
   const handleRetake = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    navigation.replace("Scan", { mode: "front-label", verifyBarcode: barcode });
-  }, [navigation, barcode, haptics]);
+    // goBack (not replace/navigate) — the Scan(front-label) instance that
+    // pushed this screen is already directly beneath it on the stack, and it
+    // re-arms its camera on refocus (ScanScreen's isFocused effect). Popping
+    // back to it keeps the stack shape the eventual success pop(2) expects;
+    // replace() or navigate() would each insert an extra level, making pop(2)
+    // land short (on a live camera, or on this now-stale screen).
+    navigation.goBack();
+  }, [navigation, haptics]);
 
   const hasAnyData =
     data.brand || data.productName || data.netWeight || data.claims.length > 0;

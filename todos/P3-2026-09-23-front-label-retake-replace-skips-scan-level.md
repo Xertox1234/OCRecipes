@@ -1,6 +1,6 @@
 ---
 title: "FrontLabelConfirm Retake replaces itself, so pop(2) lands on the first Scan's live camera"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-23
 updated: 2026-09-23
