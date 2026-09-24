@@ -1,6 +1,6 @@
 ---
 title: "Front-label scan started after a verification returns to the label camera"
-status: backlog
+status: done
 priority: low
 created: 2026-09-23
 updated: 2026-09-23
@@ -35,3 +35,7 @@ Found by two reviewers of PR #1029 (pre-existing, outside that PR's diff). The v
 ### 2026-09-23
 
 - Filed from PR #1029 review.
+- Implemented: changed the "Scan Front Label" CTA in `LabelAnalysisScreen.tsx` from `navigation.replace("Scan", …)` to `navigation.navigate("Scan", …)` (push, not replace). Verified against the installed `@react-navigation/routers` v7.5.2 `StackRouter` source that this is a genuine push in this exact stack shape (no custom `getId`, target route name differs from the current route), matching the existing, unrelated `navigation.navigate("Scan", …)` call in `NutritionDetailScreen.tsx`'s "Add product details" CTA. `FrontLabelConfirmScreen.tsx`'s `pop(2)` on success now lands back on `LabelAnalysis` (result + Done still shown) instead of the live `Scan(label)` camera; `LabelAnalysisScreen`'s own Done button still `pop(2)`s to `NutritionDetail`. Added a render test in `LabelAnalysisScreen.verification.test.tsx` pinning `navigate` (not `replace`) being called with `("Scan", { mode: "front-label", verifyBarcode })`.
+- AC2 (NutritionDetail's "Add product details" still returns to NutritionDetail) was verified by inspection — that entry point is a separate, untouched call site in `NutritionDetailScreen.tsx`.
+- Deferred, not fixed here (out of Acceptance Criteria scope): after returning to `LabelAnalysis` via `pop(2)`, the "Scan Front Label" CTA can still render because `verificationResult.canScanFrontLabel` is local state never invalidated by a later front-label save. Filed a related but independently-scoped Low finding as `todos/P3-2026-09-23-front-label-retake-replace-skips-scan-level.md`: `FrontLabelConfirmScreen`'s own "Retake" button has an analogous replace-vs-navigate stacking issue.
+- Reviewed clean by `code-reviewer` + `mobile-reviewer` (no blocking findings); updated `docs/solutions/conventions/navigate-vs-replace-modal-flows-2026-05-13.md` to correct its stale "existing correct usage" listing and add the exception this fix falls under.

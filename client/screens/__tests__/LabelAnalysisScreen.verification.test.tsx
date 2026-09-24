@@ -4,20 +4,30 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import LabelAnalysisScreen from "../LabelAnalysisScreen";
 
-const { mockGoBack, mockPop, mockApiRequest, mockUpload, mockRoute } =
-  vi.hoisted(() => ({
-    mockGoBack: vi.fn(),
-    mockPop: vi.fn(),
-    mockApiRequest: vi.fn(),
-    mockUpload: vi.fn(),
-    mockRoute: { params: {} as Record<string, unknown> },
-  }));
+const {
+  mockGoBack,
+  mockPop,
+  mockNavigate,
+  mockReplace,
+  mockApiRequest,
+  mockUpload,
+  mockRoute,
+} = vi.hoisted(() => ({
+  mockGoBack: vi.fn(),
+  mockPop: vi.fn(),
+  mockNavigate: vi.fn(),
+  mockReplace: vi.fn(),
+  mockApiRequest: vi.fn(),
+  mockUpload: vi.fn(),
+  mockRoute: { params: {} as Record<string, unknown> },
+}));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     goBack: mockGoBack,
     pop: mockPop,
-    navigate: vi.fn(),
+    navigate: mockNavigate,
+    replace: mockReplace,
   }),
   useRoute: () => mockRoute,
 }));
@@ -48,6 +58,8 @@ describe("LabelAnalysisScreen — verification mode Done", () => {
   beforeEach(() => {
     mockGoBack.mockClear();
     mockPop.mockClear();
+    mockNavigate.mockClear();
+    mockReplace.mockClear();
     mockUpload.mockResolvedValue({
       sessionId: "session-1",
       labelData: {
@@ -114,5 +126,49 @@ describe("LabelAnalysisScreen — verification mode Done", () => {
       "/api/verification/submit",
       { barcode: BARCODE, sessionId: "session-1" },
     );
+  });
+
+  // The front-label CTA used to `replace()` this screen with Scan(front-label),
+  // so FrontLabelConfirm's pop(2) landed on the Scan(label) camera underneath
+  // instead of back here. It must `navigate()` (push) so LabelAnalysis stays
+  // on the stack for pop(2) to land on.
+  it("pushes (navigate, not replace) to Scan front-label from the front-label CTA", async () => {
+    mockApiRequest.mockResolvedValue({
+      json: async () => ({
+        verified: true,
+        isMatch: true,
+        verificationLevel: "single_verified",
+        verificationCount: 1,
+        canScanFrontLabel: true,
+      }),
+    });
+    mockRoute.params = {
+      imageUri: "file:///label.jpg",
+      barcode: BARCODE,
+      verificationMode: true,
+      verifyBarcode: BARCODE,
+    };
+    renderComponent(<LabelAnalysisScreen />);
+
+    const submit = await screen.findByText("Submit Verification");
+    await act(async () => {
+      fireEvent.click(submit);
+    });
+
+    const scanFrontLabel = await screen.findByText("Scan Front Label");
+    fireEvent.click(scanFrontLabel);
+
+    // Control: the tap reached a navigation call (navigate on the fixed code).
+    await waitFor(() =>
+      expect(
+        mockNavigate.mock.calls.length + mockReplace.mock.calls.length,
+      ).toBe(1),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith("Scan", {
+      mode: "front-label",
+      verifyBarcode: BARCODE,
+    });
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 });
