@@ -1,9 +1,9 @@
 ---
 title: "Closing Ask Coach mid-answer spends a daily message, saves no reply, and leaves an unretryable stub conversation — needs a product decision"
-status: backlog
+status: in-progress
 priority: high
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 assignee:
 labels: [deferred, audit, reliability, product-decision]
 github_issue:
@@ -27,7 +27,7 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 ## Acceptance Criteria
 
-- [ ] A product decision is recorded in this todo: (a) finish generation server-side and persist even after client disconnect, (b) refund the quota for an aborted turn, (c) allow retrying a trailing user-only turn, or a combination
+- [x] A product decision is recorded in this todo: (a) finish generation server-side and persist even after client disconnect, (b) refund the quota for an aborted turn, (c) allow retrying a trailing user-only turn, or a combination
 - [ ] The chosen behavior is implemented with tests on both client and server sides
 - [ ] No quota is consumed without either a persisted reply or a retry path
 - [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
@@ -63,3 +63,11 @@ Option (a) is usually the most user-friendly (the answer appears in history next
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (H6).
+
+### 2026-09-24
+
+- **Product decision (user): Hybrid.** Client disconnect before any content is streamed → refund (delete the user row; quota is `count(*)` of today's user rows). Disconnect after content → persist the partial reply (so the paid quota bought something, and the existing Retry works). A pure refund was rejected: a client could read the whole answer and abort just before `done`.
+- **Premise correction (measured):** the audit's "server skips persisting the reply" never happened at runtime. `req.on("close")` never fires on Node 24 once `express.json()` has consumed the body, so the M8 abort was dead code. On disconnect the server finished generating and saved the full reply, spending full tokens. Fixed by listening on `res` `close` + `!res.writableFinished`.
+- Abort is wired for the coach path only; recipe/remix keeps finish-and-save (follow-up todo `P2-2026-09-24-recipe-chat-disconnect-policy.md`).
+- Duplicate guard: the route mints a per-turn `turnKey` when the client sends none, so the settle can tell via `getChatMessageByTurnKey` whether the service's own write already landed.
+- Accepted residual: a refund leaves a zero-message conversation in history (already true when the overlay closes before the POST fires).

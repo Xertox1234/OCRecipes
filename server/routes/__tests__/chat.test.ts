@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import express from "express";
 import request from "supertest";
 
@@ -28,6 +30,7 @@ vi.mock("../../storage", () => ({
     getChatMessages: vi.fn(),
     createChatMessage: vi.fn(),
     createChatMessageWithLimitCheck: vi.fn(),
+    getChatMessageByTurnKey: vi.fn(),
     getDailyChatMessageCount: vi.fn(),
     getChatMessageCount: vi.fn(),
     getUser: vi.fn(),
@@ -52,6 +55,8 @@ vi.mock("../../storage", () => ({
 vi.mock("../../services/nutrition-coach", () => ({
   generateCoachResponse: vi.fn(),
   generateCoachProResponse: vi.fn(),
+  // The free-tier path hashes a response-cache key that includes this.
+  getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test"),
 }));
 
 vi.mock("../../services/coach-blocks", () => ({
@@ -557,13 +562,15 @@ describe("Chat Routes", () => {
       expect(res.text).toContain("Hello ");
       expect(res.text).toContain("world!");
       expect(res.text).toContain('"done":true');
-      // Saved assistant message (4th arg is metadata — null when no blocks)
+      // Saved assistant message (4th arg is metadata — null when no blocks;
+      // 5th is the route-minted per-turn key the H6 disconnect settle uses)
       expect(storage.createChatMessage).toHaveBeenCalledWith(
         1,
         "1",
         "assistant",
         "Hello world!",
         null,
+        expect.any(String),
       );
       // Title updated for first exchange (history.length === 0)
       expect(storage.updateChatConversationTitle).toHaveBeenCalled();
@@ -650,6 +657,249 @@ describe("Chat Routes", () => {
 
       expect(res.status).toBe(200);
       expect(storage.updateChatConversationTitle).not.toHaveBeenCalled();
+    });
+
+    // H6 — closing Ask Coach mid-answer used to leave a quota-counted user
+    // message with no reply. Hybrid policy: disconnect before any content →
+    // refund (delete the user row; quota is a count of user rows); disconnect
+    // after content → persist the partial reply. supertest cannot drop a
+    // connection mid-stream, so these drive a real socket.
+    describe("client disconnect mid-stream (H6)", () => {
+      const USER_MSG_ID = 42;
+
+      /** Resolves when `signal` aborts (the route wires req close → abort). */
+      function untilAborted(signal: AbortSignal): Promise<void> {
+        return new Promise((resolve) => {
+          if (signal.aborted) return resolve();
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }
+
+      /**
+       * POSTs a coach message over a real socket and destroys the client
+       * side once `disconnectWhen(body)` is true. Resolves when the route
+       * handler calls `res.end()` — the H6 decision runs before that, so
+       * negative assertions after this resolves are meaningful.
+       */
+      async function postAndDisconnect(
+        disconnectWhen: (bodySoFar: string) => boolean,
+      ): Promise<void> {
+        const testApp = express();
+        let signalEnd!: () => void;
+        const ended = new Promise<void>((r) => (signalEnd = r));
+        testApp.use((_req, res, next) => {
+          const origEnd = res.end.bind(res);
+          res.end = ((...args: Parameters<typeof res.end>) => {
+            signalEnd();
+            return origEnd(...args);
+          }) as typeof res.end;
+          next();
+        });
+        testApp.use(express.json());
+        register(testApp);
+        const server = testApp.listen(0);
+        await new Promise<void>((r) => server.once("listening", r));
+        const { port } = server.address() as AddressInfo;
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const payload = JSON.stringify({ content: "Hello" });
+            const clientReq = http.request(
+              {
+                port,
+                method: "POST",
+                path: "/api/chat/conversations/1/messages",
+                headers: {
+                  Authorization: "Bearer token",
+                  "Content-Type": "application/json",
+                  "Content-Length": Buffer.byteLength(payload),
+                },
+              },
+              (res) => {
+                let body = "";
+                const check = () => {
+                  if (disconnectWhen(body)) {
+                    clientReq.destroy();
+                    resolve();
+                  }
+                };
+                res.on("data", (chunk: Buffer) => {
+                  body += chunk.toString();
+                  check();
+                });
+                check();
+              },
+            );
+            clientReq.on("error", () => {}); // destroy() surfaces ECONNRESET
+            clientReq.on("close", () => resolve());
+            clientReq.once("error", reject);
+            clientReq.end(payload);
+          }).catch(() => {});
+          await ended;
+        } finally {
+          server.closeAllConnections();
+          await new Promise((r) => server.close(r));
+        }
+      }
+
+      function setupDisconnect() {
+        mockStreamingSetup();
+        vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+          createMockChatMessage({ id: USER_MSG_ID, role: "user" }),
+        );
+        vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
+        vi.mocked(storage.deleteChatMessage).mockResolvedValue(true);
+      }
+
+      const assistantWrites = () =>
+        vi
+          .mocked(storage.createChatMessage)
+          .mock.calls.filter((c) => c[2] === "assistant");
+
+      it("refunds the user message when the client leaves before any content", async () => {
+        setupDisconnect();
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* (_h, _c, _u, signal) {
+            await untilAborted(signal!);
+            throw Object.assign(new Error("Request was aborted."), {
+              name: "AbortError",
+            });
+          },
+        );
+
+        await postAndDisconnect(() => true);
+
+        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+          USER_MSG_ID,
+          "1",
+        );
+        expect(assistantWrites()).toHaveLength(0);
+      });
+
+      it("refunds on a free-tier (non-Pro) coach turn too", async () => {
+        setupDisconnect();
+        vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+          tier: "free",
+          expiresAt: null,
+        });
+        vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+        vi.mocked(generateCoachResponse).mockImplementation(
+          async function* (_h, _c, signal) {
+            await untilAborted(signal!);
+          },
+        );
+
+        await postAndDisconnect(() => true);
+
+        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+          USER_MSG_ID,
+          "1",
+        );
+        expect(assistantWrites()).toHaveLength(0);
+      });
+
+      it("persists the partial reply when the client leaves after content", async () => {
+        setupDisconnect();
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* (_h, _c, _u, signal) {
+            yield "Eat more ";
+            yield "protein.";
+            await untilAborted(signal!);
+            throw Object.assign(new Error("Request was aborted."), {
+              name: "AbortError",
+            });
+          },
+        );
+
+        await postAndDisconnect((body) => body.includes("protein."));
+
+        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(assistantWrites()).toHaveLength(1);
+        expect(assistantWrites()[0][3]).toBe("Eat more protein.");
+        // A partial must never be served to other users as a cached answer.
+        expect(storage.setCoachCachedResponse).not.toHaveBeenCalled();
+      });
+
+      it("strips half-formed block markup from a Coach Pro partial", async () => {
+        setupDisconnect();
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* (_h, _c, _u, signal) {
+            yield 'Try this:\n```coach_blocks\n[{"type":';
+            await untilAborted(signal!);
+          },
+        );
+
+        await postAndDisconnect((body) => body.includes("Try this"));
+
+        expect(assistantWrites()).toHaveLength(1);
+        expect(assistantWrites()[0][3]).toBe("Try this:");
+      });
+
+      it("refunds when the only thing streamed was an unterminated block fence", async () => {
+        setupDisconnect();
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* (_h, _c, _u, signal) {
+            yield '```coach_blocks\n[{"type":';
+            await untilAborted(signal!);
+          },
+        );
+
+        await postAndDisconnect((body) => body.includes("coach_blocks"));
+
+        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+          USER_MSG_ID,
+          "1",
+        );
+        expect(assistantWrites()).toHaveLength(0);
+      });
+
+      it("does not double-write when the service already persisted the reply", async () => {
+        setupDisconnect();
+        let capturedSignal: AbortSignal | undefined;
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* (_h, _c, _u, signal) {
+            capturedSignal = signal;
+            yield "Full answer.";
+          },
+        );
+        // The service's own write lands, and only then does the close
+        // arrive — the route must see the persisted turn and stand down.
+        let persisted: ReturnType<typeof createMockChatMessage> | undefined;
+        vi.mocked(storage.createChatMessage).mockImplementation(
+          async (...args) => {
+            await untilAborted(capturedSignal!);
+            persisted = createMockChatMessage({
+              id: 43,
+              role: "assistant",
+              content: args[3],
+              turnKey: args[5] ?? null,
+            });
+            return persisted;
+          },
+        );
+        vi.mocked(storage.getChatMessageByTurnKey).mockImplementation(
+          async () => persisted,
+        );
+
+        await postAndDisconnect((body) => body.includes("Full answer."));
+
+        expect(assistantWrites()).toHaveLength(1);
+        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+      });
+
+      it("control: a completed stream neither refunds nor adds a second write", async () => {
+        setupDisconnect();
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* () {
+            yield "All done.";
+          },
+        );
+
+        await postAndDisconnect((body) => body.includes('"done":true'));
+
+        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(assistantWrites()).toHaveLength(1);
+        expect(assistantWrites()[0][3]).toBe("All done.");
+      });
     });
   });
 

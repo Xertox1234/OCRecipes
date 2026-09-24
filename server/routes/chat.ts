@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
@@ -28,6 +29,7 @@ import {
   tryArchiveNotebook,
 } from "../services/coach-pro-chat";
 import { sanitizeUserInput, sanitizeContextField } from "../lib/ai-safety";
+import { parseBlocksFromContent } from "../services/coach-blocks";
 
 const SSE_TIMEOUT_MS = 120_000; // 2 minutes max per SSE connection
 const SSE_MAX_RESPONSE_BYTES = 50 * 1024; // 50KB max response size
@@ -366,9 +368,24 @@ export function register(app: Express): void {
         // AbortController wires the HTTP close event directly into the OpenAI
         // SDK so in-flight generation is cancelled immediately, not just after
         // the next chunk boundary. (M8 — 2026-04-18)
+        //
+        // Listen on `res`, not `req`: express.json() has already consumed the
+        // body, so the request's own "close" fired before this line and a
+        // `req.on("close")` listener never runs (measured on Node 24, our
+        // runtime) — M8 was dead code.
+        // `!res.writableFinished` separates a dropped client from our own
+        // res.end().
+        //
+        // Coach path only: the recipe/remix path cannot salvage a partial
+        // (half a recipe JSON), so it keeps finishing and saving the reply
+        // after a disconnect rather than burning quota for nothing.
+        const isCoachPath = !isRecipeChat && !isRemixChat;
         const abortController = new AbortController();
         let aborted = false;
-        req.on("close", () => {
+        let clientDisconnected = false;
+        res.on("close", () => {
+          if (res.writableFinished || !isCoachPath) return;
+          clientDisconnected = true;
           aborted = true;
           abortController.abort();
         });
@@ -386,6 +403,11 @@ export function register(app: Express): void {
         }, SSE_TIMEOUT_MS);
 
         let responseBytes = 0;
+        // Coach path: the content actually delivered to the client, and a
+        // per-turn key so the service's write and the disconnect settle below
+        // can tell whether this turn's reply already exists.
+        let streamedContent = "";
+        const coachTurnKey = parsed.data.turnKey ?? randomUUID();
 
         try {
           if (isRecipeChat || isRemixChat) {
@@ -520,7 +542,7 @@ export function register(app: Express): void {
               content: sanitizedContent,
               screenContext: parsed.data.screenContext,
               warmUpId: parsed.data.warmUpId,
-              turnKey: parsed.data.turnKey,
+              turnKey: coachTurnKey,
               isCoachPro: !!features.coachPro,
               user: {
                 dailyCalorieGoal: user.dailyCalorieGoal,
@@ -556,6 +578,7 @@ export function register(app: Express): void {
                 }
                 break;
               }
+              if (event.type === "content") streamedContent += event.content;
               res.write(`data: ${eventJson}\n\n`);
             }
           }
@@ -564,7 +587,16 @@ export function register(app: Express): void {
             res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
           }
         } catch (error) {
-          logger.error({ err: toError(error) }, "chat streaming error");
+          // A client disconnect aborts the OpenAI stream, which throws —
+          // the expected exit, so log it at debug rather than error.
+          if (clientDisconnected) {
+            logger.debug(
+              { err: toError(error) },
+              "chat stream ended by client disconnect",
+            );
+          } else {
+            logger.error({ err: toError(error) }, "chat streaming error");
+          }
           if (!aborted && !res.writableEnded) {
             res.write(
               `data: ${JSON.stringify({ error: "Failed to generate response" })}\n\n`,
@@ -572,6 +604,51 @@ export function register(app: Express): void {
           }
         } finally {
           clearTimeout(sseTimeout);
+        }
+
+        // H6 — the client left mid-answer. The user message is already
+        // quota-counted (quota = count of today's user rows), so either
+        // refund it (nothing was streamed) or keep what they paid for as the
+        // assistant reply (something was). Refunding a turn whose content
+        // was already delivered would let a client read an answer and abort
+        // just before `done` to get the message back for free.
+        if (clientDisconnected) {
+          try {
+            // Skip if the service's own write landed before the close did.
+            const alreadyPersisted = await storage.getChatMessageByTurnKey(
+              id,
+              coachTurnKey,
+            );
+            if (!alreadyPersisted) {
+              const parsedPartial = features.coachPro
+                ? parseBlocksFromContent(streamedContent)
+                : { text: streamedContent.trim(), blocks: [] };
+              // An unterminated fence is half-written block JSON — the client
+              // hid it while streaming, so it was never "delivered".
+              const partialText = parsedPartial.text
+                .replace(/```coach_blocks[\s\S]*$/, "")
+                .trim();
+              const { blocks } = parsedPartial;
+              if (!partialText && blocks.length === 0) {
+                await storage.deleteChatMessage(message.id, req.userId);
+              } else {
+                // Never cached, titled, or notebook-extracted — a partial.
+                await storage.createChatMessage(
+                  id,
+                  req.userId,
+                  "assistant",
+                  partialText,
+                  blocks.length > 0 ? { blocks } : null,
+                  coachTurnKey,
+                );
+              }
+            }
+          } catch (error) {
+            logger.error(
+              { err: toError(error) },
+              "failed to settle aborted coach turn",
+            );
+          }
         }
         res.end();
       } catch (error) {
