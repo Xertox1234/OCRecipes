@@ -4,6 +4,8 @@ import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
 import {
   stripCoachBlocksFence,
+  stripCoachBlocksFenceIncremental,
+  createFenceScanState,
   filterValidBlocks,
 } from "@/components/coach/coach-chat-utils";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
@@ -95,6 +97,10 @@ export function useCoachStream({
   const startedAtRef = useRef(0); // Date.now() when startStream was called
   const accumulatedRef = useRef(""); // full raw text from server (may contain fence)
   const displayedLengthRef = useRef(0); // chars of stripped text already pushed to buffer
+  // Scan-offset state for the incremental fence stripper — must be reset
+  // alongside accumulatedRef everywhere accumulatedRef is reset, or stale
+  // offsets from a prior stream corrupt the next one's fence detection.
+  const fenceStateRef = useRef(createFenceScanState());
   const firstCharDrainedRef = useRef(false); // cleared status on first drain?
   const fullTextRef = useRef(""); // fence-stripped text to pass to onDone
   const blocksRef = useRef<CoachBlock[]>([]);
@@ -152,6 +158,7 @@ export function useCoachStream({
     isDoneRef.current = false;
     accumulatedRef.current = "";
     displayedLengthRef.current = 0;
+    fenceStateRef.current = createFenceScanState();
     firstCharDrainedRef.current = false;
     setIsStreaming(false);
     setStatusText("");
@@ -177,6 +184,7 @@ export function useCoachStream({
       isDoneRef.current = false;
       accumulatedRef.current = "";
       displayedLengthRef.current = 0;
+      fenceStateRef.current = createFenceScanState();
       firstCharDrainedRef.current = false;
       fullTextRef.current = "";
       blocksRef.current = [];
@@ -234,8 +242,12 @@ export function useCoachStream({
                   }
                   if (typeof data.content === "string") {
                     accumulatedRef.current += data.content;
-                    const stripped = stripCoachBlocksFence(
+                    // Incremental: tracks scan offsets in fenceStateRef so
+                    // this doesn't re-scan the full accumulated text from
+                    // position 0 on every event (see coach-chat-utils.ts).
+                    const stripped = stripCoachBlocksFenceIncremental(
                       accumulatedRef.current,
+                      fenceStateRef.current,
                     );
                     const newChars = stripped.slice(displayedLengthRef.current);
                     displayedLengthRef.current = stripped.length;
@@ -245,6 +257,7 @@ export function useCoachStream({
                   if (typeof data.safety_override === "string") {
                     accumulatedRef.current = "";
                     displayedLengthRef.current = 0;
+                    fenceStateRef.current = createFenceScanState();
                     firstCharDrainedRef.current = false;
                     fullTextRef.current = data.safety_override;
                     setStreamingContent("");

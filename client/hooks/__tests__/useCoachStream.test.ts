@@ -72,10 +72,21 @@ vi.mock("@/lib/query-client", () => ({ getApiUrl: mockGetApiUrl }));
 vi.mock("@/lib/timezone", () => ({
   getDeviceTimezone: () => "America/Los_Angeles",
 }));
-vi.mock("@/components/coach/coach-chat-utils", () => ({
-  stripCoachBlocksFence: (s: string) => s.trim(),
-  filterValidBlocks: (arr: unknown[]) => arr,
-}));
+// The hook now also imports stripCoachBlocksFenceIncremental and
+// createFenceScanState (perf fix — see coach-chat-utils.ts). None of this
+// file's fixtures include a coach_blocks fence, so the real strip functions
+// behave identically to the old `(s) => s.trim()` stub for them; only
+// filterValidBlocks stays overridden, as before.
+vi.mock("@/components/coach/coach-chat-utils", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@/components/coach/coach-chat-utils")
+    >();
+  return {
+    ...actual,
+    filterValidBlocks: (arr: unknown[]) => arr,
+  };
+});
 
 /**
  * MockXHR is a plain object that the hook will receive as the XHR instance.
