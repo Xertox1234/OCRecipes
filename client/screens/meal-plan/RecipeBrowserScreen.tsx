@@ -364,6 +364,17 @@ export default function RecipeBrowserScreen() {
     onSheetAnimate: handleFilterSheetAnimate,
   } = useSheetBackHandler(filterSheetRef);
 
+  // Android TalkBack background focus trap (iOS already trapped via
+  // accessibilityViewIsModal on the screen's own root View below). Opened
+  // synchronously alongside .present() where the filter icon is pressed;
+  // released only once BottomSheetModal's own onDismiss confirms the sheet
+  // has fully closed (post close-animation, the same asymmetric bias
+  // useSheetBackHandler uses) — never released early.
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const handleFilterSheetClosed = useCallback(() => {
+    setIsFilterSheetOpen(false);
+  }, []);
+
   const { isPremium } = usePremiumContext();
 
   // Debounce search
@@ -671,8 +682,18 @@ export default function RecipeBrowserScreen() {
 
   return (
     <View
+      testID="recipe-browser-root"
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       accessibilityViewIsModal
+      // Android TalkBack background focus trap while the filter sheet is
+      // open — see docs/solutions/conventions/
+      // in-screen-overlay-needs-android-focus-trap-2026-06-22.md. Unrelated
+      // to the pre-existing accessibilityViewIsModal above (an iOS-only prop
+      // for a different mechanism); no accessibilityElementsHidden here
+      // since that mechanism already traps VoiceOver on this screen.
+      importantForAccessibility={
+        isFilterSheetOpen ? "no-hide-descendants" : "auto"
+      }
     >
       <View
         style={[
@@ -859,7 +880,10 @@ export default function RecipeBrowserScreen() {
             accessibilityLabel="Filter quick meals under 30 minutes"
           />
           <Pressable
-            onPress={() => filterSheetRef.current?.present()}
+            onPress={() => {
+              filterSheetRef.current?.present();
+              setIsFilterSheetOpen(true);
+            }}
             style={[
               styles.filterIconButton,
               { borderColor: withOpacity(theme.text, 0.15) },
@@ -1059,6 +1083,7 @@ export default function RecipeBrowserScreen() {
         handleIndicatorStyle={{ backgroundColor: withOpacity(theme.text, 0.3) }}
         onChange={handleFilterSheetChange}
         onAnimate={handleFilterSheetAnimate}
+        onDismiss={handleFilterSheetClosed}
         // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
         // "Bottom Sheet" on the DraggableView that WRAPS these children. On
         // new-arch Fabric that makes the wrapper an accessibility LEAF

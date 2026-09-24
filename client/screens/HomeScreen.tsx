@@ -135,6 +135,17 @@ export default function HomeScreen() {
     onSheetAnimate: handleImportSheetAnimate,
   } = useSheetBackHandler(importSheetRef);
 
+  // Android TalkBack background focus trap (iOS already trapped via
+  // accessibilityViewIsModal on the sheet's own content root, set inside
+  // ImportRecipeSheetContent). Opened synchronously alongside .present() in
+  // handleActionPress; released only once BottomSheetModal's own onDismiss
+  // confirms the sheet has fully closed (post close-animation, the same
+  // asymmetric bias useSheetBackHandler uses) — never released early.
+  const [isImportSheetOpen, setIsImportSheetOpen] = useState(false);
+  const handleImportSheetClosed = useCallback(() => {
+    setIsImportSheetOpen(false);
+  }, []);
+
   const renderImportSheetBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
@@ -245,6 +256,7 @@ export default function HomeScreen() {
       recordAction(action.id);
       if (action.id === "import-recipe") {
         importSheetRef.current?.present();
+        setIsImportSheetOpen(true);
         return;
       }
       navigateAction(action, navigation);
@@ -393,6 +405,7 @@ export default function HomeScreen() {
     <>
       {/* Collapsed summary bar (visible when scrolled) */}
       <Animated.View
+        testID="home-collapsed-bar"
         style={[
           styles.collapsedBar,
           collapsedBarAnimatedStyle,
@@ -406,8 +419,18 @@ export default function HomeScreen() {
         // pointerEvents="none" does NOT remove the bar from the a11y tree —
         // hide it explicitly or screen readers focus an invisible button.
         accessibilityElementsHidden={!isBarVisible}
+        // This bar is a SIBLING of the ScrollView below (not a descendant),
+        // so the ScrollView's own Android trap (isImportSheetOpen further
+        // down) does not cover it — it needs the same isImportSheetOpen
+        // condition composed in directly. Found in review (2026-09-23):
+        // the bar's own isBarVisible-driven exclusion is independent of
+        // sheet state, so a TalkBack user could reach this Pressable behind
+        // an open sheet whenever the bar happens to be visible (the
+        // "import-recipe" action is in a CollapsibleSection far down the
+        // page, so isBarVisible is very likely already true by the time
+        // this sheet opens in practice).
         importantForAccessibility={
-          isBarVisible ? "auto" : "no-hide-descendants"
+          isBarVisible && !isImportSheetOpen ? "auto" : "no-hide-descendants"
         }
       >
         <Pressable
@@ -435,12 +458,21 @@ export default function HomeScreen() {
       </Animated.View>
 
       <Animated.ScrollView
+        testID="home-scroll"
         ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={scrollContentContainerStyle}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
+        // Android TalkBack background focus trap while the import sheet is
+        // open — see docs/solutions/conventions/
+        // in-screen-overlay-needs-android-focus-trap-2026-06-22.md. iOS is
+        // already trapped separately via accessibilityViewIsModal on the
+        // sheet's own content root, so no accessibilityElementsHidden here.
+        importantForAccessibility={
+          isImportSheetOpen ? "no-hide-descendants" : "auto"
+        }
         onScroll={scrollHandler}
         onScrollBeginDrag={() => {
           if (switchTimerRef.current) {
@@ -546,6 +578,7 @@ export default function HomeScreen() {
         handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onChange={handleImportSheetChange}
         onAnimate={handleImportSheetAnimate}
+        onDismiss={handleImportSheetClosed}
         // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
         // "Bottom Sheet" on the DraggableView that WRAPS these children. On
         // new-arch Fabric that makes the wrapper an accessibility LEAF
