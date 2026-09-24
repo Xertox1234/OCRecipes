@@ -27,10 +27,11 @@ git rev-parse --show-toplevel
 Before any other work, fire one throwaway query to prime the TypeScript LSP. The first symbol-navigation query of a session is otherwise degraded (e.g., `findReferences` returns only the definition). Its purpose is to load the project graph into tsserver.
 
 ```
+LSP({ operation: "hover", filePath: "client/constants/theme.ts", line: 1, character: 1 })
 LSP({ operation: "workspaceSymbol", filePath: "client/constants/theme.ts", line: 1, character: 1, query: "withOpacity" })
 ```
 
-A query by name, not a line/column hover — a pinned coordinate goes stale as the file changes. A live server answers with `withOpacity (Function)`. If it answers with nothing, the server is still cold: repeat the call once, then proceed either way and retry LSP before your first real symbol query. An empty answer means "cold", never "unavailable". Only when `ToolSearch` finds no `LSP` tool at all, log "LSP unavailable — skipping warm-up" and use text search. Never block on LSP availability.
+The `hover` does the warming — its answer does not matter, so its position is arbitrary (a `workspaceSymbol` alone did not warm a cold server when measured). The `workspaceSymbol` is the check, by name rather than a pinned coordinate that goes stale as the file changes: a live server answers `withOpacity (Function)`. If it answers with nothing, the server is still cold: repeat the pair once, then proceed either way and retry LSP before your first real symbol query. An empty answer means "cold", never "unavailable". Only when `ToolSearch` finds no `LSP` tool at all, log "LSP unavailable — skipping warm-up" and use text search. Never block on LSP availability.
 
 ---
 
@@ -128,7 +129,7 @@ Codified knowledge lives in the **`docs/solutions/*.md` tree** — the canonical
 
    The brief is **advisory — cite-and-verify, never final**: anything that gates a decision (short-circuit quotes, "already handled" claims) must be re-read inline at the cited lines before acting on it.
 
-   **Fallback:** non-zero exit / `[ERROR …]` on stderr → dispatch a read-only Explore subagent with the same paths and the same three-section brief. If that also fails, fall back to the skip-gate inline behavior.
+   **Fallback:** non-zero exit / `[ERROR …]` on stderr → dispatch a read-only Explore subagent (`run_in_background: false` — see Step 5b) with the same paths and the same three-section brief. If that also fails, fall back to the skip-gate inline behavior.
 
 3. **Threshold (no weak matches).** Surface a solution only if **either** ≥1 `applies_to` glob matches an affected file, **or** (affected files are empty/unknown) ≥2 tag overlaps with labels AND a title/symptom keyword hit. Otherwise note `No verified solution matched.` and proceed.
 

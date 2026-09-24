@@ -82,7 +82,8 @@ Source: the orchestrator's run record for that session and the five executor rep
 - **Mechanisms to use:** reading and comparing existing executor instructions and hooks; no new
   gates.
 - **Files in scope:** `.claude/agents/todo-executor.md`, `.claude/skills/todo/SKILL.md`,
-  `docs/AI_WORKFLOW.md` (read, and edit only once decisions are made). `.claude/hooks/**` is
+  `docs/AI_WORKFLOW.md` (read, and edit only once decisions are made), and
+  `.claude/agents/todo-researcher.md` (same stale LSP warm-up; added with user approval 2026-09-24). `.claude/hooks/**` is
   frozen — findings there go to `docs/harness-residuals.md`.
 - No new mechanisms, files, or abstractions beyond those listed.
 
@@ -138,8 +139,10 @@ Source: the orchestrator's run record for that session and the five executor rep
     Probed on a hook-less throwaway worktree: `.env` absent → symlink to the main checkout.
   - Stalls: every executor `Agent()` dispatch passes `run_in_background: false` (researcher,
     Step 6 reviewers, Step 7 confirmation pass); Step 5b's false "turn completes" claim corrected.
-  - LSP warm-up: line-independent `workspaceSymbol("withOpacity")`; an empty answer = cold
-    (retry once), and only a `ToolSearch` miss = unavailable.
+  - LSP warm-up: a throwaway `hover` warms the server (position arbitrary), then a
+    line-independent `workspaceSymbol("withOpacity")` checks it. An empty answer means cold (retry the pair
+    once); only a `ToolSearch` miss means unavailable. (Review measured that `workspaceSymbol` alone
+    does not warm a cold server; a `hover` does.)
   - Instruction edits load on session reload, so they are unverified until the next `/todo` run.
     Check it for zero `[handback-send-enforce]` nudges and zero `Async agent launched` results
     in executor transcripts.
