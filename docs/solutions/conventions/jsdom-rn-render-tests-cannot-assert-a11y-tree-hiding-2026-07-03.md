@@ -55,9 +55,12 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
   `test/mocks/react-native-reanimated.ts` has its own separate `mapA11yProps()` helper that
   does **not** destructure `accessibilityElementsHidden` or `importantForAccessibility`, so
   those hiding props remain unmapped in the Reanimated path — this is a known, still-open
-  residual gap, but no `Animated.View`/`Animated.Text` in the affected code currently
-  receives these hiding props directly). So hiding via THAT pair **is** now assertable via
-  plain RN primitives: `*ByRole` queries exclude the hidden node (use a role **count**, not a
+  residual gap, and it is LIVE, not hypothetical: `client/screens/ProfileScreen.tsx`,
+  `client/screens/HomeScreen.tsx`, `client/components/cookbook/CookbookCoverPlate.tsx`, and
+  `client/components/TextInput.tsx` all set these props directly on `Animated.View`/
+  `Animated.Text`, so their hiding is not assertable in jsdom via this mechanism). So hiding
+  via THAT pair **is** now assertable on plain RN primitives: `*ByRole` queries exclude the
+  hidden node (use a role **count**, not a
   name filter — a name the fix itself removed can never match and the assertion is vacuous;
   mutation-proven in review), and non-role elements assert via `testID` +
   `getAttribute("aria-hidden") === "true"`. Exemplar:
