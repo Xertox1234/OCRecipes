@@ -1,6 +1,6 @@
 ---
 title: "Closing Ask Coach mid-answer spends a daily message, saves no reply, and leaves an unretryable stub conversation — needs a product decision"
-status: in-progress
+status: done
 priority: high
 created: 2026-09-23
 updated: 2026-09-24
@@ -28,9 +28,9 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 ## Acceptance Criteria
 
 - [x] A product decision is recorded in this todo: (a) finish generation server-side and persist even after client disconnect, (b) refund the quota for an aborted turn, (c) allow retrying a trailing user-only turn, or a combination
-- [ ] The chosen behavior is implemented with tests on both client and server sides
-- [ ] No quota is consumed without either a persisted reply or a retry path
-- [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
+- [x] The chosen behavior is implemented with tests on both client and server sides
+- [x] No quota is consumed without either a persisted reply or a retry path
+- [x] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes
 
@@ -73,3 +73,4 @@ Option (a) is usually the most user-friendly (the answer appears in history next
 - Accepted residual: a refund leaves a zero-message conversation in history (already true when the overlay closes before the POST fires).
 - **Accepted residual (user, 2026-09-24), from the #1060 server review:** a Coach Pro turn that disconnects during a tool-call round (only `status` events, no content yet) is refunded, even though an OpenAI round and tool run already happened. A client could repeat that to spend tokens without using quota, limited by `chatRateLimit`. Accepted because any refund-before-first-token already spends prompt tokens, and the client gets no answer; tool rounds only widen that bounded cost.
 - #1060 review: the settle step vets a partial with `containsUnsafeCoachAdvice`, because free-tier deltas stream before the service's end-of-response safety check. An unsafe partial is saved as `STANDARD_SAFETY_MESSAGE`.
+- Shipped in #1060 (squash `ff243a5b`). Archived.

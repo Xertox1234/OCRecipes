@@ -36,7 +36,7 @@ const partialText = containsUnsafeCoachAdvice(strippedText)
   : strippedText;
 ```
 
-Apply it to both tiers, not only the one that streams live, so the code stays safe if a generator's buffering changes. Pinned by the real-socket cell `never persists an unvetted unsafe free-tier partial` in `server/routes/__tests__/chat.test.ts`: the free-tier generator yields "You likely have diabetes." and the client disconnects. The cell failed before the fix.
+Apply it to both tiers, not only the one that streams live. The check covers only the block-stripped **prose**; it does not scan `coach_blocks` JSON. Coach Pro's block content is safe today only because `generateCoachProResponse` vets a whole round, fence included, before yielding it. If Coach Pro ever streams live deltas, the settle step must also check the raw `streamedContent` or the parsed blocks. Pinned by the real-socket cell `never persists an unvetted unsafe free-tier partial` in `server/routes/__tests__/chat.test.ts`: the free-tier generator yields "You likely have diabetes." and the client disconnects. The cell failed before the fix.
 
 ## Prevention
 
