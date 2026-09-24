@@ -1,6 +1,6 @@
 ---
 title: "Vite 8.3 warns vitest.config.ts is unsupported by the future native config loader"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-23
 updated: 2026-09-23

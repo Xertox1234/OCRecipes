@@ -214,7 +214,7 @@
     "undici": "^7.29.0"
   },
   "lint-staged": {
-    "*.{ts,tsx}": [
+    "*.{ts,tsx,mts}": [
       "env ESLINT_NO_TYPE_AWARE=1 eslint --fix",
       "prettier --write"
     ],

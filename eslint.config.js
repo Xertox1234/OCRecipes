@@ -36,6 +36,33 @@ module.exports = defineConfig([
     },
   },
   {
+    // eslint-config-expo's TS block (node_modules/eslint-config-expo/flat/utils/typescript.js)
+    // only assigns the TS parser to **/*.ts, **/*.tsx, **/*.d.ts — a bare ".mts" file (the
+    // native-ESM vitest config files) gets no parser at all and is silently skipped ("File
+    // ignored because no matching configuration was supplied"). This block mirrors just the
+    // parser/plugin assignment (not the full expo TS ruleset) so .mts files parse and get
+    // basic unused-vars coverage; the type-aware async rules below add real @typescript-eslint
+    // coverage for it. See docs/solutions — vitest 8.3 native-config-loader migration.
+    files: ["**/*.mts"],
+    languageOptions: {
+      parser: tseslint.parser,
+    },
+    plugins: { "@typescript-eslint": tseslint.plugin },
+    rules: {
+      "no-undef": "off",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          vars: "all",
+          args: "none",
+          ignoreRestSiblings: true,
+          caughtErrors: "all",
+        },
+      ],
+    },
+  },
+  {
     files: ["server/**/*.ts"],
     rules: {
       "no-console": "error",
@@ -96,7 +123,7 @@ module.exports = defineConfig([
     ? []
     : [
         {
-          files: ["**/*.{ts,tsx}"],
+          files: ["**/*.{ts,tsx,mts}"],
           languageOptions: {
             parser: tseslint.parser,
             parserOptions: {
