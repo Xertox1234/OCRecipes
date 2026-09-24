@@ -17,7 +17,7 @@ github_issue:
 
 ## Background
 
-Found while implementing `todos/archive/P3-2026-09-23-front-label-after-verification-lands-on-camera.md`. Traced both entry paths:
+Found while implementing the sibling todo `P3-2026-09-23-front-label-after-verification-lands-on-camera` (archived in the same PR as this file). Traced both entry paths:
 
 - **NutritionDetail entry:** `NutritionDetail → Scan(front-label)#1 [push] → FrontLabelConfirm [push]`. Tap Retake → `replace` swaps FrontLabelConfirm for `Scan(front-label)#2`, giving `NutritionDetail, Scan#1, Scan#2`. Capture → push → `FrontLabelConfirm#2`. Confirm success → `pop(2)` → pops `FrontLabelConfirm#2` and `Scan#2` → lands on `Scan#1`, a live camera, not `NutritionDetail`.
 - **Verification entry** (after the sibling todo's fix): same shape one level deeper — Retake still leaves an extra `Scan` level below the final `pop(2)`, landing on a live camera instead of `LabelAnalysis`.
@@ -38,7 +38,7 @@ Both paths are affected because the defect is in `FrontLabelConfirmScreen.tsx`'s
 
 ## Dependencies
 
-- None (independent of the sibling todo it was found alongside; that one is already archived).
+- None (independent of the sibling todo it was found alongside; that one is already archived — see Background).
 
 ## Risks
 
@@ -48,4 +48,4 @@ Both paths are affected because the defect is in `FrontLabelConfirmScreen.tsx`'s
 
 ### 2026-09-23
 
-- Filed as a deferred Low-severity finding while implementing `P3-2026-09-23-front-label-after-verification-lands-on-camera.md` — out of scope for that todo, traced but not fixed there.
+- Filed as a deferred Low-severity finding while implementing `P3-2026-09-23-front-label-after-verification-lands-on-camera` — out of scope for that todo, traced but not fixed there.
