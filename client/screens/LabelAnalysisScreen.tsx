@@ -661,7 +661,12 @@ export default function LabelAnalysisScreen() {
           </ThemedText>
           <Button
             onPress={() =>
-              navigation.replace("Scan", {
+              // navigate (push), not replace: replacing this screen removes
+              // it from the stack, so FrontLabelConfirm's pop(2) lands on the
+              // Scan(label) camera underneath instead of back here. Keeping
+              // LabelAnalysis on the stack lets pop(2) return to it, where
+              // the verification result and Done are still shown.
+              navigation.navigate("Scan", {
                 mode: "front-label",
                 verifyBarcode,
               })

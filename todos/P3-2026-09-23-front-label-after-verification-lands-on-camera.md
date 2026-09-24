@@ -1,6 +1,6 @@
 ---
 title: "Front-label scan started after a verification returns to the label camera"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-23
 updated: 2026-09-23
