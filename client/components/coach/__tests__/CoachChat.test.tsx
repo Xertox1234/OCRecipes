@@ -297,8 +297,17 @@ describe("CoachChat — onMessageSent", () => {
  * 5-min staleTime served the pre-settle cache on the next view.
  */
 describe("CoachChat — unmount marks the conversation stale (H6)", () => {
+  // Restored in afterEach so a failed assertion can't leave the prototype
+  // spied for later tests in this file.
+  let invalidateSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+  });
+  afterEach(() => {
+    invalidateSpy.mockRestore();
+  });
+
   it("invalidates messages + list without refetching on unmount after a send", () => {
-    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
     const { unmount } = renderCoachChat();
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "Hello coach" },
@@ -316,6 +325,5 @@ describe("CoachChat — unmount marks the conversation stale (H6)", () => {
       queryKey: ["/api/chat/conversations"],
       refetchType: "none",
     });
-    invalidateSpy.mockRestore();
   });
 });

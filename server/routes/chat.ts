@@ -27,8 +27,13 @@ import { logger, toError } from "../lib/logger";
 import {
   handleCoachChat,
   tryArchiveNotebook,
+  STANDARD_SAFETY_MESSAGE,
 } from "../services/coach-pro-chat";
-import { sanitizeUserInput, sanitizeContextField } from "../lib/ai-safety";
+import {
+  sanitizeUserInput,
+  sanitizeContextField,
+  containsUnsafeCoachAdvice,
+} from "../lib/ai-safety";
 import { parseBlocksFromContent } from "../services/coach-blocks";
 
 const SSE_TIMEOUT_MS = 120_000; // 2 minutes max per SSE connection
@@ -579,6 +584,13 @@ export function register(app: Express): void {
                 break;
               }
               if (event.type === "content") streamedContent += event.content;
+              // The override replaces what the client shows, as it does the
+              // service's own fullResponse. Defensive: today no I/O await sits
+              // between this event and the service's own save, so a close
+              // cannot land in between — but if one ever does, a delivered
+              // override must not count as "nothing streamed" (refund).
+              else if (event.type === "safety_override")
+                streamedContent = event.message;
               res.write(`data: ${eventJson}\n\n`);
             }
           }
@@ -625,9 +637,14 @@ export function register(app: Express): void {
                 : { text: streamedContent.trim(), blocks: [] };
               // An unterminated fence is half-written block JSON — the client
               // hid it while streaming, so it was never "delivered".
-              const partialText = parsedPartial.text
+              const strippedText = parsedPartial.text
                 .replace(/```coach_blocks[\s\S]*$/, "")
                 .trim();
+              // Free-tier deltas stream BEFORE the service's end-of-response
+              // safety check, so a partial cut mid-stream was never vetted.
+              const partialText = containsUnsafeCoachAdvice(strippedText)
+                ? STANDARD_SAFETY_MESSAGE
+                : strippedText;
               const { blocks } = parsedPartial;
               if (!partialText && blocks.length === 0) {
                 await storage.deleteChatMessage(message.id, req.userId);

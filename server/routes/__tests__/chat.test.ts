@@ -12,6 +12,7 @@ import {
   generateCoachProResponse,
 } from "../../services/nutrition-coach";
 import { generateRecipeChatResponse } from "../../services/recipe-chat";
+import { STANDARD_SAFETY_MESSAGE } from "../../services/coach-pro-chat";
 import { register } from "../chat";
 import {
   createMockChatConversation,
@@ -57,6 +58,7 @@ vi.mock("../../services/nutrition-coach", () => ({
   generateCoachProResponse: vi.fn(),
   // The free-tier path hashes a response-cache key that includes this.
   getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test"),
+  SAFETY_OVERRIDE_SENTINEL: "\x00SAFETY_OVERRIDE\x00",
 }));
 
 vi.mock("../../services/coach-blocks", () => ({
@@ -701,7 +703,7 @@ describe("Chat Routes", () => {
         await new Promise<void>((r) => server.once("listening", r));
         const { port } = server.address() as AddressInfo;
         try {
-          await new Promise<void>((resolve, reject) => {
+          await new Promise<void>((resolve) => {
             const payload = JSON.stringify({ content: "Hello" });
             const clientReq = http.request(
               {
@@ -731,9 +733,8 @@ describe("Chat Routes", () => {
             );
             clientReq.on("error", () => {}); // destroy() surfaces ECONNRESET
             clientReq.on("close", () => resolve());
-            clientReq.once("error", reject);
             clientReq.end(payload);
-          }).catch(() => {});
+          });
           await ended;
         } finally {
           server.closeAllConnections();
@@ -850,6 +851,31 @@ describe("Chat Routes", () => {
           "1",
         );
         expect(assistantWrites()).toHaveLength(0);
+      });
+
+      // Free-tier generateCoachResponse streams each delta BEFORE its
+      // containsUnsafeCoachAdvice check runs on the full text — a partial
+      // cut mid-stream has never been vetted, so the settle must vet it.
+      it("never persists an unvetted unsafe free-tier partial", async () => {
+        setupDisconnect();
+        vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+          tier: "free",
+          expiresAt: null,
+        });
+        vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+        vi.mocked(generateCoachResponse).mockImplementation(
+          async function* (_h, _c, signal) {
+            yield "You likely have diabetes.";
+            await untilAborted(signal!);
+          },
+        );
+
+        await postAndDisconnect((body) => body.includes("diabetes"));
+
+        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(assistantWrites()).toHaveLength(1);
+        expect(assistantWrites()[0][3]).not.toContain("diabetes");
+        expect(assistantWrites()[0][3]).toBe(STANDARD_SAFETY_MESSAGE);
       });
 
       it("does not double-write when the service already persisted the reply", async () => {

@@ -7,7 +7,16 @@
  * pre-settle cache. The dismissal must mark it stale without refetching.
  */
 import React from "react";
-import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from "vitest";
 import { waitFor } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { renderComponent } from "../../../test/utils/render-component";
@@ -57,8 +66,17 @@ describe("CoachOverlayContent — dismiss mid-answer (H6)", () => {
     delete proto.scrollToEnd;
   });
 
+  // Restored in afterEach so a failed assertion can't leave the prototype
+  // spied for later tests in this worker.
+  let invalidateSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+  });
+  afterEach(() => {
+    invalidateSpy.mockRestore();
+  });
+
   it("aborts the stream and marks the conversation stale without refetching", async () => {
-    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
     const { unmount } = renderComponent(
       <CoachOverlayContent
         question={{ text: "How much protein?", question: "protein_today" }}
@@ -84,6 +102,5 @@ describe("CoachOverlayContent — dismiss mid-answer (H6)", () => {
       queryKey: ["/api/chat/conversations"],
       refetchType: "none",
     });
-    invalidateSpy.mockRestore();
   });
 });
