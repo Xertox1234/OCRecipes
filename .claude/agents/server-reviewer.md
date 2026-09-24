@@ -148,6 +148,7 @@ Route flow: set `text/event-stream` headers → `res.flushHeaders()` (required �
 - Accumulate `fullResponse` for DB persistence before ending; write a terminal `{ done: true }` event on success and an `{ error: ... }` event on failure.
 - `res.end()` always runs — never leave the SSE connection dangling.
 - An `isAborted` callback lets the service check client disconnect without importing Express types.
+- Client-disconnect detection is `res.on("close")` gated on `!res.writableFinished`, **never `req.on("close")`**. After `express.json()` the request's `close` has already fired, so a late `req` listener is dead code (M8 was dead until 2026-09-24). Any disconnect behavior needs a real-socket test (`postAndDisconnect` in `server/routes/__tests__/chat.test.ts`); supertest cannot drop a connection. See `docs/solutions/logic-errors/req-close-never-fires-after-body-parser-use-res-close-2026-09-24.md`
 
 Reference: `server/routes/chat.ts`, `server/services/coach-pro-chat.ts`.
 

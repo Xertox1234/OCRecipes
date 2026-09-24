@@ -829,8 +829,23 @@ export default function CoachChat({
   useEffect(() => {
     return () => {
       abortStream();
+      // Unmounting mid-answer makes the server settle the turn after we're
+      // gone (refund or partial reply, H6) — mark the conversation stale so
+      // the next view refetches it instead of serving the pre-settle cache.
+      // `refetchType: "none"` avoids racing the server's write.
+      const convId = activeConvIdRef.current;
+      if (convId !== null) {
+        void queryClient.invalidateQueries({
+          queryKey: [`/api/chat/conversations/${convId}/messages`],
+          refetchType: "none",
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/chat/conversations"],
+          refetchType: "none",
+        });
+      }
     };
-  }, [abortStream]);
+  }, [abortStream, queryClient]);
 
   const handleMicPress = useCallback(() => {
     if (isListening) {

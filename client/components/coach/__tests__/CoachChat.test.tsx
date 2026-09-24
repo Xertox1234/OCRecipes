@@ -13,6 +13,7 @@ import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, screen, fireEvent } from "@testing-library/react";
 import * as RN from "react-native";
+import { QueryClient } from "@tanstack/react-query";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
 
@@ -287,5 +288,42 @@ describe("CoachChat — onMessageSent", () => {
     fireEvent.click(screen.getByLabelText("Send message"));
 
     expect(onMessageSent).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * H6: unmounting mid-answer makes the server settle the turn after the client
+ * is gone (refund or partial reply). Only `onDone` invalidated before, so the
+ * 5-min staleTime served the pre-settle cache on the next view.
+ */
+describe("CoachChat — unmount marks the conversation stale (H6)", () => {
+  // Restored in afterEach so a failed assertion can't leave the prototype
+  // spied for later tests in this file.
+  let invalidateSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+  });
+  afterEach(() => {
+    invalidateSpy.mockRestore();
+  });
+
+  it("invalidates messages + list without refetching on unmount after a send", () => {
+    const { unmount } = renderCoachChat();
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Hello coach" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+    invalidateSpy.mockClear();
+
+    unmount();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations/1/messages"],
+      refetchType: "none",
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations"],
+      refetchType: "none",
+    });
   });
 });

@@ -168,6 +168,20 @@ export function CoachOverlayContent({
 
     return () => {
       abortStream();
+      // Dismissing mid-answer makes the server settle the turn after we're
+      // gone — refund the message or save the partial reply (H6). Only
+      // `onDone` invalidates otherwise, so mark this conversation stale or
+      // history would serve the cached pre-settle view for the 5-min
+      // staleTime. `refetchType: "none"` defers the refetch to the next
+      // mount instead of racing the server's post-disconnect write.
+      void queryClient.invalidateQueries({
+        queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+        refetchType: "none",
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/chat/conversations"],
+        refetchType: "none",
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);

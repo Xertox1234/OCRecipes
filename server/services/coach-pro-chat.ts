@@ -166,7 +166,7 @@ export type CoachChatEvent =
   | { type: "status"; label: string }
   | { type: "safety_override"; message: string };
 
-const STANDARD_SAFETY_MESSAGE =
+export const STANDARD_SAFETY_MESSAGE =
   "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
 
 const TOOL_STATUS_LABELS: Record<string, string> = {
