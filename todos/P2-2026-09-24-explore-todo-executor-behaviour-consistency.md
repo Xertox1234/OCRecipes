@@ -47,11 +47,11 @@ Observed divergences in that one run:
    literal, so no stamp was written until a second dispatch. In #1035 only `code-reviewer`'s stamp
    was written; `security-auditor` and `server-reviewer` wrote none.
 5. **Research step.** The front-label executor skipped the `todo-researcher` dispatch on its own
-   judgement ("small scope") instead of following Step 3a's rule.
+   judgement ("small scope") instead of following the Short-circuit gate (after Step 3a).
 6. **Long background waits.** The Vite executor stopped with its own background work pending
    several times (~112 min total) before reporting.
-7. **Odd commit hash.** #1039's head is `0000036a969c…` — seven leading zero hex digits
-   (~1 in 268M by chance). Verified real on origin; cause not investigated.
+7. **Odd commit hash.** #1039's head is `0000036a969c…` — five leading zero hex digits
+   (~1 in 1M by chance). Verified real on origin; cause not investigated.
 
 Source: the orchestrator's run record for that session and the five executor reports.
 
