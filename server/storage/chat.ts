@@ -99,6 +99,12 @@ export async function getChatMessages(
   limit = 100,
   userId: string,
 ): Promise<ChatMessage[]> {
+  // Fetch the newest `limit` rows (desc, with an `id` tiebreak since rows
+  // inserted in the same transaction can share a `createdAt`), then reverse
+  // in memory to hand the caller chronological (oldest-first) order. A plain
+  // ascending `.orderBy(createdAt).limit(limit)` would instead return the
+  // OLDEST `limit` rows, silently dropping the newest turns once a
+  // conversation grows past `limit` messages.
   const rows = await db
     .select({ message: chatMessages })
     .from(chatMessages)
@@ -112,9 +118,9 @@ export async function getChatMessages(
         eq(chatConversations.userId, userId),
       ),
     )
-    .orderBy(chatMessages.createdAt)
+    .orderBy(desc(chatMessages.createdAt), desc(chatMessages.id))
     .limit(limit);
-  return rows.map((r) => r.message);
+  return rows.map((r) => r.message).reverse();
 }
 
 /**

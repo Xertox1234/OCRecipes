@@ -1,6 +1,6 @@
 ---
 title: "getChatMessages(limit) returns the OLDEST N messages — coach/recipe context and chat history drop the newest turns in long conversations"
-status: backlog
+status: done
 priority: high
 created: 2026-09-24
 updated: 2026-09-24
@@ -31,10 +31,10 @@ The existing storage test `getChatMessages › respects limit` (`server/storage/
 
 ## Acceptance Criteria
 
-- [ ] A limited read returns the newest N messages, in chronological (ascending) order for the caller
-- [ ] A storage test with > limit messages asserts the exact contents (the newest N, oldest-first). It fails on current `main`.
-- [ ] Every caller above is checked. **Decided (user, 2026-09-24): `GET /messages` returns the newest 100** (oldest-first order within them). No pagination.
-- [ ] If `handleCoachChat` relies on history already containing the just-inserted user message, the coach test covers a > 20 message conversation
+- [x] A limited read returns the newest N messages, in chronological (ascending) order for the caller
+- [x] A storage test with > limit messages asserts the exact contents (the newest N, oldest-first). It fails on current `main`.
+- [x] Every caller above is checked. **Decided (user, 2026-09-24): `GET /messages` returns the newest 100** (oldest-first order within them). No pagination.
+- [x] If `handleCoachChat` relies on history already containing the just-inserted user message, the coach test covers a > 20 message conversation
 
 ## Implementation Notes
 
