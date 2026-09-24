@@ -56,6 +56,30 @@ describe("linking config", () => {
     ).toBeUndefined();
   });
 
+  // Query values are decoded by query-string → decode-uri-component. Its
+  // fallback decoder for malformed input (GHSA-vcc3-ghjq-m6fr, <= 0.4.2) is
+  // super-linear: 400 invalid `%C0` tokens took ~2.4s under Node's JIT, so a
+  // crafted link could freeze the app. Pin both the fix and that ordinary
+  // percent-encoding still decodes after the ESM-only 0.5.0 bump.
+  it("decodes a percent-encoded query param from a deep link", () => {
+    const state = getStateFromPath(
+      "verify-email?token=caf%C3%A9%20au%20lait",
+      linking.config,
+    );
+    expect(state?.routes[0]?.params).toMatchObject({ token: "café au lait" });
+  });
+
+  it("parses a deep link with a long malformed percent-encoded query quickly", () => {
+    const start = performance.now();
+    const state = getStateFromPath(
+      `verify-email?token=${"%C0".repeat(400)}`,
+      linking.config,
+    );
+    const elapsedMs = performance.now() - start;
+    expect(state?.routes[0]?.name).toBe("VerifyEmail");
+    expect(elapsedMs).toBeLessThan(250);
+  });
+
   it("configures AllConversations as a path string", () => {
     expect(linking.config!.screens.AllConversations).toBe("conversation-list");
   });
