@@ -68,8 +68,15 @@ type NutritionDetailRoute = RouteProp<RootStackParamList, "NutritionDetail">;
 const SKELETON_PANEL_ROW_WIDTHS = [70, 92, 64, 76, 58, 84];
 
 function NutritionDetailSkeleton() {
+  // This screen is a `presentation: "modal"` route (RootStackNavigator), so
+  // firing the announce on the same tick it mounts races the OS's own
+  // present focus-shift and can be swallowed on iOS. Delay past it per
+  // docs/solutions/conventions/on-open-announce-must-delay-past-modal-present-focus-shift-2026-06-25.md.
   React.useEffect(() => {
-    AccessibilityInfo.announceForAccessibility("Loading");
+    const timer = setTimeout(() => {
+      AccessibilityInfo.announceForAccessibility("Loading");
+    }, 500);
+    return () => clearTimeout(timer);
   }, []);
 
   return (
@@ -441,7 +448,14 @@ export default function NutritionDetailScreen() {
         {showManualSearch ? (
           <Card elevation={1} style={styles.manualSearchCard}>
             <View style={styles.manualSearchHeader}>
-              <Feather name="search" size={20} color={theme.link} />
+              {/* Decorative icon — the heading text beside it already conveys
+                  the meaning; hide it per docs/rules/accessibility.md. */}
+              <Feather
+                name="search"
+                size={20}
+                color={theme.link}
+                accessible={false}
+              />
               <View style={{ flex: 1, marginLeft: Spacing.sm }}>
                 <ThemedText
                   type="body"
@@ -491,10 +505,14 @@ export default function NutritionDetailScreen() {
                 {isSearching ? (
                   <ActivityIndicator size="small" color={theme.buttonText} />
                 ) : (
+                  // Decorative — the Pressable's own accessibilityLabel above
+                  // already conveys the action; hide the icon per
+                  // docs/rules/accessibility.md.
                   <Feather
                     name="arrow-right"
                     size={20}
                     color={theme.buttonText}
+                    accessible={false}
                   />
                 )}
               </Pressable>

@@ -1,6 +1,6 @@
 ---
 title: "Minor accessibility cleanups: double-announced selection in the date strip, unhidden decorative icons, and an early skeleton announcement"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-23
 updated: 2026-09-23

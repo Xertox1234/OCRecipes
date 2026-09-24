@@ -452,14 +452,35 @@ describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day
   // single-site edit to either line breaks it. It is NOT a basis guard — the
   // literal pins above are. (Confirmed by mutation: reverting the import to
   // `toDateString` fails those three — the daily-budget, window, and
-  // daily-summary pins — and leaves this one green.)
+  // daily-summary pins — and leaves this one green.) Selection is exposed via
+  // `accessibilityState`/`aria-selected`, not a label suffix (see the
+  // dedicated single-announce test below), so this guard now keys off
+  // `aria-selected` instead of a `", selected"` label substring.
   it("keeps the per-chip key and the selected key on one shared helper", () => {
     const { container } = renderComponent(<MealPlanHomeScreen />);
     const selected = Array.from(
+      container.querySelectorAll('[aria-selected="true"]'),
+      (el) => el.getAttribute("aria-label") ?? "",
+    );
+    expect(selected).toEqual(["Wednesday, September 2"]);
+  });
+
+  // P3-2026-09-23 (L12): the label used to append ", selected" ON TOP OF
+  // accessibilityState={{selected}}, so VoiceOver/TalkBack announced the
+  // selected state twice per chip. Selection must be state-only now.
+  it("announces the selected date strip chip's selection once, via state only", () => {
+    const { container } = renderComponent(<MealPlanHomeScreen />);
+    const labelsWithSuffix = Array.from(
       container.querySelectorAll("[aria-label]"),
       (el) => el.getAttribute("aria-label") ?? "",
     ).filter((l) => l.includes(", selected"));
-    expect(selected).toEqual(["Wednesday, September 2, selected"]);
+    expect(labelsWithSuffix).toEqual([]);
+
+    const selectedChips = container.querySelectorAll('[aria-selected="true"]');
+    expect(selectedChips).toHaveLength(1);
+    expect(selectedChips[0]?.getAttribute("aria-label")).toBe(
+      "Wednesday, September 2",
+    );
   });
 });
 

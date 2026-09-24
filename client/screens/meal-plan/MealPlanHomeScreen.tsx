@@ -167,7 +167,14 @@ const DateStripItem = React.memo(function DateStripItem({
         },
       ]}
       accessibilityRole="button"
-      accessibilityLabel={`${date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}${isSelected ? ", selected" : ""}`}
+      // Selection is state, not label content — accessibilityState below is
+      // what VoiceOver/TalkBack use to announce "selected"; appending it to
+      // the label too caused a double announcement.
+      accessibilityLabel={date.toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      })}
       accessibilityState={{ selected: isSelected }}
     >
       <ThemedText
