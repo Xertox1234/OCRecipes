@@ -5,7 +5,7 @@ priority: low
 created: 2026-09-24
 updated: 2026-09-24
 assignee:
-labels: [deferred, react-native]
+labels: [deferred, react-native, security]
 github_issue:
 ---
 
