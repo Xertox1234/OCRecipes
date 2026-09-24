@@ -3,7 +3,7 @@ title: "Vector-icon test mock drops accessibility-hiding props, so icon hiding c
 status: done
 priority: low
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 assignee:
 labels: [deferred, testing]
 github_issue:
