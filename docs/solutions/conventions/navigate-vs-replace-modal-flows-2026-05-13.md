@@ -6,6 +6,7 @@ module: client
 tags: [react-native, navigation, modal, replace, sequential-flows]
 applies_to: [client/screens/**/*.tsx]
 created: '2026-05-13'
+last_updated: '2026-09-23'
 ---
 
 # navigate() vs replace() in modal flows
@@ -34,13 +35,16 @@ When to use `replace()`: Sequential flows where each step consumes the previous 
 
 When to keep `navigate()`: Flows where the user might want to go back and retry (Scan→PhotoIntent, PhotoIntent→PhotoAnalysis — user might want to re-scan or pick a different intent).
 
+When to keep `navigate()` (2026-09-23): also when a screen further up the stack returns via a **fixed-depth `pop(n)`**. `replace()` removes the current screen from the stack and pushes a new one in its place — same stack *length*, but a different *screen* now sits at that depth. A downstream `pop(n)` was counted against the original stack shape, so replacing a screen the `pop(n)` was relying on to still be there makes the `pop(n)` land one screen short of its intended destination — on whatever `replace()` put there instead. `client/screens/LabelAnalysisScreen.tsx`'s front-label CTA hit this exactly: it used to `replace()` itself with `Scan(front-label)`, so `FrontLabelConfirmScreen`'s `pop(2)` (counted assuming LabelAnalysis was still 2 levels up) landed on the live `Scan(label)` camera underneath instead of back on LabelAnalysis. Fixed by using `navigate()` (push) instead, keeping the stack shape the `pop(2)` expects. See `todos/archive/P3-2026-09-23-front-label-after-verification-lands-on-camera.md` for the full trace.
+
 ## Related Files
 
 - `client/screens/ReceiptCaptureScreen.tsx` → ReceiptReview
 - `client/screens/CookSessionCaptureScreen.tsx` → CookSessionReview
 - `client/screens/CookSessionReviewScreen.tsx` → SubstitutionResult
 - `client/screens/BatchScanScreen.tsx` → BatchSummary
-- Existing correct usage: `FrontLabelConfirmScreen`, `LabelAnalysisScreen`, `ReceiptReviewScreen`
+- Existing correct usage: `ReceiptReviewScreen`
+- `client/screens/LabelAnalysisScreen.tsx` — **no longer** uses `replace()` for its front-label CTA (2026-09-23) — see the Exceptions entry above. Do not reintroduce `replace()` there.
 
 ## See Also
 
