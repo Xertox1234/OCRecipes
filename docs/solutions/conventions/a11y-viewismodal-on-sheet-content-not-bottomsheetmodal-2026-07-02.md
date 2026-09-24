@@ -96,7 +96,7 @@ before concluding a site lacks the fix.
 - `client/screens/meal-plan/RecipeBrowserScreen.tsx` — pre-existing `BottomSheetView` example
 - `client/components/meal-plan/QuickAddSheet.tsx` — the Fragment-to-plain-View conversion (2026-09-20), with the sourced `useFocusHook` comment
 - `client/components/meal-plan/AddItemMenuSheet.tsx`, `SimpleEntrySheet.tsx` — the existing-single-root case (2026-09-20)
-- `client/screens/HomeScreen.tsx`, `client/screens/meal-plan/RecipeEntryHubScreen.tsx`, `client/screens/meal-plan/RecipeBrowserScreen.tsx`, `client/screens/meal-plan/MealPlanHomeScreen.tsx` — the Android `importantForAccessibility` background trap (2026-09-20), gated by a per-site `useState` (imperative hosts) or a derived union of existing state (MealPlanHomeScreen's 4 sheets)
+- `client/screens/HomeScreen.tsx`, `client/screens/meal-plan/RecipeEntryHubScreen.tsx`, `client/screens/meal-plan/RecipeBrowserScreen.tsx`, `client/screens/meal-plan/MealPlanHomeScreen.tsx` — the Android `importantForAccessibility` background trap (2026-09-23), gated by a per-site `useState` (imperative hosts) or a derived union of existing state (MealPlanHomeScreen's 4 sheets)
 
 ## See Also
 

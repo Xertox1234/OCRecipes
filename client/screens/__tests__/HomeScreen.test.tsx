@@ -241,9 +241,20 @@ describe("HomeScreen — Android TalkBack background trap also covers the collap
     isBarVisibleHolder.value = false;
   });
 
-  it("keeps the collapsed bar hidden while visible (its own pre-existing rule) even with the import sheet closed", () => {
+  it("keeps the collapsed bar hidden when it is not visible (its own pre-existing rule) even with the import sheet closed", () => {
     isBarVisibleHolder.value = false;
     renderComponent(<HomeScreen />);
+    expect(
+      screen
+        .getByTestId("home-collapsed-bar")
+        .getAttribute("importantforaccessibility"),
+    ).toBe("no-hide-descendants");
+  });
+
+  it("keeps the collapsed bar hidden when it is not visible and the import sheet is open — the fourth truth-table cell", () => {
+    isBarVisibleHolder.value = false;
+    renderComponent(<HomeScreen />);
+    fireEvent.click(screen.getByTestId("open-import-sheet"));
     expect(
       screen
         .getByTestId("home-collapsed-bar")

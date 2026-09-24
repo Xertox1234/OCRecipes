@@ -183,7 +183,9 @@ Native `Modal`, not `@gorhom/bottom-sheet`.
   TalkBack user could reach the bar's "Tap for details" button behind the open sheet under a
   realistic interaction sequence. Fixed by composing `isImportSheetOpen` into the bar's existing
   `importantForAccessibility` condition; 4 new tests isolate `isBarVisible` from `isImportSheetOpen`
-  to pin all four truth-table cells, mutation-verified. Codify candidate worth generalizing: a
+  to pin three of the four truth-table cells, mutation-verified. The fourth cell
+  (`isBarVisible=false`, sheet open) was left unpinned by this pass — see the `### 2026-09-24` entry
+  below. Codify candidate worth generalizing: a
   background trap applied to "the ScrollView" can miss a sibling of that ScrollView that has its own,
   independent visibility condition — enumerate every top-level sibling of the sheet's host, not just
   the obvious scroll container.
@@ -193,3 +195,19 @@ Native `Modal`, not `@gorhom/bottom-sheet`.
   `database "williamtower" does not exist` — a Postgres-unreachable false red, not a regression (zero
   overlap with this diff's client-only files). Symlinked `.env` from the main checkout (gitignored,
   invisible to git) to get a genuine full-suite run: 541/541 files, 8611/8611 tests passed.
+
+### 2026-09-24
+
+- Review of PR #1038 found the 2026-09-23 truth-table pass actually covered 3 of the 4
+  `isBarVisible` × `isImportSheetOpen` cells for `HomeScreen.tsx`'s collapsed bar — the missing
+  cell was `isBarVisible=false` AND the import sheet OPEN. Added a fifth test to the same
+  `describe` block asserting the bar stays hidden (`no-hide-descendants`) in that cell,
+  TDD-verified as discriminating: mutating the bar's `importantForAccessibility` expression from
+  `isBarVisible && !isImportSheetOpen` to the XOR form `isBarVisible !== isImportSheetOpen` turned
+  only the new test red (8 of the other 9 tests in the file, including the three pre-existing
+  cells in this block, stayed green) — proof the cell was genuinely unpinned before, not that some
+  unrelated test happened to be sensitive. Also retitled the `isBarVisible=false`/sheet-closed test,
+  whose title said "hidden while visible" but whose body actually sets
+  `isBarVisibleHolder.value = false`, to match its body. All four truth-table cells are now pinned
+  by name in `docs/solutions/logic-errors/background-trap-on-scrollview-misses-sibling-with-independent-visibility-2026-09-23.md`'s
+  Related Files section.

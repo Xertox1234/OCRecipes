@@ -80,7 +80,7 @@ Compose with `&&`/`||`, don't replace: the sibling's existing condition still ne
 ## Related Files
 
 - `client/screens/HomeScreen.tsx` — the collapsed summary bar (`~line 406`) and the trapped `Animated.ScrollView` (`~line 449`), the sibling pair this bug was found in
-- `client/screens/__tests__/HomeScreen.test.tsx` — the `describe("HomeScreen — Android TalkBack background trap also covers the collapsed bar sibling")` block: isolates `isBarVisible` from `isImportSheetOpen` to pin all four truth-table cells
+- `client/screens/__tests__/HomeScreen.test.tsx` — the `describe("HomeScreen — Android TalkBack background trap also covers the collapsed bar sibling")` block: isolates `isBarVisible` from `isImportSheetOpen` to pin all four truth-table cells — `(isBarVisible=false, sheet closed)`, `(isBarVisible=true, sheet closed)`, `(isBarVisible=true, sheet open)`, and `(isBarVisible=false, sheet open)`, each its own test
 - `docs/solutions/conventions/in-screen-overlay-needs-android-focus-trap-2026-06-22.md` — the general Android-trap mechanism this bug was found while applying
 - `docs/solutions/conventions/a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md` — why the `BottomSheetModal` itself is not a true tree sibling despite the JSX placement
 
