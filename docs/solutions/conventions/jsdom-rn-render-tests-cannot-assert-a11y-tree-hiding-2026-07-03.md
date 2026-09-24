@@ -4,9 +4,9 @@ track: knowledge
 category: conventions
 module: client
 tags: [testing, accessibility, jsdom, render-tests, mocks]
-applies_to: [client/components/**/__tests__/*.test.tsx, client/screens/**/__tests__/*.test.tsx, test/mocks/react-native.ts]
+applies_to: [client/components/**/__tests__/*.test.tsx, client/screens/**/__tests__/*.test.tsx, test/mocks/react-native.ts, test/mocks/expo-vector-icons.ts]
 created: '2026-07-03'
-last_updated: '2026-09-20'
+last_updated: '2026-09-23'
 ---
 
 # jsdom RN render tests cannot assert a11y-tree hiding OR grouping — assert label absence/uniqueness and exact full-label composition instead
@@ -51,16 +51,35 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
 - **Partially executed 2026-08-17 (SpeedDial VoiceOver fix):** the mocks now map the
   EXPLICIT platform-hiding pair — `accessibilityElementsHidden` /
   `importantForAccessibility="no-hide-descendants"` (either one) — to `aria-hidden` on the
-  DOM node (`ariaHiddenProps` in `test/mocks/react-native.ts`, mirrored in the reanimated
-  mock). So hiding via THAT pair **is** now assertable: `*ByRole` queries exclude the
-  hidden node (use a role **count**, not a name filter — a name the fix itself removed can
-  never match and the assertion is vacuous; mutation-proven in review), and non-role
-  elements assert via `testID` + `getAttribute("aria-hidden") === "true"`. Exemplar:
+  DOM node (`ariaHiddenProps` in `test/mocks/react-native.ts`; the reanimated mock at
+  `test/mocks/react-native-reanimated.ts` has its own separate `mapA11yProps()` helper that
+  does **not** destructure `accessibilityElementsHidden` or `importantForAccessibility`, so
+  those hiding props remain unmapped in the Reanimated path — this is a known, still-open
+  residual gap, but no `Animated.View`/`Animated.Text` in the affected code currently
+  receives these hiding props directly). So hiding via THAT pair **is** now assertable via
+  plain RN primitives: `*ByRole` queries exclude the hidden node (use a role **count**, not a
+  name filter — a name the fix itself removed can never match and the assertion is vacuous;
+  mutation-proven in review), and non-role elements assert via `testID` +
+  `getAttribute("aria-hidden") === "true"`. Exemplar:
   `client/components/__tests__/SpeedDial.test.tsx` ("accessibility tree membership").
   Everything this doc says about **`accessible={true/false}`** (and
   `accessibilityActions`/`onAccessibilityAction`) is UNCHANGED — those props still
   pass through untranslated, and the label-absence/composed-label patterns remain the
   only honest assertions for them.
+- **Partially executed 2026-09-23 (Vector‑icon mock drops accessibility‑hiding props):**
+  `test/mocks/expo-vector-icons.ts` previously spread `importantForAccessibility` /
+  `accessibilityElementsHidden` raw onto the icon `<span>` instead of translating them via
+  `ariaHiddenProps`, so icon hiding was untestable and produced a React unknown‑prop warning.
+  Fixed by exporting `ariaHiddenProps` from `test/mocks/react-native.ts` (it was module‑private)
+  and reusing it in `expo-vector-icons.ts`, following the exact reuse pattern
+  `test/mocks/gorhom-bottom-sheet.ts` already used for `ariaModalProps`. Now, any icon that
+  sets either hiding prop gets `aria-hidden="true"` on its DOM `<span>`, making icon hiding
+  assertable via `container.querySelector('[data-icon="check-circle"]').getAttribute("aria-hidden") === "true"`.
+  Exemplar: `client/components/__tests__/Toast.test.tsx` ("hides the status icon from the
+  accessibility tree"). The Exceptions entry for `ariaHiddenProps` (2026-08-17) continues to
+  govern all other RN primitives; this entry extends the same mechanism to vector icons.
+  The `accessible={true/false}` and `accessibilityActions`/`onAccessibilityAction` rules
+  remain unchanged.
 - **Partially executed 2026-09-20 (BottomSheetModal background-trap fix):** the
   mocks now map `accessibilityViewIsModal` to `aria-modal="true"` on the DOM
   node (`ariaModalProps` in `test/mocks/react-native.ts`, applied both to
@@ -81,16 +100,18 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
 
 ## Related Files
 
-- `test/mocks/react-native.ts` — `mockComponent` spreads `accessible`, `accessibilityActions`, and `onAccessibilityAction` through untranslated (the harness gap); `ariaModalProps` maps `accessibilityViewIsModal` → `aria-modal` (2026-09-20)
+- `test/mocks/react-native.ts` — `mockComponent` spreads `accessible`, `accessibilityActions`, and `onAccessibilityAction` through untranslated (the harness gap); `ariaModalProps` maps `accessibilityViewIsModal` → `aria-modal` (2026-09-20); `ariaHiddenProps` maps `accessibilityElementsHidden`/`importantForAccessibility` → `aria-hidden` (2026-08-17), now exported for reuse
 - `test/mocks/gorhom-bottom-sheet.ts` — `BottomSheetView`/`BottomSheetScrollView` reuse `ariaModalProps` for parity with the shared `mockComponent` path (2026-09-20)
+- `test/mocks/expo-vector-icons.ts` — icon mock now reuses `ariaHiddenProps` from `react-native.ts` (2026-09-23), making icon hiding assertable
+- `test/mocks/react-native-reanimated.ts` — `mapA11yProps()` helper (around line 119) does **not** handle `accessibilityElementsHidden` or `importantForAccessibility`; these props remain unmapped for `Animated.View`/`Animated.Text`. Known open residual gap (2026-09-23).
 - `client/components/meal-plan/AddItemMenuSheet.tsx`, `SimpleEntrySheet.tsx`, `QuickAddSheet.tsx` — the `accessibilityViewIsModal` fix under test (2026-09-20); `QuickAddSheet.tsx` is also the exemplar for converting a Fragment-rooted sheet to a single content-root `View` when no existing root exists
+- `client/components/__tests__/Toast.test.tsx` — exemplar test for icon hiding assertion using `container.querySelector('[data-icon="check-circle"]').getAttribute("aria-hidden") === "true"` (2026-09-23)
 - `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — the exemplar test file for the hiding case and the accessibilityActions avoidance pattern
 - `client/components/home/CarouselRecipeCard.tsx` — the fix under test (label prefix + `accessible={false}` badge)
 - `client/components/__tests__/AllergenBadge.test.tsx` — test for `accessible={true}` grouping fix on AllergenBadge
 - `client/components/__tests__/VerificationBadge.test.tsx` — test for `accessible={true}` grouping fix on VerificationBadge
 - `client/screens/__tests__/ScanScreen.test.tsx` — the exemplar test file for the grouping case
 - `client/screens/ScanScreen.tsx` — the `confirmSafetyFlag` badge (`accessible={true}`) under test
-- `client/camera/components/__tests__/ProductChip.safetyFlag.test.tsx` — the earlier ProductChip precedent for the same grouping pattern (commit `8892c990`)
 - `client/screens/__tests__/FavouriteRecipesScreen.test.tsx` — test file applying the same avoidance pattern for accessibilityActions
 - `client/screens/FavouriteRecipesScreen.tsx` — production screen using `accessibilityActions`/`onAccessibilityAction` on a favourite‑heart button
 - `client/screens/meal-plan/RecipeBrowserScreen.tsx` — uses the same `accessibilityActions`/`onAccessibilityAction` pattern; jsdom tests follow the label‑only assertion rule
