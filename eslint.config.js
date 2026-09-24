@@ -42,7 +42,7 @@ module.exports = defineConfig([
     // ignored because no matching configuration was supplied"). This block mirrors just the
     // parser/plugin assignment (not the full expo TS ruleset) so .mts files parse and get
     // basic unused-vars coverage; the type-aware async rules below add real @typescript-eslint
-    // coverage for it. See docs/solutions — vitest 8.3 native-config-loader migration.
+    // coverage for it. See docs/solutions — Vite 8.3 native-config-loader migration.
     files: ["**/*.mts"],
     languageOptions: {
       parser: tseslint.parser,

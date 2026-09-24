@@ -1,4 +1,4 @@
-// scripts/pg-lab/vitest-flake-reporter.ts
+// scripts/pg-lab/vitest-flake-reporter.mts
 //
 // Custom Vitest reporter that appends one row per test case to `dev.test_runs` in the
 // `ocrecipes_lab` lab database (PG Lab Batch B — docs/research/2026-07-05-pg-lab-roadmap.md
@@ -16,7 +16,7 @@
 // nothing ever throws out of this reporter, and no return value a caller could branch on.
 //
 // CI guard: local-dev-only (see the todo's Acceptance Criteria). The primary gate is in
-// vitest.config.ts, which omits this reporter from the `reporters` array entirely when
+// vitest.config.mts, which omits this reporter from the `reporters` array entirely when
 // `process.env.CI` is set — that also avoids constructing a `pg.Client` in an environment
 // that will never use it. The `process.env.CI` checks in this file are a second,
 // defense-in-depth no-op guard in case this class is ever wired some other way.
