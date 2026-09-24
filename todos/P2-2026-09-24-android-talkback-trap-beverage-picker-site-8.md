@@ -41,8 +41,13 @@ signal from the hook plus the prop on the screen. iOS is already trapped via
 
 ## Implementation Notes
 
-- Files: `client/hooks/useBeverageSheet.ts`, `client/hooks/usePhotoAnalysis.ts`,
-  `client/screens/PhotoAnalysisScreen.tsx`, and their tests.
+- Files: `client/components/BeveragePickerSheet.tsx`, `client/hooks/useBeverageSheet.ts`,
+  `client/hooks/usePhotoAnalysis.ts`, `client/screens/PhotoAnalysisScreen.tsx`, and their tests.
+- The `<BottomSheetModal onDismiss>` that fires on every dismissal path lives in
+  `BeveragePickerSheet.tsx` (its `handleDismiss` only calls a local `resetState()`, and
+  `BeveragePickerSheetProps` has no dismiss callback). Add an optional `onDismiss` prop there and
+  pass the hook's setter through from `useBeverageSheet`, so the open-state boolean clears post
+  close-animation.
 - Pattern to copy: `client/screens/meal-plan/RecipeEntryHubScreen.tsx` (`isImportSheetOpen` +
   `onDismiss`).
 - On-device TalkBack verification needs real Android hardware (not available here) — record it as
@@ -52,7 +57,8 @@ signal from the hook plus the prop on the screen. iOS is already trapped via
 
 - **Mechanisms to use:** the same `importantForAccessibility` + open-state boolean pattern #1038
   used; nothing new.
-- **Files in scope:** the three files above and their co-located tests.
+- **Files in scope:** the four files above (including `BeveragePickerSheet.tsx` for the dismiss
+  callback) and their co-located tests.
 - No new mechanisms, files, or abstractions beyond those listed.
 
 ## Dependencies

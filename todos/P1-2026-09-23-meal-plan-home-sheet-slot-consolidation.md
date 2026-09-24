@@ -31,6 +31,7 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 - [ ] A shared `useSheetHostProps()` (or constant) supplies the host prop bundle to all 5 BottomSheetModal sites, with the a11y comment in one place
 - [ ] Top action buttons render from a config array
 - [ ] Existing MealPlanHomeScreen tests + Android back-handler tests stay green; add a test that back dismisses the open sheet for each kind
+- [ ] The Android background trap (`importantForAccessibility` on the ScrollView, driven by `isAnySheetOpen` today) stays engaged across the menu → destination handoff; a test pins it between menu dismiss and destination present (see the 2026-09-24 Updates entry)
 - [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes

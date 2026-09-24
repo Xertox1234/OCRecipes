@@ -26,7 +26,8 @@ form fields: `client/lib/photo-upload.ts` lines 141 (`{ intent }`), 305-315 (opt
 ## Acceptance Criteria
 
 - [ ] A client-side test asserts each upload helper in `client/lib/photo-upload.ts` sends at most
-      one non-file field, citing `MULTIPART_LIMITS.fields`
+      one non-file field, naming `MULTIPART_LIMITS.fields` in a comment (the constant is not
+      exported, so the test pins a literal `1` — it will not notice if the server value changes)
 - [ ] A one-line comment at each `parameters` site points to `MULTIPART_LIMITS` in
       `server/routes/_upload.ts`
 
