@@ -7,8 +7,6 @@ updated: 2026-09-24
 assignee:
 labels: [deferred, reliability, ai]
 github_issue:
-human_led: true
-blocked_reason: "GET /messages needs a product decision before dispatch: return the newest 100, or add pagination (nearLimit/messageCount already exist)."
 ---
 
 # getChatMessages(limit) returns the OLDEST N messages — coach/recipe context and chat history drop the newest turns in long conversations
@@ -35,7 +33,7 @@ The existing storage test `getChatMessages › respects limit` (`server/storage/
 
 - [ ] A limited read returns the newest N messages, in chronological (ascending) order for the caller
 - [ ] A storage test with > limit messages asserts the exact contents (the newest N, oldest-first). It fails on current `main`.
-- [ ] Every caller above is checked. `GET /messages` needs a decision: newest 100, or pagination (`nearLimit` / `messageCount` already exist in the conversation payload).
+- [ ] Every caller above is checked. **Decided (user, 2026-09-24): `GET /messages` returns the newest 100** (oldest-first order within them). No pagination.
 - [ ] If `handleCoachChat` relies on history already containing the just-inserted user message, the coach test covers a > 20 message conversation
 
 ## Implementation Notes
@@ -43,3 +41,9 @@ The existing storage test `getChatMessages › respects limit` (`server/storage/
 - Typical fix: a subquery ordered `desc(createdAt), desc(id)` with `limit`, then re-sorted ascending. Add the `id` tiebreak, because rows inserted in the same transaction can share a `createdAt`.
 - `server/storage/chat.ts` is over the 500-line threshold (docs/rules/architecture.md). Change the existing function in place; don't add a sibling.
 - The function has an IDOR join on `chatConversations.userId`. Keep it, and keep the wrong-user test.
+
+## Updates
+
+### 2026-09-24
+
+- **Product decision (user):** return the newest N everywhere, including `GET /messages` (newest 100). Gate removed; ready for `/todo`.
