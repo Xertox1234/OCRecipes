@@ -27,6 +27,14 @@ import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import HomeScreen from "../HomeScreen";
 
+// Defaults to false (every existing test relies on the collapsed bar being
+// hidden). The Android-trap-covers-the-collapsed-bar block below is the only
+// one that flips it, to prove the bar stays excluded from the Android a11y
+// tree even while VISIBLE, if the import sheet is also open.
+const { isBarVisibleHolder } = vi.hoisted(() => ({
+  isBarVisibleHolder: { value: false },
+}));
+
 // The shared test/mocks/react-native-reanimated.ts mock's `Animated` namespace
 // only exports View/Text/createAnimatedComponent — HomeScreen (unlike any
 // currently-tested screen) also renders `Animated.ScrollView` directly, which
@@ -88,7 +96,9 @@ vi.mock("@/hooks/useScrollLinkedHeader", () => ({
     scrollY: { value: 0 },
     headerAnimatedStyle: {},
     collapsedBarAnimatedStyle: {},
-    isBarVisible: false,
+    get isBarVisible() {
+      return isBarVisibleHolder.value;
+    },
   }),
 }));
 
@@ -215,6 +225,61 @@ describe("HomeScreen — Android TalkBack background trap", () => {
     expect(
       screen
         .getByTestId("home-scroll")
+        .getAttribute("importantforaccessibility"),
+    ).toBe("auto");
+  });
+});
+
+// Regression test for the review finding (2026-09-23): the collapsed summary
+// bar is a SIBLING of the trapped ScrollView, not a descendant, so the
+// ScrollView's own importantForAccessibility does not cover it. Isolates
+// isBarVisible=true (the collapsed-bar-visible state) from isImportSheetOpen
+// to prove the bar is excluded from the Android a11y tree on BOTH conditions
+// independently, and reachable only when neither hides it.
+describe("HomeScreen — Android TalkBack background trap also covers the collapsed bar sibling", () => {
+  afterEach(() => {
+    isBarVisibleHolder.value = false;
+  });
+
+  it("keeps the collapsed bar hidden while visible (its own pre-existing rule) even with the import sheet closed", () => {
+    isBarVisibleHolder.value = false;
+    renderComponent(<HomeScreen />);
+    expect(
+      screen
+        .getByTestId("home-collapsed-bar")
+        .getAttribute("importantforaccessibility"),
+    ).toBe("no-hide-descendants");
+  });
+
+  it("exposes the collapsed bar when it is visible and no sheet is open", () => {
+    isBarVisibleHolder.value = true;
+    renderComponent(<HomeScreen />);
+    expect(
+      screen
+        .getByTestId("home-collapsed-bar")
+        .getAttribute("importantforaccessibility"),
+    ).toBe("auto");
+  });
+
+  it("hides the visible collapsed bar from the Android accessibility tree while the import sheet is open — the gap a TalkBack user could otherwise reach behind the sheet", () => {
+    isBarVisibleHolder.value = true;
+    renderComponent(<HomeScreen />);
+    fireEvent.click(screen.getByTestId("open-import-sheet"));
+    expect(
+      screen
+        .getByTestId("home-collapsed-bar")
+        .getAttribute("importantforaccessibility"),
+    ).toBe("no-hide-descendants");
+  });
+
+  it("re-exposes the visible collapsed bar once the import sheet is dismissed", () => {
+    isBarVisibleHolder.value = true;
+    renderComponent(<HomeScreen />);
+    fireEvent.click(screen.getByTestId("open-import-sheet"));
+    fireEvent.click(screen.getByTestId("close-import-sheet"));
+    expect(
+      screen
+        .getByTestId("home-collapsed-bar")
         .getAttribute("importantforaccessibility"),
     ).toBe("auto");
   });

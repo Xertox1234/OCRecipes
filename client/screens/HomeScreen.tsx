@@ -405,6 +405,7 @@ export default function HomeScreen() {
     <>
       {/* Collapsed summary bar (visible when scrolled) */}
       <Animated.View
+        testID="home-collapsed-bar"
         style={[
           styles.collapsedBar,
           collapsedBarAnimatedStyle,
@@ -418,8 +419,18 @@ export default function HomeScreen() {
         // pointerEvents="none" does NOT remove the bar from the a11y tree —
         // hide it explicitly or screen readers focus an invisible button.
         accessibilityElementsHidden={!isBarVisible}
+        // This bar is a SIBLING of the ScrollView below (not a descendant),
+        // so the ScrollView's own Android trap (isImportSheetOpen further
+        // down) does not cover it — it needs the same isImportSheetOpen
+        // condition composed in directly. Found in review (2026-09-23):
+        // the bar's own isBarVisible-driven exclusion is independent of
+        // sheet state, so a TalkBack user could reach this Pressable behind
+        // an open sheet whenever the bar happens to be visible (the
+        // "import-recipe" action is in a CollapsibleSection far down the
+        // page, so isBarVisible is very likely already true by the time
+        // this sheet opens in practice).
         importantForAccessibility={
-          isBarVisible ? "auto" : "no-hide-descendants"
+          isBarVisible && !isImportSheetOpen ? "auto" : "no-hide-descendants"
         }
       >
         <Pressable
