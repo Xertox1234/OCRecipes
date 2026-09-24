@@ -182,6 +182,31 @@ describe("Toast", () => {
       ).toBeNull();
     });
 
+    // The status icon repeats nothing beyond the message text that follows
+    // it; unmarked it becomes its own screen-reader focus stop, hence
+    // `importantForAccessibility="no-hide-descendants"` on Toast.tsx's
+    // Feather. Selected via `data-icon` (the mock's declared contract, see
+    // test/mocks/expo-vector-icons.ts) rather than a testID, since Toast.tsx
+    // does not pass one to the icon and adding one would be a production
+    // change outside this todo's scope. `accessible={false}` (also set on
+    // the icon) has no jsdom-observable ARIA equivalent and stays
+    // untranslated by design — see docs/solutions/conventions/
+    // jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md —
+    // so it is not asserted here.
+    it("hides the status icon from the accessibility tree", () => {
+      const { container } = renderComponent(
+        <Toast
+          message="Item saved"
+          variant="success"
+          theme={Colors.light}
+          onDismiss={mockDismiss}
+        />,
+      );
+      const icon = container.querySelector('[data-icon="check-circle"]');
+      expect(icon).not.toBeNull();
+      expect(icon?.getAttribute("aria-hidden")).toBe("true");
+    });
+
     it("holds an action toast longer while a screen reader is on", async () => {
       vi.spyOn(RN.AccessibilityInfo, "isScreenReaderEnabled").mockResolvedValue(
         true,

@@ -74,7 +74,7 @@ export const I18nManager = {
  * both platforms sets both, and a component that sets only one is a real
  * single-platform bug this mock should surface rather than mask.
  */
-function ariaHiddenProps(
+export function ariaHiddenProps(
   accessibilityElementsHidden: unknown,
   importantForAccessibility: unknown,
 ): { "aria-hidden"?: true } {
