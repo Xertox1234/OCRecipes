@@ -573,6 +573,22 @@ export default function MealPlanHomeScreen() {
   const [importRecipeMealType, setImportRecipeMealType] =
     useState<MealType | null>(null);
 
+  // Android TalkBack background focus trap (iOS already trapped via
+  // accessibilityViewIsModal on each sheet's own content root, PR #1000). No
+  // new state — a pure read of the 4 existing xxxMealType booleans, the same
+  // ones already passed as `isOpen` to each sheet's own useSheetBackHandler
+  // call below. Applied to the screen's own background ScrollView while ANY
+  // sheet is open; releases as soon as its owning xxxMealType clears to null
+  // (see docs/solutions/logic-errors/
+  // gorhom-onchange-fires-on-animation-complete-not-start-2026-07-07.md for
+  // why that can be a little ahead of the close animation finishing — the
+  // accepted early-release direction, not the never-releases one).
+  const isAnySheetOpen =
+    addItemMenuMealType !== null ||
+    importRecipeMealType !== null ||
+    quickAddMealType !== null ||
+    simpleEntryMealType !== null;
+
   const selectedDateStr = toLocalDateString(selectedDate);
 
   const createRecipeMutation = useCreateMealPlanRecipe();
@@ -1234,6 +1250,7 @@ export default function MealPlanHomeScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <ScrollView
+        testID="meal-plan-home-scroll"
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.sm,
           paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
@@ -1246,6 +1263,14 @@ export default function MealPlanHomeScreen() {
           />
         }
         showsVerticalScrollIndicator={false}
+        // Android TalkBack background focus trap while any of the 4 sheets
+        // is open — see docs/solutions/conventions/
+        // in-screen-overlay-needs-android-focus-trap-2026-06-22.md. iOS is
+        // already trapped separately via accessibilityViewIsModal on each
+        // sheet's own content root, so no accessibilityElementsHidden here.
+        importantForAccessibility={
+          isAnySheetOpen ? "no-hide-descendants" : "auto"
+        }
       >
         {/* Top Action Buttons */}
         <View style={styles.topActions}>
