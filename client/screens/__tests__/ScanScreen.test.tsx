@@ -23,6 +23,7 @@ const {
   mockPermissionStatus,
   mockShortcutToSessionComplete,
   mockSessionCompleteOcrText,
+  mockFeatures,
   mockRefreshScanCount,
   mockApiRequest,
   mockCapturePhotoToFile,
@@ -76,6 +77,11 @@ const {
     // object omits the `ocrText` key entirely, same as the real reducer's
     // BARCODE_LOCKED→CONFIRM_PRODUCT branch (scan-phase-reducer.ts:47).
     mockSessionCompleteOcrText: { value: undefined as string | undefined },
+    // Mutable so a test can grant a gated feature (e.g. receiptScanner) to
+    // reach a smart-classification route that would otherwise resolve to
+    // "blocked" — default `{}` matches every existing test's assumption of
+    // no premium features.
+    mockFeatures: { value: {} as Record<string, boolean> },
     // Stable across renders (unlike a fresh vi.fn() per usePremiumContext()
     // call) — mirrors the real PremiumContext, which memoizes refreshScanCount
     // via useCallback. The session-complete navigate effect depends on this
@@ -162,7 +168,7 @@ vi.mock("@/hooks/usePremiumFeatures", () => ({
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({
     refreshScanCount: mockRefreshScanCount,
-    features: {},
+    features: mockFeatures.value,
   }),
 }));
 // @/lib/photo-upload transitively imports expo-file-system, a native module
@@ -229,6 +235,7 @@ beforeEach(() => {
   mockPermissionStatus.value = "granted";
   mockShortcutToSessionComplete.value = false;
   mockSessionCompleteOcrText.value = undefined;
+  mockFeatures.value = {};
   mockIsFocused.value = true;
   mockNavigationObject.isFocused = () => true;
   // Re-seeded every test (clearAllMocks wipes history, not implementations, so
@@ -1248,6 +1255,103 @@ describe("ScanScreen — fetchProductInfo Warning haptic is gated on liveness (a
   });
 });
 
+describe("ScanScreen — onSmartPhotoConfirm's navigate case does not leak untracked destinations", () => {
+  // has_barcode and grocery_receipt/restaurant_receipt route to screens whose
+  // params never carry `imageUri` (ClassificationRoute in scan-screen-utils.ts).
+  // onSmartPhotoConfirm used to call releaseTempUri(imageUri) unconditionally
+  // before routing, which forgot the file from pendingTempUrisRef WITHOUT
+  // deleting it — for these two outcomes nothing else ever deletes it either.
+  // The fix leaves the URI tracked for these outcomes so the existing
+  // blur-triggered abandon-cleanup (resetScan -> cleanupPendingUris) deletes
+  // it once the navigate's own blur fires — proven below by simulating that
+  // blur and asserting deleteAsync eventually runs.
+
+  it("does not permanently leak the capture file when smart-classification routes to NutritionDetail (has_barcode)", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce({
+      sessionId: null,
+      intent: "auto",
+      foods: [],
+      overallConfidence: 0.9,
+      needsFollowUp: false,
+      followUpQuestions: [],
+      contentType: "has_barcode",
+      barcode: "0778918011332",
+    });
+
+    const { rerender } = renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    const confirm = await screen.findByLabelText(
+      "Confirm smart photo analysis",
+    );
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("NutritionDetail", {
+        barcode: "0778918011332",
+      });
+    });
+    // Not yet deleted — ScanScreen hasn't blurred yet.
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    // Simulate the blur the real navigate causes (same pattern as the
+    // existing "abandoned by leaving Scan" test below) — this is what must
+    // eventually clean up the file, since NutritionDetail's params never
+    // carried it.
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+  });
+
+  it("does not permanently leak the capture file when smart-classification routes to ReceiptCapture (grocery_receipt)", async () => {
+    mockFeatures.value = { receiptScanner: true };
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce({
+      sessionId: null,
+      intent: "auto",
+      foods: [],
+      overallConfidence: 0.9,
+      needsFollowUp: false,
+      followUpQuestions: [],
+      contentType: "grocery_receipt",
+    });
+
+    const { rerender } = renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    const confirm = await screen.findByLabelText(
+      "Confirm smart photo analysis",
+    );
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("ReceiptCapture");
+    });
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+  });
+});
+
 describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => {
   const classificationResult = {
     sessionId: null,
@@ -1310,27 +1414,205 @@ describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => 
     });
   });
 
+  // Drives the real barcode-lock -> STEP2 capture -> confirm flow (the
+  // mockShortcutToSessionComplete reducer override used below skips CAMERA_READY
+  // straight to SESSION_COMPLETE, so it never runs trackTempUri — a real capture
+  // is required for these two tests to actually exercise pendingTempUrisRef).
+  const driveToStep2Reviewing = async () => {
+    const rendered = renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+
+    fireEvent.click(await screen.findByLabelText("Scan Nutrition Facts →"));
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    return rendered;
+  };
+
   // Risk guard: a photo forwarded to NutritionDetail must survive — the
   // SESSION_COMPLETE navigate releases it before firing, so the blur that
   // navigation causes must not also delete it.
+  //
+  // The original version of this test used mockShortcutToSessionComplete,
+  // which jumps CAMERA_READY straight to SESSION_COMPLETE without ever
+  // capturing a photo — trackTempUri never ran, so pendingTempUrisRef never
+  // held "file:///label.jpg" and the "not deleted" assertion passed whether
+  // or not the SESSION_COMPLETE effect's releaseTempUri calls existed
+  // (mutation-checked: deleting them here still leaves this version green
+  // unless the drive below is real). Driving a real capture makes this test
+  // actually depend on the guard.
   it("does not delete the nutrition photo forwarded to NutritionDetail", async () => {
-    mockShortcutToSessionComplete.value = true;
-    mockSessionCompleteOcrText.value = "Calories 210, Total Fat 8g";
+    const { rerender } = await driveToStep2Reviewing();
 
-    renderComponent(<ScanScreen />);
+    fireEvent.click(
+      await screen.findByLabelText("Finish scan", {}, { timeout: 3000 }),
+    );
 
-    await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith(
-        "NutritionDetail",
-        expect.objectContaining({
-          nutritionImageUri: "file:///nutrition-label.jpg",
-        }),
-      );
+    await waitFor(
+      () => {
+        expect(mockNavigate).toHaveBeenCalledWith(
+          "NutritionDetail",
+          expect.objectContaining({
+            nutritionImageUri: "file:///label.jpg",
+          }),
+        );
+      },
+      { timeout: 3000 },
+    );
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    // The navigate above blurs ScanScreen — simulate that and confirm the
+    // abandon-cleanup still doesn't delete the file NutritionDetail now owns.
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
     });
 
     expect(mockDeleteAsync).not.toHaveBeenCalledWith(
-      "file:///nutrition-label.jpg",
+      "file:///label.jpg",
       expect.anything(),
     );
+  });
+
+  // Positive control (the denominator for the test above): abandoning the
+  // scan at STEP2_REVIEWING — before confirming — must still delete the file,
+  // proving trackTempUri really did track it and the abandon-cleanup path is
+  // live for this flow, not just for the smart-photo flow covered above.
+  it("deletes the STEP2 photo when the two-step flow is abandoned before confirming", async () => {
+    const { rerender } = await driveToStep2Reviewing();
+
+    await screen.findByLabelText(
+      "Nutrition label captured. Double tap to edit.",
+    );
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+  });
+});
+
+describe("ScanScreen — onEditStep2/onEditStep3 release the transferred photo, not the whole phase", () => {
+  const driveBarcodeLockAndProceed = async () => {
+    const rendered = renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+    fireEvent.click(await screen.findByLabelText("Scan Nutrition Facts →"));
+
+    return rendered;
+  };
+
+  // Zero coverage previously (PR #1055 review finding): onEditStep2 releases
+  // the STEP2 photo (ownership transfers to LabelAnalysis) instead of leaving
+  // it for the abandon-cleanup this navigate's own blur would otherwise run.
+  it("onEditStep2 releases the photo instead of leaving it for abandon-cleanup", async () => {
+    const { rerender } = await driveBarcodeLockAndProceed();
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    fireEvent.click(
+      await screen.findByLabelText(
+        "Nutrition label captured. Double tap to edit.",
+      ),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith("LabelAnalysis", {
+      imageUri: "file:///label.jpg",
+    });
+
+    // Simulate the blur this navigate causes — must NOT delete: ownership
+    // transferred to LabelAnalysis, which owns its own cleanup.
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    expect(mockDeleteAsync).not.toHaveBeenCalledWith(
+      "file:///label.jpg",
+      expect.anything(),
+    );
+  });
+
+  // Zero coverage previously. onEditStep3 releases only frontImageUri (the
+  // URI it knows transfers) — nutritionImageUri must stay pending so the
+  // abandon-cleanup this navigate's blur triggers still deletes it. Distinct
+  // mock paths per capture are required: mockCapturePhotoToFile resolving the
+  // same path for both captures would dedupe them to one pendingTempUrisRef
+  // entry and make this assertion vacuous.
+  it("onEditStep3 releases only frontImageUri, leaving nutritionImageUri pending for abandon-cleanup", async () => {
+    mockCapturePhotoToFile
+      .mockResolvedValueOnce({ filePath: "/label.jpg" })
+      .mockResolvedValueOnce({ filePath: "/front.jpg" });
+
+    const { rerender } = await driveBarcodeLockAndProceed();
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    // Auto-advance (1s) out of STEP2_REVIEWING into STEP2_CONFIRMED.
+    await screen.findByLabelText("Finish scan", {}, { timeout: 3000 });
+
+    // Front-of-package capture -> STEP3_REVIEWING.
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    fireEvent.click(
+      await screen.findByLabelText("Front label captured. Double tap to edit."),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      "FrontLabelConfirm",
+      expect.objectContaining({ imageUri: "file:///front.jpg" }),
+    );
+
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    // frontImageUri was released — ownership transferred, must survive.
+    expect(mockDeleteAsync).not.toHaveBeenCalledWith(
+      "file:///front.jpg",
+      expect.anything(),
+    );
+    // nutritionImageUri was never released here — abandon-cleanup deletes it.
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
   });
 });

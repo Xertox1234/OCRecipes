@@ -16,6 +16,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { deleteAsync } from "expo-file-system/legacy";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -86,6 +87,19 @@ export default function FrontLabelConfirmScreen() {
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   const { imageUri, barcode, data: initialData } = route.params;
+
+  // Delete the captured temp photo once this flow ends. Unmount only — never
+  // useFocusEffect: both real exits (the confirm-success pop(2) below and
+  // Retake's goBack()) are true unmounts, and nothing keeps this screen
+  // mounted-but-blurred, unlike LabelAnalysisScreen's front-label-CTA case.
+  // uploadFrontLabelPhoto's own cleanup only removes ITS internally
+  // compressed copy, never the original imageUri this screen was handed —
+  // see docs/solutions/design-patterns/compress-upload-cleanup-for-image-uploads-2026-05-13.md.
+  useEffect(() => {
+    return () => {
+      deleteAsync(imageUri, { idempotent: true }).catch(() => {});
+    };
+  }, [imageUri]);
 
   const [sessionId, setSessionId] = useState<string | null>(
     route.params.sessionId,

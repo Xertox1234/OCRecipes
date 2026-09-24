@@ -58,7 +58,7 @@ const GALLERY_URI_1 = "file:///gallery-1.jpg";
 const GALLERY_URI_2 = "file:///gallery-2.jpg";
 
 async function pickTwoFromGallery() {
-  renderComponent(<ReceiptCaptureScreen />);
+  const rendered = renderComponent(<ReceiptCaptureScreen />);
 
   mockLaunchImageLibrary.mockResolvedValueOnce({
     canceled: false,
@@ -70,6 +70,8 @@ async function pickTwoFromGallery() {
   });
 
   await screen.findByLabelText("Remove photo 1");
+
+  return rendered;
 }
 
 describe("ReceiptCaptureScreen — captured photo file cleanup", () => {
@@ -99,8 +101,14 @@ describe("ReceiptCaptureScreen — captured photo file cleanup", () => {
   // Risk guard: photos handed to ReceiptReview via Done must survive —
   // navigation.replace() unmounts this screen, so the cleanup effect must
   // check the handoff flag before deleting anything.
+  //
+  // navigation.replace() is mocked (it doesn't actually unmount the tree), so
+  // the original version of this test never drove the unmount-cleanup effect
+  // at all — it passed whether or not handedOffRef existed. Unmount for real
+  // after Done to actually exercise the guard (mutation-checked: deleting the
+  // `handedOffRef.current = true` line in handleDone turns this red).
   it("does not delete photos handed off to ReceiptReview via Done", async () => {
-    await pickTwoFromGallery();
+    const { unmount } = await pickTwoFromGallery();
 
     await act(async () => {
       fireEvent.click(screen.getByLabelText(/^Done with/));
@@ -112,6 +120,11 @@ describe("ReceiptCaptureScreen — captured photo file cleanup", () => {
         photoUris: [GALLERY_URI_1, GALLERY_URI_2],
       }),
     );
+
+    await act(async () => {
+      unmount();
+    });
+
     expect(mockDeleteAsync).not.toHaveBeenCalled();
   });
 

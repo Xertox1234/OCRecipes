@@ -3,7 +3,7 @@ import { Platform, AccessibilityInfo } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
-import * as FileSystem from "expo-file-system";
+import { deleteAsync } from "expo-file-system/legacy";
 
 import { useHaptics } from "@/hooks/useHaptics";
 import { getConfidenceTier, getConfidenceHapticType } from "@/lib/confidence";
@@ -109,7 +109,7 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
 
         // Clean up image URI to free memory
         if (imageUri) {
-          FileSystem.deleteAsync(imageUri, { idempotent: true }).catch(() => {
+          deleteAsync(imageUri, { idempotent: true }).catch(() => {
             // Ignore cleanup errors
           });
         }

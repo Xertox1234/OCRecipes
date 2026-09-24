@@ -1,6 +1,6 @@
 ---
 title: "Temp-file cleanup follow-ups: two capture paths still leak, non-discriminating tests, and usePhotoAnalysis's cleanup never runs"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-24
 updated: 2026-09-24
