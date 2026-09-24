@@ -10,6 +10,8 @@ import * as Haptics from "expo-haptics";
 import { AccessibilityInfo } from "react-native";
 import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
 import { parseFrontLabelFromOCR } from "@/lib/front-label-ocr-parser";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 const {
   mockGoBack,
@@ -27,6 +29,7 @@ const {
   mockRecognizeText,
   mockIsFocused,
   mockDeleteAsync,
+  mockToastError,
 } = vi.hoisted(() => {
   const mockGoBack = vi.fn();
   const mockCanGoBack = vi.fn();
@@ -93,6 +96,7 @@ const {
     // every existing test's assumption of a focused screen.
     mockIsFocused: { value: true },
     mockDeleteAsync: vi.fn().mockResolvedValue(undefined),
+    mockToastError: vi.fn(),
   };
 });
 
@@ -178,7 +182,7 @@ vi.mock("@/components/UpgradeModal", () => ({
   UpgradeModal: () => null,
 }));
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn() }),
+  useToast: () => ({ success: vi.fn(), error: mockToastError }),
 }));
 // Only handleConfirmLog (post-log-success close) reaches apiRequest; the
 // other two safe-back-navigation call sites never touch the network.
@@ -355,6 +359,71 @@ describe("ScanScreen — safe back navigation", () => {
       );
       expect(mockGoBack).not.toHaveBeenCalled();
       expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    // L5 (2026-09-23 front-end audit): handleConfirmLog's catch used to show
+    // the same generic toast for every /api/scanned-items failure. Branch on
+    // ApiError.code the same way NutritionDetail's log-to-database path does
+    // (useNutritionLookup.ts onError), instead of leaving RATE_LIMITED
+    // indistinguishable from any other failure.
+    it("shows a rate-limit-specific message when the log request is throttled", async () => {
+      mockCanGoBack.mockReturnValue(true);
+      mockApiRequest.mockImplementation(
+        async (_method: string, url: string) => {
+          if (url === "/api/scanned-items") {
+            throw new ApiError("Too many requests", ErrorCode.RATE_LIMITED);
+          }
+          if (url.startsWith("/api/nutrition/barcode/")) {
+            return {
+              json: async () => ({
+                productName: "Test Product",
+                calories: 120,
+              }),
+            } as Response;
+          }
+          return { json: async () => ({}) } as Response;
+        },
+      );
+
+      renderComponent(<ScanScreen />);
+      fireEvent.click(await screen.findByLabelText("Log It"));
+
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledWith(
+          "Too many requests. Please wait a moment and try again.",
+        );
+      });
+      expect(mockGoBack).not.toHaveBeenCalled();
+      expect(mockReset).not.toHaveBeenCalled();
+    });
+
+    it("shows the generic message for a non-rate-limit log failure", async () => {
+      mockCanGoBack.mockReturnValue(true);
+      mockApiRequest.mockImplementation(
+        async (_method: string, url: string) => {
+          if (url === "/api/scanned-items") {
+            throw new Error("boom");
+          }
+          if (url.startsWith("/api/nutrition/barcode/")) {
+            return {
+              json: async () => ({
+                productName: "Test Product",
+                calories: 120,
+              }),
+            } as Response;
+          }
+          return { json: async () => ({}) } as Response;
+        },
+      );
+
+      renderComponent(<ScanScreen />);
+      fireEvent.click(await screen.findByLabelText("Log It"));
+
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledWith(
+          "Failed to log item. Please try again.",
+        );
+      });
     });
   });
 });

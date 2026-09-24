@@ -55,6 +55,8 @@ import { ScanSonarRing } from "@/camera/components/ScanSonarRing";
 import { getCoachMessage } from "@/camera/components/CoachHint-utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { logger } from "@/lib/logger";
 import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
@@ -355,9 +357,13 @@ export default function ScanScreen() {
       safeGoBack(navigation, () =>
         navigation.reset({ index: 0, routes: [{ name: "Main" }] }),
       );
-    } catch {
+    } catch (err) {
       setConfirmCard((prev) => prev && { ...prev, isLogging: false });
-      toast.error("Failed to log item. Please try again.");
+      toast.error(
+        err instanceof ApiError && err.code === ErrorCode.RATE_LIMITED
+          ? "Too many requests. Please wait a moment and try again."
+          : "Failed to log item. Please try again.",
+      );
     }
   }, [confirmCard, navigation, toast, refreshScanCount, queryClient]);
 
@@ -958,18 +964,43 @@ export default function ScanScreen() {
                 // before navigating so the blur this triggers doesn't delete
                 // it via resetScan().
                 releaseTempUri(imageUri);
-                // navigate accepts a variable screen name from a discriminated union;
-                // cast the whole function signature to avoid React Navigation's strict
-                // per-screen overloads while keeping params typed via ClassificationRoute.
-                (
-                  navigation.navigate as (
-                    screen: string,
-                    params?: Record<string, unknown>,
-                  ) => void
-                )(
-                  action.route.screen,
-                  action.route.params as Record<string, unknown> | undefined,
-                );
+                // ClassificationRoute is a discriminated union keyed on `screen` —
+                // switch on the literal so each arm gets React Navigation's
+                // per-screen param type instead of casting the whole navigate
+                // signature away (docs/rules/typescript.md: never cast navigation
+                // types with `as never`/`as unknown`).
+                switch (action.route.screen) {
+                  case "PhotoAnalysis":
+                    navigation.navigate("PhotoAnalysis", action.route.params);
+                    break;
+                  case "LabelAnalysis":
+                    navigation.navigate("LabelAnalysis", action.route.params);
+                    break;
+                  case "MenuScanResult":
+                    navigation.navigate("MenuScanResult", action.route.params);
+                    break;
+                  case "CookSessionCapture":
+                    navigation.navigate(
+                      "CookSessionCapture",
+                      action.route.params,
+                    );
+                    break;
+                  case "ReceiptCapture":
+                    navigation.navigate("ReceiptCapture");
+                    break;
+                  case "NutritionDetail":
+                    navigation.navigate("NutritionDetail", action.route.params);
+                    break;
+                  default: {
+                    // Exhaustiveness guard: a new ClassificationRoute member must
+                    // be handled here — a silent no-op is exactly the bug the
+                    // outer switch's own guard above exists to prevent.
+                    const _exhaustive: never = action.route;
+                    throw new Error(
+                      `unhandled classification route: ${String(_exhaustive)}`,
+                    );
+                  }
+                }
                 break;
               case "blocked":
                 // blocked: hide the chip (RESET) and show the upsell. RESET-on-block

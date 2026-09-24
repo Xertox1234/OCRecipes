@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { Alert } from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import SettingsScreen from "../SettingsScreen";
+import { apiRequest } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import type { ConfirmOptions } from "@/components/ConfirmationModal";
 
 const { mockConfirm, mockLogout } = vi.hoisted(() => ({
@@ -150,5 +153,59 @@ describe("SettingsScreen sign-out confirmation", () => {
     options?.onConfirm();
 
     expect(mockLogout).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SettingsScreen data export error copy", () => {
+  // L4 (2026-09-23 front-end audit): performExport used to branch on
+  // `/^429:/.test(error.message)`, which only matches the raw status-prefixed
+  // message ApiError happens to carry today. Branching on `error.code` instead
+  // is the project convention (LabelAnalysisScreen.tsx, useNutritionLookup.ts)
+  // and survives a RATE_LIMITED error whose message doesn't start with "429:".
+  it("shows a rate-limit-specific message when the export request is throttled", async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(
+      new ApiError("Too many requests", ErrorCode.RATE_LIMITED),
+    );
+
+    renderComponent(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Export My Data" }));
+
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(1));
+    const confirmButtons = (Alert.alert as ReturnType<typeof vi.fn>).mock
+      .calls[0][2] as { text: string; onPress?: () => void }[];
+    const exportButton = confirmButtons.find((b) => b.text === "Export");
+    expect(exportButton).toBeDefined();
+    await act(async () => {
+      exportButton?.onPress?.();
+    });
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith(
+        "Export Failed",
+        "You have already exported recently. Please wait before trying again.",
+      );
+    });
+  });
+
+  it("shows a generic message for a non-rate-limit export failure", async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce(new Error("boom"));
+
+    renderComponent(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Export My Data" }));
+
+    await waitFor(() => expect(Alert.alert).toHaveBeenCalledTimes(1));
+    const confirmButtons = (Alert.alert as ReturnType<typeof vi.fn>).mock
+      .calls[0][2] as { text: string; onPress?: () => void }[];
+    const exportButton = confirmButtons.find((b) => b.text === "Export");
+    await act(async () => {
+      exportButton?.onPress?.();
+    });
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith(
+        "Export Failed",
+        "Could not export your data. Please try again.",
+      );
+    });
   });
 });
