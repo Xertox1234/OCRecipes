@@ -61,9 +61,12 @@ export function useQuickLogSession({
   // without this the effect re-parses on every mutation settle (isParsing toggle).
   const autoParsedTranscriptRef = useRef<string | null>(null);
 
-  // Bumped on reset() to invalidate any parse still in flight. A parse that
-  // resolves after the session was cleared must not repopulate dismissed items
-  // or fire a haptic for an abandoned session (TanStack v5 has no mutation cancel).
+  // Bumped on reset() to invalidate any parse or log submit still in flight.
+  // A parse or logAllMutation result that resolves after the session was
+  // cleared must not repopulate dismissed items, write a stale error banner,
+  // or fire a haptic for an abandoned session (TanStack v5 has no mutation
+  // cancel). logAllMutation captures the epoch via onMutate's context since
+  // its callbacks are defined at the hook level, not per mutate() call.
   const sessionEpochRef = useRef(0);
 
   // Mirror of logAllMutation.isPending so the zero-dep removeItem callback can
@@ -175,7 +178,8 @@ export function useQuickLogSession({
   const logAllMutation = useMutation<
     ScannedItemResponse[] | undefined,
     PartialLogError,
-    ParsedFoodItem[]
+    ParsedFoodItem[],
+    { epoch: number }
   >({
     // "always" so mutationFn RUNS while offline and the branch below can enqueue
     // each item durably. With the default "online", an offline submit pauses the
@@ -244,18 +248,12 @@ export function useQuickLogSession({
         (r) => (r as PromiseFulfilledResult<ScannedItemResponse>).value,
       );
     },
-    onSuccess: (data, items) => {
-      const loggedItems = items.slice(0, MAX_LOG_ITEMS);
-      const summary: LogSummary = {
-        itemCount: loggedItems.length,
-        totalCalories: loggedItems.reduce(
-          (sum, item) => sum + (item.calories ?? 0),
-          0,
-        ),
-        firstName: loggedItems[0]?.name ?? "Food",
-      };
+    onMutate: () => ({ epoch: sessionEpochRef.current }),
+    onSuccess: (data, items, context) => {
       if (data !== undefined) {
-        // Online success — invalidate so the UI refreshes with server data
+        // Online success — invalidate so the UI refreshes with server data.
+        // Unconditional: a real write happened, so cached data is stale
+        // regardless of whether this session has since been reset.
         void queryClient.invalidateQueries({
           queryKey: QUERY_KEYS.dailySummary,
         });
@@ -267,32 +265,58 @@ export function useQuickLogSession({
         });
       }
       // Offline path: drain will invalidate after replay — no invalidation here
+
+      // A submit that resolves after the session was reset must not touch a
+      // dismissed session's UI state (see sessionEpochRef doc comment).
+      if (context !== undefined && context.epoch !== sessionEpochRef.current) {
+        return;
+      }
+
+      const loggedItems = items.slice(0, MAX_LOG_ITEMS);
+      const summary: LogSummary = {
+        itemCount: loggedItems.length,
+        totalCalories: loggedItems.reduce(
+          (sum, item) => sum + (item.calories ?? 0),
+          0,
+        ),
+        firstName: loggedItems[0]?.name ?? "Food",
+      };
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       setParsedItems([]);
       setInputText("");
       setSubmitError(null);
       onLogSuccessRef.current?.(summary);
     },
-    onError: (error, items) => {
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
+    onError: (error, items, context) => {
       // Keep only the items that failed so a retry won't re-submit already-persisted ones.
       // Index stability holds because parsedItems is frozen while the mutation is in-flight.
       const failedIndices = error.failedIndices ?? [];
+      if (failedIndices.length > 0 && failedIndices.length < items.length) {
+        // Some items persisted — refresh stale queries. Unconditional: real
+        // server-side writes happened, so cached data is stale regardless of
+        // whether this session has since been reset.
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.dailySummary,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.scannedItems,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.frequentItems,
+        });
+      }
+
+      // A submit that resolves after the session was reset must not
+      // repopulate items or write a stale error banner into a dismissed
+      // session (see sessionEpochRef doc comment).
+      if (context !== undefined && context.epoch !== sessionEpochRef.current) {
+        return;
+      }
+
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       if (failedIndices.length > 0) {
         const failedSet = new Set(failedIndices);
         setParsedItems((prev) => prev.filter((_, i) => failedSet.has(i)));
-        if (failedIndices.length < items.length) {
-          // Some items persisted — refresh stale queries
-          void queryClient.invalidateQueries({
-            queryKey: QUERY_KEYS.dailySummary,
-          });
-          void queryClient.invalidateQueries({
-            queryKey: QUERY_KEYS.scannedItems,
-          });
-          void queryClient.invalidateQueries({
-            queryKey: QUERY_KEYS.frequentItems,
-          });
-        }
       }
       const cappedCount = Math.min(items.length, MAX_LOG_ITEMS);
       const allFailed =

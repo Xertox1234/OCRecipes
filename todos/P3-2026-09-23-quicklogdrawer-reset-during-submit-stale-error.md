@@ -1,6 +1,6 @@
 ---
 title: 'Closing QuickLogDrawer mid-submit lets a late error repopulate a stale "Failed to log items" banner'
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-23
 updated: 2026-09-23
