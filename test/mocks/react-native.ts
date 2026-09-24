@@ -70,11 +70,14 @@ export const I18nManager = {
  * which is the actual property under test. (`getByLabelText` does NOT — it
  * still matches hidden nodes, so never assert exclusion with it.)
  *
- * Either prop alone marks the node hidden: a component that hides correctly on
- * both platforms sets both, and a component that sets only one is a real
- * single-platform bug this mock should surface rather than mask.
+ * Either prop alone marks the node hidden (the two are OR'd). Consequence: a
+ * passing `aria-hidden` assertion proves AT LEAST ONE hiding prop is set — it
+ * cannot tell which platform is covered, so a component that sets only one
+ * (a real single-platform bug when the other platform has no other hiding
+ * path) is masked, not surfaced. When one platform's hiding hangs on one
+ * specific prop, that platform needs on-device verification.
  */
-function ariaHiddenProps(
+export function ariaHiddenProps(
   accessibilityElementsHidden: unknown,
   importantForAccessibility: unknown,
 ): { "aria-hidden"?: true } {
