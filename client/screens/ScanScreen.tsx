@@ -960,26 +960,37 @@ export default function ScanScreen() {
             });
             switch (action.kind) {
               case "navigate":
-                // Ownership transfers to the destination screen — release
-                // before navigating so the blur this triggers doesn't delete
-                // it via resetScan().
-                releaseTempUri(imageUri);
                 // ClassificationRoute is a discriminated union keyed on `screen` —
                 // switch on the literal so each arm gets React Navigation's
                 // per-screen param type instead of casting the whole navigate
                 // signature away (docs/rules/typescript.md: never cast navigation
                 // types with `as never`/`as unknown`).
+                //
+                // Only release (without deleting) when the destination's own
+                // params actually carry `imageUri` — ownership genuinely
+                // transfers there. `ReceiptCapture` (`params: undefined`) and
+                // `NutritionDetail` (`params: { barcode }`) never receive the
+                // file, so releasing it there would forget it from
+                // `pendingTempUrisRef` without anything else ever deleting
+                // it. Leaving it tracked for those two arms is deliberate:
+                // this navigate blurs ScanScreen, and the existing "Reset
+                // when screen loses focus" effect above already deletes
+                // anything still pending via resetScan() -> cleanupPendingUris().
                 switch (action.route.screen) {
                   case "PhotoAnalysis":
+                    releaseTempUri(imageUri);
                     navigation.navigate("PhotoAnalysis", action.route.params);
                     break;
                   case "LabelAnalysis":
+                    releaseTempUri(imageUri);
                     navigation.navigate("LabelAnalysis", action.route.params);
                     break;
                   case "MenuScanResult":
+                    releaseTempUri(imageUri);
                     navigation.navigate("MenuScanResult", action.route.params);
                     break;
                   case "CookSessionCapture":
+                    releaseTempUri(imageUri);
                     navigation.navigate(
                       "CookSessionCapture",
                       action.route.params,

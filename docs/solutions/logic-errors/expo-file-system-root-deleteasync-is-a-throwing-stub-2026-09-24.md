@@ -8,6 +8,7 @@ applies_to: [client/hooks/**/*.ts, client/lib/**/*.ts, client/screens/**/*.tsx]
 symptoms: [Temp capture file is never deleted even though a deleteAsync cleanup call exists and appears to run, A console.warn about a deprecated expo-file-system import appears with no other visible effect, A cleanup effect wrapped in .catch(() => {}) never throws or logs anything yet the file remains on disk]
 created: '2026-09-24'
 severity: medium
+last_updated: '2026-09-24'
 ---
 
 # expo-file-system root deleteAsync is a throwing stub in SDK 54 — import from expo-file-system/legacy
@@ -29,7 +30,7 @@ export async function deleteAsync(fileUri: string, options: DeletingOptions = {}
 
 `errorOnLegacyMethodUse` does a `console.warn` (easy to miss in a busy RN log stream) and then throws an `Error`. Every legacy-named function on the root export — `getInfoAsync`, `readAsStringAsync`, `writeAsStringAsync`, `moveAsync`, `copyAsync`, `makeDirectoryAsync`, `readDirectoryAsync`, `uploadAsync`, `downloadAsync`, etc. — is stubbed the same way (`node_modules/expo-file-system/build/legacyWarnings.d.ts` lists all of them with `@deprecated ... This method will throw in runtime.` in their doc comments). Confirmed against the installed version: `node_modules/expo-file-system/package.json` reports `"version": "19.0.22"`, paired with `"expo": "^54.0.23"` in this project's `package.json`.
 
-`client/hooks/usePhotoAnalysis.ts:6` had exactly this bug — `import * as FileSystem from "expo-file-system";` then `FileSystem.deleteAsync(imageUri, { idempotent: true }).catch(() => {})` at line 112, inside a `useFocusEffect` cleanup. The call has thrown on every invocation since SDK 54 landed; the bare `.catch(() => {})` hid it completely, so the screen's "cleanup" has never freed a single temp photo. Its own test (`client/hooks/__tests__/usePhotoAnalysis.test.ts`) mocks `useFocusEffect` as a no-op (`() => {}`), so the broken cleanup path is never even executed in CI — the bug has zero test coverage in either direction.
+`client/hooks/usePhotoAnalysis.ts:6` had exactly this bug — `import * as FileSystem from "expo-file-system";` then `FileSystem.deleteAsync(imageUri, { idempotent: true }).catch(() => {})` at line 112, inside a `useFocusEffect` cleanup. The call threw on every invocation since SDK 54 landed; the bare `.catch(() => {})` hid it completely, so the screen's "cleanup" never freed a single temp photo. Its own test (`client/hooks/__tests__/usePhotoAnalysis.test.ts`) mocked `useFocusEffect` as a no-op (`() => {}`), so the broken cleanup path was never even executed in CI — the bug had zero test coverage in either direction. Fixed 2026-09-24 (see Related Files).
 
 ## Solution
 
@@ -55,12 +56,13 @@ If migrating to the new class-based API instead: `new File(uri).delete()` is syn
 
 ## Related Files
 
-- `client/hooks/usePhotoAnalysis.ts` — the still-open instance of this bug (out of scope for the todo that produced this solution; not yet fixed)
-- `client/hooks/__tests__/usePhotoAnalysis.test.ts` — mocks `useFocusEffect` as a no-op, so this bug has no test coverage
+- `client/hooks/usePhotoAnalysis.ts` — fixed instance (2026-09-24, follow-up todo); now imports `deleteAsync` from `expo-file-system/legacy`
+- `client/hooks/__tests__/usePhotoAnalysis.test.ts` — now mocks `useFocusEffect` with a real `React.useEffect(cb, [cb])` (not a no-op) and asserts the `/legacy` `deleteAsync` mock is called on unmount
 - `client/lib/image-compression.ts` — the correct `/legacy` import pattern
 - `client/screens/ScanScreen.tsx` — fixed instance (2026-09-24)
 - `client/screens/ReceiptCaptureScreen.tsx` — fixed instance (2026-09-24)
 - `client/screens/LabelAnalysisScreen.tsx` — fixed instance (2026-09-24)
+- `client/screens/FrontLabelConfirmScreen.tsx` — fixed instance (2026-09-24, follow-up todo); added an unmount-only cleanup effect for its captured `imageUri`
 
 ## See Also
 

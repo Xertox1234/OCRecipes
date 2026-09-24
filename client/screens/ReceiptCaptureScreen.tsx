@@ -151,13 +151,14 @@ export default function ReceiptCaptureScreen() {
   const handleRemovePhoto = useCallback(
     (index: number) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      setPhotos((prev) => {
-        const removed = prev[index];
-        if (removed) {
-          deleteAsync(removed, { idempotent: true }).catch(() => {});
-        }
-        return prev.filter((_, i) => i !== index);
-      });
+      // Read via the ref (not `photos` directly) so this callback doesn't
+      // need `photos` in its dependency array — the side effect runs once,
+      // outside the setPhotos updater (updaters must stay pure).
+      const removed = photosRef.current[index];
+      if (removed) {
+        deleteAsync(removed, { idempotent: true }).catch(() => {});
+      }
+      setPhotos((prev) => prev.filter((_, i) => i !== index));
       setOcrTexts((prev) => prev.filter((_, i) => i !== index));
     },
     [haptics],
