@@ -192,7 +192,11 @@ describe("Toast", () => {
     // the icon) has no jsdom-observable ARIA equivalent and stays
     // untranslated by design — see docs/solutions/conventions/
     // jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md —
-    // so it is not asserted here.
+    // so it is not asserted here. Scope limit: `aria-hidden` only proves SOME
+    // hiding prop is set — the mock ORs the two — so swapping the icon's
+    // `importantForAccessibility` (its only TalkBack hiding; iOS hides it via
+    // the parent's `accessible` collapse) for `accessibilityElementsHidden`
+    // would keep this green while Android regresses.
     it("hides the status icon from the accessibility tree", () => {
       const { container } = renderComponent(
         <Toast

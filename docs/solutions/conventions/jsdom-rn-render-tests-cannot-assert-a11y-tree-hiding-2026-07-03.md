@@ -6,7 +6,7 @@ module: client
 tags: [testing, accessibility, jsdom, render-tests, mocks]
 applies_to: [client/components/**/__tests__/*.test.tsx, client/screens/**/__tests__/*.test.tsx, test/mocks/react-native.ts, test/mocks/expo-vector-icons.ts]
 created: '2026-07-03'
-last_updated: '2026-09-23'
+last_updated: '2026-09-24'
 ---
 
 # jsdom RN render tests cannot assert a11y-tree hiding OR grouping — assert label absence/uniqueness and exact full-label composition instead
@@ -56,9 +56,12 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
   does **not** destructure `accessibilityElementsHidden` or `importantForAccessibility`, so
   those hiding props remain unmapped in the Reanimated path — this is a known, still-open
   residual gap, and it is LIVE, not hypothetical: `client/screens/ProfileScreen.tsx`,
-  `client/screens/HomeScreen.tsx`, `client/components/cookbook/CookbookCoverPlate.tsx`, and
-  `client/components/TextInput.tsx` all set these props directly on `Animated.View`/
-  `Animated.Text`, so their hiding is not assertable in jsdom via this mechanism). So hiding
+  `client/screens/HomeScreen.tsx`, and `client/components/cookbook/CookbookCoverPlate.tsx`
+  all set `"no-hide-descendants"` and/or `accessibilityElementsHidden` directly on
+  `Animated.View`, so their hiding is not assertable in jsdom via this mechanism.
+  `client/components/TextInput.tsx`'s `Animated.Text` is NOT an instance of this gap: it
+  sets `importantForAccessibility="no"`, which `ariaHiddenProps` deliberately never maps —
+  closing the reanimated gap will not make it render `aria-hidden`). So hiding
   via THAT pair **is** now assertable on plain RN primitives: `*ByRole` queries exclude the
   hidden node (use a role **count**, not a
   name filter — a name the fix itself removed can never match and the assertion is vacuous;
@@ -83,6 +86,16 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
   govern all other RN primitives; this entry extends the same mechanism to vector icons.
   The `accessible={true/false}` and `accessibilityActions`/`onAccessibilityAction` rules
   remain unchanged.
+  **Scope limit — an `aria-hidden` assertion proves "at least one hiding prop is set", not
+  "the platform that needs it is covered".** `ariaHiddenProps` ORs the two props, so a
+  regression that swaps the only prop doing real work (e.g. Toast's
+  `importantForAccessibility="no-hide-descendants"`, its sole TalkBack hiding — iOS hiding
+  comes from the parent `accessible` collapse) for `accessibilityElementsHidden` keeps the
+  test green while Android regresses. Both props collapse to the same attribute, so no jsdom
+  render test can tell them apart — the OR is intentional and pinned by
+  `client/components/__tests__/Card.a11y.test.tsx`'s single-prop cases. When one platform's
+  hiding hangs on one specific prop, say so in the test comment and leave that platform to
+  on-device verification; never cite the `aria-hidden` read-back as proof of it.
 - **Partially executed 2026-09-20 (BottomSheetModal background-trap fix):** the
   mocks now map `accessibilityViewIsModal` to `aria-modal="true"` on the DOM
   node (`ariaModalProps` in `test/mocks/react-native.ts`, applied both to
