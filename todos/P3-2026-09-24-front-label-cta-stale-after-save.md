@@ -31,7 +31,8 @@ advisor and code-reviewer as a suggestion; left out of that PR's scope.
 
 ## Implementation Notes
 
-- `verificationResult` is `useMutation` state in LabelAnalysisScreen, not query-backed, and
+- `verificationResult` is a plain `useState` in LabelAnalysisScreen, set in the verify
+  mutation's `onSuccess` (not the mutation's `.data`, and not query-backed), and
   FrontLabelConfirmScreen's save calls no `invalidateQueries` — so there is no existing query to
   invalidate. Options: clear `canScanFrontLabel` in a focus effect after a save is signalled
   (e.g. a React Query cache entry set with `queryClient.setQueryData` on save and read on focus),

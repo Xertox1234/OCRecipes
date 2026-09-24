@@ -30,8 +30,9 @@ The full checklist is in
       `stryker.conf.mjs` and `stryker.explore.conf.mjs` (`configFile`),
       the `grep -qE` path filters in `.github/workflows/mutation-goal-safety.yml` and
       `mutation-non-excluded.yml` (written regex-escaped as `vitest\.mutation\.config\.ts`, so a
-      literal grep misses them) — swept with `git grep -nP` (not `-E`: `\b` silently matches
-      nothing under `-E` on this git)
+      literal grep misses them) — sweep with `git grep -nP` (not `-E`: `\b` silently matches
+      nothing under `-E` on this git), using a pattern that tolerates the escaping, e.g.
+      `vitest\\?\.(integration|mutation)\\?\.config\\?\.ts`
 - [ ] CI's mutation and integration jobs still run
 - [ ] While here: three comments in `scripts/__tests__/coverage-ratchet.test.ts` still call the
       production config "the real vitest.config.ts" (found by #1039's final review) — change them
@@ -44,8 +45,10 @@ The full checklist is in
 
 ## Scope Contract
 
-- **Mechanisms to use:** the same rename pattern as #1039.
-- **Files in scope:** the two configs and every file that references them.
+- **Mechanisms to use:** the same rename pattern as #1039, plus a comment-only edit in
+  `scripts/__tests__/coverage-ratchet.test.ts`.
+- **Files in scope:** the two configs, every file that references them, and
+  `scripts/__tests__/coverage-ratchet.test.ts` (comments only).
 - No new mechanisms, files, or abstractions beyond those listed.
 
 ## Updates
