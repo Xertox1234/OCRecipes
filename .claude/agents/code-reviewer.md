@@ -208,7 +208,7 @@ Vitest (NOT Jest); tests co-located in `__tests__/` directories. The pre-commit 
 - `docs/rules/*.md` — current binding rules; `docs/legacy-patterns/*.md` — frozen archive (deep-linked named sections); `docs/LEARNINGS.md` — reverse-chronological gotcha log
 - `shared/schemas/` — Zod request/response schemas; `shared/types/` — shared TypeScript types; `server/middleware/auth.ts` + `server/middleware/api-key-auth.ts` — Express request augmentations (inline `declare global`)
 - `eslint.config.js` — `as never` ban + custom rules; `.husky/pre-commit` — pre-commit pipeline (`lint-staged` only)
-- `server/__tests__/factories/` — typed mock factories; `test/setup.ts` — global Vitest setup (`vi.clearAllMocks()` in `beforeEach`, `JWT_SECRET` default, `__DEV__` global, production-DB guard); `vitest.config.ts` — Vitest configuration; `tsconfig.check.json` — CI type-check config; `docs/rules/testing.md` — current testing rules
+- `server/__tests__/factories/` — typed mock factories; `test/setup.ts` — global Vitest setup (`vi.clearAllMocks()` in `beforeEach`, `JWT_SECRET` default, `__DEV__` global, production-DB guard); `vitest.config.mts` — Vitest configuration; `tsconfig.check.json` — CI type-check config; `docs/rules/testing.md` — current testing rules
 - `todos/TEMPLATE.md` — todo file template
 
 ## Remember

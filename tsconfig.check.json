@@ -11,6 +11,6 @@
     "**/*.spec.tsx",
     "test/**",
     "__mocks__/**",
-    "vitest.config.ts"
+    "vitest.config.mts"
   ]
 }

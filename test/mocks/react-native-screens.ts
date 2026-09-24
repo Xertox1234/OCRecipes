@@ -7,7 +7,7 @@
 // test/mocks/react-native.ts and test/mocks/react-native-svg.ts already solve
 // for their respective packages. A `vi.mock()` cannot fix this: Vitest's
 // dependency-scan/pre-bundle phase walks the static import graph BEFORE any
-// vi.mock() interception takes effect, so a `vitest.config.ts` resolve.alias
+// vi.mock() interception takes effect, so a `vitest.config.mts` resolve.alias
 // is required. See docs/solutions/runtime-errors/
 // mock-native-svg-flow-syntax-transform-failure-2026-07-12.md, which named
 // this exact package as a predicted "latent next occurrence."

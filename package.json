@@ -29,8 +29,8 @@
     "build:domain-map": "tsx scripts/build-domain-map.ts .claude/hooks/lib/domain-map.sh",
     "build:domain-map:check": "tsx scripts/build-domain-map.ts --check .claude/hooks/lib/domain-map.sh",
     "build:generated:check": "npm run build:copilot-instructions:check && npm run build:domain-map:check",
-    "check:format": "prettier --check \"**/*.{js,ts,tsx,css,json}\"",
-    "format": "prettier --write \"**/*.{js,ts,tsx,css,json}\"",
+    "check:format": "prettier --check \"**/*.{js,ts,tsx,mts,css,json}\"",
+    "format": "prettier --write \"**/*.{js,ts,tsx,mts,css,json}\"",
     "test": "vitest",
     "test:run": "vitest run",
     "test:unit": "vitest run --exclude 'server/storage/__tests__/**'",
@@ -214,7 +214,7 @@
     "undici": "^7.29.0"
   },
   "lint-staged": {
-    "*.{ts,tsx}": [
+    "*.{ts,tsx,mts}": [
       "env ESLINT_NO_TYPE_AWARE=1 eslint --fix",
       "prettier --write"
     ],

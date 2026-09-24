@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import baseConfig from "./vitest.config";
+import baseConfig from "./vitest.config.mts";
 
 // Real-DB HTTP integration suite (test/integration/**/*.itest.ts) — see
 // test/integration/README.md for what this is and why it is split out.

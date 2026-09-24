@@ -27,7 +27,7 @@ reachable Postgres (the same `DATABASE_URL` your other tests use — see
 
 ## Why these files are NOT picked up by `npm run test:run` / `preflight:fast`
 
-The `.itest.ts` suffix (not `.test.ts`) means the base `vitest.config.ts`'s
+The `.itest.ts` suffix (not `.test.ts`) means the base `vitest.config.mts`'s
 `include: ["**/*.test.ts", "**/*.test.tsx"]` never matches these files — so:
 
 - `npm run test:run` (and CI's existing `Tests`/`Coverage` jobs, which

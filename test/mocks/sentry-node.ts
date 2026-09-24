@@ -1,5 +1,5 @@
 /**
- * Vitest stub for @sentry/node, aliased in vitest.config.ts.
+ * Vitest stub for @sentry/node, aliased in vitest.config.mts.
  *
  * Not for native-module isolation (the @sentry/react-native mock's reason) —
  * @sentry/node is pure JS but costs ~500ms to import (it pulls the OTel

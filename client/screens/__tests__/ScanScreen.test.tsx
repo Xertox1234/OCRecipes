@@ -103,7 +103,7 @@ vi.mock("react-native-vision-camera", () => ({
     capturePhotoToFile: mockCapturePhotoToFile,
   })),
 }));
-// The package is ALSO aliased to test/mocks/ in vitest.config.ts (it calls
+// The package is ALSO aliased to test/mocks/ in vitest.config.mts (it calls
 // requireNativeModule() at module scope). That alias and this vi.mock compose —
 // vi.mock replaces whatever the resolver returns — so the shutter tests below
 // can drive real OCR text through recognizeTextFromPhoto. Same pattern as

@@ -65,7 +65,7 @@ if [ "$MODE" = "fast" ]; then
   fi
   CHANGED=()
   while IFS= read -r f; do [ -n "$f" ] && CHANGED+=("$f"); done \
-    < <(git diff --name-only --diff-filter=ACMR "${DIFF_BASE_ARGS[@]}" -- '*.ts' '*.tsx' 2>/dev/null)
+    < <(git diff --name-only --diff-filter=ACMR "${DIFF_BASE_ARGS[@]}" -- '*.ts' '*.tsx' '*.mts' 2>/dev/null)
   # --uncommitted also needs wholly untracked files: `git diff HEAD` never reports them
   # (staged or not, they're absent until tracked), so a brand-new file created by a
   # todo-executor implementation step (new test/impl files — this is a TDD-heavy repo)
@@ -74,11 +74,11 @@ if [ "$MODE" = "fast" ]; then
   # untracked, ls-files --others never reports tracked), so no dedup is needed.
   if [ "$UNCOMMITTED" -eq 1 ]; then
     while IFS= read -r f; do [ -n "$f" ] && CHANGED+=("$f"); done \
-      < <(git ls-files --others --exclude-standard -- '*.ts' '*.tsx' 2>/dev/null)
+      < <(git ls-files --others --exclude-standard -- '*.ts' '*.tsx' '*.mts' 2>/dev/null)
   fi
 
   # Separate probe: hook/husky/scripts shell changes. The CHANGED array above only globs
-  # *.ts/*.tsx, so an all-.sh push (hooks, husky, or a scripts/*.sh helper like
+  # *.ts/*.tsx/*.mts, so an all-.sh push (hooks, husky, or a scripts/*.sh helper like
   # run-hook-tests.sh or lib/preflight-stamp-path.sh — this very gate's own machinery) would
   # otherwise stamp without ever exercising the changed shell logic. Same BASE..HEAD committed
   # range as CHANGED — push-gate semantics, not the staged/working set. Filter is ACDMRT

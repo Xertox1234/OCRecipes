@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/pg-lab/flake-report.sh — retry-consumption ranking and duration trend for
 # dev.test_runs (PG Lab Batch B — see scripts/pg-lab/schema/flake-ledger.sql and
-# scripts/pg-lab/vitest-flake-reporter.ts).
+# scripts/pg-lab/vitest-flake-reporter.mts).
 #
 # Two modes:
 #   (no args)              Top retry-consuming tests over the trailing N days (default
@@ -10,13 +10,13 @@
 #
 # NOTE on the parent todo's stated default ("the itest-defer api-test"): that test is
 # `.claude/hooks/test-inject-patterns.sh`'s `itest-defer` case — a bash-level hook test
-# entirely outside Vitest, so vitest-flake-reporter.ts can never populate a row for it.
+# entirely outside Vitest, so vitest-flake-reporter.mts can never populate a row for it.
 # There is deliberately NO hardcoded default test name here; pass a real Vitest test's
 # `fullName` (as it appears in dev.test_runs.test_name) to use the trend mode. See
 # todos/archive/P3-2026-07-05-pg-flake-ledger.md Updates for the full note.
 #
 # This is a human-invoked reporting tool (unlike the fail-silent writer in
-# vitest-flake-reporter.ts) — it fails LOUDLY if psql is missing or the DB is unreachable.
+# vitest-flake-reporter.mts) — it fails LOUDLY if psql is missing or the DB is unreachable.
 # It also applies its own schema defensively (idempotent CREATE ... IF NOT EXISTS) before
 # querying, matching the eval-report.sh / codify-neardup.sh --rebuild precedent, so the
 # report works even before any local test run has ever successfully persisted a row.
@@ -40,7 +40,7 @@ TEST_NAME="${1:-}"
 # `?sslmode=require` smuggle a denylisted name (e.g. `nutricam?sslmode=require`) past the
 # `case` match entirely, while `psql` itself parses the full URI correctly and connects to
 # the real database anyway. Mirrors the `new URL(connectionString).pathname` parsing
-# vitest-flake-reporter.ts uses for the same check.
+# vitest-flake-reporter.mts uses for the same check.
 LAB_DB_PATH="${LAB_DATABASE_URL%%\?*}"
 LAB_DB_PATH="${LAB_DB_PATH%%\#*}"
 case "${LAB_DB_PATH##*/}" in

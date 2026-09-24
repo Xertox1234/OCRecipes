@@ -27,7 +27,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 // COLUMNS_PER_ROW is the column order emitted by persistTestRuns' INSERT (see
-// ../vitest-flake-reporter.ts): ts, commit, test_name, file, duration_ms, retry_count,
+// ../vitest-flake-reporter.mts): ts, commit, test_name, file, duration_ms, retry_count,
 // flaky, state. Imported (not redeclared) so this test can't silently drift from the
 // module's own constant.
 const {
@@ -35,7 +35,7 @@ const {
   FlakeLedgerReporter,
   ROWS_PER_BATCH,
   COLUMNS_PER_ROW,
-} = await import("../vitest-flake-reporter");
+} = await import("../vitest-flake-reporter.mts");
 
 function fakeTestCase(
   overrides: {
@@ -172,7 +172,7 @@ describe("persistTestRuns", () => {
   it("appends -dirty to the commit when the working tree has uncommitted changes", async () => {
     mockExecSync.mockImplementation((command: string) => {
       if (command.includes("rev-parse")) return "abc1234\n";
-      return " M scripts/pg-lab/vitest-flake-reporter.ts\n"; // dirty tree
+      return " M scripts/pg-lab/vitest-flake-reporter.mts\n"; // dirty tree
     });
 
     await persistTestRuns([

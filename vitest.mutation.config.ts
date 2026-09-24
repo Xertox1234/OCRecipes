@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import baseConfig from "./vitest.config";
+import baseConfig from "./vitest.config.mts";
 
 // Stryker's dry run (perTest coverage) discovers tests via Vitest's `include`.
 // We scope discovery to ONLY the target's dedicated unit test so the dry run stays

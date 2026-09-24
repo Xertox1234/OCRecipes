@@ -1,7 +1,7 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
 import os from "node:os";
-import { FlakeLedgerReporter } from "./scripts/pg-lab/vitest-flake-reporter";
+import { FlakeLedgerReporter } from "./scripts/pg-lab/vitest-flake-reporter.mts";
 
 // Tests must never transform under production conditions. A shell-exported
 // NODE_ENV=production flips vite's resolve conditions for the jsdom module
@@ -94,7 +94,7 @@ export default defineConfig({
     // local-dev signal, not a CI artifact — excluding it here (rather than relying solely
     // on the reporter's own internal CI check) also avoids ever *constructing* (and thus
     // connecting) the reporter in an environment that will never use it. (The static
-    // `import` of vitest-flake-reporter.ts above — and its own `import pg from "pg"` — is
+    // `import` of vitest-flake-reporter.mts above — and its own `import pg from "pg"` — is
     // still evaluated in CI regardless, since ES module imports aren't conditional; only
     // the `new FlakeLedgerReporter()` call is skipped. That's harmless here: `pg` is
     // already a server runtime dependency, and importing it has no side effects.)
@@ -107,67 +107,79 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@shared": path.resolve(__dirname, "./shared"),
-      "@": path.resolve(__dirname, "./client"),
-      "react-native": path.resolve(__dirname, "./test/mocks/react-native.ts"),
+      "@shared": path.resolve(import.meta.dirname, "./shared"),
+      "@": path.resolve(import.meta.dirname, "./client"),
+      "react-native": path.resolve(
+        import.meta.dirname,
+        "./test/mocks/react-native.ts",
+      ),
       "react-native-svg": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/react-native-svg.ts",
       ),
       "react-native-reanimated": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/react-native-reanimated.ts",
       ),
       // react-native-worklets carries the (still-current) scheduleOnUI/scheduleOnRN
       // APIs that replace reanimated's deprecated runOnUI/runOnJS — same mock file,
       // since it already exports both the old and new names.
       "react-native-worklets": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/react-native-reanimated.ts",
       ),
       "react-native-safe-area-context": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/react-native-safe-area-context.ts",
       ),
       "react-native-screens": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/react-native-screens.ts",
       ),
       "react-native-gesture-handler/ReanimatedSwipeable": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/react-native-gesture-handler-reanimated-swipeable.ts",
       ),
       "react-native-gesture-handler": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/react-native-gesture-handler.ts",
       ),
       "@expo/vector-icons": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/expo-vector-icons.ts",
       ),
       "@react-navigation/elements": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/react-navigation-elements.ts",
       ),
       "@gorhom/bottom-sheet": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/gorhom-bottom-sheet.ts",
       ),
-      "expo-haptics": path.resolve(__dirname, "./test/mocks/expo-haptics.ts"),
+      "expo-haptics": path.resolve(
+        import.meta.dirname,
+        "./test/mocks/expo-haptics.ts",
+      ),
       "@sentry/react-native": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/sentry-react-native.ts",
       ),
       // Pure JS but ~500ms to import (OTel tree); _helpers.ts → error-reporter
       // would make every route test pay it. See test/mocks/sentry-node.ts.
-      "@sentry/node": path.resolve(__dirname, "./test/mocks/sentry-node.ts"),
-      "expo-blur": path.resolve(__dirname, "./test/mocks/expo-blur.ts"),
+      "@sentry/node": path.resolve(
+        import.meta.dirname,
+        "./test/mocks/sentry-node.ts",
+      ),
+      "expo-blur": path.resolve(
+        import.meta.dirname,
+        "./test/mocks/expo-blur.ts",
+      ),
       "expo-linear-gradient": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/expo-linear-gradient.ts",
       ),
       "@react-native-community/netinfo": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/react-native-community-netinfo.ts",
       ),
       // Expo Modules API package: importing it pulls in expo-modules-core and
@@ -175,7 +187,7 @@ export default defineConfig({
       // cannot type-strip — collection fails before any test runs. Reached
       // transitively via the @/camera barrel. See test/mocks/ header.
       "@infinitered/react-native-mlkit-text-recognition": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "./test/mocks/infinitered-react-native-mlkit-text-recognition.ts",
       ),
     },

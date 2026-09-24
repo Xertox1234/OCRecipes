@@ -7,7 +7,7 @@
  * lines.
  *
  * Why this exists:
- *   vitest.config.ts no longer uses `environmentMatchGlobs` (removed in PR
+ *   vitest.config.mts no longer uses `environmentMatchGlobs` (removed in PR
  *   #148 / audit 2026-05-11 L1). Without the glob, a new component test that
  *   forgets the pragma silently falls back to the `node` environment, where
  *   `document` and other DOM APIs are undefined — leading to either spurious
@@ -142,7 +142,7 @@ function main() {
   console.log(`${colors.bold}Missing jsdom pragma:${colors.reset}\n`);
   for (const filePath of failures) {
     console.log(
-      `${colors.cyan}${filePath}${colors.reset}: missing '// @vitest-environment jsdom' pragma (required since vitest.config.ts no longer matches via environmentMatchGlobs)`,
+      `${colors.cyan}${filePath}${colors.reset}: missing '// @vitest-environment jsdom' pragma (required since vitest.config.mts no longer matches via environmentMatchGlobs)`,
     );
   }
   console.log(`\n${colors.bold}Summary:${colors.reset}`);

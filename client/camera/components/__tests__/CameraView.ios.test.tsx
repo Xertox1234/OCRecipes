@@ -10,7 +10,7 @@
  * CameraView.test.tsx resolves to the cross-platform CameraView.tsx, not
  * this file — see that file's note). An explicit import naming the file —
  * `from "../CameraView.ios"`, as below — resolves and transforms through
- * Vitest's normal TS/JSX pipeline with no vitest.config.ts changes needed.
+ * Vitest's normal TS/JSX pipeline with no vitest.config.mts changes needed.
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";

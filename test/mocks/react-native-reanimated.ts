@@ -41,7 +41,7 @@ export const runOnJS = (fn: (...args: unknown[]) => unknown) => fn;
 export const runOnUI = (fn: (...args: unknown[]) => unknown) => fn;
 // react-native-worklets' scheduleOnRN/scheduleOnUI take the worklet AND its
 // args in one call (not curried like the deprecated runOnJS/runOnUI above).
-// vitest.config.ts aliases "react-native-worklets" to this same mock file,
+// vitest.config.mts aliases "react-native-worklets" to this same mock file,
 // so these exports also satisfy that import.
 export const scheduleOnRN = (
   fn: (...args: unknown[]) => unknown,
