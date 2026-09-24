@@ -1,6 +1,6 @@
 ---
 title: "Minor accessibility cleanups: double-announced selection in the date strip, unhidden decorative icons, and an early skeleton announcement"
-status: backlog
+status: done
 priority: low
 created: 2026-09-23
 updated: 2026-09-23
@@ -25,10 +25,10 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 ## Acceptance Criteria
 
-- [ ] DateStripItem announces selection once (state only)
-- [ ] The listed decorative icons are hidden from screen readers
-- [ ] The NutritionDetail loading announce follows the project's delayed-announce convention (or is documented as intentional)
-- [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
+- [x] DateStripItem announces selection once (state only)
+- [x] The listed decorative icons are hidden from screen readers
+- [x] The NutritionDetail loading announce follows the project's delayed-announce convention (or is documented as intentional)
+- [x] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes
 
@@ -56,3 +56,16 @@ Small, mechanical.
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (L12).
+- Implemented: dropped the `", selected"` label suffix on `DateStripItem`
+  (`accessibilityState` now the sole selection signal); added
+  `accessible={false}` to the decorative `search` and `arrow-right` Feather
+  icons in `NutritionDetailScreen.tsx`; delayed the skeleton's "Loading"
+  announce by 500ms (cleared on unmount) per the on-open-announce convention,
+  since `NutritionDetail` is a `presentation: "modal"` route. New/updated
+  tests confirmed RED against pre-fix code and GREEN after. The icon-hiding
+  fix has no matching jsdom test — documented inline as intentional
+  (`accessible={false}` never reaches the mocked DOM in this harness; no
+  label-absence delta exists to pin), following the
+  `todos/archive/2026-06-03-coach-pro-bookmark-icon-accessible-false.md`
+  precedent. Reviewed by `code-reviewer` and `mobile-reviewer` — no blocking
+  findings.
