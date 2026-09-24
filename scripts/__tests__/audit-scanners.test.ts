@@ -332,8 +332,10 @@ describe("capFindings", () => {
   });
 });
 
-// Each stage above is tested in isolation, and both stay green if only one of
-// them ranks by line count — the composed pipeline is what an audit consumes.
+// Each stage above is tested in isolation. capFindings' isolated tests stay
+// green even if it stops preserving the order of same-severity ties, which
+// would silently undo sweepFileLengths' biggest-first ranking — only the
+// composed pipeline, which is what an audit consumes, catches that.
 describe("capFindings(sweepFileLengths(...)) — rank before cap", () => {
   it("keeps the MAX_FINDINGS_PER_TOOL largest files, not the alphabetically-first ones", () => {
     const total = 44;
