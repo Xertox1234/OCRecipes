@@ -332,6 +332,37 @@ describe("capFindings", () => {
   });
 });
 
+// Each stage above is tested in isolation, and both stay green if only one of
+// them ranks by line count — the composed pipeline is what an audit consumes.
+describe("capFindings(sweepFileLengths(...)) — rank before cap", () => {
+  it("keeps the MAX_FINDINGS_PER_TOOL largest files, not the alphabetically-first ones", () => {
+    const total = 44;
+    // 17 is coprime with 44, so i*17 % 44 is a permutation of 0..43: sizes are
+    // shuffled relative to the alphabetical order of the file names.
+    const entries = Array.from({ length: total }, (_, i) => ({
+      path: `client/file-${String(i).padStart(2, "0")}.tsx`,
+      lines: FILE_LENGTH_THRESHOLD + 1 + ((i * 17) % total) * 10,
+    }));
+    const expectedKept = [...entries]
+      .sort((a, b) => b.lines - a.lines)
+      .slice(0, MAX_FINDINGS_PER_TOOL)
+      .map((e) => e.path);
+    const alphabeticalKept = entries
+      .slice(0, MAX_FINDINGS_PER_TOOL)
+      .map((e) => e.path);
+    // Regime guards: the cap must actually engage, and an insertion-order
+    // (alphabetical) cap must pick a different set, or this test can't fail.
+    expect(total).toBeGreaterThan(MAX_FINDINGS_PER_TOOL);
+    expect(new Set(alphabeticalKept)).not.toEqual(new Set(expectedKept));
+
+    const { kept, hidden } = capFindings(sweepFileLengths(entries));
+
+    expect(kept.map((f) => f.files)).toEqual(expectedKept);
+    expect(hidden).toHaveLength(total - MAX_FINDINGS_PER_TOOL);
+    expect(hidden.some((f) => expectedKept.includes(f.files))).toBe(false);
+  });
+});
+
 describe("toManifestRows", () => {
   const finding: ScannerFinding = {
     tool: "npm-audit",
