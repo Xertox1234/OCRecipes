@@ -208,6 +208,7 @@ export default function RecipeChatScreen() {
   const { data: messages = [] } = useChatMessages(conversationId);
   const {
     sendMessage,
+    abortStream,
     streamingContent,
     streamingRecipe,
     isStreaming,
@@ -226,6 +227,17 @@ export default function RecipeChatScreen() {
   useEffect(() => {
     if (!isStreaming) setPendingUserMessage(null);
   }, [isStreaming]);
+
+  // Generation keeps running server-side after this screen goes away
+  // (recipe/remix finish-and-save policy) — abort our own dead XHR so it
+  // stops driving local state, and let useSendMessage mark the conversation
+  // stale so returning to it refetches the finished reply instead of a
+  // pre-settle cache (same pattern as CoachOverlayContent / CoachChat, #1060).
+  useEffect(() => {
+    return () => {
+      abortStream();
+    };
+  }, [abortStream]);
 
   useEffect(() => {
     if (!isStreaming) return;

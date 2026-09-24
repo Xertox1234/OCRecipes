@@ -682,9 +682,20 @@ describe("Chat Routes", () => {
        * side once `disconnectWhen(body)` is true. Resolves when the route
        * handler calls `res.end()` — the H6 decision runs before that, so
        * negative assertions after this resolves are meaningful.
+       *
+       * `onServerClose`, when given, is wired to the SAME `res` "close" event
+       * the route's own disconnect handler listens on — it fires regardless
+       * of path (coach or recipe/remix), since `res.on("close")` is
+       * registered unconditionally in `chat.ts`; only what it DOES differs
+       * by path. This lets a recipe/remix test pause its fake generator
+       * until the server has genuinely observed the disconnect, without
+       * relying on the `AbortSignal` the coach path's generator awaits
+       * (recipe/remix generation never receives that signal — see
+       * `docs/solutions/logic-errors/req-close-never-fires-after-body-parser-use-res-close-2026-09-24.md`).
        */
       async function postAndDisconnect(
         disconnectWhen: (bodySoFar: string) => boolean,
+        onServerClose?: () => void,
       ): Promise<void> {
         const testApp = express();
         let signalEnd!: () => void;
@@ -695,6 +706,7 @@ describe("Chat Routes", () => {
             signalEnd();
             return origEnd(...args);
           }) as typeof res.end;
+          if (onServerClose) res.on("close", onServerClose);
           next();
         });
         testApp.use(express.json());
@@ -925,6 +937,92 @@ describe("Chat Routes", () => {
         expect(storage.deleteChatMessage).not.toHaveBeenCalled();
         expect(assistantWrites()).toHaveLength(1);
         expect(assistantWrites()[0][3]).toBe("All done.");
+      });
+
+      // P2-2026-09-24: the opposite policy from H6 above. Recipe/remix has no
+      // salvage for a partial (half a recipe JSON), so `isCoachPath` makes the
+      // `res.on("close")` handler return early for this path — `aborted` is
+      // never set by a disconnect, only by the SSE timeout or byte-limit guard.
+      // Generation runs to completion and the reply is saved as if the client
+      // had stayed connected; no refund, no partial-persistence branch.
+      describe("recipe/remix disconnect — finish-and-save policy", () => {
+        const RECIPE_USER_MSG_ID = 55;
+        const recipeFixture = {
+          title: "Pasta Bake",
+          description: "A cozy baked pasta",
+          difficulty: "Easy" as const,
+          timeEstimate: "30 min",
+          servings: 4,
+          ingredients: [{ name: "pasta", quantity: "1", unit: "lb" }],
+          instructions: ["Boil", "Bake"],
+          dietTags: [],
+        };
+
+        const assistantWrites = () =>
+          vi
+            .mocked(storage.createChatMessage)
+            .mock.calls.filter((c) => c[2] === "assistant");
+
+        function setupRecipeDisconnect() {
+          mockStreamingSetup();
+          // mockStreamingSetup's getChatConversation defaults to type "coach" —
+          // override AFTER calling it, or this reverts to the coach path.
+          vi.mocked(storage.getChatConversation).mockResolvedValue(
+            createMockChatConversation({ type: "recipe" }),
+          );
+          vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+            createMockChatMessage({ id: RECIPE_USER_MSG_ID, role: "user" }),
+          );
+        }
+
+        it("saves the assistant reply with recipe metadata exactly once, and never refunds, when the client disconnects mid-stream", async () => {
+          setupRecipeDisconnect();
+          let serverObservedClose = false;
+          let releaseGenerator!: () => void;
+          const closed = new Promise<void>((r) => {
+            releaseGenerator = r;
+          });
+          // No AbortSignal reaches this generator on the recipe/remix path
+          // (unlike the coach path's `untilAborted(signal)`), so the pause
+          // point is the test harness's own observation of the real socket
+          // close — proving the write isn't gated on the client staying
+          // connected.
+          vi.mocked(generateRecipeChatResponse).mockImplementation(
+            async function* () {
+              yield { content: "Sure! " };
+              await closed;
+              yield {
+                content: "",
+                recipe: recipeFixture,
+                allergenWarning: null,
+              };
+              yield { done: true };
+            },
+          );
+
+          await postAndDisconnect(
+            (body) => body.includes("Sure!"),
+            () => {
+              serverObservedClose = true;
+              releaseGenerator();
+            },
+          );
+
+          expect(serverObservedClose).toBe(true);
+          expect(assistantWrites()).toHaveLength(1);
+          const [, , , content, metadata] = assistantWrites()[0];
+          expect(content).toBe("Sure!");
+          expect(metadata).toEqual({
+            metadataVersion: 1,
+            recipe: recipeFixture,
+            allergenWarning: null,
+            imageUrl: null,
+          });
+          // Coach-only settle path — recipe/remix never refunds or looks up a
+          // turn key.
+          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+          expect(storage.getChatMessageByTurnKey).not.toHaveBeenCalled();
+        });
       });
     });
   });

@@ -467,6 +467,11 @@ export function register(app: Express): void {
                 ? { systemPromptOverride: remixPromptOverride }
                 : undefined,
             )) {
+              // On this path `aborted` starts false and stays false unless
+              // the byte-limit guard below or the SSE timeout trips it — a
+              // client disconnect never reaches here (isCoachPath is false,
+              // so res.on("close") above returns early). This break is not
+              // a disconnect check any more.
               if (aborted) break;
 
               const eventJson = JSON.stringify(event);
@@ -502,7 +507,11 @@ export function register(app: Express): void {
               }
             }
 
-            // Save assistant message with recipe in metadata
+            // Save assistant message with recipe in metadata.
+            // `aborted` here can only be true from the SSE timeout or the
+            // byte-limit guard above — a client disconnect never sets it on
+            // this path, so this gate does not skip saving on disconnect
+            // (recipe/remix finish-and-save policy, P2-2026-09-24).
             if (!aborted && (fullTextResponse || recipeData)) {
               const metadata = recipeData
                 ? {
@@ -529,6 +538,8 @@ export function register(app: Express): void {
 
             // Auto-title from recipe name on first exchange (fire-and-forget — non-critical)
             // history.length is the count before this exchange; +2 for user+assistant messages
+            // Same `aborted` semantics as the persistence gate above — a
+            // client disconnect does not skip this either.
             if (!aborted && recipeData && history.length <= 1) {
               fireAndForget(
                 "recipe-chat-auto-title",

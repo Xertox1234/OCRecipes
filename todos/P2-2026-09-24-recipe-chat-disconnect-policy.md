@@ -1,6 +1,6 @@
 ---
 title: "Recipe/remix chat: make finish-and-save on disconnect explicit, and show the finished reply when the user returns"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-24
 updated: 2026-09-24
@@ -22,10 +22,10 @@ Deferred from the H6 fix (`todos/P1-2026-09-23-ask-coach-dismiss-mid-stream-burn
 ## Acceptance Criteria
 
 - [x] Product decision recorded (user, 2026-09-24): **keep finishing.** A recipe/remix turn whose client disconnects runs to completion server-side and saves the full reply; no abort, no refund.
-- [ ] The user sees the finished reply on returning to the recipe chat, or when browsing previous chats. That means no stale cache: when the recipe chat unmounts or its stream is intentionally aborted, the conversation's messages and the conversation list are marked stale (`refetchType: "none"`, same pattern as `CoachOverlayContent` / `CoachChat` in #1060).
-- [ ] A server real-socket test (`postAndDisconnect` in `server/routes/__tests__/chat.test.ts`) pins it: a recipe turn disconnected mid-stream still saves its assistant message (with recipe metadata) exactly once, and does not refund
-- [ ] Dead abort assumptions on the recipe path are removed or commented. Its `if (!aborted && …)` persistence gates can only be tripped by the SSE timeout / byte limit now, so say so.
-- [ ] Client test: unmount / intentional abort mid-stream invalidates both query keys
+- [x] The user sees the finished reply on returning to the recipe chat, or when browsing previous chats. That means no stale cache: when the recipe chat unmounts or its stream is intentionally aborted, the conversation's messages and the conversation list are marked stale (`refetchType: "none"`, same pattern as `CoachOverlayContent` / `CoachChat` in #1060).
+- [x] A server real-socket test (`postAndDisconnect` in `server/routes/__tests__/chat.test.ts`) pins it: a recipe turn disconnected mid-stream still saves its assistant message (with recipe metadata) exactly once, and does not refund
+- [x] Dead abort assumptions on the recipe path are removed or commented. Its `if (!aborted && …)` persistence gates can only be tripped by the SSE timeout / byte limit now, so say so.
+- [x] Client test: unmount / intentional abort mid-stream invalidates both query keys
 
 ## Implementation Notes
 
