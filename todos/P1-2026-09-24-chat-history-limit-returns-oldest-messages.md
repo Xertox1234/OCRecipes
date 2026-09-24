@@ -1,6 +1,6 @@
 ---
 title: "getChatMessages(limit) returns the OLDEST N messages — coach/recipe context and chat history drop the newest turns in long conversations"
-status: backlog
+status: in-progress
 priority: high
 created: 2026-09-24
 updated: 2026-09-24

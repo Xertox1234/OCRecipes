@@ -400,6 +400,45 @@ describe("handleCoachChat", () => {
     });
   });
 
+  // ── DB history window reliance (AC4) ───────────────────────
+  // On the non-warm-up path, `messageHistory` is built straight from
+  // `storage.getChatMessages(conversationId, 20, userId)` (coach-pro-chat.ts
+  // ~line 684) with no separate append of `content` — the current turn's
+  // text. `createChatMessageWithLimitCheck` (server/routes/chat.ts) persists
+  // that turn BEFORE this generator runs, so once a conversation exceeds 20
+  // messages, the model only sees the user's actual question if storage's
+  // newest-20 window ends with the row it just inserted. This pins that
+  // contract so a future change to the limit, or a caller that stops
+  // trusting storage to include the current turn, breaks visibly here.
+  describe("DB history window reliance (>20 message conversations)", () => {
+    it("passes the current turn through unmodified when it is the newest row", async () => {
+      const content = "What should I eat today?";
+      const history = Array.from({ length: 19 }, (_, i) =>
+        createMockChatMessage({
+          role: i % 2 === 0 ? "user" : "assistant",
+          content: `Older message ${i}`,
+        }),
+      ).concat(createMockChatMessage({ role: "user", content }));
+      expect(history).toHaveLength(20);
+
+      vi.mocked(storage.getChatMessages).mockResolvedValue(history);
+
+      const params = makeParams({ content, isCoachPro: true });
+
+      await collectEvents(handleCoachChat(params));
+
+      expect(storage.getChatMessages).toHaveBeenCalledWith(1, 20, "user-42");
+
+      const passedHistory = vi.mocked(generateCoachProResponse).mock
+        .calls[0][0];
+      // No manual append happened — the length is exactly what storage
+      // returned, and the last entry is the current turn (not duplicated,
+      // not dropped).
+      expect(passedHistory).toHaveLength(20);
+      expect(passedHistory.at(-1)).toEqual({ role: "user", content });
+    });
+  });
+
   // ── Coach Pro vs standard coach branching ─────────────────
 
   describe("Coach Pro vs standard coach branching", () => {
