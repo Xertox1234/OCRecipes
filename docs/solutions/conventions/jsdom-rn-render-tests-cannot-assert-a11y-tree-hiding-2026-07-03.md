@@ -56,8 +56,9 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
   does **not** destructure `accessibilityElementsHidden` or `importantForAccessibility`, so
   those hiding props remain unmapped in the Reanimated path — this is a known, still-open
   residual gap, and it is LIVE, not hypothetical: `client/screens/ProfileScreen.tsx`,
-  `client/screens/HomeScreen.tsx`, and `client/components/cookbook/CookbookCoverPlate.tsx`
-  all set `"no-hide-descendants"` and/or `accessibilityElementsHidden` directly on
+  `client/screens/HomeScreen.tsx`, `client/components/cookbook/CookbookCoverPlate.tsx`, and
+  `client/camera/components/ProductChip.tsx` (its root forwards `importantForAccessibility`,
+  `"no-hide-descendants"` while the scan confirm card is up) all set `"no-hide-descendants"` and/or `accessibilityElementsHidden` directly on
   `Animated.View`, so their hiding is not assertable in jsdom via this mechanism.
   `client/components/TextInput.tsx`'s `Animated.Text` is NOT an instance of this gap: it
   sets `importantForAccessibility="no"`, which `ariaHiddenProps` deliberately never maps —
@@ -119,7 +120,8 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
 - `test/mocks/react-native.ts` — `mockComponent` spreads `accessible`, `accessibilityActions`, and `onAccessibilityAction` through untranslated (the harness gap); `ariaModalProps` maps `accessibilityViewIsModal` → `aria-modal` (2026-09-20); `ariaHiddenProps` maps `accessibilityElementsHidden`/`importantForAccessibility` → `aria-hidden` (2026-08-17), now exported for reuse
 - `test/mocks/gorhom-bottom-sheet.ts` — `BottomSheetView`/`BottomSheetScrollView` reuse `ariaModalProps` for parity with the shared `mockComponent` path (2026-09-20)
 - `test/mocks/expo-vector-icons.ts` — icon mock now reuses `ariaHiddenProps` from `react-native.ts` (2026-09-23), making icon hiding assertable
-- `test/mocks/react-native-reanimated.ts` — `mapA11yProps()` helper (around line 119) does **not** handle `accessibilityElementsHidden` or `importantForAccessibility`; these props remain unmapped for `Animated.View`/`Animated.Text`. Known open residual gap (2026-09-23).
+- `test/mocks/react-native-reanimated.ts` — `mapA11yProps()` helper (around line 120) does **not** handle `accessibilityElementsHidden` or `importantForAccessibility`; these props remain unmapped for `Animated.View`/`Animated.Text`. Known open residual gap (2026-09-23).
+- `client/camera/components/ProductChip.tsx` — root `Animated.View` forwards `importantForAccessibility` (set via `getScanOverlayA11y` in `client/screens/ScanScreenConfirmOverlay-utils.ts`); an instance of the reanimated gap above, so an `aria-hidden` hiding test against its root is meaningless until `mapA11yProps()` is fixed
 - `client/components/meal-plan/AddItemMenuSheet.tsx`, `SimpleEntrySheet.tsx`, `QuickAddSheet.tsx` — the `accessibilityViewIsModal` fix under test (2026-09-20); `QuickAddSheet.tsx` is also the exemplar for converting a Fragment-rooted sheet to a single content-root `View` when no existing root exists
 - `client/components/__tests__/Toast.test.tsx` — exemplar test for icon hiding assertion using `container.querySelector('[data-icon="check-circle"]').getAttribute("aria-hidden") === "true"` (2026-09-23)
 - `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — the exemplar test file for the hiding case and the accessibilityActions avoidance pattern
