@@ -84,3 +84,13 @@ Review-stamp writer, recorded from the #1019 review (no todo filed):
   passes the env var by hand into a diff that also touches hook/script files. Workaround: don't
   pass `PREFLIGHT_VERBOSE=1` to an outer preflight run whose diff also triggers
   `run-hook-tests.sh`; run the hook suite standalone instead (`bash scripts/run-hook-tests.sh`).
+
+`test-inject-patterns.sh`, found 2026-09-24, source PR #1039 review (no todo filed):
+
+- Its routing assertion at ~lines 225-226 (`check "vitest.config.ts → testing rules" ...`)
+  asserts pattern-injection routing against the literal fixture `"vitest.config.ts"` and never
+  exercises `"vitest.config.mts"`, though the real config file was renamed to `.mts` in #1039
+  (Vite native-config-loader migration). `scripts/lib/path-domains.ts`'s `config-file` matcher
+  currently matches ANY extension on the basename, so nothing is broken today — but the self-test
+  gives no regression coverage if that matcher were ever narrowed to `.ts`-only. Frozen harness →
+  residual only, no fix.
