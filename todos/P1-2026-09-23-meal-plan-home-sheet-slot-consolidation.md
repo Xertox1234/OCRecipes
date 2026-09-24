@@ -61,3 +61,15 @@ Keep the menu → destination two-step handoff (InteractionManager) behavior ide
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (H9, M23, M24).
+
+### 2026-09-24
+
+- PR #1038 (merged `850a4016`) added `isAnySheetOpen` (the four sheet-state atoms OR'd, ~line 586) to drive the Android TalkBack background trap (~line 1272). Its final review found a narrow
+  early-release window: on the menu → destination handoff (`handleChooseRecipe`,
+  `handleImportRecipe`, `handleSimpleEntry`), the menu's state is nulled synchronously and the next
+  sheet's is set in `InteractionManager.runAfterInteractions`, so `isAnySheetOpen` can read `false`
+  for a moment while a sheet is still on screen (same class as
+  `docs/solutions/logic-errors/gorhom-onchange-fires-on-animation-complete-not-start-2026-07-07.md`).
+  Unverified on device. The `activeSheet` refactor here should keep the trap engaged across the
+  handoff — add an AC-level test that the trap stays on between menu dismiss and destination
+  present.
