@@ -63,4 +63,10 @@ Raised by #1027's mobile review (non-blocking). #1027 added `importantForAccessi
   spread), and adds `test/mocks/react-native-reanimated.ts` to the doc's `applies_to`
   frontmatter — which review found is inert today, like the two existing `test/mocks/*`
   entries, because `scripts/lib/path-domains.ts` routes `test/mocks/` to no domain. The doc
-  now says so.
+  now says so. Its review also found that the `FlatList`/`SectionList` mocks drop the hiding
+  props entirely (a second, separate mock gap, now documented), that RN 0.81's `View.js`
+  derives `importantForAccessibility` from a literal `aria-hidden` (so CollapsibleSection's
+  literal prop does hide it on Android — the caveat was corrected), and that the per-site lists
+  kept growing each review round, so they are now marked as dated examples with a
+  sweep-by-target method instead of a census. Fixing both mock gaps is tracked in
+  `todos/P3-2026-09-24-test-mocks-drop-a11y-hiding-props-reanimated-and-lists.md` (PR #1048).
