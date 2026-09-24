@@ -520,6 +520,63 @@ describe("useQuickLogSession", () => {
     expect(result.current.parseError).toBeNull();
   });
 
+  it("reset during an in-flight submit, then a late error, does not repopulate the submitError banner", async () => {
+    const { wrapper } = createQueryWrapper();
+
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          items: [
+            {
+              name: "eggs",
+              quantity: 1,
+              unit: "large",
+              calories: 72,
+              protein: 6,
+              carbs: 0,
+              fat: 5,
+              servingSize: null,
+            },
+          ],
+        }),
+    });
+
+    // logAll POST hangs until we reject it manually, simulating a late error
+    // that resolves after the session has already been reset (drawer closed
+    // mid-submit).
+    let rejectLog!: (reason: unknown) => void;
+    mockApiRequest.mockReturnValueOnce(
+      new Promise((_, rej) => {
+        rejectLog = rej;
+      }),
+    );
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("egg"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
+
+    act(() => result.current.submitLog());
+    await waitFor(() => expect(result.current.isSubmitting).toBe(true));
+
+    // User closes the drawer mid-submit — session resets while the POST is
+    // still in flight.
+    act(() => result.current.reset());
+    expect(result.current.submitError).toBeNull();
+
+    // The submit's error arrives after the reset — it belongs to a dismissed
+    // session and must not repopulate the banner.
+    await act(async () => {
+      rejectLog(new Error("server error"));
+    });
+    await waitFor(() => expect(result.current.isSubmitting).toBe(false));
+
+    expect(result.current.submitError).toBeNull();
+    expect(result.current.parsedItems).toHaveLength(0);
+  });
+
   it("auto-parses when isFinal becomes true with a transcript", async () => {
     const { useSpeechToText } = await import("@/hooks/useSpeechToText");
     (useSpeechToText as ReturnType<typeof vi.fn>).mockReturnValue({

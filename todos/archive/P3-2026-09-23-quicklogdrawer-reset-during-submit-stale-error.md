@@ -1,9 +1,9 @@
 ---
 title: 'Closing QuickLogDrawer mid-submit lets a late error repopulate a stale "Failed to log items" banner'
-status: backlog
+status: done
 priority: low
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 assignee:
 labels: [deferred, audit, reliability]
 github_issue:
@@ -23,9 +23,9 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 ## Acceptance Criteria
 
-- [ ] A submit result that arrives after a reset is ignored (epoch guard)
-- [ ] Test: reset during an in-flight submit, then error → no banner on reopen
-- [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
+- [x] A submit result that arrives after a reset is ignored (epoch guard)
+- [x] Test: reset during an in-flight submit, then error → no banner on reopen
+- [x] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes
 
@@ -53,3 +53,22 @@ Reuse the existing epoch mechanism in useQuickLogSession.
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (L15).
+
+### 2026-09-24
+
+- Implemented via TDD: added a failing test reproducing the race (RED —
+  `expected 'Failed to log items. Please try again.' to be null`), then fixed
+  `logAllMutation` in `client/hooks/useQuickLogSession.ts` by adding
+  `onMutate: () => ({ epoch: sessionEpochRef.current })` and checking
+  `context.epoch !== sessionEpochRef.current` in both `onSuccess` and
+  `onError` before writing UI state. `queryClient.invalidateQueries` stays
+  unconditional in both branches per the Risks note. `QuickLogDrawer.tsx`
+  needed no change — its test mocks the whole session hook, so the fix is
+  fully contained in the hook.
+- Reviewed by `code-reviewer` and `mobile-reviewer`: no blocking findings.
+  `mobile-reviewer` raised a WARNING that guarding `onSuccess` also
+  suppresses the success haptic/toast callback for a stale-but-genuine
+  success (beyond the Risk note's literal "only the UI error state" wording)
+  and a SUGGESTION to add a matching stale-success test. Per the project's
+  one-review-pass policy, these were not fixed on this branch — deferred to
+  the PR report for human triage.
