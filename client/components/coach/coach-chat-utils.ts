@@ -29,21 +29,96 @@ export function planBannerA11yLabel(days: MealPlanDay[]): string {
   return `AI meal plan with ${days.length} ${dayWord} and ${totalMeals} ${mealWord}`;
 }
 
+const COACH_BLOCKS_OPEN_FENCE = "```coach_blocks\n";
+const COACH_BLOCKS_CLOSE_FENCE = "```";
+
 /**
  * Strips the coach_blocks fence from accumulated XHR streaming text.
  * When a response is mid-stream, the closing ``` may not have arrived yet,
  * so this handles that case by stripping from the open fence to end-of-string.
  */
 export function stripCoachBlocksFence(accumulated: string): string {
-  const openIdx = accumulated.indexOf("```coach_blocks\n");
+  const openIdx = accumulated.indexOf(COACH_BLOCKS_OPEN_FENCE);
   if (openIdx === -1) return accumulated.trim();
-  const closeIdx = accumulated.indexOf("```", openIdx + 16);
+  const closeIdx = accumulated.indexOf(
+    COACH_BLOCKS_CLOSE_FENCE,
+    openIdx + COACH_BLOCKS_OPEN_FENCE.length,
+  );
   if (closeIdx === -1) return accumulated.slice(0, openIdx).trim();
   // Remove the fence block: take text before open fence and text after close fence.
   // If after-text starts with \n, skip it to avoid double newline.
-  let after = accumulated.slice(closeIdx + 3);
+  let after = accumulated.slice(closeIdx + COACH_BLOCKS_CLOSE_FENCE.length);
   if (after.startsWith("\n")) after = after.slice(1);
   return (accumulated.slice(0, openIdx) + after).trim();
+}
+
+/**
+ * Scan-offset state for `stripCoachBlocksFenceIncremental`, carried across
+ * repeated calls on a growing `accumulated` string by the caller (e.g. one
+ * ref per active coach stream). Reset it (via `createFenceScanState()`)
+ * whenever `accumulated` itself is reset for a new/aborted stream.
+ */
+export interface FenceScanState {
+  /** Index of the open fence marker in `accumulated`, or -1 while still searching. */
+  openIdx: number;
+  /** How far into `accumulated` the open-marker search has already covered. */
+  openSearchedTo: number;
+  /** Index of the close fence marker, or -1 while still searching / not applicable. */
+  closeIdx: number;
+  /** How far into `accumulated` the close-marker search has already covered. */
+  closeSearchedTo: number;
+}
+
+export function createFenceScanState(): FenceScanState {
+  return { openIdx: -1, openSearchedTo: 0, closeIdx: -1, closeSearchedTo: 0 };
+}
+
+/**
+ * Equivalent to `stripCoachBlocksFence(accumulated)`, but for repeated calls
+ * on a growing `accumulated` string (one SSE event at a time) it tracks how
+ * far each marker search has already scanned in `state`, so a call only
+ * re-scans the unsearched suffix (plus a small constant overlap — one marker
+ * length minus one char — so a marker split across two chunks is never
+ * missed) instead of re-running `indexOf` from position 0 on every event.
+ * Before the fence is found, that full-string `indexOf` on every event is the
+ * O(n^2) cost this replaces: it re-scans the entire accumulated response on
+ * every token/chunk for the rest of the stream.
+ *
+ * Callers must pass the SAME `state` object across calls for one stream, and
+ * a fresh `createFenceScanState()` when `accumulated` itself resets.
+ */
+export function stripCoachBlocksFenceIncremental(
+  accumulated: string,
+  state: FenceScanState,
+): string {
+  if (state.openIdx === -1) {
+    const from = Math.max(
+      0,
+      state.openSearchedTo - (COACH_BLOCKS_OPEN_FENCE.length - 1),
+    );
+    const idx = accumulated.indexOf(COACH_BLOCKS_OPEN_FENCE, from);
+    state.openSearchedTo = accumulated.length;
+    if (idx === -1) return accumulated.trim();
+    state.openIdx = idx;
+    state.closeSearchedTo = idx + COACH_BLOCKS_OPEN_FENCE.length;
+  }
+
+  if (state.closeIdx === -1) {
+    const from = Math.max(
+      state.openIdx + COACH_BLOCKS_OPEN_FENCE.length,
+      state.closeSearchedTo - (COACH_BLOCKS_CLOSE_FENCE.length - 1),
+    );
+    const idx = accumulated.indexOf(COACH_BLOCKS_CLOSE_FENCE, from);
+    state.closeSearchedTo = accumulated.length;
+    if (idx === -1) return accumulated.slice(0, state.openIdx).trim();
+    state.closeIdx = idx;
+  }
+
+  let after = accumulated.slice(
+    state.closeIdx + COACH_BLOCKS_CLOSE_FENCE.length,
+  );
+  if (after.startsWith("\n")) after = after.slice(1);
+  return (accumulated.slice(0, state.openIdx) + after).trim();
 }
 
 /**

@@ -43,6 +43,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
 import {
   useFavouriteRecipeIds,
@@ -989,6 +990,7 @@ export default function RecipeBrowserScreen() {
         </View>
       ) : (
         <AnimatedSectionList
+          {...FLATLIST_DEFAULTS}
           sections={[
             { key: "local", title: "From OCRecipes", data: localResults },
             ...(onlineResults.length > 0

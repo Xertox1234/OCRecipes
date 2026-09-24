@@ -1,6 +1,6 @@
 ---
 title: "RecipeBrowser section list has no windowing props, and useCoachStream re-scans the whole accumulated response on each SSE event"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-23
 updated: 2026-09-23
