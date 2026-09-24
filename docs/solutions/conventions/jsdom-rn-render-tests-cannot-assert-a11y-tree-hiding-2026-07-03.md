@@ -58,13 +58,18 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
   residual gap, and it is LIVE, not hypothetical: `client/screens/ProfileScreen.tsx`,
   `client/screens/HomeScreen.tsx`, `client/components/cookbook/CookbookCoverPlate.tsx`,
   `client/camera/components/ProductChip.tsx` (its root forwards `importantForAccessibility`,
-  `"no-hide-descendants"` while the scan confirm card is up), and
+  `"no-hide-descendants"` while the scan confirm card is up),
+  `client/screens/BatchScanScreen.tsx` (its local-toast `Animated.View` spreads
+  `behindContentA11yProps` from `useConfirmationModal()`, both hiding props while the modal is
+  open), and
   `client/components/home/CollapsibleSection.tsx` all set `"no-hide-descendants"` and/or `accessibilityElementsHidden` directly on
-  `Animated.View`, so their hiding is not assertable in jsdom via this mechanism.
+  `Animated.View`, so their hiding is not assertable in jsdom via this mechanism. Sweep for
+  new instances by TARGET, not literal: the props also arrive via helper spreads
+  (`getScanOverlayA11y`, `behindContentA11yProps`), which a grep for the prop names misses.
   `client/components/TextInput.tsx`'s `Animated.Text` is NOT an instance of this gap: it
   sets `importantForAccessibility="no"`, which `ariaHiddenProps` deliberately never maps —
   closing the reanimated gap will not make it render `aria-hidden`).
-  `client/components/home/CollapsibleSection.tsx` differs from the other four sites in one
+  `client/components/home/CollapsibleSection.tsx` differs from the other five sites in one
   way: an `aria-hidden` read-back on its clip container's `Animated.View` already passes
   today, but only because the component also writes a literal `aria-hidden={!isExpanded}`
   prop alongside `importantForAccessibility` — `mapA11yProps()` doesn't destructure
@@ -132,6 +137,8 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
 - `test/mocks/react-native-reanimated.ts` — `mapA11yProps()` helper (around line 120) does **not** handle `accessibilityElementsHidden` or `importantForAccessibility`; these props remain unmapped for `Animated.View`/`Animated.Text`. Known open residual gap (2026-09-23).
 - `client/camera/components/ProductChip.tsx` — root `Animated.View` forwards `importantForAccessibility` (set via `getScanOverlayA11y` in `client/screens/ScanScreenConfirmOverlay-utils.ts`); an instance of the reanimated gap above, so an `aria-hidden` hiding test against its root is meaningless until `mapA11yProps()` is fixed
 - `client/components/home/CollapsibleSection.tsx` — clip-container `Animated.View` sets both `importantForAccessibility` and a literal `aria-hidden={!isExpanded}`; another instance of the reanimated gap, but the literal `aria-hidden` prop passes through `mapA11yProps()`'s `...domSafe` spread untranslated, so an `aria-hidden` read-back against it passes today for the wrong reason — it proves nothing about `importantForAccessibility`/Android hiding
+- `client/screens/BatchScanScreen.tsx` — local-toast `Animated.View` spreads `behindContentA11yProps` (`client/components/ConfirmationModal.tsx`'s `useConfirmationModal()`); another instance of the reanimated gap, reached through a helper spread rather than a literal prop. The other `behindContentA11yProps` spread sites land on plain `View`/`Pressable`/list components, which `mockComponent` translates
+- Note on this doc's `applies_to`: the three `test/mocks/*` entries are currently INERT — `scripts/lib/path-domains.ts` routes `test/mocks/` to no domain (`npx tsx scripts/lib/path-domains.ts test/mocks/react-native-reanimated.ts` prints nothing), and retrieval selects by routed domain before `applies_to` is consulted. They take effect only if a `test/mocks/` routing rule is added; until then this doc is injected on edits to the `client/**/__tests__` files only
 - `client/components/meal-plan/AddItemMenuSheet.tsx`, `SimpleEntrySheet.tsx`, `QuickAddSheet.tsx` — the `accessibilityViewIsModal` fix under test (2026-09-20); `QuickAddSheet.tsx` is also the exemplar for converting a Fragment-rooted sheet to a single content-root `View` when no existing root exists
 - `client/components/__tests__/Toast.test.tsx` — exemplar test for icon hiding assertion using `container.querySelector('[data-icon="check-circle"]').getAttribute("aria-hidden") === "true"` (2026-09-23)
 - `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — the exemplar test file for the hiding case and the accessibilityActions avoidance pattern

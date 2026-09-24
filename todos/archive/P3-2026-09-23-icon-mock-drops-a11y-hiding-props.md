@@ -55,8 +55,12 @@ Raised by #1027's mobile review (non-blocking). #1027 added `importantForAccessi
   sets `importantForAccessibility="no"`, which `ariaHiddenProps` never maps, so it isn't an
   instance of the gap), and the addition of `client/camera/components/ProductChip.tsx` as a
   live gap instance.
-- A separate docs-only follow-up PR adds `client/components/home/CollapsibleSection.tsx` as a
+- Follow-up PR #1043 (docs-only) adds `client/components/home/CollapsibleSection.tsx` as a
   further live gap instance (with a caveat: its `aria-hidden` read-back already passes today,
   but only via a literal `aria-hidden` prop passing through `mapA11yProps()` untranslated, not
-  via the `importantForAccessibility` mapping this doc's mechanism provides) and adds
-  `test/mocks/react-native-reanimated.ts` to the doc's `applies_to` frontmatter.
+  via the `importantForAccessibility` mapping this doc's mechanism provides), adds
+  `client/screens/BatchScanScreen.tsx` (reached via the `behindContentA11yProps` helper
+  spread), and adds `test/mocks/react-native-reanimated.ts` to the doc's `applies_to`
+  frontmatter — which review found is inert today, like the two existing `test/mocks/*`
+  entries, because `scripts/lib/path-domains.ts` routes `test/mocks/` to no domain. The doc
+  now says so.
