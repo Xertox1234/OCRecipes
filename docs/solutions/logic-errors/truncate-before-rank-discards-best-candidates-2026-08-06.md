@@ -8,7 +8,7 @@ tags: [retrieval, ranking, inject-patterns, harness, tooling, pagination, silent
 applies_to: [.claude/hooks/inject-patterns.sh, .claude/hooks/**/*.sh, scripts/**/*.ts, server/services/**/*.ts, server/storage/**/*.ts]
 symptoms: [A relevance/priority field exists and is documented as live, but changing it has no observable effect, A "top N" list is dominated by whatever is newest rather than whatever fits, A corpus/index grows steadily while the set actually served stays the same size, Docs cite records by name that the system can never surface]
 created: '2026-08-06'
-last_updated: '2026-08-16'
+last_updated: '2026-09-24'
 ---
 
 # A pipeline that truncates before it ranks silently discards its best candidates
@@ -94,10 +94,36 @@ every glob shares the same prefix shape (react-native's `client/components/**/*.
 much smaller delta, confirming rather than contradicting the honest-scope note above; see
 `injection-glob-tier-ranked-by-date-not-specificity-2026-08-13` in `todos/archive/`.
 
+### A second instance: `MAX_FINDINGS_PER_TOOL` capping file-length findings (added 2026-09-24)
+
+`scripts/audit-scanners.ts`'s `capFindings` sorts every tool's findings by `severity` before
+slicing to `MAX_FINDINGS_PER_TOOL` (20) — the correct proxy for `npm-audit`/`gitleaks`, where
+severity varies. But `sweepFileLengths` gave every file-length finding the same `"Low"` severity,
+so `capFindings`'s sort was a no-op tie for that tool and the kept 20 were whatever order
+`git ls-files` happened to enumerate (alphabetical-ish) — the real criterion for this tool (line
+count) was never consulted before the cap discarded 24 of 44 candidates. A 2026-09-23 audit found
+a 1700-line and a 1267-line file silently absent from a 20-of-44 scanner run while smaller files
+under 700 lines were kept, purely by alphabetical luck.
+
+Same root cause as above, same fix shape: rank first, cap last — but here "rank" means sorting by
+the tool's own real criterion (`lines` descending) inside `sweepFileLengths`, upstream of
+`capFindings`'s generic severity sort, so the two compose correctly (severity ties preserve
+insertion order, and insertion order is now biggest-first). Also added: `capFindings` now returns
+the dropped `hidden` findings (not just a count), and the CLI prints a `hidden by cap: <files>,
++N more` line, so a future silent truncation is visible in the tool's own output rather than
+requiring an audit to notice via a missing-file complaint. Pinned by a composed test
+(`scripts/__tests__/audit-scanners.test.ts`) asserting `capFindings(sweepFileLengths(entries))`
+against an independently-sorted expected top-20, with sizes shuffled relative to file names so an
+insertion/alphabetical-order regression can't pass by coincidence — the isolated per-function
+tests for each stage stayed green even when only one stage was fixed, exactly the "every function
+is right in isolation" trap this solution describes.
+
 ## Related Files
 
 - `.claude/hooks/inject-patterns.sh` — `solutions_from_markdown`
 - `.claude/hooks/test-inject-patterns-relevance.sh` — the out-of-window fixture that pins it
+- `scripts/audit-scanners.ts` — `sweepFileLengths`, `capFindings`
+- `scripts/__tests__/audit-scanners.test.ts` — the composed rank-then-cap regression test
 
 ## See Also
 
