@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   StyleSheet,
   View,
@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
+import { deleteAsync } from "expo-file-system/legacy";
 import { useNavigation, useIsFocused } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -57,8 +58,31 @@ export default function ReceiptCaptureScreen() {
   const [ocrTexts, setOcrTexts] = useState<(string | undefined)[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
 
+  // Mirrors `photos` for the unmount cleanup below — a `[]`-deps effect
+  // cleanup closes over the value from the initial render, so a live ref is
+  // the only way for it to see the latest captured list.
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+  // Set right before navigation.replace("ReceiptReview", ...) hands the
+  // photos off — `replace` unmounts this screen, and without this flag the
+  // unmount cleanup below would delete the files ReceiptReview just received.
+  const handedOffRef = useRef(false);
+
   // Premium gate on mount
   const shouldShowUpgrade = !isPremium;
+
+  // Delete every still-captured photo when this screen is abandoned (closed
+  // without tapping Done) — the only path that doesn't already delete its
+  // own files (handleRemovePhoto deletes immediately; handleDone hands the
+  // set off to ReceiptReview via handedOffRef above).
+  useEffect(() => {
+    return () => {
+      if (handedOffRef.current) return;
+      photosRef.current.forEach((uri) => {
+        deleteAsync(uri, { idempotent: true }).catch(() => {});
+      });
+    };
+  }, []);
 
   const handleCapture = useCallback(async () => {
     if (isCapturing || photos.length >= MAX_PHOTOS) return;
@@ -127,7 +151,13 @@ export default function ReceiptCaptureScreen() {
   const handleRemovePhoto = useCallback(
     (index: number) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      setPhotos((prev) => prev.filter((_, i) => i !== index));
+      setPhotos((prev) => {
+        const removed = prev[index];
+        if (removed) {
+          deleteAsync(removed, { idempotent: true }).catch(() => {});
+        }
+        return prev.filter((_, i) => i !== index);
+      });
       setOcrTexts((prev) => prev.filter((_, i) => i !== index));
     },
     [haptics],
@@ -139,6 +169,9 @@ export default function ReceiptCaptureScreen() {
     const definedOcrTexts = ocrTexts.filter(
       (t): t is string => typeof t === "string",
     );
+    // Ownership of these files transfers to ReceiptReview — must be set
+    // before replace() unmounts this screen and runs the cleanup effect.
+    handedOffRef.current = true;
     navigation.replace("ReceiptReview", {
       photoUris: photos,
       ocrTexts: definedOcrTexts.length > 0 ? definedOcrTexts : undefined,

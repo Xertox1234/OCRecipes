@@ -25,6 +25,8 @@ const {
   mockApiRequest,
   mockCapturePhotoToFile,
   mockRecognizeText,
+  mockIsFocused,
+  mockDeleteAsync,
 } = vi.hoisted(() => {
   const mockGoBack = vi.fn();
   const mockCanGoBack = vi.fn();
@@ -46,7 +48,7 @@ const {
       goBack: mockGoBack,
       canGoBack: mockCanGoBack,
       reset: mockReset,
-      isFocused: () => true,
+      isFocused: (): boolean => true,
     },
     mockRouteParams: {
       value: undefined as
@@ -86,6 +88,11 @@ const {
     // the behaviour under test.
     mockCapturePhotoToFile: vi.fn(),
     mockRecognizeText: vi.fn(),
+    // Mutable so individual tests can simulate the screen losing focus
+    // (blur) without a real navigation transition — default true matches
+    // every existing test's assumption of a focused screen.
+    mockIsFocused: { value: true },
+    mockDeleteAsync: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -137,8 +144,13 @@ vi.mock("@/camera/hooks/useCameraPermissions", () => ({
 // reproduced in isolation outside ScanScreen, so it is not specific to this file.
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => mockNavigationObject,
-  useIsFocused: () => true,
+  useIsFocused: () => mockIsFocused.value,
   useRoute: () => ({ params: mockRouteParams.value }),
+}));
+// ScanScreen deletes abandoned capture files on reset/unmount — the real
+// module hits a native module at import time under jsdom.
+vi.mock("expo-file-system/legacy", () => ({
+  deleteAsync: mockDeleteAsync,
 }));
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumCamera: () => ({ isPremium: true, remainingScans: null }),
@@ -213,10 +225,13 @@ beforeEach(() => {
   mockPermissionStatus.value = "granted";
   mockShortcutToSessionComplete.value = false;
   mockSessionCompleteOcrText.value = undefined;
+  mockIsFocused.value = true;
+  mockNavigationObject.isFocused = () => true;
   // Re-seeded every test (clearAllMocks wipes history, not implementations, so
   // a per-test override would otherwise leak into the next test in this file).
   mockCapturePhotoToFile.mockResolvedValue({ filePath: "/label.jpg" });
   mockRecognizeText.mockResolvedValue({ text: "", blocks: [] });
+  mockDeleteAsync.mockResolvedValue(undefined);
   mockApiRequest.mockImplementation(async (_method: string, url: string) => {
     if (url.startsWith("/api/nutrition/barcode/")) {
       return {
@@ -1066,5 +1081,187 @@ describe("ScanScreen — label mode forwards verifyBarcode to LabelAnalysis", ()
         localOCRText: OCR,
       });
     });
+  });
+});
+
+describe("ScanScreen — fetchProductInfo Warning haptic is gated on liveness (audit L1)", () => {
+  const dangerFlag = {
+    id: "allergen:tree_nuts",
+    kind: "allergen",
+    severity: "danger",
+    tier: "safety",
+    title: "Contains Tree Nuts",
+  };
+
+  const driveBarcodeLock = async () => {
+    renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    expect(firstHandler).toBeDefined();
+
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+  };
+
+  it("fires the Warning haptic for a danger flag while the screen is focused", async () => {
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Trail Mix",
+            calories: 200,
+            flags: [dangerFlag],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    await driveBarcodeLock();
+
+    await waitFor(() => {
+      expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+        Haptics.NotificationFeedbackType.Warning,
+      );
+    });
+  });
+
+  // Reproduces audit finding L1 (ScanScreen.tsx ~396-398): fetchProductInfo
+  // fired the Warning haptic after its async fetch resolved with no check
+  // that the user was still on Scan. Fails on main.
+  it("does not fire the Warning haptic when the screen lost focus before the fetch resolved", async () => {
+    let resolveFetch: (value: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return pending;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    await driveBarcodeLock();
+
+    // The user leaves Scan while the barcode lookup is still in flight.
+    mockNavigationObject.isFocused = () => false;
+
+    await act(async () => {
+      resolveFetch({
+        json: async () => ({
+          productName: "Trail Mix",
+          calories: 200,
+          flags: [dangerFlag],
+        }),
+      } as Response);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Control: the fetch really did resolve and dispatch PRODUCT_LOADED —
+    // otherwise "not called" would be true for the wrong reason.
+    expect(await screen.findByText("⚠ Contains Tree Nuts")).toBeTruthy();
+    expect(Haptics.notificationAsync).not.toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Warning,
+    );
+  });
+});
+
+describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => {
+  const classificationResult = {
+    sessionId: null,
+    intent: "auto" as const,
+    foods: [],
+    overallConfidence: 0.9,
+    needsFollowUp: false,
+    followUpQuestions: [],
+    contentType: "prepared_meal" as const,
+  };
+
+  // Reproduces audit finding L2: capturePhotoToFile writes to the OS temp
+  // dir and nothing ever deleted it. Fails on main (deleteAsync is never
+  // imported/called by ScanScreen).
+  it("deletes the captured photo file when a failed smart classification is retried", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockRejectedValueOnce(
+      new Error("classification failed"),
+    );
+
+    renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    const retry = await screen.findByLabelText("Retry smart photo analysis");
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(retry);
+    });
+
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+  });
+
+  // The other half of the Risk note: leaving Scan mid-classification (no
+  // retry, no confirm) must still clean up — abandonment via blur, not just
+  // via the retry button.
+  it("deletes the captured photo file when the smart flow is abandoned by leaving Scan", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce(
+      classificationResult,
+    );
+
+    const { rerender } = renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    await screen.findByLabelText("Confirm smart photo analysis");
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+  });
+
+  // Risk guard: a photo forwarded to NutritionDetail must survive — the
+  // SESSION_COMPLETE navigate releases it before firing, so the blur that
+  // navigation causes must not also delete it.
+  it("does not delete the nutrition photo forwarded to NutritionDetail", async () => {
+    mockShortcutToSessionComplete.value = true;
+    mockSessionCompleteOcrText.value = "Calories 210, Total Fat 8g";
+
+    renderComponent(<ScanScreen />);
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "NutritionDetail",
+        expect.objectContaining({
+          nutritionImageUri: "file:///nutrition-label.jpg",
+        }),
+      );
+    });
+
+    expect(mockDeleteAsync).not.toHaveBeenCalledWith(
+      "file:///nutrition-label.jpg",
+      expect.anything(),
+    );
   });
 });

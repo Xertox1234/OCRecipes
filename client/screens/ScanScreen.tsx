@@ -20,6 +20,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import * as Haptics from "expo-haptics";
+import { deleteAsync } from "expo-file-system/legacy";
 import { Feather } from "@expo/vector-icons";
 import {
   useNavigation,
@@ -168,6 +169,39 @@ export default function ScanScreen() {
   // OCR runs + two navigations. Synchronous ref check, mirroring isCapturingRef.
   const isConfirmingRef = useRef(false);
 
+  // Temp capture files (capturePhotoToFile writes to the OS temp dir) that
+  // this screen currently owns and nothing has cleaned up yet. Captures that
+  // are handed to another screen (front-label/label-mode navigate, or the
+  // trackTempUri callers below releasing before their own navigate) are
+  // removed here without deleting — ownership just transferred. Anything
+  // still present when the scan is abandoned (reset or unmount) is deleted.
+  // nutritionImageUri/frontImageUri displayed by NutritionDetail are released
+  // right before that navigate fires — see the SESSION_COMPLETE effect below.
+  const pendingTempUrisRef = useRef<Set<string>>(new Set());
+  const trackTempUri = useCallback((uri: string) => {
+    pendingTempUrisRef.current.add(uri);
+  }, []);
+  const releaseTempUri = useCallback((uri: string | undefined) => {
+    if (uri) pendingTempUrisRef.current.delete(uri);
+  }, []);
+  const cleanupPendingUris = useCallback(() => {
+    pendingTempUrisRef.current.forEach((uri) => {
+      deleteAsync(uri, { idempotent: true }).catch(() => {});
+    });
+    pendingTempUrisRef.current.clear();
+  }, []);
+  // Every abandonment of the scan session (blur, an explicit retry, or a
+  // premium-blocked smart confirm) must clean up before discarding scanPhase
+  // — dispatch(RESET) alone silently drops whatever imageUri that phase held.
+  const resetScan = useCallback(() => {
+    cleanupPendingUris();
+    dispatch({ type: "RESET" });
+  }, [cleanupPendingUris]);
+  // Backstop for the case ScanScreen unmounts (the scan modal dismissed)
+  // without the blur effect below running first. Idempotent: cleanupPendingUris
+  // clears the set after running, and deleteAsync is idempotent itself.
+  useEffect(() => cleanupPendingUris, [cleanupPendingUris]);
+
   const { permission, requestPermission } = useCameraPermissions();
 
   // Keep reducedMotionRef current so onBarcodeScanned can read it without being in deps
@@ -183,10 +217,11 @@ export default function ScanScreen() {
     }
   }, [isFocused]);
 
-  // Reset when screen loses focus
+  // Reset when screen loses focus — also cleans up any temp capture file the
+  // abandoned phase was holding (resetScan; see pendingTempUrisRef above).
   useEffect(() => {
-    if (!isFocused) dispatch({ type: "RESET" });
-  }, [isFocused]);
+    if (!isFocused) resetScan();
+  }, [isFocused, resetScan]);
 
   // Coach hint escalation timer
   useEffect(() => {
@@ -268,6 +303,13 @@ export default function ScanScreen() {
 
     const timer = setTimeout(() => {
       void refreshScanCount();
+      // Ownership of the wizard's captured photos transfers to NutritionDetail
+      // here — release before navigating so the abandon-cleanup above never
+      // deletes a file NutritionDetail is about to display (Scope Contract Risk).
+      // Both fields are optional (undefined on a barcode-only session);
+      // releaseTempUri no-ops on undefined.
+      releaseTempUri(scanPhase.nutritionImageUri);
+      releaseTempUri(scanPhase.frontImageUri);
       navigation.navigate(
         "NutritionDetail",
         buildNutritionDetailParams(scanPhase),
@@ -280,6 +322,7 @@ export default function ScanScreen() {
     refreshScanCount,
     reducedMotion,
     returnAfterLog,
+    releaseTempUri,
     // `haptics` itself is a NEW object every render (useHaptics returns an
     // object literal) — depending on it directly would re-run this effect on
     // every unrelated ScanScreen re-render and abort the in-flight
@@ -392,8 +435,17 @@ export default function ScanScreen() {
         });
         // Raise salience on a severe flag WITHOUT blocking the flow (badges only).
         // In returnAfterLog mode the confirm-card branch above owns this haptic
-        // for the same barcode — skip here to avoid a double buzz.
-        if (safetyFlag?.severity === "danger" && !returnAfterLog) {
+        // for the same barcode — skip here to avoid a double buzz. Also gated
+        // on liveness: this fires after an async await, and `isFocused` state
+        // would be a stale closure here — navigation.isFocused() reads it live
+        // (same liveness check onSmartPhotoConfirm uses below), so a user who
+        // left Scan while this fetch was in flight doesn't get buzzed after
+        // the fact.
+        if (
+          safetyFlag?.severity === "danger" &&
+          !returnAfterLog &&
+          navigation.isFocused()
+        ) {
           haptics.notification(Haptics.NotificationFeedbackType.Warning);
         }
       } catch (err) {
@@ -401,7 +453,7 @@ export default function ScanScreen() {
         // Non-critical — ProductChip renders without product data
       }
     },
-    [haptics, returnAfterLog],
+    [haptics, returnAfterLog, navigation],
   );
 
   const onBarcodeScanned = useCallback(
@@ -562,6 +614,7 @@ export default function ScanScreen() {
           return;
         }
 
+        trackTempUri(photo.uri);
         dispatch({ type: "SMART_PHOTO_INITIATED", imageUri: photo.uri });
         try {
           const result = await uploadPhotoForAnalysis(photo.uri, "auto");
@@ -593,6 +646,7 @@ export default function ScanScreen() {
       // Haptic + flash immediately after capture, before async OCR
       haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
       setFlashCount((c) => c + 1);
+      trackTempUri(photo.uri);
 
       if (capturePlan.runStepOcr) {
         let ocrText = "";
@@ -619,7 +673,14 @@ export default function ScanScreen() {
     } finally {
       isCapturingRef.current = false;
     }
-  }, [isLabelMode, isFrontLabelMode, verifyBarcode, navigation, haptics]);
+  }, [
+    isLabelMode,
+    isFrontLabelMode,
+    verifyBarcode,
+    navigation,
+    haptics,
+    trackTempUri,
+  ]);
 
   // Permission screens
   if (!permission || permission.status === "undetermined") {
@@ -851,11 +912,19 @@ export default function ScanScreen() {
               scanPhase.type === "STEP2_REVIEWING"
                 ? scanPhase.imageUri
                 : scanPhase.nutritionImageUri;
+            // Ownership transfers to LabelAnalysis, which deletes it on its
+            // own unmount — release so the abandon-cleanup here doesn't also
+            // delete it once this blur triggers resetScan().
+            releaseTempUri(imageUri);
             navigation.navigate("LabelAnalysis", { imageUri });
           }
         }}
         onEditStep3={() => {
           if (scanPhase.type === "STEP3_REVIEWING") {
+            // Only frontImageUri transfers to FrontLabelConfirm here —
+            // nutritionImageUri stays pending and is cleaned up by the blur
+            // this navigate triggers (resetScan), same as any other abandon.
+            releaseTempUri(scanPhase.frontImageUri);
             navigation.navigate("FrontLabelConfirm", {
               imageUri: scanPhase.frontImageUri,
               barcode: scanPhase.barcode,
@@ -885,6 +954,10 @@ export default function ScanScreen() {
             });
             switch (action.kind) {
               case "navigate":
+                // Ownership transfers to the destination screen — release
+                // before navigating so the blur this triggers doesn't delete
+                // it via resetScan().
+                releaseTempUri(imageUri);
                 // navigate accepts a variable screen name from a discriminated union;
                 // cast the whole function signature to avoid React Navigation's strict
                 // per-screen overloads while keeping params typed via ClassificationRoute.
@@ -905,7 +978,7 @@ export default function ScanScreen() {
                 // hinge on ordering — UpgradeModal is a RN <Modal> in its own native
                 // window, so its trap never nests with the chip's accessibilityViewIsModal
                 // (which lingers through its spring-out). The camera sits at IDLE behind.
-                dispatch({ type: "RESET" });
+                resetScan();
                 setShowUpgradeModal(true);
                 break;
               case "unrecognized":
@@ -931,7 +1004,7 @@ export default function ScanScreen() {
             setIsSmartConfirming(false);
           }
         }}
-        onRetry={() => dispatch({ type: "RESET" })}
+        onRetry={resetScan}
       />
 
       {confirmCard && (

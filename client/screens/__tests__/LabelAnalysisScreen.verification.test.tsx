@@ -52,6 +52,12 @@ vi.mock("@/lib/photo-upload", () => ({
   confirmLabelAnalysis: vi.fn(),
 }));
 
+// LabelAnalysisScreen deletes its captured temp photo on unmount — the real
+// module hits a native module at import time under jsdom.
+vi.mock("expo-file-system/legacy", () => ({
+  deleteAsync: vi.fn().mockResolvedValue(undefined),
+}));
+
 const BARCODE = "0778918011332";
 
 describe("LabelAnalysisScreen — verification mode Done", () => {

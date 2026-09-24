@@ -19,6 +19,7 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { deleteAsync } from "expo-file-system/legacy";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -129,6 +130,19 @@ export default function LabelAnalysisScreen() {
       }
     }
   }, [route.params.localOCRText]);
+
+  // Delete the captured temp photo when this flow ends. Unmount only — never
+  // useFocusEffect: the front-label CTA below keeps LabelAnalysis ON the stack
+  // (navigate, not replace) so pop(2) can return to it, and the upload effect
+  // re-reads `imageUri` on every retry. A focus-based cleanup would delete the
+  // file out from under that retry. `imageUri` is never rendered on this
+  // screen (upload is its only consumer), so cleanup can wait for the real end
+  // of the flow — this screen's three exits (goBack/pop) all unmount it.
+  useEffect(() => {
+    return () => {
+      deleteAsync(imageUri, { idempotent: true }).catch(() => {});
+    };
+  }, [imageUri]);
 
   const retryUpload = useCallback(() => {
     toast.dismiss();

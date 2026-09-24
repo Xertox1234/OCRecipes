@@ -1,6 +1,6 @@
 ---
 title: "Scan: allergen haptic can fire after leaving Scan, and captured photo temp files are never deleted"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-23
 updated: 2026-09-23
