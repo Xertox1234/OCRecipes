@@ -3,7 +3,7 @@ import { vi } from "vitest";
 /**
  * Global mock for @infinitered/react-native-mlkit-text-recognition.
  *
- * Registered as a resolve.alias in vitest.config.ts so that any test-suite file
+ * Registered as a resolve.alias in vitest.config.mts so that any test-suite file
  * reaching the @/camera barrel (ScanScreen, ReceiptCaptureScreen,
  * CookSessionCaptureScreen) does not pull the real package into the module
  * graph. It is an Expo Modules API package, so importing it drags in the

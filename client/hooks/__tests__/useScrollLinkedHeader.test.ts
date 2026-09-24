@@ -70,7 +70,7 @@ vi.mock("react-native-reanimated", () => {
       (fn: (...args: unknown[]) => void) =>
       (...args: unknown[]) =>
         fn(...args),
-    // vitest.config.ts aliases "react-native-worklets" to the same physical
+    // vitest.config.mts aliases "react-native-worklets" to the same physical
     // mock file as "react-native-reanimated" — this LOCAL vi.mock override
     // intercepts both specifiers once resolved, so useScrollLinkedHeader.ts's
     // `import { scheduleOnRN } from "react-native-worklets"` needs it here too.

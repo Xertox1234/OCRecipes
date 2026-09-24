@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ErrorEvent } from "@sentry/node";
 
 // Mock @sentry/node before the module under test loads it. This factory takes
-// precedence over the test/mocks/sentry-node.ts alias in vitest.config.ts
+// precedence over the test/mocks/sentry-node.ts alias in vitest.config.mts
 // (the alias exists to keep the ~500ms real import out of route tests).
 //
 // DECISION (2026-07-12): no integration test runs this suite against the
@@ -11,7 +11,7 @@ import type { ErrorEvent } from "@sentry/node";
 // extra hardening — a future SDK upgrade that restructures where PII lands
 // on the outgoing event (the exact bug class scrubEvent/beforeSendHandler
 // exist to fix) wouldn't be caught by a mocked test. It was not pursued
-// because the obstacle is structural, not a missing test: vitest.config.ts's
+// because the obstacle is structural, not a missing test: vitest.config.mts's
 // `resolve.alias` for "@sentry/node" (line ~137) rewrites the specifier to
 // test/mocks/sentry-node.ts at the bundler level, before Vitest's mock layer
 // runs — `vi.unmock`/`vi.importActual` intercept `vi.mock()` factories, not
@@ -214,7 +214,7 @@ describe("error-reporter", () => {
       // Reads the installed SDK's real deny-list off disk (same static-read
       // technique as the boot-ordering tests below) instead of importing
       // "@sentry/node" — that specifier is aliased to test/mocks/sentry-node.ts
-      // in vitest.config.ts, so a live import here would resolve to the stub,
+      // in vitest.config.mts, so a live import here would resolve to the stub,
       // not the real SDK. Path is the same one cited in error-reporter.ts's
       // own doc comment: node_modules/@sentry/node's OWN nested @sentry/core
       // copy (10.65.0) — NOT the top-level node_modules/@sentry/core, which

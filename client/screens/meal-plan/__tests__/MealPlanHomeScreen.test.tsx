@@ -163,7 +163,7 @@ vi.mock("@/components/UpgradeModal", () => ({
   UpgradeModal: () => null,
 }));
 
-// ── Local @gorhom/bottom-sheet override (shadows the global vitest.config.ts
+// ── Local @gorhom/bottom-sheet override (shadows the global vitest.config.mts
 // alias for this file only). The global mock renders onChange/onAnimate as
 // inert attributes on a <div> — fine for content-sheet tests, useless here,
 // since this test needs to invoke those callbacks directly per instance.

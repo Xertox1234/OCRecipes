@@ -2,7 +2,7 @@ import { recognizeTextFromPhoto } from "../recognizeTextFromPhoto";
 
 const mockRecognizeText = vi.hoisted(() => vi.fn());
 
-// The package is ALSO aliased to test/mocks/ in vitest.config.ts, because it
+// The package is ALSO aliased to test/mocks/ in vitest.config.mts, because it
 // calls requireNativeModule() at module scope and would otherwise throw at
 // import time in any suite that pulls in the @/camera barrel. That alias and
 // this per-file vi.mock compose: vi.mock replaces whatever the resolver
