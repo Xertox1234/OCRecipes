@@ -3,7 +3,7 @@ title: "MealPlanHomeScreen: collapse four hand-duplicated bottom-sheet slots (an
 status: backlog
 priority: high
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 assignee:
 labels: [deferred, audit, maintainability]
 github_issue:

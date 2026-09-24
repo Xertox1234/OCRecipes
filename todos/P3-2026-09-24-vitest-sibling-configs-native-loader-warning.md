@@ -33,6 +33,9 @@ The full checklist is in
       literal grep misses them) — swept with `git grep -nP` (not `-E`: `\b` silently matches
       nothing under `-E` on this git)
 - [ ] CI's mutation and integration jobs still run
+- [ ] While here: three comments in `scripts/__tests__/coverage-ratchet.test.ts` still call the
+      production config "the real vitest.config.ts" (found by #1039's final review) — change them
+      to `.mts`, leaving that file's `path.join(dir, "vitest.config.ts")` temp-dir fixtures alone
 
 ## Implementation Notes
 

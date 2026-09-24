@@ -31,14 +31,19 @@ advisor and code-reviewer as a suggestion; left out of that PR's scope.
 
 ## Implementation Notes
 
-- Options: refetch verification status on focus, or clear `canScanFrontLabel` when
-  FrontLabelConfirmScreen reports a save. Prefer the one that doesn't add new navigation params.
+- `verificationResult` is `useMutation` state in LabelAnalysisScreen, not query-backed, and
+  FrontLabelConfirmScreen's save calls no `invalidateQueries` — so there is no existing query to
+  invalidate. Options: clear `canScanFrontLabel` in a focus effect after a save is signalled
+  (e.g. a React Query cache entry set with `queryClient.setQueryData` on save and read on focus),
+  or re-run the verification lookup on focus. Prefer the one that doesn't add navigation params.
 - Files: `client/screens/LabelAnalysisScreen.tsx`,
   `client/screens/__tests__/LabelAnalysisScreen.verification.test.tsx`.
 
 ## Scope Contract
 
-- **Mechanisms to use:** existing query invalidation or focus effects; no new params.
+- **Mechanisms to use:** a focus effect plus ONE small save signal — a React Query cache entry
+  (`setQueryData` / a new query key) is allowed for this; no new navigation params, no new
+  context or store.
 - **Files in scope:** the two files above (plus `client/screens/FrontLabelConfirmScreen.tsx` if the
   save must signal).
 - No new mechanisms, files, or abstractions beyond those listed.

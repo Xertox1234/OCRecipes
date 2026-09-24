@@ -18,16 +18,19 @@ later editor. None affects runtime behaviour.
 
 ## Background
 
-1. `client/screens/meal-plan/RecipeBrowserScreen.tsx` ~line 366-367: the comment on
-   `isFilterSheetOpen` says iOS is trapped "via accessibilityViewIsModal on the screen's own root
-   View below" (line 686). The filter sheet's own iOS trap is
-   `<BottomSheetView accessibilityViewIsModal>` (~line 1096); the root-View prop is unrelated, as
-   the comment ~line 690 already says.
-2. `todos/archive/P2-2026-09-20-android-talkback-background-trap-missing-on-bottomsheetmodal-sites.md`
-   ~line 83: says PhotoAnalysisScreen imports neither `useBeverageSheet()` nor
-   `usePhotoAnalysis()`. It imports `usePhotoAnalysis` (PhotoAnalysisScreen.tsx line 35); only
-   `useBeverageSheet` is indirect.
-3. Same archived todo ~line 207: "8 of the other 9 tests" — the file has 9 tests total, so 8 others.
+(Line numbers drift; grep the quoted text.)
+
+1. `client/screens/meal-plan/RecipeBrowserScreen.tsx`, the comment on `isFilterSheetOpen`: says
+   iOS is trapped "via accessibilityViewIsModal on the screen's own root View below" — the
+   `recipe-browser-root` View's prop. The filter sheet's own iOS trap is
+   `<BottomSheetView accessibilityViewIsModal>` inside the filter sheet; the root-View prop is
+   unrelated, as the later comment beside the root View's `importantForAccessibility` already
+   says.
+2. `todos/archive/P2-2026-09-20-android-talkback-background-trap-missing-on-bottomsheetmodal-sites.md`,
+   the site-8 deferral paragraph ("neither of which this screen imports"): PhotoAnalysisScreen
+   does import `usePhotoAnalysis`; only `useBeverageSheet` is indirect.
+3. Same archived todo, the 2026-09-24 entry: "8 of the other 9 tests" — the file has 9 tests
+   total, so 8 others.
 
 ## Acceptance Criteria
 

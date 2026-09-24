@@ -18,18 +18,19 @@ plain primitives, but two other mock families skip it, so no jsdom test can chec
 
 ## Background
 
-Documented in
+Both gaps are documented in
 `docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md`
-(PRs #1040 and #1043):
+(gap 1 since PR #1040; gap 2 and the extra gap-1 sites added by PR #1043). The site lists below
+are examples as of 2026-09-24, not a census:
 
-1. `test/mocks/react-native-reanimated.ts` — `mapA11yProps()` (~line 120) destructures neither
+1. `test/mocks/react-native-reanimated.ts` — `mapA11yProps()` destructures neither
    `accessibilityElementsHidden` nor `importantForAccessibility`, so they reach the DOM raw with a
-   React unknown-prop warning. Live sites: ProfileScreen, HomeScreen, CookbookCoverPlate,
+   React unknown-prop warning. Example sites: ProfileScreen, HomeScreen, CookbookCoverPlate,
    ProductChip, BatchScanScreen, CollapsibleSection.
 2. `createFlatListMock` and the hand-written `SectionList` in `test/mocks/react-native.ts`
    destructure a fixed prop list and never spread the rest, so the props are silently dropped.
-   Live sites: SavedItemsScreen, ChatListScreen, GroceryListsScreen, PantryScreen (via
-   `behindContentA11yProps`).
+   Example sites (via `behindContentA11yProps`): SavedItemsScreen, ChatListScreen,
+   CookSessionReviewScreen, GroceryListsScreen, PantryScreen.
 
 ## Acceptance Criteria
 
@@ -51,7 +52,8 @@ Documented in
 ## Scope Contract
 
 - **Mechanisms to use:** the existing `ariaHiddenProps` helper.
-- **Files in scope:** the two mock files, their tests, and the solution doc.
+- **Files in scope:** the two mock files, their tests, the solution doc, and any existing client
+  test that AC 4 requires repairing (list each one in the Updates entry).
 - No new mechanisms, files, or abstractions beyond those listed.
 
 ## Updates
