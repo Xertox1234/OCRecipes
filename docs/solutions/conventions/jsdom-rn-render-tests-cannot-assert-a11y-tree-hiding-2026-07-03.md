@@ -4,7 +4,7 @@ track: knowledge
 category: conventions
 module: client
 tags: [testing, accessibility, jsdom, render-tests, mocks]
-applies_to: [client/components/**/__tests__/*.test.tsx, client/screens/**/__tests__/*.test.tsx, test/mocks/react-native.ts, test/mocks/expo-vector-icons.ts]
+applies_to: [client/components/**/__tests__/*.test.tsx, client/screens/**/__tests__/*.test.tsx, test/mocks/react-native.ts, test/mocks/expo-vector-icons.ts, test/mocks/react-native-reanimated.ts]
 created: '2026-07-03'
 last_updated: '2026-09-24'
 ---
@@ -56,13 +56,22 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
   does **not** destructure `accessibilityElementsHidden` or `importantForAccessibility`, so
   those hiding props remain unmapped in the Reanimated path — this is a known, still-open
   residual gap, and it is LIVE, not hypothetical: `client/screens/ProfileScreen.tsx`,
-  `client/screens/HomeScreen.tsx`, `client/components/cookbook/CookbookCoverPlate.tsx`, and
+  `client/screens/HomeScreen.tsx`, `client/components/cookbook/CookbookCoverPlate.tsx`,
   `client/camera/components/ProductChip.tsx` (its root forwards `importantForAccessibility`,
-  `"no-hide-descendants"` while the scan confirm card is up) all set `"no-hide-descendants"` and/or `accessibilityElementsHidden` directly on
+  `"no-hide-descendants"` while the scan confirm card is up), and
+  `client/components/home/CollapsibleSection.tsx` all set `"no-hide-descendants"` and/or `accessibilityElementsHidden` directly on
   `Animated.View`, so their hiding is not assertable in jsdom via this mechanism.
   `client/components/TextInput.tsx`'s `Animated.Text` is NOT an instance of this gap: it
   sets `importantForAccessibility="no"`, which `ariaHiddenProps` deliberately never maps —
-  closing the reanimated gap will not make it render `aria-hidden`). So hiding
+  closing the reanimated gap will not make it render `aria-hidden`).
+  `client/components/home/CollapsibleSection.tsx` differs from the other four sites in one
+  way: an `aria-hidden` read-back on its clip container's `Animated.View` already passes
+  today, but only because the component also writes a literal `aria-hidden={!isExpanded}`
+  prop alongside `importantForAccessibility` — `mapA11yProps()` doesn't destructure
+  `aria-hidden` either, so it spreads through the `...domSafe` passthrough unchanged, not via
+  any translation this doc's `ariaHiddenProps` mechanism provides. A regression that dropped
+  `importantForAccessibility` (Android's real hiding) while keeping the literal `aria-hidden`
+  prop would keep such a test green. So hiding
   via THAT pair **is** now assertable on plain RN primitives: `*ByRole` queries exclude the
   hidden node (use a role **count**, not a
   name filter — a name the fix itself removed can never match and the assertion is vacuous;
@@ -122,6 +131,7 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
 - `test/mocks/expo-vector-icons.ts` — icon mock now reuses `ariaHiddenProps` from `react-native.ts` (2026-09-23), making icon hiding assertable
 - `test/mocks/react-native-reanimated.ts` — `mapA11yProps()` helper (around line 120) does **not** handle `accessibilityElementsHidden` or `importantForAccessibility`; these props remain unmapped for `Animated.View`/`Animated.Text`. Known open residual gap (2026-09-23).
 - `client/camera/components/ProductChip.tsx` — root `Animated.View` forwards `importantForAccessibility` (set via `getScanOverlayA11y` in `client/screens/ScanScreenConfirmOverlay-utils.ts`); an instance of the reanimated gap above, so an `aria-hidden` hiding test against its root is meaningless until `mapA11yProps()` is fixed
+- `client/components/home/CollapsibleSection.tsx` — clip-container `Animated.View` sets both `importantForAccessibility` and a literal `aria-hidden={!isExpanded}`; another instance of the reanimated gap, but the literal `aria-hidden` prop passes through `mapA11yProps()`'s `...domSafe` spread untranslated, so an `aria-hidden` read-back against it passes today for the wrong reason — it proves nothing about `importantForAccessibility`/Android hiding
 - `client/components/meal-plan/AddItemMenuSheet.tsx`, `SimpleEntrySheet.tsx`, `QuickAddSheet.tsx` — the `accessibilityViewIsModal` fix under test (2026-09-20); `QuickAddSheet.tsx` is also the exemplar for converting a Fragment-rooted sheet to a single content-root `View` when no existing root exists
 - `client/components/__tests__/Toast.test.tsx` — exemplar test for icon hiding assertion using `container.querySelector('[data-icon="check-circle"]').getAttribute("aria-hidden") === "true"` (2026-09-23)
 - `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — the exemplar test file for the hiding case and the accessibilityActions avoidance pattern

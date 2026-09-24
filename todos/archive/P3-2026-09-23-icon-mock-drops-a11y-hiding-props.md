@@ -45,3 +45,18 @@ Raised by #1027's mobile review (non-blocking). #1027 added `importantForAccessi
   removing the prop from `Toast.tsx` (then restored — `Toast.tsx` itself is unmodified). Full
   client suite (284 files / 3019 tests) and full repo suite (541 files / 8601 tests, with
   `.env` present) pass; `code-reviewer` and `mobile-reviewer` both returned no findings.
+
+### 2026-09-24
+
+- Post-review follow-up commits on PR #1040 (after the "no findings" pass above) corrected
+  three things in `docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md`:
+  the `ariaHiddenProps` docblock's OR/scope-limit claim, the incorrect inclusion of
+  `client/components/TextInput.tsx` in the reanimated-gap enumeration (its `Animated.Text`
+  sets `importantForAccessibility="no"`, which `ariaHiddenProps` never maps, so it isn't an
+  instance of the gap), and the addition of `client/camera/components/ProductChip.tsx` as a
+  live gap instance.
+- A separate docs-only follow-up PR adds `client/components/home/CollapsibleSection.tsx` as a
+  further live gap instance (with a caveat: its `aria-hidden` read-back already passes today,
+  but only via a literal `aria-hidden` prop passing through `mapA11yProps()` untranslated, not
+  via the `importantForAccessibility` mapping this doc's mechanism provides) and adds
+  `test/mocks/react-native-reanimated.ts` to the doc's `applies_to` frontmatter.
