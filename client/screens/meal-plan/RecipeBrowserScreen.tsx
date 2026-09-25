@@ -17,15 +17,11 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import Animated from "react-native-reanimated";
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-} from "@gorhom/bottom-sheet";
-import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
+import { useSheetHostProps } from "@/hooks/useSheetHostProps";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Chip } from "@/components/Chip";
@@ -346,6 +342,15 @@ export default function RecipeBrowserScreen() {
   const [filters, setFilters] = useState<RecipeFilters>(DEFAULT_FILTERS);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const filterSheetRef = React.useRef<BottomSheetModal>(null);
+
+  // Host prop bundle (backdrop, themed background, handle indicator, and the
+  // accessible={false} iOS a11y fix — see useSheetHostProps' own JSDoc). No
+  // backdropOpacity/backdropPressBehavior override, matching this sheet's
+  // pre-existing behavior of using gorhom's own backdrop defaults.
+  const sheetHostProps = useSheetHostProps({
+    backgroundColor: theme.backgroundRoot,
+    handleIndicatorColor: withOpacity(theme.text, 0.3),
+  });
 
   // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
   const {
@@ -1060,28 +1065,10 @@ export default function RecipeBrowserScreen() {
       <BottomSheetModal
         ref={filterSheetRef}
         snapPoints={["70%"]}
-        backdropComponent={(props: BottomSheetBackdropProps) => (
-          <BottomSheetBackdrop
-            {...props}
-            disappearsOnIndex={-1}
-            appearsOnIndex={0}
-          />
-        )}
-        backgroundStyle={{ backgroundColor: theme.backgroundRoot }}
-        handleIndicatorStyle={{ backgroundColor: withOpacity(theme.text, 0.3) }}
         onChange={handleFilterSheetChange}
         onAnimate={handleFilterSheetAnimate}
         onDismiss={handleFilterSheetClosed}
-        // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
-        // "Bottom Sheet" on the DraggableView that WRAPS these children. On
-        // new-arch Fabric that makes the wrapper an accessibility LEAF
-        // (isAccessibilityElement=YES), so VoiceOver — and Maestro's iOS driver —
-        // see one opaque "Bottom Sheet" element and this sheet's content
-        // becomes unreachable. accessible={false} keeps the children
-        // individually exposed. MUST be `false`, not `null`: gorhom does
-        // `_providedAccessible ?? undefined`, so null re-defaults to true.
-        // See docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
-        accessible={false}
+        {...sheetHostProps}
       >
         <BottomSheetView accessibilityViewIsModal>
           <SearchFilterSheet
