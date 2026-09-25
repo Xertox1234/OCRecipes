@@ -85,3 +85,8 @@ Keep the change minimal: one `inputTextRef`. Do not restructure CoachChat's othe
   caller (not merely a keystroke inside CoachChat) would still cascade a new `handleSend` identity
   through this same chain. Not observable from a keystroke alone, so out of scope for this fix;
   noted for anyone touching `useCoachWarmUp.ts` next.
+
+### 2026-09-25 (review repair)
+
+- Independent review found the render-body `inputTextRef.current = inputText` write is itself a React Compiler CompileError ("Cannot access refs during render"), confirmed by compiling an isolated component with the pinned `babel-plugin-react-compiler`. Replaced it with a `setInputText` wrapper that writes the ref and the state together (all three writes route through it); the isolated wrapper pattern compiles with no bailout. `docs/rules/hooks.md`'s ref-mirror rule now says so.
+- The residual note was incomplete: `CoachProScreen`'s `handleCreateConversation` also depended on a fresh `useMutation` result. Both residuals are fixed here: `useCreateConversation` is destructured to `mutateAsync`, and `useCoachWarmUp` returns a memoized object (test added).

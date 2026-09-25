@@ -110,18 +110,22 @@ export default function CoachChat({
   const { mutateAsync: addMealPlanItem, isPending: isAddingPlanItem } =
     useAddMealPlanItem();
 
-  const [inputText, setInputText] = useState("");
-  // Latest-value mirror of `inputText`, synced every render (not just from
-  // handleChangeText — inputText is also set by the interim-transcript
-  // effect below and by handleSend's own post-send reset). handleSend reads
-  // this ref instead of `inputText` directly so its identity doesn't change
-  // on every keystroke — see H3 (2026-09-23 audit): handleSend depending on
-  // inputText cascaded into handleRetry/handleBlockAction/handleQuickReply/
-  // renderItem all getting new identities per keystroke, forcing every
-  // visible FlatList row to re-render. Mirrors the onCompleteRef pattern in
-  // ScanSonarRing.tsx.
+  const [inputText, setInputTextState] = useState("");
+  // Latest-value mirror of `inputText`. handleSend reads this ref instead of
+  // `inputText` so its identity doesn't change on every keystroke — see H3
+  // (2026-09-23 audit): handleSend depending on inputText cascaded into
+  // handleRetry/handleBlockAction/handleQuickReply/renderItem all getting new
+  // identities per keystroke, forcing every visible FlatList row to re-render.
+  // The ref is written together with the state in this setter, NOT in the
+  // render body: a render-phase `ref.current =` write is a React Compiler
+  // CompileError ("Cannot access refs during render"), and writing here also
+  // keeps the ref current before the re-render. Every write to inputText must
+  // go through setInputText (the raw state setter is not used elsewhere).
   const inputTextRef = useRef(inputText);
-  inputTextRef.current = inputText;
+  const setInputText = useCallback((text: string) => {
+    inputTextRef.current = text;
+    setInputTextState(text);
+  }, []);
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
   const [streamingError, setStreamingError] = useState<string | null>(null);
   const [isAtDailyLimit, setIsAtDailyLimit] = useState(false);
