@@ -1,6 +1,6 @@
 ---
 title: "Coach Pro's first message fails silently when conversation creation errors — add feedback and a mutation error safety net"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-25

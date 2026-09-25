@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Share, Platform } from "react-native";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, type MutationErrorMeta } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import type { ResolvedFavouriteRecipe } from "@shared/schema";
 
@@ -53,7 +53,17 @@ export function useIsRecipeFavourited(
   );
 }
 
-export function useToggleFavouriteRecipe() {
+/**
+ * `meta` is threaded (not hardcoded): this hook has 5 call sites and only
+ * CookbookPickerModal already shows its own generic-failure Alert (deferring
+ * to this hook's own LIMIT_REACHED alert for that one code — see its
+ * onError comment) — the other 4 (FavouriteRecipesScreen, RecipeActionBar,
+ * RecipeBrowserScreen, RecipeCarousel) have no generic-failure handling at
+ * all, so leaving `meta` unset for them lets the global net cover the gap.
+ * A LIMIT_REACHED failure is unaffected either way: it's a 4xx, which
+ * `shouldSurfaceMutationError` already suppresses regardless of `meta`.
+ */
+export function useToggleFavouriteRecipe(meta?: MutationErrorMeta) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -110,6 +120,7 @@ export function useToggleFavouriteRecipe() {
       void queryClient.invalidateQueries({ queryKey: FAVOURITES_IDS_KEY });
       void queryClient.invalidateQueries({ queryKey: FAVOURITES_KEY });
     },
+    meta,
   });
 }
 

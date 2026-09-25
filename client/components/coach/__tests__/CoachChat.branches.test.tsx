@@ -186,6 +186,7 @@ vi.mock("@/hooks/useHaptics", () => ({
 vi.mock("@/components/coach/CoachChatBase", () => ({
   CoachChatBase: ({
     children,
+    inputText,
     onSend,
     onChangeText,
     streamingError,
@@ -193,6 +194,7 @@ vi.mock("@/components/coach/CoachChatBase", () => ({
     inputAdornment,
   }: {
     children: React.ReactNode;
+    inputText?: string;
     onSend: () => void;
     onChangeText: (t: string) => void;
     streamingError?: string | null;
@@ -207,6 +209,7 @@ vi.mock("@/components/coach/CoachChatBase", () => ({
         data-testid="text-input"
         onChange={(e) => onChangeText(e.target.value)}
       />
+      <div data-testid="input-text">{inputText}</div>
       {streamingError ? (
         <div data-testid="streaming-error">{streamingError}</div>
       ) : null}
@@ -422,7 +425,7 @@ describe("CoachChat — handleSend", () => {
     });
   });
 
-  it("aborts the send when conversation creation fails", async () => {
+  it("aborts the send when conversation creation fails, restores the typed text, and shows a visible error", async () => {
     const onCreateConversation = vi.fn().mockRejectedValue(new Error("boom"));
     renderCoachChat({ conversationId: null, onCreateConversation });
     fireEvent.change(screen.getByTestId("text-input"), {
@@ -432,6 +435,14 @@ describe("CoachChat — handleSend", () => {
       fireEvent.click(screen.getByTestId("send"));
     });
     expect(state.startStream).not.toHaveBeenCalled();
+    // The optimistic bubble/input clear must not eat the user's message —
+    // the typed text comes back so they can retry without retyping it.
+    expect(screen.getByTestId("input-text").textContent).toBe("new convo");
+    // A bare catch that only clears the optimistic bubble leaves the user
+    // with no explanation at all — this must surface visibly.
+    expect(screen.getByTestId("streaming-error").textContent).toBe(
+      "Couldn't start the conversation. Please try again.",
+    );
   });
 
   it("uses the warm-up id and resets warm-up state when isCoachPro", () => {

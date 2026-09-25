@@ -276,6 +276,9 @@ export default function GoalSetupScreen() {
         scrollViewRef.current?.scrollToEnd({ animated: !reducedMotion });
       });
     },
+    // `calculateMutation.isError` already drives a visible InlineError below
+    // the button (see its render below).
+    meta: { silentError: true },
   });
 
   const saveMutation = useMutation({
@@ -307,6 +310,9 @@ export default function GoalSetupScreen() {
     onError: () => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     },
+    // `saveMutation.isError` already drives a visible InlineError (see its
+    // render below).
+    meta: { silentError: true },
   });
 
   const handleCalculate = () => {

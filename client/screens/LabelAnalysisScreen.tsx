@@ -264,6 +264,8 @@ export default function LabelAnalysisScreen() {
       }
       toast.error(msg);
     },
+    // The onError above already toasts on failure.
+    meta: { silentError: true },
   });
 
   const [verificationResult, setVerificationResult] =
@@ -315,6 +317,8 @@ export default function LabelAnalysisScreen() {
           : "Couldn't submit verification. Please try again.",
       );
     },
+    // The onError above already toasts on failure.
+    meta: { silentError: true },
   });
 
   const handleLog = useCallback(() => {

@@ -27,7 +27,9 @@ interface SavedItemCardProps {
 export function SavedItemCard({ item, onPress }: SavedItemCardProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const deleteMutation = useDeleteSavedItem();
+  // handleDelete's own catch below already shows an Alert on failure —
+  // opt out so the global net doesn't double it.
+  const deleteMutation = useDeleteSavedItem({ silentError: true });
 
   const isRecipe = item.type === "recipe";
   const iconName = isRecipe ? "book-open" : "activity";
