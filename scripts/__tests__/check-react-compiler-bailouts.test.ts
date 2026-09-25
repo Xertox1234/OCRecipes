@@ -6,6 +6,7 @@ import { spawnSync } from "child_process";
 import {
   findClientSourceFiles,
   compilerMatchesExpoBuild,
+  pluginPathsMatch,
   isBailout,
   loadBaseline,
   writeBaseline,
@@ -198,6 +199,17 @@ export function CleanToo({ label }: { label: string }) {
   describe("compilerMatchesExpoBuild", () => {
     // The check is only meaningful if it runs the SAME babel-plugin-react-compiler
     // copy that babel-preset-expo (the real build) resolves.
+    // The comparison itself, driven with synthetic paths so it can fail.
+    it("reports a mismatch when the two resolved paths differ", () => {
+      expect(
+        pluginPathsMatch(
+          "/r/node_modules/babel-plugin-react-compiler/dist/index.js",
+          "/r/node_modules/babel-preset-expo/node_modules/babel-plugin-react-compiler/dist/index.js",
+        ),
+      ).toBe(false);
+      expect(pluginPathsMatch("/same/index.js", "/same/index.js")).toBe(true);
+    });
+
     it("resolves the same compiler copy as babel-preset-expo in this repo", () => {
       const result = compilerMatchesExpoBuild();
       expect(result.ok).toBe(true);

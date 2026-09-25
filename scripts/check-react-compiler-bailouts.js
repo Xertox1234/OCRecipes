@@ -250,6 +250,11 @@ export function parseArgs(args) {
  * dependency, so a future Expo bump can nest a different copy for the build
  * while this script keeps resolving the root one.
  */
+/** True iff both resolved plugin paths are the same file. Pure, so testable. */
+export function pluginPathsMatch(checkPath, expoPath) {
+  return checkPath === expoPath;
+}
+
 export function compilerMatchesExpoBuild() {
   const checkPath = reactCompilerPlugin;
   let expoPath;
@@ -261,7 +266,7 @@ export function compilerMatchesExpoBuild() {
   } catch (error) {
     return { ok: false, checkPath, expoPath: `unresolvable (${error})` };
   }
-  return { ok: checkPath === expoPath, checkPath, expoPath };
+  return { ok: pluginPathsMatch(checkPath, expoPath), checkPath, expoPath };
 }
 
 export function main(args) {

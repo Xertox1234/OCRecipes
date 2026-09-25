@@ -50,8 +50,8 @@ check the compiler will re-report these.
   that compiles — check with `node scripts/check-react-compiler-bailouts.js`,
   a CI-enforced ratchet (chained onto `npm run lint`) against a checked-in
   baseline (`scripts/react-compiler-bailout-baseline.json`). The baseline is
-  per FILE, but bailing is per function: 26 of the 61 baseline `.tsx` files
-  also contain components that compile cleanly (e.g. ProfileScreen: 4
+  per FILE, but bailing is per function: measured 2026-09-25, 25 of the 60
+  baseline `.tsx` files also contain components that compile cleanly (e.g. ProfileScreen: 4
   errors, 1 success). So check which function bailed before adding manual
   memoization — memoize the component that is actually skipped, not the
   whole file.
