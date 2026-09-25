@@ -87,3 +87,4 @@ notification-scheduler.ts`'s server-push path — out of this todo's scope —
   sends entryId-only payloads indefinitely) — fixed inline (reworded comments).
   Filed `todos/P3-2026-09-25-notification-scheduler-missing-deep-link-url.md`
   for the actual server-side fix. mobile-reviewer: no findings.
+- Independent review: the handled notification response was never cleared, so ErrorBoundary's "Try Again" (which remounts NavigationContainer and re-runs getInitialURL) would re-open the last tapped entry. linking.ts now clears it once turned into a URL, on both the cold-launch and live-tap paths, and only builds the fallback URL for a positive-integer entryId. Tests added, including a round trip of the built URL through the real linking config.

@@ -25,8 +25,10 @@ vi.mock("react-native", async (importOriginal) => {
 
 const mockGetLastNotificationResponse = vi.fn();
 const mockAddNotificationResponseReceivedListener = vi.fn();
+const mockClearLastNotificationResponse = vi.fn();
 vi.mock("expo-notifications", () => ({
   getLastNotificationResponse: () => mockGetLastNotificationResponse(),
+  clearLastNotificationResponse: () => mockClearLastNotificationResponse(),
   addNotificationResponseReceivedListener: (
     ...args: [(response: unknown) => void]
   ) => mockAddNotificationResponseReceivedListener(...args),
@@ -201,6 +203,37 @@ describe("getInitialURL", () => {
     const url = await linking.getInitialURL!();
 
     expect(url).toBe("ocrecipes://notebook-entry/99");
+    // The URL must actually route: round-trip it through the real config.
+    const state = getStateFromPath(
+      url!.replace("ocrecipes://", ""),
+      linking.config,
+    );
+    const route = state?.routes[0];
+    expect(route?.name).toBe("NotebookEntry");
+    expect(route?.params).toEqual({ entryId: 99 });
+  });
+
+  // The last response lives in memory for the whole process. Left uncleared,
+  // any NavigationContainer remount (e.g. ErrorBoundary's "Try Again") calls
+  // getInitialURL again and re-opens the same, possibly crashing, entry.
+  it("clears the notification response once it has been turned into a URL", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: 99 } } } },
+    });
+
+    await linking.getInitialURL!();
+
+    expect(mockClearLastNotificationResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a non-positive entryId instead of opening notebook-entry/0", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: 0 } } } },
+    });
+
+    expect(await linking.getInitialURL!()).toBeUndefined();
   });
 
   it("returns undefined when there is no real link and no notification response", async () => {
@@ -256,6 +289,9 @@ describe("subscribe", () => {
     });
 
     expect(listener).toHaveBeenCalledWith("ocrecipes://notebook-entry/3");
+    // A live tap also becomes the process's "last response"; clear it so a
+    // later remount's getInitialURL doesn't replay it.
+    expect(mockClearLastNotificationResponse).toHaveBeenCalledTimes(1);
   });
 
   // The failure mode this closes: React Navigation's own subscribe-driven

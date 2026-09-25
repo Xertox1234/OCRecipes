@@ -26,10 +26,25 @@ function extractNotificationUrl(
 ): string | undefined {
   if (!data) return undefined;
   if (typeof data.url === "string") return data.url;
-  if (typeof data.entryId === "number" || typeof data.entryId === "string") {
-    return `ocrecipes://notebook-entry/${data.entryId}`;
+  // Positive integers only, matching parseIntOrZero's "not a positive
+  // integer" convention: notebook-entry/0 would open an entry that can't save.
+  const entryId = Number(data.entryId);
+  if (Number.isInteger(entryId) && entryId > 0) {
+    return `ocrecipes://notebook-entry/${entryId}`;
   }
   return undefined;
+}
+
+// expo-notifications keeps the last response in memory for the whole process.
+// Once we've turned it into a URL, clear it: otherwise any NavigationContainer
+// remount (e.g. ErrorBoundary's "Try Again") re-runs getInitialURL and
+// re-opens the same entry — the very screen that may have crashed.
+function consumeNotificationUrl(
+  data: Record<string, unknown> | undefined,
+): string | undefined {
+  const url = extractNotificationUrl(data);
+  if (url) Notifications.clearLastNotificationResponse();
+  return url;
 }
 
 // A notification response tapped while the root navigator hasn't mounted yet
@@ -69,7 +84,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
     if (url != null) return url;
 
     const response = Notifications.getLastNotificationResponse();
-    return extractNotificationUrl(
+    return consumeNotificationUrl(
       response?.notification.request.content.data as
         | Record<string, unknown>
         | undefined,
@@ -83,7 +98,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
 
     const notificationSubscription =
       Notifications.addNotificationResponseReceivedListener((response) => {
-        const url = extractNotificationUrl(
+        const url = consumeNotificationUrl(
           response.notification.request.content.data as
             | Record<string, unknown>
             | undefined,

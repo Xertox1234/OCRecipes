@@ -152,6 +152,8 @@ Notification payloads must carry a **full-prefixed** URL (e.g. `ocrecipes://note
 
 `getInitialURL` and a live `subscribe` tap can both fire for the *same* cold-launch notification — `expo-notifications` delivers the launch response via `getLastNotificationResponse()` and may also emit it to a freshly-registered `addNotificationResponseReceivedListener`. This is benign: the second delivery is a same-route re-navigate (a no-op), so no deduplication is needed.
 
+**Clear the response once it has been turned into a URL** (`Notifications.clearLastNotificationResponse()`, in both `getInitialURL` and the `subscribe` listener). The last response is an in-memory field that lives for the whole app process (`EmitterModule.swift` / `NotificationsEmitter.kt`), and `getInitialURL` runs again on every `NavigationContainer` mount. In this app `ErrorBoundary` wraps the container, so its "Try Again" remounts it and, uncleared, re-opens the last tapped entry, which may be the screen that crashed. Also accept only a positive-integer `entryId` when building the fallback URL (`notebook-entry/0` opens an entry that can't save).
+
 ### The gap the vanilla example doesn't close: a live tap before the navigator has mounted
 
 Verified by reading the installed `@react-navigation/native`/`@react-navigation/core` source (`node_modules`), not assumed from docs. The vanilla `getInitialURL`/`subscribe` pattern above, by itself, does **not** handle a notification tap that arrives while the app is already running but the root navigator hasn't mounted yet (e.g. a screen showing a loading spinner instead of a `Stack.Navigator`, gated on an auth check):
@@ -190,7 +192,7 @@ A unit test that calls the exported `getInitialURL`/`subscribe` functions direct
 Test `getInitialURL`/`subscribe` by calling the exported functions directly — do not mount `NavigationContainer` (same avoidance `client/navigation/__tests__/linking.test.ts` already uses for `getStateFromPath`, importing from `@react-navigation/core` instead of `@react-navigation/native` to avoid pulling in React Native sources the node env can't load). Mocking gotchas:
 
 - The globally-aliased `react-native` mock (`test/mocks/react-native.ts`) only exports `Linking.openURL`/`openSettings` — no `getInitialURL`/`addEventListener`. Override locally per `docs/solutions/conventions/inline-vi-mock-globally-aliased-modules-2026-05-13.md` item 3 ("missing exports"): `vi.mock("react-native", async (importOriginal) => ({ ...(await importOriginal()), Linking: { ...actual.Linking, getInitialURL: vi.fn(), addEventListener: vi.fn() } }))`.
-- `expo-notifications` has no global alias; mock it inline per-file (`getLastNotificationResponse`, `addNotificationResponseReceivedListener`), matching `client/lib/__tests__/notifications.test.ts`'s existing shape.
+- `expo-notifications` has no global alias; mock it inline per-file (`getLastNotificationResponse`, `clearLastNotificationResponse`, `addNotificationResponseReceivedListener`), matching `client/lib/__tests__/notifications.test.ts`'s existing shape.
 - If the module under test imports `navigationRef` (for the `isReady()` gate above), mock `../navigationRef` too — its runtime import chain otherwise pulls in `@react-navigation/native`.
 
 ## Related Files
