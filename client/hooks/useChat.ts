@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, getApiUrl, type QueryErrorMeta } from "@/lib/query-client";
+import {
+  apiRequest,
+  getApiUrl,
+  type QueryErrorMeta,
+  type MutationErrorMeta,
+} from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { useCallback, useState, useRef } from "react";
@@ -71,7 +76,15 @@ export function useChatMessages(
   });
 }
 
-export function useCreateConversation() {
+/**
+ * `meta` is threaded (not hardcoded) because this hook is shared by 5
+ * screens with different error-handling conventions: pass
+ * `{ silentError: true }` from a caller that already shows its own visible
+ * error on a conversation-create failure (ChatScreen, ChatListScreen,
+ * CoachProScreen via CoachChat's own catch, CoachOverlayContent). Leave it
+ * unset for a caller with no local handling — the global net now covers it.
+ */
+export function useCreateConversation(meta?: MutationErrorMeta) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data?: {
@@ -91,6 +104,7 @@ export function useCreateConversation() {
         queryKey: ["/api/chat/conversations"],
       });
     },
+    meta,
   });
 }
 
@@ -105,6 +119,9 @@ export function useDeleteConversation() {
         queryKey: ["/api/chat/conversations"],
       });
     },
+    // Both call sites (ChatListScreen, AllConversationsScreen) already show
+    // a visible toast via a per-call onError — the global net would double it.
+    meta: { silentError: true },
   });
 }
 
@@ -375,6 +392,9 @@ export function useDeleteChatMessageForRetry() {
       // Intentionally no cache invalidation — CoachChat manages
       // message state directly during retry to avoid UI flicker.
     },
+    // Its one call site (CoachChat.handleRetry) already sets a visible
+    // streamingError in its own catch — the global net would double it.
+    meta: { silentError: true },
   });
 }
 
@@ -394,10 +414,21 @@ export function usePinConversation() {
         queryKey: ["/api/chat/conversations"],
       });
     },
+    // Its one call site (AllConversationsScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }
 
-/** Save a recipe from a chat message to the user's library */
+/**
+ * Save a recipe from a chat message to the user's library.
+ *
+ * No opt-out: the one call site (RecipeChatScreen.handleSaveRecipe) only
+ * plays a haptic + an iOS-only VoiceOver announce on failure, which this
+ * project's convention treats as NOT visible feedback (haptics/console/
+ * iOS-only-announce alone don't count — see the mutation rule in
+ * docs/rules/client-state.md). The global toast is a genuine improvement
+ * here, not a double-report.
+ */
 export function useSaveRecipeFromChat() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -481,6 +512,8 @@ export function useCreateNotebookEntry() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
     },
+    // Its one call site (NotebookEntryScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }
 
@@ -510,6 +543,9 @@ export function useUpdateNotebookEntry() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
     },
+    // Every call site (NotebookEntryScreen x3, NotebookScreen) already
+    // toasts on failure.
+    meta: { silentError: true },
   });
 }
 
@@ -522,5 +558,7 @@ export function useDeleteNotebookEntry() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
     },
+    // Its one call site (NotebookScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }

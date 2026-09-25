@@ -48,6 +48,9 @@ export function useCreateCookbook() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
     },
+    // Both call sites (CookbookPickerModal, CookbookCreateScreen) already
+    // show a visible error (Alert/InlineError) on failure.
+    meta: { silentError: true },
   });
 }
 
@@ -70,6 +73,9 @@ export function useUpdateCookbook() {
       void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks", id] });
     },
+    // Its one call site (CookbookCreateScreen) already shows an InlineError
+    // on failure.
+    meta: { silentError: true },
   });
 }
 
@@ -96,6 +102,9 @@ export function useUploadCookbookCover() {
         queryKey: ["/api/cookbooks", cookbookId],
       });
     },
+    // Its one call site (CookbookCreateScreen) already shows a visible
+    // toast.error on failure (inline or batched with the create flow).
+    meta: { silentError: true },
   });
 }
 
@@ -121,6 +130,9 @@ export function useGenerateCookbookCover() {
         queryKey: ["/api/cookbooks", cookbookId],
       });
     },
+    // Its one call site (CookbookCreateScreen) already shows a visible
+    // toast.error / upgrade-modal on failure.
+    meta: { silentError: true },
   });
 }
 
@@ -138,6 +150,9 @@ export function useDeleteCookbook() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
     },
+    // Both call sites (CookbookDetailScreen, CookbookListScreen) already
+    // toast on failure.
+    meta: { silentError: true },
   });
 }
 
@@ -169,6 +184,9 @@ export function useAddRecipeToCookbook() {
         queryKey: ["/api/cookbooks", cookbookId],
       });
     },
+    // Its one call site (CookbookPickerModal) already shows an Alert on
+    // failure.
+    meta: { silentError: true },
   });
 }
 
@@ -200,5 +218,7 @@ export function useRemoveRecipeFromCookbook() {
         queryKey: ["/api/cookbooks", cookbookId],
       });
     },
+    // Its one call site (CookbookDetailScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }

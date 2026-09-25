@@ -291,7 +291,9 @@ export default function ChatScreen() {
     streamError,
     requestError,
   } = useSendMessage(validConversationId);
-  const createConversation = useCreateConversation();
+  // handleSend's own catch below already toasts on a creation failure —
+  // opt out so the global net doesn't double it.
+  const createConversation = useCreateConversation({ silentError: true });
   const { acknowledge } = useAcknowledgeReminders();
   // Reminders clear when the user actually sends a message, not on mere
   // screen focus — fire at most once per mount.

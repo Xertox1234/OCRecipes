@@ -93,8 +93,10 @@ export default function ChatListScreen() {
     refetch,
     isRefetching,
   } = useChatConversations(activeSegment);
+  // handleNewChat's own catch below already toasts on a creation failure —
+  // opt out so the global net doesn't double it.
   const { mutateAsync: createConversationAsync, isPending: isCreatingChat } =
-    useCreateConversation();
+    useCreateConversation({ silentError: true });
   const { mutate: deleteConversationMutate } = useDeleteConversation();
 
   const handleNewChat = useCallback(async () => {

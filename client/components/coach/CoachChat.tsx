@@ -418,7 +418,16 @@ export default function CoachChat({
         try {
           convId = await onCreateConversation();
         } catch {
+          // The input was already cleared and the optimistic bubble was
+          // already shown above — a bare catch here left the user with no
+          // feedback and their typed message gone. Restore what they typed
+          // so they can retry without retyping, and surface the failure via
+          // the same InlineError surface used for stream/retry failures.
           setOptimisticMessage(null);
+          setInputText(content);
+          setStreamingError(
+            "Couldn't start the conversation. Please try again.",
+          );
           return;
         }
       }
