@@ -8,9 +8,11 @@
 // Two differences from the RN mock reflect real API differences between the
 // two libraries, and are exactly what a migration test needs to observe:
 //  - cachePolicy/contentFit are surfaced as data-* attributes so a test can
-//    assert they actually reached the rendered element — real expo-image
-//    (unlike RN's Image) needs `cachePolicy` set for a real caching benefit,
-//    which is the point of the FallbackImage migration this mock supports.
+//    assert they actually reached the rendered element — expo-image already
+//    disk-caches by default (`cachePolicy` defaults to 'disk'), so setting
+//    `cachePolicy="memory-disk"` (what the FallbackImage migration this mock
+//    supports actually does) adds a memory tier on top of that default, it
+//    doesn't turn caching on from nothing.
 //  - onError is invoked with expo-image's real callback shape
 //    (`{ error: string }`), not a wrapped NativeSyntheticEvent — expo-image's
 //    onError is a plain callback, never an RN-style native event object.
