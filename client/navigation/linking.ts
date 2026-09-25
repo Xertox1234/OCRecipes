@@ -9,14 +9,18 @@ function parseIntOrZero(value: string): number {
   return Number.isNaN(num) ? 0 : num;
 }
 
-// Coach reminders schedule with `data.url` going forward (see
-// client/hooks/useNotebookNotifications.ts); a reminder already scheduled on
-// a device before this change carries only `data.entryId`. Build the
-// equivalent full-prefix URL from that legacy shape so those on-device
-// notifications keep opening the right entry — `extractPathFromURL` (used
-// internally by React Navigation to match a URL against `prefixes`) returns
-// undefined for a string matching none of them, so a bare path/id here would
-// silently fail to route.
+// The client's own scheduleCommitmentReminder (client/hooks/
+// useNotebookNotifications.ts) sends `data.url` going forward, but this
+// fallback is NOT a time-bounded migration bridge that can be deleted once
+// old on-device notifications age out: the server-driven push path
+// (server/services/notification-scheduler.ts, the primary delivery path —
+// the client scheduler is only a fallback for undelivered push) sends
+// `data: { entryId }` only and is out of this todo's scope, so it will keep
+// emitting entryId-only payloads indefinitely. Build the equivalent
+// full-prefix URL from that shape so those notifications keep opening the
+// right entry — `extractPathFromURL` (used internally by React Navigation to
+// match a URL against `prefixes`) returns undefined for a string matching
+// none of them, so a bare path/id here would silently fail to route.
 function extractNotificationUrl(
   data: Record<string, unknown> | undefined,
 ): string | undefined {
