@@ -292,6 +292,26 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
   });
 
   describe('"Updated with AI analysis" toast', () => {
+    it("hides the toast's decorative check icon from screen readers", async () => {
+      mockRoute.params = {
+        imageUri: IMAGE_URI,
+        barcode: BARCODE,
+        localOCRText: LOCAL_OCR_TEXT,
+      };
+      mockUpload.mockResolvedValue({
+        sessionId: "session-1",
+        labelData: AI_REPLACEMENT_LABEL_DATA,
+      });
+
+      renderComponent(<LabelAnalysisScreen />);
+
+      const text = await screen.findByText("Updated with AI analysis");
+      const toast = text.parentElement!;
+      const icon = toast.querySelector('[data-icon="check-circle"]');
+      expect(icon).not.toBeNull();
+      expect(icon?.getAttribute("aria-hidden")).toBe("true");
+    });
+
     it("announces the update merged with the ready-to-log announce (same-commit iOS collision guard), and respects reduced motion", async () => {
       mockRoute.params = {
         imageUri: IMAGE_URI,

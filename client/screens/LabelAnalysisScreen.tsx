@@ -738,7 +738,13 @@ export default function LabelAnalysisScreen() {
             { backgroundColor: withOpacity(theme.info, 0.12) },
           ]}
         >
-          <Feather name="check-circle" size={14} color={theme.info} />
+          <Feather
+            name="check-circle"
+            size={14}
+            color={theme.info}
+            accessible={false}
+            importantForAccessibility="no-hide-descendants"
+          />
           <ThemedText type="small" style={{ color: theme.info }}>
             Updated with AI analysis
           </ThemedText>

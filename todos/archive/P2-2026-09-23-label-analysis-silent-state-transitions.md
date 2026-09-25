@@ -80,3 +80,7 @@ Follow the edge-guarded announcer patterns already used by NoticeStack / Nutriti
   `todos/P2-2026-09-25-label-analysis-low-confidence-error-dead-branch.md`
   (pre-existing: the `confidence < 0.3` error is set alongside `labelData`, so it
   can never render — untouched by this diff, out of scope for this todo).
+
+### 2026-09-25 (review repair)
+
+- The "Updated with AI analysis" toast's check icon is now hidden from screen readers (`accessible={false}` + `importantForAccessibility="no-hide-descendants"`, matching the verification banner), with a test. The P3 todo filed for it is removed. The pre-existing dead low-confidence error branch stays filed as `todos/P2-2026-09-25-label-analysis-low-confidence-error-dead-branch.md`: it needs a new warning surface, not a repair of this change.
