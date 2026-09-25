@@ -120,7 +120,10 @@ The `UNSTABLE_` prefix means the API may change or be removed across minor versi
 React Navigation 7's documented mechanism for routing a notification tap through the same `linking` config that handles ordinary deep links is to override `getInitialURL`/`subscribe` on the `LinkingOptions` object:
 
 ```typescript
-// client/navigation/linking.ts
+// Vanilla React Navigation example — NOT this repo's linking.ts verbatim.
+// The real file wraps extractNotificationUrl in consumeNotificationUrl (to
+// call clearLastNotificationResponse) and adds an isReady()/pending-hold
+// step before delivering to `listener`; see the two additions below.
 async getInitialURL() {
   // A real deep link wins if both are somehow present — the more specific intent.
   const url = await Linking.getInitialURL();
@@ -150,7 +153,7 @@ Use `Notifications.getLastNotificationResponse()` (synchronous), not `getLastNot
 
 Notification payloads must carry a **full-prefixed** URL (e.g. `ocrecipes://notebook-entry/42`), never a bare path or id — `extractPathFromURL` (internal to React Navigation, used to match a URL against `prefixes`) returns `undefined` for a string matching none of them, silently dropping the link. When a payload only carries a bare id field (a legacy shape, or a third-party/server-scheduled sender that predates this pattern), reconstruct the full-prefix URL from it rather than passing the id through as-is — see `client/navigation/linking.ts`'s `extractNotificationUrl` for a worked example, and note in the code that this fallback is not always a temporary migration bridge: a sender you don't control (e.g. a server-driven push path) may keep emitting the legacy shape indefinitely, so the fallback should be treated as permanent unless every sender is confirmed updated.
 
-`getInitialURL` and a live `subscribe` tap can both fire for the *same* cold-launch notification — `expo-notifications` delivers the launch response via `getLastNotificationResponse()` and may also emit it to a freshly-registered `addNotificationResponseReceivedListener`. This is benign: the second delivery is a same-route re-navigate (a no-op), so no deduplication is needed.
+`getInitialURL` and a live `subscribe` tap can both fire for the *same* cold-launch notification — `expo-notifications` delivers the launch response via `getLastNotificationResponse()` and may also emit it to a freshly-registered `addNotificationResponseReceivedListener`. This is benign: the second delivery is a same-route re-navigate (a no-op), so no deduplication is needed — verified by reading source, not on a device.
 
 **Clear the response once it has been turned into a URL** (`Notifications.clearLastNotificationResponse()`, in both `getInitialURL` and the `subscribe` listener). The last response is an in-memory field that lives for the whole app process (`EmitterModule.swift` / `NotificationsEmitter.kt`), and `getInitialURL` runs again on every `NavigationContainer` mount. In this app `ErrorBoundary` wraps the container, so its "Try Again" remounts it and, uncleared, re-opens the last tapped entry, which may be the screen that crashed. Also accept only a positive-integer `entryId` when building the fallback URL (`notebook-entry/0` opens an entry that can't save).
 
@@ -186,6 +189,39 @@ export function flushPendingNotificationUrl(): void {
 ```
 
 A unit test that calls the exported `getInitialURL`/`subscribe` functions directly (see Testing below) can only assert URL **forwarding** into React Navigation's own `listener` — it cannot observe React Navigation's own replay behavior (the `UNSTABLE_routeNamesChangeBehavior="lastUnhandled"` mechanism, or this hold/flush). Verify those by reading the installed source as above, and say explicitly in the test's comments and in any PR description that on-device/simulator verification is a separate, unperformed step.
+
+## Length cap before parse — one override covers every URL source
+
+`query-string`/`decode-uri-component`'s query-param decoding is still O(entries × length) on many distinct malformed percent-runs even after the GHSA-vcc3-ghjq-m6fr fix (0.5.0) — a ~200 KB link with thousands of distinct runs can stall the JS thread for over a second. Add a single `getStateFromPath` override to the `linking` config that rejects any path+query over a length cap (e.g. 8 KB) before delegating to the real parser:
+
+```typescript
+// client/navigation/linking.ts
+import { getStateFromPath as getStateFromPathDefault } from "@react-navigation/core";
+
+const MAX_DEEP_LINK_PATH_LENGTH = 8 * 1024;
+
+export const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: [...],
+  getStateFromPath(path, options) {
+    if (path.length > MAX_DEEP_LINK_PATH_LENGTH) return undefined;
+    try {
+      return getStateFromPathDefault(path, options);
+    } catch (error) {
+      if (error instanceof URIError) return undefined; // malformed escape
+      throw error;
+    }
+  },
+  // ...getInitialURL, subscribe, config as above
+};
+```
+
+Import the default parser from `@react-navigation/core`, **not** `@react-navigation/native` — the same reason the test file avoids `native` (above): `native`'s index also re-exports `NavigationContainer`/`Link`/etc., whose module graph pulls in React Native sources the Vitest node env can't load. `core` is the identical function `native` re-exports unchanged (`@react-navigation/native/lib/module/index.js`: `export * from '@react-navigation/core'`), and is declared in `package.json` (do not rely on it as a hoisted transitive of `native`: a nested copy would break every deep link with no install/type/lint signal).
+
+**Catch `URIError` in the same override.** The default parser runs `decodeURIComponent` on path params with no try/catch, so a malformed escape (`nutrition/%C0`, `recipe/%ZZ`, a trailing `%`) throws `URIError: URI malformed` — and `useLinking.native.js`'s subscribe listener calls `getStateFromURL(url)` outside its own `try`, so on a live tap the throw is uncaught (a likely release-build crash; not verified on a device). The length cap does not help: these links are tiny. Return `undefined` for a `URIError` (the link is ignored, like an over-cap one) and rethrow anything else so a real config bug still surfaces. Found in #1090's security review; reproduced against the installed `@react-navigation/core`.
+
+**One override genuinely covers every URL source** — verified by reading `node_modules/@react-navigation/native/lib/module/useLinking.native.js` and `NavigationContainer.js`, not assumed from the option's name: `NavigationContainer.js` spreads the app's `linking` object (including this override) into the options object passed to `useLinking`, and `useLinking`'s single internal `getStateFromURL` callback calls `extractPathFromURL` then the (possibly overridden) `getStateFromPath` for **both** `getInitialState` (the async `getInitialURL` path — this repo's own `getInitialURL` already folds the notification's `data.url`/entryId-derived fallback into what it returns) and the `subscribe` listener (live `Linking` events, and the pending-hold `flushPendingNotificationUrl` replay above, since flushing calls `deliverUrl`, which the `subscribe` effect set to the exact same `listener`). The `UNSTABLE_routeNamesChangeBehavior="lastUnhandled"` replay (`RootStackNavigator.tsx`) is a separate concern: it rehydrates an already-computed navigation **state object**, never re-invoking `getStateFromPath` on the raw path a second time — so a link rejected by the cap cannot later be decoded uncapped through that path either.
+
+Pick the cap by measuring the app's real longest link (the verify-email token, ~350-430 chars depending on email length here) rather than guessing — leave at least an order of magnitude of headroom. Test the cap boundary two-sided (`length === cap` still parses; `cap + 1` is rejected) in addition to a heavy adversarial payload, and fall back to the raw parser in that heavy-payload test (`linking.getStateFromPath ?? getStateFromPathDefault`) so a regression that removes the override fails on the timing assertion rather than a `TypeError` on a missing property.
 
 ## Testing
 

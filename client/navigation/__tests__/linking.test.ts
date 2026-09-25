@@ -44,7 +44,8 @@ vi.mock("../navigationRef", () => ({
   navigationRef: { isReady: () => mockIsReady() },
 }));
 
-const { linking, flushPendingNotificationUrl } = await import("../linking");
+const { linking, flushPendingNotificationUrl, MAX_DEEP_LINK_PATH_LENGTH } =
+  await import("../linking");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -130,6 +131,54 @@ describe("linking config", () => {
     expect(linking.config!.screens.AllConversations).toBe("conversation-list");
   });
 
+  // decode-uri-component 0.5.0 (#1054) closed the repeated-run shape but is
+  // still O(entries * length) on many DISTINCT malformed runs — the todo's
+  // own measurement: n=16000 distinct runs (208,000 chars) took ~1.5s
+  // through the raw parser under Node's V8 JIT. Exercise `linking
+  // .getStateFromPath` — the actual entry point React Navigation calls for
+  // every URL source (see the comment in linking.ts) — not the raw
+  // `getStateFromPath` import used by the tests above. Fall back to the raw
+  // parser when the cap is absent so a regression fails on TIMING, the
+  // property this test exists to guard, rather than a TypeError.
+  it("rejects a long deep link with many distinct malformed percent-encoded runs, quickly", () => {
+    const hex = (n: number) => n.toString(16).padStart(2, "0");
+    const runs = Array.from(
+      { length: 16000 },
+      (_, i) =>
+        `%C0%${hex(i & 0xff)}%${hex((i >> 8) & 0xff)}%${hex((i >> 16) & 0xff)}x`,
+    ).join("");
+    const path = `verify-email?token=${runs}`;
+    const parse = linking.getStateFromPath ?? getStateFromPath;
+
+    const start = performance.now();
+    const state = parse(path, linking.config);
+    const elapsedMs = performance.now() - start;
+
+    expect(state).toBeUndefined();
+    expect(elapsedMs).toBeLessThan(250);
+  });
+
+  it("still parses a deep link exactly at the length cap", () => {
+    const prefix = "verify-email?token=";
+    const path = prefix + "a".repeat(MAX_DEEP_LINK_PATH_LENGTH - prefix.length);
+    expect(path.length).toBe(MAX_DEEP_LINK_PATH_LENGTH);
+
+    const state = linking.getStateFromPath!(path, linking.config);
+
+    expect(state?.routes[0]?.name).toBe("VerifyEmail");
+  });
+
+  it("rejects a deep link one character past the length cap", () => {
+    const prefix = "verify-email?token=";
+    const path =
+      prefix + "a".repeat(MAX_DEEP_LINK_PATH_LENGTH - prefix.length + 1);
+    expect(path.length).toBe(MAX_DEEP_LINK_PATH_LENGTH + 1);
+
+    const state = linking.getStateFromPath!(path, linking.config);
+
+    expect(state).toBeUndefined();
+  });
+
   it("configures Login as a path string so ocrecipes://login routes to sign-in", () => {
     // Drives the verify-email landing's "Open OCRecipes" success CTA
     // (ocrecipes://login) straight to the Login screen instead of foregrounding
@@ -163,6 +212,30 @@ describe("linking config", () => {
 // there is no real deep link, per the React Navigation 7 +
 // expo-notifications integration doc (Context7 "Handle push notifications
 // with React Navigation").
+// @react-navigation/core's default getStateFromPath runs decodeURIComponent
+// on path params with no try/catch, and useLinking.native.js calls it
+// OUTSIDE its try on a live Linking event — a malformed escape (well under
+// the length cap) threw an uncaught URIError on a single tap.
+describe("malformed percent-escapes in a deep link", () => {
+  it.each(["nutrition/%C0", "chat/%E0%A4%A", "recipe/%ZZ", "notebook-entry/%"])(
+    "ignores %s instead of throwing",
+    (path) => {
+      expect(() =>
+        linking.getStateFromPath!(path, linking.config),
+      ).not.toThrow();
+      expect(linking.getStateFromPath!(path, linking.config)).toBeUndefined();
+    },
+  );
+
+  it("still parses a well-formed link (control)", () => {
+    const state = linking.getStateFromPath!(
+      "nutrition/5000112637922",
+      linking.config,
+    );
+    expect(state).toBeDefined();
+  });
+});
+
 describe("getInitialURL", () => {
   it("prefers a real deep link over a notification response — the more specific intent", async () => {
     mockGetInitialURL.mockResolvedValue("ocrecipes://recipe/42");
@@ -234,6 +307,51 @@ describe("getInitialURL", () => {
     });
 
     expect(await linking.getInitialURL!()).toBeUndefined();
+  });
+
+  // Number("12abc") is NaN, so Number.isInteger rejects it — a malformed
+  // entryId must not be coerced into an open-able URL.
+  it("rejects a non-numeric entryId like '12abc'", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: "12abc" } } } },
+    });
+
+    expect(await linking.getInitialURL!()).toBeUndefined();
+  });
+
+  it("rejects a non-integer entryId like 1.5", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: 1.5 } } } },
+    });
+
+    expect(await linking.getInitialURL!()).toBeUndefined();
+  });
+
+  it("accepts a numeric-string entryId like '12'", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: "12" } } } },
+    });
+
+    expect(await linking.getInitialURL!()).toBe(
+      "ocrecipes://notebook-entry/12",
+    );
+  });
+
+  // Negative control for the "clears the notification response" test above:
+  // consumeNotificationUrl must only clear when a URL was actually derived,
+  // or a malformed payload would wipe a response a retry could still use.
+  it("does not clear the notification response when no URL can be derived", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: "12abc" } } } },
+    });
+
+    await linking.getInitialURL!();
+
+    expect(mockClearLastNotificationResponse).not.toHaveBeenCalled();
   });
 
   it("returns undefined when there is no real link and no notification response", async () => {
