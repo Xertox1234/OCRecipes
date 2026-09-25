@@ -180,21 +180,38 @@ describe("CoachChat — renderItem identity stability across keystrokes (H3)", (
 
   it("keeps the FlatList renderItem prop referentially stable when the input text changes", () => {
     renderCoachChat();
-    const firstRenderItem = capturedFlatListProps.value?.renderItem;
+    const firstProps = capturedFlatListProps.value;
+    const firstRenderItem = firstProps?.renderItem;
     expect(typeof firstRenderItem).toBe("function");
 
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "h" },
     });
 
-    const secondRenderItem = capturedFlatListProps.value?.renderItem;
+    // Denominator: prove the keystroke actually reached CoachChat and caused
+    // a re-render — without this, a broken wiring (e.g. the mock TextInput's
+    // onChange never reaching onChangeText) would make the assertions below
+    // pass vacuously, since a component that never re-renders trivially keeps
+    // every prop "stable". The input's own displayed value is the most direct
+    // signal; the FlatList props object is a second, independent one (JSX
+    // always creates a fresh props object on any parent re-render, regardless
+    // of which individual prop values changed).
+    expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("h");
+    const secondProps = capturedFlatListProps.value;
+    expect(secondProps).not.toBe(firstProps);
+
+    const secondRenderItem = secondProps?.renderItem;
     expect(secondRenderItem).toBe(firstRenderItem);
 
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "he" },
     });
 
-    const thirdRenderItem = capturedFlatListProps.value?.renderItem;
+    expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("he");
+    const thirdProps = capturedFlatListProps.value;
+    expect(thirdProps).not.toBe(secondProps);
+
+    const thirdRenderItem = thirdProps?.renderItem;
     expect(thirdRenderItem).toBe(firstRenderItem);
   });
 });
