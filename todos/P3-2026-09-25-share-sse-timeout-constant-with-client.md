@@ -1,6 +1,6 @@
 ---
 title: "Coach stream ceiling test pins a hand-copied server SSE timeout — share SSE_TIMEOUT_MS so the ordering can't drift"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-25
 updated: 2026-09-25

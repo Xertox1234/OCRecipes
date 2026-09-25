@@ -16,6 +16,7 @@ import { chatRateLimit } from "./_rate-limiters";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 import {
   generateRecipeChatResponse,
   buildRecipeContext,
@@ -36,7 +37,6 @@ import {
 } from "../lib/ai-safety";
 import { parseBlocksFromContent } from "../services/coach-blocks";
 
-const SSE_TIMEOUT_MS = 120_000; // 2 minutes max per SSE connection
 const SSE_MAX_RESPONSE_BYTES = 50 * 1024; // 50KB max response size
 
 export function register(app: Express): void {
