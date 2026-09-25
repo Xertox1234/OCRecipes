@@ -89,6 +89,18 @@ describe("parseInline", () => {
       { text: "italic", italic: true },
     ]);
   });
+
+  it("renders a markdown link as its plain text, dropping the URL", () => {
+    expect(parseInline("Check out [this recipe](https://example.com)")).toEqual(
+      [{ text: "Check out this recipe" }],
+    );
+  });
+
+  it("still applies bold/italic markers inside link-stripped text", () => {
+    expect(parseInline("[**bold link**](https://example.com)")).toEqual([
+      { text: "bold link", bold: true },
+    ]);
+  });
 });
 
 describe("BULLET_REGEX", () => {

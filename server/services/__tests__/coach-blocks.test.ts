@@ -108,6 +108,13 @@ describe("Coach Blocks Service", () => {
     );
   });
 
+  it("tells the model to present recipes as a recipe_card block, never as a markdown image or link", () => {
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(/recipe_card block/);
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(
+      /never as a markdown image.*or a markdown link/i,
+    );
+  });
+
   it("parses both fences when content contains two coach_blocks fences", () => {
     const content = `Here is chart one.\n\`\`\`coach_blocks\n[{"type":"quick_replies","options":[{"label":"Yes","message":"yes"}]}]\n\`\`\`\nAnd here is another.\n\`\`\`coach_blocks\n[{"type":"quick_replies","options":[{"label":"No","message":"no"}]}]\n\`\`\``;
     const result = parseBlocksFromContent(content);

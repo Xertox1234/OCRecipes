@@ -1,6 +1,6 @@
 ---
 title: "Coach Pro replies show raw markdown image links — MarkdownText renders no images or links"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-25
 updated: 2026-09-25

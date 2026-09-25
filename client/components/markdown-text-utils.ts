@@ -4,8 +4,25 @@ export interface InlineSegment {
   italic?: boolean;
 }
 
+/**
+ * Match a standalone markdown image: `![alt](url)`. Callers strip these
+ * entirely — never rendered, alt text included — since the chat renderer
+ * has no image support.
+ */
+export const IMAGE_REGEX = /!\[([^\]]*)\]\([^)]*\)/g;
+
+/**
+ * Match a markdown link: `[text](url)`. `parseInline` replaces every match
+ * with its plain `text` — no tap target, no URL shown. Only meaningful once
+ * images have already been stripped (an unstripped `![alt](url)` also
+ * contains a `[alt](url)` substring this would otherwise match).
+ */
+const LINK_REGEX = /\[([^\]]*)\]\([^)]*\)/g;
+
 /** Parse inline bold/italic markers into styled segments. */
 export function parseInline(text: string): InlineSegment[] {
+  // Render a markdown link as its plain text — not tappable, no URL shown.
+  const withoutLinks = text.replace(LINK_REGEX, "$1");
   const segments: InlineSegment[] = [];
   // Match **bold**, *italic* (but not ** inside bold).
   // Note: nested bold+italic (e.g. ***text***) is not supported — the outer
@@ -15,10 +32,10 @@ export function parseInline(text: string): InlineSegment[] {
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = regex.exec(withoutLinks)) !== null) {
     // Push text before this match
     if (match.index > lastIndex) {
-      segments.push({ text: text.slice(lastIndex, match.index) });
+      segments.push({ text: withoutLinks.slice(lastIndex, match.index) });
     }
 
     if (match[2]) {
@@ -33,8 +50,8 @@ export function parseInline(text: string): InlineSegment[] {
   }
 
   // Push remaining text
-  if (lastIndex < text.length) {
-    segments.push({ text: text.slice(lastIndex) });
+  if (lastIndex < withoutLinks.length) {
+    segments.push({ text: withoutLinks.slice(lastIndex) });
   }
 
   return segments;

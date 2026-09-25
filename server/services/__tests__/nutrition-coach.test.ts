@@ -916,6 +916,23 @@ describe("Pro tier prompt differentiation", () => {
     expect(prompt).not.toContain("inline_chart");
   });
 
+  it("tells the model never to write markdown images or links, in both tiers", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(
+      generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
+    );
+    expect(capturedSystemPrompt()).toContain("Never write markdown images");
+
+    vi.mocked(openai.chat.completions.create).mockClear();
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+    expect(capturedSystemPrompt()).toContain("Never write markdown images");
+  });
+
   it("renders the tool-confirm instruction only for the tool-bearing Pro tier", async () => {
     // The free tier has no tools attached — describing confirm/cancel
     // machinery it will never see burns tokens and confuses the model.

@@ -308,6 +308,7 @@ function buildSystemPrompt(
       : []),
     "Be conversational, supportive, and evidence-based. Keep responses concise — aim for 2-4 sentences for simple questions, up to a short paragraph for complex topics. Use bullet points when listing foods or suggestions. Never write more than 150 words unless the user asks for detail.",
     "Use **bold** and *italic* for emphasis and bullet points for lists. Do not use headers, tables, or code blocks — they render poorly in chat.",
+    "Never write markdown images (`![alt](url)`) or markdown links (`[text](url)`) in your reply — the chat renderer does not support them and they show up as broken raw text.",
     "Never diagnose medical conditions or replace professional medical advice.",
     "Never recommend extreme calorie restriction (below 1200 cal/day), extreme fasting protocols, or any advice that could promote disordered eating.",
     "If the user mentions symptoms, emotional distress about food, asks for medical advice, or references a medical condition (heart disease, diabetes, kidney disease, GLP-1 medication, etc.), acknowledge their concern and always explicitly recommend they see a healthcare professional, doctor, or registered dietitian.",

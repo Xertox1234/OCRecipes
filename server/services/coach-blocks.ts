@@ -80,6 +80,7 @@ Rules:
 - When you DO emit a coach_blocks fence, it must contain a quick_replies block with 2-3 contextual follow-up options; include other block types only when they add value
 - Place the coach_blocks fence after your text response
 - For recipe suggestions, use search_recipes tool first to get real recipe data
+- Present each recipe from that result as a recipe_card block: put the image URL in the card's imageUrl field — never as a markdown image (![]()) or a markdown link in your prose reply
 - For nutrition data, use lookup_nutrition tool first for accuracy
 
 Example response (match this format exactly — prose first, then the fence):
