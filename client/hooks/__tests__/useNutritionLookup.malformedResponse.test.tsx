@@ -177,4 +177,59 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
     errorSpy.mockRestore();
     warnSpy.mockRestore();
   });
+
+  // Pins the `.catch(() => undefined)` guard around `serverRes.json()`
+  // itself: a 200 with a body that isn't even valid JSON is also a
+  // malformed response, and must land in the same `safeParse` failure path
+  // as a shape mismatch rather than throwing and being swallowed by the
+  // network-failure catch.
+  it("treats an unparseable 200 body (bad JSON) the same as a shape mismatch", async () => {
+    const errorSpy = vi
+      .spyOn(logger, "error")
+      .mockImplementation(() => undefined);
+    const warnSpy = vi
+      .spyOn(logger, "warn")
+      .mockImplementation(() => undefined);
+
+    mockServerFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => {
+          throw new SyntaxError("Unexpected token < in JSON at position 0");
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 1,
+          product: {
+            product_name: "Fallback Snack",
+            brands: "GenericBrand",
+            nutriments: {
+              "energy-kcal_100g": 400,
+              proteins_100g: 5,
+              carbohydrates_100g: 60,
+              fat_100g: 10,
+            },
+          },
+        }),
+      });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "000000000007" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.nutrition?.productName).toBe("Fallback Snack");
+    const [flag] = result.current.flags;
+    expect(flag.detail).not.toMatch(/couldn't reach our service/i);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
 });

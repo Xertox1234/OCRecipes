@@ -7,7 +7,6 @@ import {
   onlineManager,
 } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
-import { z } from "zod";
 
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
@@ -19,10 +18,8 @@ import { logger } from "@/lib/logger";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { tokenStorage } from "@/lib/token-storage";
 import type { MicronutrientData } from "@/components/MicronutrientSection";
-import {
-  verificationLevelSchema,
-  type VerificationLevel,
-} from "@shared/types/verification";
+import type { VerificationLevel } from "@shared/types/verification";
+import { barcodeLookupResponseSchema } from "@shared/types/barcode-lookup";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
 import {
   validateAndNormalizeNutrition,
@@ -64,80 +61,6 @@ export interface NutritionData {
   imageUrl?: string;
   barcode?: string;
 }
-
-// ---------------------------------------------------------------------------
-// Barcode lookup response validation
-// ---------------------------------------------------------------------------
-//
-// `GET/POST /api/nutrition/barcode/:code` returns `serverRes.json(): any` —
-// an unvalidated 200 used to be dereferenced directly (`data.servingInfo
-// .wasCorrected`), so a shape mismatch threw and was swallowed by the
-// network-failure catch below, misreporting a server-side bug as "couldn't
-// reach our service" with only a dev-only `logger.warn`. Validate the shape
-// with `safeParse` before touching it.
-//
-// Deliberately no stricter than what this file actually dereferences
-// (docs/rules/typescript.md: "an ingestion-boundary Zod schema must be no
-// stricter than the code that reads it"). `flags`/`labelCompared`/
-// `verificationLevel`/`isBeverage` all already have a defensive runtime
-// check downstream (`Array.isArray`, `typeof`, `=== true`) precisely because
-// their shape can't be pinned down further without rejecting real traffic —
-// see `useNutritionLookup.test.ts`'s `baseBody()` fixture, which ships a
-// flag object with only an `id` (`{ id: "processing:ultra" }`), and the
-// `labelCompared: "declined"` fixture pinning the `=== true` idiom against a
-// truthy non-boolean. Making those fields strict here would fail a
-// currently-working response, which is exactly the failure mode this todo
-// exists to remove.
-const barcodePer100gSchema = z.object({
-  calories: z.number().optional(),
-  protein: z.number().optional(),
-  carbs: z.number().optional(),
-  fat: z.number().optional(),
-  fiber: z.number().optional(),
-  sugar: z.number().optional(),
-  sodium: z.number().optional(),
-  saturatedFat: z.number().optional(),
-  transFat: z.number().optional(),
-  cholesterol: z.number().optional(),
-  caffeine: z.number().optional(),
-});
-
-const barcodeServingInfoSchema = z.object({
-  displayLabel: z.string(),
-  grams: z.number(),
-  wasCorrected: z.boolean(),
-  correctionReason: z.string().optional(),
-});
-
-// Shape shared by the top-level lookup result and the label-conflict's
-// nested `conflict.label` — `server/routes/nutrition.ts`'s
-// `buildBarcodeResponseBody` builds both the same way.
-const barcodeNutritionResultSchema = z.object({
-  productName: z.string(),
-  brandName: z.string().optional(),
-  imageUrl: z.string().optional(),
-  per100g: barcodePer100gSchema,
-  perServing: barcodePer100gSchema,
-  servingInfo: barcodeServingInfoSchema,
-  isServingDataTrusted: z.boolean(),
-  flags: z.array(z.unknown()).optional(),
-});
-
-const barcodeLookupResponseSchema = barcodeNutritionResultSchema.extend({
-  labelCompared: z.unknown().optional(),
-  // `.catch(undefined)` — a verification-level value this client doesn't
-  // recognise yet (a future server adding a new tier) must not fail the
-  // WHOLE parse and mask real nutrition data behind a false "malformed"
-  // report; the verification badge is cosmetic, not load-bearing.
-  verificationLevel: verificationLevelSchema.optional().catch(undefined),
-  isBeverage: z.unknown().optional(),
-  conflict: z
-    .object({
-      fields: z.array(z.string()).optional(),
-      label: barcodeNutritionResultSchema,
-    })
-    .optional(),
-});
 
 export function useNutritionLookup(params: {
   barcode?: string;
