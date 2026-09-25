@@ -1,6 +1,6 @@
 ---
 title: "RecipeBrowserScreen: replace 9 fragmented filter atoms with one filters object and a single DEFAULT_FILTERS constant"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23
