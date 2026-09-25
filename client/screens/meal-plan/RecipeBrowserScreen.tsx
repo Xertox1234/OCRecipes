@@ -65,6 +65,9 @@ import {
   shouldGatePremiumSource,
   isQuotaExceededError,
   resolveOnlineCtaState,
+  computeActiveFilterCount,
+  DEFAULT_FILTERS,
+  type RecipeFilters,
 } from "@/screens/meal-plan/recipe-browser-utils";
 import type {
   SearchableRecipe,
@@ -339,22 +342,8 @@ export default function RecipeBrowserScreen() {
   const { mealType, plannedDate, searchQuery, planDays } = route.params || {};
 
   const [searchText, setSearchText] = useState(searchQuery || "");
-  const [activeCuisine, setActiveCuisine] = useState<string | undefined>();
-  const [activeDiet, setActiveDiet] = useState<string | undefined>();
-  const [curatedOnly, setCuratedOnly] = useState(false);
-  const [safeForMe, setSafeForMe] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
-  const [advancedFilters, setAdvancedFilters] = useState<SearchFilters>({
-    sort: "relevance",
-    maxPrepTime: undefined,
-    maxCalories: undefined,
-    minProtein: undefined,
-    source: "all",
-  });
-  const [activeDifficulty, setActiveDifficulty] = useState<
-    string | undefined
-  >();
-  const [pantryMode, setPantryMode] = useState(false);
+  const [filters, setFilters] = useState<RecipeFilters>(DEFAULT_FILTERS);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const filterSheetRef = React.useRef<BottomSheetModal>(null);
 
@@ -408,30 +397,20 @@ export default function RecipeBrowserScreen() {
   const searchParams: RecipeSearchParams = useMemo(
     () => ({
       q: debouncedQuery || undefined,
-      cuisine: activeCuisine,
-      diet: activeDiet,
-      curatedOnly: curatedOnly || undefined,
-      safeForMe: safeForMe || undefined,
+      cuisine: filters.activeCuisine,
+      diet: filters.activeDiet,
+      curatedOnly: filters.curatedOnly || undefined,
+      safeForMe: filters.safeForMe || undefined,
       mealType: mealType || undefined,
-      difficulty: activeDifficulty,
-      pantry: pantryMode || undefined,
-      sort: advancedFilters.sort,
-      source: advancedFilters.source,
-      maxPrepTime: advancedFilters.maxPrepTime,
-      maxCalories: advancedFilters.maxCalories,
-      minProtein: advancedFilters.minProtein,
+      difficulty: filters.activeDifficulty,
+      pantry: filters.pantryMode || undefined,
+      sort: filters.advanced.sort,
+      source: filters.advanced.source,
+      maxPrepTime: filters.advanced.maxPrepTime,
+      maxCalories: filters.advanced.maxCalories,
+      minProtein: filters.advanced.minProtein,
     }),
-    [
-      debouncedQuery,
-      activeCuisine,
-      activeDiet,
-      curatedOnly,
-      safeForMe,
-      mealType,
-      activeDifficulty,
-      pantryMode,
-      advancedFilters,
-    ],
+    [debouncedQuery, mealType, filters],
   );
 
   const addItemMutation = useAddMealPlanItem();
@@ -448,29 +427,22 @@ export default function RecipeBrowserScreen() {
 
   const isBrowseOnly = !plannedDate || !mealType;
 
-  const activeFilterCount = useMemo(() => {
-    let count = 0;
-    if (advancedFilters.sort !== "relevance") count++;
-    if (advancedFilters.maxPrepTime !== undefined) count++;
-    if (advancedFilters.maxCalories !== undefined) count++;
-    if (advancedFilters.minProtein !== undefined) count++;
-    if (advancedFilters.source !== "all") count++;
-    if (curatedOnly) count++;
-    if (safeForMe) count++;
-    return count;
-  }, [advancedFilters, curatedOnly, safeForMe]);
+  const activeFilterCount = useMemo(
+    () => computeActiveFilterCount(filters),
+    [filters],
+  );
 
   // Show the curated Discover feed when the user has not typed a query or
   // activated any chip/filter. While the feed is shown the full-list query is
   // disabled (null) to protect the 20/min /api/recipes/search budget.
   const showDiscovery = isBlankBrowseState({
     debouncedQuery,
-    activeCuisine,
-    activeDiet,
-    activeDifficulty,
-    curatedOnly,
-    safeForMe,
-    pantryMode,
+    activeCuisine: filters.activeCuisine,
+    activeDiet: filters.activeDiet,
+    activeDifficulty: filters.activeDifficulty,
+    curatedOnly: filters.curatedOnly,
+    safeForMe: filters.safeForMe,
+    pantryMode: filters.pantryMode,
     activeFilterCount,
   });
 
@@ -612,7 +584,7 @@ export default function RecipeBrowserScreen() {
         setShowUpgradeModal(true);
         return;
       }
-      setAdvancedFilters(next);
+      setFilters((prev) => ({ ...prev, advanced: next }));
     },
     [isPremium, haptics],
   );
@@ -620,7 +592,10 @@ export default function RecipeBrowserScreen() {
   const handleToggleCuisine = useCallback(
     (cuisine: string) => {
       haptics.selection();
-      setActiveCuisine((prev) => (prev === cuisine ? undefined : cuisine));
+      setFilters((prev) => ({
+        ...prev,
+        activeCuisine: prev.activeCuisine === cuisine ? undefined : cuisine,
+      }));
     },
     [haptics],
   );
@@ -628,7 +603,10 @@ export default function RecipeBrowserScreen() {
   const handleToggleDiet = useCallback(
     (diet: string) => {
       haptics.selection();
-      setActiveDiet((prev) => (prev === diet ? undefined : diet));
+      setFilters((prev) => ({
+        ...prev,
+        activeDiet: prev.activeDiet === diet ? undefined : diet,
+      }));
     },
     [haptics],
   );
@@ -637,19 +615,7 @@ export default function RecipeBrowserScreen() {
     haptics.selection();
     setSearchText("");
     setDebouncedQuery("");
-    setActiveCuisine(undefined);
-    setActiveDiet(undefined);
-    setActiveDifficulty(undefined);
-    setCuratedOnly(false);
-    setSafeForMe(false);
-    setPantryMode(false);
-    setAdvancedFilters({
-      sort: "relevance",
-      maxPrepTime: undefined,
-      maxCalories: undefined,
-      minProtein: undefined,
-      source: "all",
-    });
+    setFilters(DEFAULT_FILTERS);
   }, [haptics]);
 
   const renderItem = useCallback(
@@ -780,20 +746,26 @@ export default function RecipeBrowserScreen() {
           <Chip
             label="Curated"
             variant="filter"
-            selected={curatedOnly}
+            selected={filters.curatedOnly}
             onPress={() => {
               haptics.selection();
-              setCuratedOnly((prev) => !prev);
+              setFilters((prev) => ({
+                ...prev,
+                curatedOnly: !prev.curatedOnly,
+              }));
             }}
             accessibilityLabel="Filter curated recipes only"
           />
           <Chip
             label="Safe for me"
             variant="filter"
-            selected={safeForMe}
+            selected={filters.safeForMe}
             onPress={() => {
               haptics.selection();
-              setSafeForMe((prev) => !prev);
+              setFilters((prev) => ({
+                ...prev,
+                safeForMe: !prev.safeForMe,
+              }));
             }}
             accessibilityLabel="Filter recipes safe for my allergies"
           />
@@ -808,7 +780,7 @@ export default function RecipeBrowserScreen() {
               key={c}
               label={c}
               variant="filter"
-              selected={activeCuisine === c}
+              selected={filters.activeCuisine === c}
               onPress={() => handleToggleCuisine(c)}
               accessibilityLabel={`Filter by ${c}`}
             />
@@ -824,7 +796,7 @@ export default function RecipeBrowserScreen() {
               key={d}
               label={d}
               variant="filter"
-              selected={activeDiet === d}
+              selected={filters.activeDiet === d}
               onPress={() => handleToggleDiet(d)}
               accessibilityLabel={`Filter by ${d}`}
             />
@@ -840,12 +812,16 @@ export default function RecipeBrowserScreen() {
               key={`diff-${d}`}
               label={d}
               variant="filter"
-              selected={activeDifficulty === d.toLowerCase()}
+              selected={filters.activeDifficulty === d.toLowerCase()}
               onPress={() => {
                 haptics.selection();
-                setActiveDifficulty((prev) =>
-                  prev === d.toLowerCase() ? undefined : d.toLowerCase(),
-                );
+                setFilters((prev) => ({
+                  ...prev,
+                  activeDifficulty:
+                    prev.activeDifficulty === d.toLowerCase()
+                      ? undefined
+                      : d.toLowerCase(),
+                }));
               }}
               accessibilityLabel={`Filter by ${d} difficulty`}
             />
@@ -859,22 +835,29 @@ export default function RecipeBrowserScreen() {
           <Chip
             label="From my pantry"
             variant="filter"
-            selected={pantryMode}
+            selected={filters.pantryMode}
             onPress={() => {
               haptics.selection();
-              setPantryMode((prev) => !prev);
+              setFilters((prev) => ({
+                ...prev,
+                pantryMode: !prev.pantryMode,
+              }));
             }}
             accessibilityLabel="Filter recipes by pantry items"
           />
           <Chip
             label="Quick meals"
             variant="filter"
-            selected={advancedFilters.maxPrepTime === 30}
+            selected={filters.advanced.maxPrepTime === 30}
             onPress={() => {
               haptics.selection();
-              setAdvancedFilters((prev) => ({
+              setFilters((prev) => ({
                 ...prev,
-                maxPrepTime: prev.maxPrepTime === 30 ? undefined : 30,
+                advanced: {
+                  ...prev.advanced,
+                  maxPrepTime:
+                    prev.advanced.maxPrepTime === 30 ? undefined : 30,
+                },
               }));
             }}
             accessibilityLabel="Filter quick meals under 30 minutes"
@@ -953,13 +936,18 @@ export default function RecipeBrowserScreen() {
           onOpenRecipe={handleRecipePress}
           onSeePreset={(key) => {
             haptics.selection();
-            if (key === "pantry") setPantryMode(true);
-            else if (key === "featured") setCuratedOnly(true);
+            if (key === "pantry")
+              setFilters((prev) => ({ ...prev, pantryMode: true }));
+            else if (key === "featured")
+              setFilters((prev) => ({ ...prev, curatedOnly: true }));
             else
-              setAdvancedFilters((f) => ({
-                ...f,
-                maxPrepTime: 20,
-                sort: "quickest",
+              setFilters((prev) => ({
+                ...prev,
+                advanced: {
+                  ...prev.advanced,
+                  maxPrepTime: 20,
+                  sort: "quickest",
+                },
               }));
           }}
           contentBottomInset={insets.bottom}
@@ -981,12 +969,12 @@ export default function RecipeBrowserScreen() {
       ) : localResults.length === 0 && onlineResults.length === 0 ? (
         <View style={styles.emptyContainer}>
           {debouncedQuery ||
-          activeCuisine ||
-          activeDiet ||
-          activeDifficulty ||
-          curatedOnly ||
-          safeForMe ||
-          pantryMode ||
+          filters.activeCuisine ||
+          filters.activeDiet ||
+          filters.activeDifficulty ||
+          filters.curatedOnly ||
+          filters.safeForMe ||
+          filters.pantryMode ||
           activeFilterCount > 0 ? (
             <EmptyState
               variant="noResults"
@@ -1097,16 +1085,13 @@ export default function RecipeBrowserScreen() {
       >
         <BottomSheetView accessibilityViewIsModal>
           <SearchFilterSheet
-            filters={advancedFilters}
+            filters={filters.advanced}
             onFiltersChange={handleFiltersChange}
             onReset={() => {
-              setAdvancedFilters({
-                sort: "relevance",
-                maxPrepTime: undefined,
-                maxCalories: undefined,
-                minProtein: undefined,
-                source: "all",
-              });
+              setFilters((prev) => ({
+                ...prev,
+                advanced: DEFAULT_FILTERS.advanced,
+              }));
             }}
             activeFilterCount={activeFilterCount}
           />
