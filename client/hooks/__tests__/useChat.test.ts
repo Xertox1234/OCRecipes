@@ -55,6 +55,12 @@ class MockXHR {
   ontimeout: XHRHandler = null;
   onabort: XHRHandler = null;
   send = vi.fn();
+  // Real XHR fires `onabort` when `.abort()` is called on an in-flight
+  // request — this mock does so synchronously, matching how the other
+  // simulate* helpers below drive their handlers.
+  abort = vi.fn(() => {
+    this.onabort?.(new ProgressEvent("abort"));
+  });
 
   constructor() {
     xhrInstance = this;
@@ -289,6 +295,50 @@ describe("useSendMessage", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["/api/chat/conversations"],
     });
+  });
+
+  // P2-2026-09-24: recipe/remix generation keeps running and saves
+  // server-side after the client leaves (finish-and-save policy), so an
+  // intentional abort (unmount, navigating away) must mark the conversation
+  // stale rather than silently skip invalidation — the OLD behavior, back
+  // when the server also stopped on disconnect and there was nothing new to
+  // fetch. `refetchType: "none"` defers the refetch instead of racing the
+  // server's still-in-flight write (same pattern as CoachOverlayContent /
+  // CoachChat, #1060).
+  it("marks queries stale (not refetch) when the stream is intentionally aborted", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    mockTokenStorage.get.mockResolvedValue("token");
+
+    const { result } = renderHook(() => useSendMessage(9), { wrapper });
+
+    await act(async () => {
+      const p = result.current.sendMessage("test");
+      // Flush the tokenStorage.get() microtask so the XHR exists to abort.
+      await Promise.resolve();
+      await Promise.resolve();
+      result.current.abortStream();
+      await p;
+    });
+
+    expect(xhrInstance.abort).toHaveBeenCalledOnce();
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations/9/messages"],
+      refetchType: "none",
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/chat/conversations"],
+      refetchType: "none",
+    });
+    // Aborting is not a stream error — no error bubble should show.
+    expect(result.current.streamError).toBe(false);
+  });
+
+  it("abortStream is a no-op when no stream is in flight", () => {
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+
+    expect(() => result.current.abortStream()).not.toThrow();
   });
 
   it("silently ignores incomplete JSON chunks", async () => {

@@ -15,6 +15,7 @@ const {
   mockImpact,
   mockNotification,
   mockSendMessage,
+  mockAbortStream,
   mockCreateConversationMutateAsync,
   mockSaveRecipeMutateAsync,
   mockChatMessagesData,
@@ -35,6 +36,7 @@ const {
   mockImpact: vi.fn(),
   mockNotification: vi.fn(),
   mockSendMessage: vi.fn(),
+  mockAbortStream: vi.fn(),
   mockCreateConversationMutateAsync: vi.fn(),
   mockSaveRecipeMutateAsync: vi.fn(),
   mockChatMessagesData: { value: [] as ChatMessage[] },
@@ -67,6 +69,7 @@ vi.mock("@/hooks/useChat", () => ({
   useChatMessages: () => ({ data: mockChatMessagesData.value }),
   useSendMessage: () => ({
     sendMessage: mockSendMessage,
+    abortStream: mockAbortStream,
     streamingContent: "",
     streamingRecipe: null,
     isStreaming: false,
@@ -111,6 +114,23 @@ describe("RecipeChatScreen — safe back navigation", () => {
       index: 0,
       routes: [{ name: "Main" }],
     });
+  });
+});
+
+// P2-2026-09-24: recipe/remix generation keeps running server-side after a
+// disconnect (finish-and-save policy) — the client's job is to stop
+// listening on its own dead XHR and mark the conversation stale so the next
+// view refetches the finished reply. useSendMessage owns the invalidation
+// (see useChat.test.ts); this screen's only responsibility is calling
+// abortStream() on unmount.
+describe("RecipeChatScreen — aborts the stream on unmount", () => {
+  it("calls abortStream when the screen unmounts", () => {
+    const { unmount } = renderComponent(<RecipeChatScreen />);
+
+    expect(mockAbortStream).not.toHaveBeenCalled();
+    unmount();
+
+    expect(mockAbortStream).toHaveBeenCalledOnce();
   });
 });
 

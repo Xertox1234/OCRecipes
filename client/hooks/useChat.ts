@@ -121,6 +121,13 @@ export function useSendMessage(conversationId: number | null) {
   // Refs for stale-closure-safe access inside streaming callbacks
   const isStreamingRef = useRef(false);
   const streamingContentRef = useRef("");
+  // The in-flight XHR, exposed so a caller (e.g. a screen's unmount cleanup)
+  // can abort it from outside sendMessage.
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
+
+  const abortStream = useCallback(() => {
+    xhrRef.current?.abort();
+  }, []);
 
   const sendMessage = useCallback(
     async (
@@ -241,6 +248,7 @@ export function useSendMessage(conversationId: number | null) {
 
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
+          xhrRef.current = xhr;
           xhr.open("POST", url.href, true);
           xhr.timeout = 120_000;
           Object.entries(headers).forEach(([k, v]) =>
@@ -289,12 +297,27 @@ export function useSendMessage(conversationId: number | null) {
           xhr.send(requestBody);
         });
 
-        // Stream ended — check if it completed normally (skip for intentional aborts)
-        if (
-          !aborted &&
-          !receivedDone &&
-          streamingContentRef.current.length > 0
-        ) {
+        // Stream ended — check if it completed normally
+        if (aborted) {
+          // The XHR was intentionally aborted (e.g. RecipeChatScreen
+          // unmounted). Recipe/remix generation keeps running and saves the
+          // reply server-side after a disconnect (finish-and-save policy —
+          // see server/routes/chat.ts); this used to be skipped entirely
+          // back when the server also stopped on disconnect and there was
+          // nothing new to fetch. Mark both queries stale so the next view
+          // refetches the finished reply instead of serving this pre-settle
+          // cache. `refetchType: "none"` defers the refetch instead of
+          // racing the server's still-in-flight write (same pattern as
+          // CoachOverlayContent / CoachChat, #1060).
+          void queryClient.invalidateQueries({
+            queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
+            refetchType: "none",
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ["/api/chat/conversations"],
+            refetchType: "none",
+          });
+        } else if (!receivedDone && streamingContentRef.current.length > 0) {
           setStreamError(true);
           void queryClient.invalidateQueries({
             queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
@@ -311,6 +334,7 @@ export function useSendMessage(conversationId: number | null) {
             : "Something went wrong. Please try again.",
         );
       } finally {
+        xhrRef.current = null;
         isStreamingRef.current = false;
         setIsStreaming(false);
         setStreamingContent("");
@@ -329,6 +353,7 @@ export function useSendMessage(conversationId: number | null) {
 
   return {
     sendMessage,
+    abortStream,
     streamingContent,
     streamingRecipe,
     allergenWarning,

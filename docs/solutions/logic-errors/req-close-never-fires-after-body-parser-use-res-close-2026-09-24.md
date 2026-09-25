@@ -8,6 +8,7 @@ tags: [api, testing, sse, streaming, abort-controller, express, node]
 applies_to: [server/routes/**/*.ts]
 symptoms: ['A route handler registers req.on("close") after an await (body already parsed) to detect client disconnect', 'An AbortController meant to stop OpenAI spend on disconnect never aborts in production', 'Every disconnect test uses supertest, which always reads the full response, so no test ever drops the connection', 'Code that is gated on an `aborted` flag (skip persistence, skip cache) reads as live but never runs']
 created: '2026-09-24'
+last_updated: '2026-09-24'
 ---
 
 # req.on('close') attached after express.json() never fires — detect a dropped client with res.on('close') + !res.writableFinished
@@ -48,13 +49,15 @@ res.on("close", () => {
 
 Run any post-disconnect bookkeeping (refund, save the partial) **before** `res.end()`, keyed on `clientDisconnected`. Don't key it on a shared `aborted` flag: in `chat.ts`, `aborted` is also set by the SSE timeout and the byte-limit guard.
 
-Making the abort real can change behavior somewhere else. Once a disconnect actually aborts, any path whose persistence is gated on `!aborted` stops saving on disconnect. In `chat.ts` the recipe/remix path can't salvage half a recipe JSON, so the handler returns early for it and keeps the old finish-and-save behavior (`todos/P2-2026-09-24-recipe-chat-disconnect-policy.md`).
+Making the abort real can change behavior somewhere else. Once a disconnect actually aborts, any path whose persistence is gated on `!aborted` stops saving on disconnect. In `chat.ts` the recipe/remix path can't salvage half a recipe JSON, so the handler returns early for it and keeps the old finish-and-save behavior (`todos/archive/P2-2026-09-24-recipe-chat-disconnect-policy.md`).
 
 ## Prevention
 
 - **Test disconnects over a real socket.** supertest can't reproduce this. `postAndDisconnect` in `server/routes/__tests__/chat.test.ts` does: `app.listen(0)`, `http.request`, `clientReq.destroy()` once a body predicate matches, and a `res.end` wrapper as the "handler finished" signal, so negative assertions made after it are meaningful. Pass the abort to the fake generator through the real `AbortSignal` (`await untilAborted(signal)`). Don't use timers.
+- **A path whose generator receives no `AbortSignal` has no `untilAborted` choke point.** The recipe/remix branch never passes `abortController.signal` into `generateRecipeChatResponse` (only the coach branch passes it into `handleCoachChat`), so a fake generator has nothing to `await` that ties it to the disconnect. `postAndDisconnect` takes an optional `onServerClose` callback wired to the SAME `res.on("close")` event the route itself listens on (it fires regardless of path — only what the route DOES with it differs); pause the fake generator on a promise that callback resolves, and set a flag inside it so the test can assert the disconnect was actually observed before checking the outcome — otherwise a race could let the generator run to completion before the socket closes and the test would pass without ever entering the regime.
 - Include a **completed-stream control** cell. It must pass both before and after the fix, which proves the harness doesn't report every stream as a disconnect.
 - Measure the version claim on the runtime you ship. This one was measured on Node 24 (`engines: 24.x`).
+- **Prove a pin is non-vacuous by breaking the guard it pins, not just by reading the code.** For the recipe/remix finish-and-save pin, temporarily removing `|| !isCoachPath` from the `res.on("close")` guard made the test fail (`assistantWrites()` length 0, the settle path with no content to persist) before reverting — cheaper than a second test and it directly falsifies the "this test would pass either way" concern.
 
 ## Related Files
 
