@@ -418,7 +418,12 @@ export default function RecipeBrowserScreen() {
     [debouncedQuery, mealType, filters],
   );
 
-  const addItemMutation = useAddMealPlanItem();
+  // Destructure rather than depend on the mutation object itself —
+  // useMutation returns a new object identity every render, which would
+  // make handleRecipePress (and renderItem, which depends on it) re-create
+  // on every RecipeBrowserScreen render, including one caused by a single
+  // search keystroke (see CoachChat.tsx for the same pattern).
+  const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
   const { data: favouriteData } = useFavouriteRecipeIds();
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
 
@@ -548,7 +553,7 @@ export default function RecipeBrowserScreen() {
 
       setAddingId(item.id);
       try {
-        await addItemMutation.mutateAsync({
+        await addMealPlanItem({
           recipeId: numericId,
           plannedDate,
           mealType,
@@ -566,7 +571,7 @@ export default function RecipeBrowserScreen() {
       toast,
       navigation,
       isBrowseOnly,
-      addItemMutation,
+      addMealPlanItem,
       plannedDate,
       mealType,
     ],
