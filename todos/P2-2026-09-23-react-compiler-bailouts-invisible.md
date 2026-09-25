@@ -1,6 +1,6 @@
 ---
 title: "React Compiler silently skips 61 of 226 client .tsx files, and nothing in lint or CI surfaces a bailout"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23
@@ -60,3 +60,51 @@ A baseline-ratchet script (like the type-aware ESLint ratchet) is the least disr
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (M1).
+
+### 2026-09-25 — Scope Contract deviation (acceptance criteria win)
+
+- **Chose the baseline-ratchet script**, not an `eslint-plugin-react-hooks` v6+/v7 upgrade, per
+  the Implementation Notes' own risk callout (a major lint-plugin bump can cascade repo-wide).
+  Re-derived the audit's exact measurement recipe from `docs/audits/2026-09-23-frontend.md`
+  Post-Audit Notes and ran it live against the real tree: 61/226 `client/**/*.tsx` files bail
+  out (excluding `__tests__`), matching the audit exactly, including all four named examples
+  (CoachChat, HomeScreen, MealPlanHomeScreen, RecipeBrowserScreen). Positive control
+  `ThemedText.tsx` compiles clean. Classification bug found and fixed during implementation:
+  a naive `events.length > 0` check flags 225/226 files, because `CompileSuccess` is itself a
+  logged event per compiled function — the correct test is "any event kind other than
+  `CompileSuccess`".
+- **AC 1 requires a "CI-enforced signal", but the Scope Contract's "Files in scope" list does
+  not include `.github/workflows/ci.yml` or `scripts/preflight.sh`.** First attempt: wire the
+  new script as its own step in both files, mirroring the 7 existing sibling `check-*.js`
+  scripts (`check-accessibility.js`, `check-hardcoded-colors.js`,
+  `check-bottomsheet-backhandler.js`, `check-idor-storage.js`, `check-jsdom-pragma.js`,
+  `check-rules-file-size.js`, `check-solution-frontmatter.js`), each of which IS wired into
+  both. The advisor (consulted mid-implementation, after this first attempt) pointed out a
+  narrower fix that stays entirely within the literal Scope Contract file list: chain the new
+  check onto the existing `lint` npm script (`package.json`, already in scope) —
+  `"lint": "ESLINT_NO_TYPE_AWARE= npx expo lint && node scripts/check-react-compiler-bailouts.js"`.
+  `.github/workflows/ci.yml:45` and `scripts/preflight.sh`'s full-mode block both already run
+  `npm run lint`, so this gets CI enforcement AND preflight parity for free, with zero workflow
+  file edits — deliberately diverging from the 7 siblings' one-step-per-file wiring, for that
+  reason. Reverted the ci.yml/preflight.sh edits from the first attempt (`git checkout --`,
+  confirmed clean via `git status --short`) in favor of this. Hardened the script against the
+  resulting `npm run lint -- <args>` passthrough footgun (args reach the chained script, not
+  `expo lint`): an unrecognized argument now exits 2 rather than silently ignoring it, matching
+  `scripts/coverage-ratchet.ts`'s "a typo must not silently run in report-only mode" convention.
+  Per `docs/solutions/conventions/when-implementation-notes-contradict-acceptance-criteria-the-criteria-win-2026-09-22.md`,
+  the acceptance criteria win over a literal Scope Contract reading — but the actual mechanism
+  chosen here needed no scope extension at all once the right seam (`lint`) was found.
+- `package-lock.json` is also touched (one line) — not in the Scope Contract list either, but
+  required: `npm ci` (CI's install step) fails if the lockfile doesn't record the new
+  `babel-plugin-react-compiler` devDependency pin. Regenerated via
+  `npm install --package-lock-only`; verified with `npm ci --dry-run` before relying on it.
+- **TDD**: every sibling `check-*.js` script in `scripts/` has a `scripts/__tests__/check-*.test.ts`
+  file — this project's TDD requirement (CLAUDE.md) is a hard rule, not scoped to app code.
+  Refactored the script to extract testable pure functions (`findTsxFiles`, `isBailout`,
+  `loadBaseline`, `writeBaseline`, `diffBailouts`, `parseArgs`) plus `--root`/`--baseline-file`
+  overrides (mirroring `coverage-ratchet.ts`'s `--coverage-file`/`--config-file`), so tests can
+  point at a temp fixture tree instead of mutating the real baseline file or scanning the real
+  226-file `client/` tree on every run. Added `scripts/__tests__/check-react-compiler-bailouts.test.ts`
+  (29 tests). Verified the key regression pin is not vacuous: temporarily reverted `isBailout`'s
+  classification to the buggy `events.length > 0` check, confirmed 7 tests go RED (including the
+  harness's own positive-control gate), then restored and confirmed GREEN.
