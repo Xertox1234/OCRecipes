@@ -5,6 +5,7 @@ import Animated, { SlideInRight, SlideInLeft } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { MarkdownText } from "@/components/MarkdownText";
+import { spokenMarkdown } from "@/components/markdown-text-utils";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, FontFamily, BorderRadius } from "@/constants/theme";
@@ -66,7 +67,7 @@ export function ChatBubble({
       style={[styles.bubbleRow, styles.bubbleRowAssistant]}
       accessible
       accessibilityRole="text"
-      accessibilityLabel={`NutriCoach: ${content}`}
+      accessibilityLabel={`NutriCoach: ${spokenMarkdown(content)}`}
     >
       <View
         style={[styles.avatarDot, { backgroundColor: theme.accentSolid }]}

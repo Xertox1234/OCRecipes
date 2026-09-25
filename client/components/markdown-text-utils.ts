@@ -19,6 +19,20 @@ export const IMAGE_REGEX = /!\[([^\]]*)\]\([^)]*\)/g;
  */
 const LINK_REGEX = /\[([^\]]*)\]\([^)]*\)/g;
 
+/**
+ * The text a screen reader should speak for a message: images dropped and
+ * links reduced to their text, matching what MarkdownText shows, so
+ * VoiceOver/TalkBack never read raw `![alt](url)` syntax or URLs aloud.
+ * Collapses the double space a mid-sentence image leaves behind.
+ */
+export function spokenMarkdown(text: string): string {
+  return text
+    .replace(IMAGE_REGEX, "")
+    .replace(LINK_REGEX, "$1")
+    .replace(/ {2,}/g, " ")
+    .trim();
+}
+
 /** Parse inline bold/italic markers into styled segments. */
 export function parseInline(text: string): InlineSegment[] {
   // Render a markdown link as its plain text — not tappable, no URL shown.

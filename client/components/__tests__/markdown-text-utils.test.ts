@@ -2,6 +2,7 @@ import {
   parseInline,
   BULLET_REGEX,
   NUMBERED_REGEX,
+  spokenMarkdown,
 } from "../markdown-text-utils";
 
 describe("parseInline", () => {
@@ -173,5 +174,19 @@ describe("NUMBERED_REGEX", () => {
   it("does not match period without space after", () => {
     const match = "1.item".match(NUMBERED_REGEX);
     expect(match).toBeNull();
+  });
+});
+
+describe("spokenMarkdown", () => {
+  it("drops images, keeps link text without the URL, and collapses the gap", () => {
+    expect(
+      spokenMarkdown(
+        "See ![pic](https://a.test/p.png) and [the recipe](https://b.test) now",
+      ),
+    ).toBe("See and the recipe now");
+  });
+
+  it("leaves plain text unchanged", () => {
+    expect(spokenMarkdown("Eat more greens.")).toBe("Eat more greens.");
   });
 });
