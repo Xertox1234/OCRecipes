@@ -1,9 +1,9 @@
 ---
 title: "LabelAnalysisScreen: the error state and the verification result are never announced to screen readers"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 assignee:
 labels: [deferred, audit, accessibility]
 github_issue:
@@ -57,3 +57,26 @@ Follow the edge-guarded announcer patterns already used by NoticeStack / Nutriti
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (M9, M10).
+
+### 2026-09-25
+
+- Implemented (TDD, red→green): full-screen error now renders via `InlineError`
+  (announced on both platforms internally); verification-result banner announces
+  once per distinct message via a NoticeStack-style ref-guarded, content-keyed
+  effect, its inert `accessibilityRole="alert"` removed, and its decorative icon
+  hidden (`accessible={false}` + `importantForAccessibility="no-hide-descendants"`);
+  the "Updated with AI analysis" toast's announce is merged into the existing
+  sessionId "Ready to log"/"Ready to submit verification" effect (both can land in
+  the same React commit — iOS drops the second of two same-tick
+  `announceForAccessibility` calls, see
+  `docs/solutions/logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md`);
+  the toast's `FadeInUp` entering animation now respects `reducedMotion`. New test
+  file: `client/screens/__tests__/LabelAnalysisScreen.a11y.test.tsx` (7 tests).
+- Reviewed by `code-reviewer` + `mobile-reviewer` (one pass) at `650c6d14` — no
+  blocking findings. Two WARNINGs filed as follow-up todos per the one-review-pass
+  policy (not fixed on this branch):
+  `todos/P3-2026-09-25-label-analysis-toast-icon-not-hidden.md` (toast's
+  `check-circle` icon not hidden) and
+  `todos/P2-2026-09-25-label-analysis-low-confidence-error-dead-branch.md`
+  (pre-existing: the `confidence < 0.3` error is set alongside `labelData`, so it
+  can never render — untouched by this diff, out of scope for this todo).
