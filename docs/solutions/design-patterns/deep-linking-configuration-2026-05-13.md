@@ -3,10 +3,10 @@ title: Deep linking configuration with parseIntOrZero boundary validation
 track: knowledge
 category: design-patterns
 module: client
-tags: [react-native, navigation, deep-linking, validation]
+tags: [react-native, navigation, deep-linking, validation, notifications, expo-notifications]
 applies_to: [client/navigation/linking.ts, client/navigation/__tests__/**]
 created: '2026-05-13'
-last_updated: '2026-05-30'
+last_updated: '2026-09-25'
 ---
 
 # Deep linking configuration with parseIntOrZero boundary validation
@@ -107,11 +107,91 @@ function RootNavigator() {
 
 The `UNSTABLE_` prefix means the API may change or be removed across minor versions without prior notice. No stable alternative for this specific “handle deep link after route set changes” pattern currently exists. Monitor React Navigation changelogs for deprecation warnings or a renamed stable counterpart.
 
+## Integrating expo-notifications via getInitialURL/subscribe
+
+React Navigation 7's documented mechanism for routing a notification tap through the same `linking` config that handles ordinary deep links is to override `getInitialURL`/`subscribe` on the `LinkingOptions` object:
+
+```typescript
+// client/navigation/linking.ts
+async getInitialURL() {
+  // A real deep link wins if both are somehow present — the more specific intent.
+  const url = await Linking.getInitialURL();
+  if (url != null) return url;
+
+  const response = Notifications.getLastNotificationResponse();
+  return extractNotificationUrl(response?.notification.request.content.data);
+},
+subscribe(listener) {
+  const onReceiveURL = ({ url }: { url: string }) => listener(url);
+  const linkingSubscription = Linking.addEventListener("url", onReceiveURL);
+
+  const notificationSubscription =
+    Notifications.addNotificationResponseReceivedListener((response) => {
+      const url = extractNotificationUrl(response.notification.request.content.data);
+      if (url) listener(url);
+    });
+
+  return () => {
+    linkingSubscription.remove();
+    notificationSubscription.remove();
+  };
+},
+```
+
+Use `Notifications.getLastNotificationResponse()` (synchronous), not `getLastNotificationResponseAsync()` — the installed `expo-notifications` SDK marks the `Async` form `@deprecated` in favor of the sync one. `getInitialURL` is already an `async` function, so calling the sync API inside it needs no `await`.
+
+Notification payloads must carry a **full-prefixed** URL (e.g. `ocrecipes://notebook-entry/42`), never a bare path or id — `extractPathFromURL` (internal to React Navigation, used to match a URL against `prefixes`) returns `undefined` for a string matching none of them, silently dropping the link. When a payload only carries a bare id field (a legacy shape, or a third-party/server-scheduled sender that predates this pattern), reconstruct the full-prefix URL from it rather than passing the id through as-is — see `client/navigation/linking.ts`'s `extractNotificationUrl` for a worked example, and note in the code that this fallback is not always a temporary migration bridge: a sender you don't control (e.g. a server-driven push path) may keep emitting the legacy shape indefinitely, so the fallback should be treated as permanent unless every sender is confirmed updated.
+
+`getInitialURL` and a live `subscribe` tap can both fire for the *same* cold-launch notification — `expo-notifications` delivers the launch response via `getLastNotificationResponse()` and may also emit it to a freshly-registered `addNotificationResponseReceivedListener`. This is benign: the second delivery is a same-route re-navigate (a no-op), so no deduplication is needed.
+
+### The gap the vanilla example doesn't close: a live tap before the navigator has mounted
+
+Verified by reading the installed `@react-navigation/native`/`@react-navigation/core` source (`node_modules`), not assumed from docs. The vanilla `getInitialURL`/`subscribe` pattern above, by itself, does **not** handle a notification tap that arrives while the app is already running but the root navigator hasn't mounted yet (e.g. a screen showing a loading spinner instead of a `Stack.Navigator`, gated on an auth check):
+
+- `useLinking.native.js`'s `subscribe`-path listener (`node_modules/@react-navigation/native/lib/module/useLinking.native.js` ~lines 118-143) resolves the URL to a state and calls `navigation.dispatch(action)` or `navigation.resetRoot(state)` on the ref `NavigationContainer` exposes.
+- `BaseNavigationContainer.js`'s `dispatch` (~lines 106-112) and `resetRoot` (~lines 127-137) both branch on `listeners.focus[0] != null` — the same condition `navigationRef.isReady()` exposes — and **silently `console.error(NOT_INITIALIZED_ERROR)` with no retry and no queueing** when it's `false` (no child `Stack.Navigator` has registered a focus listener yet).
+- This is different from the `UNSTABLE_routeNamesChangeBehavior="lastUnhandled"` replay above (which is triggered through `getInitialURL`'s cold-launch initial-state path, entirely independent of `navigationRef`/`isReady()`) — a *live* `subscribe` tap during this window is a genuine, unrecoverable drop with the vanilla pattern.
+- The window is real but normally **boot-only**: it exists only until the app's first auth check resolves (in this project, `client/hooks/useAuth.ts`'s `isLoading` starts `true` exactly once and a foreground-resume recheck never sets it back to `true`), so it is not a recurring "warm, backgrounded" condition once the app has booted once.
+
+**The fix**: hold the URL in a module-level variable when `navigationRef.isReady()` is `false`, and flush it via `NavigationContainer`'s own `onReady` prop instead of delivering it straight to the `subscribe` listener. `createNavigationContainerRef`'s `isReady()` safely returns `false` (never throws) when the ref isn't attached yet, and `onReady` fires exactly once, precisely when `isReady()` first flips `true` (`BaseNavigationContainer.js`'s `onReadyCalledRef` effect) — so the hold-then-flush ordering is sound, not racy. This uses only `NavigationContainer`'s existing, documented `onReady` prop plus `navigationRef.isReady()` — no new library, dependency, or architectural layer:
+
+```typescript
+// client/navigation/linking.ts
+let pendingNotificationUrl: string | undefined;
+let deliverUrl: ((url: string) => void) | undefined;
+
+export function flushPendingNotificationUrl(): void {
+  if (pendingNotificationUrl && deliverUrl) {
+    const url = pendingNotificationUrl;
+    pendingNotificationUrl = undefined;
+    deliverUrl(url);
+  }
+}
+
+// inside subscribe(listener): deliverUrl = listener; then, in the
+// notification callback, `navigationRef.isReady() ? listener(url) : (pendingNotificationUrl = url)`
+
+// client/App.tsx
+<NavigationContainer ref={navigationRef} linking={linking} onReady={flushPendingNotificationUrl}>
+```
+
+A unit test that calls the exported `getInitialURL`/`subscribe` functions directly (see Testing below) can only assert URL **forwarding** into React Navigation's own `listener` — it cannot observe React Navigation's own replay behavior (the `UNSTABLE_routeNamesChangeBehavior="lastUnhandled"` mechanism, or this hold/flush). Verify those by reading the installed source as above, and say explicitly in the test's comments and in any PR description that on-device/simulator verification is a separate, unperformed step.
+
+## Testing
+
+Test `getInitialURL`/`subscribe` by calling the exported functions directly — do not mount `NavigationContainer` (same avoidance `client/navigation/__tests__/linking.test.ts` already uses for `getStateFromPath`, importing from `@react-navigation/core` instead of `@react-navigation/native` to avoid pulling in React Native sources the node env can't load). Mocking gotchas:
+
+- The globally-aliased `react-native` mock (`test/mocks/react-native.ts`) only exports `Linking.openURL`/`openSettings` — no `getInitialURL`/`addEventListener`. Override locally per `docs/solutions/conventions/inline-vi-mock-globally-aliased-modules-2026-05-13.md` item 3 ("missing exports"): `vi.mock("react-native", async (importOriginal) => ({ ...(await importOriginal()), Linking: { ...actual.Linking, getInitialURL: vi.fn(), addEventListener: vi.fn() } }))`.
+- `expo-notifications` has no global alias; mock it inline per-file (`getLastNotificationResponse`, `addNotificationResponseReceivedListener`), matching `client/lib/__tests__/notifications.test.ts`'s existing shape.
+- If the module under test imports `navigationRef` (for the `isReady()` gate above), mock `../navigationRef` too — its runtime import chain otherwise pulls in `@react-navigation/native`.
+
 ## Related Files
 
-- `client/navigation/linking.ts` — `parseIntOrZero` + config
-- `client/App.tsx` — `linking` prop on `NavigationContainer`
+- `client/navigation/linking.ts` — `parseIntOrZero` + config; `getInitialURL`/`subscribe` + the pending-URL hold/flush
+- `client/App.tsx` — `linking` prop on `NavigationContainer`; `onReady={flushPendingNotificationUrl}`
 - `client/navigation/RootStackNavigator.tsx` — `UNSTABLE_routeNamesChangeBehavior` prop on root `Stack.Navigator`
+- `client/navigation/navigationRef.ts` — the `isReady()` check the hold/flush depends on
+- `client/hooks/useNotebookNotifications.ts` — schedules the `url` field the notification-tap path reads
 - `client/navigation/__tests__/linking.test.ts`
 
 ## See Also
