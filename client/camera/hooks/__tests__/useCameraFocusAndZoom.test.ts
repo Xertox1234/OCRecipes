@@ -14,6 +14,7 @@ import { logger } from "@/lib/logger";
 // module-scope declarations.
 const captured = vi.hoisted(() => ({
   tapEnd: undefined as ((e: { x: number; y: number }) => void) | undefined,
+  pinchStart: undefined as (() => void) | undefined,
   pinchUpdate: undefined as ((e: { scale: number }) => void) | undefined,
 }));
 
@@ -25,7 +26,8 @@ vi.mock("react-native-gesture-handler", () => {
     }
   }
   class PinchMock {
-    onStart() {
+    onStart(cb: () => void) {
+      captured.pinchStart = cb;
       return this;
     }
     onUpdate(cb: (e: { scale: number }) => void) {
@@ -41,6 +43,32 @@ vi.mock("react-native-gesture-handler", () => {
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
+
+// The global react-native-reanimated mock (test/mocks/react-native-reanimated.ts)
+// returns a fresh, non-persistent { value } object from useSharedValue on every
+// render — fine for tests that only assert call counts, but the per-frame
+// pinch-zoom gating below (lastAppliedZoom/lastZoomLabelText) depends on those
+// shared values surviving across re-renders. Ref-backed inline mock per
+// docs/legacy-patterns/testing.md -> "Stateful Animation Mock Pattern"
+// (canonical example: useScrollLinkedHeader.test.ts). vitest.config.mts
+// aliases "react-native-worklets" to the same physical mock file as
+// "react-native-reanimated", so this override also intercepts this hook's
+// `import { scheduleOnRN } from "react-native-worklets"`.
+vi.mock("react-native-reanimated", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- mock needs synchronous require
+  const { useRef } = require("react");
+  return {
+    useSharedValue: <T>(initial: T) => {
+      const ref = useRef(null as { value: T } | null);
+      if (ref.current === null) {
+        ref.current = { value: initial };
+      }
+      return ref.current;
+    },
+    scheduleOnRN: (fn: (...args: unknown[]) => unknown, ...args: unknown[]) =>
+      fn(...args),
+  };
+});
 
 // Only the metering flags and zoom range are read by the SUT; the real
 // CameraDevice is a native HybridObject with ~60 members.
@@ -82,6 +110,12 @@ async function pinch(scale: number) {
   });
 }
 
+async function startPinch() {
+  await act(async () => {
+    captured.pinchStart?.();
+  });
+}
+
 function mount(
   focusTo: CameraRef["focusTo"],
   device: CameraDevice | undefined,
@@ -100,6 +134,7 @@ describe("useCameraFocusAndZoom", () => {
 
   beforeEach(() => {
     captured.tapEnd = undefined;
+    captured.pinchStart = undefined;
     captured.pinchUpdate = undefined;
     vi.mocked(logger.error).mockClear();
     // Platform.OS is a plain string property, not a function — assign directly.
@@ -285,6 +320,82 @@ describe("useCameraFocusAndZoom", () => {
       expect(vi.mocked(logger.error).mock.calls[1][1]).toMatchObject({
         message: "persistent zoom failure",
       });
+    });
+  });
+
+  describe("pinch-to-zoom — per-frame bridge call gating", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("applies setZoom only once the value moves past the epsilon", async () => {
+      const setZoom = vi.fn().mockResolvedValue(undefined);
+      mount(vi.fn().mockResolvedValue(undefined), makeDevice(), setZoom);
+
+      await pinch(1.5);
+      expect(setZoom).toHaveBeenCalledTimes(1);
+      expect(setZoom).toHaveBeenLastCalledWith(1.5);
+
+      // 0.005 delta from the last APPLIED value (1.5) — below the epsilon.
+      await pinch(1.505);
+      expect(setZoom).toHaveBeenCalledTimes(1);
+
+      // 0.03 delta from the last applied value — crosses it.
+      await pinch(1.53);
+      expect(setZoom).toHaveBeenCalledTimes(2);
+      expect(setZoom).toHaveBeenLastCalledWith(1.53);
+    });
+
+    it("does not reset the zoom label's hide timer for a repeat frame within the same displayed bucket", async () => {
+      const { result } = mount(
+        vi.fn().mockResolvedValue(undefined),
+        makeDevice(),
+      );
+
+      await pinch(1.5);
+      expect(result.current.zoomLabel).toBe("1.5x");
+
+      await act(async () => {
+        vi.advanceTimersByTime(300);
+      });
+
+      // 1.53 still formats to "1.5x" — same displayed bucket, gate suppresses
+      // the bridge call and must NOT re-arm the hide timer.
+      await pinch(1.53);
+
+      await act(async () => {
+        // 650ms total since the FIRST frame's timer armed. If the repeat
+        // frame above had re-armed it (ungated), only 350ms would have
+        // elapsed since THAT call and the label would still be visible.
+        vi.advanceTimersByTime(350);
+      });
+      expect(result.current.zoomLabel).toBeNull();
+    });
+
+    it("shows the zoom label again at the start of a new gesture even when it ends in the same displayed bucket", async () => {
+      const { result } = mount(
+        vi.fn().mockResolvedValue(undefined),
+        makeDevice(),
+      );
+
+      await startPinch();
+      await pinch(1.5);
+      expect(result.current.zoomLabel).toBe("1.5x");
+
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+      });
+      expect(result.current.zoomLabel).toBeNull();
+
+      // Second gesture's first frame lands on the exact same displayed zoom
+      // (scale 1.0 off the new gesture-start baseline of 1.5).
+      await startPinch();
+      await pinch(1.0);
+      expect(result.current.zoomLabel).toBe("1.5x");
     });
   });
 

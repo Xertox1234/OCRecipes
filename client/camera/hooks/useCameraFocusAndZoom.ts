@@ -7,6 +7,8 @@ import type { CameraDevice, CameraRef } from "react-native-vision-camera";
 import { logger } from "@/lib/logger";
 import {
   clampZoom,
+  formatZoomLabel,
+  shouldApplyZoom,
   supportedMeteringModes,
 } from "./useCameraFocusAndZoom-utils";
 
@@ -33,6 +35,13 @@ export function useCameraFocusAndZoom({
 }: UseCameraFocusAndZoomOptions) {
   const zoom = useSharedValue(1);
   const zoomAtGestureStart = useSharedValue(1);
+  // UI-thread-side "last value bridged to JS" trackers — gates the per-frame
+  // scheduleOnRN calls below to transitions only, per the pattern in
+  // docs/legacy-patterns/animation.md -> "Gate runOnJS on Shared-Value
+  // Transitions, Not on Every Frame" (same shape as useScrollLinkedHeader.ts's
+  // lastBarVisible).
+  const lastAppliedZoom = useSharedValue(1);
+  const lastZoomLabelText = useSharedValue<string | null>(null);
   const [focusPoint, setFocusPoint] = useState<FocusPoint | null>(null);
   const focusKeyRef = useRef(0);
   const focusFailureReportedRef = useRef(false);
@@ -117,8 +126,9 @@ export function useCameraFocusAndZoom({
   // doesn't install (it's snapshot-only OCR, no frame processors). Passing
   // an animated zoom SharedValue as a prop throws inside Camera's own
   // effect ("react-native-vision-camera-worklets is not installed"),
-  // silently killing the whole preview. Bridging via scheduleOnRN on every pinch
-  // update costs a JS-thread hop per frame but avoids that dependency.
+  // silently killing the whole preview. Bridging via scheduleOnRN avoids
+  // that dependency; the pinch worklet below only schedules this once the
+  // value has moved past shouldApplyZoom's epsilon, not on every frame.
   const setCameraZoom = useCallback(
     (value: number) => {
       cameraRef.current?.controller
@@ -149,13 +159,17 @@ export function useCameraFocusAndZoom({
     [cameraRef, device],
   );
 
-  // Bridged from the pinch worklet on every update via scheduleOnRN — shows a live
-  // "1.8x" readout during the gesture, fades out ~600ms after it stops
-  // changing. Re-arms the hide timer on each call rather than debouncing, so
-  // the label stays visible for the whole gesture and only starts its
-  // fade-out countdown once the fingers actually stop moving.
+  // Bridged from the pinch worklet via scheduleOnRN only when the displayed
+  // toFixed(1) text actually changes (see formatZoomLabel/lastZoomLabelText
+  // gating in pinchGesture.onUpdate below) — shows a live "1.8x" readout,
+  // fading out ~600ms after the last DISPLAYED change. Re-arms the hide timer
+  // on each call rather than debouncing. NOTE: holding a pinch steady within
+  // the same 0.1x bucket for >600ms mid-gesture now lets the label fade even
+  // though the gesture hasn't ended (no scheduleOnRN call arrives to re-arm
+  // the timer) — a deliberate tradeoff of gating on displayed text; an
+  // onEnd-driven hide would avoid it but is out of this change's scope.
   const showZoomLabel = useCallback((value: number) => {
-    setZoomLabel(`${value.toFixed(1)}x`);
+    setZoomLabel(formatZoomLabel(value));
     if (zoomLabelHideTimer.current) clearTimeout(zoomLabelHideTimer.current);
     zoomLabelHideTimer.current = setTimeout(() => {
       setZoomLabel(null);
@@ -175,6 +189,12 @@ export function useCameraFocusAndZoom({
   const pinchGesture = Gesture.Pinch()
     .onStart(() => {
       zoomAtGestureStart.value = zoom.value;
+      // Reset the label gate so a new gesture always shows the live readout
+      // at least once, even if it ends in the same displayed bucket the
+      // previous gesture left off in (lastAppliedZoom is NOT reset here — it
+      // tracks native state, not display, so an unchanged zoom correctly
+      // stays un-re-sent).
+      lastZoomLabelText.value = null;
     })
     .onUpdate((e) => {
       if (!device) return;
@@ -183,8 +203,15 @@ export function useCameraFocusAndZoom({
         device.minZoom,
         device.maxZoom,
       );
-      scheduleOnRN(setCameraZoom, zoom.value);
-      scheduleOnRN(showZoomLabel, zoom.value);
+      if (shouldApplyZoom(zoom.value, lastAppliedZoom.value)) {
+        lastAppliedZoom.value = zoom.value;
+        scheduleOnRN(setCameraZoom, zoom.value);
+      }
+      const nextZoomLabel = formatZoomLabel(zoom.value);
+      if (nextZoomLabel !== lastZoomLabelText.value) {
+        lastZoomLabelText.value = nextZoomLabel;
+        scheduleOnRN(showZoomLabel, zoom.value);
+      }
     });
 
   return { focusPoint, zoomLabel, tapGesture, pinchGesture };
