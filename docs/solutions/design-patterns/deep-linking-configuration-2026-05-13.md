@@ -190,6 +190,32 @@ export function flushPendingNotificationUrl(): void {
 
 A unit test that calls the exported `getInitialURL`/`subscribe` functions directly (see Testing below) can only assert URL **forwarding** into React Navigation's own `listener` — it cannot observe React Navigation's own replay behavior (the `UNSTABLE_routeNamesChangeBehavior="lastUnhandled"` mechanism, or this hold/flush). Verify those by reading the installed source as above, and say explicitly in the test's comments and in any PR description that on-device/simulator verification is a separate, unperformed step.
 
+## Length cap before parse — one override covers every URL source
+
+`query-string`/`decode-uri-component`'s query-param decoding is still O(entries × length) on many distinct malformed percent-runs even after the GHSA-vcc3-ghjq-m6fr fix (0.5.0) — a ~200 KB link with thousands of distinct runs can stall the JS thread for over a second. Add a single `getStateFromPath` override to the `linking` config that rejects any path+query over a length cap (e.g. 8 KB) before delegating to the real parser:
+
+```typescript
+// client/navigation/linking.ts
+import { getStateFromPath as getStateFromPathDefault } from "@react-navigation/core";
+
+const MAX_DEEP_LINK_PATH_LENGTH = 8 * 1024;
+
+export const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: [...],
+  getStateFromPath(path, options) {
+    if (path.length > MAX_DEEP_LINK_PATH_LENGTH) return undefined;
+    return getStateFromPathDefault(path, options);
+  },
+  // ...getInitialURL, subscribe, config as above
+};
+```
+
+Import the default parser from `@react-navigation/core`, **not** `@react-navigation/native` — the same reason the test file avoids `native` (above): `native`'s index also re-exports `NavigationContainer`/`Link`/etc., whose module graph pulls in React Native sources the Vitest node env can't load. `core` is the identical function `native` re-exports unchanged (`@react-navigation/native/lib/module/index.js`: `export * from '@react-navigation/core'`), and is already a resolved transitive dependency.
+
+**One override genuinely covers every URL source** — verified by reading `node_modules/@react-navigation/native/lib/module/useLinking.native.js` and `NavigationContainer.js`, not assumed from the option's name: `NavigationContainer.js` spreads the app's `linking` object (including this override) into the options object passed to `useLinking`, and `useLinking`'s single internal `getStateFromURL` callback calls `extractPathFromURL` then the (possibly overridden) `getStateFromPath` for **both** `getInitialState` (the async `getInitialURL` path — this repo's own `getInitialURL` already folds the notification's `data.url`/entryId-derived fallback into what it returns) and the `subscribe` listener (live `Linking` events, and the pending-hold `flushPendingNotificationUrl` replay above, since flushing calls `deliverUrl`, which the `subscribe` effect set to the exact same `listener`). The `UNSTABLE_routeNamesChangeBehavior="lastUnhandled"` replay (`RootStackNavigator.tsx`) is a separate concern: it rehydrates an already-computed navigation **state object**, never re-invoking `getStateFromPath` on the raw path a second time — so a link rejected by the cap cannot later be decoded uncapped through that path either.
+
+Pick the cap by measuring the app's real longest link (the verify-email token, ~350-430 chars depending on email length here) rather than guessing — leave at least an order of magnitude of headroom. Test the cap boundary two-sided (`length === cap` still parses; `cap + 1` is rejected) in addition to a heavy adversarial payload, and fall back to the raw parser in that heavy-payload test (`linking.getStateFromPath ?? getStateFromPathDefault`) so a regression that removes the override fails on the timing assertion rather than a `TypeError` on a missing property.
+
 ## Testing
 
 Test `getInitialURL`/`subscribe` by calling the exported functions directly — do not mount `NavigationContainer` (same avoidance `client/navigation/__tests__/linking.test.ts` already uses for `getStateFromPath`, importing from `@react-navigation/core` instead of `@react-navigation/native` to avoid pulling in React Native sources the node env can't load). Mocking gotchas:
