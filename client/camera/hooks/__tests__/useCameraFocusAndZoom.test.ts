@@ -447,6 +447,26 @@ describe("useCameraFocusAndZoom", () => {
       expect(setZoom).toHaveBeenCalledTimes(1);
     });
 
+    // iOS: UIPinchGestureRecognizer goes .possible -> .failed for a one-finger
+    // tap, so onFinalize arrives with NO onBegin before it.
+    it("does nothing when onFinalize arrives with no onBegin at all (iOS failed attempt)", async () => {
+      const setZoom = vi.fn().mockResolvedValue(undefined);
+      mount(vi.fn().mockResolvedValue(undefined), makeDevice(), setZoom);
+
+      await startPinch();
+      await pinch(1.5);
+      await endPinch();
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+      });
+      expect(vi.getTimerCount()).toBe(0);
+
+      await endPinch(); // bare onFinalize
+
+      expect(vi.getTimerCount()).toBe(0);
+      expect(setZoom).toHaveBeenCalledTimes(1);
+    });
+
     it("sends nothing extra at gesture end when the last value was already applied, or the pinch never moved", async () => {
       const setZoom = vi.fn().mockResolvedValue(undefined);
       const { result } = mount(
