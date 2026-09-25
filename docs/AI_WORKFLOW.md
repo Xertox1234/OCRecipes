@@ -101,7 +101,7 @@ Skip it whenever the pipeline's eligibility check returns `yes` — both the aut
 #### Tier handling (project convention)
 
 - **CRITICAL** blocks — must be fixed before the work proceeds.
-- **Scope-contract violation = CRITICAL.** When the task under review carries a stated Scope Contract (`todos/TEMPLATE.md` section), any added mechanism, file, or abstraction the contract excludes is treated as a correctness failure, not a style nit — it blocks like any other CRITICAL.
+- **Scope-contract violation = CRITICAL, with one disclosed exception.** When the task under review carries a stated Scope Contract (`todos/TEMPLATE.md` section), any added mechanism, file, or abstraction the contract excludes is a correctness failure, not a style nit — it blocks like any other CRITICAL. The one exception: a file was genuinely necessary to satisfy an acceptance criterion AND it is disclosed under an "Out of contract" heading in the PR body with a one-line reason tied to that criterion. Verify the reason actually holds — a disclosed-but-unnecessary file is still CRITICAL — and an undisclosed out-of-contract file is always CRITICAL regardless of whether it was needed.
 - **WARNING** — fix inline if clearly in-scope and small; otherwise surface it (e.g. `DEFERRED_WARNINGS`) for the user to triage. Never auto-file a follow-up todo.
 - **SUGGESTION** — informational; apply only if trivial and in-scope.
 

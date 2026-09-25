@@ -158,6 +158,8 @@ Agent({
 
 Replace `<filename>` with the filename portion of the todo path passed to you (e.g., if your todo is `todos/scan-confirm-null-calories-guard.md`, use `scan-confirm-null-calories-guard`).
 
+**The Lightweight path (top of Step 3) and this Short-circuit gate are the only two grounds to skip the `todo-researcher` dispatch.** No other judgment call — "small scope," "I already know this area," or similar — justifies skipping it; if neither gate applies, spawn the researcher. Record whichever applied in `SHORT_CIRCUIT` for Step 11: the matched solution path for a short-circuit, `lightweight — docs/config-only files` for the Lightweight path, or `none` when the researcher was actually dispatched.
+
 Read the research brief the agent returns. Keep it in context for Step 4 — it contains library API notes, project context, and global patterns relevant to this todo.
 
 **If the Agent() call throws an error, the subagent is unreachable, or the returned text contains none of the section headers (`## Library Notes`, `## Project Context`, `## Global Patterns`)**, log "researcher unavailable" and fall back to reading local pattern docs directly using this label mapping:
@@ -232,8 +234,8 @@ Execute the todo:
 3. Apply patterns discovered in Step 3, including any `verified_solutions` surfaced there — treat a glob-matched solution's `Solution`/`Prevention` (bug-track) or `Rule` (knowledge-track) as **authoritative guidance**, following it over re-derivation. If a solution conflicts with the todo, Acceptance Criteria win; flag the conflict in your Step 11 report rather than silently diverging. Follow established conventions — do not introduce new patterns without cause.
 4. Consider risks and constraints noted in the todo's **Risks** section. If a risk materializes during implementation, adapt the approach or escalate via the Failure Path.
 5. Keep changes minimal. Only modify what is necessary to satisfy the acceptance criteria. Do not refactor adjacent code, add features, or gold-plate.
-6. **Honor the todo's Scope Contract section** (when present) as a hard boundary: use ONLY the mechanisms it lists and touch ONLY files within its stated scope. Introducing a mechanism, file, or abstraction the contract excludes is a CRITICAL (blocking) review finding per `docs/AI_WORKFLOW.md` → Tier handling — it will block you at Step 6, so do not write it at Step 4.
-7. **Track all files you modify** during this step — you will need this list for scoped reverts in the Failure Path.
+6. **Honor the todo's Scope Contract section** (when present) as the default boundary: use ONLY the mechanisms it lists and touch ONLY files within its stated scope. Scope may grow beyond that only when an acceptance criterion cannot be satisfied without touching an extra file — and only if you disclose it: track the file, the specific acceptance criterion it was needed for, and a one-line reason as you go, so Step 10 can list it under the PR body's "Out of contract" heading. An out-of-contract file that is either undisclosed or not actually needed for an acceptance criterion is a CRITICAL (blocking) review finding per `docs/AI_WORKFLOW.md` → Tier handling — it will block you at Step 6, so do not write one without both the genuine need and the plan to disclose it.
+7. **Track all files you modify** during this step — you will need this list for scoped reverts in the Failure Path. For any file outside the Scope Contract, also note the specific acceptance criterion it was needed for and a one-line reason — that pair is what Step 6 pastes to reviewers and Step 10 discloses under the PR body's "Out of contract" heading.
 
 ---
 
@@ -317,7 +319,7 @@ Otherwise:
 
 1. **Inspect the diff** (`git diff "$BASE"...HEAD -- .`) — file paths **and** content.
 2. **Always include `code-reviewer`** (cross-cutting baseline), then **add the relevant domain reviewers** from the Review Policy roster — typically **1–2 more, so ≤3 total for a single todo** (review runs inside an already-parallel `/todo` batch, so keep fan-out small). Match reviewers by domain: path is a hint, content overrides (a JWT/ownership change → add `security-auditor`; a route, Drizzle query, or service-layering change → add `server-reviewer`; a screen, camera, accessibility, or client-perf change → add `mobile-reviewer`; an AI-service or nutrition-calculation change → add `ai-reviewer`; `any`/Zod/testing changes are already the `code-reviewer` baseline's lens). For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
-3. **Dispatch the selected reviewers in parallel** (one Agent call each, **each with `run_in_background: false`**, in a single message — a backgrounded reviewer strands you, see Step 5b), using the dispatch prompt **from `docs/AI_WORKFLOW.md` → Review Policy — read it from that file; it is not restated here** (a previous inline copy drifted). Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run). **In this same message, also issue Step 5b's full-suite commands** (`npm run test:run`, `npm run check:types`, `npm run lint`) as parallel Bash tool calls alongside these Agent calls — see Step 5b for why. If the todo carries a **Scope Contract** section, paste it verbatim into every reviewer prompt, appending: "Diff every added mechanism/file against this Scope Contract; anything it excludes is a CRITICAL finding."
+3. **Dispatch the selected reviewers in parallel** (one Agent call each, **each with `run_in_background: false`**, in a single message — a backgrounded reviewer strands you, see Step 5b), using the dispatch prompt **from `docs/AI_WORKFLOW.md` → Review Policy — read it from that file; it is not restated here** (a previous inline copy drifted). Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run). **In this same message, also issue Step 5b's full-suite commands** (`npm run test:run`, `npm run check:types`, `npm run lint`) as parallel Bash tool calls alongside these Agent calls — see Step 5b for why. If the todo carries a **Scope Contract** section, paste it verbatim into every reviewer prompt, along with your Step 4 tracked list of any out-of-contract files and their AC-tied reasons (empty if none), appending: "Diff every added mechanism/file against this Scope Contract. An out-of-contract file is a CRITICAL finding UNLESS it appears in the out-of-contract list above with a reason tied to a specific acceptance criterion — verify that reason actually holds (the file is genuinely needed for that AC), not just that it's listed; a listed-but-unnecessary file is still CRITICAL."
 
 4. **Merge** all reviewers' findings into one list (dedupe where two reviewers flag the same file:line). Store the merged result in working context as `review_output`, noting which agent reported each finding.
 
@@ -326,6 +328,8 @@ Otherwise:
 ## Step 7 — Address Feedback
 
 Process the code review findings. The project convention (see `CLAUDE.md` and `docs/AI_WORKFLOW.md`) is that **only CRITICAL blocks**; WARNING surfaces a real issue but is judgment-based, and SUGGESTION is informational.
+
+**The no-filing rule below is global, not scoped to code review.** Whatever the source — a review WARNING, an advisor YELLOW, or anything else out of this todo's scope that you notice mid-run — the executor never creates a todo file for it. Every such side problem goes into the Step 11 report under `DEFERRED_WARNINGS`; the user decides what, if anything, becomes a todo. Stated once here — not restated at each individual finding source.
 
 1. **CRITICAL** — mandatory. Fix every CRITICAL finding before continuing.
 2. **WARNING** — surface and address with judgment:
@@ -579,6 +583,9 @@ remote branch todo/<todo-slug> already exists at a diverged commit and the PR ch
 ## Changes
 <Bullet list of every source file modified during implementation — from the list you tracked in Step 4.>
 
+## Out of contract
+<Only when the todo has a Scope Contract AND at least one tracked file fell outside it: one bullet per such file — "`path` — reason (needed for AC #n)". Omit this entire heading when there is no Scope Contract or every touched file is within it.>
+
 ## Resolves
 Todo: `todos/<filename>.md` (archived in this commit)
 
@@ -675,6 +682,14 @@ Todo: `todos/<filename>.md` (archived in this commit)
    this agent, not by CI: nothing in the test suite executes this markdown, and claiming otherwise
    would be the false-assurance this todo exists to remove.
 
+   **Report `REVIEW_STAMP` honestly.** Copy the verdict word straight out of `$MATCH`
+   (`clean` or `advisory`) into the Step 11 `REVIEW_STAMP:` line — never round an `advisory`
+   record up to `clean`; the gate accepts both, but they are different states, not synonyms.
+   When the record is `advisory`, the WARNING/SUGGESTION notes behind that verdict — from this
+   confirmation-pass review, or carried over from Step 6 — belong in `DEFERRED_WARNINGS` in your
+   Step 11 report, same as any other review WARNING (Step 7 governs whether/how each was
+   addressed).
+
    d. **On `$MATCH` empty, re-dispatch once, then stop.** Report the outcome honestly either way —
    never fabricate a record, and never work around a miss by re-running the check against an
    older SHA.
@@ -723,10 +738,10 @@ CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from S
 SOLUTION_FILE: <worktree-relative "docs/solutions/<...>.md" path whenever a solution file was written, passed the 6b sanity-check, and was committed in step 7, or "none" if no solution was codified>
 
 FILES_CHANGED: <list of modified files>
-SHORT_CIRCUIT: <docs/solutions path reused as the primary guide (researcher skipped), or "none">
+SHORT_CIRCUIT: <docs/solutions path reused as the primary guide (Short-circuit gate) | "lightweight — docs/config-only files" (Lightweight path) | "none" (researcher was dispatched)>
 REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was needed; 2 if two fix cycles were needed>
 ADVISOR: <green | yellow | red | skipped>
-DEFERRED_WARNINGS: <one line per unaddressed code review WARNING or YELLOW advisor reason (description + file path), or "none">
+DEFERRED_WARNINGS: <one line per unaddressed code review WARNING, YELLOW advisor reason, WARNING/SUGGESTION note behind an `advisory` Step 10 review-stamp record, or any other side problem noticed during the run (description + file path), or "none">
 ```
 
 **On failure:**
