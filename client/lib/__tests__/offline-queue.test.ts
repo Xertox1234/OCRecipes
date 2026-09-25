@@ -35,6 +35,28 @@ describe("offline-queue", () => {
     expect(typeof q[0].savedAt).toBe("number");
   });
 
+  // Hermes (the app's JS engine) has no global `crypto`; a bare
+  // `crypto.randomUUID()` made every enqueue throw on device.
+  it("enqueues on a runtime with no global crypto", async () => {
+    vi.stubGlobal("crypto", undefined);
+    try {
+      const { initOfflineQueue, enqueue, loadQueue } = await importModule();
+      await initOfflineQueue();
+      await enqueue({
+        endpoint: "/api/scanned-items",
+        method: "POST",
+        body: {},
+      });
+      const q = loadQueue();
+      expect(q).toHaveLength(1);
+      expect(q[0].id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("dequeue removes the item by id", async () => {
     const { initOfflineQueue, enqueue, dequeue, loadQueue } =
       await importModule();
