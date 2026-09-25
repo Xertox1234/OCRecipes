@@ -52,13 +52,18 @@ vi.mock("../../lib/ai-safety", () => ({
   SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
 }));
 
+// A hoisted singleton (not a per-call factory return) — `nutrition-coach.ts`
+// calls `createServiceLogger("nutrition-coach")` once at module load, so
+// tests need a stable reference to assert on `mockLog.error`/`mockLog.debug`.
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+
 vi.mock("../../lib/logger", () => ({
-  createServiceLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
+  createServiceLogger: () => mockLog,
   toError: (e: unknown) => (e instanceof Error ? e : new Error(String(e))),
 }));
 
@@ -472,6 +477,36 @@ describe("generateCoachProResponse", () => {
     expect(result).toBe(
       "Sorry, I'm having trouble responding right now. Please try again.",
     );
+    // Control: a real (non-abort) failure still logs at ERROR.
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach pro API error",
+    );
+  });
+
+  it("does not log at ERROR and yields nothing when the API call is aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    vi.mocked(openai.chat.completions.create).mockRejectedValue(
+      new Error("This operation was aborted"),
+    );
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    const result = await collectStream(
+      generateCoachProResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        "user-1",
+        controller.signal,
+      ),
+    );
+
+    expect(result).toBe("");
+    expect(mockLog.error).not.toHaveBeenCalled();
+    expect(mockLog.debug).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach pro stream aborted",
+    );
   });
 
   it("yields error message without partial content when streaming throws mid-stream", async () => {
@@ -513,6 +548,64 @@ describe("generateCoachProResponse", () => {
       "Sorry, the response was interrupted. Please try again.",
     );
     expect(result).not.toContain("Partial response");
+    // Control: a real (non-abort) mid-stream failure still logs at ERROR.
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach pro streaming error",
+    );
+  });
+
+  it("does not log at ERROR and yields no partial content when the stream is aborted mid-stream", async () => {
+    const controller = new AbortController();
+    const abortedStream = {
+      [Symbol.asyncIterator]() {
+        let count = 0;
+        return {
+          async next() {
+            count++;
+            if (count === 1) {
+              return {
+                done: false,
+                value: {
+                  choices: [
+                    {
+                      delta: { content: "Partial response" },
+                      finish_reason: null,
+                    },
+                  ],
+                },
+              };
+            }
+            controller.abort();
+            throw new Error("This operation was aborted");
+          },
+        };
+      },
+    };
+
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      abortedStream as any,
+    );
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    const result = await collectStream(
+      generateCoachProResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        "user-1",
+        controller.signal,
+      ),
+    );
+
+    // `contentInThisRound` is only yielded AFTER the streaming loop — the
+    // mid-loop throw skips that yield entirely, so "Partial response" was
+    // never sent to the caller even before this todo.
+    expect(result).toBe("");
+    expect(mockLog.error).not.toHaveBeenCalled();
+    expect(mockLog.debug).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach pro stream aborted",
+    );
   });
 
   it("handles parallel tool calls via Promise.allSettled", async () => {
@@ -765,6 +858,121 @@ describe("generateCoachResponse", () => {
 
     expect(result).toBe(
       "Sorry, I'm having trouble responding right now. Please try again.",
+    );
+    // Control: a real (non-abort) failure still logs at ERROR.
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach API error",
+    );
+  });
+
+  it("does not log at ERROR and yields nothing when the API call is aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    vi.mocked(openai.chat.completions.create).mockRejectedValue(
+      new Error("This operation was aborted"),
+    );
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    const result = await collectStream(
+      generateCoachResponse(messages, DEFAULT_CONTEXT, controller.signal),
+    );
+
+    expect(result).toBe("");
+    expect(mockLog.error).not.toHaveBeenCalled();
+    expect(mockLog.debug).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach stream aborted",
+    );
+  });
+
+  it("yields error message without partial content when streaming throws mid-stream", async () => {
+    const errorStream = {
+      [Symbol.asyncIterator]() {
+        let count = 0;
+        return {
+          async next() {
+            count++;
+            if (count === 1) {
+              return {
+                done: false,
+                value: {
+                  choices: [
+                    { delta: { content: "Partial " }, finish_reason: null },
+                  ],
+                },
+              };
+            }
+            throw new Error("Stream interrupted");
+          },
+        };
+      },
+    };
+
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      errorStream as any,
+    );
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    const result = await collectStream(
+      generateCoachResponse(messages, DEFAULT_CONTEXT),
+    );
+
+    // Unlike Pro, the free-tier generator yields each delta as it arrives
+    // (not after the loop), so content streamed before the throw is already
+    // in the caller's buffer.
+    expect(result).toBe(
+      "Partial Sorry, the response was interrupted. Please try again.",
+    );
+    // Control: a real (non-abort) mid-stream failure still logs at ERROR.
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach streaming error",
+    );
+  });
+
+  it("does not log at ERROR and skips the interrupted-message yield when the stream is aborted mid-stream", async () => {
+    const controller = new AbortController();
+    const abortedStream = {
+      [Symbol.asyncIterator]() {
+        let count = 0;
+        return {
+          async next() {
+            count++;
+            if (count === 1) {
+              return {
+                done: false,
+                value: {
+                  choices: [
+                    { delta: { content: "Partial " }, finish_reason: null },
+                  ],
+                },
+              };
+            }
+            controller.abort();
+            throw new Error("This operation was aborted");
+          },
+        };
+      },
+    };
+
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      abortedStream as any,
+    );
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    const result = await collectStream(
+      generateCoachResponse(messages, DEFAULT_CONTEXT, controller.signal),
+    );
+
+    // Content already streamed before the abort stays delivered; only the
+    // interrupted-message yield is skipped (the route breaks on
+    // `isAborted()` before it would ever reach the client anyway).
+    expect(result).toBe("Partial ");
+    expect(mockLog.error).not.toHaveBeenCalled();
+    expect(mockLog.debug).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach stream aborted",
     );
   });
 

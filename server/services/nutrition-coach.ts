@@ -548,6 +548,12 @@ export async function* generateCoachResponse(
       { timeout: OPENAI_TIMEOUT_STREAM_MS, signal: abortSignal },
     );
   } catch (error) {
+    if (abortSignal?.aborted) {
+      // Aborted (client disconnect, SSE timeout, or byte-limit guard) before
+      // any content arrived — expected, not a failure.
+      log.debug({ err: toError(error) }, "coach stream aborted");
+      return;
+    }
     log.error({ err: toError(error) }, "coach API error");
     yield "Sorry, I'm having trouble responding right now. Please try again.";
     return;
@@ -564,6 +570,14 @@ export async function* generateCoachResponse(
       }
     }
   } catch (error) {
+    if (abortSignal?.aborted) {
+      // A client disconnect, SSE timeout, or byte-limit guard aborts the
+      // OpenAI stream — the expected exit, not a failure. The interrupted-
+      // message yield below is skipped: the caller breaks out of its own
+      // loop on `isAborted()` before this event would ever reach the client.
+      log.debug({ err: toError(error) }, "coach stream aborted");
+      return;
+    }
     log.error({ err: toError(error) }, "coach streaming error");
     yield "Sorry, the response was interrupted. Please try again.";
     return;
@@ -651,6 +665,12 @@ export async function* generateCoachProResponse(
         { timeout: OPENAI_TIMEOUT_STREAM_MS, signal: abortSignal },
       );
     } catch (error) {
+      if (abortSignal?.aborted) {
+        // Aborted (client disconnect, SSE timeout, or byte-limit guard)
+        // before any content arrived — expected, not a failure.
+        log.debug({ err: toError(error) }, "coach pro stream aborted");
+        return;
+      }
       log.error({ err: toError(error) }, "coach pro API error");
       yield "Sorry, I'm having trouble responding right now. Please try again.";
       return;
@@ -700,6 +720,16 @@ export async function* generateCoachProResponse(
         }
       }
     } catch (error) {
+      if (abortSignal?.aborted) {
+        // A client disconnect, SSE timeout, or byte-limit guard aborts the
+        // OpenAI stream — the expected exit, not a failure. The interrupted-
+        // message yield below is skipped: the caller breaks out of its own
+        // loop on `isAborted()` before this event would ever reach the
+        // client, and `contentInThisRound` is discarded with the early
+        // return regardless.
+        log.debug({ err: toError(error) }, "coach pro stream aborted");
+        return;
+      }
       log.error({ err: toError(error) }, "coach pro streaming error");
       yield "Sorry, the response was interrupted. Please try again.";
       return;
