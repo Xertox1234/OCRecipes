@@ -549,7 +549,7 @@ export async function* generateCoachResponse(
     );
   } catch (error) {
     if (abortSignal?.aborted) {
-      // Aborted (client disconnect, SSE timeout, or byte-limit guard) before
+      // Aborted (client disconnect or SSE timeout) before
       // any content arrived — expected, not a failure.
       log.debug({ err: toError(error) }, "coach stream aborted");
       return;
@@ -571,7 +571,7 @@ export async function* generateCoachResponse(
     }
   } catch (error) {
     if (abortSignal?.aborted) {
-      // A client disconnect, SSE timeout, or byte-limit guard aborts the
+      // A client disconnect or SSE timeout aborts the
       // OpenAI stream — the expected exit, not a failure. The interrupted-
       // message yield below is skipped: the caller breaks out of its own
       // loop on `isAborted()` before this event would ever reach the client.
@@ -666,7 +666,7 @@ export async function* generateCoachProResponse(
       );
     } catch (error) {
       if (abortSignal?.aborted) {
-        // Aborted (client disconnect, SSE timeout, or byte-limit guard)
+        // Aborted (client disconnect or SSE timeout)
         // before any content arrived — expected, not a failure.
         log.debug({ err: toError(error) }, "coach pro stream aborted");
         return;
@@ -721,7 +721,7 @@ export async function* generateCoachProResponse(
       }
     } catch (error) {
       if (abortSignal?.aborted) {
-        // A client disconnect, SSE timeout, or byte-limit guard aborts the
+        // A client disconnect or SSE timeout aborts the
         // OpenAI stream — the expected exit, not a failure. The interrupted-
         // message yield below is skipped: the caller breaks out of its own
         // loop on `isAborted()` before this event would ever reach the

@@ -25,7 +25,7 @@ When one `AbortController`/`AbortSignal` is shared across multiple distinct caus
 
 ## Root Cause
 
-`server/routes/chat.ts` creates one `AbortController` per request and aborts it from three places: `res.on("close")` (disconnect), the `sseTimeout` `setTimeout` callback, and the `SSE_MAX_RESPONSE_BYTES` guard. All three set the same `aborted = true` flag and call the same `abortController.abort()`. `server/services/nutrition-coach.ts`'s generators receive only the resulting `AbortSignal` — they have no way to ask which of the three callers aborted it. Gating a log-level downgrade purely on `abortSignal?.aborted` (correct for the disconnect case, per `todos/archive/P3-2026-09-24-coach-generators-log-error-on-client-abort.md`) also silently swallows the timeout and byte-limit cases, and neither of those had any log line of its own before this fix.
+`server/routes/chat.ts` creates one `AbortController` per request and aborts it from three places: `res.on("close")` (disconnect), the `sseTimeout` `setTimeout` callback, and the `SSE_MAX_RESPONSE_BYTES` guard. All three set the same `aborted = true` flag and call the same `abortController.abort()`. `server/services/nutrition-coach.ts`'s generators receive only the resulting `AbortSignal` — they have no way to ask which of the three callers aborted it. Gating a log-level downgrade purely on `abortSignal?.aborted` (correct for the disconnect case, per `todos/archive/P3-2026-09-24-coach-generators-log-error-on-client-abort.md`) also silently swallows the timeout case, which had no log line of its own before this fix. (The byte-limit guard never reaches these catch blocks: it trips inside the route's own `for await` while the generator is suspended at a `yield`, and `break` closes the generator via `return()`, which runs `finally`, not `catch`. It had no server-side log either.)
 
 ## Solution
 
@@ -44,7 +44,7 @@ const sseTimeout = setTimeout(() => {
 }, SSE_TIMEOUT_MS);
 ```
 
-This keeps the downstream consumer's downgrade (correct for the common disconnect case) while restoring visibility for the rarer, more concerning cause — a hang. The byte-limit guard already writes a distinct `{ error: "Response too large" }` payload to the client, so it stays observable without an additional log line (not added here).
+This keeps the downstream consumer's downgrade (correct for the common disconnect case) while restoring visibility for the rarer, more concerning cause — a hang. The byte-limit guard writes a distinct `{ error: "Response too large" }` payload to the client, but that is client-side only; both trip sites in `chat.ts` now also `logger.warn` with the byte count. Note that none of these logger calls reach Sentry (only `handleRouteError` and Express's error handler do, and neither runs once SSE headers are sent), so these warnings are visible in pino/log aggregation, not as Sentry alerts.
 
 ## Prevention
 

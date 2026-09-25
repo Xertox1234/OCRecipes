@@ -484,6 +484,30 @@ describe("generateCoachProResponse", () => {
     );
   });
 
+  // Production always passes a live signal, so the control must too (see the
+  // free-tier equivalent).
+  it("still logs a real API failure at ERROR when a live, never-aborted signal is passed", async () => {
+    vi.mocked(openai.chat.completions.create).mockRejectedValue(
+      new Error("API down"),
+    );
+    const controller = new AbortController();
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    await collectStream(
+      generateCoachProResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        "user-1",
+        controller.signal,
+      ),
+    );
+
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach pro API error",
+    );
+  });
+
   it("does not log at ERROR and yields nothing when the API call is aborted", async () => {
     const controller = new AbortController();
     controller.abort();
@@ -860,6 +884,26 @@ describe("generateCoachResponse", () => {
       "Sorry, I'm having trouble responding right now. Please try again.",
     );
     // Control: a real (non-abort) failure still logs at ERROR.
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach API error",
+    );
+  });
+
+  // Production always passes a live signal (abortController.signal), so the
+  // control must too: a regression to a bare `if (abortSignal)` presence check
+  // would otherwise pass while hiding every real failure.
+  it("still logs a real API failure at ERROR when a live, never-aborted signal is passed", async () => {
+    vi.mocked(openai.chat.completions.create).mockRejectedValue(
+      new Error("API down"),
+    );
+    const controller = new AbortController();
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    await collectStream(
+      generateCoachResponse(messages, DEFAULT_CONTEXT, controller.signal),
+    );
+
     expect(mockLog.error).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.any(Error) }),
       "coach API error",

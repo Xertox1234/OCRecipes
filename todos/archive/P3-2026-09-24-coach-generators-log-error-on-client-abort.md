@@ -39,3 +39,7 @@ Deferred from the #1060 server review (MEDIUM). The route's own debug-level down
 - Review: `code-reviewer` + `server-reviewer` (server-reviewer: clean, no blocking findings, confirmed no path lets a real failure coincide with `abortSignal.aborted === true`, confirmed the skipped yield was already unreachable in every consumer).
 - `ADVISOR: yellow` — the shared-AbortSignal consequence above; resolved inline rather than left as a residual.
 - Full suite (`test:run`, `check:types`, `lint`) green at the implementation commit.
+
+### 2026-09-25 (review repair)
+
+- Independent review: every "real failure still logs at ERROR" control called the generator with no signal, while production always passes a live one, so a regression to a bare `if (abortSignal)` check would pass while hiding every real OpenAI failure. Added a live, never-aborted-signal control per generator; verified both fail under that regression. The byte-limit guard never reaches the generators' catch blocks (it closes them via `return()`) and logged nothing server-side; both trip sites in `chat.ts` now `logger.warn` with the byte count, and the four comments that listed it as a catch-path cause are corrected. Test-count correction for the note above: 5 new tests and 3 existing tests gained a control (not 4/4).
