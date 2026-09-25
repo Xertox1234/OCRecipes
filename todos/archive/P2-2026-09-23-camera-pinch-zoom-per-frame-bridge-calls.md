@@ -102,3 +102,7 @@ Prefer the epsilon gate unless adding `react-native-vision-camera-worklets` is i
   `code-reviewer` additionally ran the hook's existing `CameraView`/`CameraView.ios` consumer
   tests and the `worklet-directive-guard` suite to rule out collateral breakage — all green. One
   non-blocking suggestion (add this dated Updates entry) — addressed by this entry.
+
+### 2026-09-25 (review repair)
+
+- Independent review found two regressions from gating: the final zoom of a pinch could stay unapplied (last frame within the epsilon), and the zoom label faded mid-gesture when held steady. Added `pinchGesture.onFinalize` (one bridge call per gesture): it flushes a held-back final zoom and starts the label's 600ms hide; `showZoomLabel` now only cancels a pending hide. Tests cover both, plus no extra `setZoom` for an idle or already-applied pinch. The solution doc gained this rule and no longer lists `useScrollLinkedHeader.ts` in `applies_to`.

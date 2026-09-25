@@ -168,15 +168,17 @@ export function useCameraFocusAndZoom({
 
   // Bridged from the pinch worklet via scheduleOnRN only when the displayed
   // toFixed(1) text actually changes (see formatZoomLabel/lastZoomLabelText
-  // gating in pinchGesture.onUpdate below) — shows a live "1.8x" readout,
-  // fading out ~600ms after the last DISPLAYED change. Re-arms the hide timer
-  // on each call rather than debouncing. NOTE: holding a pinch steady within
-  // the same 0.1x bucket for >600ms mid-gesture now lets the label fade even
-  // though the gesture hasn't ended (no scheduleOnRN call arrives to re-arm
-  // the timer) — a deliberate tradeoff of gating on displayed text; an
-  // onEnd-driven hide would avoid it but is out of this change's scope.
+  // gating in pinchGesture.onUpdate below) — shows a live "1.8x" readout.
+  // It only cancels a pending hide: the label stays up for the whole gesture
+  // (a steady pinch sends no frames to re-arm a timer), and hideZoomLabel,
+  // called once from pinchGesture.onFinalize, starts the ~600ms fade.
   const showZoomLabel = useCallback((value: number) => {
     setZoomLabel(formatZoomLabel(value));
+    if (zoomLabelHideTimer.current) clearTimeout(zoomLabelHideTimer.current);
+    zoomLabelHideTimer.current = null;
+  }, []);
+
+  const hideZoomLabel = useCallback(() => {
     if (zoomLabelHideTimer.current) clearTimeout(zoomLabelHideTimer.current);
     zoomLabelHideTimer.current = setTimeout(() => {
       setZoomLabel(null);
@@ -218,6 +220,18 @@ export function useCameraFocusAndZoom({
       if (nextZoomLabel !== lastZoomLabelText.value) {
         lastZoomLabelText.value = nextZoomLabel;
         scheduleOnRN(showZoomLabel, zoom.value);
+      }
+    })
+    // onFinalize (not onEnd) so a system-cancelled pinch still flushes and
+    // hides. One bridge call per gesture: apply a final value the epsilon
+    // gate held back, and start the label fade if this gesture showed it.
+    .onFinalize(() => {
+      if (zoom.value !== lastAppliedZoom.value) {
+        lastAppliedZoom.value = zoom.value;
+        scheduleOnRN(setCameraZoom, zoom.value);
+      }
+      if (lastZoomLabelText.value !== null) {
+        scheduleOnRN(hideZoomLabel);
       }
     });
 

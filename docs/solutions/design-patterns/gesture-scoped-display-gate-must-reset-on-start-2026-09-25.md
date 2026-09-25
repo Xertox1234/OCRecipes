@@ -6,7 +6,7 @@ module: client
 severity: low
 tags: [react-native, reanimated, gesture, performance, camera, hooks]
 symptoms: ['A UI-thread-to-JS bridge gate (per docs/legacy-patterns/animation.md "Gate runOnJS on Shared-Value Transitions") never re-fires for a second gesture that ends at the same value the first one left off at', 'A live readout that should show at the start of every gesture silently stays hidden if the gesture ends in the same displayed bucket as the previous one']
-applies_to: [client/camera/hooks/useCameraFocusAndZoom.ts, client/hooks/useScrollLinkedHeader.ts]
+applies_to: [client/camera/hooks/useCameraFocusAndZoom.ts]
 created: 2026-09-25
 ---
 
@@ -60,6 +60,7 @@ const pinchGesture = Gesture.Pinch()
 - **Discretize a continuous value before comparing it**, using a comparison that matches what the *consumer* actually cares about — a numeric epsilon (`Math.abs(next - last) > epsilon`) for an imperative native call where sub-threshold movement has no observable effect, or a formatted-string/bucket compare (`nextLabel !== lastLabel`) for a UI value where the user only perceives the *rendered* text changing, not the underlying float. These two discretizations can legitimately disagree on the same raw value (a delta can cross the epsilon while staying in the same display bucket, or vice versa) — that's expected, not a bug, because they gate different consumers.
 - **Ask what the tracked "last value" outlives before deciding whether to reset it.** A gate mirroring state that persists independently of the current interaction (native hardware state, a server-synced value) must NOT reset when the interaction ends — the state it mirrors didn't reset either, so resetting the gate would just re-send a value the consumer is already at. A gate mirroring something whose meaning is scoped to the current interaction (a live "you are here" readout, a transient in-gesture affordance) MUST reset at the start of the next interaction, or a second gesture that happens to end in the same bucket as the first silently never fires the bridge call at all — the gate can't tell "genuinely unchanged since last shown" apart from "never shown this gesture" without an explicit reset.
 - Reset the display-scoped gate in the gesture's `.onStart`, not its `.onEnd` — resetting on start means the very first `.onUpdate` frame of the new gesture is guaranteed to look like a transition (compared against the reset sentinel), regardless of how many frames the previous gesture accumulated or when cleanup ran.
+- **Gating per-frame bridge calls removes two guarantees the per-frame version had for free; restore both in `.onFinalize`** (not `.onEnd`, so a system-cancelled gesture is covered too), at one bridge call per gesture. (1) The final value: the last frame may sit within the epsilon of the last value sent, so flush it if it differs. (2) Timers re-armed "every frame": a steady hold sends no frames, so a 600ms hide timer armed on each displayed change fires mid-gesture. Arm the hide only from `.onFinalize`, and have the per-frame call cancel any pending hide instead of arming one. Both were caught in review of #1081.
 
 ## Why
 

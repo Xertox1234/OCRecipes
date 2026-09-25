@@ -16,6 +16,7 @@ const captured = vi.hoisted(() => ({
   tapEnd: undefined as ((e: { x: number; y: number }) => void) | undefined,
   pinchStart: undefined as (() => void) | undefined,
   pinchUpdate: undefined as ((e: { scale: number }) => void) | undefined,
+  pinchFinalize: undefined as (() => void) | undefined,
 }));
 
 vi.mock("react-native-gesture-handler", () => {
@@ -32,6 +33,10 @@ vi.mock("react-native-gesture-handler", () => {
     }
     onUpdate(cb: (e: { scale: number }) => void) {
       captured.pinchUpdate = cb;
+      return this;
+    }
+    onFinalize(cb: () => void) {
+      captured.pinchFinalize = cb;
       return this;
     }
   }
@@ -116,6 +121,12 @@ async function startPinch() {
   });
 }
 
+async function endPinch() {
+  await act(async () => {
+    captured.pinchFinalize?.();
+  });
+}
+
 function mount(
   focusTo: CameraRef["focusTo"],
   device: CameraDevice | undefined,
@@ -136,6 +147,7 @@ describe("useCameraFocusAndZoom", () => {
     captured.tapEnd = undefined;
     captured.pinchStart = undefined;
     captured.pinchUpdate = undefined;
+    captured.pinchFinalize = undefined;
     vi.mocked(logger.error).mockClear();
     // Platform.OS is a plain string property, not a function — assign directly.
     RN.Platform.OS = "ios";
@@ -350,30 +362,66 @@ describe("useCameraFocusAndZoom", () => {
       expect(setZoom).toHaveBeenLastCalledWith(1.53);
     });
 
-    it("does not reset the zoom label's hide timer for a repeat frame within the same displayed bucket", async () => {
+    it("keeps the zoom label visible for the whole gesture and hides it ~600ms after the gesture ends", async () => {
       const { result } = mount(
         vi.fn().mockResolvedValue(undefined),
         makeDevice(),
       );
 
+      await startPinch();
       await pinch(1.5);
       expect(result.current.zoomLabel).toBe("1.5x");
 
+      // Fingers held steady in one displayed bucket well past 600ms: the
+      // gated frames send nothing to JS, and the label must NOT fade mid-pinch.
       await act(async () => {
-        vi.advanceTimersByTime(300);
+        vi.advanceTimersByTime(700);
       });
-
-      // 1.53 still formats to "1.5x" — same displayed bucket, gate suppresses
-      // the bridge call and must NOT re-arm the hide timer.
       await pinch(1.53);
+      expect(result.current.zoomLabel).toBe("1.5x");
 
+      await endPinch();
       await act(async () => {
-        // 650ms total since the FIRST frame's timer armed. If the repeat
-        // frame above had re-armed it (ungated), only 350ms would have
-        // elapsed since THAT call and the label would still be visible.
-        vi.advanceTimersByTime(350);
+        vi.advanceTimersByTime(599);
+      });
+      expect(result.current.zoomLabel).toBe("1.5x");
+      await act(async () => {
+        vi.advanceTimersByTime(2);
       });
       expect(result.current.zoomLabel).toBeNull();
+    });
+
+    it("applies the final zoom when the gesture ends, even if the last frame was within the epsilon", async () => {
+      const setZoom = vi.fn().mockResolvedValue(undefined);
+      mount(vi.fn().mockResolvedValue(undefined), makeDevice(), setZoom);
+
+      await startPinch();
+      await pinch(1.5);
+      await pinch(1.505); // below the epsilon: not sent mid-gesture
+      expect(setZoom).toHaveBeenCalledTimes(1);
+
+      await endPinch();
+      expect(setZoom).toHaveBeenCalledTimes(2);
+      expect(setZoom).toHaveBeenLastCalledWith(1.505);
+    });
+
+    it("sends nothing extra at gesture end when the last value was already applied, or the pinch never moved", async () => {
+      const setZoom = vi.fn().mockResolvedValue(undefined);
+      const { result } = mount(
+        vi.fn().mockResolvedValue(undefined),
+        makeDevice(),
+        setZoom,
+      );
+
+      await startPinch();
+      await endPinch(); // no update frames at all
+      expect(setZoom).not.toHaveBeenCalled();
+      expect(result.current.zoomLabel).toBeNull();
+
+      await startPinch();
+      await pinch(1.5);
+      await endPinch();
+      expect(setZoom).toHaveBeenCalledTimes(1);
     });
 
     it("shows the zoom label again at the start of a new gesture even when it ends in the same displayed bucket", async () => {
@@ -386,6 +434,7 @@ describe("useCameraFocusAndZoom", () => {
       await pinch(1.5);
       expect(result.current.zoomLabel).toBe("1.5x");
 
+      await endPinch();
       await act(async () => {
         vi.advanceTimersByTime(700);
       });
