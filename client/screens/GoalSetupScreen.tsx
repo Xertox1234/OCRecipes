@@ -300,6 +300,7 @@ export default function GoalSetupScreen() {
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
     },

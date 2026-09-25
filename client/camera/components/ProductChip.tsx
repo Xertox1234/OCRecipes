@@ -8,9 +8,9 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Image,
   type ViewProps,
 } from "react-native";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
@@ -270,7 +270,11 @@ export function ProductChip({
       {/* Product info row */}
       <View style={styles.productRow}>
         {product?.imageUri ? (
-          <Image source={{ uri: product.imageUri }} style={styles.thumb} />
+          <Image
+            source={{ uri: product.imageUri }}
+            style={styles.thumb}
+            cachePolicy="memory-disk"
+          />
         ) : (
           <View style={[styles.thumb, styles.thumbPlaceholder]} />
         )}

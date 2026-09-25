@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import ChatScreen from "../ChatScreen";
 
@@ -9,20 +9,46 @@ const {
   mockAcknowledge,
   mockCreateMutateAsync,
   mockSetParams,
+  mockGoBack,
+  mockPopTo,
+  mockCanGoBack,
+  mockRouteParams,
+  mockUseChatMessages,
 } = vi.hoisted(() => ({
+  mockGoBack: vi.fn(),
+  mockPopTo: vi.fn(),
+  mockCanGoBack: vi.fn(() => false),
   mockSendMessage: vi.fn(),
   mockAcknowledge: vi.fn(),
   mockCreateMutateAsync: vi.fn(),
   mockSetParams: vi.fn(),
+  // A mutable ref (not a static factory return) so each test can simulate a
+  // different deep-link/navigation route.params shape. Typed looser than
+  // ChatStackParamList's `Chat` union on purpose: an unparsed query param
+  // (e.g. `chat/abc?initialMessage=hi`) lands both keys in route.params at
+  // once at runtime (see linking.ts's Scan/verifyBarcode comment), which the
+  // production union type doesn't model.
+  mockRouteParams: {
+    value: { conversationId: 42 } as
+      | { conversationId?: number; initialMessage?: string }
+      | undefined,
+  },
+  mockUseChatMessages: vi.fn(),
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ setParams: mockSetParams }),
-  useRoute: () => ({ params: { conversationId: 42 } }),
+  useNavigation: () => ({
+    setParams: mockSetParams,
+    goBack: mockGoBack,
+    popTo: mockPopTo,
+    canGoBack: mockCanGoBack,
+  }),
+  useRoute: () => ({ params: mockRouteParams.value }),
 }));
 
 vi.mock("@/hooks/useChat", () => ({
-  useChatMessages: () => ({ data: [], isLoading: false }),
+  useChatMessages: (conversationId: number | null) =>
+    mockUseChatMessages(conversationId),
   useSendMessage: () => ({
     sendMessage: mockSendMessage,
     streamingContent: "",
@@ -43,8 +69,10 @@ vi.mock("@/context/ToastContext", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockRouteParams.value = { conversationId: 42 };
   mockSendMessage.mockResolvedValue(undefined);
   mockAcknowledge.mockResolvedValue(undefined);
+  mockUseChatMessages.mockReturnValue({ data: [], isLoading: false });
 });
 
 describe("ChatScreen — reminder acknowledgment", () => {
@@ -81,5 +109,81 @@ describe("ChatScreen — reminder acknowledgment", () => {
     await Promise.resolve();
 
     expect(mockAcknowledge).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ChatScreen — malformed conversationId (deep link)", () => {
+  // A deep link like ocrecipes://chat/abc coerces conversationId to 0 via
+  // linking's parseIntOrZero; ocrecipes://chat/-5 parses to -5 (parseIntOrZero
+  // does not clamp negatives). Both are "present but not a positive integer" —
+  // distinct from the omitted (undefined) in-app "start a new chat" case.
+  it("shows a not-found state for a zero id", () => {
+    mockRouteParams.value = { conversationId: 0 };
+
+    renderComponent(<ChatScreen />);
+
+    expect(screen.getByText("This chat couldn't be found.")).toBeDefined();
+  });
+
+  it("shows a not-found state for a negative id and never fetches with it", () => {
+    mockRouteParams.value = { conversationId: -5 };
+
+    renderComponent(<ChatScreen />);
+
+    expect(screen.getByText("This chat couldn't be found.")).toBeDefined();
+    // The malformed id must never reach the data hook — pass null through
+    // instead of the raw value.
+    expect(mockUseChatMessages).toHaveBeenLastCalledWith(null);
+  });
+
+  it("never creates a conversation or sends, even when an unparsed initialMessage query param rides along with a malformed id", async () => {
+    // Unparsed deep-link query params land in route.params unfiltered (see
+    // linking.ts's Scan/verifyBarcode comment) — a malformed id and
+    // initialMessage can arrive together, e.g.
+    // ocrecipes://chat/abc?initialMessage=hi.
+    mockRouteParams.value = { conversationId: 0, initialMessage: "hi" };
+
+    renderComponent(<ChatScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("This chat couldn't be found.")).toBeDefined();
+    });
+    expect(mockCreateMutateAsync).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  // A chat/:id deep link builds a Coach stack holding only Chat, so there is
+  // no header back button. canGoBack() is NOT a usable signal here: it bubbles
+  // to the tab navigator (backBehavior "firstRoute") and returns true, and
+  // goBack() would land on the Home tab. The exit always targets the list,
+  // via popTo so a deep-linked Chat is replaced rather than left behind it.
+  it("always returns to the chat list, even when canGoBack() is true", () => {
+    mockRouteParams.value = { conversationId: 0 };
+    mockCanGoBack.mockReturnValue(true);
+
+    renderComponent(<ChatScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to chats" }));
+
+    expect(mockPopTo).toHaveBeenCalledWith("ChatList");
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChatScreen — missing conversationId (create flow)", () => {
+  it("creates a conversation and sends the first message with the new id", async () => {
+    mockRouteParams.value = undefined;
+    mockCreateMutateAsync.mockResolvedValue({ id: 99 });
+
+    renderComponent(<ChatScreen />);
+
+    fireEvent.change(screen.getByPlaceholderText("Ask NutriCoach..."), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+
+    await waitFor(() => expect(mockCreateMutateAsync).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(mockSendMessage).toHaveBeenCalledWith("Hello", undefined, 99),
+    );
   });
 });

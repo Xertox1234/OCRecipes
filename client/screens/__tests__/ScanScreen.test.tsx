@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
 import { renderComponent } from "../../../test/utils/render-component";
 
 import ScanScreen from "../ScanScreen";
@@ -431,6 +432,29 @@ describe("ScanScreen — safe back navigation", () => {
           "Failed to log item. Please try again.",
         );
       });
+    });
+
+    // P1-2026-09-23: this log-success path used to invalidate only
+    // dailySummary + scannedItems, leaving Home's "X / Y cal" header (which
+    // reads useDailyBudget) stale until the 5-min staleTime lapsed.
+    it("invalidates /api/daily-budget on a successful log, not just daily-summary and scanned-items", async () => {
+      const invalidateSpy = vi.spyOn(
+        QueryClient.prototype,
+        "invalidateQueries",
+      );
+      mockCanGoBack.mockReturnValue(true);
+
+      renderComponent(<ScanScreen />);
+      fireEvent.click(await screen.findByLabelText("Log It"));
+
+      await waitFor(() => {
+        expect(mockGoBack).toHaveBeenCalledOnce();
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/daily-budget"],
+      });
+
+      invalidateSpy.mockRestore();
     });
   });
 });

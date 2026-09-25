@@ -273,14 +273,23 @@ export default function ChatScreen() {
       ? route.params.initialMessage
       : undefined;
 
-  const { data: messages, isLoading } = useChatMessages(conversationId);
+  // `conversationId` is omitted (null) for the in-app "start a new chat"
+  // flow; a deep link always provides a value, and a malformed one coerces to
+  // 0 (or a negative number — linking's parseIntOrZero does not clamp
+  // negatives). Malformed is specifically "present but not a positive
+  // integer" — NOT any falsy id — otherwise a bad link silently starts a new
+  // chat with it. Precedent: NotebookEntryScreen.tsx (docs/rules/react-native.md).
+  const isMalformedId = conversationId !== null && !(conversationId > 0);
+  const validConversationId = isMalformedId ? null : conversationId;
+
+  const { data: messages, isLoading } = useChatMessages(validConversationId);
   const {
     sendMessage,
     streamingContent,
     isStreaming,
     streamError,
     requestError,
-  } = useSendMessage(conversationId);
+  } = useSendMessage(validConversationId);
   const createConversation = useCreateConversation();
   const { acknowledge } = useAcknowledgeReminders();
   // Reminders clear when the user actually sends a message, not on mere
@@ -400,19 +409,24 @@ export default function ChatScreen() {
   const handleSend = useCallback(
     async (text?: string) => {
       const content = (text || inputText).trim();
-      if (!content || isStreaming) return;
+      // A malformed id (see isMalformedId above) must never create or send —
+      // this guard also covers the cross-tab initialMessage auto-send effect
+      // below, which fires independently of what the not-found render shows.
+      if (!content || isStreaming || isMalformedId) return;
 
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setInputText("");
 
       try {
-        if (!conversationId) {
+        if (conversationId === null) {
           // Auto-create a conversation if none exists
           const conversation = await createConversation.mutateAsync(undefined);
           navigation.setParams({ conversationId: conversation.id });
-          // Need to wait and send after navigation updates
-          // For now, just send immediately after creating
-          await sendMessage(content);
+          // navigation.setParams doesn't apply until the next render, so
+          // sendMessage (closed over the pre-update conversationId) would
+          // silently drop this message — pass the fresh id explicitly via the
+          // override param instead of relying on the closure.
+          await sendMessage(content, undefined, conversation.id);
         } else {
           await sendMessage(content);
         }
@@ -441,6 +455,7 @@ export default function ChatScreen() {
     [
       inputText,
       isStreaming,
+      isMalformedId,
       haptics,
       conversationId,
       createConversation,
@@ -464,6 +479,40 @@ export default function ChatScreen() {
       <ChatBubble role={item.role} content={item.content} isStreaming={false} />
     );
   }, []);
+
+  if (isMalformedId) {
+    return (
+      <View
+        style={[
+          styles.notFound,
+          { backgroundColor: theme.backgroundRoot, paddingTop: headerInset },
+        ]}
+      >
+        <ThemedText
+          style={[styles.notFoundText, { color: theme.textSecondary }]}
+        >
+          {"This chat couldn't be found."}
+        </ThemedText>
+        {/* A chat/:id deep link builds a Coach stack holding only Chat, so the
+            header has no back button. Don't branch on canGoBack(): it bubbles
+            to the tab navigator (backBehavior "firstRoute") and goBack() would
+            land on Home. popTo pops back to an existing ChatList, or REPLACES
+            this screen with one (v7 navigate() would push, leaving the dead end
+            behind the list). */}
+        <Pressable
+          onPress={() => navigation.popTo("ChatList")}
+          hitSlop={12}
+          style={styles.notFoundBackButton}
+          accessibilityRole="button"
+          accessibilityLabel="Back to chats"
+        >
+          <ThemedText style={[styles.notFoundBack, { color: theme.link }]}>
+            Back to chats
+          </ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
 
   const streamingFooter = isStreaming ? (
     <CoachStreamingFooter content={streamingContent} />
@@ -604,6 +653,24 @@ const styles = StyleSheet.create({
   emptyContent: {
     flexGrow: 1,
     justifyContent: "center",
+  },
+  notFound: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.xl,
+  },
+  notFoundText: {
+    fontSize: 15,
+    textAlign: "center",
+  },
+  notFoundBackButton: {
+    minHeight: 44,
+    justifyContent: "center",
+    marginTop: Spacing.md,
+  },
+  notFoundBack: {
+    fontSize: 15,
   },
   typingRow: {
     flexDirection: "row",

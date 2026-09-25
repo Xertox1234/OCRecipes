@@ -263,6 +263,9 @@ export function useQuickLogSession({
         void queryClient.invalidateQueries({
           queryKey: QUERY_KEYS.frequentItems,
         });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/daily-budget"],
+        });
       }
       // Offline path: drain will invalidate after replay — no invalidation here
 
@@ -303,6 +306,9 @@ export function useQuickLogSession({
         });
         void queryClient.invalidateQueries({
           queryKey: QUERY_KEYS.frequentItems,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/daily-budget"],
         });
       }
 

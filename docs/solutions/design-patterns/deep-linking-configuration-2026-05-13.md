@@ -4,7 +4,7 @@ track: knowledge
 category: design-patterns
 module: client
 tags: [react-native, navigation, deep-linking, validation, notifications, expo-notifications]
-applies_to: [client/navigation/linking.ts, client/navigation/__tests__/**]
+applies_to: [client/navigation/linking.ts, client/navigation/__tests__/**, client/screens/ChatScreen.tsx]
 created: '2026-05-13'
 last_updated: '2026-09-25'
 ---
@@ -36,7 +36,15 @@ Universal link prefix `https://ocrecipes.app` is also registered (requires serve
 
 ### Boundary validation for URL params
 
-Deep links are untrusted external input. Always use `parseIntOrZero` (not raw `parseInt`) for numeric params — it returns `0` instead of `NaN` for non-numeric strings, which the screen's existing error/not-found UI handles gracefully.
+Deep links are untrusted external input. Always use `parseIntOrZero` (not raw `parseInt`) for numeric params — it returns `0` instead of `NaN` for non-numeric strings, which the screen's existing error/not-found UI handles gracefully. `parseIntOrZero` does **not** clamp negatives (`-5` parses to `-5`), so a screen's "malformed" check must be "not a positive integer" (`!(id > 0)`), not `=== 0`.
+
+The receiving screen's not-found guard must not live ONLY in the render branch. `linking.ts`'s `Scan`/`verifyBarcode` comment (`client/navigation/linking.ts`) is this repo's own example of an unparsed query param landing in `route.params` unfiltered — the same is true for any path that doesn't declare a `parse` entry for it, so a malformed positional id (`chat/abc` → `0`) and an arbitrary query param (`?initialMessage=hi`) can arrive on the SAME route object. If the screen also has a mount/param-driven effect that can invoke a create/send handler from that query param (a cross-tab auto-send-on-open, for example), the malformed-id guard must be duplicated inside that handler too — the not-found view rendering is not evidence that the handler was ever prevented from firing. See `docs/rules/react-native.md`'s deep-link bullet and `client/screens/ChatScreen.tsx` (M16, 2026-09-23 front-end audit).
+
+A deep-link target's not-found view also needs its **own exit**. `linking.ts` declares no intermediate screens for `chat/:conversationId`, so the Coach stack holds only `Chat` and the header shows no back button. Two tempting exits are wrong (both read against the installed `@react-navigation` 7.x source):
+- `canGoBack() ? goBack() : …` — `canGoBack()` is NOT local. It falls back to the parent's (`useNavigationHelpers.js`: `… || parentNavigationHelpers?.canGoBack()`), and the tab navigator's default `backBehavior: 'firstRoute'` puts Home in its history, so it returns true and `goBack()` lands on the Home tab.
+- `navigate("ChatList")` — in v7 `StackRouter` only reuses the CURRENT route unless `pop: true`; otherwise it pushes, leaving the dead-end screen behind the list.
+
+Use `navigation.popTo("ChatList")`: it pops back to an existing `ChatList`, or replaces the current screen with one when none exists. `NotebookEntryScreen` gets away with `goBack` because it is a root `fullScreenModal`. Do not escape via `setParams({ conversationId: undefined })`: the key stays present, so the malformed-id check stays true.
 
 ```typescript
 // client/navigation/linking.ts
@@ -193,6 +201,7 @@ Test `getInitialURL`/`subscribe` by calling the exported functions directly — 
 - `client/navigation/navigationRef.ts` — the `isReady()` check the hold/flush depends on
 - `client/hooks/useNotebookNotifications.ts` — schedules the `url` field the notification-tap path reads
 - `client/navigation/__tests__/linking.test.ts`
+- `client/screens/ChatScreen.tsx` — malformed-id guard duplicated inside `handleSend`, not just the render branch (M16, 2026-09-23 front-end audit)
 
 ## See Also
 

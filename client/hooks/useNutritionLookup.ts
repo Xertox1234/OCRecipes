@@ -951,6 +951,9 @@ export function useNutritionLookup(params: {
         void queryClient.invalidateQueries({
           queryKey: QUERY_KEYS.dailySummary,
         });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/daily-budget"],
+        });
       }
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       // NOT goBack(), and NOT safeGoBack(). NutritionDetail is pushed from

@@ -189,6 +189,10 @@ describe("useMealPlan", () => {
       expect(invalidateSpy).toHaveBeenCalledWith({
         queryKey: ["/api/daily-summary"],
       });
+      // Confirming writes a daily log, so the calorie header must refresh.
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/daily-budget"],
+      });
     });
   });
 });

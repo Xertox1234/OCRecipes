@@ -1,14 +1,11 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
-  Image,
   View,
-  type ImageProps,
-  type ImageErrorEventData,
-  type NativeSyntheticEvent,
   type StyleProp,
   type ViewStyle,
   type ImageStyle,
 } from "react-native";
+import { Image, type ImageProps, type ImageErrorEventData } from "expo-image";
 import { Feather } from "@expo/vector-icons";
 
 import { useTheme } from "@/hooks/useTheme";
@@ -53,13 +50,17 @@ interface FallbackImageProps
  * The fallback matches the image dimensions to prevent layout shift.
  *
  * DECORATIVE BY DESIGN — neither branch is an accessibility element, and the
- * component deliberately does NOT accept `accessibilityLabel` or `alt`.
- * React Native gates image accessibility on
+ * component deliberately does NOT accept `accessibilityLabel` or `alt`. This
+ * was originally forced by RN Image's own gating —
  * `accessible={props.alt !== undefined ? true : props.accessible}`
- * (identically in Image.ios.js and Image.android.js), so the label this
- * component used to accept was silently inert. Device-confirmed 2026-08-04:
- * the hero image rendered `content-desc='Image of coca-cola'` with
- * `focusable=false` in the Android tree — a description TalkBack skips.
+ * (identically in Image.ios.js and Image.android.js) — which made a label
+ * silently inert. Device-confirmed 2026-08-04: the hero image rendered
+ * `content-desc='Image of coca-cola'` with `focusable=false` in the Android
+ * tree — a description TalkBack skips. The component now renders
+ * expo-image's `Image` (2026-09), which does not gate accessibility on `alt`
+ * the same way, but the omission is kept as a deliberate design decision
+ * independent of that: every call site's image name is already carried by
+ * adjacent visible text (see below).
  *
  * Every call site that passed a label was naming an image whose name is
  * already carried by adjacent visible text, so honouring the label would
@@ -90,7 +91,7 @@ export function FallbackImage({
   }, [sourceUri]);
 
   const handleError = useCallback(
-    (event: NativeSyntheticEvent<ImageErrorEventData>) => {
+    (event: ImageErrorEventData) => {
       setHasError(true);
       onError?.(event);
     },
@@ -141,6 +142,14 @@ export function FallbackImage({
     <Image
       source={{ uri: validSource.uri }}
       style={style}
+      // Caching only — deliberately no explicit `contentFit` here.
+      // expo-image's default ("cover") already matches RN Image's old
+      // default, and several call sites still pass the deprecated
+      // `resizeMode` compat prop (e.g. "contain" for nutrition-label
+      // photos) via `imageProps` below; expo-image supports `resizeMode`
+      // as a compat prop for exactly this migration, so setting our own
+      // `contentFit` here would fight it.
+      cachePolicy="memory-disk"
       accessible={false}
       importantForAccessibility="no"
       onError={handleError}
