@@ -8,6 +8,8 @@ import {
   HOLD_GATE_MS,
   CHARS_PER_TICK,
   DRAIN_INTERVAL_MS,
+  STREAM_INACTIVITY_MS,
+  XHR_TIMEOUT_MS,
   type UseCoachStreamReturn,
 } from "../useCoachStream";
 
@@ -97,8 +99,11 @@ class MockXHR {
   readyState = 0;
   responseText = "";
   status = 200;
+  timeout = 0;
   onreadystatechange: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  ontimeout: (() => void) | null = null;
+  onload: (() => void) | null = null;
   sentBody: string | null = null;
   aborted = false;
   headers: Record<string, string> = {};
@@ -109,8 +114,16 @@ class MockXHR {
     this.sentBody = body;
     this.readyState = 1;
   });
+  // RN's abort() (XMLHttpRequest.js `abort`) zeroes status, then dispatches
+  // readystatechange at DONE before `abort`. Model it, or a hook that treats
+  // any readyState 4 as a finish passes here and misfires on device.
   abort = vi.fn(() => {
     this.aborted = true;
+    if (this.readyState === 0 || this.readyState === 4) return;
+    this.status = 0;
+    this.responseText = "";
+    this.readyState = 4;
+    this.onreadystatechange?.();
   });
 
   /** Simulate an SSE event arriving from the server. */
@@ -120,11 +133,34 @@ class MockXHR {
     this.onreadystatechange?.();
   }
 
-  /** Simulate the connection completing successfully. */
+  /** Simulate the connection completing cleanly: readystatechange, then load. */
   complete() {
     this.readyState = 4;
     this.status = 200;
     this.onreadystatechange?.();
+    this.onload?.();
+  }
+
+  /**
+   * Simulate a native failure after headers arrived, in RN's order
+   * (`__didCompleteResponse` → `setReadyState(DONE)`): the response text is
+   * replaced by the error string, status stays 200, readystatechange fires
+   * FIRST, and only then `timeout` or `error`. No `load`.
+   */
+  private failNatively(kind: "timeout" | "error") {
+    this.responseText = kind === "timeout" ? "timed out" : "network lost";
+    this.readyState = 4;
+    this.onreadystatechange?.();
+    if (kind === "timeout") this.ontimeout?.();
+    else this.onerror?.();
+  }
+
+  fireTimeout() {
+    this.failNatively("timeout");
+  }
+
+  fireNetworkError() {
+    this.failNatively("error");
   }
 }
 
@@ -422,5 +458,191 @@ describe("useCoachStream on a runtime with no global crypto", () => {
     expect(body.turnKey).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
+  });
+});
+
+describe("useCoachStream guaranteed termination", () => {
+  // Before this, the hook cleared isStreaming only on a `done` event, a
+  // `data.error` event, a status >= 400, or `onerror`. A stalled socket, a
+  // native timeout (RN dispatches `timeout`, not `error`), or a clean close
+  // without `done` left it true forever, and CoachChat.handleSend refuses to
+  // send while streaming, so the user was stuck until an app restart.
+  // Every cell asserts the terminal callback fired exactly ONCE: RN dispatches
+  // readystatechange before timeout/error, so a hook with two terminal paths
+  // double-fires while still ending with isStreaming === false.
+
+  it("orders the ceilings: server SSE cap < inactivity < XHR timeout", () => {
+    // server/routes/chat.ts SSE_TIMEOUT_MS. The server sends its own
+    // `{ error: "Response timeout" }` at this cap, so on a live connection that
+    // graceful error must arrive before either client ceiling fires.
+    const SERVER_SSE_TIMEOUT_MS = 120_000;
+    expect(STREAM_INACTIVITY_MS).toBeGreaterThan(SERVER_SSE_TIMEOUT_MS);
+    expect(XHR_TIMEOUT_MS).toBeGreaterThan(STREAM_INACTIVITY_MS);
+  });
+
+  it("sets xhr.timeout on the request", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    expect(mockXhr.timeout).toBe(XHR_TIMEOUT_MS);
+  });
+
+  it("a native timeout mid-stream ends the stream with one error", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Partial answer" });
+      mockXhr.fireTimeout();
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("a network error mid-stream ends the stream with one error", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Partial answer" });
+      mockXhr.fireNetworkError();
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("a clean close without `done` after content ends the stream with one error", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Half an ans" });
+      mockXhr.complete();
+    });
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 10);
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("a clean close without `done` and no content ends the stream with one error", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.complete();
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("a stalled stream is aborted after the inactivity window, which any event resets", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    // A status event counts as activity, not just content.
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS - 1);
+      mockXhr.emit({ status: "Checking your pantry…" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS - 1);
+      mockXhr.emit({ content: "Here is" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS - 1);
+    });
+    expect(result.current.isStreaming).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(2);
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    // The abort also dispatches readystatechange at DONE; it must not re-enter.
+    expect(mockXhr.abort).toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("a server `data.error` followed by the clean close fires one error", async () => {
+    const { result, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ error: "Response timeout" });
+      mockXhr.complete();
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith("Response timeout");
+  });
+
+  it("control: `done` then a clean close fires onDone once and no error, even after a long drain", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Hi" });
+      mockXhr.emit({ done: true });
+      mockXhr.complete();
+    });
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS * 2);
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith("Hi", undefined);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("abortStream fires no error, and its inactivity timer does not fire later", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Some" });
+      result.current.abortStream();
+    });
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS * 2);
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("unmount mid-stream fires no error, and its inactivity timer does not fire later", async () => {
+    const onDone = vi.fn();
+    const onError = vi.fn();
+    const { useCoachStream } = await import("../useCoachStream");
+    const { result, unmount } = renderHook(() =>
+      useCoachStream({ onDone, onError }),
+    );
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Some" });
+    });
+    unmount();
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS * 2);
+    });
+
+    expect(mockXhr.abort).toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
   });
 });
