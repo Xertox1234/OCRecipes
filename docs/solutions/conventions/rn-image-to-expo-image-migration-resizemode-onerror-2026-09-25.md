@@ -15,7 +15,7 @@ created: '2026-09-25'
 When swapping a component's `Image` import from `"react-native"` to `"expo-image"`:
 
 1. **Do not hardcode `contentFit` upstream of a `{...rest}`/`{...imageProps}` spread** if any existing caller still passes RN's `resizeMode` prop. expo-image's own `resolveContentFit()` (`node_modules/expo-image/src/utils.ts`) already maps the deprecated `resizeMode` values (`cover`/`contain`/etc.) to `contentFit` **when `contentFit` is unset**, and defaults to `'cover'` when neither prop is set — the same default RN's `Image` used. Setting your own `contentFit` on the component's own fixed props means it always wins over a caller's `resizeMode`, silently overriding portrait/"contain" callers that relied on the old default-cover-except-when-I-say-so behavior. Leave `contentFit` unset and let the compat layer do the mapping; only set it explicitly if the component has no `resizeMode`-passing callers to begin with.
-2. **Retype (not just re-import) any shared `onError` handler.** expo-image's `onError` callback shape is `(event: ImageErrorEventData) => void` where `ImageErrorEventData = { error: string }` — a plain object, never RN's `NativeSyntheticEvent<ImageErrorEventData>` wrapper. A handler written for RN's shape still compiles if it never reads into the event, but any code that reads `event.nativeEvent.error` breaks silently at the type level unless the import source (and therefore the type) is also swapped.
+2. **Retype (not just re-import) any shared `onError` handler.** expo-image's `onError` callback shape is `(event: ImageErrorEventData) => void` where `ImageErrorEventData = { error: string }` — a plain object, never RN's `NativeSyntheticEvent<ImageErrorEventData>` wrapper. A handler still typed for RN's wrapper does NOT compile: `ImageProps.onError` is declared with property syntax, so under this repo's `strict` (`strictFunctionTypes`) the parameter check is contravariant and fails with `TS2322 … 'ImageErrorEventData' is missing … nativeEvent, currentTarget, target …` whether or not the body reads the event (measured with `tsc --strict` against the installed types). At runtime the old access would still work: `ExpoImage.tsx`'s `withDeprecatedNativeEvent` defines a self-referential `nativeEvent` getter, so `event.nativeEvent.error` resolves with a deprecation `console.warn`. So the compiler forces the retype; don't silence it with a cast, retype to `ImageErrorEventData` from `expo-image`.
 
 ## When this applies
 
@@ -62,8 +62,9 @@ const handleError = useCallback((event: ImageErrorEventData) => {
 ```
 
 ```ts
-// BAD — still typed for RN's wrapper after the import swap; compiles, but
-// event.nativeEvent is undefined on expo-image's real { error: string }.
+// BAD — still typed for RN's wrapper after the import swap. Fails to compile
+// under strictFunctionTypes (TS2322); an `as any` to force it through would
+// "work" only via expo-image's deprecated nativeEvent getter (console.warn).
 import { type ImageErrorEventData, type NativeSyntheticEvent } from "react-native";
 const handleError = (event: NativeSyntheticEvent<ImageErrorEventData>) => { ... };
 ```

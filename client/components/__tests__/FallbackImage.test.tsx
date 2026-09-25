@@ -23,6 +23,24 @@ describe("FallbackImage", () => {
     expect(img.getAttribute("data-cache-policy")).toBe("memory-disk");
   });
 
+  it("never sets contentFit itself, so a caller's resizeMode still decides the fit", () => {
+    // CapturedPhotos passes resizeMode="contain" for nutrition-label photos
+    // (the whole panel must stay visible). expo-image maps resizeMode to
+    // contentFit only while contentFit is unset, so FallbackImage must never
+    // set one of its own.
+    renderComponent(
+      <FallbackImage
+        source={{ uri: "https://example.com/label.jpg" }}
+        resizeMode="contain"
+        testID="label"
+      />,
+    );
+
+    expect(
+      screen.getByTestId("label").getAttribute("data-content-fit"),
+    ).toBeNull();
+  });
+
   it("shows the fallback icon instead of an image when the source is missing", () => {
     renderComponent(<FallbackImage source={undefined} testID="thumb" />);
 

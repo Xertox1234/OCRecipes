@@ -63,3 +63,7 @@ Check the expo-image jest/vitest mock story before starting (test/mocks). Size-v
 
 - Implemented: `FallbackImage.tsx` and `ProductChip.tsx` now render `expo-image`'s `Image` with `cachePolicy="memory-disk"`; `contentFit` deliberately left unset (expo-image's default "cover" matches RN Image's old default, and several call sites still pass the still-supported deprecated `resizeMode` compat prop). Added `test/mocks/expo-image.ts` (aliased in `vitest.config.mts`) and `FallbackImage.test.tsx` (valid-uri, invalid-uri, empty-uri, load-error). TDD verified: the cache-policy assertion failed against pre-migration code and passed after.
 - Reviewed by `code-reviewer` (No findings) and `mobile-reviewer` (one SUGGESTION, comment-wording only, applied inline; No blocking findings). Full suite green: 546 files / 8691 tests, `check:types` clean, `lint` clean.
+
+### 2026-09-25 (review repair)
+
+- The solution doc had the onError mechanism backwards. An RN-typed handler fails to compile under `strictFunctionTypes` (TS2322, measured with `tsc --strict`), and at runtime `event.nativeEvent.error` still resolves through expo-image's deprecated getter. Corrected. Added a test that FallbackImage never sets `contentFit` (it fails when `contentFit="cover"` is injected), protecting `resizeMode="contain"` callers.
