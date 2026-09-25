@@ -1087,7 +1087,16 @@ export default function MealPlanHomeScreen() {
   }, [haptics, navigation]);
 
   const handleRefresh = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: ["/api/meal-plan"] });
+    // invalidateMealPlanItems fires-and-forgets internally (its own callers
+    // never await it either); the pull-to-refresh spinner is driven by
+    // useMealPlanItems' own `isRefetching`, not by this callback's await, so
+    // that's still coordinated. Daily-budget and daily-summary (L6, 2026-09-23
+    // audit) were previously never refreshed here at all.
+    invalidateMealPlanItems(queryClient);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] }),
+      queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] }),
+    ]);
     haptics.impact();
   }, [queryClient, haptics]);
 

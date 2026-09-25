@@ -1,6 +1,6 @@
 ---
 title: "Home and Plan calorie totals go stale — /api/daily-budget is never invalidated by single-item food logs or goal saves"
-status: backlog
+status: in-progress
 priority: high
 created: 2026-09-23
 updated: 2026-09-23

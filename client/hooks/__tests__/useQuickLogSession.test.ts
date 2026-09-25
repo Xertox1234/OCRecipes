@@ -315,6 +315,52 @@ describe("useQuickLogSession", () => {
     expect(result.current.inputText).toBe("");
   });
 
+  // P1-2026-09-23: this online-success path used to invalidate dailySummary,
+  // scannedItems, and frequentItems, but never daily-budget — leaving Home's
+  // calorie header stale after a QuickLog submit.
+  it("invalidates /api/daily-budget after submitLog succeeds online", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "chicken",
+                quantity: 1,
+                unit: "breast",
+                calories: 320,
+                protein: 58,
+                carbs: 0,
+                fat: 7,
+                servingSize: null,
+              },
+            ],
+          }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: 1 }),
+      });
+
+    const { result } = renderHook(() => useQuickLogSession({}), { wrapper });
+
+    act(() => result.current.setInputText("chicken breast"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
+
+    act(() => result.current.submitLog());
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/daily-budget"],
+      }),
+    );
+  });
+
   it("sets submitError when log fails", async () => {
     const { wrapper } = createQueryWrapper();
     mockApiRequest

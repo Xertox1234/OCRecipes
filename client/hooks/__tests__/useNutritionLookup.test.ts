@@ -138,6 +138,33 @@ describe("useNutritionLookup — addToLogMutation error surfacing", () => {
     expect(mockGoBack).not.toHaveBeenCalled();
     expect(mockToastError).not.toHaveBeenCalled();
   });
+
+  // P1-2026-09-23: addToLogMutation used to invalidate only scannedItems and
+  // dailySummary on a real online success, leaving Home's calorie header
+  // (useDailyBudget) stale.
+  it("invalidates /api/daily-budget on a successful online log", async () => {
+    mockApiRequest.mockResolvedValueOnce({
+      json: async () => ({ id: 1 }),
+    });
+    const { wrapper, queryClient } = createQueryWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(
+      () => useNutritionLookup({ imageUri: "photo.jpg" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      result.current.handleAddToLog();
+    });
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/daily-budget"],
+      }),
+    );
+  });
 });
 
 describe("useNutritionLookup — isPer100g regression (P2-2026-07-14)", () => {
