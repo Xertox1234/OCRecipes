@@ -1,8 +1,54 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 // @react-navigation/core is a hard dependency of @react-navigation/native;
 // importing native itself pulls React Native sources the node env cannot load.
 import { getStateFromPath } from "@react-navigation/core";
-import { linking } from "../linking";
+
+// linking.ts now imports react-native's `Linking` for getInitialURL/subscribe.
+// The globally-aliased RN mock (test/mocks/react-native.ts) only exports
+// `Linking.openURL`/`openSettings` (no `getInitialURL`/`addEventListener`), so
+// a local override is required here — see
+// docs/solutions/conventions/inline-vi-mock-globally-aliased-modules-2026-05-13.md
+// item 3 ("missing exports").
+const mockGetInitialURL = vi.fn();
+const mockAddEventListener = vi.fn();
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  return {
+    ...actual,
+    Linking: {
+      ...actual.Linking,
+      getInitialURL: (...args: unknown[]) => mockGetInitialURL(...args),
+      addEventListener: (...args: unknown[]) => mockAddEventListener(...args),
+    },
+  };
+});
+
+const mockGetLastNotificationResponse = vi.fn();
+const mockAddNotificationResponseReceivedListener = vi.fn();
+const mockClearLastNotificationResponse = vi.fn();
+vi.mock("expo-notifications", () => ({
+  getLastNotificationResponse: () => mockGetLastNotificationResponse(),
+  clearLastNotificationResponse: () => mockClearLastNotificationResponse(),
+  addNotificationResponseReceivedListener: (
+    ...args: [(response: unknown) => void]
+  ) => mockAddNotificationResponseReceivedListener(...args),
+}));
+
+// linking.ts also imports navigationRef to decide whether a live notification
+// tap can be delivered immediately or must be held for onReady to flush —
+// see client/navigation/linking.ts for why (React Navigation's own
+// dispatch/resetRoot silently no-ops, with no retry, before a navigator has
+// mounted).
+const mockIsReady = vi.fn();
+vi.mock("../navigationRef", () => ({
+  navigationRef: { isReady: () => mockIsReady() },
+}));
+
+const { linking, flushPendingNotificationUrl } = await import("../linking");
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("linking config", () => {
   it("includes both custom scheme and universal link prefixes", () => {
@@ -108,5 +154,208 @@ describe("linking config", () => {
       linking.config!.screens.Main.screens.CoachTab.screens.Chat;
 
     expect(chat.parse.conversationId("abc")).toBe(0);
+  });
+});
+
+// Cold-launch: a tap that launches the app never reaches
+// addNotificationResponseReceivedListener in time, so getInitialURL is the
+// only path that can see it. Falls back to the notification response when
+// there is no real deep link, per the React Navigation 7 +
+// expo-notifications integration doc (Context7 "Handle push notifications
+// with React Navigation").
+describe("getInitialURL", () => {
+  it("prefers a real deep link over a notification response — the more specific intent", async () => {
+    mockGetInitialURL.mockResolvedValue("ocrecipes://recipe/42");
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: 7 } } } },
+    });
+
+    const url = await linking.getInitialURL!();
+
+    expect(url).toBe("ocrecipes://recipe/42");
+    expect(mockGetLastNotificationResponse).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the notification response's url when there is no real link", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: {
+        request: {
+          content: { data: { url: "ocrecipes://notebook-entry/12" } },
+        },
+      },
+    });
+
+    const url = await linking.getInitialURL!();
+
+    expect(url).toBe("ocrecipes://notebook-entry/12");
+  });
+
+  // Reminders scheduled before this change carry only `data.entryId` (see
+  // client/hooks/useNotebookNotifications.ts) — already-scheduled on-device
+  // notifications must keep opening the right entry after this ships.
+  it("constructs a notebook-entry URL from an entryId-only payload (the server push scheduler's shape)", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: 99 } } } },
+    });
+
+    const url = await linking.getInitialURL!();
+
+    expect(url).toBe("ocrecipes://notebook-entry/99");
+    // The URL must actually route: round-trip it through the real config.
+    const state = getStateFromPath(
+      url!.replace("ocrecipes://", ""),
+      linking.config,
+    );
+    const route = state?.routes[0];
+    expect(route?.name).toBe("NotebookEntry");
+    expect(route?.params).toEqual({ entryId: 99 });
+  });
+
+  // The last response lives in memory for the whole process. Left uncleared,
+  // any NavigationContainer remount (e.g. ErrorBoundary's "Try Again") calls
+  // getInitialURL again and re-opens the same, possibly crashing, entry.
+  it("clears the notification response once it has been turned into a URL", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: 99 } } } },
+    });
+
+    await linking.getInitialURL!();
+
+    expect(mockClearLastNotificationResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a non-positive entryId instead of opening notebook-entry/0", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: 0 } } } },
+    });
+
+    expect(await linking.getInitialURL!()).toBeUndefined();
+  });
+
+  it("returns undefined when there is no real link and no notification response", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue(null);
+
+    const url = await linking.getInitialURL!();
+
+    expect(url).toBeUndefined();
+  });
+});
+
+// These tests assert URL FORWARDING into React Navigation's own `listener`
+// callback — the boundary this module owns. They cannot observe whether
+// React Navigation subsequently routes to the target screen (e.g. replaying
+// after login via UNSTABLE_routeNamesChangeBehavior="lastUnhandled" in
+// node_modules/@react-navigation/core/lib/module/useNavigationBuilder.js) —
+// that was verified by reading that source, not exercised here. The todo's
+// "verify on a simulator" step was not run.
+describe("subscribe", () => {
+  beforeEach(() => {
+    mockAddEventListener.mockReturnValue({ remove: vi.fn() });
+    mockAddNotificationResponseReceivedListener.mockReturnValue({
+      remove: vi.fn(),
+    });
+  });
+
+  it("forwards a real deep link URL to the listener", () => {
+    const listener = vi.fn();
+    linking.subscribe!(listener);
+
+    const onReceiveURL = mockAddEventListener.mock.calls[0][1] as (event: {
+      url: string;
+    }) => void;
+    onReceiveURL({ url: "ocrecipes://recipe/5" });
+
+    expect(listener).toHaveBeenCalledWith("ocrecipes://recipe/5");
+  });
+
+  it("forwards a notification response's url to the listener when the navigator is ready", () => {
+    mockIsReady.mockReturnValue(true);
+    const listener = vi.fn();
+    linking.subscribe!(listener);
+
+    const onResponse = mockAddNotificationResponseReceivedListener.mock
+      .calls[0][0] as (response: unknown) => void;
+    onResponse({
+      notification: {
+        request: {
+          content: { data: { url: "ocrecipes://notebook-entry/3" } },
+        },
+      },
+    });
+
+    expect(listener).toHaveBeenCalledWith("ocrecipes://notebook-entry/3");
+    // A live tap also becomes the process's "last response"; clear it so a
+    // later remount's getInitialURL doesn't replay it.
+    expect(mockClearLastNotificationResponse).toHaveBeenCalledTimes(1);
+  });
+
+  // The failure mode this closes: React Navigation's own subscribe-driven
+  // dispatch/resetRoot (useLinking.native.js lines 118-143) silently no-ops —
+  // a console.error with no retry — when no navigator has registered a focus
+  // listener yet (BaseNavigationContainer.js dispatch/resetRoot, lines
+  // 106-137). That window is real but boot-only: client/hooks/useAuth.ts's
+  // `isLoading: true` (line 120) is the only place it's ever set — the
+  // foreground AppState recheck never sets it back to true, so this is not a
+  // recurring "warm, backgrounded" state. A tap arriving in that window must
+  // be held rather than hitting the no-op path.
+  it("holds a notification url when the navigator is not ready, and flushes it exactly once", () => {
+    mockIsReady.mockReturnValue(false);
+    const listener = vi.fn();
+    linking.subscribe!(listener);
+
+    const onResponse = mockAddNotificationResponseReceivedListener.mock
+      .calls[0][0] as (response: unknown) => void;
+    onResponse({
+      notification: {
+        request: {
+          content: { data: { url: "ocrecipes://notebook-entry/8" } },
+        },
+      },
+    });
+
+    expect(listener).not.toHaveBeenCalled();
+
+    flushPendingNotificationUrl();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith("ocrecipes://notebook-entry/8");
+
+    // A second flush with nothing pending is a no-op, not a re-delivery.
+    flushPendingNotificationUrl();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to an entryId-only payload when holding for a not-ready navigator", () => {
+    mockIsReady.mockReturnValue(false);
+    const listener = vi.fn();
+    linking.subscribe!(listener);
+
+    const onResponse = mockAddNotificationResponseReceivedListener.mock
+      .calls[0][0] as (response: unknown) => void;
+    onResponse({
+      notification: { request: { content: { data: { entryId: 21 } } } },
+    });
+
+    flushPendingNotificationUrl();
+    expect(listener).toHaveBeenCalledWith("ocrecipes://notebook-entry/21");
+  });
+
+  it("removes both the linking and notification subscriptions on cleanup", () => {
+    const removeLinking = vi.fn();
+    const removeNotification = vi.fn();
+    mockAddEventListener.mockReturnValue({ remove: removeLinking });
+    mockAddNotificationResponseReceivedListener.mockReturnValue({
+      remove: removeNotification,
+    });
+
+    const cleanup = linking.subscribe!(vi.fn());
+    cleanup!();
+
+    expect(removeLinking).toHaveBeenCalledTimes(1);
+    expect(removeNotification).toHaveBeenCalledTimes(1);
   });
 });
