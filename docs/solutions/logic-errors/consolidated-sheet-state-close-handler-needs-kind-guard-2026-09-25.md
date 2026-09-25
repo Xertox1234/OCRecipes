@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 tags: [react-native, hooks, client-state, bottom-sheet, accessibility]
 module: client
-applies_to: ["client/**/*.tsx"]
+applies_to: ["client/**/*.tsx", "client/hooks/useSheetBackHandler.ts"]
 symptoms: ["a menu -> destination-sheet handoff (close one BottomSheetModal, then InteractionManager.runAfterInteractions opens a different one) intermittently leaves the destination sheet's Android back-handler or focus-trap pointing at nothing, as if it silently closed itself right after opening", "consolidating several `useState<T | null>` atoms into one `activeSheet: {kind, T} | null` union appears correct in every manual test but breaks only under a same-screen handoff between two of the sheets"]
 created: 2026-09-25
 severity: medium

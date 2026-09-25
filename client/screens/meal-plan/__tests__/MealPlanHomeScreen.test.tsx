@@ -571,6 +571,30 @@ describe("MealPlanHomeScreen — unified activeSheet back-handler wiring", () =>
     expect(capturedSheets.get("quick-add")!.dismiss).toHaveBeenCalledTimes(1);
   });
 
+  // The 4 sheets share ONE onChange; a late onChange(-1) from the abandoned
+  // menu can clear the shared isOpenRef while quick-add is genuinely open.
+  // Correctness then rests on useSheetBackHandler's stateIsOpenRef fallback
+  // (activeSheet !== null) — this pins it.
+  it("a late onChange(-1) from the abandoned menu does not stop back from dismissing the newly-opened quick-add sheet", () => {
+    const addEventListenerSpy = renderScreenAndroid();
+    openAddItemMenu();
+    act(() => {
+      addItemMenuProps.current!.onChooseRecipe();
+    });
+    act(() => {
+      flushInteractions();
+    });
+
+    act(() => {
+      capturedSheets.get("quick-add")!.onChange?.(0);
+      capturedSheets.get("add-item-menu")!.onChange?.(-1);
+    });
+
+    clearDismissSpies();
+    expect(fireBackPress(addEventListenerSpy)).toBe(true);
+    expect(capturedSheets.get("quick-add")!.dismiss).toHaveBeenCalledTimes(1);
+  });
+
   it("a back press falls through (dismisses nothing) when no sheet is open", () => {
     const addEventListenerSpy = renderScreenAndroid();
     expect(fireBackPress(addEventListenerSpy)).toBe(false);

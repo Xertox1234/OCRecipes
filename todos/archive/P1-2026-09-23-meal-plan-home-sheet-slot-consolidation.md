@@ -3,7 +3,7 @@ title: "MealPlanHomeScreen: collapse four hand-duplicated bottom-sheet slots (an
 status: done
 priority: high
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 assignee:
 labels: [deferred, audit, maintainability]
 github_issue:
@@ -98,3 +98,7 @@ Keep the menu → destination two-step handoff (InteractionManager) behavior ide
   per device-verified evidence, and fixed a `vi.hoisted` TDZ hazard in
   `docs/solutions/conventions/inline-vi-mock-globally-aliased-modules-2026-05-13.md`'s
   example snippet.
+
+### 2026-09-25 (review repair)
+
+- Confirmation review: the comment calling useSheetBackHandler's `stateIsOpenRef` fallback load-bearing for the shared onChange race had no test. Added one: after the menu → quick-add handoff, quick-add fires onChange(0) then the abandoned menu fires onChange(-1); back must still dismiss quick-add. Verified it fails with the fallback removed. The solution doc's `applies_to` now includes `client/hooks/useSheetBackHandler.ts` (a `.ts` file its `**/*.tsx` glob missed).
