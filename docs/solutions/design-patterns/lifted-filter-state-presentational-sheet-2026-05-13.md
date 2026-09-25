@@ -131,17 +131,17 @@ const DEFAULT_FILTERS: RecipeFilters = {
 // Inside the screen:
 const [filters, setFilters] = useState<RecipeFilters>(DEFAULT_FILTERS);
 
-// Derive active badge count only from the advanced sub-object
-const activeFilterCount = useMemo(() => {
-  let count = 0;
-  const a = filters.advanced;
-  if (a.sort !== 'relevance') count++;
-  if (a.maxPrepTime !== undefined) count++;
-  if (a.maxCalories !== undefined) count++;
-  if (a.minProtein !== undefined) count++;
-  if (a.source !== 'all') count++;
-  return count;
-}, [filters.advanced]);
+// Pure derivation lives in *-utils.ts so it's independently testable.
+// It reads BOTH the advanced sub-object's fields AND any chip-row fields
+// that should count toward the badge (here curatedOnly/safeForMe do;
+// activeCuisine/activeDiet/activeDifficulty/pantryMode deliberately don't
+// — that's a per-screen choice, not a rule this pattern imposes). The
+// memo depends on the whole `filters` object, matching however broadly
+// the pure function reads from it.
+const activeFilterCount = useMemo(
+  () => computeActiveFilterCount(filters),
+  [filters],
+);
 
 // Pass the nested sub-object to the sheet
 <SearchFilterSheet
