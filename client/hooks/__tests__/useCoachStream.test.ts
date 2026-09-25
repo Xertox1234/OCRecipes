@@ -585,7 +585,7 @@ describe("useCoachStream guaranteed termination", () => {
 
     expect(result.current.isStreaming).toBe(false);
     expect(onError).toHaveBeenCalledTimes(1);
-    expect(onError).toHaveBeenCalledWith("Response timeout");
+    expect(onError.mock.calls[0]?.[0]).toBe("Response timeout");
   });
 
   it("control: `done` then a clean close fires onDone once and no error, even after a long drain", async () => {
