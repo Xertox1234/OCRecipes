@@ -123,7 +123,7 @@ describe("Coach Blocks Service", () => {
       /recipe_card only when you have real calories, protein and prep time/i,
     );
     expect(BLOCKS_SYSTEM_PROMPT).toMatch(
-      /search_recipes does not return them/i,
+      /search_recipes does not return calories or protein/i,
     );
     expect(BLOCKS_SYSTEM_PROMPT).not.toMatch(
       /Present each recipe from that result as a recipe_card/,

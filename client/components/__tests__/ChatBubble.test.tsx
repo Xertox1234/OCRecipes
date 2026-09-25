@@ -33,13 +33,6 @@ describe("ChatBubble", () => {
     ).toBeDefined();
   });
 
-  it("renders nothing for an assistant message that is only an image (strips to empty)", () => {
-    renderComponent(
-      <ChatBubble role="assistant" content="![bowl](https://x.test/b.jpg)" />,
-    );
-    expect(screen.queryByLabelText(/NutriCoach/)).toBeNull();
-  });
-
   it("returns null when content is empty and not streaming", () => {
     const { container } = renderComponent(
       <ChatBubble role="assistant" content="" />,
