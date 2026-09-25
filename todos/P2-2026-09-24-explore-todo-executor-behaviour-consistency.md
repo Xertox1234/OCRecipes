@@ -57,8 +57,13 @@ Source: the orchestrator's run record for that session and the five executor rep
 
 - [x] For each divergence above, the behaviour the user wants is decided (user, 2026-09-25 — see
       Updates). What remains is applying those decisions to the instructions:
-- [ ] **Scope (2): grow only when needed.** `todo-executor.md` Step 4 item 6 and the Step 6
-      reviewer prompt stop treating every out-of-contract file as CRITICAL. An executor may
+- [ ] **Scope (2): grow only when needed.** Every place that states the "out-of-contract =
+      CRITICAL" rule stops treating every out-of-contract file as CRITICAL: `todo-executor.md`
+      Step 4 item 6 and the Step 6 item-3 reviewer-prompt append, the rule's source
+      `docs/AI_WORKFLOW.md` → Tier handling ("Scope-contract violation = CRITICAL"), and the
+      scope-contract checklist item in `.claude/agents/code-reviewer.md`. The Step 10 item-7b
+      confirmation pass inherits the change through `docs/AI_WORKFLOW.md`, so no disclosed file
+      is blocked there either. An executor may
       touch a file outside the Scope Contract only when an acceptance criterion cannot be met
       without it, and must list each such file under an "Out of contract" heading in the PR body
       with a one-line reason. An undisclosed out-of-contract file, or one not needed for an
@@ -98,7 +103,9 @@ Source: the orchestrator's run record for that session and the five executor rep
   gates.
 - **Files in scope:** `.claude/agents/todo-executor.md`, `.claude/skills/todo/SKILL.md`,
   `docs/AI_WORKFLOW.md` (read, and edit only once decisions are made), and
-  `.claude/agents/todo-researcher.md` (same stale LSP warm-up; added with user approval 2026-09-24). `.claude/hooks/**` is
+  `.claude/agents/todo-researcher.md` (same stale LSP warm-up; added with user approval 2026-09-24), and
+  `.claude/agents/code-reviewer.md` (its scope-contract checklist item only; added 2026-09-25 for
+  decision 2). `.claude/hooks/**` is
   frozen — findings there go to `docs/harness-residuals.md`.
 - No new mechanisms, files, or abstractions beyond those listed.
 
