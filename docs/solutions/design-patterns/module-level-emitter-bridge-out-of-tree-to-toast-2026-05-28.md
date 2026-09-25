@@ -6,7 +6,7 @@ module: client
 tags: [tanstack-query, error-handling, toast, client-state, client]
 applies_to: [client/lib/query-client.ts, client/components/QueryErrorToastBridge.tsx]
 created: '2026-05-28'
-last_updated: '2026-05-28'
+last_updated: '2026-09-25'
 ---
 
 # Bridge an out-of-tree singleton to the in-tree toast via a module-level emitter
@@ -74,11 +74,28 @@ Render it once as a sibling inside `<ToastProvider>` in `App.tsx` (next to
 ## Exceptions / gotchas
 
 - **TanStack Query v5 cache-level `onError` fires _in addition to_ each
-  observer's local `onError`.** With ~30+ files already defining mutation
-  `onError`, a global _mutation_ handler would double-toast. Scope the global net
-  to **queries** (which mostly lack handlers) and/or gate it behind a `meta`
-  flag. Document the chosen mutation policy in a comment at the construction site
-  — the acceptance criteria for this kind of change require it.
+  observer's local `onError`.** With ~65+ mutation call sites already defining
+  their own `onError`/try-catch/`isError`-driven visible feedback, a naive
+  global _mutation_ handler would double-toast most of them. **Decision
+  (reversed 2026-09-25 — see `docs/rules/client-state.md`):** the global net
+  now covers mutations too, gated behind a `meta: { silentError: true }` flag
+  (`MutationErrorMeta`/`shouldSurfaceMutationError`, a byte-identical mirror of
+  `QueryErrorMeta`/`shouldSurfaceQueryError`, sharing the same
+  `queryErrorListeners`/`subscribeToQueryErrors` toast bridge rather than a
+  second emitter). The prior "scope to queries only" policy this bullet
+  originally documented is superseded — do not re-derive it. Document the
+  chosen mutation policy in a comment at the construction site — the
+  acceptance criteria for this kind of change require it.
+- **Mutations don't share `meta` by cache key the way queries do.**
+  `MutationCache.build` constructs a fresh `Mutation` per `.mutate()`/
+  `.mutateAsync()` call from that call's own options, so the query-side
+  "shared query key meta mount-order" hazard (below) has no mutation
+  counterpart — a hook's hardcoded `meta` applies uniformly to every call of
+  that hook. The only reason to thread an optional `meta?: MutationErrorMeta`
+  parameter through a hook instead of hardcoding the opt-out is when the
+  hook has multiple call sites that disagree on whether they already show
+  visible error feedback (some do, some don't) — hardcode when they agree,
+  thread when they don't.
 - **Suppress expected errors.** Reuse the file's existing `/^4\d\d:/` message
   guard to skip 4xx (screens already branch on these); it also covers the
   `on401: "throw"` auth-redirect path (message `"401: ..."`) and `429`. Only
@@ -104,7 +121,7 @@ Render it once as a sibling inside `<ToastProvider>` in `App.tsx` (next to
 
 ## Related Files
 
-- `client/lib/query-client.ts` — `subscribeToQueryErrors`, `shouldSurfaceQueryError`, the `QueryCache` net
+- `client/lib/query-client.ts` — `subscribeToQueryErrors`, `shouldSurfaceQueryError`/`QueryErrorMeta`, the `QueryCache` net, and (2026-09-25) `shouldSurfaceMutationError`/`MutationErrorMeta`, the `MutationCache` net
 - `client/components/QueryErrorToastBridge.tsx` — the in-tree subscriber
 - `client/App.tsx` — bridge rendered inside `<ToastProvider>`
 - `client/context/ToastContext.tsx` — `useToast`, `show` (replace-not-append)
