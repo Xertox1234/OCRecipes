@@ -140,14 +140,21 @@ export function useCameraFocusAndZoom({
           zoomFailureReportedRef.current = false;
         })
         .catch((error: unknown) => {
-          // Latched: setZoom is invoked via scheduleOnRN on EVERY pinch-gesture
-          // frame (not once per tap, like runFocus's focusTo) — unlatched,
-          // one dragged pinch on a broken zoom would emit dozens of Sentry
-          // events. NOTE: the bound is "one report per success→failure
-          // transition", not "one report per mount" — the .then() re-arm
-          // above means an INTERMITTENTLY failing setZoom during one drag
-          // can still emit more than one report; that's the same tradeoff
-          // runFocus already accepts, just at a much higher call rate here.
+          // Latched: setZoom is invoked via scheduleOnRN on every frame that
+          // crosses shouldApplyZoom's epsilon (still a much higher rate than
+          // runFocus's once-per-tap focusTo) — unlatched, one dragged pinch on
+          // a broken zoom would emit dozens of Sentry events. NOTE: the bound
+          // is "one report per success→failure transition", not "one report
+          // per mount" — the .then() re-arm above means an INTERMITTENTLY
+          // failing setZoom during one drag can still emit more than one
+          // report; that's the same tradeoff runFocus already accepts, just
+          // at a much higher call rate here. Also note lastAppliedZoom (in
+          // pinchGesture.onUpdate) advances before this promise settles, so a
+          // rejection leaves it ahead of the actual native zoom — accepted,
+          // not fixed: the next pinch frame that moves >epsilon past THIS
+          // value (rather than the last successfully applied one) retries,
+          // which is fine at epsilon's scale and avoids writing a UI-thread
+          // shared value from a JS-thread promise callback mid-gesture.
           if (zoomFailureReportedRef.current) return;
           zoomFailureReportedRef.current = true;
           logger.error(
