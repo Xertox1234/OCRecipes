@@ -1014,6 +1014,19 @@ export default function MealPlanHomeScreen() {
   // multi-listener registration order to get wrong during a same-screen
   // handoff (e.g. handleChooseRecipe) — the prior 4-call architecture needed
   // a documented load-bearing declaration order for exactly that reason.
+  //
+  // Because onSheetChange/onSheetAnimate are now SHARED across all 4
+  // BottomSheetModal instances (unlike the old 4-hook-instance design, where
+  // each had its own private isOpenRef), any one of them firing onChange(-1)
+  // — a late close from a just-abandoned sheet during a handoff, or the
+  // spurious blur/refocus duplicate event useSheetBackHandler's own JSDoc
+  // documents — clears the ONE shared isOpenRef even while a different sheet
+  // is genuinely open. Correctness in that window depends entirely on
+  // useSheetBackHandler's `stateIsOpenRef` fallback (derived here from
+  // `activeSheet !== null`), which was originally added for an unrelated
+  // single-sheet blur/refocus bug and is now silently load-bearing for this
+  // screen's multi-sheet aliasing too — do not change that fallback's logic
+  // without checking this call site.
   const { onSheetChange, onSheetAnimate } = useSheetBackHandler(
     activeSheetRef,
     activeSheet !== null,

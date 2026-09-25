@@ -9,7 +9,7 @@ const HIDDEN_HANDLE_STYLE = { display: "none" as const };
 // root — `pressBehavior` lives on the wider `BottomSheetDefaultBackdropProps`
 // (the concrete `BottomSheetBackdrop` component's own props), which is not a
 // public export. Inlined here to match its declared type
-// (components/bottomSheetBackdrop/types.ts `BackdropPressBehavior`).
+// (components/bottomSheetBackdrop/types.d.ts `BackdropPressBehavior`).
 type BackdropPressBehavior = "none" | "close" | "collapse" | number;
 
 export interface UseSheetHostPropsOptions {
