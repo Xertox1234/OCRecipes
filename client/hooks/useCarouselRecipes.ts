@@ -62,5 +62,9 @@ export function useDismissCarouselRecipe() {
         queryClient.setQueryData(CAROUSEL_KEY, context.previous);
       }
     },
+    // Reviewed for the global mutation net (2026-09-25): no opt-out — its one
+    // call site (RecipeCarousel.handleDismiss) shows no visible failure
+    // feedback beyond this rollback, so the global toast is a genuine
+    // improvement here, not a double-report.
   });
 }
