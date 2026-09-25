@@ -56,11 +56,11 @@ Since `labelData` is truthy by the time `error` is set, this branch can never tr
 ## Implementation Notes
 
 - Route any new announcement through the existing merged announcer effect (the one that already combines the sessionId "Ready to log"/"Ready to submit verification" and "Updated with AI analysis" cases) rather than adding a third independent `AccessibilityInfo.announceForAccessibility` call — the two can land in the same commit as `sessionArrived`, and iOS drops the second of two same-tick announces.
-- Consider whether the intended fix is "show a NoticeStack-style low-confidence warning banner" rather than reusing the full-screen `error` state, since `labelData` is legitimately present and the AI data is still shown to the user.
+- The visual warning already exists: the confidence-tier banner ("Low confidence — review carefully before logging." / "Some values may be inaccurate. Review before logging."). Do not add another banner; announce this one's text.
 
 ## Scope Contract
 
-- **Mechanisms to use:** the existing merged announcer effect and/or the existing `NoticeStack`-style banner pattern already used elsewhere in this codebase — no new announcement mechanism.
+- **Mechanisms to use:** the existing merged announcer effect only — no new announcement mechanism and no new visual surface.
 - **Files in scope:**
   - `client/screens/LabelAnalysisScreen.tsx`
   - `client/screens/__tests__/LabelAnalysisScreen*.test.tsx`
