@@ -19,6 +19,7 @@ const {
   mockCreateConversationMutateAsync,
   mockSaveRecipeMutateAsync,
   mockChatMessagesData,
+  mockSendMessageState,
 } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
   mockCanGoBack: vi.fn(),
@@ -40,6 +41,18 @@ const {
   mockCreateConversationMutateAsync: vi.fn(),
   mockSaveRecipeMutateAsync: vi.fn(),
   mockChatMessagesData: { value: [] as ChatMessage[] },
+  // A mutable ref so tests can simulate useSendMessage's streaming/recipe/
+  // error state changing across a rerender (e.g. a stream starting then
+  // ending).
+  mockSendMessageState: {
+    value: {
+      streamingContent: "",
+      streamingRecipe: null as { title: string } | null,
+      isStreaming: false,
+      streamError: false,
+      requestError: null as string | null,
+    },
+  },
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -70,11 +83,7 @@ vi.mock("@/hooks/useChat", () => ({
   useSendMessage: () => ({
     sendMessage: mockSendMessage,
     abortStream: mockAbortStream,
-    streamingContent: "",
-    streamingRecipe: null,
-    isStreaming: false,
-    streamError: false,
-    requestError: null,
+    ...mockSendMessageState.value,
   }),
   useSaveRecipeFromChat: () => ({
     mutateAsync: mockSaveRecipeMutateAsync,
@@ -87,6 +96,13 @@ beforeEach(() => {
   mockCanGoBack.mockReturnValue(true);
   mockRouteParams.value = undefined;
   mockChatMessagesData.value = [];
+  mockSendMessageState.value = {
+    streamingContent: "",
+    streamingRecipe: null,
+    isStreaming: false,
+    streamError: false,
+    requestError: null,
+  };
 });
 
 describe("RecipeChatScreen — safe back navigation", () => {
@@ -205,5 +221,103 @@ describe("RecipeChatScreen — haptics route through useHaptics()", () => {
       ),
     );
     expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+  });
+});
+
+// P2-2026-09-23: the stream-end → message-refetch "pending assistant bubble"
+// bridge was extracted into usePendingAssistantBridge, shared with
+// ChatScreen (see usePendingAssistantBridge.test.ts for its own unit
+// coverage). These tests prove RecipeChatScreen is actually WIRED to it,
+// with its object (content + recipe) payload — a passing hook unit test
+// alone doesn't prove that
+// (docs/solutions/conventions/pure-utils-extraction-tests-dont-prove-wiring-2026-07-14.md).
+describe("RecipeChatScreen — pending assistant bubble (stream-end bridge)", () => {
+  const seedUserMessage: ChatMessage = {
+    id: 1,
+    conversationId: 1,
+    role: "user",
+    content: "Give me a pasta recipe",
+    metadata: null,
+    createdAt: new Date().toISOString(),
+  };
+
+  beforeEach(() => {
+    mockRouteParams.value = { conversationId: 1 };
+    mockChatMessagesData.value = [seedUserMessage];
+  });
+
+  it("shows the streamed reply as a pending bubble once streaming ends, then clears it once the real message is fetched", () => {
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+
+    mockSendMessageState.value = {
+      streamingContent: "Here's a pasta recipe for you.",
+      streamingRecipe: null,
+      isStreaming: true,
+      streamError: false,
+      requestError: null,
+    };
+    rerender(<RecipeChatScreen />);
+
+    // Stream ends — useSendMessage clears streamingContent/streamingRecipe
+    // in the same render as isStreaming flipping false.
+    mockSendMessageState.value = {
+      streamingContent: "",
+      streamingRecipe: null,
+      isStreaming: false,
+      streamError: false,
+      requestError: null,
+    };
+    rerender(<RecipeChatScreen />);
+    expect(screen.getByText("Here's a pasta recipe for you.")).toBeDefined();
+
+    // The real assistant message lands in the next fetch — bubble clears.
+    mockChatMessagesData.value = [
+      seedUserMessage,
+      {
+        id: 2,
+        conversationId: 1,
+        role: "assistant",
+        content: "Here's a pasta recipe for you.",
+        metadata: null,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    rerender(<RecipeChatScreen />);
+    // Same reasoning as ChatScreen's equivalent test: the persisted message
+    // shares the streamed text, so a still-present bubble would duplicate it.
+    expect(screen.getAllByText("Here's a pasta recipe for you.")).toHaveLength(
+      1,
+    );
+  });
+
+  it("never shows a pending bubble when the stream ends in error", () => {
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+
+    mockSendMessageState.value = {
+      streamingContent: "partial recipe text",
+      streamingRecipe: null,
+      isStreaming: true,
+      streamError: false,
+      requestError: null,
+    };
+    rerender(<RecipeChatScreen />);
+
+    mockSendMessageState.value = {
+      streamingContent: "",
+      streamingRecipe: null,
+      isStreaming: false,
+      streamError: true,
+      requestError: null,
+    };
+    rerender(<RecipeChatScreen />);
+
+    expect(screen.queryByText("partial recipe text")).toBeNull();
+    // Same L16 copy fix as ChatScreen's toast (P2-2026-09-23): no partial
+    // content is ever shown here, so the inline error bubble must not imply
+    // otherwise.
+    expect(
+      screen.getByText("Response interrupted. Try sending again."),
+    ).toBeDefined();
+    expect(screen.queryByText(/may be incomplete/i)).toBeNull();
   });
 });

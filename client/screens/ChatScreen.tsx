@@ -39,6 +39,7 @@ import {
   useSendMessage,
   useCreateConversation,
 } from "@/hooks/useChat";
+import { usePendingAssistantBridge } from "@/hooks/usePendingAssistantBridge";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import {
   Spacing,
@@ -297,56 +298,27 @@ export default function ChatScreen() {
   const hasAcknowledgedRef = useRef(false);
 
   const [inputText, setInputText] = useState("");
-  const [pendingAssistantContent, setPendingAssistantContent] = useState<
-    string | null
-  >(null);
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
-  const prevStreamingRef = useRef(false);
-  const lastStreamingContentRef = useRef("");
-  const pendingBaselineAssistantCountRef = useRef(0);
   const shownStreamErrorRef = useRef(false);
   const shownRequestErrorRef = useRef(false);
 
-  useEffect(() => {
-    if (isStreaming && streamingContent) {
-      lastStreamingContentRef.current = streamingContent;
-    }
-    if (prevStreamingRef.current && !isStreaming) {
-      AccessibilityInfo.announceForAccessibility("Coach response received");
-      // Bridge the stream-end → message-refetch gap, but only for responses
-      // that will actually persist. On stream/request error the server keeps
-      // no message, so a pending bubble would never clear.
-      if (lastStreamingContentRef.current && !streamError && !requestError) {
-        pendingBaselineAssistantCountRef.current = (messages || []).filter(
-          (m) => m.role === "assistant",
-        ).length;
-        setPendingAssistantContent(lastStreamingContentRef.current);
-      }
-      lastStreamingContentRef.current = "";
-    }
-    prevStreamingRef.current = isStreaming;
-  }, [isStreaming, streamingContent, streamError, requestError, messages]);
-
-  useEffect(() => {
-    if (!pendingAssistantContent) return;
-    // Clear once a new assistant message has been persisted (count grew past
-    // the pre-completion baseline). Count, not content equality — a safety
-    // override or server-side trim can make the persisted text diverge from
-    // the streamed text, which would otherwise strand the bubble forever.
-    const assistantCount = (messages || []).filter(
+  const pendingAssistantContent = usePendingAssistantBridge<string>({
+    isStreaming,
+    streamingValue: streamingContent,
+    hasStreamingValue: !!streamingContent,
+    hasError: !!streamError || !!requestError,
+    assistantMessageCount: (messages || []).filter(
       (m) => m.role === "assistant",
-    ).length;
-    if (assistantCount > pendingBaselineAssistantCountRef.current) {
-      setPendingAssistantContent(null);
-    }
-  }, [messages, pendingAssistantContent]);
+    ).length,
+    announce: { message: "Coach response received", always: true },
+  });
 
   useEffect(() => {
     if (streamError && !shownStreamErrorRef.current) {
       shownStreamErrorRef.current = true;
       haptics.notification(Haptics.NotificationFeedbackType.Error);
-      toast.error("Response was interrupted. Partial response may be visible.");
+      toast.error("Response interrupted. Try sending again.");
     }
     if (!streamError) {
       shownStreamErrorRef.current = false;

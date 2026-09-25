@@ -1,6 +1,6 @@
 ---
 title: "ChatScreen and RecipeChatScreen duplicate the stream-end → message-refetch bridge verbatim — extract a hook and fix two inaccurate messages"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-25

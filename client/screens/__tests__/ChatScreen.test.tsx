@@ -14,6 +14,10 @@ const {
   mockCanGoBack,
   mockRouteParams,
   mockUseChatMessages,
+  mockSendMessageState,
+  mockToastError,
+  mockToastSuccess,
+  mockToastInfo,
 } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
   mockPopTo: vi.fn(),
@@ -34,6 +38,19 @@ const {
       | undefined,
   },
   mockUseChatMessages: vi.fn(),
+  // A mutable ref so tests can simulate useSendMessage's streaming/error
+  // state changing across a rerender (e.g. a stream starting then ending).
+  mockSendMessageState: {
+    value: {
+      streamingContent: "",
+      isStreaming: false,
+      streamError: null as boolean | null,
+      requestError: null as string | null,
+    },
+  },
+  mockToastError: vi.fn(),
+  mockToastSuccess: vi.fn(),
+  mockToastInfo: vi.fn(),
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -51,10 +68,7 @@ vi.mock("@/hooks/useChat", () => ({
     mockUseChatMessages(conversationId),
   useSendMessage: () => ({
     sendMessage: mockSendMessage,
-    streamingContent: "",
-    isStreaming: false,
-    streamError: null,
-    requestError: null,
+    ...mockSendMessageState.value,
   }),
   useCreateConversation: () => ({ mutateAsync: mockCreateMutateAsync }),
 }));
@@ -64,7 +78,11 @@ vi.mock("@/hooks/useAcknowledgeReminders", () => ({
 }));
 
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => ({
+    success: mockToastSuccess,
+    error: mockToastError,
+    info: mockToastInfo,
+  }),
 }));
 
 beforeEach(() => {
@@ -73,6 +91,12 @@ beforeEach(() => {
   mockSendMessage.mockResolvedValue(undefined);
   mockAcknowledge.mockResolvedValue(undefined);
   mockUseChatMessages.mockReturnValue({ data: [], isLoading: false });
+  mockSendMessageState.value = {
+    streamingContent: "",
+    isStreaming: false,
+    streamError: null,
+    requestError: null,
+  };
 });
 
 describe("ChatScreen — reminder acknowledgment", () => {
@@ -184,6 +208,124 @@ describe("ChatScreen — missing conversationId (create flow)", () => {
     await waitFor(() => expect(mockCreateMutateAsync).toHaveBeenCalled());
     await waitFor(() =>
       expect(mockSendMessage).toHaveBeenCalledWith("Hello", undefined, 99),
+    );
+  });
+});
+
+// P2-2026-09-23: the stream-end → message-refetch "pending assistant bubble"
+// bridge was extracted into usePendingAssistantBridge (see
+// usePendingAssistantBridge.test.ts for its own unit coverage). These tests
+// prove ChatScreen is actually WIRED to it — a passing hook unit test alone
+// doesn't prove that (docs/solutions/conventions/pure-utils-extraction-tests-dont-prove-wiring-2026-07-14.md).
+describe("ChatScreen — pending assistant bubble (stream-end bridge)", () => {
+  const seedUserMessage = {
+    id: 1,
+    role: "user" as const,
+    content: "What should I eat today?",
+    createdAt: new Date().toISOString(),
+  };
+
+  beforeEach(() => {
+    // A non-empty conversation, so the screen renders the message FlatList
+    // (where the pending bubble lives) instead of the empty-state prompts —
+    // isolates the bridge behavior from that unrelated branch.
+    mockUseChatMessages.mockReturnValue({
+      data: [seedUserMessage],
+      isLoading: false,
+    });
+  });
+
+  it("shows the streamed reply as a pending bubble once streaming ends, then clears it once the real message is fetched", () => {
+    const { rerender } = renderComponent(<ChatScreen />);
+
+    mockSendMessageState.value = {
+      streamingContent: "Here's a healthy snack idea.",
+      isStreaming: true,
+      streamError: null,
+      requestError: null,
+    };
+    // While actively streaming the content renders via the live streaming
+    // footer, not the pending bubble under test here — assert only on what
+    // happens once streaming ends.
+    rerender(<ChatScreen />);
+
+    // Stream ends — useSendMessage clears streamingContent in the same
+    // render as isStreaming flipping false (see useChat.ts's `finally`).
+    mockSendMessageState.value = {
+      streamingContent: "",
+      isStreaming: false,
+      streamError: null,
+      requestError: null,
+    };
+    rerender(<ChatScreen />);
+    expect(screen.getByText("Here's a healthy snack idea.")).toBeDefined();
+
+    // The real assistant message lands in the next fetch — bubble clears.
+    mockUseChatMessages.mockReturnValue({
+      data: [
+        seedUserMessage,
+        {
+          id: 2,
+          role: "assistant",
+          content: "Here's a healthy snack idea.",
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      isLoading: false,
+    });
+    rerender(<ChatScreen />);
+    // The persisted message has the same text as what was streamed, so a
+    // still-present pending bubble would render it TWICE — assert exactly
+    // one instance to prove the bubble actually cleared rather than merely
+    // coexisting with the real message.
+    expect(screen.getAllByText("Here's a healthy snack idea.")).toHaveLength(1);
+  });
+
+  it("never shows a pending bubble when the stream ends in error", () => {
+    const { rerender } = renderComponent(<ChatScreen />);
+
+    mockSendMessageState.value = {
+      streamingContent: "partial reply",
+      isStreaming: true,
+      streamError: null,
+      requestError: null,
+    };
+    rerender(<ChatScreen />);
+
+    mockSendMessageState.value = {
+      streamingContent: "",
+      isStreaming: false,
+      streamError: true,
+      requestError: null,
+    };
+    rerender(<ChatScreen />);
+
+    expect(screen.queryByText("partial reply")).toBeNull();
+  });
+});
+
+// P2-2026-09-23 (L16): the toast used to claim a partial response "may be
+// visible" even though useChat.ts always discards the streamed content on
+// error — this fails on main's old copy and passes once it's corrected to
+// match actual behavior (matches the Coach's #1068 copy in
+// CoachOverlayContent.tsx).
+describe("ChatScreen — stream-interrupted toast copy", () => {
+  it("tells the user the reply was interrupted, not that a partial reply may be visible", () => {
+    const { rerender } = renderComponent(<ChatScreen />);
+
+    mockSendMessageState.value = {
+      streamingContent: "",
+      isStreaming: false,
+      streamError: true,
+      requestError: null,
+    };
+    rerender(<ChatScreen />);
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Response interrupted. Try sending again.",
+    );
+    expect(mockToastError).not.toHaveBeenCalledWith(
+      expect.stringContaining("Partial response may be visible"),
     );
   });
 });

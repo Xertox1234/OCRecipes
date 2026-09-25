@@ -39,6 +39,7 @@ import {
   useSaveRecipeFromChat,
   type StreamingRecipe,
 } from "@/hooks/useChat";
+import { usePendingAssistantBridge } from "@/hooks/usePendingAssistantBridge";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { RecipeCard } from "@/components/recipe-chat/RecipeCard";
 import { generateRemixChips, type RemixChip } from "@/lib/remix-chips";
@@ -164,10 +165,6 @@ export default function RecipeChatScreen() {
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(
     null,
   );
-  const [pendingAssistantMessage, setPendingAssistantMessage] = useState<{
-    content: string;
-    recipe: StreamingRecipe | null;
-  } | null>(null);
 
   const createConversation = useCreateConversation();
 
@@ -217,11 +214,35 @@ export default function RecipeChatScreen() {
   } = useSendMessage(conversationId);
   const saveRecipeMutation = useSaveRecipeFromChat();
   const savedMessageIdsRef = useRef(new Set<number>());
-  const wasStreamingRef = useRef(false);
-  const lastStreamingContentRef = useRef("");
-  const lastStreamingRecipeRef = useRef<StreamingRecipe | null>(null);
-  const pendingBaselineAssistantCountRef = useRef(0);
   const [, forceRender] = useState(0);
+
+  const assistantMessageCount = messages.filter(
+    (m) => m.role === "assistant",
+  ).length;
+  // Stripped once and reused for both the pending-bubble snapshot below and
+  // the live streaming footer's display content further down.
+  const strippedStreamingContent = useMemo(
+    () => stripStreamingRecipeJson(streamingContent),
+    [streamingContent],
+  );
+  // Memoized so the bridge's effect deps stay stable across unrelated
+  // re-renders (e.g. typing in the input) instead of a fresh object every
+  // render — see docs/solutions/conventions/per-render-object-into-effect-deps-dry-trap-2026-07-17.md.
+  const pendingStreamingValue = useMemo(
+    () => ({ content: strippedStreamingContent, recipe: streamingRecipe }),
+    [strippedStreamingContent, streamingRecipe],
+  );
+  const pendingAssistantMessage = usePendingAssistantBridge<{
+    content: string;
+    recipe: StreamingRecipe | null;
+  }>({
+    isStreaming,
+    streamingValue: pendingStreamingValue,
+    hasStreamingValue: !!streamingContent || !!streamingRecipe,
+    hasError: !!streamError || !!requestError,
+    assistantMessageCount,
+    announce: { message: "Recipe response received", always: false },
+  });
 
   // Clear optimistic user message once streaming completes
   useEffect(() => {
@@ -241,55 +262,10 @@ export default function RecipeChatScreen() {
 
   useEffect(() => {
     if (!isStreaming) return;
-    if (streamingContent) {
-      lastStreamingContentRef.current =
-        stripStreamingRecipeJson(streamingContent);
-    }
-    if (streamingRecipe) {
-      lastStreamingRecipeRef.current = streamingRecipe;
-    }
-  }, [isStreaming, streamingContent, streamingRecipe]);
-
-  useEffect(() => {
-    if (!isStreaming) return;
     requestAnimationFrame(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     });
   }, [isStreaming]);
-
-  useEffect(() => {
-    if (wasStreamingRef.current && !isStreaming) {
-      const content = lastStreamingContentRef.current;
-      const recipe = lastStreamingRecipeRef.current;
-      // Bridge the stream-end → message-refetch gap, but only for responses
-      // that will actually persist. On stream/request error the server keeps
-      // no message, so a pending bubble would never clear.
-      if ((content || recipe) && !streamError && !requestError) {
-        pendingBaselineAssistantCountRef.current = messages.filter(
-          (m) => m.role === "assistant",
-        ).length;
-        setPendingAssistantMessage({ content, recipe });
-        AccessibilityInfo.announceForAccessibility("Recipe response received");
-      }
-      lastStreamingContentRef.current = "";
-      lastStreamingRecipeRef.current = null;
-    }
-    wasStreamingRef.current = isStreaming;
-  }, [isStreaming, streamError, requestError, messages]);
-
-  useEffect(() => {
-    if (!pendingAssistantMessage) return;
-    // Clear once a new assistant message has been persisted (count grew past
-    // the pre-completion baseline). Count, not content/title equality — a
-    // server-side trim or JSON-fence strip can make the persisted recipe
-    // message diverge, which would otherwise strand the bubble forever.
-    const assistantCount = messages.filter(
-      (m) => m.role === "assistant",
-    ).length;
-    if (assistantCount > pendingBaselineAssistantCountRef.current) {
-      setPendingAssistantMessage(null);
-    }
-  }, [messages, pendingAssistantMessage]);
 
   const handleSaveRecipe = useCallback(
     async (messageId: number) => {
@@ -361,11 +337,6 @@ export default function RecipeChatScreen() {
     [handleSend],
   );
 
-  const streamingDisplayContent = useMemo(
-    () => stripStreamingRecipeJson(streamingContent),
-    [streamingContent],
-  );
-
   // Build display messages from fetched messages + low-frequency optimistic/error state.
   // Streaming assistant content renders in ListFooterComponent so token updates
   // do not invalidate visible FlatList rows.
@@ -415,13 +386,17 @@ export default function RecipeChatScreen() {
       });
     }
 
-    // Show dropped-connection error as an inline bubble
+    // Show dropped-connection error as an inline bubble. No partial content
+    // is ever shown here — the pending-assistant bridge above deliberately
+    // skips creating a bubble on `streamError` (see
+    // usePendingAssistantBridge's `hasError` gate), so this static copy must
+    // not claim otherwise (same fix as ChatScreen's toast, P2-2026-09-23).
     if (streamError) {
       msgs.push({
         id: -4,
         conversationId: conversationId ?? 0,
         role: "assistant",
-        content: "Connection dropped. Your response may be incomplete.",
+        content: "Response interrupted. Try sending again.",
         metadata: { isError: true },
         createdAt: new Date().toISOString(),
       });
@@ -515,7 +490,7 @@ export default function RecipeChatScreen() {
 
   const streamingFooter = isStreaming ? (
     <RecipeStreamingFooter
-      content={streamingDisplayContent}
+      content={strippedStreamingContent}
       recipe={streamingRecipe}
     />
   ) : null;

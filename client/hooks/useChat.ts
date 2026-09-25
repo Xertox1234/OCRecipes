@@ -343,9 +343,12 @@ export function useSendMessage(conversationId: number | null) {
         // requestError is intentionally NOT cleared here: clearing in the same
         // synchronous finally frame as setRequestError(errorMsg) batches to null
         // before the component re-renders (React 19 automatic batching). It is
-        // cleared at the start of the next sendMessage call. RecipeChatScreen is
-        // a fullScreenModal that unmounts on dismiss, so stale requestError state
-        // across navigation isn't a concern.
+        // cleared at the start of the next sendMessage call instead — that
+        // holds for every consumer of this hook regardless of screen
+        // lifetime: ChatScreen is a persistent tab screen that never unmounts
+        // between sends, and RecipeChatScreen is a fullScreenModal that
+        // unmounts on dismiss, but neither relies on unmount to clear stale
+        // requestError state.
       }
     },
     [conversationId, queryClient],
