@@ -396,7 +396,8 @@ describe("useQuickLogSession", () => {
   });
 
   it("partial failure: removes successfully logged items so retry is idempotent", async () => {
-    const { wrapper } = createQueryWrapper();
+    const { wrapper, queryClient } = createQueryWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     // Parse returns 2 items: eggs (index 0) and coffee (index 1)
     mockApiRequest
@@ -451,6 +452,13 @@ describe("useQuickLogSession", () => {
     expect(result.current.submitError).toBe(
       "Some items failed to log. Please try again.",
     );
+    // P1-2026-09-23 (code-reviewer finding): the partial-success onError
+    // branch invalidates daily-budget too — real server writes happened for
+    // the item(s) that DID persist (eggs), so Home's calorie header is stale
+    // otherwise, same as the full-success path.
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/daily-budget"],
+    });
   });
 
   it("total failure: preserves all parsedItems and shows generic error message", async () => {
