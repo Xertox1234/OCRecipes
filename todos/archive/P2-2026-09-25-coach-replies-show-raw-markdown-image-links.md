@@ -1,6 +1,6 @@
 ---
 title: "Coach Pro replies show raw markdown image links — MarkdownText renders no images or links"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-25
 updated: 2026-09-25
@@ -23,11 +23,11 @@ Medium: every Coach Pro answer that cites a recipe looks broken to the user. The
 
 ## Acceptance Criteria
 
-- [ ] A Coach Pro reply that references recipes never shows raw `![…](…)` or `[…](…)` syntax in the bubble
+- [x] A Coach Pro reply that references recipes never shows raw `![…](…)` or `[…](…)` syntax in the bubble
 - [x] Decision recorded (user, 2026-09-25): **both.** The prompt steers recipes to `recipe_card` blocks, and `MarkdownText` strips any leftover syntax as a safety net. No inline images.
-- [ ] Prompt: the Coach Pro prompt tells the model to present recipes as `recipe_card` blocks and never as markdown images or links. The wording goes through the `prompt-engineer` agent.
-- [ ] Client: `MarkdownText` drops an image `![alt](url)` entirely (the line disappears if nothing else is on it) and renders a link `[text](url)` as its plain `text`. It is not tappable, and no URL is shown.
-- [ ] Test: a `MarkdownText` case with an image line and a link, asserting no raw `![`, `](` or URL text is rendered and the link text survives
+- [x] Prompt: the Coach Pro prompt tells the model to present recipes as `recipe_card` blocks and never as markdown images or links. The wording goes through the `prompt-engineer` agent.
+- [x] Client: `MarkdownText` drops an image `![alt](url)` entirely (the line disappears if nothing else is on it) and renders a link `[text](url)` as its plain `text`. It is not tappable, and no URL is shown.
+- [x] Test: a `MarkdownText` case with an image line and a link, asserting no raw `![`, `](` or URL text is rendered and the link text survives
 
 ## Implementation Notes
 
@@ -40,3 +40,5 @@ Medium: every Coach Pro answer that cites a recipe looks broken to the user. The
 ### 2026-09-25
 
 - **Product decision (user):** both. The prompt steers recipes to `recipe_card` blocks, and the client quietly strips any leftover image/link syntax (image line removed, link shown as its plain text). No inline images, so no host allowlist or size-limit work. Gate removed; ready for `/todo`.
+
+- **Implemented:** `server/services/nutrition-coach.ts`'s universal persona block (both tiers) now tells the model to never write markdown images or links; `server/services/coach-blocks.ts`'s `BLOCKS_SYSTEM_PROMPT` now tells the model to present recipes as `recipe_card` blocks (image URL goes in the card's `imageUrl` field) instead of a markdown image/link — wording drafted by the `prompt-engineer` agent. `client/components/markdown-text-utils.ts`'s `parseInline` now renders `[text](url)` as plain `text`; `client/components/MarkdownText.tsx` drops a standalone `![alt](url)` line entirely, including when the line is a bullet/numbered list item whose only content was the image (a stray `-`/`1.` marker bug found independently by all three review passes and fixed). Reviewed by `code-reviewer`, `ai-reviewer`, and `mobile-reviewer` — no CRITICAL findings; one WARNING (the stray-marker bug) fixed on the branch, two narrow SUGGESTIONs (nested-bracket markdown syntax not stripped; theoretical quadratic regex cost on unterminated input, not reachable given the 1500-token response cap) left as-is per reviewer judgment that they are non-live/out of scope.
