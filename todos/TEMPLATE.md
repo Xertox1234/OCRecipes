@@ -45,10 +45,11 @@ Technical details, approach suggestions, or constraints to consider.
 
 ## Scope Contract
 
-<!-- Optional but recommended. A stated contract is a HARD boundary: the executor must
-     stay inside it, and reviewers treat violations as CRITICAL (blocking) findings —
-     see docs/AI_WORKFLOW.md → Tier handling. Delete this section only if scope is
-     genuinely open-ended. -->
+<!-- Optional but recommended. The executor stays inside the stated contract. A file
+     outside it is a CRITICAL (blocking) finding unless an acceptance criterion genuinely
+     needs it AND it is disclosed under an "Out of contract" heading in the PR body with
+     that reason — see docs/AI_WORKFLOW.md → Tier handling. Delete this section only if
+     scope is genuinely open-ended. -->
 
 - **Mechanisms to use:** <e.g. "the standard `blocked_until` frontmatter gate — nothing new">
 - **Files in scope:** <exact paths or narrow globs>

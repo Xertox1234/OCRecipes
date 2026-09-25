@@ -113,8 +113,8 @@ Source: the orchestrator's run record for that session and the five executor rep
 
 ## Dependencies
 
-- Related: `todos/P2-2026-09-20-todo-executor-commits-after-review-so-no-pr-is-stamp-clean-at-head.md`
-  (another executor-behaviour defect; currently stuck at `in-progress`).
+- Related: `todos/archive/P2-2026-09-20-todo-executor-commits-after-review-so-no-pr-is-stamp-clean-at-head.md`
+  (another executor-behaviour defect; resolved and archived by #1061).
 
 ## Risks
 
@@ -227,3 +227,7 @@ files` value (a `docs/solutions` path and `none` already existed), and synced th
     `Agent()` dispatch to pass `run_in_background: false` per the 2026-09-24 stall-prevention
     decision. Not re-litigated here since that decision predates and is outside this run's four
     acceptance criteria; flagged for whoever next touches those steps.
+
+### 2026-09-25 (review repair)
+
+- The executor's deferred warnings are fixed on this branch: `todos/TEMPLATE.md`'s Scope Contract comment no longer calls every out-of-contract file CRITICAL (it now states the "needed for an AC and disclosed" exception, matching the other three places); `todo-executor.md` Step 5b says what to do when the `Agent` tool has no `run_in_background` parameter (dispatches run in the background, so wait for each completion notification — what every executor in the 2026-09-25 sweep actually did); and the Dependencies note now points at the archived, resolved stamp-drift todo.
