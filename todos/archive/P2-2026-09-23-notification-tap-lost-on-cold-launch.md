@@ -1,6 +1,6 @@
 ---
 title: "Coach reminder notification taps are lost on cold launch and before the navigator is ready — route them through linking"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23
@@ -26,11 +26,11 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 ## Acceptance Criteria
 
-- [ ] A cold-launch tap on a reminder opens the NotebookEntry (after login, if logged out)
-- [ ] A warm tap before the navigator is ready is not dropped
-- [ ] Reminder payloads carry a URL (existing scheduled reminders with only `entryId` still work, or are migrated)
-- [ ] Tests for getInitialURL/subscribe handling
-- [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
+- [x] A cold-launch tap on a reminder opens the NotebookEntry (after login, if logged out)
+- [x] A warm tap before the navigator is ready is not dropped
+- [x] Reminder payloads carry a URL (existing scheduled reminders with only `entryId` still work, or are migrated)
+- [x] Tests for getInitialURL/subscribe handling
+- [x] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes
 
@@ -59,3 +59,31 @@ Follow the React Navigation 7 docs example exactly. Verify on a simulator with a
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (M26).
+
+### 2026-09-25
+
+- Implemented. `client/navigation/linking.ts` gained `getInitialURL`/`subscribe`
+  per the React Navigation 7 + expo-notifications integration pattern, with a
+  fallback from a legacy `data.entryId`-only payload to a full-prefix URL.
+- **Deviation from Implementation Notes** ("follow the docs example exactly"):
+  source-reading the installed `@react-navigation/native`/`@react-navigation/core`
+  packages showed the vanilla `getInitialURL`/`subscribe` example alone does not
+  satisfy AC2 ("a warm tap before the navigator is ready is not dropped") — React
+  Navigation's own `dispatch`/`resetRoot` silently no-op (no retry) when no
+  navigator has registered a focus listener yet, which is exactly the boot-time
+  window before `AuthContext`'s first `checkAuth()` resolves. Added a small
+  pending-URL hold in `linking.ts`, flushed via `NavigationContainer`'s existing
+  `onReady` prop (wired in `App.tsx`) — no new library or architectural layer.
+  Both review agents (code-reviewer, mobile-reviewer) independently re-verified
+  this against the installed source and ruled it in-scope.
+- Tests assert URL forwarding into React Navigation's own listener; they cannot
+  observe React Navigation's own replay behavior
+  (`UNSTABLE_routeNamesChangeBehavior="lastUnhandled"`), which was verified by
+  reading the installed source instead. The "verify on a simulator" step in
+  Implementation Notes was not run.
+- Review: code-reviewer WARNING (comment wording implied the entryId fallback
+  was a time-bounded migration bridge; in fact `server/services/
+notification-scheduler.ts`'s server-push path — out of this todo's scope —
+  sends entryId-only payloads indefinitely) — fixed inline (reworded comments).
+  Filed `todos/P3-2026-09-25-notification-scheduler-missing-deep-link-url.md`
+  for the actual server-side fix. mobile-reviewer: no findings.
