@@ -1,6 +1,6 @@
 ---
 title: "Explore why todo-executors diverge on the same situation (.env, scope growth, filing, review-stamp handling)"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-24
 updated: 2026-09-25
