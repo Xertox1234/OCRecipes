@@ -4,8 +4,9 @@
  * Hermes (the app's JS engine) has no global `crypto`, so a bare
  * `crypto.randomUUID()` throws `ReferenceError: Property 'crypto' doesn't exist`
  * on device. Vitest runs in Node, where it exists, so such a call passes every
- * test and fails only in the app. That broke every coach stream and every
- * offline-queue enqueue from 2026-05-04 until this helper replaced both calls.
+ * test and fails only in the app. It broke every coach stream from 2026-05-04
+ * (useCoachStream) and every offline-queue enqueue from 2026-06-12 (when
+ * offline-queue.ts was added) until this helper replaced both calls.
  *
  * Uses `crypto.getRandomValues` when a runtime provides it, otherwise
  * `Math.random`. That is fine for what the app needs: idempotency and dedupe

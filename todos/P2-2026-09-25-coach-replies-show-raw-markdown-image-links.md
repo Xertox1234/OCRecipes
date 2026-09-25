@@ -7,6 +7,8 @@ updated: 2026-09-25
 assignee:
 labels: [deferred, ai-prompting, react-native]
 github_issue:
+human_led: true
+blocked_reason: "Needs a product decision first: steer the model to recipe_card blocks via the prompt, strip or render image/link syntax in MarkdownText, or both."
 ---
 
 # Coach Pro replies show raw markdown image links — MarkdownText renders no images or links

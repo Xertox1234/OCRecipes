@@ -96,9 +96,9 @@ module.exports = defineConfig([
   {
     // Hermes (the app's JS engine) has no global `crypto`. A bare
     // `crypto.randomUUID()` in client code passes every Vitest test (Node has
-    // it) and throws on device: it broke every coach stream and offline-queue
-    // enqueue from 2026-05-04 until 2026-09-25. Tests are excluded because they
-    // stub the global on purpose to model Hermes.
+    // it) and throws on device: it broke every coach stream from 2026-05-04 and
+    // every offline-queue enqueue from 2026-06-12, until 2026-09-25. Tests are
+    // excluded because they stub the global on purpose to model Hermes.
     files: ["client/**/*.{ts,tsx}"],
     ignores: ["**/__tests__/**", "**/*.test.{ts,tsx}"],
     rules: {
