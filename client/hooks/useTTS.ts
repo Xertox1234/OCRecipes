@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import * as Speech from "expo-speech";
 
 import { useToast } from "@/context/ToastContext";
+import { IMAGE_REGEX } from "@/components/markdown-text-utils";
 
 /**
  * Split text into sentences on `.`, `!`, `?` followed by whitespace or end-of-string.
@@ -20,6 +21,8 @@ export function splitSentences(text: string): string[] {
  */
 function stripMarkdown(text: string): string {
   return text
+    .replace(IMAGE_REGEX, "") // images first, or the link rule reads "!alt"
+    .replace(/ {2,}/g, " ")
     .replace(/#{1,6}\s*/g, "") // headings
     .replace(/\*\*(.+?)\*\*/g, "$1") // bold
     .replace(/\*(.+?)\*/g, "$1") // italic

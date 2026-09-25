@@ -90,6 +90,22 @@ describe("useTTS", () => {
     expect(result.current.speakingMessageId).toBe(1);
   });
 
+  it('drops a markdown image instead of reading its alt text as "!alt"', () => {
+    const { result } = renderHook(() => useTTS());
+
+    act(() => {
+      result.current.speak(
+        1,
+        "Try this ![bowl](https://x.test/b.jpg) from [Bon Appetit](https://ba.test/r).",
+      );
+    });
+
+    expect(mockSpeak).toHaveBeenCalledWith(
+      "Try this from Bon Appetit.",
+      expect.objectContaining({ language: "en-US" }),
+    );
+  });
+
   it("strips markdown before speaking", () => {
     const { result } = renderHook(() => useTTS());
 

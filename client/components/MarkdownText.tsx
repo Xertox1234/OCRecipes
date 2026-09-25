@@ -12,6 +12,7 @@ import {
   BULLET_REGEX,
   NUMBERED_REGEX,
   type InlineSegment,
+  stripImageLines,
 } from "@/components/markdown-text-utils";
 
 interface MarkdownTextProps {
@@ -48,13 +49,18 @@ function InlineText({
 /**
  * Lightweight markdown renderer for chat messages.
  * Supports: **bold**, *italic*, bullet lists (- / *), numbered lists (1.), line breaks.
+ * Images (`![alt](url)`) are dropped entirely — a line containing only an
+ * image disappears. Links (`[text](url)`) render as plain, non-tappable
+ * `text` with the URL omitted.
  *
  * Known limitations:
  * - Nested bold+italic (***text***) is not supported
  * - `* text` (asterisk + space) is treated as a bullet, not emphasis
  */
 export function MarkdownText({ children, style }: MarkdownTextProps) {
-  const lines = children.split("\n");
+  // Images stripped, image-only lines/list items dropped — shared with
+  // spokenMarkdown so the screen and the spoken label agree.
+  const lines = stripImageLines(children);
   const elements: React.ReactNode[] = [];
   let i = 0;
 
