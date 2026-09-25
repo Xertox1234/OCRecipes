@@ -1,6 +1,6 @@
 ---
 title: "Explore why todo-executors diverge on the same situation (.env, scope growth, filing, review-stamp handling)"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-24
 updated: 2026-09-25
@@ -57,7 +57,7 @@ Source: the orchestrator's run record for that session and the five executor rep
 
 - [x] For each divergence above, the behaviour the user wants is decided (user, 2026-09-25 — see
       Updates). What remains is applying those decisions to the instructions:
-- [ ] **Scope (2): grow only when needed.** Every place that states the "out-of-contract =
+- [x] **Scope (2): grow only when needed.** Every place that states the "out-of-contract =
       CRITICAL" rule stops treating every out-of-contract file as CRITICAL: `todo-executor.md`
       Step 4 item 6 and the Step 6 item-3 reviewer-prompt append, the rule's source
       `docs/AI_WORKFLOW.md` → Tier handling ("Scope-contract violation = CRITICAL"), and the
@@ -68,25 +68,25 @@ Source: the orchestrator's run record for that session and the five executor rep
       without it, and must list each such file under an "Out of contract" heading in the PR body
       with a one-line reason. An undisclosed out-of-contract file, or one not needed for an
       acceptance criterion, stays CRITICAL.
-- [ ] **Follow-ups (3): report only.** Executors never create a todo file, for any finding (not
+- [x] **Follow-ups (3): report only.** Executors never create a todo file, for any finding (not
       just review WARNINGs). Every side problem goes into the Step 11 report under
       `DEFERRED_WARNINGS`; the user decides what becomes a todo. Say so once, where filing is
       discussed (Step 7), without restating it elsewhere.
 - [x] **Review stamp (4a): accept `advisory`.** Done in #1061 (`e48b9147`): the Step 10 7c
       check accepts `clean` OR `advisory` with zero unresolved, prints `"<verdict> <agent_type>"`,
       and `REVIEW_STAMP:` gained an `advisory at <sha>` form. Do not redo this.
-- [ ] **Review stamp (4b): report `advisory` honestly.** What #1061 left: say in Step 10 7c (once)
+- [x] **Review stamp (4b): report `advisory` honestly.** What #1061 left: say in Step 10 7c (once)
       that `REVIEW_STAMP:` copies the verdict word from the `MATCH` line and never reports an
       `advisory` record as `clean`, and that the advisory review's WARNING/SUGGESTION notes go into
       `DEFERRED_WARNINGS` (extend that field's description in the Step 11 template to cover them).
-- [ ] **Research (5): follow the rule.** The researcher is skipped only on the existing
+- [x] **Research (5): follow the rule.** The researcher is skipped only on the existing
       Short-circuit gate or Lightweight path. Add one sentence saying no other skip (e.g. "small
       scope") is allowed, and that the skip reason is recorded in `SHORT_CIRCUIT`.
 - [x] A decision on `.env` for `Agent(isolation)` worktrees: provision it the way `post-checkout`
       does, forbid linking it and leave DB tests to CI, or something else — recorded where
       executors will read it.
 - [x] The #1039 leading-zero commit hash explained (how it was produced) or ruled harmless.
-- [ ] No `.claude/hooks/**` edit is needed for any item above; if one turns out to be, log it in
+- [x] No `.claude/hooks/**` edit is needed for any item above; if one turns out to be, log it in
       `docs/harness-residuals.md` per the harness freeze instead of editing the hook.
 
 ## Implementation Notes
@@ -113,8 +113,8 @@ Source: the orchestrator's run record for that session and the five executor rep
 
 ## Dependencies
 
-- Related: `todos/P2-2026-09-20-todo-executor-commits-after-review-so-no-pr-is-stamp-clean-at-head.md`
-  (another executor-behaviour defect; currently stuck at `in-progress`).
+- Related: `todos/archive/P2-2026-09-20-todo-executor-commits-after-review-so-no-pr-is-stamp-clean-at-head.md`
+  (another executor-behaviour defect; resolved and archived by #1061).
 
 ## Risks
 
@@ -184,3 +184,51 @@ Source: the orchestrator's run record for that session and the five executor rep
   `advisory` record and added the `advisory at <sha>` report form, so AC (4) is split: (4a) is
   done, and (4b) keeps only the "never report it as clean" sentence and the `DEFERRED_WARNINGS`
   wiring.
+
+### 2026-09-25 (implementation)
+
+- Applied the four remaining decisions as instruction edits. All are docs-only (`.claude/agents/`,
+  `docs/AI_WORKFLOW.md`, `.claude/skills/todo/SKILL.md`) — no `.claude/hooks/**` change was
+  needed for any of them.
+  - **Scope (2):** `todo-executor.md` Step 4 item 6 (and the new item-7 tracking clause), the
+    Step 6 item-3 reviewer-prompt append, `docs/AI_WORKFLOW.md` → Tier handling, and
+    `.claude/agents/code-reviewer.md`'s scope-contract checklist item all now carry the
+    disclosed-exception carve-out (needed for an AC + listed under a PR-body "Out of contract"
+    heading with a reason that holds up). Added the "Out of contract" section to Step 10's PR
+    body template, since the rule has nowhere to land without it. Swept the repo for every other
+    "scope contract"/"out-of-contract" mention (`grep -rln` over `.claude/`, `docs/`, `todos/`) —
+    the only other hit that restates the rule's detail (not just the concept) is
+    `todos/TEMPLATE.md:48-51`'s comment ("a stated contract is a HARD boundary... reviewers treat
+    violations as CRITICAL"), which is left un-edited here (out of this todo's Scope Contract's
+    Files-in-scope list) and is now stale — it still states the old no-exception framing this diff
+    replaces everywhere else (review-caught; see `DEFERRED_WARNINGS` in the Step 11 report — not
+    filed as a todo, per decision (3) above). Everything else is either a solved todo/solution file
+    referencing the concept historically, or a per-todo Scope Contract section (not a rule
+    statement).
+  - **Follow-ups (3):** Step 7 now states once, up front, that the no-filing rule is global (any
+    side finding, not just review WARNINGs) and that it is intentionally not restated elsewhere.
+  - **Review stamp (4b):** Step 10 item c now says to copy the verdict word straight from `$MATCH`
+    into `REVIEW_STAMP:` and never round `advisory` up to `clean`, and that an advisory record's
+    WARNING/SUGGESTION notes go into `DEFERRED_WARNINGS`. Widened the Step 11 `DEFERRED_WARNINGS`
+    field description to name that source explicitly.
+  - **Research (5):** added one sentence after the researcher dispatch block stating the
+    Lightweight path and the Short-circuit gate are the _only_ two grounds to skip the researcher,
+    and that the skip reason (or "researcher dispatched") is recorded in `SHORT_CIRCUIT`. Extended
+    `SHORT_CIRCUIT`'s Step 11 field description with the new `lightweight — docs/config-only
+files` value (a `docs/solutions` path and `none` already existed), and synced the two SKILL.md
+    mentions of that field (Phase 4 recording + the Phase 5 "Short-circuited: SC" tally, which now
+    clarifies it counts only the verified-solution form, not a lightweight skip).
+  - This todo (`docs/`, `.claude/agents/`, `.claude/skills/` only, all `.md`) qualified for the
+    Lightweight path itself — the `todo-researcher` dispatch was skipped per that rule, consistent
+    with the AC (5) it implements.
+  - Left as a `DEFERRED_WARNING` rather than fixed here (out of this todo's Scope Contract): this
+    session's `Agent` tool schema has no `run_in_background` parameter
+    (`additionalProperties: false`), while `todo-executor.md` (Steps 3, 5b, 6, 10) instructs every
+    `Agent()` dispatch to pass `run_in_background: false` per the 2026-09-24 stall-prevention
+    decision. Not re-litigated here since that decision predates and is outside this run's four
+    acceptance criteria; flagged for whoever next touches those steps.
+
+### 2026-09-25 (review repair)
+
+- The executor's deferred warnings are fixed on this branch: `todos/TEMPLATE.md`'s Scope Contract comment no longer calls every out-of-contract file CRITICAL (it now states the "needed for an AC and disclosed" exception, matching the other three places); `todo-executor.md` Step 5b says what to do when the `Agent` tool has no `run_in_background` parameter (dispatches run in the background, so wait for each completion notification — what every executor in the 2026-09-25 sweep actually did); and the Dependencies note now points at the archived, resolved stamp-drift todo.
+- Independent review: `docs/AI_WORKFLOW.md` Review Policy still told reviewers to "file as a todo" for WARNING/SUGGESTION findings, contradicting ruling (3) for executors; both spots now say a `todo-executor` reports under `DEFERRED_WARNINGS` instead. Dropped the "stated once here" claim in Step 7 (the rule is also restated in its WARNING bullet and the round-2 cap). The PR body's "Out of contract" section now discloses `todos/TEMPLATE.md` with its AC-2 reason.

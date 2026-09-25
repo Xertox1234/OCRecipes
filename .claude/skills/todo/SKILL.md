@@ -354,7 +354,7 @@ Dispatched agents run in the **background**. Launching them does not block your 
 
 ### Recording results
 
-Each executor reports one of: `success`, `failed`, `blocked`, `skipped`. Every `skipped`/`blocked` report carries a `REASON_CODE` (enum in the executor's Step 11) — keep it verbatim; Phase 5 routes on it. Each successful executor additionally reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes (auto-merge enabled)` = guard OK, executor already armed `gh pr merge --auto` — nothing further needed; `yes (auto-merge enable FAILED ...)` = guard OK but the `gh pr merge --auto` call itself errored — needs manual merge or review; `held` = guard HOLD via the path or todo-frontmatter gate, with the guard's reason line in parentheses; `review-required` = medium/high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them. These accumulate in `/tmp/todo-scheduler-state.json`'s `results` array as they arrive, rather than per batch — Phase 5 reads that array rather than relying on memory of the whole run.
+Each executor reports one of: `success`, `failed`, `blocked`, `skipped`. Every `skipped`/`blocked` report carries a `REASON_CODE` (enum in the executor's Step 11) — keep it verbatim; Phase 5 routes on it. Each successful executor additionally reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes (auto-merge enabled)` = guard OK, executor already armed `gh pr merge --auto` — nothing further needed; `yes (auto-merge enable FAILED ...)` = guard OK but the `gh pr merge --auto` call itself errored — needs manual merge or review; `held` = guard HOLD via the path or todo-frontmatter gate, with the guard's reason line in parentheses; `review-required` = medium/high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped; `lightweight — docs/config-only files` if the Lightweight path skipped it instead; else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them. These accumulate in `/tmp/todo-scheduler-state.json`'s `results` array as they arrive, rather than per batch — Phase 5 reads that array rather than relying on memory of the whole run.
 
 ## Phase 5 — Session Summary
 
@@ -395,7 +395,7 @@ After the queue is fully drained (or after early termination):
    Failed:    F
    Remaining: X (todos still in backlog after this session)
    Patterns codified: P
-   Short-circuited: SC (todos that reused a verified solution and skipped research; list the docs/solutions paths)
+   Short-circuited: SC (todos that reused a verified solution and skipped research — only `SHORT_CIRCUIT` values that are a docs/solutions path; list those paths. A `lightweight — …` value skipped research for an unrelated reason — a docs/config-only diff, no verified solution involved — and does not count toward SC.)
    Advisor: G green, Y yellow, R red, S skipped (not available)
    Final test count: T (baseline was B)
    ```
