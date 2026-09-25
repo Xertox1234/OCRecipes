@@ -40,8 +40,12 @@ import { act, cleanup, screen, fireEvent } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import * as RN from "react-native";
 import { renderComponent } from "../../../../test/utils/render-component";
-import MealPlanHomeScreen from "../MealPlanHomeScreen";
+import MealPlanHomeScreen, {
+  MealSlotItem,
+  MealSlotSection,
+} from "../MealPlanHomeScreen";
 import { TIER_FEATURES } from "@shared/types/premium";
+import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 // Mocked below (vi.mock("@/hooks/useMealPlan", ...)) — imported by name so
 // the pull-to-refresh test can assert the screen calls it, not a re-derived
 // predicate.
@@ -61,6 +65,7 @@ const {
   hookCalls,
   mealPlanItemsData,
   refreshControlProps,
+  capturedPressables,
 } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
   capturedSheets: new Map<string, CapturedSheet>(),
@@ -85,6 +90,23 @@ const {
   refreshControlProps: {
     current: null as null | { onRefresh?: () => void | Promise<void> },
   },
+  // Every rendered Pressable's raw props, captured in render order — the only
+  // way to inspect `accessibilityActions`/`onAccessibilityAction` at all: the
+  // shared mock's hand-written Pressable doesn't destructure either prop, so
+  // `accessibilityActions` falls through `...rest` and is stringified to
+  // "[object Object]" on the DOM node, and `onAccessibilityAction` (matching
+  // React's `/^on[A-Z]/` DOM-event-handler heuristic) is dropped outright
+  // before it ever reaches an attribute — see
+  // docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md.
+  // Capturing at the mock-component boundary (before that spread) sidesteps
+  // the gap entirely: a plain JS object passed to a component function is
+  // never mangled the way a DOM attribute/event is. Find the entry under
+  // test by a discriminating prop (usually `typeof p.onAccessibilityAction
+  // === "function"`, since only the accessibility-actions-bearing Pressable
+  // in a given render carries that prop at all) rather than by index, since
+  // sibling Pressables (the visible Confirm/Remove buttons, the Suggest
+  // chip) render into the same array.
+  capturedPressables: [] as Record<string, unknown>[],
 }));
 
 // ── Data hooks — collaborators of the screen, not the SUT ──────────────────
@@ -224,7 +246,26 @@ vi.mock("react-native", async (importOriginal) => {
       children,
     );
   ScrollView.displayName = "ScrollView";
-  return { ...actual, RefreshControl, ScrollView };
+  // Capture every rendered Pressable's raw props (see the capturedPressables
+  // hoisted comment above) by delegating to the real mocked Pressable
+  // unchanged — this is a pure observation point, not a behavior override,
+  // so every other test in this file renders identically.
+  const CapturingPressable = React.forwardRef<unknown, Record<string, unknown>>(
+    (props, ref) => {
+      capturedPressables.push(props);
+      return React.createElement(
+        actual.Pressable as React.ComponentType<Record<string, unknown>>,
+        { ...props, ref },
+      );
+    },
+  );
+  CapturingPressable.displayName = "Pressable";
+  return {
+    ...actual,
+    RefreshControl,
+    ScrollView,
+    Pressable: CapturingPressable,
+  };
 });
 
 vi.mock("@/components/UpgradeModal", () => ({
@@ -705,5 +746,325 @@ describe("MealPlanHomeScreen — pull-to-refresh refreshes meal-plan, daily-budg
     });
 
     invalidateSpy.mockRestore();
+  });
+});
+
+// P1-2026-09-23 (H2): MealSlotItem's Confirm/Remove buttons and
+// MealSlotSection's Suggest chip are Pressables nested inside an `accessible`
+// card/header Pressable (RN defaults `accessible={true}`), which collapses
+// the whole subtree into one VoiceOver/TalkBack focus stop — the nested
+// buttons are visible and individually clickable in jsdom (which doesn't
+// model the collapse) but unreachable on-device. The fix exposes each as an
+// `accessibilityActions` entry on the card/header, mirroring
+// CarouselRecipeCard's existing `toggleFavourite` pattern
+// (client/components/home/CarouselRecipeCard.tsx:102-124).
+//
+// jsdom cannot observe `accessibilityActions`/`onAccessibilityAction` via the
+// DOM or `fireEvent` at all (see the capturedPressables hoisted comment
+// above) — these tests capture the raw props at the mock-component boundary
+// instead, and render MealSlotItem/MealSlotSection in isolation (exported
+// solely for this) rather than through the full screen, since neither
+// depends on anything but `useTheme()`.
+describe("MealSlotItem accessibility actions", () => {
+  function makeItem(
+    overrides: Record<string, unknown> = {},
+  ): MealPlanItemWithRelations {
+    return {
+      id: 7,
+      userId: "test-user",
+      recipeId: null,
+      scannedItemId: null,
+      plannedDate: "2026-09-02",
+      mealType: "breakfast",
+      servings: "1",
+      sortOrder: 0,
+      createdAt: new Date("2026-09-01T00:00:00Z"),
+      recipe: null,
+      scannedItem: null,
+      ...overrides,
+    } as MealPlanItemWithRelations;
+  }
+
+  beforeEach(() => {
+    capturedPressables.length = 0;
+  });
+
+  afterEach(() => cleanup());
+
+  function findCardProps() {
+    return capturedPressables.find(
+      (p) => typeof p.onAccessibilityAction === "function",
+    );
+  }
+
+  it("exposes only a remove action when the item cannot be confirmed", () => {
+    renderComponent(
+      <MealSlotItem
+        item={makeItem()}
+        isConfirmed={false}
+        onPress={vi.fn()}
+        onRemove={vi.fn()}
+        onConfirm={vi.fn()}
+        canConfirm={false}
+      />,
+    );
+    const cardProps = findCardProps();
+    expect(
+      cardProps,
+      "no accessibility-actions Pressable captured",
+    ).toBeDefined();
+    expect(cardProps!.accessibilityActions).toEqual([
+      { name: "remove", label: "Remove Item removed" },
+    ]);
+  });
+
+  it("also exposes a confirm action when the item is confirmable and not yet confirmed", () => {
+    renderComponent(
+      <MealSlotItem
+        item={makeItem()}
+        isConfirmed={false}
+        onPress={vi.fn()}
+        onRemove={vi.fn()}
+        onConfirm={vi.fn()}
+        canConfirm={true}
+      />,
+    );
+    const cardProps = findCardProps();
+    expect(cardProps!.accessibilityActions).toEqual([
+      { name: "confirm", label: "Confirm Item removed as eaten" },
+      { name: "remove", label: "Remove Item removed" },
+    ]);
+  });
+
+  it("omits the confirm action once the item is already confirmed — nothing left to confirm", () => {
+    renderComponent(
+      <MealSlotItem
+        item={makeItem()}
+        isConfirmed={true}
+        onPress={vi.fn()}
+        onRemove={vi.fn()}
+        onConfirm={vi.fn()}
+        canConfirm={true}
+      />,
+    );
+    const cardProps = findCardProps();
+    expect(cardProps!.accessibilityActions).toEqual([
+      { name: "remove", label: "Remove Item removed" },
+    ]);
+  });
+
+  it("dispatches onConfirm when the confirm accessibility action fires", () => {
+    const onConfirm = vi.fn();
+    renderComponent(
+      <MealSlotItem
+        item={makeItem()}
+        isConfirmed={false}
+        onPress={vi.fn()}
+        onRemove={vi.fn()}
+        onConfirm={onConfirm}
+        canConfirm={true}
+      />,
+    );
+    const cardProps = findCardProps();
+    act(() => {
+      (cardProps!.onAccessibilityAction as (e: unknown) => void)({
+        nativeEvent: { actionName: "confirm" },
+      });
+    });
+    expect(onConfirm).toHaveBeenCalledWith(7);
+  });
+
+  it("dispatches onRemove when the remove accessibility action fires", () => {
+    const onRemove = vi.fn();
+    renderComponent(
+      <MealSlotItem
+        item={makeItem()}
+        isConfirmed={false}
+        onPress={vi.fn()}
+        onRemove={onRemove}
+        onConfirm={vi.fn()}
+        canConfirm={true}
+      />,
+    );
+    const cardProps = findCardProps();
+    act(() => {
+      (cardProps!.onAccessibilityAction as (e: unknown) => void)({
+        nativeEvent: { actionName: "remove" },
+      });
+    });
+    expect(onRemove).toHaveBeenCalledWith(7);
+  });
+
+  it("does not dispatch either handler for an unrecognized action name", () => {
+    const onConfirm = vi.fn();
+    const onRemove = vi.fn();
+    renderComponent(
+      <MealSlotItem
+        item={makeItem()}
+        isConfirmed={false}
+        onPress={vi.fn()}
+        onRemove={onRemove}
+        onConfirm={onConfirm}
+        canConfirm={true}
+      />,
+    );
+    const cardProps = findCardProps();
+    act(() => {
+      (cardProps!.onAccessibilityAction as (e: unknown) => void)({
+        nativeEvent: { actionName: "unknown" },
+      });
+    });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it("keeps the visible confirm and remove buttons independently reachable by touch, unaffected by the fix", () => {
+    const onConfirm = vi.fn();
+    const onRemove = vi.fn();
+    renderComponent(
+      <MealSlotItem
+        item={makeItem()}
+        isConfirmed={false}
+        onPress={vi.fn()}
+        onRemove={onRemove}
+        onConfirm={onConfirm}
+        canConfirm={true}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Confirm Item removed as eaten"));
+    expect(onConfirm).toHaveBeenCalledWith(7);
+    fireEvent.click(screen.getByLabelText("Remove Item removed"));
+    expect(onRemove).toHaveBeenCalledWith(7);
+  });
+});
+
+describe("MealSlotSection suggest accessibility action", () => {
+  const baseSectionProps = {
+    mealType: "breakfast" as const,
+    items: [] as MealPlanItemWithRelations[],
+    confirmedIds: new Set<number>(),
+    onItemPress: vi.fn(),
+    onRemoveItem: vi.fn(),
+    onAddItem: vi.fn(),
+    onConfirmItem: vi.fn(),
+    onToggle: vi.fn(),
+    sectionSummary: { itemCount: 0, totalCalories: 0 },
+  };
+
+  beforeEach(() => {
+    capturedPressables.length = 0;
+  });
+
+  afterEach(() => cleanup());
+
+  function findHeaderProps() {
+    return capturedPressables.find(
+      (p) => typeof p.onAccessibilityAction === "function",
+    );
+  }
+
+  it("exposes a suggest action when the section is expanded", () => {
+    renderComponent(
+      <MealSlotSection
+        {...baseSectionProps}
+        onSuggest={vi.fn()}
+        canSuggest={true}
+        canConfirm={false}
+        isExpanded={true}
+      />,
+    );
+    const headerProps = findHeaderProps();
+    expect(
+      headerProps,
+      "no accessibility-actions Pressable captured",
+    ).toBeDefined();
+    expect(headerProps!.accessibilityActions).toEqual([
+      { name: "suggest", label: "AI suggest breakfast" },
+    ]);
+  });
+
+  it("labels the suggest action as an upgrade prompt when suggestions are gated", () => {
+    renderComponent(
+      <MealSlotSection
+        {...baseSectionProps}
+        onSuggest={vi.fn()}
+        canSuggest={false}
+        canConfirm={false}
+        isExpanded={true}
+      />,
+    );
+    const headerProps = findHeaderProps();
+    expect(headerProps!.accessibilityActions).toEqual([
+      { name: "suggest", label: "Upgrade to suggest breakfast" },
+    ]);
+  });
+
+  it("exposes no suggest action while collapsed — no Suggest chip is rendered to route it to", () => {
+    renderComponent(
+      <MealSlotSection
+        {...baseSectionProps}
+        onSuggest={vi.fn()}
+        canSuggest={true}
+        canConfirm={false}
+        isExpanded={false}
+      />,
+    );
+    const headerProps = findHeaderProps();
+    expect(headerProps!.accessibilityActions).toBeUndefined();
+  });
+
+  it("dispatches onSuggest when the suggest accessibility action fires", () => {
+    const onSuggest = vi.fn();
+    renderComponent(
+      <MealSlotSection
+        {...baseSectionProps}
+        onSuggest={onSuggest}
+        canSuggest={true}
+        canConfirm={false}
+        isExpanded={true}
+      />,
+    );
+    const headerProps = findHeaderProps();
+    act(() => {
+      (headerProps!.onAccessibilityAction as (e: unknown) => void)({
+        nativeEvent: { actionName: "suggest" },
+      });
+    });
+    expect(onSuggest).toHaveBeenCalledWith("breakfast");
+  });
+
+  it("does not dispatch onSuggest for an unrecognized action name", () => {
+    const onSuggest = vi.fn();
+    renderComponent(
+      <MealSlotSection
+        {...baseSectionProps}
+        onSuggest={onSuggest}
+        canSuggest={true}
+        canConfirm={false}
+        isExpanded={true}
+      />,
+    );
+    const headerProps = findHeaderProps();
+    act(() => {
+      (headerProps!.onAccessibilityAction as (e: unknown) => void)({
+        nativeEvent: { actionName: "unknown" },
+      });
+    });
+    expect(onSuggest).not.toHaveBeenCalled();
+  });
+
+  it("keeps the visible Suggest chip independently reachable by touch, unaffected by the fix", () => {
+    const onSuggest = vi.fn();
+    renderComponent(
+      <MealSlotSection
+        {...baseSectionProps}
+        onSuggest={onSuggest}
+        canSuggest={true}
+        canConfirm={false}
+        isExpanded={true}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("AI suggest breakfast"));
+    expect(onSuggest).toHaveBeenCalledWith("breakfast");
   });
 });

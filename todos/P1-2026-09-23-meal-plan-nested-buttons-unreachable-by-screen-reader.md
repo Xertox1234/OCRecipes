@@ -1,9 +1,9 @@
 ---
 title: "Plan meal-slot Confirm/Remove/Suggest and Home carousel Dismiss are unreachable to VoiceOver — nested Pressables inside an accessible card"
-status: backlog
+status: in-progress
 priority: high
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 assignee:
 labels: [deferred, audit, accessibility]
 github_issue:
