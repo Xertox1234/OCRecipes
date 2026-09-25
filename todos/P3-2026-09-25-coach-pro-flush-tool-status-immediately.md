@@ -1,6 +1,6 @@
 ---
 title: "Coach Pro holds tool-status labels until the next content chunk, so a tool turn is silent on the wire"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-25
 updated: 2026-09-25
