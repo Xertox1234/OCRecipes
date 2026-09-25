@@ -31,7 +31,6 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
-import { QUERY_KEYS } from "@/lib/query-keys";
 import {
   BEVERAGE_TYPES,
   BEVERAGE_SIZES,
@@ -47,6 +46,7 @@ import {
   capitalize,
 } from "./beverage-picker-utils";
 import type { BeverageSheetOptions } from "@/hooks/useBeverageSheet";
+import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 
 type Step = "beverage" | "modifier" | "size" | "custom";
 
@@ -199,12 +199,7 @@ export function BeveragePickerSheet({
 
         // Success
         haptics.notification(NotificationFeedbackType.Success);
-        void queryClient.invalidateQueries({
-          queryKey: QUERY_KEYS.dailySummary,
-        });
-        void queryClient.invalidateQueries({
-          queryKey: QUERY_KEYS.scannedItems,
-        });
+        invalidateFoodLogQueries(queryClient);
 
         // Build confirmation text and call onLogged callback
         const displayName = isCustom

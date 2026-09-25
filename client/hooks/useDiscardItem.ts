@@ -7,6 +7,7 @@ import { apiRequest } from "@/lib/query-client";
 import { enqueue } from "@/lib/offline-queue";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import type { ScannedItemResponse, PaginatedResponse } from "@/types/api";
+import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 
 /**
  * Hook to soft-delete (discard) a scanned item.
@@ -84,8 +85,7 @@ export function useDiscardItem() {
       // (data.queued === false) AND errors (data === undefined) still invalidate
       // here — the error path re-syncs the cache after onError's rollback.
       if (data?.queued) return;
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+      invalidateFoodLogQueries(queryClient);
     },
   });
 }
