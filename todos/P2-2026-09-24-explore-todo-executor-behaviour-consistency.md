@@ -72,11 +72,13 @@ Source: the orchestrator's run record for that session and the five executor rep
       just review WARNINGs). Every side problem goes into the Step 11 report under
       `DEFERRED_WARNINGS`; the user decides what becomes a todo. Say so once, where filing is
       discussed (Step 7), without restating it elsewhere.
-- [ ] **Review stamp (4): report `advisory` honestly.** The Step 10 7c stamp check accepts a
-      record whose verdict is `clean` OR `advisory` with zero unresolved (matching
-      `merge-review-guard.sh`), and the Step 11 `REVIEW_STAMP:` field reports which one it was,
-      e.g. `advisory at <sha>`, with the advisory notes in `DEFERRED_WARNINGS`. Never report
-      `advisory` as `clean`.
+- [x] **Review stamp (4a): accept `advisory`.** Done in #1061 (`e48b9147`): the Step 10 7c
+      check accepts `clean` OR `advisory` with zero unresolved, prints `"<verdict> <agent_type>"`,
+      and `REVIEW_STAMP:` gained an `advisory at <sha>` form. Do not redo this.
+- [ ] **Review stamp (4b): report `advisory` honestly.** What #1061 left: say in Step 10 7c (once)
+      that `REVIEW_STAMP:` copies the verdict word from the `MATCH` line and never reports an
+      `advisory` record as `clean`, and that the advisory review's WARNING/SUGGESTION notes go into
+      `DEFERRED_WARNINGS` (extend that field's description in the Step 11 template to cover them).
 - [ ] **Research (5): follow the rule.** The researcher is skipped only on the existing
       Short-circuit gate or Lightweight path. Add one sentence saying no other skip (e.g. "small
       scope") is allowed, and that the skip reason is recorded in `SHORT_CIRCUIT`.
@@ -178,3 +180,7 @@ Source: the orchestrator's run record for that session and the five executor rep
   Divergence 6 (background waits) was covered by the 2026-09-24 `run_in_background: false`
   decision; 7 was ruled harmless. Gate removed and status reset to `backlog`; the remaining work
   is instruction edits, ready for `/todo`.
+- **Reconciled with #1061 (merged `e48b9147`):** that PR already made the 7c check accept an
+  `advisory` record and added the `advisory at <sha>` report form, so AC (4) is split: (4a) is
+  done, and (4b) keeps only the "never report it as clean" sentence and the `DEFERRED_WARNINGS`
+  wiring.
