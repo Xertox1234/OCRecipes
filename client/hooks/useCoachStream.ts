@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
+import { randomUuidV4 } from "@/lib/uuid";
 import {
   stripCoachBlocksFence,
   filterValidBlocks,
@@ -281,7 +282,7 @@ export function useCoachStream({
 
           startDrain();
 
-          const turnKey = crypto.randomUUID();
+          const turnKey = randomUuidV4();
           const body: Record<string, unknown> = {
             content: userMessage,
             turnKey,
