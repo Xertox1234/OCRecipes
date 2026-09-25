@@ -1,6 +1,6 @@
 ---
 title: "Cap deep-link length before getStateFromPath — decode-uri-component 0.5.0 is still quadratic on distinct malformed runs"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-24
 updated: 2026-09-24

@@ -1,4 +1,12 @@
 import type { LinkingOptions } from "@react-navigation/native";
+// Import the real parser from @react-navigation/core, NOT @react-navigation/native:
+// native's index also re-exports NavigationContainer/Link/etc., whose module graph
+// pulls in React Native sources the Vitest node env can't load (the same reason
+// client/navigation/__tests__/linking.test.ts imports getStateFromPath from
+// @react-navigation/core instead of @react-navigation/native). @react-navigation/core
+// is the identical function native re-exports unchanged, and is already a resolved
+// transitive dep the test file relies on.
+import { getStateFromPath as getStateFromPathDefault } from "@react-navigation/core";
 import { Linking } from "react-native";
 import * as Notifications from "expo-notifications";
 import type { RootStackParamList } from "./RootStackNavigator";
@@ -8,6 +16,26 @@ function parseIntOrZero(value: string): number {
   const num = parseInt(value, 10);
   return Number.isNaN(num) ? 0 : num;
 }
+
+// decode-uri-component 0.5.0 (PR #1054, GHSA-vcc3-ghjq-m6fr) closed the
+// repeated-malformed-run shape but is still O(entries * length) on distinct
+// malformed percent runs: query-string.parse (used internally by
+// getStateFromPath to parse the query string) built a `replaceMap` entry per
+// distinct run and re-scanned the whole input once per entry. A ~200 KB link
+// with many distinct runs can stall the JS thread for over a second even on
+// V8; Hermes is slower. Reject before the real parser ever sees the input.
+//
+// The real verify-email link (this app's longest legitimate deep link) is
+// ~427 chars: a JWT from server/lib/verification-token.ts's
+// signVerificationToken, appended by server/services/email.ts as
+// `verify-email?token=<token>`. Every other configured path
+// (recipe/:id, chat/:id, notebook-entry/:id, scan?mode=...) is far shorter.
+// 8 KB leaves >18x headroom over the longest real link while still capping
+// the attack payload's cost. Measured on Node's V8 JIT (Hermes is slower):
+// a 208,019-char, 16,000-distinct-run payload through this same
+// getStateFromPath takes ~1.5-1.8s without this cap; the worst payload the
+// cap still lets through (628 distinct runs, 8,183 chars) parses in ~6ms.
+export const MAX_DEEP_LINK_PATH_LENGTH = 8 * 1024;
 
 // The client's own scheduleCommitmentReminder (client/hooks/
 // useNotebookNotifications.ts) sends `data.url` going forward, but this
@@ -77,6 +105,21 @@ export function flushPendingNotificationUrl(): void {
 
 export const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ["ocrecipes://", "https://ocrecipes.app"],
+  // Every URL source — a real Linking event, a notification's data.url or
+  // entryId-derived URL surfaced via getInitialURL, and a held tap replayed
+  // by flushPendingNotificationUrl — funnels through this same
+  // getStateFromPath: @react-navigation/native's useLinking.native.js calls
+  // extractPathFromURL(prefixes, url) then getStateFromPathRef.current(path,
+  // config) for BOTH getInitialState and the subscribe listener, so one
+  // length check here covers every entry point without touching them
+  // individually. extractPathFromURL itself is linear (split + regex, no
+  // percent-decoding), so this is the first expensive point in the chain.
+  getStateFromPath(path, options) {
+    if (path.length > MAX_DEEP_LINK_PATH_LENGTH) {
+      return undefined;
+    }
+    return getStateFromPathDefault(path, options);
+  },
   async getInitialURL() {
     // A real deep link wins if both are somehow present — it's the more
     // specific intent.

@@ -44,7 +44,8 @@ vi.mock("../navigationRef", () => ({
   navigationRef: { isReady: () => mockIsReady() },
 }));
 
-const { linking, flushPendingNotificationUrl } = await import("../linking");
+const { linking, flushPendingNotificationUrl, MAX_DEEP_LINK_PATH_LENGTH } =
+  await import("../linking");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -128,6 +129,54 @@ describe("linking config", () => {
 
   it("configures AllConversations as a path string", () => {
     expect(linking.config!.screens.AllConversations).toBe("conversation-list");
+  });
+
+  // decode-uri-component 0.5.0 (#1054) closed the repeated-run shape but is
+  // still O(entries * length) on many DISTINCT malformed runs — the todo's
+  // own measurement: n=16000 distinct runs (208,000 chars) took ~1.5s
+  // through the raw parser under Node's V8 JIT. Exercise `linking
+  // .getStateFromPath` — the actual entry point React Navigation calls for
+  // every URL source (see the comment in linking.ts) — not the raw
+  // `getStateFromPath` import used by the tests above. Fall back to the raw
+  // parser when the cap is absent so a regression fails on TIMING, the
+  // property this test exists to guard, rather than a TypeError.
+  it("rejects a long deep link with many distinct malformed percent-encoded runs, quickly", () => {
+    const hex = (n: number) => n.toString(16).padStart(2, "0");
+    const runs = Array.from(
+      { length: 16000 },
+      (_, i) =>
+        `%C0%${hex(i & 0xff)}%${hex((i >> 8) & 0xff)}%${hex((i >> 16) & 0xff)}x`,
+    ).join("");
+    const path = `verify-email?token=${runs}`;
+    const parse = linking.getStateFromPath ?? getStateFromPath;
+
+    const start = performance.now();
+    const state = parse(path, linking.config);
+    const elapsedMs = performance.now() - start;
+
+    expect(state).toBeUndefined();
+    expect(elapsedMs).toBeLessThan(250);
+  });
+
+  it("still parses a deep link exactly at the length cap", () => {
+    const prefix = "verify-email?token=";
+    const path = prefix + "a".repeat(MAX_DEEP_LINK_PATH_LENGTH - prefix.length);
+    expect(path.length).toBe(MAX_DEEP_LINK_PATH_LENGTH);
+
+    const state = linking.getStateFromPath!(path, linking.config);
+
+    expect(state?.routes[0]?.name).toBe("VerifyEmail");
+  });
+
+  it("rejects a deep link one character past the length cap", () => {
+    const prefix = "verify-email?token=";
+    const path =
+      prefix + "a".repeat(MAX_DEEP_LINK_PATH_LENGTH - prefix.length + 1);
+    expect(path.length).toBe(MAX_DEEP_LINK_PATH_LENGTH + 1);
+
+    const state = linking.getStateFromPath!(path, linking.config);
+
+    expect(state).toBeUndefined();
   });
 
   it("configures Login as a path string so ocrecipes://login routes to sign-in", () => {
