@@ -1,9 +1,9 @@
 ---
 title: "todo-executor commits the archive and the codification AFTER its review step, so no /todo PR is ever stamp-clean at its head and the merge review gate denies every one"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-20
-updated: 2026-09-20
+updated: 2026-09-24
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -75,7 +75,7 @@ confirmed. Investigate before fixing; do not assume.
 
 ## Acceptance Criteria
 
-- [ ] A `/todo` PR produced by a clean executor run arrives at its head with a stamp whose SHA
+- [x] A `/todo` PR produced by a clean executor run arrives at its head with a stamp whose SHA
       equals that head and whose verdict is clean — demonstrated end-to-end on a real run, not
       argued from the step list.
 - [x] The chosen mechanism is recorded with its trade-off (see Implementation Notes — the three
@@ -274,3 +274,54 @@ digest equal to the gate's own formula, and reports honestly when it does not. I
 the gate keys on rather than the position of a heading, so it survives rewording and fails on the
 very next run if a commit-producing step is moved after it. It is enforced **by the agent at
 runtime, not by CI** — nothing in the test suite executes this markdown.
+
+### 2026-09-24 (acceptance criterion 1 MET on a real run; one drift fixed; closed)
+
+**Criterion 1 is shown by PR #1008**, a `/todo` executor run that reported `MERGE_ELIGIBLE: held`,
+so the Step 10.7 confirmation pass ran. Each property was checked against its primary source,
+not against the executor's own report:
+
+```
+$ gh pr view 1008 --json state,headRefOid
+MERGED  5962512b78e77796c5893257aebf10b6184a0c94
+$ jq -c '{verdict,head_sha,reviewed_files_digest,unresolved,agent_type}' \
+    /tmp/ocrecipes-review-stamps-07d4e12e42b1/5962512b78e77796c5893257aebf10b6184a0c94/code-reviewer.json
+{"verdict":"clean","head_sha":"5962512b78e77796c5893257aebf10b6184a0c94","reviewed_files_digest":"2acd83b4c4556b4f","unresolved":[],"agent_type":"code-reviewer"}
+$ gh pr diff 1008 --name-only | sed '/^$/d' | sort -u | shasum | cut -c1-16    # the gate's formula
+2acd83b4c4556b4f
+```
+
+The head SHA equals the merged head, the verdict is clean with nothing unresolved, and the digest
+equals the gate's own formula. That digest covers the archived todo and the solution file, so the
+record can only have come from a review taken after Step 9. The outputs are pasted here because the
+record lives in `/tmp` and a reboot wipes it. A second instance is #1049 (`held`): head `3cc6cebb`
+equals its merged head and digest `d8b6643607c4c61c` matches, but the verdict is `advisory`, so it is
+not the evidence for a criterion that says "clean".
+
+**Drift fixed in this PR.** The 2026-09-22 one-review-pass ruling (#1015) widened
+`merge-review-guard.sh` to accept `advisory` as well as `clean` (pinned by the advisory case in
+`test-merge-review-guard.sh`), and `docs/AI_WORKFLOW.md` was updated with it. `todo-executor.md`
+Step 10.7 was not. Its step-c check still selected `.verdict=="clean"` only, so on an advisory-only
+review a spec-following executor would get an empty match, spend the re-dispatch for nothing, and
+report `none at` for a PR the gate would admit. Executors improvised around the gap:
+#1038 reported `advisory at …`, #1049 reported `clean at … verdict advisory`, and #1039/#1040/#1047/#1055
+reported `clean at` for records that are `advisory` on disk. The fix changes the 7b prose and the 7c
+jq to `clean or advisory`, makes 7c print the verdict, and adds `advisory at` to the Step 11
+`REVIEW_STAMP` enum. Measured by extracting both jq programs literally from the old and new files and
+running them against the real records (3 rows, 1 record each):
+
+```
+3cc6cebb digest=d8b6643607c4c61c records=1 old=[]              new=[advisory code-reviewer]
+5962512b digest=2acd83b4c4556b4f records=1 old=[code-reviewer] new=[clean code-reviewer]
+5962512b digest=0000000000000000 records=1 old=[]              new=[]      <- wrong-digest control
+```
+
+Synthetic controls: `findings` with an empty `unresolved`, and `advisory` with a non-empty
+`unresolved`, both still select nothing.
+
+**Observed, not filed.** #1047 and #1055 ran the 7b confirmation pass although step 5 reported
+`MERGE_ELIGIBLE: yes`. That is a wasted dispatch with no effect on the gate. #1055 also reported a
+stamp at `21c01cec`, which is not its merged head `6847234f`, so a report taken before the head
+moved does not describe the PR as merged. For #1009/#1038/#1039/#1040 the head moved past the
+executor's record at merge time, which is outside the executor, and the gate correctly asked for a
+fresh record each time.

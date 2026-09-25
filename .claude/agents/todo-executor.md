@@ -642,9 +642,11 @@ Todo: `todos/<filename>.md` (archived in this commit)
    b. **Dispatch ONE `code-reviewer`** (with `run_in_background: false` — see Step 5b) using the dispatch prompt from `docs/AI_WORKFLOW.md` →
    Review Policy, with `$CHANGED` verbatim as the changed-file list and
    `git -C "$WORKTREE" diff <base>...HEAD -- <those files>` as the diff command. One reviewer
-   is enough: the gate sets its match on **any single** record with a clean verdict and a
-   matching digest and never filters `agent_type`. Do not dispatch the roster here — Step 6
-   already carried the domain lenses.
+   is enough: the gate sets its match on **any single** record with a clean or advisory verdict
+   and a matching digest and never filters `agent_type`. Do not dispatch the roster here — Step 6
+   already carried the domain lenses. (`advisory` is the verdict a WARNING/SUGGESTION-only review
+   records when its last line is exactly `No blocking findings.`. The gate has accepted it since
+   the 2026-09-22 one-review-pass ruling; see the verdict test in `merge-review-guard.sh`.)
 
    This is a real review, not a formality. It is the **only** review Step 9's codification ever
    receives, and `docs/solutions/` is the corpus future executors short-circuit their research
@@ -656,9 +658,15 @@ Todo: `todos/<filename>.md` (archived in this commit)
    DIR=$( cd "$WORKTREE" && . .claude/hooks/lib/review-stamp-path.sh && review_stamp_dir "$HEAD_SHA" )
    MATCH=$(find "$DIR" -maxdepth 1 -name '*.json' 2>/dev/null -exec jq -r \
      --arg d "$WANT_DIGEST" --arg s "$HEAD_SHA" \
-     'select(.head_sha==$s and .verdict=="clean" and ((.unresolved//[])|length)==0 and .reviewed_files_digest==$d) | .agent_type' \
+     'select(.head_sha==$s and (.verdict=="clean" or .verdict=="advisory") and ((.unresolved//[])|length)==0 and .reviewed_files_digest==$d) | "\(.verdict) \(.agent_type)"' \
      {} + 2>/dev/null | head -1)
    ```
+
+   The verdict set here must equal the gate's own set, the `VERDICT` test in
+   `merge-review-guard.sh`. A narrower check fails confidently: on an advisory-only review it
+   returns empty, spends the step-d re-dispatch for nothing, and reports `none at` for a PR the
+   gate would have let through. If the gate's verdict set ever changes, change this line in the
+   same PR.
 
    **This check is the regression check for Steps 6–10's ordering.** It asserts the property the
    merge gate actually keys on rather than the position of a heading, so it survives any rewording
@@ -671,7 +679,7 @@ Todo: `todos/<filename>.md` (archived in this commit)
    never fabricate a record, and never work around a miss by re-running the check against an
    older SHA.
 
-   The most likely cause of a miss after a genuinely clean review is **not** the review: if the
+   The most likely cause of a miss after a genuinely clean (or advisory) review is **not** the review: if the
    reviewer hands its report back through `SubagentHandback`, `review-stamp-writer.sh` reads the
    short wrapper line it writes afterwards, and a wrapper naming any of the three bracketed
    severity words from the findings format is read as an objection and writes **no record**
@@ -710,7 +718,7 @@ COMMIT: <commit hash>
 BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "null" if PR creation failed>
 MERGE_ELIGIBLE: <yes (auto-merge enabled — GitHub squash-merges automatically once CI is green, nothing further needed) | yes (auto-merge enable FAILED — needs manual gh pr merge --auto or individual review) | held (guard: <the guard's HOLD reason line — path or todo-frontmatter gate; needs individual review>) | review-required (medium/high/critical/security todo) | unknown (guard could not evaluate) | n/a (no PR created)>
-REVIEW_STAMP: <clean at <full head sha> (<agent_type> record, digest <16 hex>) | skipped — guard-eligible, no record required | none at <full head sha> — <what you observed after the second attempt>>
+REVIEW_STAMP: <clean at <full head sha> (<agent_type> record, digest <16 hex>) | advisory at <full head sha> (<agent_type> record, digest <16 hex>) | skipped — guard-eligible, no record required | none at <full head sha> — <what you observed after the second attempt>>
 CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from Step 9 step 6b>
 SOLUTION_FILE: <worktree-relative "docs/solutions/<...>.md" path whenever a solution file was written, passed the 6b sanity-check, and was committed in step 7, or "none" if no solution was codified>
 
