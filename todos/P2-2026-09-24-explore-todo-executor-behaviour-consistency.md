@@ -197,11 +197,14 @@ Source: the orchestrator's run record for that session and the five executor rep
     heading with a reason that holds up). Added the "Out of contract" section to Step 10's PR
     body template, since the rule has nowhere to land without it. Swept the repo for every other
     "scope contract"/"out-of-contract" mention (`grep -rln` over `.claude/`, `docs/`, `todos/`) —
-    the only other hit that states the rule normatively (vs. referencing the concept) is
-    `todos/TEMPLATE.md`'s comment, which just points to `docs/AI_WORKFLOW.md` → Tier handling and
-    needed no edit since it doesn't restate the rule's detail. Everything else is either a solved
-    todo/solution file referencing the concept historically, or a per-todo Scope Contract section
-    (not a rule statement).
+    the only other hit that restates the rule's detail (not just the concept) is
+    `todos/TEMPLATE.md:48-51`'s comment ("a stated contract is a HARD boundary... reviewers treat
+    violations as CRITICAL"), which is left un-edited here (out of this todo's Scope Contract's
+    Files-in-scope list) and is now stale — it still states the old no-exception framing this diff
+    replaces everywhere else (review-caught; see `DEFERRED_WARNINGS` in the Step 11 report — not
+    filed as a todo, per decision (3) above). Everything else is either a solved todo/solution file
+    referencing the concept historically, or a per-todo Scope Contract section (not a rule
+    statement).
   - **Follow-ups (3):** Step 7 now states once, up front, that the no-filing rule is global (any
     side finding, not just review WARNINGs) and that it is intentionally not restated elsewhere.
   - **Review stamp (4b):** Step 10 item c now says to copy the verdict word straight from `$MATCH`
