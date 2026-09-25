@@ -1,9 +1,9 @@
 ---
 title: "Coach stream can hang forever — useCoachStream has no XHR timeout and no handler for a clean close without a done event"
-status: backlog
+status: done
 priority: high
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 assignee:
 labels: [deferred, audit, reliability]
 github_issue:
@@ -27,11 +27,11 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 ## Acceptance Criteria
 
-- [ ] `xhr.timeout` + `xhr.ontimeout` set, with a ceiling above the longest legitimate coach stream
-- [ ] A JS inactivity timer, reset on every progress chunk, aborts a stalled stream and surfaces the existing streaming-error UI
-- [ ] `readyState === 4` with a 2xx status and no `done` clears streaming state and finalizes (or errors) the message
-- [ ] Tests (fake XHR): timeout event, inactivity stall, and clean-close-without-done each end with `isStreaming === false`
-- [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
+- [x] `xhr.timeout` + `xhr.ontimeout` set, with a ceiling above the longest legitimate coach stream
+- [x] A JS inactivity timer, reset on every progress chunk, aborts a stalled stream and surfaces the existing streaming-error UI
+- [x] `readyState === 4` with a 2xx status and no `done` clears streaming state and finalizes (or errors) the message
+- [x] Tests (fake XHR): timeout event, inactivity stall, and clean-close-without-done each end with `isStreaming === false`
+- [x] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes
 
@@ -58,3 +58,10 @@ Reuse the error surface already used for `data.error` events (:222-228). Keep pa
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (H5).
+
+### 2026-09-25
+
+- Fixed in `client/hooks/useCoachStream.ts`. Every terminal path (`data.error`, status >= 400, `onerror`, `ontimeout`, clean close, inactivity) goes through one idempotent `fail`, guarded by a per-stream `settled` flag. `done` also settles.
+- Ceilings: server `SSE_TIMEOUT_MS` 120s < `STREAM_INACTIVITY_MS` 125s < `XHR_TIMEOUT_MS` 150s. The inactivity window can't be shorter: Coach Pro flushes tool-status labels only with the next content chunk, so a multi-round tool turn is silent on the wire for up to the whole server budget (5 tool calls, each a 30s-capped OpenAI call). Above 120s, the client timer fires only on a dead connection, because a live one gets the server's own graceful `Response timeout` first.
+- A clean close without `done` is reported as an error ("Response interrupted"), even with partial content. It doesn't finalize a partial: that reply was never finished or saved server-side, so an `onDone` would show text that vanishes on refetch. This matches the Implementation Note (consistent with the error path).
+- Detected via `xhr.onload`, not `readyState 4`. RN (`XMLHttpRequest.js` `setReadyState`) dispatches readystatechange at DONE before `timeout`/`error`/`abort`, with status still 200 on a native failure, so a readyState-4 check would mistake a timeout for a clean close.

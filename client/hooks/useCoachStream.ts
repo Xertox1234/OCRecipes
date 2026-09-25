@@ -16,6 +16,19 @@ export const HOLD_GATE_MS = 700;
 export const DRAIN_INTERVAL_MS = 50;
 export const CHARS_PER_TICK = 20;
 
+// Termination ceilings. Order: server SSE_TIMEOUT_MS (120s,
+// server/routes/chat.ts) < STREAM_INACTIVITY_MS < XHR_TIMEOUT_MS.
+// The server sends its own `{ error: "Response timeout" }` at 120s, so on a
+// live connection that graceful error always arrives first; these fire only
+// on a dead or half-open one. The inactivity window can't be shorter:
+// Coach Pro flushes tool-status labels only with the next content chunk, so a
+// multi-round tool turn is legitimately silent on the wire for up to the whole
+// server budget (5 tool calls, each a 30s-capped OpenAI call).
+export const STREAM_INACTIVITY_MS = 125_000;
+// A backstop in case the JS timer is starved. On Android, xhr.timeout is an
+// OkHttp total-call cap, not an idle one.
+export const XHR_TIMEOUT_MS = 150_000;
+
 /**
  * Pure helper — returns the slice of buffer to release this drain tick.
  * Returns "" when the hold gate has not elapsed yet.
@@ -107,6 +120,14 @@ export function useCoachStream({
   const blocksRef = useRef<CoachBlock[]>([]);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
   const drainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearInactivity = useCallback(() => {
+    if (inactivityTimerRef.current !== null) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+  }, []);
 
   const stopDrain = useCallback(() => {
     if (drainIntervalRef.current !== null) {
@@ -154,6 +175,7 @@ export function useCoachStream({
   const abortStream = useCallback(() => {
     xhrRef.current?.abort();
     xhrRef.current = null;
+    clearInactivity();
     stopDrain();
     bufferRef.current = "";
     isDoneRef.current = false;
@@ -164,15 +186,16 @@ export function useCoachStream({
     setIsStreaming(false);
     setStatusText("");
     setStreamingContent("");
-  }, [stopDrain]);
+  }, [clearInactivity, stopDrain]);
 
   // Abort XHR and drain interval on unmount
   useEffect(() => {
     return () => {
       xhrRef.current?.abort();
+      clearInactivity();
       stopDrain();
     };
-  }, [stopDrain]);
+  }, [clearInactivity, stopDrain]);
 
   const startStream = useCallback(
     (
@@ -181,6 +204,7 @@ export function useCoachStream({
       extras?: { warmUpId?: string | null; screenContext?: string },
     ) => {
       // Reset all state for a fresh stream
+      clearInactivity();
       bufferRef.current = "";
       isDoneRef.current = false;
       accumulatedRef.current = "";
@@ -211,11 +235,36 @@ export function useCoachStream({
           xhr.setRequestHeader("X-Timezone", getDeviceTimezone());
 
           let lastProcessedIndex = 0;
+          // Once a terminal outcome is chosen, every later event is ignored.
+          // RN dispatches readystatechange at DONE before timeout/error (and
+          // on abort), so without this one stream can report twice.
+          let settled = false;
+          const fail = (msg: string, code?: string) => {
+            if (settled) return;
+            settled = true;
+            clearInactivity();
+            stopDrain();
+            setIsStreaming(false);
+            setStatusText("");
+            onErrorRef.current?.(msg, code);
+          };
+          // Reset on every event, status included: a stalled socket never
+          // closes or errors on its own, so without this the stream hangs.
+          const armInactivity = () => {
+            clearInactivity();
+            inactivityTimerRef.current = setTimeout(() => {
+              // Settle before aborting: abort() re-dispatches readystatechange.
+              fail("Response timeout");
+              xhr.abort();
+            }, STREAM_INACTIVITY_MS);
+          };
 
           xhr.onreadystatechange = () => {
+            if (settled) return;
             if (xhr.readyState >= 3 && xhr.responseText) {
               const newText = xhr.responseText.slice(lastProcessedIndex);
               lastProcessedIndex = xhr.responseText.length;
+              if (newText) armInactivity();
 
               for (const line of newText.split("\n")) {
                 if (!line.startsWith("data: ")) continue;
@@ -229,10 +278,7 @@ export function useCoachStream({
                     continue;
                   const data = raw as Record<string, unknown>;
                   if (data.error) {
-                    stopDrain();
-                    setIsStreaming(false);
-                    setStatusText("");
-                    onErrorRef.current?.(String(data.error));
+                    fail(String(data.error));
                     return;
                   }
                   if (
@@ -268,6 +314,10 @@ export function useCoachStream({
                     blocksRef.current = filterValidBlocks(data.blocks);
                   }
                   if (data.done) {
+                    // The drain now owns finishing (onDone). Nothing after
+                    // `done` — a late error or close — may override it.
+                    settled = true;
+                    clearInactivity();
                     isDoneRef.current = true;
                     if (accumulatedRef.current) {
                       fullTextRef.current = stripCoachBlocksFence(
@@ -282,22 +332,26 @@ export function useCoachStream({
             }
 
             if (xhr.readyState === 4 && xhr.status >= 400) {
-              stopDrain();
-              setIsStreaming(false);
-              setStatusText("");
-              onErrorRef.current?.(
+              fail(
                 `${xhr.status}: ${xhr.responseText}`,
                 parseErrorCode(xhr.responseText),
               );
             }
           };
 
-          xhr.onerror = () => {
-            stopDrain();
-            setIsStreaming(false);
-            setStatusText("");
-            onErrorRef.current?.("Network error");
+          xhr.onerror = () => fail("Network error");
+          // RN dispatches `timeout`, not `error`, when xhr.timeout elapses.
+          xhr.ontimeout = () => fail("Response timeout");
+          // `load` fires only on a clean close (never after timeout, error or
+          // abort, unlike readyState 4). A clean 2xx close before `done` means
+          // the server or a proxy cut the stream: the reply was never
+          // finished or saved, so report it rather than finalize a partial.
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              fail("Response interrupted");
+            }
           };
+          xhr.timeout = XHR_TIMEOUT_MS;
 
           startDrain();
 
@@ -308,6 +362,7 @@ export function useCoachStream({
           };
           if (extras?.warmUpId) body.warmUpId = extras.warmUpId;
           if (extras?.screenContext) body.screenContext = extras.screenContext;
+          armInactivity();
           xhr.send(JSON.stringify(body));
         })
         .catch((err: unknown) => {
@@ -319,7 +374,7 @@ export function useCoachStream({
           );
         });
     },
-    [startDrain, stopDrain],
+    [clearInactivity, startDrain, stopDrain],
   );
 
   return {
