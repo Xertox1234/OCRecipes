@@ -349,13 +349,7 @@ export default function HomeScreen() {
 
   const renderInlineAction = (action: HomeAction) => {
     if (action.id === "quick-log") {
-      return (
-        <QuickLogDrawer
-          key={action.id}
-          action={action}
-          maxHeight={DRAWER_MAX_HEIGHT}
-        />
-      );
+      return <QuickLogDrawer key={action.id} action={action} />;
     }
     const rowRef = drawerRowRefs[action.id];
     const isLocked = !!action.premium && !isPremium;

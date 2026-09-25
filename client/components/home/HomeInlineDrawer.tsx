@@ -22,7 +22,7 @@ interface HomeInlineDrawerProps {
   label: string;
   isOpen: boolean;
   onToggle: () => void;
-  maxHeight: number;
+  maxHeight?: number;
   isLocked?: boolean;
   /** Optional tint for the expanded body — lets a caller (e.g. QuickLogDrawer)
    * preserve its own body background without duplicating the shell. */

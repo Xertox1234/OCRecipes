@@ -120,10 +120,9 @@ const ParsedItemRow = React.memo(function ParsedItemRow({
 
 interface QuickLogDrawerProps {
   action: HomeAction;
-  maxHeight: number;
 }
 
-export function QuickLogDrawer({ action, maxHeight }: QuickLogDrawerProps) {
+export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
@@ -188,7 +187,6 @@ export function QuickLogDrawer({ action, maxHeight }: QuickLogDrawerProps) {
       label={action.label}
       isOpen={isOpen}
       onToggle={handleToggle}
-      maxHeight={maxHeight}
       bodyBackgroundColor={withOpacity(theme.link, 0.04)}
     >
       {/* Text input row */}
