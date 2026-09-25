@@ -108,10 +108,25 @@ describe("Coach Blocks Service", () => {
     );
   });
 
-  it("tells the model to present recipes as a recipe_card block, never as a markdown image or link", () => {
-    expect(BLOCKS_SYSTEM_PROMPT).toMatch(/recipe_card block/);
+  it("forbids markdown images and links in prose and names recipes instead", () => {
     expect(BLOCKS_SYSTEM_PROMPT).toMatch(
-      /never as a markdown image.*or a markdown link/i,
+      /never put a recipe image or link in your prose/i,
+    );
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(/refer to a recipe by its name/i);
+  });
+
+  // search_recipes returns no calories/protein/prep time, and recipe_card
+  // requires all three: steering every search hit into a card would make the
+  // model invent nutrition numbers in an authoritative-looking card.
+  it("allows a recipe_card only when real calories, protein and prep time came from a tool", () => {
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(
+      /recipe_card only when you have real calories, protein and prep time/i,
+    );
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(
+      /search_recipes does not return them/i,
+    );
+    expect(BLOCKS_SYSTEM_PROMPT).not.toMatch(
+      /Present each recipe from that result as a recipe_card/,
     );
   });
 
