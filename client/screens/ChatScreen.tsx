@@ -493,17 +493,18 @@ export default function ChatScreen() {
         >
           {"This chat couldn't be found."}
         </ThemedText>
-        {/* A chat/:id deep link builds a stack holding only Chat, so the
-            header has no back button; this is the only way out. */}
+        {/* A chat/:id deep link builds a Coach stack holding only Chat, so the
+            header has no back button. Don't branch on canGoBack(): it bubbles
+            to the tab navigator (backBehavior "firstRoute") and goBack() would
+            land on Home. popTo pops back to an existing ChatList, or REPLACES
+            this screen with one (v7 navigate() would push, leaving the dead end
+            behind the list). */}
         <Pressable
-          onPress={() =>
-            navigation.canGoBack()
-              ? navigation.goBack()
-              : navigation.navigate("ChatList")
-          }
+          onPress={() => navigation.popTo("ChatList")}
           hitSlop={12}
+          style={styles.notFoundBackButton}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel="Back to chats"
         >
           <ThemedText style={[styles.notFoundBack, { color: theme.link }]}>
             Back to chats
@@ -663,9 +664,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: "center",
   },
+  notFoundBackButton: {
+    minHeight: 44,
+    justifyContent: "center",
+    marginTop: Spacing.md,
+  },
   notFoundBack: {
     fontSize: 15,
-    marginTop: Spacing.md,
   },
   typingRow: {
     flexDirection: "row",

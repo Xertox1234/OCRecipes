@@ -67,4 +67,4 @@ The lost-message fix is one line. The malformed-id "not found" state follows `No
 
 ### 2026-09-25 (review repair)
 
-- Independent review found the not-found view was a dead end: a `chat/:id` deep link builds a stack holding only `Chat`, so there is no header back button. Added a labelled back button (`goBack` when possible, else `ChatList`) with tests for both branches, and codified the rule in the deep-linking solution doc.
+- Independent review found the not-found view was a dead end: a `chat/:id` deep link builds a stack holding only `Chat`, so there is no header back button. Added a labelled "Back to chats" button using `popTo("ChatList")` (a confirmation review showed `canGoBack()` bubbles to the tab navigator and `goBack()` would land on Home, and that v7 `navigate` would push). 44pt minimum target. Codified in the deep-linking solution doc.

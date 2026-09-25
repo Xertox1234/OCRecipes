@@ -10,13 +10,13 @@ const {
   mockCreateMutateAsync,
   mockSetParams,
   mockGoBack,
-  mockNavigate,
+  mockPopTo,
   mockCanGoBack,
   mockRouteParams,
   mockUseChatMessages,
 } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
-  mockNavigate: vi.fn(),
+  mockPopTo: vi.fn(),
   mockCanGoBack: vi.fn(() => false),
   mockSendMessage: vi.fn(),
   mockAcknowledge: vi.fn(),
@@ -40,7 +40,7 @@ vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     setParams: mockSetParams,
     goBack: mockGoBack,
-    navigate: mockNavigate,
+    popTo: mockPopTo,
     canGoBack: mockCanGoBack,
   }),
   useRoute: () => ({ params: mockRouteParams.value }),
@@ -152,28 +152,20 @@ describe("ChatScreen — malformed conversationId (deep link)", () => {
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
-  // A chat/:id deep link builds a stack holding only Chat, so there is no
-  // header back button — the not-found view must offer its own way out.
-  it("offers a back action that goes to the chat list when nothing is behind it", () => {
-    mockRouteParams.value = { conversationId: 0 };
-    mockCanGoBack.mockReturnValue(false);
-
-    renderComponent(<ChatScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
-
-    expect(mockNavigate).toHaveBeenCalledWith("ChatList");
-    expect(mockGoBack).not.toHaveBeenCalled();
-  });
-
-  it("goes back when there is a screen behind it", () => {
+  // A chat/:id deep link builds a Coach stack holding only Chat, so there is
+  // no header back button. canGoBack() is NOT a usable signal here: it bubbles
+  // to the tab navigator (backBehavior "firstRoute") and returns true, and
+  // goBack() would land on the Home tab. The exit always targets the list,
+  // via popTo so a deep-linked Chat is replaced rather than left behind it.
+  it("always returns to the chat list, even when canGoBack() is true", () => {
     mockRouteParams.value = { conversationId: 0 };
     mockCanGoBack.mockReturnValue(true);
 
     renderComponent(<ChatScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to chats" }));
 
-    expect(mockGoBack).toHaveBeenCalledOnce();
-    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockPopTo).toHaveBeenCalledWith("ChatList");
+    expect(mockGoBack).not.toHaveBeenCalled();
   });
 });
 
