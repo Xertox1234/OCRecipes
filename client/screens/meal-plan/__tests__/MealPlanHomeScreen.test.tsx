@@ -886,9 +886,14 @@ describe("MealPlanHomeScreen — pull-to-refresh refreshes meal-plan, daily-budg
 // P1-2026-09-23 (H2): MealSlotItem's Confirm/Remove buttons and
 // MealSlotSection's Suggest chip are Pressables nested inside an `accessible`
 // card/header Pressable (RN defaults `accessible={true}`), which collapses
-// the whole subtree into one VoiceOver/TalkBack focus stop — the nested
-// buttons are visible and individually clickable in jsdom (which doesn't
-// model the collapse) but unreachable on-device. The fix exposes each as an
+// the whole subtree into one iOS VoiceOver focus stop (device-verified: an RN
+// `accessible={true}` wrapper collapses its subtree on iOS but NOT on Android
+// — see docs/solutions/best-practices/adb-uiautomator-ondevice-android-verification-2026-07-12.md
+// item 9) — the nested buttons are visible and individually clickable in
+// jsdom (which doesn't model the collapse) but unreachable on iOS VoiceOver.
+// The accessibilityActions fix is additive/harmless on Android, where the
+// nested buttons stay independently reachable regardless. The fix exposes
+// each as an
 // `accessibilityActions` entry on the card/header, mirroring
 // CarouselRecipeCard's existing `toggleFavourite` pattern
 // (client/components/home/CarouselRecipeCard.tsx:102-124).

@@ -53,7 +53,9 @@ The general guidance ("do NOT inline-mock `react-native` / `react-native-reanima
 5. **Prop capture — reading a value the mock would otherwise mangle or drop.** Some RN props aren't merely absent from the global alias (item 3) — the shared mock actively destroys them on the way to the DOM. `test/mocks/react-native.ts`'s hand-written `Pressable` doesn't destructure `accessibilityActions`/`onAccessibilityAction`, so they fall through its `...rest` spread onto a real DOM element: `accessibilityActions` (an array) gets stringified to `"[object Object]"`, and `onAccessibilityAction` (a function matching React's `/^on[A-Z]/` DOM-event-handler heuristic) is silently dropped before it ever becomes an attribute. Neither survives to be read back via `screen`/`fireEvent`. Wrapping the mock's `Pressable` in a capturing component intercepts the **props object itself**, before that spread — a plain JS value passed to a component function is never mangled the way a DOM attribute or event listener is, so `props.accessibilityActions` is the real array and `props.onAccessibilityAction` is the real function reference the production component built.
 
    ```typescript
-   const capturedPressables: Record<string, unknown>[] = [];
+   const { capturedPressables } = vi.hoisted(() => ({
+     capturedPressables: [] as Record<string, unknown>[],
+   }));
    vi.mock("react-native", async (importOriginal) => {
      const actual = await importOriginal<typeof import("react-native")>();
      const CapturingPressable = React.forwardRef<unknown, Record<string, unknown>>(
@@ -65,6 +67,13 @@ The general guidance ("do NOT inline-mock `react-native` / `react-native-reanima
      return { ...actual, Pressable: CapturingPressable };
    });
    ```
+
+   `vi.hoisted` is required here, not a stylistic preference: `vi.mock` factories are
+   hoisted above all imports/top-level statements by Vitest's transform, so a bare
+   top-level `const capturedPressables = []` declared AFTER the `vi.mock` call in
+   source order is not yet initialized when the hoisted factory runs, throwing a
+   TDZ `ReferenceError`. `vi.hoisted` hoists the declaration itself to the same
+   point, guaranteeing it exists before any `vi.mock` factory executes.
 
    Find the instance under test by a **discriminating prop**, not by index or render order, when a component renders several Pressables (a card plus its own visible action buttons all funnel into the same capture array) — e.g. `capturedPressables.find(p => typeof p.onAccessibilityAction === "function")`, since only the accessibility-actions-bearing Pressable carries that prop at all. Worked examples: `client/components/home/__tests__/CarouselRecipeCard.test.tsx` (`describe("CarouselRecipeCard dismiss accessibility action")`) and `client/screens/meal-plan/__tests__/MealPlanHomeScreen.test.tsx` (`describe("MealSlotItem accessibility actions")`, `describe("MealSlotSection suggest accessibility action")`) — the latter extends that file's own **pre-existing** local `react-native` mock (originally added to capture `RefreshControl`/`ScrollView`) rather than adding a second one, since `vi.mock` only honors one factory per resolved module ID (see item 4's gotcha for why a second factory for the same specifier is not additive). This is also the durable fix for the false "never assert `accessibilityActions`/`onAccessibilityAction`" absolutism in [jsdom RN render tests cannot assert a11y-tree hiding OR grouping](jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md) — that rule is correct for the DOM/`fireEvent` channel and still holds there; it just isn't the only channel.
 

@@ -246,10 +246,12 @@ export const MealSlotItem = React.memo(function MealSlotItem({
   // Scanned items carry no derived-allergen cache (that's product-level data,
   // a separate concept) — only a recipe-backed item can have one. The card
   // Pressable is accessible by default, which collapses its whole subtree
-  // into a single VoiceOver/TalkBack focus stop, so fold the allergen text
-  // into the card's own label (same pattern as RecipeBrowserScreen's
-  // UnifiedRecipeCard) rather than relying on the nested label's own
-  // container.
+  // into a single iOS VoiceOver focus stop (device-verified: an RN
+  // accessible={true} wrapper collapses its subtree on iOS but NOT on
+  // Android — see docs/solutions/best-practices/adb-uiautomator-ondevice-android-verification-2026-07-12.md
+  // item 9), so fold the allergen text into the card's own label (same
+  // pattern as RecipeBrowserScreen's UnifiedRecipeCard) rather than relying
+  // on the nested label's own container.
   const allergenA11ySuffix = toRecipeAllergenA11ySuffix(item.recipe?.allergens);
 
   const accessLabel = macros
@@ -257,10 +259,13 @@ export const MealSlotItem = React.memo(function MealSlotItem({
     : `${name}${isConfirmed ? ", confirmed" : ""}${allergenA11ySuffix}`;
 
   // The card Pressable above is accessible by default, which collapses its
-  // whole subtree into a single VoiceOver/TalkBack focus stop — the nested
-  // Confirm and Remove Pressables below are never independently reachable.
-  // Expose both as accessibilityActions on the card instead (same pattern as
-  // CarouselRecipeCard's toggleFavourite/dismiss actions) so the primary
+  // whole subtree into a single iOS VoiceOver focus stop (same device-verified
+  // iOS-only collapse cited above) — the nested Confirm and Remove Pressables
+  // below are never independently reachable on iOS VoiceOver (Android keeps
+  // them independently reachable regardless — see the same citation).
+  // Expose both as accessibilityActions on the card instead (additive/
+  // harmless on Android; same pattern as CarouselRecipeCard's
+  // toggleFavourite/dismiss actions) so the primary
   // label stays the single focus stop while Confirm/Remove are still
   // independently activatable via the screen reader's actions/rotor. Confirm
   // is omitted once there's nothing left to confirm (mirrors `canConfirm`
@@ -401,10 +406,15 @@ export const MealSlotSection = React.memo(function MealSlotSection({
     : `${label}${summaryText}, collapsed`;
 
   // The header Pressable is accessible by default, which collapses its whole
-  // subtree into a single VoiceOver/TalkBack focus stop — the nested "Suggest"
-  // chip below is never independently reachable when the section is expanded.
-  // Expose it as an accessibilityAction on the header instead (same pattern
-  // as CarouselRecipeCard's toggleFavourite/dismiss actions), gated to
+  // subtree into a single iOS VoiceOver focus stop (device-verified: an RN
+  // accessible={true} wrapper collapses its subtree on iOS but NOT on
+  // Android — see docs/solutions/best-practices/adb-uiautomator-ondevice-android-verification-2026-07-12.md
+  // item 9) — the nested "Suggest" chip below is never independently
+  // reachable on iOS VoiceOver when the section is expanded (Android keeps
+  // it independently reachable regardless). Expose it as an
+  // accessibilityAction on the header instead (additive/harmless on
+  // Android; same pattern as CarouselRecipeCard's toggleFavourite/dismiss
+  // actions), gated to
   // isExpanded since that's also what gates the chip's own render — a
   // collapsed section has no Suggest chip to route the action to.
   const headerAccessibilityActions = useMemo(
