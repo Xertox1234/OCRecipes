@@ -97,6 +97,17 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     const cameraRef = useRef<VisionCameraRef>(null);
     const device = useCameraDevice(facing);
 
+    // Hard latch (no re-arm), one per failure class, once per mount — unlike
+    // useCameraFocusAndZoom's re-arming latch, these are rare session-level
+    // failures reported for release/OTA-build visibility
+    // (js-rendered-feedback-not-evidence-native-call-succeeded-2026-07-25.md),
+    // not a high-frequency gesture callback where re-arming matters.
+    const captureFailureReportedRef = useRef(false);
+    const cameraErrorReportedRef = useRef(false);
+    const scannerErrorReportedRef = useRef(false);
+    const interruptionStartedReportedRef = useRef(false);
+    const interruptionEndedReportedRef = useRef(false);
+
     const { reducedMotion } = useAccessibility();
     const { focusPoint, zoomLabel, tapGesture, pinchGesture } =
       useCameraFocusAndZoom({ cameraRef, device });
@@ -137,7 +148,9 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
       barcodeFormats,
       onBarcodeScanned: handleBarcodeScanned,
       onError: (error) => {
-        logger.warn("[CameraView] Barcode scanner error:", error.message);
+        if (scannerErrorReportedRef.current) return;
+        scannerErrorReportedRef.current = true;
+        logger.error("[CameraView] Barcode scanner error", error);
       },
     });
 
@@ -151,7 +164,11 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
             {},
           );
           return { uri: `file://${photoFile.filePath}` };
-        } catch {
+        } catch (error) {
+          if (!captureFailureReportedRef.current) {
+            captureFailureReportedRef.current = true;
+            logger.error("[CameraView] takePicture failed", error);
+          }
           return null;
         }
       },
@@ -184,7 +201,23 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
               device.hasTorch ? (enableTorch ? "on" : "off") : undefined
             }
             onError={(error) => {
-              logger.warn("[CameraView] Camera error:", error.message);
+              if (cameraErrorReportedRef.current) return;
+              cameraErrorReportedRef.current = true;
+              logger.error("[CameraView] Camera error", error);
+            }}
+            onInterruptionStarted={(reason) => {
+              if (interruptionStartedReportedRef.current) return;
+              interruptionStartedReportedRef.current = true;
+              logger.error(
+                `[CameraView] Camera session interrupted (${reason})`,
+              );
+            }}
+            onInterruptionEnded={() => {
+              if (interruptionEndedReportedRef.current) return;
+              interruptionEndedReportedRef.current = true;
+              logger.error(
+                "[CameraView] camera interruption ended (recovered)",
+              );
             }}
           />
           <FocusRing point={focusPoint} reducedMotion={reducedMotion} />

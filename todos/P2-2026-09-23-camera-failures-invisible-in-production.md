@@ -1,6 +1,6 @@
 ---
 title: "Camera capture and session failures leave no trace in production — errors are swallowed or sent to the dev-only logger.warn"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-25
