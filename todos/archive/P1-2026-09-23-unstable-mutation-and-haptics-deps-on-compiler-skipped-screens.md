@@ -1,6 +1,6 @@
 ---
 title: "RecipeBrowser, MealPlanHome and Home pass whole useMutation/useHaptics objects as callback deps on compiler-skipped screens — list rows re-render every render"
-status: in-progress
+status: done
 priority: high
 created: 2026-09-23
 updated: 2026-09-23
@@ -26,10 +26,10 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 ## Acceptance Criteria
 
-- [ ] Each listed callback depends on destructured `mutate`/`mutateAsync` (or `haptics.impact`/`.notification`/`.selection`), never the whole object
-- [ ] Test per screen: re-rendering the parent does not change the identity of the callback/renderItem passed to the list rows
-- [ ] Optionally (decide in implementation): make `useHaptics` return a memoized object so every consumer is fixed at the source — only if it doesn't break its tests
-- [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
+- [x] Each listed callback depends on destructured `mutate`/`mutateAsync` (or `haptics.impact`/`.notification`/`.selection`), never the whole object
+- [x] Test per screen: re-rendering the parent does not change the identity of the callback/renderItem passed to the list rows
+- [x] Optionally (decide in implementation): make `useHaptics` return a memoized object so every consumer is fixed at the source — only if it doesn't break its tests
+- [x] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes
 
@@ -59,3 +59,26 @@ Pattern already used correctly in CoachChat.tsx (comment at :105-107) and Histor
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (H4, M2, M3).
+
+### 2026-09-25
+
+- Implemented: destructured `mutateAsync`/`mutate` (never the whole `useMutation()` object) in
+  RecipeBrowserScreen's `handleRecipePress` (H4) and MealPlanHomeScreen's `handleRemoveItem`/
+  `handleReorder`/`handleConfirmItem`/`handleSelectSuggestion` (M2); destructured `impact`/
+  `notification` (never the whole `useHaptics()` object) in HomeScreen's `handleRefresh`/
+  `handleActionPress`/`handleDrawerToggle`/`handleCalorieTap` (M3). Also memoized `useHaptics()`'s
+  own return object (`useMemo` over its three already-`useCallback`-stable inner functions) — AC #3,
+  taken since it was low-risk (existing tests assert behavior, not identity) and hardens every other
+  whole-`haptics`-object consumer in the codebase at the source, without touching those files.
+- A TDD-red test per screen proves the fix: RecipeBrowserScreen asserts `renderItem`'s identity
+  survives a search keystroke; HomeScreen asserts `onCalorieTap`/`onRefresh`/`onActionPress` survive
+  an unrelated re-render; MealPlanHomeScreen asserts a mocked `DraggableList`'s captured props object
+  is the exact same reference across an unrelated section's expand/collapse — proof `MealSlotSection`'s
+  own `React.memo` actually bails, not merely that individual callback fields are stable (the
+  "denominator" here is inverted from a plain FlatList/SectionList capture: the props object staying
+  identical IS the pass condition, since the capture point sits inside the memoized parent).
+- Scope decision: MealPlanHomeScreen's `handleSuggest`/`handleAddItem`/`handleToggleSection` and
+  RecipeBrowserScreen's other haptics-using callbacks still list the whole `haptics` object — not
+  touched, since H4/M2's named findings are the mutation objects only (M3/HomeScreen is the only
+  finding that names `haptics` itself), and AC #3's memoization makes that whole-object dependency
+  stable regardless. Reviewed by `code-reviewer` + `mobile-reviewer`: no blocking findings.
