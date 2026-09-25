@@ -1,5 +1,5 @@
 ---
-title: "LabelAnalysisScreen: the low-confidence (<0.3) upload error is set but never rendered or announced"
+title: "LabelAnalysisScreen: dead low-confidence setError, and the confidence banner is never announced"
 status: backlog
 priority: medium
 created: 2026-09-25
@@ -9,7 +9,7 @@ labels: [deferred, bug, accessibility]
 github_issue:
 ---
 
-# LabelAnalysisScreen: the low-confidence (<0.3) upload error is set but never rendered or announced
+# LabelAnalysisScreen: dead low-confidence setError, and the confidence banner is never announced
 
 ## Summary
 
@@ -43,13 +43,15 @@ if (error && !labelData) {
 }
 ```
 
-Since `labelData` is truthy by the time `error` is set, this branch can never trigger from this code path. Users who get a very-low-confidence AI read currently see and hear nothing indicating the read may be inaccurate.
+Since `labelData` is truthy by the time `error` is set, this branch can never trigger from this code path.
+
+**Correction (review of #1078):** sighted users are NOT left without a warning. `getConfidenceTier` (`client/lib/confidence.ts`) maps every score below 0.5 to `"low"`, and the confidence-tier banner in the same screen already renders "Low confidence — review carefully before logging." for these results. The real gaps are narrower: (a) the `setError` copy is dead code, and (b) the confidence banner is never announced to screen readers, for the `low` AND `medium` tiers alike.
 
 ## Acceptance Criteria
 
-- [ ] A low-confidence (`< 0.3`) AI analysis result, when it lands in the same commit as `setLabelData`, surfaces a warning to the user — visually and via a screen-reader announcement — without duplicating an announcement in the same React commit as the existing "Ready to log"/"Updated with AI analysis" merged announcer (`client/screens/LabelAnalysisScreen.tsx`; see `docs/solutions/logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md`).
-- [ ] The fix does not reintroduce the `error && !labelData` dead branch for this case — either render the low-confidence warning through a separate, always-visible surface (e.g. a `NoticeStack`-style banner) rather than the full-screen `error` state, or explicitly allow this one case through the full-screen guard with a clear rationale.
-- [ ] A failing test is written first (TDD) reproducing a low-confidence AI response and asserting the warning is visible and announced; then the fix; then it passes.
+- [ ] The dead `setError(...)` call for `confidence < 0.3` in the upload success path is removed (the existing confidence banner is the visual warning; do NOT add a second visual surface).
+- [ ] When AI data with a `low` or `medium` confidence tier lands, the banner's text is announced to screen readers, folded into the existing merged announcer effect (the one combining "Ready to log" and "Updated with AI analysis") so it never fires as a second same-commit announce (`docs/solutions/logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md`).
+- [ ] Failing tests first: a low-confidence and a medium-confidence AI result each produce exactly one announcement containing the banner text (`toHaveBeenCalledTimes(1)`); a high-confidence result's announcement is unchanged.
 
 ## Implementation Notes
 
@@ -77,3 +79,4 @@ Since `labelData` is truthy by the time `error` is set, this branch can never tr
 ### 2026-09-25
 
 - Filed from the mobile-reviewer's WARNING finding during the P2-2026-09-23-label-analysis-silent-state-transitions review pass.
+- Rescoped after the #1078 review: the visible warning already exists; the work is removing dead code and announcing the existing banner.

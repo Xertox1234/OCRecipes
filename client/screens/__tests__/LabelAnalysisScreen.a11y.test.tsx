@@ -161,6 +161,8 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
       expect(announce).toHaveBeenCalledWith(
         "Couldn't read this label. Try again with better lighting.",
       );
+      // Exactly once: a second same-commit announce would collide on iOS.
+      expect(announce).toHaveBeenCalledTimes(1);
 
       // The decorative alert-circle icon this screen used to render itself
       // (unhidden, 48px) is gone — InlineError owns the icon and already
