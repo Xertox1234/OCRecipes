@@ -22,6 +22,7 @@ import {
   type FoodItem,
   type PhotoAnalysisResponse,
 } from "@/lib/photo-upload";
+import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 
 type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -323,8 +324,7 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
         analysisIntent: intent,
       });
 
-      void queryClient.invalidateQueries({ queryKey: ["/api/scanned-items"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
+      invalidateFoodLogQueries(queryClient);
 
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();

@@ -315,6 +315,52 @@ describe("useQuickLogSession", () => {
     expect(result.current.inputText).toBe("");
   });
 
+  // P1-2026-09-23: this online-success path used to invalidate dailySummary,
+  // scannedItems, and frequentItems, but never daily-budget — leaving Home's
+  // calorie header stale after a QuickLog submit.
+  it("invalidates /api/daily-budget after submitLog succeeds online", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "chicken",
+                quantity: 1,
+                unit: "breast",
+                calories: 320,
+                protein: 58,
+                carbs: 0,
+                fat: 7,
+                servingSize: null,
+              },
+            ],
+          }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: 1 }),
+      });
+
+    const { result } = renderHook(() => useQuickLogSession({}), { wrapper });
+
+    act(() => result.current.setInputText("chicken breast"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
+
+    act(() => result.current.submitLog());
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/daily-budget"],
+      }),
+    );
+  });
+
   it("sets submitError when log fails", async () => {
     const { wrapper } = createQueryWrapper();
     mockApiRequest
@@ -350,7 +396,8 @@ describe("useQuickLogSession", () => {
   });
 
   it("partial failure: removes successfully logged items so retry is idempotent", async () => {
-    const { wrapper } = createQueryWrapper();
+    const { wrapper, queryClient } = createQueryWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     // Parse returns 2 items: eggs (index 0) and coffee (index 1)
     mockApiRequest
@@ -405,6 +452,13 @@ describe("useQuickLogSession", () => {
     expect(result.current.submitError).toBe(
       "Some items failed to log. Please try again.",
     );
+    // P1-2026-09-23 (code-reviewer finding): the partial-success onError
+    // branch invalidates daily-budget too — real server writes happened for
+    // the item(s) that DID persist (eggs), so Home's calorie header is stale
+    // otherwise, same as the full-success path.
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/daily-budget"],
+    });
   });
 
   it("total failure: preserves all parsedItems and shows generic error message", async () => {
