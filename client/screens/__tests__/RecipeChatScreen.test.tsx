@@ -290,6 +290,36 @@ describe("RecipeChatScreen — pending assistant bubble (stream-end bridge)", ()
     );
   });
 
+  // Parity with the pre-extraction screen: capture is gated on the RAW
+  // content, and a bubble shows only if the captured (stripped) content or a
+  // recipe is present. A stream that is only an opening ```json fence strips
+  // to "" and must not leave an earlier fragment behind as a bubble.
+  it("shows no pending bubble when the stream strips to empty and no recipe arrives", () => {
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+
+    for (const streamingContent of ["STALE-FRAGMENT", "```json{"]) {
+      mockSendMessageState.value = {
+        streamingContent,
+        streamingRecipe: null,
+        isStreaming: true,
+        streamError: false,
+        requestError: null,
+      };
+      rerender(<RecipeChatScreen />);
+    }
+
+    mockSendMessageState.value = {
+      streamingContent: "",
+      streamingRecipe: null,
+      isStreaming: false,
+      streamError: false,
+      requestError: null,
+    };
+    rerender(<RecipeChatScreen />);
+
+    expect(screen.queryByText("STALE-FRAGMENT")).toBeNull();
+  });
+
   it("never shows a pending bubble when the stream ends in error", () => {
     const { rerender } = renderComponent(<RecipeChatScreen />);
 

@@ -11,8 +11,22 @@ export interface UsePendingAssistantBridgeOptions<T> {
    * `hasStreamingValue` is true.
    */
   streamingValue: T;
-  /** True when `streamingValue` is non-empty and worth remembering this tick. */
+  /**
+   * True when this tick's value should be captured. The whole
+   * `streamingValue` snapshot is captured at once, so for an object value
+   * every field must be monotonic within a stream (never reverting to empty
+   * mid-stream), as useChat's streamingContent accumulator and
+   * streamingRecipe are; otherwise a later empty field overwrites an earlier
+   * captured one.
+   */
   hasStreamingValue: boolean;
+  /**
+   * Whether a captured value is worth surfacing as a pending bubble once the
+   * stream ends. Defaults to truthiness. Needed when the capture gate and
+   * the displayed value differ (e.g. raw content gates capture but the
+   * captured text is stripped and may be empty).
+   */
+  isPresent?: (value: T) => boolean;
   /**
    * True when the stream just ended without anything the server will
    * persist (a stream/request error) — the captured value must never
@@ -48,6 +62,7 @@ export function usePendingAssistantBridge<T>({
   hasError,
   assistantMessageCount,
   announce,
+  isPresent = Boolean,
 }: UsePendingAssistantBridgeOptions<T>): T | null {
   const [pending, setPending] = useState<T | null>(null);
   const prevStreamingRef = useRef(false);
@@ -65,7 +80,11 @@ export function usePendingAssistantBridge<T>({
       // Bridge the stream-end → message-refetch gap, but only for responses
       // that will actually persist. On stream/request error the server keeps
       // no message, so a pending bubble would never clear.
-      if (lastValueRef.current !== null && !hasError) {
+      if (
+        lastValueRef.current !== null &&
+        isPresent(lastValueRef.current) &&
+        !hasError
+      ) {
         pendingBaselineAssistantCountRef.current = assistantMessageCount;
         setPending(lastValueRef.current);
         if (!announce.always) {
@@ -83,6 +102,7 @@ export function usePendingAssistantBridge<T>({
     assistantMessageCount,
     announce.message,
     announce.always,
+    isPresent,
   ]);
 
   useEffect(() => {

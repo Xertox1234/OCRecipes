@@ -144,6 +144,14 @@ const RecipeStreamingFooter = React.memo(function RecipeStreamingFooter({
   );
 });
 
+// Module-level so its identity is stable in usePendingAssistantBridge's deps.
+function hasPendingRecipeReply(value: {
+  content: string;
+  recipe: StreamingRecipe | null;
+}): boolean {
+  return !!value.content || !!value.recipe;
+}
+
 export default function RecipeChatScreen() {
   const route = useRoute<RecipeChatRouteProp>();
   const navigation = useNavigation<RecipeChatScreenNavigationProp>();
@@ -238,7 +246,11 @@ export default function RecipeChatScreen() {
   }>({
     isStreaming,
     streamingValue: pendingStreamingValue,
-    hasStreamingValue: !!strippedStreamingContent || !!streamingRecipe,
+    // Gate on the RAW content (as before the extraction): stripping a stream
+    // that is only an opening ```json fence yields "", and a stripped-basis
+    // gate would skip that tick and keep an earlier fragment.
+    hasStreamingValue: !!streamingContent || !!streamingRecipe,
+    isPresent: hasPendingRecipeReply,
     hasError: !!streamError || !!requestError,
     assistantMessageCount,
     announce: { message: "Recipe response received", always: false },

@@ -180,6 +180,32 @@ describe("usePendingAssistantBridge", () => {
     expect(result.current).toBeNull();
   });
 
+  it("does not surface a captured value that isPresent rejects", () => {
+    const isPresent = (v: { content: string }) => v.content !== "";
+    const { result, rerender } = renderHook(
+      (props: UsePendingAssistantBridgeOptions<{ content: string }>) =>
+        usePendingAssistantBridge(props),
+      {
+        initialProps: makeProps({
+          isStreaming: true,
+          streamingValue: { content: "" },
+          hasStreamingValue: true,
+          isPresent,
+        }),
+      },
+    );
+    rerender(
+      makeProps({
+        isStreaming: false,
+        streamingValue: { content: "" },
+        hasStreamingValue: false,
+        isPresent,
+      }),
+    );
+
+    expect(result.current).toBeNull();
+  });
+
   it("never surfaces a pending bubble when the stream ended in error", () => {
     const { result, rerender } = renderHook(
       (props: UsePendingAssistantBridgeOptions<string>) =>
