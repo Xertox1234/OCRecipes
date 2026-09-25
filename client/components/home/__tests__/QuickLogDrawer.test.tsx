@@ -3,7 +3,21 @@ import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { QuickLogDrawer } from "../QuickLogDrawer";
+import { HomeInlineDrawer } from "../HomeInlineDrawer";
 import * as useQuickLogSessionModule from "@/hooks/useQuickLogSession";
+
+const TEST_MAX_HEIGHT = 600;
+
+// Spy on the REAL HomeInlineDrawer (not a stub) so every existing behavioral
+// assertion below still exercises the actual header/chevron/measure shell —
+// this only lets the composition test confirm QuickLogDrawer renders it.
+vi.mock("../HomeInlineDrawer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../HomeInlineDrawer")>();
+  return {
+    ...actual,
+    HomeInlineDrawer: vi.fn(actual.HomeInlineDrawer),
+  };
+});
 
 const { mockToastError, mockToastInfo, mockNavigate } = vi.hoisted(() => ({
   mockToastError: vi.fn(),
@@ -88,7 +102,9 @@ describe("QuickLogDrawer", () => {
   });
 
   it("renders collapsed by default — drawer body not visible", () => {
-    renderComponent(<QuickLogDrawer action={testAction} />);
+    renderComponent(
+      <QuickLogDrawer action={testAction} maxHeight={TEST_MAX_HEIGHT} />,
+    );
     expect(screen.getByRole("button", { name: /quick log/i })).toBeTruthy();
     // Input is always mounted but hidden via aria-hidden when collapsed
     const input = screen.queryByPlaceholderText(/what did you eat/i);
@@ -99,7 +115,9 @@ describe("QuickLogDrawer", () => {
   });
 
   it("shows input and chips after tapping header", () => {
-    renderComponent(<QuickLogDrawer action={testAction} />);
+    renderComponent(
+      <QuickLogDrawer action={testAction} maxHeight={TEST_MAX_HEIGHT} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /quick log/i }));
     expect(screen.getByPlaceholderText(/what did you eat/i)).toBeTruthy();
     expect(screen.getByText("Coffee")).toBeTruthy();
@@ -107,7 +125,9 @@ describe("QuickLogDrawer", () => {
   });
 
   it("calls session.reset when collapsing after open", () => {
-    renderComponent(<QuickLogDrawer action={testAction} />);
+    renderComponent(
+      <QuickLogDrawer action={testAction} maxHeight={TEST_MAX_HEIGHT} />,
+    );
     const header = screen.getByRole("button", { name: /quick log/i });
     fireEvent.click(header); // open
     fireEvent.click(header); // close
@@ -131,7 +151,9 @@ describe("QuickLogDrawer", () => {
       ],
     });
 
-    renderComponent(<QuickLogDrawer action={testAction} />);
+    renderComponent(
+      <QuickLogDrawer action={testAction} maxHeight={TEST_MAX_HEIGHT} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /quick log/i }));
 
     expect(screen.getByText(/chicken/i)).toBeTruthy();
@@ -145,7 +167,9 @@ describe("QuickLogDrawer", () => {
       speechError: "Microphone permission denied",
     });
 
-    renderComponent(<QuickLogDrawer action={testAction} />);
+    renderComponent(
+      <QuickLogDrawer action={testAction} maxHeight={TEST_MAX_HEIGHT} />,
+    );
 
     expect(mockToastError).toHaveBeenCalledWith("Microphone permission denied");
   });
@@ -168,7 +192,9 @@ describe("QuickLogDrawer", () => {
       submitError: "Failed to log some items. Please try again.",
     });
 
-    renderComponent(<QuickLogDrawer action={testAction} />);
+    renderComponent(
+      <QuickLogDrawer action={testAction} maxHeight={TEST_MAX_HEIGHT} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /quick log/i }));
 
     expect(
@@ -177,7 +203,9 @@ describe("QuickLogDrawer", () => {
   });
 
   it("camera button press navigates to Scan with returnAfterLog: true", () => {
-    renderComponent(<QuickLogDrawer action={testAction} />);
+    renderComponent(
+      <QuickLogDrawer action={testAction} maxHeight={TEST_MAX_HEIGHT} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /quick log/i }));
     fireEvent.click(
       screen.getByRole("button", { name: /open camera to scan food/i }),
@@ -193,7 +221,9 @@ describe("QuickLogDrawer", () => {
         "Only the first 10 items were logged. Please log the rest separately.",
     });
 
-    renderComponent(<QuickLogDrawer action={testAction} />);
+    renderComponent(
+      <QuickLogDrawer action={testAction} maxHeight={TEST_MAX_HEIGHT} />,
+    );
 
     expect(mockToastInfo).toHaveBeenCalledWith(
       "Only the first 10 items were logged. Please log the rest separately.",
@@ -218,7 +248,9 @@ describe("QuickLogDrawer", () => {
       isSubmitting: true,
     });
 
-    renderComponent(<QuickLogDrawer action={testAction} />);
+    renderComponent(
+      <QuickLogDrawer action={testAction} maxHeight={TEST_MAX_HEIGHT} />,
+    );
     fireEvent.click(screen.getByRole("button", { name: /quick log/i }));
 
     // "Log All" text should not be visible
@@ -226,5 +258,18 @@ describe("QuickLogDrawer", () => {
     // ActivityIndicator renders as a View in the test environment — verify
     // the button itself is still present (busy state) and Log All text is gone
     expect(screen.getByRole("button", { name: /log all items/i })).toBeTruthy();
+  });
+
+  it("composes HomeInlineDrawer for its header/chevron shell instead of reimplementing it", () => {
+    renderComponent(
+      <QuickLogDrawer action={testAction} maxHeight={TEST_MAX_HEIGHT} />,
+    );
+
+    expect(HomeInlineDrawer).toHaveBeenCalled();
+    const props = vi.mocked(HomeInlineDrawer).mock.calls[0][0];
+    expect(props.icon).toBe(testAction.icon);
+    expect(props.label).toBe(testAction.label);
+    expect(props.maxHeight).toBe(TEST_MAX_HEIGHT);
+    expect(typeof props.onToggle).toBe("function");
   });
 });

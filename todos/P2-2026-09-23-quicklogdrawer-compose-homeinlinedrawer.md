@@ -1,6 +1,6 @@
 ---
 title: "QuickLogDrawer reimplements HomeInlineDrawer's header/chevron shell instead of composing it like its two siblings"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23

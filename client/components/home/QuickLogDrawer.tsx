@@ -1,10 +1,4 @@
-import React, {
-  useState,
-  useCallback,
-  useEffect,
-  useRef,
-  useMemo,
-} from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -13,23 +7,16 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  cancelAnimation,
-} from "react-native-reanimated";
 import { useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { InlineError } from "@/components/InlineError";
 import { VoiceLogButton } from "@/components/VoiceLogButton";
+import { HomeInlineDrawer } from "@/components/home/HomeInlineDrawer";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
-import { useAccessibility } from "@/hooks/useAccessibility";
 import { useToast } from "@/context/ToastContext";
-import { useCollapsibleHeight } from "@/hooks/useCollapsibleHeight";
 import { useQuickLogSession } from "@/hooks/useQuickLogSession";
 import type { ParsedFoodItem, LogSummary } from "@/hooks/useQuickLogSession";
 import {
@@ -38,10 +25,6 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
-import {
-  expandTimingConfig,
-  collapseTimingConfig,
-} from "@/constants/animations";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 import type { HomeAction } from "./action-config";
 
@@ -137,25 +120,16 @@ const ParsedItemRow = React.memo(function ParsedItemRow({
 
 interface QuickLogDrawerProps {
   action: HomeAction;
+  maxHeight: number;
 }
 
-export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
+export function QuickLogDrawer({ action, maxHeight }: QuickLogDrawerProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
   const navigation = useNavigation<HomeScreenNavigationProp>();
-  const { reducedMotion } = useAccessibility();
 
   const [isOpen, setIsOpen] = useState(false);
-  const isOpenRef = useRef(false);
-  useEffect(() => {
-    isOpenRef.current = isOpen;
-  }, [isOpen]);
-  const chevronRotation = useSharedValue(0);
-  const { animatedStyle, onContentLayout } = useCollapsibleHeight(
-    isOpen,
-    reducedMotion,
-  );
 
   const handleLogSuccess = useCallback(
     ({ firstName, totalCalories }: LogSummary) => {
@@ -191,33 +165,12 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
     if (!next) sessionReset();
     setIsOpen(next);
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    if (reducedMotion) {
-      chevronRotation.value = next ? 90 : 0;
-    } else {
-      chevronRotation.value = withTiming(
-        next ? 90 : 0,
-        next ? expandTimingConfig : collapseTimingConfig,
-      );
-    }
-  }, [isOpen, sessionReset, haptics, chevronRotation, reducedMotion]);
+  }, [isOpen, sessionReset, haptics]);
 
   const handleCameraPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     navigation.navigate("Scan", { returnAfterLog: true });
   }, [haptics, navigation]);
-
-  // Keep chevron in sync if reducedMotion changes while open
-  useEffect(() => {
-    if (reducedMotion) {
-      cancelAnimation(chevronRotation);
-      chevronRotation.value = isOpenRef.current ? 90 : 0;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- shared value + isOpenRef are stable refs
-  }, [reducedMotion]);
-
-  const chevronStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${chevronRotation.value}deg` }],
-  }));
 
   const totalCalories = useMemo(
     () =>
@@ -230,197 +183,131 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
   );
 
   return (
-    <View>
-      {/* Header row */}
-      <Pressable
-        onPress={handleToggle}
-        style={styles.header}
-        accessibilityRole="button"
-        accessibilityLabel={action.label}
-        accessibilityState={{ expanded: isOpen }}
-        accessibilityHint={`Double tap to ${isOpen ? "collapse" : "expand"} quick log`}
+    <HomeInlineDrawer
+      icon={action.icon}
+      label={action.label}
+      isOpen={isOpen}
+      onToggle={handleToggle}
+      maxHeight={maxHeight}
+      bodyBackgroundColor={withOpacity(theme.link, 0.04)}
+    >
+      {/* Text input row */}
+      <View
+        style={[
+          styles.inputRow,
+          {
+            backgroundColor: theme.backgroundSecondary,
+            borderColor: theme.border,
+          },
+        ]}
       >
-        <View
-          style={[
-            styles.iconCircle,
-            { backgroundColor: withOpacity(theme.link, 0.1) },
+        <TextInput
+          style={[styles.textInput, { color: theme.text }]}
+          placeholder="What did you eat?"
+          placeholderTextColor={theme.textSecondary}
+          value={session.inputText}
+          onChangeText={session.setInputText}
+          onSubmitEditing={session.handleTextSubmit}
+          returnKeyType="search"
+          accessibilityLabel="Food description"
+        />
+        <VoiceLogButton
+          isListening={session.isListening}
+          volume={session.volume}
+          onPress={session.handleVoicePress}
+          disabled={session.isParsing}
+        />
+        <Pressable
+          onPress={handleCameraPress}
+          accessibilityLabel="Open camera to scan food"
+          accessibilityRole="button"
+          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          style={({ pressed }) => [
+            styles.iconButton,
+            {
+              borderColor: theme.border,
+              opacity: pressed ? 0.7 : 1,
+            },
           ]}
         >
           <Feather
-            name={action.icon as keyof typeof Feather.glyphMap}
-            size={18}
-            color={theme.link}
-            accessible={false}
-          />
-        </View>
-        <ThemedText type="body" style={styles.label}>
-          {action.label}
-        </ThemedText>
-        <Animated.View style={chevronStyle}>
-          <Feather
-            name="chevron-right"
-            size={16}
+            name="camera"
+            size={20}
             color={theme.textSecondary}
             accessible={false}
           />
-        </Animated.View>
-      </Pressable>
+        </Pressable>
+      </View>
 
-      {/* Animated drawer body — always mounted so collapse animation can play */}
-      <Animated.View style={[animatedStyle, styles.clipContainer]}>
-        <View
-          style={[
-            styles.drawerBody,
-            { backgroundColor: withOpacity(theme.link, 0.04) },
-          ]}
-          onLayout={onContentLayout}
-          importantForAccessibility={isOpen ? "yes" : "no-hide-descendants"}
-          aria-hidden={!isOpen}
-        >
-          {/* Text input row */}
-          <View
-            style={[
-              styles.inputRow,
-              {
-                backgroundColor: theme.backgroundSecondary,
-                borderColor: theme.border,
-              },
-            ]}
-          >
-            <TextInput
-              style={[styles.textInput, { color: theme.text }]}
-              placeholder="What did you eat?"
-              placeholderTextColor={theme.textSecondary}
-              value={session.inputText}
-              onChangeText={session.setInputText}
-              onSubmitEditing={session.handleTextSubmit}
-              returnKeyType="search"
-              accessibilityLabel="Food description"
+      {/* Parse error */}
+      <InlineError message={session.parseError} />
+
+      {/* Frequent chips — only when no parsed items */}
+      {!hasParsedItems &&
+        session.frequentItems &&
+        session.frequentItems.length > 0 && (
+          <View style={styles.chipsRow}>
+            {session.frequentItems.slice(0, 5).map((item) => (
+              <FrequentChip
+                key={item.productName}
+                productName={item.productName}
+                onPress={session.handleChipPress}
+              />
+            ))}
+          </View>
+        )}
+
+      {/* Parsed items */}
+      {hasParsedItems && (
+        <View style={styles.parsedSection}>
+          {session.parsedItems.map((item, index) => (
+            <ParsedItemRow
+              key={`${item.name}-${index}`}
+              item={item}
+              index={index}
+              onRemove={session.removeItem}
             />
-            <VoiceLogButton
-              isListening={session.isListening}
-              volume={session.volume}
-              onPress={session.handleVoicePress}
-              disabled={session.isParsing}
-            />
+          ))}
+
+          {/* Footer: total + Log All */}
+          <View style={styles.parsedFooter}>
+            <ThemedText style={[styles.totalText, { color: theme.link }]}>
+              {totalCalories} cal total
+            </ThemedText>
             <Pressable
-              onPress={handleCameraPress}
-              accessibilityLabel="Open camera to scan food"
+              onPress={session.submitLog}
+              disabled={session.isSubmitting}
+              accessibilityLabel="Log all items"
               accessibilityRole="button"
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+              accessibilityState={{ busy: session.isSubmitting }}
               style={({ pressed }) => [
-                styles.iconButton,
+                styles.logAllButton,
                 {
-                  borderColor: theme.border,
-                  opacity: pressed ? 0.7 : 1,
+                  backgroundColor: theme.accentSolid,
+                  opacity: pressed || session.isSubmitting ? 0.7 : 1,
                 },
               ]}
             >
-              <Feather
-                name="camera"
-                size={20}
-                color={theme.textSecondary}
-                accessible={false}
-              />
+              {session.isSubmitting ? (
+                <ActivityIndicator size="small" color={theme.buttonText} />
+              ) : (
+                <ThemedText
+                  style={[styles.logAllText, { color: theme.buttonText }]}
+                >
+                  Log All
+                </ThemedText>
+              )}
             </Pressable>
           </View>
 
-          {/* Parse error */}
-          <InlineError message={session.parseError} />
-
-          {/* Frequent chips — only when no parsed items */}
-          {!hasParsedItems &&
-            session.frequentItems &&
-            session.frequentItems.length > 0 && (
-              <View style={styles.chipsRow}>
-                {session.frequentItems.slice(0, 5).map((item) => (
-                  <FrequentChip
-                    key={item.productName}
-                    productName={item.productName}
-                    onPress={session.handleChipPress}
-                  />
-                ))}
-              </View>
-            )}
-
-          {/* Parsed items */}
-          {hasParsedItems && (
-            <View style={styles.parsedSection}>
-              {session.parsedItems.map((item, index) => (
-                <ParsedItemRow
-                  key={`${item.name}-${index}`}
-                  item={item}
-                  index={index}
-                  onRemove={session.removeItem}
-                />
-              ))}
-
-              {/* Footer: total + Log All */}
-              <View style={styles.parsedFooter}>
-                <ThemedText style={[styles.totalText, { color: theme.link }]}>
-                  {totalCalories} cal total
-                </ThemedText>
-                <Pressable
-                  onPress={session.submitLog}
-                  disabled={session.isSubmitting}
-                  accessibilityLabel="Log all items"
-                  accessibilityRole="button"
-                  accessibilityState={{ busy: session.isSubmitting }}
-                  style={({ pressed }) => [
-                    styles.logAllButton,
-                    {
-                      backgroundColor: theme.accentSolid,
-                      opacity: pressed || session.isSubmitting ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  {session.isSubmitting ? (
-                    <ActivityIndicator size="small" color={theme.buttonText} />
-                  ) : (
-                    <ThemedText
-                      style={[styles.logAllText, { color: theme.buttonText }]}
-                    >
-                      Log All
-                    </ThemedText>
-                  )}
-                </Pressable>
-              </View>
-
-              <InlineError message={session.submitError} />
-            </View>
-          )}
+          <InlineError message={session.submitError} />
         </View>
-      </Animated.View>
-    </View>
+      )}
+    </HomeInlineDrawer>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    minHeight: 48,
-    gap: Spacing.md,
-  },
-  iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  label: { flex: 1 },
-  clipContainer: { overflow: "hidden" },
-  drawerBody: {
-    position: "absolute",
-    width: "100%",
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
-    paddingTop: Spacing.sm,
-    gap: Spacing.sm,
-  },
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
