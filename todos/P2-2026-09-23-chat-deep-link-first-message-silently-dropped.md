@@ -3,7 +3,7 @@ title: "ChatScreen with no conversation id (e.g. a malformed chat/:id deep link)
 status: backlog
 priority: medium
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 assignee:
 labels: [deferred, audit, reliability]
 github_issue:
@@ -27,13 +27,14 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 ## Acceptance Criteria
 
-- [ ] The create branch calls `sendMessage(content, undefined, conversation.id)`
-- [ ] Test: ChatScreen mounted with conversationId 0/undefined creates a conversation AND sends the message with the new id
+- [ ] **Decided (user, 2026-09-25): a malformed id shows "not found".** A `chat/:id` deep link whose id isn't a positive integer (e.g. `chat/abc` → 0) renders a "chat not found" state instead of an empty chat, following the `NotebookEntryScreen.tsx` precedent (undefined vs. malformed 0). It never auto-creates a conversation.
+- [ ] The create branch (ChatScreen opened with genuinely no id) still calls `sendMessage(content, undefined, conversation.id)`, so the first message is not lost
+- [ ] Tests: a malformed id renders "not found" and creates nothing; a missing id creates a conversation AND sends the message with the new id
 - [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes
 
-One-line fix plus a test. Decide whether a malformed id should show "not found" (the NotebookEntry precedent) instead of auto-creating — note the decision.
+The lost-message fix is one line. The malformed-id "not found" state follows `NotebookEntryScreen.tsx:61-67` (line numbers may drift); keep the distinction between a missing id and a malformed 0. If `linking.ts` `parseIntOrZero` makes the two indistinguishable, fixing that is in scope.
 
 ## Scope Contract
 
@@ -41,6 +42,7 @@ One-line fix plus a test. Decide whether a malformed id should show "not found" 
 - **Files in scope:**
   - `client/screens/ChatScreen.tsx`
   - `client/screens/__tests__/ChatScreen*.test.tsx`
+  - `client/navigation/linking.ts` (only if needed to tell a malformed id from a missing one)
 - No new mechanisms, files, or abstractions beyond those listed.
 
 ## Dependencies
@@ -56,3 +58,7 @@ One-line fix plus a test. Decide whether a malformed id should show "not found" 
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (M16).
+
+### 2026-09-25
+
+- **Product decision (user):** a broken chat link shows "not found" (NotebookEntry precedent) and never auto-creates. The lost-first-message bug is still fixed for a chat opened with no id. Ready for `/todo`.

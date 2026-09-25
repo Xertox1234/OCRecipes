@@ -3,7 +3,7 @@ title: "Camera capture and session failures leave no trace in production — err
 status: backlog
 priority: medium
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 assignee:
 labels: [deferred, audit, camera, observability]
 github_issue:
@@ -28,7 +28,7 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 - [ ] Capture failures, Camera session errors, and barcode-scanner errors are reported via `logger.error`, latched to once per mount to avoid floods
 - [ ] User-facing behavior is unchanged (the capture-failed alert still shows)
-- [ ] Decide and document whether to handle `onInterruptionStarted/Ended` (at minimum, log them)
+- [ ] **Decided (user, 2026-09-25): log interruptions only.** `onInterruptionStarted/Ended` are handled on both CameraView variants by reporting to error tracking (latched once per mount, like the failures). No new user-facing UI
 - [ ] Tests assert `logger.error` is called once on repeated failures
 - [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
@@ -58,3 +58,7 @@ Apply the same change to both CameraView variants. The jscpd duplicate between t
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (M6).
+
+### 2026-09-25
+
+- **Product decision (user):** log camera interruptions to error tracking; show users nothing new. Ready for `/todo`.
