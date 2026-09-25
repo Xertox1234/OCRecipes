@@ -11,8 +11,8 @@ import {
   parseInline,
   BULLET_REGEX,
   NUMBERED_REGEX,
-  IMAGE_REGEX,
   type InlineSegment,
+  stripImageLines,
 } from "@/components/markdown-text-utils";
 
 interface MarkdownTextProps {
@@ -58,26 +58,9 @@ function InlineText({
  * - `* text` (asterisk + space) is treated as a bullet, not emphasis
  */
 export function MarkdownText({ children, style }: MarkdownTextProps) {
-  // Strip markdown images before line classification. A line that was only
-  // an image (nothing else on it) disappears entirely — no line, no spacer.
-  // This also covers a bullet/numbered list item whose only content was an
-  // image (e.g. "- ![alt](url)" or "1. ![alt](url)") — without this, the
-  // bare list marker survives image-stripping, fails BULLET_REGEX/
-  // NUMBERED_REGEX (which require content after the marker), and falls
-  // through to render as a stray "-" or "1." line.
-  const lines: string[] = [];
-  for (const rawLine of children.split("\n")) {
-    let withoutImages = rawLine.replace(IMAGE_REGEX, "");
-    if (withoutImages !== rawLine) {
-      if (/^\s*(?:[-*]|\d+\.)?\s*$/.test(withoutImages)) {
-        continue;
-      }
-      // Collapse the double space an image leaves behind when it was
-      // removed from the middle of a line with other text.
-      withoutImages = withoutImages.replace(/ {2,}/g, " ");
-    }
-    lines.push(withoutImages);
-  }
+  // Images stripped, image-only lines/list items dropped — shared with
+  // spokenMarkdown so the screen and the spoken label agree.
+  const lines = stripImageLines(children);
   const elements: React.ReactNode[] = [];
   let i = 0;
 

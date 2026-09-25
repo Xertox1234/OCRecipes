@@ -29,7 +29,9 @@ export function ChatBubble({
   const { reducedMotion } = useAccessibility();
   const isUser = role === "user";
 
-  if (!content) return null;
+  // An assistant message that is only markup (e.g. a lone image) strips to
+  // nothing on screen and in speech — don't render an empty bubble.
+  if (!content || (!isUser && !spokenMarkdown(content))) return null;
 
   const entering = reducedMotion
     ? undefined

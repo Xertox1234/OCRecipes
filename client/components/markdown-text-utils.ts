@@ -19,20 +19,6 @@ export const IMAGE_REGEX = /!\[([^\]]*)\]\([^)]*\)/g;
  */
 const LINK_REGEX = /\[([^\]]*)\]\([^)]*\)/g;
 
-/**
- * The text a screen reader should speak for a message: images dropped and
- * links reduced to their text, matching what MarkdownText shows, so
- * VoiceOver/TalkBack never read raw `![alt](url)` syntax or URLs aloud.
- * Collapses the double space a mid-sentence image leaves behind.
- */
-export function spokenMarkdown(text: string): string {
-  return text
-    .replace(IMAGE_REGEX, "")
-    .replace(LINK_REGEX, "$1")
-    .replace(/ {2,}/g, " ")
-    .trim();
-}
-
 /** Parse inline bold/italic markers into styled segments. */
 export function parseInline(text: string): InlineSegment[] {
   // Render a markdown link as its plain text — not tappable, no URL shown.
@@ -80,3 +66,47 @@ export const BULLET_REGEX = /^(\s*)[-*]\s+(.+)/;
 
 /** Match a numbered list line (1. item). */
 export const NUMBERED_REGEX = /^(\s*)(\d+)\.\s+(.+)/;
+
+/**
+ * Split a message into lines with markdown images removed. A line that was
+ * only an image — including a list item whose only content was an image
+ * ("- ![alt](url)", "1. ![alt](url)") — is dropped entirely, not left as a
+ * blank line or a bare marker. Shared by MarkdownText (what is shown) and
+ * spokenMarkdown (what is spoken) so the two cannot drift apart.
+ */
+export function stripImageLines(text: string): string[] {
+  const lines: string[] = [];
+  for (const rawLine of text.split("\n")) {
+    let withoutImages = rawLine.replace(IMAGE_REGEX, "");
+    if (withoutImages !== rawLine) {
+      if (/^\s*(?:[-*]|\d+\.)?\s*$/.test(withoutImages)) {
+        continue;
+      }
+      // Collapse the double space an image leaves behind mid-line.
+      withoutImages = withoutImages.replace(/ {2,}/g, " ");
+    }
+    lines.push(withoutImages);
+  }
+  return lines;
+}
+
+/**
+ * The text a screen reader or read-aloud should speak for a message, built
+ * from the same pieces MarkdownText renders with (stripImageLines, the list
+ * regexes, parseInline), so it matches the screen: no `![alt](url)`, URLs,
+ * list markers or bold/italic markers read aloud.
+ */
+export function spokenMarkdown(text: string): string {
+  return stripImageLines(text)
+    .map((line) => {
+      const bullet = line.match(BULLET_REGEX);
+      const numbered = line.match(NUMBERED_REGEX);
+      const body = bullet ? bullet[2] : numbered ? numbered[3] : line;
+      return parseInline(body.trim())
+        .map((segment) => segment.text)
+        .join("")
+        .trim();
+    })
+    .join("\n")
+    .trim();
+}
