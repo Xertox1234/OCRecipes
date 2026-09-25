@@ -120,9 +120,7 @@ export function useCoachStream({
   const blocksRef = useRef<CoachBlock[]>([]);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
   const drainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearInactivity = useCallback(() => {
     if (inactivityTimerRef.current !== null) {
