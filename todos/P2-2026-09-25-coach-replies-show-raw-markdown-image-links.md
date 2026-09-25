@@ -7,8 +7,6 @@ updated: 2026-09-25
 assignee:
 labels: [deferred, ai-prompting, react-native]
 github_issue:
-human_led: true
-blocked_reason: "Needs a product decision first: steer the model to recipe_card blocks via the prompt, strip or render image/link syntax in MarkdownText, or both."
 ---
 
 # Coach Pro replies show raw markdown image links — MarkdownText renders no images or links
@@ -26,11 +24,19 @@ Medium: every Coach Pro answer that cites a recipe looks broken to the user. The
 ## Acceptance Criteria
 
 - [ ] A Coach Pro reply that references recipes never shows raw `![…](…)` or `[…](…)` syntax in the bubble
-- [ ] Decision recorded: steer the model to `recipe_card` blocks via the prompt, strip or render image/link syntax in `MarkdownText`, or both. Stripping in the client is the safety net regardless of the prompt.
-- [ ] Test: a `MarkdownText` case with an image line and a link, asserting the chosen rendering (no raw syntax)
+- [x] Decision recorded (user, 2026-09-25): **both.** The prompt steers recipes to `recipe_card` blocks, and `MarkdownText` strips any leftover syntax as a safety net. No inline images.
+- [ ] Prompt: the Coach Pro prompt tells the model to present recipes as `recipe_card` blocks and never as markdown images or links. The wording goes through the `prompt-engineer` agent.
+- [ ] Client: `MarkdownText` drops an image `![alt](url)` entirely (the line disappears if nothing else is on it) and renders a link `[text](url)` as its plain `text`. It is not tappable, and no URL is shown.
+- [ ] Test: a `MarkdownText` case with an image line and a link, asserting no raw `![`, `](` or URL text is rendered and the link text survives
 
 ## Implementation Notes
 
 - Client: `client/components/MarkdownText.tsx` (and its parser, imported at the top of the file). Rendering remote images inline in a chat bubble needs size limits and a decision on whether to allow arbitrary hosts. Stripping the image line, or showing just its alt text, is the simpler option.
 - Prompt: the Coach Pro system prompt, plus `BLOCKS_SYSTEM_PROMPT` in `server/services/coach-blocks.ts`. Tell the model to present recipes as `recipe_card` blocks and never as markdown images. Prompt changes go through the `prompt-engineer` agent.
 - Tool output: check whether the recipe-search tool result hands the model image URLs it doesn't need to repeat (`server/services/coach-tools.ts`).
+
+## Updates
+
+### 2026-09-25
+
+- **Product decision (user):** both. The prompt steers recipes to `recipe_card` blocks, and the client quietly strips any leftover image/link syntax (image line removed, link shown as its plain text). No inline images, so no host allowlist or size-limit work. Gate removed; ready for `/todo`.

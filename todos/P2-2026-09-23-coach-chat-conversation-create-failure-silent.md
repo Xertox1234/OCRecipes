@@ -3,7 +3,7 @@ title: "Coach Pro's first message fails silently when conversation creation erro
 status: backlog
 priority: medium
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 assignee:
 labels: [deferred, audit, reliability, client-state]
 github_issue:
@@ -26,7 +26,8 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 ## Acceptance Criteria
 
 - [ ] CoachChat surfaces a visible error (and restores the typed text) when conversation creation fails
-- [ ] Decide and implement (or explicitly reject, with rationale) a global MutationCache error net scoped to mutations with no local handler
+- [ ] **Decided (user, 2026-09-25): add the net.** A global `MutationCache({ onError })` in `client/lib/query-client.ts` shows an error toast only when the failing mutation has no local `onError` and no meta opt-out (mirroring `shouldSurfaceQueryError`), so no failure is shown twice
+- [ ] Every existing `useMutation` is checked for a local error path (an `onError`, or a caller that catches `mutateAsync` and shows its own error). Any that would double-toast gets the meta opt-out; the PR lists what was checked
 - [ ] Tests for the CoachChat failure path (and the net, if added)
 - [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
@@ -40,7 +41,8 @@ The global net is a cross-cutting change — if adopted, audit existing mutation
 - **Files in scope:**
   - `client/components/coach/CoachChat.tsx`
   - `client/hooks/useChat.ts`
-  - `client/lib/query-client.ts (only if the net is adopted)`
+  - `client/lib/query-client.ts` (the net)
+  - mutation call sites that need the meta opt-out to avoid a double toast (meta-only edits)
   - matching `__tests__/`
 - No new mechanisms, files, or abstractions beyond those listed.
 
@@ -57,3 +59,7 @@ The global net is a cross-cutting change — if adopted, audit existing mutation
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (M17).
+
+### 2026-09-25
+
+- **Product decision (user):** add the global mutation error net (opt-out-aware, never double-toasts), plus CoachChat's own visible error + restored text. Ready for `/todo`.

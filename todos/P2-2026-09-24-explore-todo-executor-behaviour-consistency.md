@@ -1,14 +1,12 @@
 ---
 title: "Explore why todo-executors diverge on the same situation (.env, scope growth, filing, review-stamp handling)"
-status: in-progress
+status: backlog
 priority: medium
 created: 2026-09-24
-updated: 2026-09-24
+updated: 2026-09-25
 assignee:
 labels: [deferred, harness, investigation]
 github_issue:
-human_led: true
-blocked_reason: "Exploration requested by the user for themselves — decide the desired executor behaviour first; not for autonomous /todo dispatch."
 ---
 
 # Explore todo-executor behaviour consistency
@@ -57,15 +55,32 @@ Source: the orchestrator's run record for that session and the five executor rep
 
 ## Acceptance Criteria
 
-- [ ] For each divergence above, a written finding: the instruction (or gap) in
-      `.claude/agents/todo-executor.md` / `.claude/skills/todo/SKILL.md` that allowed it, and the
-      behaviour the user wants.
+- [x] For each divergence above, the behaviour the user wants is decided (user, 2026-09-25 — see
+      Updates). What remains is applying those decisions to the instructions:
+- [ ] **Scope (2): grow only when needed.** `todo-executor.md` Step 4 item 6 and the Step 6
+      reviewer prompt stop treating every out-of-contract file as CRITICAL. An executor may
+      touch a file outside the Scope Contract only when an acceptance criterion cannot be met
+      without it, and must list each such file under an "Out of contract" heading in the PR body
+      with a one-line reason. An undisclosed out-of-contract file, or one not needed for an
+      acceptance criterion, stays CRITICAL.
+- [ ] **Follow-ups (3): report only.** Executors never create a todo file, for any finding (not
+      just review WARNINGs). Every side problem goes into the Step 11 report under
+      `DEFERRED_WARNINGS`; the user decides what becomes a todo. Say so once, where filing is
+      discussed (Step 7), without restating it elsewhere.
+- [ ] **Review stamp (4): report `advisory` honestly.** The Step 10 7c stamp check accepts a
+      record whose verdict is `clean` OR `advisory` with zero unresolved (matching
+      `merge-review-guard.sh`), and the Step 11 `REVIEW_STAMP:` field reports which one it was,
+      e.g. `advisory at <sha>`, with the advisory notes in `DEFERRED_WARNINGS`. Never report
+      `advisory` as `clean`.
+- [ ] **Research (5): follow the rule.** The researcher is skipped only on the existing
+      Short-circuit gate or Lightweight path. Add one sentence saying no other skip (e.g. "small
+      scope") is allowed, and that the skip reason is recorded in `SHORT_CIRCUIT`.
 - [x] A decision on `.env` for `Agent(isolation)` worktrees: provision it the way `post-checkout`
       does, forbid linking it and leave DB tests to CI, or something else — recorded where
       executors will read it.
 - [x] The #1039 leading-zero commit hash explained (how it was produced) or ruled harmless.
-- [ ] Any follow-up changes filed as separate todos (or, for `.claude/hooks/**`, logged in
-      `docs/harness-residuals.md` per the harness freeze).
+- [ ] No `.claude/hooks/**` edit is needed for any item above; if one turns out to be, log it in
+      `docs/harness-residuals.md` per the harness freeze instead of editing the hook.
 
 ## Implementation Notes
 
@@ -146,3 +161,13 @@ Source: the orchestrator's run record for that session and the five executor rep
   - Instruction edits load on session reload, so they are unverified until the next `/todo` run.
     Check it for zero `[handback-send-enforce]` nudges and zero `Async agent launched` results
     in executor transcripts.
+
+### 2026-09-25
+
+- **Decisions (user) on the four remaining divergences:** (2) scope may grow only when an
+  acceptance criterion needs it, and every extra file is disclosed in the PR; (3) executors report
+  side problems and never file todos; (4) an `advisory` stamp counts as a pass but is reported as
+  `advisory`, never `clean`; (5) the researcher is skipped only where the existing rules allow.
+  Divergence 6 (background waits) was covered by the 2026-09-24 `run_in_background: false`
+  decision; 7 was ruled harmless. Gate removed and status reset to `backlog`; the remaining work
+  is instruction edits, ready for `/todo`.

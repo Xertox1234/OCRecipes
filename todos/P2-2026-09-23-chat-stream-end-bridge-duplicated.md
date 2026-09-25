@@ -3,7 +3,7 @@ title: "ChatScreen and RecipeChatScreen duplicate the stream-end → message-ref
 status: backlog
 priority: medium
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 assignee:
 labels: [deferred, audit, maintainability]
 github_issue:
@@ -27,7 +27,7 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 - [ ] A `usePendingAssistantBridge(...)` hook owns the refs/effects; both screens use it
 - [ ] The useChat comment's premise is corrected
-- [ ] The toast copy matches actual behavior (or partial content is actually preserved — decide)
+- [ ] The toast copy matches actual behavior. **Decided (user, 2026-09-25): keep today's behavior (the partial reply is discarded) and fix the wording.** Replace "Partial response may be visible" with copy that says the reply was interrupted and the user can retry, e.g. "Response was interrupted. Tap retry." Do not preserve partial content. This matches the Coach decision in #1068.
 - [ ] Existing ChatScreen/RecipeChatScreen tests green; unit tests for the new hook
 - [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
@@ -59,3 +59,7 @@ Pure extraction first (no behavior change), then the copy fix.
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (M21, L14, L16).
+
+### 2026-09-25
+
+- **Product decision (user):** fix the wording, don't keep the partial. The toast must stop claiming a partial reply is visible. Ready for `/todo`.
