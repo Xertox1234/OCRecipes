@@ -335,6 +335,37 @@ describe("CameraView.ios — failure reporting (latched once per mount)", () => 
     );
   });
 
+  it("still reports the end of a real interruption when the app backgrounds during it", () => {
+    render(<CameraView barcodeTypes={[]} />);
+
+    const { onInterruptionStarted, onInterruptionEnded } = lastCameraProps();
+    onInterruptionStarted?.("video-device-in-use-by-another-client");
+    onInterruptionStarted?.("video-device-not-available-in-background");
+    onInterruptionEnded?.();
+
+    expect(logger.error).toHaveBeenLastCalledWith(
+      "[CameraView] Camera session interruption ended",
+    );
+    expect(logger.error).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives each newly reported interruption reason its own end report", () => {
+    render(<CameraView barcodeTypes={[]} />);
+
+    const { onInterruptionStarted, onInterruptionEnded } = lastCameraProps();
+    onInterruptionStarted?.("video-device-in-use-by-another-client");
+    onInterruptionEnded?.();
+    onInterruptionStarted?.(
+      "video-device-not-available-due-to-system-pressure",
+    );
+    onInterruptionEnded?.();
+    // A repeat of an already-reported reason reports neither start nor end.
+    onInterruptionStarted?.("video-device-in-use-by-another-client");
+    onInterruptionEnded?.();
+
+    expect(logger.error).toHaveBeenCalledTimes(4);
+  });
+
   it("re-arms every latch on a fresh mount (once per mount, not once ever)", () => {
     const first = render(<CameraView barcodeTypes={[]} />);
     lastCameraProps().onError?.(new Error("first mount"));

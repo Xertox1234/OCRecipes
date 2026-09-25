@@ -92,3 +92,4 @@ failed", ...)` at each call site (ScanScreen.tsx, ReceiptCaptureScreen.tsx,
 ### 2026-09-25 (review repair)
 
 - Independent review found iOS forwards app backgrounding (`video-device-not-available-in-background`) through `onInterruptionStarted`. Repaired: that reason and its matching end are not reported, interruptions latch per reason, the end message is neutral, and tests pin the Sentry payload and cover a remount. Codified in `docs/solutions/logic-errors/visioncamera-interruption-reports-app-backgrounding-latch-per-reason-2026-09-25.md`.
+- Confirmation review then found the "last start was background" flag dropped a real interruption's end when the app backgrounded mid-episode. Replaced it with an "awaiting end" flag set by each reported start, so every reported interruption gets one end report. Tests added for both sequences.

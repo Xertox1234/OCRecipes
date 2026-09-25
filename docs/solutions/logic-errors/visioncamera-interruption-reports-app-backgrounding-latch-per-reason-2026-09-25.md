@@ -24,10 +24,10 @@ Two defects compound:
 
 ## Solution
 
-- Skip `video-device-not-available-in-background` entirely, and skip the `onInterruptionEnded` that follows it (the end callback has no reason, so remember whether the last start was the background one).
+- Skip `video-device-not-available-in-background` entirely. The end callback carries no reason, so pair ends with REPORTED starts: set an "awaiting end" flag when a start is reported and report the end only while it is set. Do not key the end on "was the last start the background one": AVFoundation can post a second, changed-reason notification mid-episode, so real → background → end would drop the real episode's end.
 - Latch **per reason** (`useRef(new Set<string>())`), not one boolean for the whole callback.
 - Android is different: CameraX only raises this path for a `RECOVERABLE` `CameraState.ErrorType` and always reports `unknown`, so one latch is fine there.
-- Tests pin the forwarded payload (`toHaveBeenCalledWith`), not just the call count. A count-only assertion stays green if a refactor drops the error that made it into Sentry.
+- The iOS tests pin the forwarded payload (`toHaveBeenCalledWith`), not just the call count. A count-only assertion stays green if a refactor drops the error that made it into Sentry. (The Android file still pins only the end message.)
 
 ## Prevention
 
