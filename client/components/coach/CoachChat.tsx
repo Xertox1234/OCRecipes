@@ -119,8 +119,11 @@ export default function CoachChat({
   // The ref is written together with the state in this setter, NOT in the
   // render body: a render-phase `ref.current =` write is a React Compiler
   // CompileError ("Cannot access refs during render"), and writing here also
-  // keeps the ref current before the re-render. Every write to inputText must
-  // go through setInputText (the raw state setter is not used elsewhere).
+  // keeps the ref current before the re-render. (This file is compiler-exempt
+  // anyway — see the CORRECTION note on handleConfirmPlanSlot's `finally` —
+  // so this avoids adding a second bailout, it doesn't restore coverage.)
+  // Every write to inputText must go through setInputText (the raw state
+  // setter is not used elsewhere).
   const inputTextRef = useRef(inputText);
   const setInputText = useCallback((text: string) => {
     inputTextRef.current = text;
@@ -386,7 +389,7 @@ export default function CoachChat({
         warmUpHook.sendWarmUp(transcript);
       }
     }
-  }, [isListening, transcript, isCoachPro, warmUpHook]);
+  }, [isListening, transcript, isCoachPro, warmUpHook, setInputText]);
 
   // Auto-send when speech finalizes
   useEffect(() => {
@@ -439,6 +442,7 @@ export default function CoachChat({
       ttsStop,
       startStream,
       onMessageSent,
+      setInputText,
     ],
   );
 
@@ -880,7 +884,7 @@ export default function CoachChat({
       setInputText(text);
       if (isCoachPro) warmUpHook.sendTextWarmUp(text);
     },
-    [isCoachPro, warmUpHook],
+    [isCoachPro, warmUpHook, setInputText],
   );
 
   const micAdornment = useMemo(
