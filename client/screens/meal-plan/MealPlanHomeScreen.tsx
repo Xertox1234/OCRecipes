@@ -204,7 +204,7 @@ const DateStripItem = React.memo(function DateStripItem({
 
 // ── Meal Slot Card ───────────────────────────────────────────────────
 
-const MealSlotItem = React.memo(function MealSlotItem({
+export const MealSlotItem = React.memo(function MealSlotItem({
   item,
   isConfirmed,
   onPress,
@@ -241,6 +241,37 @@ const MealSlotItem = React.memo(function MealSlotItem({
     ? `${name}, ${macros.calories} calories, ${macros.protein}g protein, ${macros.carbs}g carbs, ${macros.fat}g fat${isConfirmed ? ", confirmed" : ""}${allergenA11ySuffix}`
     : `${name}${isConfirmed ? ", confirmed" : ""}${allergenA11ySuffix}`;
 
+  // The card Pressable above is accessible by default, which collapses its
+  // whole subtree into a single VoiceOver/TalkBack focus stop — the nested
+  // Confirm and Remove Pressables below are never independently reachable.
+  // Expose both as accessibilityActions on the card instead (same pattern as
+  // CarouselRecipeCard's toggleFavourite/dismiss actions) so the primary
+  // label stays the single focus stop while Confirm/Remove are still
+  // independently activatable via the screen reader's actions/rotor. Confirm
+  // is omitted once there's nothing left to confirm (mirrors `canConfirm`
+  // gating the nested button's render + the `!isConfirmed &&` guard on its
+  // onPress); Remove has no such gate, matching its unconditional render.
+  const accessibilityActions = useMemo(
+    () => [
+      ...(canConfirm && !isConfirmed
+        ? [{ name: "confirm", label: `Confirm ${name} as eaten` }]
+        : []),
+      { name: "remove", label: `Remove ${name}` },
+    ],
+    [canConfirm, isConfirmed, name],
+  );
+
+  const handleAccessibilityAction = useCallback(
+    (event: { nativeEvent: { actionName: string } }) => {
+      if (event.nativeEvent.actionName === "confirm") {
+        if (!isConfirmed) onConfirm(item.id);
+      } else if (event.nativeEvent.actionName === "remove") {
+        onRemove(item.id);
+      }
+    },
+    [isConfirmed, onConfirm, onRemove, item.id],
+  );
+
   return (
     <Pressable
       onPress={() => !isOrphaned && onPress(item)}
@@ -256,6 +287,8 @@ const MealSlotItem = React.memo(function MealSlotItem({
       ]}
       accessibilityRole="button"
       accessibilityLabel={accessLabel}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={handleAccessibilityAction}
     >
       {canConfirm && (
         <Pressable
@@ -308,7 +341,7 @@ const MealSlotItem = React.memo(function MealSlotItem({
 
 // ── Meal Slot Section ────────────────────────────────────────────────
 
-const MealSlotSection = React.memo(function MealSlotSection({
+export const MealSlotSection = React.memo(function MealSlotSection({
   mealType,
   items,
   confirmedIds,
@@ -352,6 +385,37 @@ const MealSlotSection = React.memo(function MealSlotSection({
     ? `${label}, expanded`
     : `${label}${summaryText}, collapsed`;
 
+  // The header Pressable is accessible by default, which collapses its whole
+  // subtree into a single VoiceOver/TalkBack focus stop — the nested "Suggest"
+  // chip below is never independently reachable when the section is expanded.
+  // Expose it as an accessibilityAction on the header instead (same pattern
+  // as CarouselRecipeCard's toggleFavourite/dismiss actions), gated to
+  // isExpanded since that's also what gates the chip's own render — a
+  // collapsed section has no Suggest chip to route the action to.
+  const headerAccessibilityActions = useMemo(
+    () =>
+      isExpanded
+        ? [
+            {
+              name: "suggest",
+              label: canSuggest
+                ? `AI suggest ${label.toLowerCase()}`
+                : `Upgrade to suggest ${label.toLowerCase()}`,
+            },
+          ]
+        : undefined,
+    [isExpanded, canSuggest, label],
+  );
+
+  const handleHeaderAccessibilityAction = useCallback(
+    (event: { nativeEvent: { actionName: string } }) => {
+      if (event.nativeEvent.actionName === "suggest") {
+        onSuggest(mealType);
+      }
+    },
+    [onSuggest, mealType],
+  );
+
   return (
     <View style={styles.mealSlotSection}>
       <Pressable
@@ -360,6 +424,8 @@ const MealSlotSection = React.memo(function MealSlotSection({
         accessibilityRole="button"
         accessibilityState={{ expanded: isExpanded }}
         accessibilityLabel={headerAccessLabel}
+        accessibilityActions={headerAccessibilityActions}
+        onAccessibilityAction={handleHeaderAccessibilityAction}
       >
         <Feather
           name={iconName as keyof typeof Feather.glyphMap}
