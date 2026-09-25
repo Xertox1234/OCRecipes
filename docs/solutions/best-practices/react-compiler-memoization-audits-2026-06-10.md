@@ -42,15 +42,19 @@ check the compiler will re-report these.
 - Verify the compiler is genuinely on: `grep reactCompiler app.json` +
   `ls node_modules/babel-plugin-react-compiler` (dep of babel-preset-expo). That
   only proves the compiler is *installed and enabled* — it says nothing about
-  whether a given file actually compiles. Coverage is per-file: measured
-  2026-09-23, 61 of 226 client `.tsx` files bail out (value mutation,
+  whether a given component actually compiles. Measured 2026-09-23, 61 of
+  226 client `.tsx` files contain a component that bails out, and a
+  2026-09-25 review found 20 more among client `.ts` hooks (value mutation,
   `eslint-disable` of hooks rules, ref access in render, `try`/`finally`,
   memo-not-preserved). "Don't add manual memo" applies ONLY to a component
   that compiles — check with `node scripts/check-react-compiler-bailouts.js`,
   a CI-enforced ratchet (chained onto `npm run lint`) against a checked-in
-  baseline (`scripts/react-compiler-bailout-baseline.json`). A file already in
-  the baseline needs manual memoization exactly like a class-component prop —
-  it is not covered, whatever this rule's headline says.
+  baseline (`scripts/react-compiler-bailout-baseline.json`). The baseline is
+  per FILE, but bailing is per function: 26 of the 61 baseline `.tsx` files
+  also contain components that compile cleanly (e.g. ProfileScreen: 4
+  errors, 1 success). So check which function bailed before adding manual
+  memoization — memoize the component that is actually skipped, not the
+  whole file.
 - **Gotcha if you ever re-derive this measurement**: the compiler's logger
   fires a `CompileSuccess` event too (once per compiled function/component),
   not just on failure — checking `events.length > 0` to detect a bailout is

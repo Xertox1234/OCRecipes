@@ -4,7 +4,8 @@ import * as os from "os";
 import * as path from "path";
 import { spawnSync } from "child_process";
 import {
-  findTsxFiles,
+  findClientSourceFiles,
+  compilerMatchesExpoBuild,
   isBailout,
   loadBaseline,
   writeBaseline,
@@ -84,12 +85,15 @@ describe("check-react-compiler-bailouts", () => {
     }
   });
 
-  describe("findTsxFiles", () => {
+  describe("findClientSourceFiles", () => {
     it("finds .tsx files recursively, relative to root", () => {
       const root = makeTmpDir();
       writeFile(root, "client/components/A.tsx", CLEAN_COMPONENT);
       writeFile(root, "client/screens/nested/B.tsx", CLEAN_COMPONENT);
-      const files = findTsxFiles(path.join(root, "client"), root).sort();
+      const files = findClientSourceFiles(
+        path.join(root, "client"),
+        root,
+      ).sort();
       expect(files).toEqual([
         "client/components/A.tsx",
         "client/screens/nested/B.tsx",
@@ -104,22 +108,32 @@ describe("check-react-compiler-bailouts", () => {
         "client/components/__tests__/A.test.tsx",
         CLEAN_COMPONENT,
       );
-      const files = findTsxFiles(path.join(root, "client"), root);
+      const files = findClientSourceFiles(path.join(root, "client"), root);
       expect(files).toEqual(["client/components/A.tsx"]);
     });
 
-    it("excludes node_modules and ignores non-.tsx files", () => {
+    // babel-preset-expo compiles every client source file, and compilation
+    // mode "infer" compiles use*-named hooks in plain .ts files too.
+    it("finds .ts as well as .tsx, but excludes .d.ts, node_modules and other extensions", () => {
       const root = makeTmpDir();
       writeFile(root, "client/components/A.tsx", CLEAN_COMPONENT);
-      writeFile(root, "client/components/A.ts", "export const x = 1;\n");
+      writeFile(root, "client/hooks/useA.ts", "export const x = 1;\n");
+      writeFile(root, "client/types/globals.d.ts", "declare const y: 1;\n");
+      writeFile(root, "client/assets/data.json", "{}\n");
       writeFile(root, "client/node_modules/pkg/Vendored.tsx", CLEAN_COMPONENT);
-      const files = findTsxFiles(path.join(root, "client"), root);
-      expect(files).toEqual(["client/components/A.tsx"]);
+      const files = findClientSourceFiles(
+        path.join(root, "client"),
+        root,
+      ).sort();
+      expect(files).toEqual([
+        "client/components/A.tsx",
+        "client/hooks/useA.ts",
+      ]);
     });
 
     it("returns an empty array for a directory that does not exist", () => {
       const root = makeTmpDir();
-      expect(findTsxFiles(path.join(root, "nope"), root)).toEqual([]);
+      expect(findClientSourceFiles(path.join(root, "nope"), root)).toEqual([]);
     });
   });
 
@@ -164,6 +178,30 @@ export function CleanToo({ label }: { label: string }) {
     it("real repo pin: the positive control (ThemedText.tsx) compiles clean", () => {
       const control = path.join(REPO_ROOT, "client/components/ThemedText.tsx");
       expect(isBailout(control)).toBe(false);
+    });
+  });
+
+  describe("parse mode matches the file extension", () => {
+    // An angle-bracket type assertion is valid TypeScript but a parse error
+    // in TSX. Parsing .ts as TSX would count this hook as a bailout.
+    it("parses a .ts file as plain TypeScript, not TSX", () => {
+      const root = makeTmpDir();
+      const file = writeFile(
+        root,
+        "client/hooks/useCast.ts",
+        "export function useCast(x: unknown) {\n  return <number>x;\n}\n",
+      );
+      expect(isBailout(file)).toBe(false);
+    });
+  });
+
+  describe("compilerMatchesExpoBuild", () => {
+    // The check is only meaningful if it runs the SAME babel-plugin-react-compiler
+    // copy that babel-preset-expo (the real build) resolves.
+    it("resolves the same compiler copy as babel-preset-expo in this repo", () => {
+      const result = compilerMatchesExpoBuild();
+      expect(result.ok).toBe(true);
+      expect(result.checkPath).toBe(result.expoPath);
     });
   });
 

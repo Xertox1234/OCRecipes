@@ -8,10 +8,13 @@
  * rule "React Compiler is ACTIVE, manual memo is redundant" (docs/rules/
  * performance.md) is only true for a component that actually compiles.
  * Measured 2026-09-23: 61 of 226 client `.tsx` files contain a skipped
- * component. Nothing enforced that number staying flat — this script does.
+ * component; a 2026-09-25 review found 20 more among the client `.ts` hooks
+ * (compilationMode "infer" compiles use*-named hooks in plain `.ts` too).
+ * Nothing enforced those numbers staying flat — this script does.
  *
  * Method (same recipe used to derive the 2026-09-23 audit's count): compile
- * every `client/**\/*.tsx` file (excluding `__tests__`) through the
+ * every `client/**\/*.{ts,tsx}` file (excluding `__tests__` and `.d.ts`,
+ * each parsed as TSX only if it IS `.tsx`, like the real build) through the
  * INSTALLED `babel-plugin-react-compiler`, standalone (`@babel/preset-
  * typescript` + `@babel/plugin-syntax-jsx`, no `babel-preset-expo`) with a
  * logger. A file is a "bailout" iff the logger records anything other than
@@ -93,12 +96,11 @@ const presetTypescript = require.resolve("@babel/preset-typescript");
 const syntaxJsx = require.resolve("@babel/plugin-syntax-jsx");
 
 /**
- * Recursively find all `.tsx` files under `dir`, excluding any path that
- * contains a `__tests__` or `node_modules` segment (mirrors the audit's
- * `find client -name '*.tsx' -not -path '*__tests__*'`). Returns paths
- * relative to `root`, POSIX-separated.
+ * Recursively find all client source files (`.ts` and `.tsx`, not `.d.ts`)
+ * under `dir`, excluding any `__tests__` or `node_modules` directory. Returns
+ * paths relative to `root`, with forward slashes.
  */
-export function findTsxFiles(dir, root) {
+export function findClientSourceFiles(dir, root) {
   const results = [];
 
   function walk(current) {
@@ -114,7 +116,11 @@ export function findTsxFiles(dir, root) {
         if (entry.name === "node_modules" || entry.name === "__tests__")
           continue;
         walk(full);
-      } else if (entry.isFile() && entry.name.endsWith(".tsx")) {
+      } else if (
+        entry.isFile() &&
+        (entry.name.endsWith(".tsx") ||
+          (entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")))
+      ) {
         results.push(path.relative(root, full).replace(/\\/g, "/"));
       }
     }
@@ -131,13 +137,16 @@ export function findTsxFiles(dir, root) {
  */
 export function isBailout(absPath) {
   const eventKinds = [];
+  // Parse like the real build: TSX only for .tsx (an angle-bracket type
+  // assertion is valid .ts but a TSX parse error).
+  const isTSX = absPath.endsWith(".tsx");
   try {
     babel.transformFileSync(absPath, {
       babelrc: false,
       configFile: false,
-      presets: [[presetTypescript, { isTSX: true, allExtensions: true }]],
+      presets: [[presetTypescript, { isTSX, allExtensions: true }]],
       plugins: [
-        [syntaxJsx],
+        ...(isTSX ? [[syntaxJsx]] : []),
         [
           reactCompilerPlugin,
           {
@@ -235,6 +244,26 @@ export function parseArgs(args) {
   return { kind: "ok", updateMode, root, baselineFile };
 }
 
+/**
+ * The check is only meaningful if it runs the SAME babel-plugin-react-compiler
+ * copy the real build uses. babel-preset-expo declares it as its own
+ * dependency, so a future Expo bump can nest a different copy for the build
+ * while this script keeps resolving the root one.
+ */
+export function compilerMatchesExpoBuild() {
+  const checkPath = reactCompilerPlugin;
+  let expoPath;
+  try {
+    const expoRequire = createRequire(
+      require.resolve("babel-preset-expo/package.json"),
+    );
+    expoPath = expoRequire.resolve("babel-plugin-react-compiler");
+  } catch (error) {
+    return { ok: false, checkPath, expoPath: `unresolvable (${error})` };
+  }
+  return { ok: checkPath === expoPath, checkPath, expoPath };
+}
+
 export function main(args) {
   const parsed = parseArgs(args);
   if (parsed.kind === "error") {
@@ -252,6 +281,16 @@ export function main(args) {
       `${colors.yellow}client/ directory not found under ${root} — nothing to check.${colors.reset}`,
     );
     return 0;
+  }
+
+  const compiler = compilerMatchesExpoBuild();
+  if (!compiler.ok) {
+    console.error(
+      `${colors.red}${colors.bold}Harness error:${colors.reset}${colors.red} this check resolves ` +
+        `babel-plugin-react-compiler at ${compiler.checkPath}, but babel-preset-expo (the real build) ` +
+        `resolves ${compiler.expoPath}. Align the root devDependency with the version Expo uses.${colors.reset}`,
+    );
+    return 2;
   }
 
   const controlPath = path.join(root, CONTROL_RELATIVE_PATH);
@@ -272,7 +311,7 @@ export function main(args) {
     return 2;
   }
 
-  const files = findTsxFiles(clientDir, root).sort();
+  const files = findClientSourceFiles(clientDir, root).sort();
   const currentBailouts = files.filter((f) => isBailout(path.join(root, f)));
 
   if (updateMode) {
