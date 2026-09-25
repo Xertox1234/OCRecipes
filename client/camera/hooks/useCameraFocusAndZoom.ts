@@ -236,9 +236,10 @@ export function useCameraFocusAndZoom({
         scheduleOnRN(setCameraZoom, zoom.value);
       }
       if (lastZoomLabelText.value !== null) {
-        // Self-clear: on iOS a failed attempt (one-finger tap) reaches
-        // onFinalize with NO onBegin before it (UIPinchGestureRecognizer goes
-        // .possible -> .failed), so the onBegin reset alone can't be relied on.
+        // Clear the gate where it's used. Every gesture that set it was
+        // active and ends here (END/FAILED/CANCELLED), so this holds whatever
+        // order the platform delivers begin/finalize in; the onBegin reset is
+        // only defence in depth.
         lastZoomLabelText.value = null;
         scheduleOnRN(hideZoomLabel);
       }

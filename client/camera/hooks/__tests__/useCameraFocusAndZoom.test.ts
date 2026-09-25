@@ -486,6 +486,33 @@ describe("useCameraFocusAndZoom", () => {
       expect(setZoom).toHaveBeenCalledTimes(1);
     });
 
+    it("cancels the previous pinch's pending hide when a new pinch starts before it fires", async () => {
+      const { result } = mount(
+        vi.fn().mockResolvedValue(undefined),
+        makeDevice(),
+      );
+
+      await startPinch();
+      await pinch(1.5);
+      await endPinch(); // arms the 600ms hide
+      await act(async () => {
+        vi.advanceTimersByTime(300);
+      });
+
+      await startPinch(); // baseline 1.5
+      await pinch(1.2); // 1.5 * 1.2 = 1.8 -> "1.8x"
+      await act(async () => {
+        vi.advanceTimersByTime(400); // past the FIRST pinch's hide deadline
+      });
+      expect(result.current.zoomLabel).toBe("1.8x");
+
+      await endPinch();
+      await act(async () => {
+        vi.advanceTimersByTime(601);
+      });
+      expect(result.current.zoomLabel).toBeNull();
+    });
+
     it("shows the zoom label again at the start of a new gesture even when it ends in the same displayed bucket", async () => {
       const { result } = mount(
         vi.fn().mockResolvedValue(undefined),
