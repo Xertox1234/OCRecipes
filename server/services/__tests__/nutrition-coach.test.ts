@@ -886,7 +886,7 @@ describe("generateCoachResponse", () => {
     );
   });
 
-  it("yields error message without partial content when streaming throws mid-stream", async () => {
+  it("yields the interrupted message after already-delivered partial content when streaming throws mid-stream", async () => {
     const errorStream = {
       [Symbol.asyncIterator]() {
         let count = 0;
