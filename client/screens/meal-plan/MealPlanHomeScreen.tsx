@@ -687,9 +687,15 @@ export default function MealPlanHomeScreen() {
 
   const selectedDateStr = toLocalDateString(selectedDate);
 
-  const createRecipeMutation = useCreateMealPlanRecipe();
-  const addItemMutation = useAddMealPlanItem();
-  const confirmMutation = useConfirmMealPlanItem();
+  // Destructure rather than depend on the mutation objects themselves —
+  // useMutation returns a new object identity every render, which would
+  // make every useCallback below that depends on it re-create every render
+  // (and, since those callbacks feed the memoized MealSlotSection/
+  // MealSlotItem rows, defeat their React.memo). See CoachChat.tsx for the
+  // same pattern.
+  const { mutateAsync: createRecipe } = useCreateMealPlanRecipe();
+  const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
+  const { mutate: confirmItem } = useConfirmMealPlanItem();
   const { data: expiringItems } = useExpiringPantryItems(
     features.pantryTracking,
   );
@@ -735,8 +741,8 @@ export default function MealPlanHomeScreen() {
     isRefetching,
   } = useMealPlanItems(startDate, endDate);
 
-  const removeMutation = useRemoveMealPlanItem();
-  const reorderMutation = useReorderMealPlanItems();
+  const { mutate: removeItem } = useRemoveMealPlanItem();
+  const { mutate: reorderItems } = useReorderMealPlanItems();
 
   // Group items by date and meal type
   const dayItems = useMemo(() => {
@@ -866,12 +872,12 @@ export default function MealPlanHomeScreen() {
   const handleRemoveItem = useCallback(
     (id: number) => {
       haptics.selection();
-      removeMutation.mutate(id, {
+      removeItem(id, {
         onError: () =>
           toast.error("Couldn't remove the item. Please try again."),
       });
     },
-    [removeMutation, haptics, toast],
+    [removeItem, haptics, toast],
   );
 
   const handleReorder = useCallback(
@@ -880,12 +886,12 @@ export default function MealPlanHomeScreen() {
         id: item.id,
         sortOrder: idx,
       }));
-      reorderMutation.mutate(updates, {
+      reorderItems(updates, {
         onError: () =>
           toast.error("Couldn't save the new order. Please try again."),
       });
     },
-    [reorderMutation, toast],
+    [reorderItems, toast],
   );
 
   const handleToggleSection = useCallback(
@@ -1103,7 +1109,7 @@ export default function MealPlanHomeScreen() {
     async (suggestion: MealSuggestion) => {
       try {
         // Create recipe from suggestion
-        const recipe = await createRecipeMutation.mutateAsync({
+        const recipe = await createRecipe({
           title: suggestion.title,
           description: suggestion.description,
           difficulty: suggestion.difficulty,
@@ -1123,7 +1129,7 @@ export default function MealPlanHomeScreen() {
         });
 
         // Add to meal plan
-        await addItemMutation.mutateAsync({
+        await addMealPlanItem({
           recipeId: recipe.id,
           plannedDate: selectedDateStr,
           mealType: suggestMealType,
@@ -1140,8 +1146,8 @@ export default function MealPlanHomeScreen() {
       }
     },
     [
-      createRecipeMutation,
-      addItemMutation,
+      createRecipe,
+      addMealPlanItem,
       selectedDateStr,
       suggestMealType,
       haptics,
@@ -1153,11 +1159,11 @@ export default function MealPlanHomeScreen() {
   const handleConfirmItem = useCallback(
     (id: number) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-      confirmMutation.mutate(id, {
+      confirmItem(id, {
         onError: () => toast.error("Couldn't log the meal. Please try again."),
       });
     },
-    [confirmMutation, haptics, toast],
+    [confirmItem, haptics, toast],
   );
 
   const handleBrowseRecipes = useCallback(() => {

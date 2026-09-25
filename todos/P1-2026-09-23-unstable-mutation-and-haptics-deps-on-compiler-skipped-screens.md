@@ -1,6 +1,6 @@
 ---
 title: "RecipeBrowser, MealPlanHome and Home pass whole useMutation/useHaptics objects as callback deps on compiler-skipped screens — list rows re-render every render"
-status: backlog
+status: in-progress
 priority: high
 created: 2026-09-23
 updated: 2026-09-23
