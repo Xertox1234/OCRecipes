@@ -493,6 +493,22 @@ export default function ChatScreen() {
         >
           {"This chat couldn't be found."}
         </ThemedText>
+        {/* A chat/:id deep link builds a stack holding only Chat, so the
+            header has no back button; this is the only way out. */}
+        <Pressable
+          onPress={() =>
+            navigation.canGoBack()
+              ? navigation.goBack()
+              : navigation.navigate("ChatList")
+          }
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ThemedText style={[styles.notFoundBack, { color: theme.link }]}>
+            Back to chats
+          </ThemedText>
+        </Pressable>
       </View>
     );
   }
@@ -646,6 +662,10 @@ const styles = StyleSheet.create({
   notFoundText: {
     fontSize: 15,
     textAlign: "center",
+  },
+  notFoundBack: {
+    fontSize: 15,
+    marginTop: Spacing.md,
   },
   typingRow: {
     flexDirection: "row",

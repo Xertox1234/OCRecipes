@@ -9,9 +9,15 @@ const {
   mockAcknowledge,
   mockCreateMutateAsync,
   mockSetParams,
+  mockGoBack,
+  mockNavigate,
+  mockCanGoBack,
   mockRouteParams,
   mockUseChatMessages,
 } = vi.hoisted(() => ({
+  mockGoBack: vi.fn(),
+  mockNavigate: vi.fn(),
+  mockCanGoBack: vi.fn(() => false),
   mockSendMessage: vi.fn(),
   mockAcknowledge: vi.fn(),
   mockCreateMutateAsync: vi.fn(),
@@ -31,7 +37,12 @@ const {
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ setParams: mockSetParams }),
+  useNavigation: () => ({
+    setParams: mockSetParams,
+    goBack: mockGoBack,
+    navigate: mockNavigate,
+    canGoBack: mockCanGoBack,
+  }),
   useRoute: () => ({ params: mockRouteParams.value }),
 }));
 
@@ -139,6 +150,30 @@ describe("ChatScreen — malformed conversationId (deep link)", () => {
     });
     expect(mockCreateMutateAsync).not.toHaveBeenCalled();
     expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  // A chat/:id deep link builds a stack holding only Chat, so there is no
+  // header back button — the not-found view must offer its own way out.
+  it("offers a back action that goes to the chat list when nothing is behind it", () => {
+    mockRouteParams.value = { conversationId: 0 };
+    mockCanGoBack.mockReturnValue(false);
+
+    renderComponent(<ChatScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+
+    expect(mockNavigate).toHaveBeenCalledWith("ChatList");
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it("goes back when there is a screen behind it", () => {
+    mockRouteParams.value = { conversationId: 0 };
+    mockCanGoBack.mockReturnValue(true);
+
+    renderComponent(<ChatScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+
+    expect(mockGoBack).toHaveBeenCalledOnce();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });
 
