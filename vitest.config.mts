@@ -178,6 +178,10 @@ export default defineConfig({
         import.meta.dirname,
         "./test/mocks/expo-linear-gradient.ts",
       ),
+      "expo-image": path.resolve(
+        import.meta.dirname,
+        "./test/mocks/expo-image.ts",
+      ),
       "@react-native-community/netinfo": path.resolve(
         import.meta.dirname,
         "./test/mocks/react-native-community-netinfo.ts",

@@ -1,6 +1,6 @@
 ---
 title: "FallbackImage (every recipe/history thumbnail) uses plain RN Image and downloads full-resolution images — migrate to expo-image"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23
