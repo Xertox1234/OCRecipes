@@ -123,3 +123,7 @@ A baseline-ratchet script (like the type-aware ESLint ratchet) is the least disr
   `todos/archive/P3-2026-09-24-camera-temp-file-cleanup-followups.md` and others, where a
   fully-verified `done` todo keeps every checkbox unchecked and records completion in Updates
   prose instead.
+
+### 2026-09-25 (review repair)
+
+- The three deferred warnings are fixed on this branch (user ruling for this sweep: every PR is repaired before merge). `@babel/core`, `@babel/preset-typescript` and `@babel/plugin-syntax-jsx` are now exact-pinned devDependencies at the installed versions (lockfile changes only the root entry). The earlier note that they resolve "only via `babel-preset-expo`" was wrong: `package-lock.json` shows many dependents of `@babel/core` (e.g. `react-native-worklets`); the solution doc is corrected. The test pinned to `Button.tsx` bailing out is removed: it would break when someone fixes Button, and the `BROKEN_COMPONENT` fixture already covers the bail-out branch.

@@ -165,14 +165,6 @@ export function CleanToo({ label }: { label: string }) {
       const control = path.join(REPO_ROOT, "client/components/ThemedText.tsx");
       expect(isBailout(control)).toBe(false);
     });
-
-    it("real repo pin: a known baseline file still bails out", () => {
-      // If this ever flips to false, the file was fixed — shrink
-      // scripts/react-compiler-bailout-baseline.json via --update-baseline
-      // rather than "fixing" this test.
-      const known = path.join(REPO_ROOT, "client/components/Button.tsx");
-      expect(isBailout(known)).toBe(true);
-    });
   });
 
   describe("loadBaseline", () => {
