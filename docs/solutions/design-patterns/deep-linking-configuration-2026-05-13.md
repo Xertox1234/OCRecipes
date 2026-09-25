@@ -6,7 +6,7 @@ module: client
 tags: [react-native, navigation, deep-linking, validation]
 applies_to: [client/navigation/linking.ts, client/navigation/__tests__/**]
 created: '2026-05-13'
-last_updated: '2026-05-30'
+last_updated: '2026-09-25'
 ---
 
 # Deep linking configuration with parseIntOrZero boundary validation
@@ -36,7 +36,9 @@ Universal link prefix `https://ocrecipes.app` is also registered (requires serve
 
 ### Boundary validation for URL params
 
-Deep links are untrusted external input. Always use `parseIntOrZero` (not raw `parseInt`) for numeric params — it returns `0` instead of `NaN` for non-numeric strings, which the screen's existing error/not-found UI handles gracefully.
+Deep links are untrusted external input. Always use `parseIntOrZero` (not raw `parseInt`) for numeric params — it returns `0` instead of `NaN` for non-numeric strings, which the screen's existing error/not-found UI handles gracefully. `parseIntOrZero` does **not** clamp negatives (`-5` parses to `-5`), so a screen's "malformed" check must be "not a positive integer" (`!(id > 0)`), not `=== 0`.
+
+The receiving screen's not-found guard must not live ONLY in the render branch. `linking.ts`'s `Scan`/`verifyBarcode` comment (`client/navigation/linking.ts`) is this repo's own example of an unparsed query param landing in `route.params` unfiltered — the same is true for any path that doesn't declare a `parse` entry for it, so a malformed positional id (`chat/abc` → `0`) and an arbitrary query param (`?initialMessage=hi`) can arrive on the SAME route object. If the screen also has a mount/param-driven effect that can invoke a create/send handler from that query param (a cross-tab auto-send-on-open, for example), the malformed-id guard must be duplicated inside that handler too — the not-found view rendering is not evidence that the handler was ever prevented from firing. See `docs/rules/react-native.md`'s deep-link bullet and `client/screens/ChatScreen.tsx` (M16, 2026-09-23 front-end audit).
 
 ```typescript
 // client/navigation/linking.ts
@@ -113,6 +115,7 @@ The `UNSTABLE_` prefix means the API may change or be removed across minor versi
 - `client/App.tsx` — `linking` prop on `NavigationContainer`
 - `client/navigation/RootStackNavigator.tsx` — `UNSTABLE_routeNamesChangeBehavior` prop on root `Stack.Navigator`
 - `client/navigation/__tests__/linking.test.ts`
+- `client/screens/ChatScreen.tsx` — malformed-id guard duplicated inside `handleSend`, not just the render branch (M16, 2026-09-23 front-end audit)
 
 ## See Also
 
