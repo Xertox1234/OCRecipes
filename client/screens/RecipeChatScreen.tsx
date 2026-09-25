@@ -238,7 +238,7 @@ export default function RecipeChatScreen() {
   }>({
     isStreaming,
     streamingValue: pendingStreamingValue,
-    hasStreamingValue: !!streamingContent || !!streamingRecipe,
+    hasStreamingValue: !!strippedStreamingContent || !!streamingRecipe,
     hasError: !!streamError || !!requestError,
     assistantMessageCount,
     announce: { message: "Recipe response received", always: false },
