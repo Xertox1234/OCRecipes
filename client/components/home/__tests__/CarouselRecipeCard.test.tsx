@@ -18,9 +18,8 @@ import type { CarouselRecipeCard as CarouselCardType } from "@shared/types/carou
 // gap: a plain JS object passed to a component function is never mangled the
 // way a DOM attribute/event is. `react-native` is aliased globally in
 // vitest.config.mts to test/mocks/react-native.ts — this local override is
-// the legitimate exception documented in
-// docs/solutions/conventions/inline-vi-mock-globally-aliased-modules-2026-05-13.md
-// (a capability, prop capture, the shared alias can't provide).
+// item 5 ("Prop capture") in
+// docs/solutions/conventions/inline-vi-mock-globally-aliased-modules-2026-05-13.md.
 const { capturedPressables } = vi.hoisted(() => ({
   capturedPressables: [] as Record<string, unknown>[],
 }));
