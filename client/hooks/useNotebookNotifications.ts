@@ -45,7 +45,12 @@ export function useNotebookNotifications() {
         content: {
           title: "Coach reminder",
           body: content.slice(0, 100),
-          data: { entryId },
+          // `url` is what client/navigation/linking.ts's getInitialURL/
+          // subscribe resolve a tap through; `entryId` stays alongside it so
+          // a reminder already scheduled on a device before this field
+          // existed still opens the right entry (linking.ts falls back to
+          // constructing this same URL from a legacy entryId-only payload).
+          data: { entryId, url: `ocrecipes://notebook-entry/${entryId}` },
           ...(Platform.OS === "android"
             ? { channelId: "coach-reminders" }
             : {}),

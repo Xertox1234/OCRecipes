@@ -1,6 +1,6 @@
 ---
 title: "Coach reminder notification taps are lost on cold launch and before the navigator is ready — route them through linking"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23
