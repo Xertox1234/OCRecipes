@@ -8,6 +8,7 @@ tags: [npm, dependencies, peer-dependencies, esbuild, vite, lockfile, hoisting, 
 symptoms: ['`npm ls` exits non-zero with `ELSPROBLEMS` / `invalid: "<range>"` on a transitive package', A peer dependency (e.g. vite's `esbuild`) shows `invalid` even though a compatible version exists elsewhere in the tree, A CLI tool invoked from an npm script (e.g. `esbuild server/index.ts`) silently runs on a stale version nobody declared, npm `overrides` entries don't clear the warning — the wrong version stays hoisted at root]
 applies_to: [package.json, package-lock.json]
 created: '2026-06-23'
+last_updated: '2026-09-25'
 ---
 
 # A peerDependency resolves the wrong root-hoisted transitive — declare it directly, overrides can't fix placement
@@ -56,6 +57,7 @@ No `overrides` entry needed. This is **not** a "blunt override" (a single global
 ## Prevention
 
 - **Declare any package you invoke as a bare-name CLI from an npm script** as a direct `devDependency` — never rely on a transitive hoisting it to root.
+- **The same rule applies to `require()`/`import` inside a script, not just a shell CLI invocation.** Found 2026-09-25 in code review of `scripts/check-react-compiler-bailouts.js`: the script does `require("@babel/core")`, `require.resolve("@babel/preset-typescript")`, and `require.resolve("@babel/plugin-syntax-jsx")`, but none of the three is declared in `package.json` — they resolve today only because `babel-preset-expo` transitively hoists them to root (confirmed against `package-lock.json`: all three are reachable solely as transitive deps of `babel-preset-expo`/`@react-native/babel-preset`/`@babel/preset-react`). The failure mode differs from the CLI case (a `Cannot find module` throw instead of a silently-stale version) but the root cause and the fix are identical. This is a higher-stakes instance than most: the script is chained with `&&` onto `npm run lint` (both CI's lint step and full `npm run preflight`), so a future unrelated dependency bump that shifts hoisting would hard-fail `npm run lint` everywhere with an error bearing no obvious connection to whatever actually changed. Left unfixed on the PR that found it (advisory review, one-review-pass policy — `docs/AI_WORKFLOW.md`) — this file exists so the next person who touches that script (or writes a similar one) declares the direct devDependency instead of relying on the same hoist a second time.
 - When a peer dependency shows `invalid` in `npm ls`, fix the **root hoist** (declare it directly), don't reach for `overrides` first.
 - Re-run `npm ls <pkg>` and confirm exit 0 after the change; verify each consumer (here: vitest transform, `server:build`, `drizzle-kit --version`) still works on the new root version.
 
@@ -64,6 +66,7 @@ No `overrides` entry needed. This is **not** a "blunt override" (a single global
 - `package.json` — `devDependencies` (the direct declaration) and `scripts.server:build` (the bare-name CLI invocation)
 - `package-lock.json` — the resolved tree (verify semantically, see See Also)
 - `todos/archive/P3-2026-06-01-dependabot-triage-3-medium-transitive.md` — the full diagnosis history (this fix overturned a "blocked on upstream" mislabel)
+- `scripts/check-react-compiler-bailouts.js` — the unfixed `require()`-on-a-transitive instance found 2026-09-25 (Prevention)
 
 ## See Also
 

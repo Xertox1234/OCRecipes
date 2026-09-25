@@ -1,6 +1,6 @@
 ---
 title: "React Compiler silently skips 61 of 226 client .tsx files, and nothing in lint or CI surfaces a bailout"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23
@@ -108,3 +108,18 @@ A baseline-ratchet script (like the type-aware ESLint ratchet) is the least disr
   (29 tests). Verified the key regression pin is not vacuous: temporarily reverted `isBailout`'s
   classification to the buggy `events.length > 0` check, confirmed 7 tests go RED (including the
   harness's own positive-control gate), then restored and confirmed GREEN.
+- **Verified end to end**: `npm run test:run` (8762/8762 pass), `npm run check:types` (clean),
+  `npm run lint` (0 errors, 3 pre-existing unrelated warnings — confirms the chained
+  `&& node scripts/check-react-compiler-bailouts.js` runs and passes inside the exact command
+  CI executes).
+- **Code review (advisory, no blocking findings)**: one real WARNING —
+  `scripts/check-react-compiler-bailouts.js` `require()`s `@babel/core`,
+  `@babel/preset-typescript`, and `@babel/plugin-syntax-jsx`, none of which is a declared
+  `package.json` dependency; they resolve today only via `babel-preset-expo`'s transitive
+  hoisting. Per the frozen one-review-pass policy (`docs/AI_WORKFLOW.md` → Review Policy,
+  user ruling 2026-09-22), not fixed on this branch — recorded in the executor's
+  `DEFERRED_WARNINGS`. One SUGGESTION (tick the Acceptance Criteria checkboxes) was NOT
+  applied — it contradicts this repo's own archive convention, verified against
+  `todos/archive/P3-2026-09-24-camera-temp-file-cleanup-followups.md` and others, where a
+  fully-verified `done` todo keeps every checkbox unchecked and records completion in Updates
+  prose instead.
