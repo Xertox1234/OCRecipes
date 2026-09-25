@@ -565,7 +565,13 @@ describe("generateCoachProResponse", () => {
 
     const messages = [{ role: "user" as const, content: "Hello" }];
     const result = await collectStream(
-      generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
+      generateCoachProResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        "user-1",
+        // Live, never-aborted signal, as production always passes one.
+        new AbortController().signal,
+      ),
     );
 
     expect(result).toBe(
@@ -959,7 +965,12 @@ describe("generateCoachResponse", () => {
 
     const messages = [{ role: "user" as const, content: "Hello" }];
     const result = await collectStream(
-      generateCoachResponse(messages, DEFAULT_CONTEXT),
+      generateCoachResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        // Live, never-aborted signal, as production always passes one.
+        new AbortController().signal,
+      ),
     );
 
     // Unlike Pro, the free-tier generator yields each delta as it arrives
