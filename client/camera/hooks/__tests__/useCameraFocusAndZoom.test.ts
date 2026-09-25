@@ -14,6 +14,7 @@ import { logger } from "@/lib/logger";
 // module-scope declarations.
 const captured = vi.hoisted(() => ({
   tapEnd: undefined as ((e: { x: number; y: number }) => void) | undefined,
+  pinchBegin: undefined as (() => void) | undefined,
   pinchStart: undefined as (() => void) | undefined,
   pinchUpdate: undefined as ((e: { scale: number }) => void) | undefined,
   pinchFinalize: undefined as (() => void) | undefined,
@@ -27,6 +28,10 @@ vi.mock("react-native-gesture-handler", () => {
     }
   }
   class PinchMock {
+    onBegin(cb: () => void) {
+      captured.pinchBegin = cb;
+      return this;
+    }
     onStart(cb: () => void) {
       captured.pinchStart = cb;
       return this;
@@ -116,8 +121,19 @@ async function pinch(scale: number) {
 }
 
 async function startPinch() {
+  // A real pinch passes through onBegin before onStart.
   await act(async () => {
+    captured.pinchBegin?.();
     captured.pinchStart?.();
+  });
+}
+
+// What a single-finger tap looks like to the pinch recognizer on Android
+// (PinchGestureHandler.kt): begin, then fail — onFinalize without onStart.
+async function tapThroughPinch() {
+  await act(async () => {
+    captured.pinchBegin?.();
+    captured.pinchFinalize?.();
   });
 }
 
@@ -145,6 +161,7 @@ describe("useCameraFocusAndZoom", () => {
 
   beforeEach(() => {
     captured.tapEnd = undefined;
+    captured.pinchBegin = undefined;
     captured.pinchStart = undefined;
     captured.pinchUpdate = undefined;
     captured.pinchFinalize = undefined;
@@ -403,6 +420,31 @@ describe("useCameraFocusAndZoom", () => {
       await endPinch();
       expect(setZoom).toHaveBeenCalledTimes(2);
       expect(setZoom).toHaveBeenLastCalledWith(1.505);
+    });
+
+    it("does nothing when a tap drives the pinch recognizer through begin and finalize without activating it", async () => {
+      const setZoom = vi.fn().mockResolvedValue(undefined);
+      const { result } = mount(
+        vi.fn().mockResolvedValue(undefined),
+        makeDevice(),
+        setZoom,
+      );
+
+      await startPinch();
+      await pinch(1.5);
+      await endPinch();
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+      });
+      expect(result.current.zoomLabel).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+
+      await tapThroughPinch();
+
+      // No re-armed hide timer and no extra setZoom for a gesture that never
+      // activated.
+      expect(vi.getTimerCount()).toBe(0);
+      expect(setZoom).toHaveBeenCalledTimes(1);
     });
 
     it("sends nothing extra at gesture end when the last value was already applied, or the pinch never moved", async () => {

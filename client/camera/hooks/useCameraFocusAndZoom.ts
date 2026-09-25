@@ -196,14 +196,18 @@ export function useCameraFocusAndZoom({
   });
 
   const pinchGesture = Gesture.Pinch()
+    // Reset the label gate on EVERY touch attempt, not just activated ones:
+    // onFinalize also fires for an attempt that never activates (on Android a
+    // single-finger tap drives the pinch recognizer BEGAN→FAILED), and a gate
+    // left over from the previous pinch would make it re-arm the hide. The
+    // reset also lets a new pinch show the readout even if it ends in the
+    // bucket the last one left off in. lastAppliedZoom is NOT reset: it tracks
+    // native state, so an unchanged zoom correctly stays un-re-sent.
+    .onBegin(() => {
+      lastZoomLabelText.value = null;
+    })
     .onStart(() => {
       zoomAtGestureStart.value = zoom.value;
-      // Reset the label gate so a new gesture always shows the live readout
-      // at least once, even if it ends in the same displayed bucket the
-      // previous gesture left off in (lastAppliedZoom is NOT reset here — it
-      // tracks native state, not display, so an unchanged zoom correctly
-      // stays un-re-sent).
-      lastZoomLabelText.value = null;
     })
     .onUpdate((e) => {
       if (!device) return;
@@ -223,7 +227,8 @@ export function useCameraFocusAndZoom({
       }
     })
     // onFinalize (not onEnd) so a system-cancelled pinch still flushes and
-    // hides. One bridge call per gesture: apply a final value the epsilon
+    // hides. At most one bridge call per ACTIVATED gesture (a never-activated
+    // attempt finds both gates clean and sends nothing): apply a final value the epsilon
     // gate held back, and start the label fade if this gesture showed it.
     .onFinalize(() => {
       if (zoom.value !== lastAppliedZoom.value) {
