@@ -120,7 +120,10 @@ The `UNSTABLE_` prefix means the API may change or be removed across minor versi
 React Navigation 7's documented mechanism for routing a notification tap through the same `linking` config that handles ordinary deep links is to override `getInitialURL`/`subscribe` on the `LinkingOptions` object:
 
 ```typescript
-// client/navigation/linking.ts
+// Vanilla React Navigation example — NOT this repo's linking.ts verbatim.
+// The real file wraps extractNotificationUrl in consumeNotificationUrl (to
+// call clearLastNotificationResponse) and adds an isReady()/pending-hold
+// step before delivering to `listener`; see the two additions below.
 async getInitialURL() {
   // A real deep link wins if both are somehow present — the more specific intent.
   const url = await Linking.getInitialURL();
@@ -150,7 +153,7 @@ Use `Notifications.getLastNotificationResponse()` (synchronous), not `getLastNot
 
 Notification payloads must carry a **full-prefixed** URL (e.g. `ocrecipes://notebook-entry/42`), never a bare path or id — `extractPathFromURL` (internal to React Navigation, used to match a URL against `prefixes`) returns `undefined` for a string matching none of them, silently dropping the link. When a payload only carries a bare id field (a legacy shape, or a third-party/server-scheduled sender that predates this pattern), reconstruct the full-prefix URL from it rather than passing the id through as-is — see `client/navigation/linking.ts`'s `extractNotificationUrl` for a worked example, and note in the code that this fallback is not always a temporary migration bridge: a sender you don't control (e.g. a server-driven push path) may keep emitting the legacy shape indefinitely, so the fallback should be treated as permanent unless every sender is confirmed updated.
 
-`getInitialURL` and a live `subscribe` tap can both fire for the *same* cold-launch notification — `expo-notifications` delivers the launch response via `getLastNotificationResponse()` and may also emit it to a freshly-registered `addNotificationResponseReceivedListener`. This is benign: the second delivery is a same-route re-navigate (a no-op), so no deduplication is needed.
+`getInitialURL` and a live `subscribe` tap can both fire for the *same* cold-launch notification — `expo-notifications` delivers the launch response via `getLastNotificationResponse()` and may also emit it to a freshly-registered `addNotificationResponseReceivedListener`. This is benign: the second delivery is a same-route re-navigate (a no-op), so no deduplication is needed — verified by reading source, not on a device.
 
 **Clear the response once it has been turned into a URL** (`Notifications.clearLastNotificationResponse()`, in both `getInitialURL` and the `subscribe` listener). The last response is an in-memory field that lives for the whole app process (`EmitterModule.swift` / `NotificationsEmitter.kt`), and `getInitialURL` runs again on every `NavigationContainer` mount. In this app `ErrorBoundary` wraps the container, so its "Try Again" remounts it and, uncleared, re-opens the last tapped entry, which may be the screen that crashed. Also accept only a positive-integer `entryId` when building the fallback URL (`notebook-entry/0` opens an entry that can't save).
 

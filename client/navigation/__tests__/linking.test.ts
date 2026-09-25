@@ -236,6 +236,51 @@ describe("getInitialURL", () => {
     expect(await linking.getInitialURL!()).toBeUndefined();
   });
 
+  // Number("12abc") is NaN, so Number.isInteger rejects it — a malformed
+  // entryId must not be coerced into an open-able URL.
+  it("rejects a non-numeric entryId like '12abc'", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: "12abc" } } } },
+    });
+
+    expect(await linking.getInitialURL!()).toBeUndefined();
+  });
+
+  it("rejects a non-integer entryId like 1.5", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: 1.5 } } } },
+    });
+
+    expect(await linking.getInitialURL!()).toBeUndefined();
+  });
+
+  it("accepts a numeric-string entryId like '12'", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: "12" } } } },
+    });
+
+    expect(await linking.getInitialURL!()).toBe(
+      "ocrecipes://notebook-entry/12",
+    );
+  });
+
+  // Negative control for the "clears the notification response" test above:
+  // consumeNotificationUrl must only clear when a URL was actually derived,
+  // or a malformed payload would wipe a response a retry could still use.
+  it("does not clear the notification response when no URL can be derived", async () => {
+    mockGetInitialURL.mockResolvedValue(null);
+    mockGetLastNotificationResponse.mockReturnValue({
+      notification: { request: { content: { data: { entryId: "12abc" } } } },
+    });
+
+    await linking.getInitialURL!();
+
+    expect(mockClearLastNotificationResponse).not.toHaveBeenCalled();
+  });
+
   it("returns undefined when there is no real link and no notification response", async () => {
     mockGetInitialURL.mockResolvedValue(null);
     mockGetLastNotificationResponse.mockReturnValue(null);
