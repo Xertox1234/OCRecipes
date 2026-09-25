@@ -204,13 +204,20 @@ export const linking: LinkingOptions<RootStackParamList> = {
   prefixes: [...],
   getStateFromPath(path, options) {
     if (path.length > MAX_DEEP_LINK_PATH_LENGTH) return undefined;
-    return getStateFromPathDefault(path, options);
+    try {
+      return getStateFromPathDefault(path, options);
+    } catch (error) {
+      if (error instanceof URIError) return undefined; // malformed escape
+      throw error;
+    }
   },
   // ...getInitialURL, subscribe, config as above
 };
 ```
 
-Import the default parser from `@react-navigation/core`, **not** `@react-navigation/native` — the same reason the test file avoids `native` (above): `native`'s index also re-exports `NavigationContainer`/`Link`/etc., whose module graph pulls in React Native sources the Vitest node env can't load. `core` is the identical function `native` re-exports unchanged (`@react-navigation/native/lib/module/index.js`: `export * from '@react-navigation/core'`), and is already a resolved transitive dependency.
+Import the default parser from `@react-navigation/core`, **not** `@react-navigation/native` — the same reason the test file avoids `native` (above): `native`'s index also re-exports `NavigationContainer`/`Link`/etc., whose module graph pulls in React Native sources the Vitest node env can't load. `core` is the identical function `native` re-exports unchanged (`@react-navigation/native/lib/module/index.js`: `export * from '@react-navigation/core'`), and is declared in `package.json` (do not rely on it as a hoisted transitive of `native`: a nested copy would break every deep link with no install/type/lint signal).
+
+**Catch `URIError` in the same override.** The default parser runs `decodeURIComponent` on path params with no try/catch, so a malformed escape (`nutrition/%C0`, `recipe/%ZZ`, a trailing `%`) throws `URIError: URI malformed` — and `useLinking.native.js`'s subscribe listener calls `getStateFromURL(url)` outside its own `try`, so on a live tap the throw is uncaught (a likely release-build crash; not verified on a device). The length cap does not help: these links are tiny. Return `undefined` for a `URIError` (the link is ignored, like an over-cap one) and rethrow anything else so a real config bug still surfaces. Found in #1090's security review; reproduced against the installed `@react-navigation/core`.
 
 **One override genuinely covers every URL source** — verified by reading `node_modules/@react-navigation/native/lib/module/useLinking.native.js` and `NavigationContainer.js`, not assumed from the option's name: `NavigationContainer.js` spreads the app's `linking` object (including this override) into the options object passed to `useLinking`, and `useLinking`'s single internal `getStateFromURL` callback calls `extractPathFromURL` then the (possibly overridden) `getStateFromPath` for **both** `getInitialState` (the async `getInitialURL` path — this repo's own `getInitialURL` already folds the notification's `data.url`/entryId-derived fallback into what it returns) and the `subscribe` listener (live `Linking` events, and the pending-hold `flushPendingNotificationUrl` replay above, since flushing calls `deliverUrl`, which the `subscribe` effect set to the exact same `listener`). The `UNSTABLE_routeNamesChangeBehavior="lastUnhandled"` replay (`RootStackNavigator.tsx`) is a separate concern: it rehydrates an already-computed navigation **state object**, never re-invoking `getStateFromPath` on the raw path a second time — so a link rejected by the cap cannot later be decoded uncapped through that path either.
 

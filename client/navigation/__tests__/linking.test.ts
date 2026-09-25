@@ -212,6 +212,30 @@ describe("linking config", () => {
 // there is no real deep link, per the React Navigation 7 +
 // expo-notifications integration doc (Context7 "Handle push notifications
 // with React Navigation").
+// @react-navigation/core's default getStateFromPath runs decodeURIComponent
+// on path params with no try/catch, and useLinking.native.js calls it
+// OUTSIDE its try on a live Linking event — a malformed escape (well under
+// the length cap) threw an uncaught URIError on a single tap.
+describe("malformed percent-escapes in a deep link", () => {
+  it.each(["nutrition/%C0", "chat/%E0%A4%A", "recipe/%ZZ", "notebook-entry/%"])(
+    "ignores %s instead of throwing",
+    (path) => {
+      expect(() =>
+        linking.getStateFromPath!(path, linking.config),
+      ).not.toThrow();
+      expect(linking.getStateFromPath!(path, linking.config)).toBeUndefined();
+    },
+  );
+
+  it("still parses a well-formed link (control)", () => {
+    const state = linking.getStateFromPath!(
+      "nutrition/5000112637922",
+      linking.config,
+    );
+    expect(state).toBeDefined();
+  });
+});
+
 describe("getInitialURL", () => {
   it("prefers a real deep link over a notification response — the more specific intent", async () => {
     mockGetInitialURL.mockResolvedValue("ocrecipes://recipe/42");

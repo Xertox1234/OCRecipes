@@ -35,6 +35,8 @@ function parseIntOrZero(value: string): number {
 // a 208,019-char, 16,000-distinct-run payload through this same
 // getStateFromPath takes ~1.5-1.8s without this cap; the worst payload the
 // cap still lets through (628 distinct runs, 8,183 chars) parses in ~6ms.
+// Neither figure is measured on Hermes; expect it slower, but the capped
+// bound (~5M character scans) should stay well under a second.
 export const MAX_DEEP_LINK_PATH_LENGTH = 8 * 1024;
 
 // The client's own scheduleCommitmentReminder (client/hooks/
@@ -118,7 +120,17 @@ export const linking: LinkingOptions<RootStackParamList> = {
     if (path.length > MAX_DEEP_LINK_PATH_LENGTH) {
       return undefined;
     }
-    return getStateFromPathDefault(path, options);
+    // The default parser calls decodeURIComponent on path params with no
+    // try/catch, and useLinking.native.js calls this OUTSIDE its own try on a
+    // live Linking event, so a malformed escape (e.g. `nutrition/%C0`) threw
+    // an uncaught URIError on a single tap. Ignore such a link, like an
+    // over-cap one. Only URIError: a real config bug should still surface.
+    try {
+      return getStateFromPathDefault(path, options);
+    } catch (error) {
+      if (error instanceof URIError) return undefined;
+      throw error;
+    }
   },
   async getInitialURL() {
     // A real deep link wins if both are somehow present — it's the more
