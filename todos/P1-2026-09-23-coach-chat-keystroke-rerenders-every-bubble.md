@@ -1,6 +1,6 @@
 ---
 title: "Coach chat re-renders every visible bubble on each keystroke — handleSend depends on inputText and CoachChat is skipped by the React Compiler"
-status: backlog
+status: in-progress
 priority: high
 created: 2026-09-23
 updated: 2026-09-23

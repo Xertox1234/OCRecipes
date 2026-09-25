@@ -98,19 +98,30 @@ export default function CoachChat({
   // "catalogSave" on POST /api/meal-plan/catalog/:id/save) — gate here too so
   // a free user gets the upgrade path instead of a failed request.
   const canSaveCatalog = usePremiumFeature("catalogSave");
-  const deleteChatMessage = useDeleteChatMessageForRetry();
   const queryClient = useQueryClient();
   const toast = useToast();
   const haptics = useHaptics();
   // Destructure rather than depend on the mutation objects themselves —
   // useMutation returns a new object identity every render, which would
   // make every useCallback below that depends on it re-create every render.
+  const { mutateAsync: deleteChatMessage } = useDeleteChatMessageForRetry();
   const { mutateAsync: saveCatalogRecipe, isPending: isSavingCatalog } =
     useSaveCatalogRecipe();
   const { mutateAsync: addMealPlanItem, isPending: isAddingPlanItem } =
     useAddMealPlanItem();
 
   const [inputText, setInputText] = useState("");
+  // Latest-value mirror of `inputText`, synced every render (not just from
+  // handleChangeText — inputText is also set by the interim-transcript
+  // effect below and by handleSend's own post-send reset). handleSend reads
+  // this ref instead of `inputText` directly so its identity doesn't change
+  // on every keystroke — see H3 (2026-09-23 audit): handleSend depending on
+  // inputText cascaded into handleRetry/handleBlockAction/handleQuickReply/
+  // renderItem all getting new identities per keystroke, forcing every
+  // visible FlatList row to re-render. Mirrors the onCompleteRef pattern in
+  // ScanSonarRing.tsx.
+  const inputTextRef = useRef(inputText);
+  inputTextRef.current = inputText;
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
   const [streamingError, setStreamingError] = useState<string | null>(null);
   const [isAtDailyLimit, setIsAtDailyLimit] = useState(false);
@@ -383,7 +394,9 @@ export default function CoachChat({
   const handleSend = useCallback(
     async (text?: string) => {
       // onPress/onSubmitEditing invoke this with an event object, not a string — only trust an explicit string arg (quick replies, voice).
-      const content = (typeof text === "string" ? text : inputText).trim();
+      const content = (
+        typeof text === "string" ? text : inputTextRef.current
+      ).trim();
       if (!content || isStreaming) return;
 
       setInputText("");
@@ -410,7 +423,10 @@ export default function CoachChat({
       onMessageSent?.();
     },
     [
-      inputText,
+      // inputText intentionally excluded — handleSend reads the latest value
+      // from inputTextRef instead so its identity (and every callback that
+      // transitively depends on it: handleRetry, handleBlockAction,
+      // handleQuickReply, renderItem) stays stable across keystrokes.
       isStreaming,
       conversationId,
       onCreateConversation,
@@ -438,8 +454,8 @@ export default function CoachChat({
 
     try {
       // Delete assistant then user message (in order — each was "most recent" at time of delete)
-      await deleteChatMessage.mutateAsync(lastMsg.id);
-      await deleteChatMessage.mutateAsync(lastUserMsg.id);
+      await deleteChatMessage(lastMsg.id);
+      await deleteChatMessage(lastUserMsg.id);
     } catch {
       queryClient.setQueryData(msgQueryKey, snapshot);
       setStreamingError("Retry failed. Check your connection and try again.");
