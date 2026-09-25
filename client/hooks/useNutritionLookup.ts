@@ -7,6 +7,7 @@ import {
   onlineManager,
 } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
+import { z } from "zod";
 
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
@@ -18,7 +19,10 @@ import { logger } from "@/lib/logger";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { tokenStorage } from "@/lib/token-storage";
 import type { MicronutrientData } from "@/components/MicronutrientSection";
-import type { VerificationLevel } from "@shared/types/verification";
+import {
+  verificationLevelSchema,
+  type VerificationLevel,
+} from "@shared/types/verification";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
 import {
   validateAndNormalizeNutrition,
@@ -60,6 +64,80 @@ export interface NutritionData {
   imageUrl?: string;
   barcode?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Barcode lookup response validation
+// ---------------------------------------------------------------------------
+//
+// `GET/POST /api/nutrition/barcode/:code` returns `serverRes.json(): any` —
+// an unvalidated 200 used to be dereferenced directly (`data.servingInfo
+// .wasCorrected`), so a shape mismatch threw and was swallowed by the
+// network-failure catch below, misreporting a server-side bug as "couldn't
+// reach our service" with only a dev-only `logger.warn`. Validate the shape
+// with `safeParse` before touching it.
+//
+// Deliberately no stricter than what this file actually dereferences
+// (docs/rules/typescript.md: "an ingestion-boundary Zod schema must be no
+// stricter than the code that reads it"). `flags`/`labelCompared`/
+// `verificationLevel`/`isBeverage` all already have a defensive runtime
+// check downstream (`Array.isArray`, `typeof`, `=== true`) precisely because
+// their shape can't be pinned down further without rejecting real traffic —
+// see `useNutritionLookup.test.ts`'s `baseBody()` fixture, which ships a
+// flag object with only an `id` (`{ id: "processing:ultra" }`), and the
+// `labelCompared: "declined"` fixture pinning the `=== true` idiom against a
+// truthy non-boolean. Making those fields strict here would fail a
+// currently-working response, which is exactly the failure mode this todo
+// exists to remove.
+const barcodePer100gSchema = z.object({
+  calories: z.number().optional(),
+  protein: z.number().optional(),
+  carbs: z.number().optional(),
+  fat: z.number().optional(),
+  fiber: z.number().optional(),
+  sugar: z.number().optional(),
+  sodium: z.number().optional(),
+  saturatedFat: z.number().optional(),
+  transFat: z.number().optional(),
+  cholesterol: z.number().optional(),
+  caffeine: z.number().optional(),
+});
+
+const barcodeServingInfoSchema = z.object({
+  displayLabel: z.string(),
+  grams: z.number(),
+  wasCorrected: z.boolean(),
+  correctionReason: z.string().optional(),
+});
+
+// Shape shared by the top-level lookup result and the label-conflict's
+// nested `conflict.label` — `server/routes/nutrition.ts`'s
+// `buildBarcodeResponseBody` builds both the same way.
+const barcodeNutritionResultSchema = z.object({
+  productName: z.string(),
+  brandName: z.string().optional(),
+  imageUrl: z.string().optional(),
+  per100g: barcodePer100gSchema,
+  perServing: barcodePer100gSchema,
+  servingInfo: barcodeServingInfoSchema,
+  isServingDataTrusted: z.boolean(),
+  flags: z.array(z.unknown()).optional(),
+});
+
+const barcodeLookupResponseSchema = barcodeNutritionResultSchema.extend({
+  labelCompared: z.unknown().optional(),
+  // `.catch(undefined)` — a verification-level value this client doesn't
+  // recognise yet (a future server adding a new tier) must not fail the
+  // WHOLE parse and mask real nutrition data behind a false "malformed"
+  // report; the verification badge is cosmetic, not load-bearing.
+  verificationLevel: verificationLevelSchema.optional().catch(undefined),
+  isBeverage: z.unknown().optional(),
+  conflict: z
+    .object({
+      fields: z.array(z.string()).optional(),
+      label: barcodeNutritionResultSchema,
+    })
+    .optional(),
+});
 
 export function useNutritionLookup(params: {
   barcode?: string;
@@ -436,6 +514,11 @@ export function useNutritionLookup(params: {
       // product's data, which is a wrong health claim rather than a missing
       // one. Every state `selectBandSource` reads belongs in this block.
       setValidatedData(null);
+      // Distinguishes "the server responded but its 200 body failed schema
+      // validation" from a genuine network/connectivity failure, so the
+      // OFF-fallback and total-outage branches below can pick copy that
+      // doesn't falsely claim we couldn't reach the service.
+      let serverResponseInvalid = false;
       try {
         // ── Primary: server-side lookup (cross-validates OFF with USDA) ──
         // Use raw fetch (not apiRequest) so we can inspect 404 responses
@@ -481,7 +564,25 @@ export function useNutritionLookup(params: {
             : await fetch(url, { headers });
 
           if (serverRes.ok) {
-            const data = await serverRes.json();
+            // `.catch(() => undefined)`: an unparseable body on a 200 (bad
+            // JSON) is also a malformed response, and must fail
+            // `safeParse(undefined)` below rather than throwing here and
+            // landing in the network-failure catch with no distinguishing
+            // signal.
+            const rawData: unknown = await serverRes
+              .json()
+              .catch(() => undefined);
+            const parsedResponse =
+              barcodeLookupResponseSchema.safeParse(rawData);
+            if (!parsedResponse.success) {
+              logger.error(
+                "Malformed barcode lookup response from server (schema validation failed)",
+                parsedResponse.error,
+              );
+              serverResponseInvalid = true;
+              throw new Error("barcode-lookup-response-validation-failed");
+            }
+            const data = parsedResponse.data;
 
             // Map server response into ValidatedNutrition for serving controls
             const validated: ValidatedNutrition = {
@@ -615,17 +716,20 @@ export function useNutritionLookup(params: {
             // response can never open the gate by itself.
             setLabelUsed(labelReady && data.labelCompared === true);
 
-            // Set verification level from barcode lookup response
+            // Set verification level from barcode lookup response.
+            // No `as VerificationLevel` cast needed — `data` is already the
+            // Zod-validated, typed result.
             if (data.verificationLevel) {
-              setVerificationLevel(data.verificationLevel as VerificationLevel);
+              setVerificationLevel(data.verificationLevel);
             }
 
-            // Narrowed explicitly: the response is consumed as untyped
-            // `json()`, so a wire field arrives as `any`. Anything that is
-            // not a real boolean becomes null — "no signal" — which
-            // resolveBasis treats as unknown rather than silently defaulting
-            // to the food scale (which would halve the strictness applied to
-            // every drink).
+            // Narrowed explicitly: `isBeverage` is intentionally left as
+            // `z.unknown()` in the schema above (see its comment) rather than
+            // `z.boolean()`, so a wire field can still arrive as anything.
+            // Anything that is not a real boolean becomes null — "no signal"
+            // — which resolveBasis treats as unknown rather than silently
+            // defaulting to the food scale (which would halve the strictness
+            // applied to every drink).
             setIsBeverage(
               typeof data.isBeverage === "boolean" ? data.isBeverage : null,
             );
@@ -664,10 +768,16 @@ export function useNutritionLookup(params: {
             }
           }
         } catch (err) {
-          logger.warn(
-            "Server barcode lookup unavailable, falling back to OFF:",
-            err,
-          );
+          // A malformed-response failure already logged via `logger.error`
+          // above (and set `serverResponseInvalid`) — it is not a
+          // connectivity failure, so it must not also emit the
+          // network-outage warn, which would blur the two causes in logs.
+          if (!serverResponseInvalid) {
+            logger.warn(
+              "Server barcode lookup unavailable, falling back to OFF:",
+              err,
+            );
+          }
         }
 
         // ── Fallback: direct Open Food Facts (when server is unreachable) ──
@@ -743,9 +853,10 @@ export function useNutritionLookup(params: {
           });
 
           // Runs whenever the primary server request didn't yield a usable
-          // result — a network error, a 5xx, an unparseable/non-notInDatabase
-          // 404, or any other case where the inner server `try` above didn't
-          // already return — so the server-side allergen check
+          // result — a network error, a 5xx, a malformed 200 (failed
+          // `barcodeLookupResponseSchema` validation), an unparseable/
+          // non-notInDatabase 404, or any other case where the inner server
+          // `try` above didn't already return — so the server-side allergen check
           // (buildScanResponseFlags) never ran for this product. `flags` would
           // otherwise stay `[]` and the screen would look allergen-clean when
           // we simply couldn't check. Surface a "couldn't verify" warn flag
@@ -764,8 +875,9 @@ export function useNutritionLookup(params: {
           // client-side allergen matching — that stays server-only (Phase 1).
           setFlags([
             createAllergenUnavailableFlag({
-              detail:
-                "We couldn't reach our service to check this against your allergies — check the package label.",
+              detail: serverResponseInvalid
+                ? "Our service sent back information we couldn't understand, so these values come from a backup source — check the package label."
+                : "We couldn't reach our service to check this against your allergies — check the package label.",
             }),
           ]);
         } else {
@@ -778,11 +890,15 @@ export function useNutritionLookup(params: {
         // Total outage: server AND the direct-OFF fallback both failed, so we
         // genuinely couldn't check this against the user's allergies. Same
         // fail-safe flag as the direct-OFF fallback branch above — see its
-        // comment for the full rationale.
+        // comment for the full rationale. `serverResponseInvalid` still
+        // applies here: a malformed 200 followed by a failed OFF fallback is
+        // still not a connectivity failure, and no backup source was reached
+        // either.
         setFlags([
           createAllergenUnavailableFlag({
-            detail:
-              "We couldn't reach our service to check this against your allergies — check the package label.",
+            detail: serverResponseInvalid
+              ? "Our service sent back information we couldn't understand, and we couldn't reach a backup source either — check the package label."
+              : "We couldn't reach our service to check this against your allergies — check the package label.",
           }),
         ]);
       } finally {

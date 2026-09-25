@@ -1,6 +1,6 @@
 ---
 title: 'Barcode lookup trusts unvalidated server JSON — a malformed 200 is shown to the user as "couldn''t reach our service" and produces no production signal'
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23
