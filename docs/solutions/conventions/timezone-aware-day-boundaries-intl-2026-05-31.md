@@ -6,7 +6,7 @@ module: server
 tags: [database, hooks, timezone, dates, intl, pattern, day-boundary]
 applies_to: [server/storage/helpers.ts, server/routes/_helpers.ts, client/hooks/useDailyBudget.ts, client/hooks/useHistoryData.ts, client/screens/DailyNutritionDetailScreen.tsx, client/screens/meal-plan/MealPlanHomeScreen.tsx]
 created: '2026-05-31'
-last_updated: '2026-05-31'
+last_updated: '2026-09-25'
 ---
 
 # Timezone-aware day boundaries using `Intl.DateTimeFormat`
@@ -118,7 +118,7 @@ A client query that needs to send `X-Timezone` must use a custom `queryFn` calli
 **CRITICAL nuance**: When a screen **shares** a static query key with another observer (e.g. `DailyNutritionDetailScreen` and `useHistoryData` both use the bare `['/api/daily-summary']` key), they share **one** TanStack v5 cache entry whose `queryFn` is last-writer-wins among mounted observers. Therefore:
 
 - (a) **All** observers of that shared key must provide a `queryFn` that sends `X-Timezone`, or the header presence becomes mount-order–dependent.
-- (b) You must **not** add a per-observer key segment like `{ tz }` to only one of them (the way per-hook keys such as `useDailyBudget`'s `['/api/daily-budget', { tz }]` do) — that would **fragment** the shared cache entry and is only safe when the key is **not** shared.
+- (b) You must **not** add a per-observer key segment like `{ tz }` to only one of them (the way per-hook keys such as `useDailyBudget`'s `['/api/daily-budget', date ?? null, { tz }]` do — this key's shape was restructured 2026-09-25 to give an optional `date` its own array element instead of interpolating it into element 0's string, so a mutation's `invalidateQueries({ queryKey: ["/api/daily-budget"] })` reaches every date variant via TanStack's default prefix match; see `docs/solutions/logic-errors/interpolated-query-key-element-defeats-prefix-invalidation-2026-09-25.md`) — that would **fragment** the shared cache entry and is only safe when the key is **not** shared.
 
 Also note that `apiRequest` throws on non-2xx via `throwIfResNotOk`, so a custom `queryFn` must **not** add a redundant `if (!res.ok)` guard.
 
@@ -141,3 +141,4 @@ Also note that `apiRequest` throws on non-2xx via `throwIfResNotOk`, so a custom
 
 - [MDN: Intl.DateTimeFormat](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DateTimeFormat)
 - [ECMA‑262 §11.6.1 – Intl.DateTimeFormat and timeZoneName](https://tc39.es/ecma402/#sec-datetimeformat-formatToParts)
+- [Interpolating a variable into a query-key string element defeats prefix invalidation](../logic-errors/interpolated-query-key-element-defeats-prefix-invalidation-2026-09-25.md)
