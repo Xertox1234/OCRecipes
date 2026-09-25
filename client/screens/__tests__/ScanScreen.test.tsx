@@ -135,7 +135,9 @@ vi.mock("react-native-gesture-handler", () => ({
   GestureDetector: ({ children }: { children: React.ReactNode }) => children,
   Gesture: {
     Tap: () => ({ onEnd: () => ({}) }),
-    Pinch: () => ({ onStart: () => ({ onUpdate: () => ({}) }) }),
+    Pinch: () => ({
+      onStart: () => ({ onUpdate: () => ({ onFinalize: () => ({}) }) }),
+    }),
     Simultaneous: () => ({}),
   },
 }));
