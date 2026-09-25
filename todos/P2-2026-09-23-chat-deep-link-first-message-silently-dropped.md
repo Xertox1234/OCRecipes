@@ -1,6 +1,6 @@
 ---
 title: "ChatScreen with no conversation id (e.g. a malformed chat/:id deep link) creates an empty conversation and silently drops the first message"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-25
