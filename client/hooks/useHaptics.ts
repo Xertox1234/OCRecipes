@@ -79,9 +79,8 @@ export function useHaptics() {
   // [reducedMotion] — only this wrapping object literal was fresh every
   // render. Memoizing it means every consumer that lists the whole `haptics`
   // object in a useCallback dep array (rather than destructuring individual
-  // methods) still gets a stable reference, instead of a new one on every
-  // parent re-render. See
-  // docs/solutions/conventions/use-memoized-haptics-object-2026-09-25.md.
+  // methods, the primary fix per docs/rules/hooks.md) still gets a stable
+  // reference, instead of a new one on every parent re-render.
   return useMemo(
     () => ({
       /** Trigger impact feedback */

@@ -15,10 +15,10 @@
  * Mirrors RecipeBrowserScreen.params.test.tsx's SectionList-capture technique
  * (same pattern CoachChat.render-item-stability.test.tsx uses for FlatList).
  * `useHaptics` is intentionally left unmocked here too (see that file's
- * comment) — the real hook now returns a memoized object (AC #3 of the same
- * todo), so this test also exercises that fix; it does not mask the mutation
- * bug being tested, since a stable `haptics` was already true before this fix
- * and the mutation identity was the sole remaining source of instability.
+ * comment) — with the real hook now memoized (AC #3 of the same todo), the
+ * mutation wrapper's fresh-per-call identity is the sole remaining unstable
+ * dependency, so this test still discriminates the fix it targets rather
+ * than being rescued by the hook-level change.
  */
 import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
