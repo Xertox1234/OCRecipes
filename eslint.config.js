@@ -94,6 +94,25 @@ module.exports = defineConfig([
     },
   },
   {
+    // Hermes (the app's JS engine) has no global `crypto`. A bare
+    // `crypto.randomUUID()` in client code passes every Vitest test (Node has
+    // it) and throws on device: it broke every coach stream and offline-queue
+    // enqueue from 2026-05-04 until 2026-09-25. Tests are excluded because they
+    // stub the global on purpose to model Hermes.
+    files: ["client/**/*.{ts,tsx}"],
+    ignores: ["**/__tests__/**", "**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        {
+          name: "crypto",
+          message:
+            "Hermes has no global `crypto` — this throws on device while passing in Vitest. Use randomUuidV4() from @/lib/uuid.",
+        },
+      ],
+    },
+  },
+  {
     files: ["**/*.test.{ts,tsx}"],
     rules: {
       "no-restricted-syntax": [

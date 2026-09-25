@@ -405,3 +405,22 @@ describe("useCoachStream request headers", () => {
     expect(mockXhr.headers["X-Timezone"]).toBe("America/Los_Angeles");
   });
 });
+
+describe("useCoachStream on a runtime with no global crypto", () => {
+  // Hermes (the app's JS engine) has no global `crypto`. A bare
+  // `crypto.randomUUID()` threw inside startStream's `.then`, so the XHR was
+  // never sent and every coach message failed with "Response interrupted" on
+  // device — while this suite, running in Node, stayed green.
+  it("still sends the request, with a v4 turnKey", async () => {
+    vi.stubGlobal("crypto", undefined);
+    const { result, onError } = await setupHook();
+    await startAndFlush(result);
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(mockXhr.send).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(mockXhr.sentBody ?? "{}") as { turnKey?: string };
+    expect(body.turnKey).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+});
