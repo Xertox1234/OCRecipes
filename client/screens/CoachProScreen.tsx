@@ -56,7 +56,7 @@ export default function CoachProScreen() {
     isError: isContextError,
     refetch: refetchContext,
   } = useCoachContext(contextEnabled);
-  const createConversation = useCreateConversation();
+  const { mutateAsync: createConversation } = useCreateConversation();
   const [conversationId, setConversationId] = useState<number | null>(null);
   const {
     data: coachConversations = [],
@@ -132,7 +132,7 @@ export default function CoachProScreen() {
   }, [notebookEntries, isEntriesLoading, cancelStaleReminders]);
 
   const handleCreateConversation = useCallback(async () => {
-    const result = await createConversation.mutateAsync({ type: "coach" });
+    const result = await createConversation({ type: "coach" });
     setConversationId(result.id);
     return result.id;
   }, [createConversation]);

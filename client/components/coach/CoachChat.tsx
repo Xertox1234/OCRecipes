@@ -98,19 +98,37 @@ export default function CoachChat({
   // "catalogSave" on POST /api/meal-plan/catalog/:id/save) — gate here too so
   // a free user gets the upgrade path instead of a failed request.
   const canSaveCatalog = usePremiumFeature("catalogSave");
-  const deleteChatMessage = useDeleteChatMessageForRetry();
   const queryClient = useQueryClient();
   const toast = useToast();
   const haptics = useHaptics();
   // Destructure rather than depend on the mutation objects themselves —
   // useMutation returns a new object identity every render, which would
   // make every useCallback below that depends on it re-create every render.
+  const { mutateAsync: deleteChatMessage } = useDeleteChatMessageForRetry();
   const { mutateAsync: saveCatalogRecipe, isPending: isSavingCatalog } =
     useSaveCatalogRecipe();
   const { mutateAsync: addMealPlanItem, isPending: isAddingPlanItem } =
     useAddMealPlanItem();
 
-  const [inputText, setInputText] = useState("");
+  const [inputText, setInputTextState] = useState("");
+  // Latest-value mirror of `inputText`. handleSend reads this ref instead of
+  // `inputText` so its identity doesn't change on every keystroke — see H3
+  // (2026-09-23 audit): handleSend depending on inputText cascaded into
+  // handleRetry/handleBlockAction/handleQuickReply/renderItem all getting new
+  // identities per keystroke, forcing every visible FlatList row to re-render.
+  // The ref is written together with the state in this setter, NOT in the
+  // render body: a render-phase `ref.current =` write is a React Compiler
+  // CompileError ("Cannot access refs during render"), and writing here also
+  // keeps the ref current before the re-render. (This file is compiler-exempt
+  // anyway — see the CORRECTION note on handleConfirmPlanSlot's `finally` —
+  // so this avoids adding a second bailout, it doesn't restore coverage.)
+  // Every write to inputText must go through setInputText (the raw state
+  // setter is not used elsewhere).
+  const inputTextRef = useRef(inputText);
+  const setInputText = useCallback((text: string) => {
+    inputTextRef.current = text;
+    setInputTextState(text);
+  }, []);
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
   const [streamingError, setStreamingError] = useState<string | null>(null);
   const [isAtDailyLimit, setIsAtDailyLimit] = useState(false);
@@ -371,7 +389,7 @@ export default function CoachChat({
         warmUpHook.sendWarmUp(transcript);
       }
     }
-  }, [isListening, transcript, isCoachPro, warmUpHook]);
+  }, [isListening, transcript, isCoachPro, warmUpHook, setInputText]);
 
   // Auto-send when speech finalizes
   useEffect(() => {
@@ -383,7 +401,9 @@ export default function CoachChat({
   const handleSend = useCallback(
     async (text?: string) => {
       // onPress/onSubmitEditing invoke this with an event object, not a string — only trust an explicit string arg (quick replies, voice).
-      const content = (typeof text === "string" ? text : inputText).trim();
+      const content = (
+        typeof text === "string" ? text : inputTextRef.current
+      ).trim();
       if (!content || isStreaming) return;
 
       setInputText("");
@@ -410,7 +430,10 @@ export default function CoachChat({
       onMessageSent?.();
     },
     [
-      inputText,
+      // inputText intentionally excluded — handleSend reads the latest value
+      // from inputTextRef instead so its identity (and every callback that
+      // transitively depends on it: handleRetry, handleBlockAction,
+      // handleQuickReply, renderItem) stays stable across keystrokes.
       isStreaming,
       conversationId,
       onCreateConversation,
@@ -419,6 +442,7 @@ export default function CoachChat({
       ttsStop,
       startStream,
       onMessageSent,
+      setInputText,
     ],
   );
 
@@ -438,8 +462,8 @@ export default function CoachChat({
 
     try {
       // Delete assistant then user message (in order — each was "most recent" at time of delete)
-      await deleteChatMessage.mutateAsync(lastMsg.id);
-      await deleteChatMessage.mutateAsync(lastUserMsg.id);
+      await deleteChatMessage(lastMsg.id);
+      await deleteChatMessage(lastUserMsg.id);
     } catch {
       queryClient.setQueryData(msgQueryKey, snapshot);
       setStreamingError("Retry failed. Check your connection and try again.");
@@ -860,7 +884,7 @@ export default function CoachChat({
       setInputText(text);
       if (isCoachPro) warmUpHook.sendTextWarmUp(text);
     },
-    [isCoachPro, warmUpHook],
+    [isCoachPro, warmUpHook, setInputText],
   );
 
   const micAdornment = useMemo(
