@@ -352,6 +352,7 @@ export default function ScanScreen() {
       );
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
+      void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
       void refreshScanCount();
       toast.success(buildSuccessToastMessage(confirmCard));
       safeGoBack(navigation, () =>

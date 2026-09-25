@@ -37,10 +37,15 @@
 // sites would NOT fail this test.
 import React from "react";
 import { act, cleanup, screen, fireEvent } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
 import * as RN from "react-native";
 import { renderComponent } from "../../../../test/utils/render-component";
 import MealPlanHomeScreen from "../MealPlanHomeScreen";
 import { TIER_FEATURES } from "@shared/types/premium";
+// Mocked below (vi.mock("@/hooks/useMealPlan", ...)) — imported by name so
+// the pull-to-refresh test can assert the screen calls it, not a re-derived
+// predicate.
+import { invalidateMealPlanItems } from "@/hooks/useMealPlan";
 
 type CapturedSheet = {
   onChange?: (index: number) => void;
@@ -50,23 +55,37 @@ type CapturedSheet = {
   accessible?: boolean;
 };
 
-const { mockApiRequest, capturedSheets, hookCalls, mealPlanItemsData } =
-  vi.hoisted(() => ({
-    mockApiRequest: vi.fn(),
-    capturedSheets: new Map<string, CapturedSheet>(),
-    // Recorded so the date-basis tests below can assert the ACTUAL query window
-    // the screen requested, rather than re-deriving it (which would just restate
-    // the implementation).
-    hookCalls: {
-      mealPlanItems: [] as unknown[][],
-      dailyBudget: [] as unknown[][],
-    },
-    // Defaults to [] (every existing describe block relies on the empty-state
-    // branch). The Android-trap-release block below is the only one that
-    // populates this, to reach the per-meal-type sections (and their "Add
-    // item" buttons) instead of the empty state's "Browse Recipes" CTA.
-    mealPlanItemsData: { value: [] as unknown[] },
-  }));
+const {
+  mockApiRequest,
+  capturedSheets,
+  hookCalls,
+  mealPlanItemsData,
+  refreshControlProps,
+} = vi.hoisted(() => ({
+  mockApiRequest: vi.fn(),
+  capturedSheets: new Map<string, CapturedSheet>(),
+  // Recorded so the date-basis tests below can assert the ACTUAL query window
+  // the screen requested, rather than re-deriving it (which would just restate
+  // the implementation).
+  hookCalls: {
+    mealPlanItems: [] as unknown[][],
+    dailyBudget: [] as unknown[][],
+  },
+  // Defaults to [] (every existing describe block relies on the empty-state
+  // branch). The Android-trap-release block below is the only one that
+  // populates this, to reach the per-meal-type sections (and their "Add
+  // item" buttons) instead of the empty state's "Browse Recipes" CTA.
+  mealPlanItemsData: { value: [] as unknown[] },
+  // The test/mocks/react-native.ts ScrollView mock never actually renders its
+  // `refreshControl` prop's element as a child (real RN's ScrollView natively
+  // owns that render; the mock only spreads unrecognized props onto the DOM
+  // node), so RefreshControl's onRefresh is otherwise unreachable from a
+  // fireEvent — captured here the same way the @gorhom/bottom-sheet mock
+  // below captures its own callbacks.
+  refreshControlProps: {
+    current: null as null | { onRefresh?: () => void | Promise<void> },
+  },
+}));
 
 // ── Data hooks — collaborators of the screen, not the SUT ──────────────────
 vi.mock("@/hooks/useMealPlan", () => ({
@@ -169,6 +188,44 @@ vi.mock("@/components/meal-plan/SimpleEntrySheet", () => ({
 vi.mock("@/components/MealSuggestionsModal", () => ({
   MealSuggestionsModal: () => null,
 }));
+
+// Capture RefreshControl's onRefresh (see the refreshControlProps hoisted
+// comment above). The shared mock's ScrollView never renders its
+// `refreshControl` prop as a child (real RN's ScrollView owns that render
+// natively; the mock only spreads unrecognized props onto the DOM node), so
+// RefreshControl's own mock component would otherwise never execute — locally
+// override ScrollView too, to actually render it. Every other export passes
+// through to the real mock file unchanged.
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  const RefreshControl = (props: {
+    onRefresh?: () => void | Promise<void>;
+  }) => {
+    refreshControlProps.current = props;
+    return null;
+  };
+  // No `ref` is threaded through — MealPlanHomeScreen's own <ScrollView>
+  // doesn't pass one — so a plain function component (not forwardRef) avoids
+  // fighting the real react-native type declarations `actual.ScrollView`
+  // carries (tsc resolves `typeof import("react-native")` against the real
+  // package's types, not this project's Vite alias).
+  const ScrollView = ({
+    children,
+    refreshControl,
+    ...rest
+  }: {
+    children?: React.ReactNode;
+    refreshControl?: React.ReactNode;
+  } & Record<string, unknown>) =>
+    React.createElement(
+      actual.ScrollView as React.ComponentType<Record<string, unknown>>,
+      rest,
+      refreshControl,
+      children,
+    );
+  ScrollView.displayName = "ScrollView";
+  return { ...actual, RefreshControl, ScrollView };
+});
 
 vi.mock("@/components/UpgradeModal", () => ({
   UpgradeModal: () => null,
@@ -608,5 +665,45 @@ describe("MealPlanHomeScreen — Android TalkBack background trap", () => {
     expect(
       screen.getByTestId("meal-plan-home-scroll").getAttribute("aria-hidden"),
     ).toBeNull();
+  });
+});
+
+// P1-2026-09-23 (L6): handleRefresh used to hand-roll an
+// `invalidateQueries({ queryKey: ["/api/meal-plan"] })` call instead of the
+// shared `invalidateMealPlanItems` helper, and never refreshed daily-budget
+// or daily-summary at all — so pull-to-refresh on this screen never updated
+// the calorie ring or the confirmed-checkmarks.
+describe("MealPlanHomeScreen — pull-to-refresh refreshes meal-plan, daily-budget, and daily-summary", () => {
+  beforeEach(() => {
+    capturedSheets.clear();
+    mockApiRequest.mockReset();
+    mockApiRequest.mockResolvedValue({ json: async () => ({}) });
+    refreshControlProps.current = null;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("calls invalidateMealPlanItems and invalidates daily-budget + daily-summary on refresh", async () => {
+    const invalidateSpy = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+
+    renderComponent(<MealPlanHomeScreen />);
+
+    expect(refreshControlProps.current?.onRefresh).toBeInstanceOf(Function);
+
+    await act(async () => {
+      await refreshControlProps.current?.onRefresh?.();
+    });
+
+    expect(invalidateMealPlanItems).toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/daily-budget"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/daily-summary"],
+    });
+
+    invalidateSpy.mockRestore();
   });
 });

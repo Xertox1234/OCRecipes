@@ -36,7 +36,6 @@ import {
   getConfidenceColor,
 } from "@/lib/confidence";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import { QUERY_KEYS } from "@/lib/query-keys";
 import {
   uploadLabelForAnalysis,
   confirmLabelAnalysis,
@@ -48,6 +47,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { parseNutritionFromOCR } from "@/lib/nutrition-ocr-parser";
 import type { VerificationSubmitResponse } from "@shared/types/verification";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import {
@@ -228,8 +228,7 @@ export default function LabelAnalysisScreen() {
       haptics.notification(
         getConfidenceHapticType(getConfidenceTier(labelData?.confidence ?? 0)),
       );
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+      invalidateFoodLogQueries(queryClient);
       navigation.goBack();
     },
     onError: (err) => {

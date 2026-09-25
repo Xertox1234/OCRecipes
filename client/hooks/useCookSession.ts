@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { cleanupImage, compressImage } from "@/lib/image-compression";
+import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 import type {
   CookingSessionResponse,
   CookSessionNutritionSummary,
@@ -178,6 +179,7 @@ export function useCookNutrition(sessionId: string | null) {
 // ============================================================================
 
 export function useLogCookSession(sessionId: string | null) {
+  const queryClient = useQueryClient();
   return useMutation<unknown, Error, { mealType?: string; date?: string }>({
     mutationFn: async (data) => {
       if (!sessionId) throw new Error("No active session");
@@ -188,6 +190,8 @@ export function useLogCookSession(sessionId: string | null) {
       );
       return res.json();
     },
+    // The server writes a scanned item + daily log for the cooked meal.
+    onSuccess: () => invalidateFoodLogQueries(queryClient),
   });
 }
 

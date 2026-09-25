@@ -1,6 +1,6 @@
 ---
 title: "ChatScreen with no conversation id (e.g. a malformed chat/:id deep link) creates an empty conversation and silently drops the first message"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-23
 updated: 2026-09-25
@@ -27,10 +27,10 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 ## Acceptance Criteria
 
-- [ ] **Decided (user, 2026-09-25): a malformed id shows "not found".** A `chat/:id` deep link whose id isn't a positive integer (e.g. `chat/abc` → 0) renders a "chat not found" state instead of an empty chat, following the `NotebookEntryScreen.tsx` precedent (undefined vs. malformed 0). It never auto-creates a conversation.
-- [ ] The create branch (ChatScreen opened with genuinely no id) still calls `sendMessage(content, undefined, conversation.id)`, so the first message is not lost
-- [ ] Tests: a malformed id renders "not found" and creates nothing; a missing id creates a conversation AND sends the message with the new id
-- [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
+- [x] **Decided (user, 2026-09-25): a malformed id shows "not found".** A `chat/:id` deep link whose id isn't a positive integer (e.g. `chat/abc` → 0) renders a "chat not found" state instead of an empty chat, following the `NotebookEntryScreen.tsx` precedent (undefined vs. malformed 0). It never auto-creates a conversation.
+- [x] The create branch (ChatScreen opened with genuinely no id) still calls `sendMessage(content, undefined, conversation.id)`, so the first message is not lost
+- [x] Tests: a malformed id renders "not found" and creates nothing; a missing id creates a conversation AND sends the message with the new id
+- [x] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes
 
@@ -62,3 +62,9 @@ The lost-message fix is one line. The malformed-id "not found" state follows `No
 ### 2026-09-25
 
 - **Product decision (user):** a broken chat link shows "not found" (NotebookEntry precedent) and never auto-creates. The lost-first-message bug is still fixed for a chat opened with no id. Ready for `/todo`.
+
+- **Implemented.** `client/screens/ChatScreen.tsx`: `isMalformedId = conversationId !== null && !(conversationId > 0)` distinguishes a missing id (`null`, in-app create flow) from a present-but-non-positive one (`0` or negative — `parseIntOrZero` does not clamp negatives). A malformed id renders a "chat not found" state (mirroring `NotebookEntryScreen.tsx`, minus its network-retry branch since this is a pure client-side shape check) and is also guarded inside `handleSend` itself, so the cross-tab `initialMessage` auto-send effect can't create/send when an unparsed deep-link query param rides along with a malformed id. The genuine create branch (`conversationId === null`) now calls `sendMessage(content, undefined, conversation.id)`, passing the freshly created id through the existing `conversationIdOverride` param instead of relying on the stale closure. `client/screens/__tests__/ChatScreen.test.tsx`: converted the static `useRoute` mock to a mutable `mockRouteParams.value` ref (matching `RecipeChatScreen.test.tsx`'s pattern) and added TDD-first failing tests for the malformed-id and missing-id-create-flow cases; all 7 tests pass. Reviewed by `code-reviewer` + `mobile-reviewer` (both clean, no blocking findings). No `linking.ts` change was needed — the negative-id gap is closed in `ChatScreen.tsx` per the Scope Contract's "only if needed" caveat.
+
+### 2026-09-25 (review repair)
+
+- Independent review found the not-found view was a dead end: a `chat/:id` deep link builds a stack holding only `Chat`, so there is no header back button. Added a labelled "Back to chats" button using `popTo("ChatList")` (a confirmation review showed `canGoBack()` bubbles to the tab navigator and `goBack()` would land on Home, and that v7 `navigate` would push). 44pt minimum target. Codified in the deep-linking solution doc.
