@@ -10,6 +10,9 @@ class GestureMock {
   activeOffsetY() {
     return this;
   }
+  onBegin() {
+    return this;
+  }
   onStart() {
     return this;
   }

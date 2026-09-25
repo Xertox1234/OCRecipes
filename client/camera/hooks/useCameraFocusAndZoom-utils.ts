@@ -32,3 +32,40 @@ export function clampZoom(value: number, min: number, max: number): number {
   "worklet";
   return Math.min(Math.max(value, min), max);
 }
+
+/**
+ * Minimum absolute zoom delta worth forwarding to the native
+ * `controller.setZoom()` bridge call. Below this the value hasn't moved
+ * enough to matter, and scheduling a UI→JS bridge crossing for it just adds
+ * per-frame overhead for no visible effect.
+ */
+export const ZOOM_APPLY_EPSILON = 0.01;
+
+/**
+ * Whether a new pinch-gesture zoom value is worth bridging to
+ * `controller.setZoom()`. Called from inside the pinch gesture's `.onUpdate`
+ * worklet (`useCameraFocusAndZoom.ts`) against a UI-thread-side "last
+ * applied" `SharedValue` — same reasoning as `clampZoom` above, so it needs
+ * its own "worklet" directive.
+ */
+export function shouldApplyZoom(
+  nextZoom: number,
+  lastAppliedZoom: number,
+  epsilon: number = ZOOM_APPLY_EPSILON,
+): boolean {
+  "worklet";
+  return Math.abs(nextZoom - lastAppliedZoom) > epsilon;
+}
+
+/**
+ * The zoom label's displayed text — the single source of truth for both the
+ * UI-thread "did the displayed text actually change" comparison in
+ * `.onUpdate` and the JS-thread `setZoomLabel` call, so the two can never
+ * format the value differently. Also called directly on the JS thread (from
+ * `showZoomLabel`), but still needs the "worklet" directive for its UI-thread
+ * call site — same reasoning as `clampZoom` above.
+ */
+export function formatZoomLabel(value: number): string {
+  "worklet";
+  return `${value.toFixed(1)}x`;
+}
