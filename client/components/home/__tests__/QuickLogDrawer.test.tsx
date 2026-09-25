@@ -3,7 +3,19 @@ import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { QuickLogDrawer } from "../QuickLogDrawer";
+import { HomeInlineDrawer } from "../HomeInlineDrawer";
 import * as useQuickLogSessionModule from "@/hooks/useQuickLogSession";
+
+// Spy on the REAL HomeInlineDrawer (not a stub) so every existing behavioral
+// assertion below still exercises the actual header/chevron/measure shell —
+// this only lets the composition test confirm QuickLogDrawer renders it.
+vi.mock("../HomeInlineDrawer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../HomeInlineDrawer")>();
+  return {
+    ...actual,
+    HomeInlineDrawer: vi.fn(actual.HomeInlineDrawer),
+  };
+});
 
 const { mockToastError, mockToastInfo, mockNavigate } = vi.hoisted(() => ({
   mockToastError: vi.fn(),
@@ -226,5 +238,20 @@ describe("QuickLogDrawer", () => {
     // ActivityIndicator renders as a View in the test environment — verify
     // the button itself is still present (busy state) and Log All text is gone
     expect(screen.getByRole("button", { name: /log all items/i })).toBeTruthy();
+  });
+
+  it("composes HomeInlineDrawer for its header/chevron shell instead of reimplementing it", () => {
+    renderComponent(<QuickLogDrawer action={testAction} />);
+
+    expect(HomeInlineDrawer).toHaveBeenCalled();
+    const props = vi.mocked(HomeInlineDrawer).mock.calls[0][0];
+    expect(props.icon).toBe(testAction.icon);
+    expect(props.label).toBe(testAction.label);
+    // QuickLogDrawer must NOT clamp its own height — its parsed-items list is
+    // unbounded before submit (MAX_LOG_ITEMS only caps at submit time), unlike
+    // its siblings' structurally-bounded content. Passing a maxHeight here
+    // would silently clip the list and the Log All button on small devices.
+    expect(props.maxHeight).toBeUndefined();
+    expect(typeof props.onToggle).toBe("function");
   });
 });

@@ -22,8 +22,11 @@ interface HomeInlineDrawerProps {
   label: string;
   isOpen: boolean;
   onToggle: () => void;
-  maxHeight: number;
+  maxHeight?: number;
   isLocked?: boolean;
+  /** Optional tint for the expanded body — lets a caller (e.g. QuickLogDrawer)
+   * preserve its own body background without duplicating the shell. */
+  bodyBackgroundColor?: string;
   children: React.ReactNode;
 }
 
@@ -34,6 +37,7 @@ export function HomeInlineDrawer({
   onToggle,
   maxHeight,
   isLocked,
+  bodyBackgroundColor,
   children,
 }: HomeInlineDrawerProps) {
   const { theme } = useTheme();
@@ -114,7 +118,12 @@ export function HomeInlineDrawer({
 
       <Animated.View style={[animatedStyle, styles.clip]}>
         <View
-          style={styles.body}
+          style={[
+            styles.body,
+            bodyBackgroundColor
+              ? { backgroundColor: bodyBackgroundColor }
+              : null,
+          ]}
           onLayout={onContentLayout}
           importantForAccessibility={isOpen ? "yes" : "no-hide-descendants"}
           aria-hidden={!isOpen}
