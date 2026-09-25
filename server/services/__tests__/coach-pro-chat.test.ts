@@ -23,7 +23,7 @@ import {
   generateCoachProResponse,
   generateCoachResponse,
 } from "../nutrition-coach";
-import type { CoachContext } from "../nutrition-coach";
+import type { CoachContext, CoachProChunk } from "../nutrition-coach";
 import { parseBlocksFromContent } from "../coach-blocks";
 import { consumeWarmUp } from "../coach-warm-up";
 import { fireAndForget } from "../../lib/fire-and-forget";
@@ -118,6 +118,16 @@ async function* fakeStream(chunks: string[]): AsyncGenerator<string> {
   }
 }
 
+/**
+ * Creates a fake generateCoachProResponse stream that yields plain content
+ * chunks (no tool_calls chunks) — for tests that don't exercise tool status.
+ */
+async function* fakeProStream(chunks: string[]): AsyncGenerator<CoachProChunk> {
+  for (const c of chunks) {
+    yield { type: "content", content: c };
+  }
+}
+
 /** Collect all events from the handleCoachChat generator. */
 async function collectEvents(
   gen: AsyncGenerator<CoachChatEvent>,
@@ -203,7 +213,7 @@ describe("handleCoachChat", () => {
     coachProInternals.lastArchivedAt.clear();
     setupDefaultStorage();
     vi.mocked(generateCoachProResponse).mockReturnValue(
-      fakeStream(["Hello ", "world!"]),
+      fakeProStream(["Hello ", "world!"]),
     );
     vi.mocked(generateCoachResponse).mockReturnValue(
       fakeStream(["Standard ", "response."]),
@@ -768,7 +778,7 @@ describe("handleCoachChat", () => {
   describe("SSE event yielding", () => {
     it("yields content events from the generator stream", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Hello ", "world!"]),
+        fakeProStream(["Hello ", "world!"]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Hello world!",
@@ -796,7 +806,7 @@ describe("handleCoachChat", () => {
         } as unknown as CoachBlock,
       ];
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Here is your plan."]),
+        fakeProStream(["Here is your plan."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Here is your plan.",
@@ -816,7 +826,7 @@ describe("handleCoachChat", () => {
 
     it("does not yield blocks event when blocks are empty", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["No blocks here."]),
+        fakeProStream(["No blocks here."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "No blocks here.",
@@ -917,7 +927,7 @@ describe("handleCoachChat", () => {
   describe("notebook extraction", () => {
     it("triggers notebook extraction for Coach Pro after response", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Advice here."]),
+        fakeProStream(["Advice here."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Advice here.",
@@ -952,7 +962,7 @@ describe("handleCoachChat", () => {
     });
 
     it("does not trigger notebook extraction when response is empty", async () => {
-      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream([]));
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeProStream([]));
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "",
         blocks: [],
@@ -983,7 +993,7 @@ describe("handleCoachChat", () => {
 
     it("anchors followUpDate with civilDateToInstant using the request tz, not new Date() (UTC-negative tz)", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Let's check in."]),
+        fakeProStream(["Let's check in."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Let's check in.",
@@ -1029,7 +1039,7 @@ describe("handleCoachChat", () => {
 
     it("threads the request's tz (and a captured `now`) into extractNotebookEntries — pins the wiring across the mock boundary", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Let's check in."]),
+        fakeProStream(["Let's check in."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Let's check in.",
@@ -1061,7 +1071,7 @@ describe("handleCoachChat", () => {
 
     it("anchors followUpDate with civilDateToInstant using the request tz, not new Date() (UTC-positive tz — the opposite-sign companion of the test above)", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Let's check in."]),
+        fakeProStream(["Let's check in."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Let's check in.",
@@ -1104,7 +1114,7 @@ describe("handleCoachChat", () => {
 
     it("does not anchor a commitment as due before the user's local midnight (UTC-negative tz) — Postgres-independent mirror of the storage-layer 'not due early' test", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Let's check in."]),
+        fakeProStream(["Let's check in."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Let's check in.",
@@ -1160,7 +1170,7 @@ describe("handleCoachChat", () => {
       const dateStr = "2026-09-05";
 
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Let's check in."]),
+        fakeProStream(["Let's check in."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Let's check in.",
@@ -1205,7 +1215,7 @@ describe("handleCoachChat", () => {
   describe("message persistence", () => {
     it("persists assistant message after response", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Test response"]),
+        fakeProStream(["Test response"]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Test response",
@@ -1234,7 +1244,7 @@ describe("handleCoachChat", () => {
         } as unknown as CoachBlock,
       ];
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Plan here."]),
+        fakeProStream(["Plan here."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Plan here.",
@@ -1255,7 +1265,7 @@ describe("handleCoachChat", () => {
     });
 
     it("does not persist message when response is empty", async () => {
-      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream([]));
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeProStream([]));
 
       const params = makeParams({ isCoachPro: true });
 
@@ -1266,7 +1276,7 @@ describe("handleCoachChat", () => {
 
     it("does not persist partial assistant message after abort", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Partial response"]),
+        fakeProStream(["Partial response"]),
       );
       let abortChecks = 0;
       const params = makeParams({
@@ -1318,18 +1328,12 @@ describe("handleCoachChat", () => {
   // ── Status events ─────────────────────────────────────────
 
   describe("status events", () => {
-    it("yields status events for Coach Pro tool calls before content resumes", async () => {
+    it("yields a status event immediately when tool calls are detected, before the next content event", async () => {
       vi.mocked(generateCoachProResponse).mockImplementation(
-        async function* (
-          _messages,
-          _context,
-          _userId,
-          _signal,
-          onBeforeToolCalls,
-        ) {
-          yield "First chunk";
-          onBeforeToolCalls?.(["search_recipes"]);
-          yield "After tool";
+        async function* (): AsyncGenerator<CoachProChunk> {
+          yield { type: "content", content: "First chunk" };
+          yield { type: "tool_calls", toolNames: ["search_recipes"] };
+          yield { type: "content", content: "After tool" };
         },
       );
 
@@ -1343,24 +1347,22 @@ describe("handleCoachChat", () => {
         label: "Searching recipes…",
       });
 
-      // Status event appears between content chunks
+      // The status event sits between the two content chunks — it is not
+      // deferred until (or past) the content chunk that follows the tool
+      // round.
       const types = events.map((e) => e.type);
       const firstContentIdx = types.indexOf("content");
       const statusIdx = types.indexOf("status");
+      const secondContentIdx = types.indexOf("content", firstContentIdx + 1);
       expect(statusIdx).toBeGreaterThan(firstContentIdx);
+      expect(statusIdx).toBeLessThan(secondContentIdx);
     });
 
     it("falls back to 'Working on it…' for unknown tool names", async () => {
       vi.mocked(generateCoachProResponse).mockImplementation(
-        async function* (
-          _messages,
-          _context,
-          _userId,
-          _signal,
-          onBeforeToolCalls,
-        ) {
-          onBeforeToolCalls?.(["some_future_tool"]);
-          yield "Done";
+        async function* (): AsyncGenerator<CoachProChunk> {
+          yield { type: "tool_calls", toolNames: ["some_future_tool"] };
+          yield { type: "content", content: "Done" };
         },
       );
 

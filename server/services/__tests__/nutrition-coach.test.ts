@@ -4,7 +4,7 @@ import {
   generateCoachResponse,
   SAFETY_OVERRIDE_SENTINEL,
 } from "../nutrition-coach";
-import type { CoachContext } from "../nutrition-coach";
+import type { CoachContext, CoachProChunk } from "../nutrition-coach";
 import { openai } from "../../lib/openai";
 import { executeToolCall } from "../coach-tools";
 import {
@@ -116,11 +116,24 @@ function createMockStream(
   };
 }
 
-/** Collect all yielded chunks from an async generator into a single string. */
-async function collectStream(gen: AsyncGenerator<string>): Promise<string> {
+/**
+ * Collect all yielded chunks from an async generator into a single string.
+ * Accepts either generateCoachResponse's plain-string stream or
+ * generateCoachProResponse's CoachProChunk stream — a tool_calls chunk
+ * contributes nothing to the concatenated result, matching what the caller
+ * would forward to the client as text.
+ */
+async function collectStream(
+  gen: AsyncGenerator<string> | AsyncGenerator<CoachProChunk>,
+): Promise<string> {
   let result = "";
   for await (const chunk of gen) {
-    result += chunk;
+    result +=
+      typeof chunk === "string"
+        ? chunk
+        : chunk.type === "content"
+          ? chunk.content
+          : "";
   }
   return result;
 }
@@ -222,6 +235,70 @@ describe("generateCoachProResponse", () => {
       generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
     );
 
+    expect(result).toBe("Chicken has 165 calories.");
+    expect(executeToolCall).toHaveBeenCalledWith(
+      "lookup_nutrition",
+      { query: "chicken" },
+      "user-1",
+      undefined,
+      "UTC",
+    );
+  });
+
+  it("yields a tool_calls chunk before the tools run, not deferred to the next content chunk", async () => {
+    const toolCallStream = createMockStream([
+      {
+        tool_calls: [
+          {
+            index: 0,
+            id: "call_abc",
+            function: {
+              name: "lookup_nutrition",
+              arguments: '{"query":"chicken"}',
+            },
+          },
+        ],
+      },
+      { finish_reason: "tool_calls" },
+    ]);
+    const textStream = createMockStream([
+      { content: "Chicken has 165 calories." },
+      { finish_reason: "stop" },
+    ]);
+
+    vi.mocked(openai.chat.completions.create)
+      .mockResolvedValueOnce(toolCallStream as any)
+      .mockResolvedValueOnce(textStream as any);
+
+    // Resolves only when the test lets it, so we can assert on the state of
+    // the generator's iteration BEFORE the tool call has actually settled.
+    let resolveToolCall!: (value: { name: string; calories: number }) => void;
+    vi.mocked(executeToolCall).mockReturnValue(
+      new Promise((resolve) => {
+        resolveToolCall = resolve;
+      }),
+    );
+
+    const messages = [
+      { role: "user" as const, content: "How many calories in chicken?" },
+    ];
+    const gen = generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1");
+
+    const first = await gen.next();
+    expect(first.done).toBe(false);
+    expect(first.value).toEqual({
+      type: "tool_calls",
+      toolNames: ["lookup_nutrition"],
+    });
+    // The tool_calls chunk was yielded — the tool itself must not have run yet.
+    expect(executeToolCall).not.toHaveBeenCalled();
+
+    // Now let the tool call resolve and drain the rest of the generator.
+    resolveToolCall({ name: "chicken", calories: 165 });
+    let result = "";
+    for await (const chunk of gen) {
+      if (chunk.type === "content") result += chunk.content;
+    }
     expect(result).toBe("Chicken has 165 calories.");
     expect(executeToolCall).toHaveBeenCalledWith(
       "lookup_nutrition",
@@ -1512,7 +1589,6 @@ describe("current time rendering", () => {
         undefined,
         undefined,
         undefined,
-        undefined,
         "America/Los_Angeles",
       ),
     );
@@ -1555,7 +1631,6 @@ describe("current time rendering", () => {
         messages,
         DEFAULT_CONTEXT,
         "user-1",
-        undefined,
         undefined,
         undefined,
         undefined,
