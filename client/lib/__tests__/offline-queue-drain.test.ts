@@ -207,9 +207,14 @@ describe("offline-queue-drain", () => {
 
     await drainQueue();
 
-    // 3 items synced, but the 3 affected keys are invalidated ONCE each (3 total),
-    // not once per item (which would have been 3 × 3 = 9 — a reconnect refetch storm).
-    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(3);
+    // 3 items synced, but the 4 affected keys are invalidated ONCE each (4 total),
+    // not once per item (which would have been 3 × 4 = 12 — a reconnect refetch storm).
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(4);
+    // A replayed food log changes today's calories, so Home's daily-budget
+    // header must refetch too (prefix key reaches every dated variant).
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["/api/daily-budget"],
+    });
   });
 
   it("does not invalidate when nothing synced (item discarded on 4xx)", async () => {

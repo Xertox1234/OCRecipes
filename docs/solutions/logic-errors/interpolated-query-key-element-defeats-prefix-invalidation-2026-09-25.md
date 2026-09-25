@@ -36,7 +36,7 @@ queryKey: [`/api/daily-budget${params}`, { tz }],
 queryKey: ["/api/daily-budget", date ?? null, { tz }],
 ```
 
-Use `null` (not `undefined`) for the "absent" slot — TanStack's key hashing treats `undefined` inconsistently across positions in an array, while `null` round-trips predictably. The `queryFn`'s actual HTTP request URL can still interpolate the date into its own query string (`/api/daily-budget${params}`) — only the **cache key** needs the variable pulled out into its own element. With this shape, `invalidateQueries({ queryKey: ["/api/daily-budget"] })` matches every variant's shared `queryKey[0]`, exactly like `invalidateMealPlanItems`'s existing `key[0] === "/api/meal-plan"` predicate already does for meal-plan items.
+Write the "absent" slot as `date ?? null`. That is for readability, not hashing: in an array slot `JSON.stringify` turns `undefined` into `null`, so `["a", undefined]` and `["a", null]` hash identically (checked with `node -e`). The hashing trap is an `undefined` OBJECT PROPERTY, which `JSON.stringify` drops entirely (`{ a: undefined }` → `{}`). The `queryFn`'s actual HTTP request URL can still interpolate the date into its own query string (`/api/daily-budget${params}`) — only the **cache key** needs the variable pulled out into its own element. With this shape, `invalidateQueries({ queryKey: ["/api/daily-budget"] })` matches every variant's shared `queryKey[0]`, exactly like `invalidateMealPlanItems`'s existing `key[0] === "/api/meal-plan"` predicate already does for meal-plan items.
 
 ## Prevention
 
@@ -46,6 +46,7 @@ When adding a query key with an optional or variable segment, ask: "if a mutatio
 
 - `client/hooks/useDailyBudget.ts`
 - `client/hooks/__tests__/useDailyBudget.test.ts` — the new "prefix invalidation after a food-log mutation" test mounts an undated and a dated `useDailyBudget` query on one shared `QueryClient` and drives a real mutation to prove both refetch
+- `client/lib/offline-queue-drain.ts` — the offline replay of a queued food log is a mutation path too; it invalidates the same bare prefix after a drain
 - `client/hooks/useMealPlan.ts` — `invalidateMealPlanItems`'s `key[0] === "/api/meal-plan"` predicate is the same pattern applied correctly
 
 ## See Also
