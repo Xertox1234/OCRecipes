@@ -192,7 +192,7 @@ describe("getInitialURL", () => {
   // Reminders scheduled before this change carry only `data.entryId` (see
   // client/hooks/useNotebookNotifications.ts) — already-scheduled on-device
   // notifications must keep opening the right entry after this ships.
-  it("constructs a notebook-entry URL from a legacy entryId-only payload", async () => {
+  it("constructs a notebook-entry URL from an entryId-only payload (the server push scheduler's shape)", async () => {
     mockGetInitialURL.mockResolvedValue(null);
     mockGetLastNotificationResponse.mockReturnValue({
       notification: { request: { content: { data: { entryId: 99 } } } },
@@ -293,7 +293,7 @@ describe("subscribe", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to a legacy entryId-only payload when holding for a not-ready navigator", () => {
+  it("falls back to an entryId-only payload when holding for a not-ready navigator", () => {
     mockIsReady.mockReturnValue(false);
     const listener = vi.fn();
     linking.subscribe!(listener);

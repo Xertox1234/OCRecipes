@@ -34,9 +34,10 @@ describe("useNotebookNotifications", () => {
 
   // AC: "Reminder payloads carry a URL" — the `linking` config's
   // getInitialURL/subscribe (client/navigation/linking.ts) resolves a tap
-  // via `data.url`, falling back to a legacy `data.entryId`-only payload only
-  // for reminders scheduled by an older build. New reminders must carry the
-  // full-prefix URL so a tap routes without relying on that fallback.
+  // via `data.url`, falling back to an `entryId`-only payload. That fallback
+  // is permanent, not legacy-only: the server's push scheduler (the primary
+  // delivery path) still sends `data: { entryId }`. Reminders this client
+  // schedules must carry the full-prefix URL so they don't depend on it.
   it("schedules a reminder whose content.data carries a full-prefix url alongside entryId", async () => {
     const { result } = renderHook(() => useNotebookNotifications());
 

@@ -64,7 +64,7 @@ Follow the React Navigation 7 docs example exactly. Verify on a simulator with a
 
 - Implemented. `client/navigation/linking.ts` gained `getInitialURL`/`subscribe`
   per the React Navigation 7 + expo-notifications integration pattern, with a
-  fallback from a legacy `data.entryId`-only payload to a full-prefix URL.
+  fallback from an `entryId`-only payload (the server push scheduler's permanent shape, not just old builds) to a full-prefix URL.
 - **Deviation from Implementation Notes** ("follow the docs example exactly"):
   source-reading the installed `@react-navigation/native`/`@react-navigation/core`
   packages showed the vanilla `getInitialURL`/`subscribe` example alone does not
