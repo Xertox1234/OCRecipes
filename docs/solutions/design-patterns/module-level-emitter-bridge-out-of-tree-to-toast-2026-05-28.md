@@ -79,8 +79,8 @@ Render it once as a sibling inside `<ToastProvider>` in `App.tsx` (next to
   global _mutation_ handler would double-toast most of them. **Decision
   (reversed 2026-09-25 — see `docs/rules/client-state.md`):** the global net
   now covers mutations too, gated behind a `meta: { silentError: true }` flag
-  (`MutationErrorMeta`/`shouldSurfaceMutationError`, a byte-identical mirror of
-  `QueryErrorMeta`/`shouldSurfaceQueryError`, sharing the same
+  (`MutationErrorMeta`/`shouldSurfaceMutationError`, a mirror of
+  `QueryErrorMeta`/`shouldSurfaceQueryError` plus one extra rule, below, sharing the same
   `queryErrorListeners`/`subscribeToQueryErrors` toast bridge rather than a
   second emitter). The prior "scope to queries only" policy this bullet
   originally documented is superseded — do not re-derive it. Document the
@@ -96,6 +96,16 @@ Render it once as a sibling inside `<ToastProvider>` in `App.tsx` (next to
   hook has multiple call sites that disagree on whether they already show
   visible error feedback (some do, some don't) — hardcode when they agree,
   thread when they don't.
+- **The mutation filter must suppress `AbortError`; the query filter never had
+  to.** No query here wires its own `AbortController`, but a mutation can:
+  `useReceiptScan` aborts its in-flight fetch on unmount and when a new scan
+  supersedes the old one. TanStack's `Mutation.execute()` calls the
+  cache-level `onError` on **any** rejection, with no view of a caller's
+  abort, so a straight mirror of the query filter toasts "Something went
+  wrong" on whatever screen the user moved to, and reports the abort to Sentry.
+  Check `name === "AbortError"` on any object, not `instanceof Error`: RN's
+  fetch rejects with a `DOMException`. Before copying a filter from one cache
+  to the other, ask what the new cache sees that the old one never did.
 - **Suppress expected errors.** Reuse the file's existing `/^4\d\d:/` message
   guard to skip 4xx (screens already branch on these); it also covers the
   `on401: "throw"` auth-redirect path (message `"401: ..."`) and `429`. Only

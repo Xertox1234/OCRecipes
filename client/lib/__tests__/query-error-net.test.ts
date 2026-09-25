@@ -137,6 +137,19 @@ describe("shouldSurfaceMutationError", () => {
     expect(shouldSurfaceMutationError("string failure", undefined)).toBe(true);
     expect(shouldSurfaceMutationError(undefined, undefined)).toBe(true);
   });
+
+  it("suppresses an AbortError (the caller cancelled — useReceiptScan's unmount/supersede abort)", () => {
+    const abortError = new Error("Aborted");
+    abortError.name = "AbortError";
+    expect(shouldSurfaceMutationError(abortError, undefined)).toBe(false);
+    // RN's fetch rejects with a DOMException, which may not extend Error.
+    expect(
+      shouldSurfaceMutationError(
+        { name: "AbortError", message: "Aborted" },
+        undefined,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("subscribeToQueryErrors", () => {
@@ -281,6 +294,16 @@ describe("global mutation error net (MutationCache.onError → emitter)", () => 
     await runFailingMutation({
       error: new ApiError("500: Internal Server Error"),
     });
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("does NOT emit when the mutation's request was aborted", async () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeToQueryErrors(listener);
+    const controller = new AbortController();
+    controller.abort();
+    await runFailingMutation({ error: controller.signal.reason });
+    unsubscribe();
     expect(listener).not.toHaveBeenCalled();
   });
 });

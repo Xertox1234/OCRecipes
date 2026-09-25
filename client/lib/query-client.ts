@@ -294,6 +294,17 @@ export function shouldSurfaceMutationError(
   meta: MutationErrorMeta | undefined,
 ): boolean {
   if (meta?.silentError === true) return false;
+  // A caller-initiated abort (useReceiptScan aborts on unmount and when a new
+  // scan supersedes the old one) is not a failure. TanStack calls the
+  // cache-level onError on any rejection, with no view of user-level aborts.
+  // RN's fetch rejects with a DOMException, so check `name`, not `instanceof`.
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { name?: unknown }).name === "AbortError"
+  ) {
+    return false;
+  }
   if (error instanceof Error && /^4\d\d:/.test(error.message)) return false;
   return true;
 }
