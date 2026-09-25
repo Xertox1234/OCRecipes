@@ -134,7 +134,11 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     // not a high-frequency gesture callback where re-arming matters.
     const captureFailureReportedRef = useRef(false);
     const cameraErrorReportedRef = useRef(false);
-    const interruptionStartedReportedRef = useRef(false);
+    // Interruptions latch PER REASON: iOS forwards every
+    // AVCaptureSession interruption, and a shared latch would let the first
+    // (often routine) reason hide a later, diagnostic one for the whole mount.
+    const reportedInterruptionReasonsRef = useRef(new Set<string>());
+    const lastInterruptionWasBackgroundRef = useRef(false);
     const interruptionEndedReportedRef = useRef(false);
 
     const { reducedMotion } = useAccessibility();
@@ -229,18 +233,23 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
               logger.error("[CameraView] Camera error", error);
             }}
             onInterruptionStarted={(reason) => {
-              if (interruptionStartedReportedRef.current) return;
-              interruptionStartedReportedRef.current = true;
+              // Backgrounding the app mid-scan fires this reason; it is
+              // routine, not a failure, so it never reaches error tracking.
+              lastInterruptionWasBackgroundRef.current =
+                reason === "video-device-not-available-in-background";
+              if (lastInterruptionWasBackgroundRef.current) return;
+              const reported = reportedInterruptionReasonsRef.current;
+              if (reported.has(reason)) return;
+              reported.add(reason);
               logger.error(
                 `[CameraView] Camera session interrupted (${reason})`,
               );
             }}
             onInterruptionEnded={() => {
+              if (lastInterruptionWasBackgroundRef.current) return;
               if (interruptionEndedReportedRef.current) return;
               interruptionEndedReportedRef.current = true;
-              logger.error(
-                "[CameraView] camera interruption ended (recovered)",
-              );
+              logger.error("[CameraView] Camera session interruption ended");
             }}
           />
           <FocusRing point={focusPoint} reducedMotion={reducedMotion} />

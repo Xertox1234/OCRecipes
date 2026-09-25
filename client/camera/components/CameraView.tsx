@@ -215,9 +215,7 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
             onInterruptionEnded={() => {
               if (interruptionEndedReportedRef.current) return;
               interruptionEndedReportedRef.current = true;
-              logger.error(
-                "[CameraView] camera interruption ended (recovered)",
-              );
+              logger.error("[CameraView] Camera session interruption ended");
             }}
           />
           <FocusRing point={focusPoint} reducedMotion={reducedMotion} />

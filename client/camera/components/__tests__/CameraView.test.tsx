@@ -199,6 +199,9 @@ describe("CameraView — failure reporting (latched once per mount)", () => {
     onInterruptionEnded?.();
 
     expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      "[CameraView] Camera session interruption ended",
+    );
   });
 
   it("keeps each failure class's latch independent of the others", () => {

@@ -88,3 +88,7 @@ failed", ...)` at each call site (ScanScreen.tsx, ReceiptCaptureScreen.tsx,
   real VisionCamera 5.1.1 `CameraProps` (not a new mechanism), that the Android-only
   scanner latch is correctly scoped (`useObjectOutput` has no `onError`), and that the
   `takePicture` null-return contract is unchanged at all three call sites.
+
+### 2026-09-25 (review repair)
+
+- Independent review found iOS forwards app backgrounding (`video-device-not-available-in-background`) through `onInterruptionStarted`. Repaired: that reason and its matching end are not reported, interruptions latch per reason, the end message is neutral, and tests pin the Sentry payload and cover a remount. Codified in `docs/solutions/logic-errors/visioncamera-interruption-reports-app-backgrounding-latch-per-reason-2026-09-25.md`.
