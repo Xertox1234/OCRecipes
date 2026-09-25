@@ -6,6 +6,7 @@ module: client
 tags: [react-native, state-management, bottom-sheet, filters, lifting-state]
 applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx]
 created: '2026-05-13'
+last_updated: '2026-09-25'
 ---
 
 # Lifted filter state with presentational bottom sheet
@@ -81,6 +82,82 @@ export function SearchFilterSheet({
 - **Reset clears to defaults:** The parent's `onReset` handler resets to the default `SearchFilters` object, not to empty/null
 - **Sheet is a BottomSheetModal child:** Wrap in `<BottomSheetView>` inside `<BottomSheetModal>`, placed at the end of the screen's return
 
+### Nesting the sheet's own fields when the parent owns more filter state than the sheet
+
+When the parent screen also owns filter state *outside* the presentational sheet's own fields (e.g. chip-row toggles like `cuisine`, `diet`, `difficulty`, `curatedOnly`, `safeForMe`, `pantryMode`, alongside the sheet's own `SearchFilters`-shaped fields like `sort`, `maxPrepTime`, `maxCalories`, `minProtein`, `source`), **do not** flatten everything into one object with the sheet's own field names at the top level. Instead nest the sheet's own fields under a named sub-key (e.g. `advanced: SearchFilters`) inside the parent's single consolidated filters object.
+
+This approach:
+
+- Keeps the presentational sheet's existing prop type/contract completely untouched — it still receives `filters: SearchFilters` and fires `onFiltersChange(nextFilters: SearchFilters)`.
+- Guarantees that the sheet's own `onReset`/`onFiltersChange` handlers can only ever read or replace that one sub-object:
+  ```typescript
+  setFilters(prev => ({ ...prev, advanced: nextFilters }));
+  ```
+- Prevents the sheet's reset-to-defaults call from accidentally spreading over or clearing the chip-row fields that live outside the sheet — a flat single-level object would let the sheet's own reset silently wipe filter state it doesn't even render, which is a real behavior regression, not just a style choice.
+
+**Implementation pattern** (`client/screens/meal-plan/recipe-browser-utils.ts` / `RecipeBrowserScreen.tsx`):
+
+```typescript
+// Parent's consolidated filter state
+interface RecipeFilters {
+  // Chip-row toggles (owned by parent, not by sheet) — single-select, not arrays
+  activeCuisine: string | undefined;
+  activeDiet: string | undefined;
+  activeDifficulty: string | undefined;
+  curatedOnly: boolean;
+  safeForMe: boolean;
+  pantryMode: boolean;
+
+  // Sheet's own fields — nested under 'advanced'
+  advanced: SearchFilters;
+}
+
+const DEFAULT_FILTERS: RecipeFilters = {
+  activeCuisine: undefined,
+  activeDiet: undefined,
+  activeDifficulty: undefined,
+  curatedOnly: false,
+  safeForMe: false,
+  pantryMode: false,
+  advanced: {
+    sort: 'relevance',
+    maxPrepTime: undefined,
+    maxCalories: undefined,
+    minProtein: undefined,
+    source: 'all',
+  },
+};
+
+// Inside the screen:
+const [filters, setFilters] = useState<RecipeFilters>(DEFAULT_FILTERS);
+
+// Derive active badge count only from the advanced sub-object
+const activeFilterCount = useMemo(() => {
+  let count = 0;
+  const a = filters.advanced;
+  if (a.sort !== 'relevance') count++;
+  if (a.maxPrepTime !== undefined) count++;
+  if (a.maxCalories !== undefined) count++;
+  if (a.minProtein !== undefined) count++;
+  if (a.source !== 'all') count++;
+  return count;
+}, [filters.advanced]);
+
+// Pass the nested sub-object to the sheet
+<SearchFilterSheet
+  filters={filters.advanced}
+  onFiltersChange={(nextAdvanced) =>
+    setFilters(prev => ({ ...prev, advanced: nextAdvanced }))
+  }
+  onReset={() =>
+    setFilters(prev => ({ ...prev, advanced: DEFAULT_FILTERS.advanced }))
+  }
+  activeFilterCount={activeFilterCount}
+/>
+```
+
+This keeps the sheet component completely ignorant of chip-row state and eliminates the risk of accidental cross-contamination.
+
 ## Exceptions
 
 When to use: any list screen with a filter bottom sheet (recipe search, product catalog, activity log filters).
@@ -89,6 +166,7 @@ When to use: any list screen with a filter bottom sheet (recipe search, product 
 
 - `client/components/meal-plan/SearchFilterSheet.tsx`
 - `client/screens/meal-plan/RecipeBrowserScreen.tsx`
+- `client/screens/meal-plan/recipe-browser-utils.ts`
 
 ## See Also
 
