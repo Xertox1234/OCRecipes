@@ -28,11 +28,13 @@ review-until-clean:
   the maximum: two review dispatches per PR.
 - **WARNING / SUGGESTION** → do **not** fix-and-re-review. File as a todo per the CLAUDE.md
   tier rule (or, for `.claude/hooks/**`, add to `docs/harness-residuals.md`), or fix it in a
-  **follow-up PR**. Never fix it on the reviewed branch: a record binds to one head sha, so any
+  **follow-up PR**. A `todo-executor` never files: it reports the finding under
+  `DEFERRED_WARNINGS` and the orchestrator/user decides (`todo-executor.md` Step 7). Never fix it on the reviewed branch: a record binds to one head sha, so any
   new commit needs a fresh review — the loop this rule removes. The reviewer ends with
   `No blocking findings.`, which records `verdict: advisory`, and the merge gate accepts it.
 - A **confirmation pass** exists only to bind a record to the final head. It never reopens
-  review: its non-CRITICAL findings are filed, not fixed.
+  review: its non-CRITICAL findings are filed (by a `todo-executor`: reported under
+  `DEFERRED_WARNINGS`), not fixed.
 
 **Concurrency:** keep per-review fan-out small. In `/todo`, review runs _inside_ an already-parallel batch (up to 4 executors), so cap each todo at **`code-reviewer` + 1–2 domain reviewers (≤3 total)** to avoid a 4×N subagent blow-up against the project's "max ~4 parallel agents" guidance. A branch-wide review (`/codify`) or an audit may use more (`code-reviewer` + 2–3 domain reviewers) because it is not itself nested in a parallel batch.
 
