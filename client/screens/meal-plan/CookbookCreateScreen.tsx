@@ -52,10 +52,7 @@ import {
 import { Spacing, FontFamily } from "@/constants/theme";
 import type { CookbookCreateScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
-import {
-  useFromHomeBackRedirect,
-  redirectToHomeTab,
-} from "@/hooks/useFromHomeBackRedirect";
+import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 
 const NAME_MAX = 100;
 const DESCRIPTION_MAX = 500;
@@ -159,34 +156,29 @@ export default function CookbookCreateScreen() {
   const hasCover = !!(pendingCoverUri ?? storedCoverUrl);
 
   /**
-   * Leave the screen. A plain `goBack()` is not enough: when Home routes here
-   * via a nested `navigate`, this screen is the ONLY route in the Plan stack,
-   * so there is nothing to pop to and `goBack()` is a silent no-op.
+   * Leave the screen, and REMOVE it from the Plan stack. Don't branch on
+   * `canGoBack()`: it bubbles — it is true whenever any PARENT can go back,
+   * and the tab router can always go back to Home. When Home routes here via
+   * a nested `navigate`, this screen is the only route in the Plan stack, so
+   * `goBack()` went to the TAB navigator: Home was shown, this route was
+   * never removed, and the form reappeared on every return to Plan. With a
+   * route beneath, `goBack()` is intercepted by `useFromHomeBackRedirect`,
+   * which also shows Home while leaving the form mounted.
    *
-   * The branch asks the navigator (`canGoBack()`), NOT `route.params.fromHome`.
-   * `redirectToHomeTab` clears `fromHome`, so a param-keyed check would be
-   * correct on the first visit and fall back into the dead end on the second
-   * (reach this screen again via the Plan tab and `fromHome` is already gone).
-   * Routing through `goBack()` whenever a route exists beneath also lets
-   * `useFromHomeBackRedirect` handle the Home case itself rather than
-   * bypassing the hook.
+   * So only an in-Plan visit with a route in this stack's OWN state goes
+   * back. Otherwise `popTo("MealPlanHome")` removes this route (adding
+   * MealPlanHome if the stack never had it) — "POP_TO" isn't a back action,
+   * so `useFromHomeBackRedirect` re-dispatches it unchanged — and a Home
+   * visit then shows Home.
    */
   const dismiss = useCallback(() => {
-    // Reaching Home leaves this screen mounted underneath, so a create-mode
-    // form would still be filled the next time it's opened. Reset it.
-    if (fromHome && !isEditMode) {
-      setName("");
-      setDescription("");
-      setError(null);
-      setPendingCoverUri(null);
-      setGenerateOnCreate(false);
-    }
-    if (navigation.canGoBack()) {
+    if (!fromHome && navigation.getState().routes.length > 1) {
       navigation.goBack();
       return;
     }
-    redirectToHomeTab(navigation);
-  }, [fromHome, isEditMode, navigation]);
+    navigation.popTo("MealPlanHome");
+    if (fromHome) navigation.getParent()?.navigate("HomeTab");
+  }, [fromHome, navigation]);
 
   // An explicit close control, always present. Without it this screen can be
   // a dead end (see `dismiss` above), and `headerBackVisible: false` keeps the
