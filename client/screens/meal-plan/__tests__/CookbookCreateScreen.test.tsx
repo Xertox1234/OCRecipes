@@ -215,6 +215,22 @@ describe("CookbookCreateScreen — leaving the screen", () => {
     expect(mockGoBack).not.toHaveBeenCalled();
   });
 
+  it("from Home, over a deeper Plan stack: still pops to MealPlanHome", () => {
+    // Accepted trade-off: popTo also drops a CookbookList the user had open
+    // in Plan. A plain pop() would be a back action, which
+    // useFromHomeBackRedirect intercepts — leaving the form mounted again.
+    mockGetState.mockReturnValue(stackState(3));
+    mockRouteParams.mockReturnValue({ fromHome: true });
+    renderComponent(<CookbookCreateScreen />);
+    renderComponent(renderHeaderLeft());
+
+    fireEvent.click(screen.getByLabelText("Close without saving"));
+
+    expect(mockPopTo).toHaveBeenCalledWith("MealPlanHome");
+    expect(mockParentNavigate).toHaveBeenCalledWith("HomeTab");
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
   it("within Plan, with a route beneath: goes back", () => {
     mockGetState.mockReturnValue(stackState(3));
     renderComponent(<CookbookCreateScreen />);
