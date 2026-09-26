@@ -150,6 +150,7 @@ Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-inj
 ### Touch targets (WCAG 2.5.5)
 
 - [ ] Minimum 44×44pt for every interactive element. Small visuals expand via `hitSlop`: `(visual size) + top + bottom ≥ 44` and `(visual size) + left + right ≥ 44` (24pt icon → 10pt per side)
+- [ ] A hitSlop fix's math checking out is not sufficient — RN clips `hitSlop` to the **immediate parent view's bounds**. If the parent is a tight row/column with no padding (only a `gap` between children), its frame is exactly edge-to-edge with its children and the hitSlop has zero room to expand into, silently clipping to nothing on that axis. Verify the parent has padding/room ≥ the hitSlop amount on every axis it needs, or prefer an explicit `minWidth`/`minHeight: 44` box on the control itself (no clipping risk) — especially when the parent is shared with an adjacent fixed-size tap target, where padding might also risk an overlap. See `docs/solutions/design-patterns/touch-target-size-pattern-2026-05-13.md` → "Common Pitfall: hitSlop clipped by parent bounds".
 
 ### Roles & state
 

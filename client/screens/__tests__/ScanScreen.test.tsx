@@ -32,6 +32,7 @@ const {
   mockIsFocused,
   mockDeleteAsync,
   mockToastError,
+  capturedPressProps,
 } = vi.hoisted(() => {
   const mockGoBack = vi.fn();
   const mockCanGoBack = vi.fn();
@@ -104,6 +105,8 @@ const {
     mockIsFocused: { value: true },
     mockDeleteAsync: vi.fn().mockResolvedValue(undefined),
     mockToastError: vi.fn(),
+    // Keyed by accessibilityLabel — see the react-native mock override below.
+    capturedPressProps: {} as Record<string, Record<string, unknown>>,
   };
 });
 
@@ -230,6 +233,36 @@ vi.mock("@/camera/reducers/scan-phase-reducer", async (importOriginal) => {
       }
       return actual.scanPhaseReducer(state, action);
     },
+  };
+});
+// Captures the raw props (style/hitSlop) each labeled Pressable/TouchableOpacity
+// receives, keyed by accessibilityLabel, for the P2-2026-09-23 touch-target
+// tests below — the shared react-native mock's Pressable drops `style` before
+// rendering to the DOM (test/mocks/react-native.ts), so asserting on the
+// rendered node can't see it. Forwards to the real (mocked) component
+// afterwards, so every other test in this file renders unaffected.
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  const capture = (Component: React.ComponentType<Record<string, unknown>>) => {
+    const Capturing = React.forwardRef<unknown, Record<string, unknown>>(
+      (props, ref) => {
+        const label = props.accessibilityLabel as string | undefined;
+        if (label) capturedPressProps[label] = props;
+        // Plain Views are captured by testID: their style is often an ARRAY,
+        // which the shared mock passes to the DOM unflattened (and dropped).
+        const testID = props.testID as string | undefined;
+        if (testID) capturedPressProps[`view:${testID}`] = props;
+        return React.createElement(Component, { ...props, ref });
+      },
+    );
+    Capturing.displayName = `Capturing(${Component.displayName ?? "Component"})`;
+    return Capturing;
+  };
+  return {
+    ...actual,
+    Pressable: capture(actual.Pressable),
+    TouchableOpacity: capture(actual.TouchableOpacity),
+    View: capture(actual.View),
   };
 });
 
@@ -1641,6 +1674,143 @@ describe("ScanScreen — onEditStep2/onEditStep3 release the transferred photo, 
     // nutritionImageUri was never released here — abandon-cleanup deletes it.
     expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
       idempotent: true,
+    });
+  });
+});
+
+// Regression coverage for todos/archive/P2-2026-09-23-touch-targets-regressed-below-44pt.md
+// (M13, 2026-09-23 front-end audit): the close-camera button and the confirm
+// buttons fell below the 44pt platform minimum. Reads the RAW props each
+// Pressable/TouchableOpacity receives (captured above) rather than the
+// rendered DOM node — the shared mock drops Pressable's `style` before
+// rendering, so a DOM-based assertion can't see it either way.
+function flattenStyle(
+  style: unknown,
+  pressed = false,
+): Record<string, unknown> {
+  if (typeof style === "function") {
+    return flattenStyle(
+      (style as (state: { pressed: boolean }) => unknown)({ pressed }),
+    );
+  }
+  if (Array.isArray(style)) {
+    return style.reduce(
+      (acc: Record<string, unknown>, s) => ({ ...acc, ...flattenStyle(s) }),
+      {},
+    );
+  }
+  return (style as Record<string, unknown> | null | undefined) ?? {};
+}
+
+function flattenHitSlop(hitSlop: unknown): {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+} {
+  if (typeof hitSlop === "number") {
+    return { top: hitSlop, bottom: hitSlop, left: hitSlop, right: hitSlop };
+  }
+  if (hitSlop && typeof hitSlop === "object") {
+    const h = hitSlop as Record<string, number>;
+    return {
+      top: h.top ?? 0,
+      bottom: h.bottom ?? 0,
+      left: h.left ?? 0,
+      right: h.right ?? 0,
+    };
+  }
+  return { top: 0, bottom: 0, left: 0, right: 0 };
+}
+
+/** visual box size (explicit width/height, or minWidth/minHeight, or the
+ * given fallback) PLUS hitSlop on each axis — hitSlop always adds to the
+ * visual box, it never gets shadowed by an explicit size. */
+function effectiveTouchSize(
+  props: Record<string, unknown> | undefined,
+  fallbackVisualSize: number,
+): { width: number; height: number } {
+  const style = flattenStyle(props?.style);
+  const hitSlop = flattenHitSlop(props?.hitSlop);
+  const visualWidth =
+    typeof style.width === "number"
+      ? style.width
+      : typeof style.minWidth === "number"
+        ? style.minWidth
+        : fallbackVisualSize;
+  const visualHeight =
+    typeof style.height === "number"
+      ? style.height
+      : typeof style.minHeight === "number"
+        ? style.minHeight
+        : fallbackVisualSize;
+  return {
+    width: visualWidth + hitSlop.left + hitSlop.right,
+    height: visualHeight + hitSlop.top + hitSlop.bottom,
+  };
+}
+
+describe("ScanScreen — touch targets meet the 44pt minimum (P2-2026-09-23, M13)", () => {
+  beforeEach(() => {
+    for (const key of Object.keys(capturedPressProps)) {
+      delete capturedPressProps[key];
+    }
+  });
+
+  it("Close camera button reaches 44pt on both axes (visual 36x36 + hitSlop)", () => {
+    renderComponent(<ScanScreen />);
+
+    // Denominator: the button actually rendered and was captured.
+    expect(capturedPressProps["Close camera"]).toBeDefined();
+
+    // styles.closeBtn (ScanScreen.tsx) is a fixed 36x36 box.
+    const { width, height } = effectiveTouchSize(
+      capturedPressProps["Close camera"],
+      36,
+    );
+    expect(width).toBeGreaterThanOrEqual(44);
+    expect(height).toBeGreaterThanOrEqual(44);
+
+    // RN clips hitSlop to the parent's bounds: the 4pt slop needs room on
+    // the right (the button's own marginRight inside the full-width overlay)
+    // and on top (the overlay's paddingTop). The overlay is a plain View, so
+    // its props are captured by testID.
+    const closeStyle = (capturedPressProps["Close camera"]?.style ?? {}) as {
+      marginRight?: number;
+    };
+    expect(closeStyle.marginRight ?? 0).toBeGreaterThanOrEqual(4);
+    const overlay = flattenStyle(
+      capturedPressProps["view:scan-top-overlay"]?.style,
+    );
+    expect(Number(overlay.paddingTop ?? 0)).toBeGreaterThanOrEqual(4);
+  });
+
+  describe("confirm-card Dismiss / Log It buttons", () => {
+    beforeEach(() => {
+      // confirmCard (Dismiss/Log It) only renders when returnAfterLog is true
+      // (ScanScreen.tsx's SESSION_COMPLETE effect) — mirrors the "post-log-success
+      // close" / "confirm-card safety badge" setups above.
+      mockRouteParams.value = { returnAfterLog: true };
+      mockShortcutToSessionComplete.value = true;
+    });
+
+    it("both reach a 44pt minimum height", async () => {
+      renderComponent(<ScanScreen />);
+      await screen.findByLabelText("Log It");
+
+      // styles.confirmDismissButton/confirmLogButton (ScanScreen.tsx) are
+      // full-width flex-row buttons — only the height axis is at risk here
+      // (padding-only, no minHeight); width is governed by the row's flex
+      // sizing, not a fixed visual constant.
+      const dismissHeight = flattenStyle(
+        capturedPressProps["Dismiss"]?.style,
+      ).minHeight;
+      const logHeight = flattenStyle(
+        capturedPressProps["Log It"]?.style,
+      ).minHeight;
+
+      expect(dismissHeight).toBeGreaterThanOrEqual(44);
+      expect(logHeight).toBeGreaterThanOrEqual(44);
     });
   });
 });

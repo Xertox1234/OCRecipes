@@ -807,11 +807,13 @@ export default function ScanScreen() {
 
       {/* Top overlay */}
       <View
+        testID="scan-top-overlay"
         style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}
         importantForAccessibility={overlayA11y.staticUI}
       >
         <TouchableOpacity
           style={styles.closeBtn}
+          hitSlop={4}
           onPress={() =>
             safeGoBack(navigation, () =>
               navigation.reset({ index: 0, routes: [{ name: "Main" }] }),
@@ -1361,12 +1363,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: BorderRadius.xs,
     paddingVertical: Spacing.sm,
+    minHeight: 44,
     alignItems: "center",
+    justifyContent: "center",
   },
   confirmLogButton: {
     flex: 2,
     borderRadius: BorderRadius.xs,
     paddingVertical: Spacing.sm,
+    minHeight: 44,
     alignItems: "center",
+    justifyContent: "center",
   },
 });

@@ -456,6 +456,7 @@ export default function LabelAnalysisScreen() {
                 onPress={() => adjustServings(-0.5)}
                 accessibilityLabel="Decrease servings"
                 accessibilityRole="button"
+                hitSlop={4}
                 style={[
                   styles.servingButton,
                   { backgroundColor: withOpacity(theme.link, 0.1) },
@@ -474,6 +475,7 @@ export default function LabelAnalysisScreen() {
                 onPress={() => adjustServings(0.5)}
                 accessibilityLabel="Increase servings"
                 accessibilityRole="button"
+                hitSlop={4}
                 style={[
                   styles.servingButton,
                   { backgroundColor: withOpacity(theme.link, 0.1) },
@@ -831,6 +833,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.md,
+    // RN clips hitSlop to the parent view's bounds — this row had no padding,
+    // so it was exactly button-edge-to-button-edge and the +/- buttons'
+    // hitSlop={4} (below) had nowhere to expand into on any axis. Padding
+    // gives it that room without changing the visible 36x36 button size.
+    padding: Spacing.xs,
   },
   servingButton: {
     width: 36,
