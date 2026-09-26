@@ -154,6 +154,17 @@ screen that opens already errored stays quiet), cleared only when
 the error clearing. Test it with a rerender walk: happy → both queries fail →
 announced once → items retry (pending, then error) → still once.
 
+**Two edge-triggered announcements can still collide.** Once both error
+EmptyStates can be on screen together, both can rise in the **same commit**:
+a shared outage, or items failing while a skeleton-deferred budget error is
+waiting. Two separate effects then post back to back, and iOS VoiceOver drops
+one of them, so the user never hears that the budget also failed. Compute both
+rises in **one** effect and speak a single combined sentence when they rise
+together (`MealPlanHomeScreen.tsx`: "Couldn't load your meal plan or calorie
+budget."). Assert the **total** call count (`toHaveBeenCalledExactlyOnceWith`),
+not a filter on one string; a per-copy filter cannot see the second post. Pin
+each mount-time seed with a "mounts already errored → no announcement" test.
+
 ## Related Files
 
 - `client/hooks/useHistoryData.ts`
@@ -165,6 +176,8 @@ announced once → items retry (pending, then error) → still once.
 - `client/lib/query-client.ts`
 
 ## See Also
+
+- [Two announceForAccessibility calls in the same commit collide on iOS](../logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md) — why a joint rise must be one utterance
 
 - [isLoading=false on query error does not mean data resolved](isloading-false-on-error-not-resolved-2026-06-12.md) — the mount-once-gate sibling of this per-render rule
 - [Static error copy that collapses every failure into one cause tells the user a falsehood](../logic-errors/network-failure-rendered-as-wrong-credentials-2026-08-08.md) — the "don't assert a false cause" rule this pairs with when distinguishing a 404 from a generic error

@@ -1057,6 +1057,10 @@ describe("MealPlanHomeScreen — meal-plan fetch error handling", () => {
 describe("MealPlanHomeScreen — fetch errors are announced for screen readers", () => {
   const ITEMS_COPY = "Couldn't load your meal plan. Try again.";
   const BUDGET_COPY = "Couldn't load your calorie budget. Try again.";
+  // iOS drops the second of two same-commit announcements, so both errors
+  // appearing together must be spoken as ONE utterance.
+  const BOTH_COPY =
+    "Couldn't load your meal plan or calorie budget. Try again.";
   const HAPPY_BUDGET = { calorieGoal: 2000, foodCalories: 0, remaining: 2000 };
   let announceSpy: ReturnType<typeof vi.spyOn>;
 
@@ -1117,7 +1121,7 @@ describe("MealPlanHomeScreen — fetch errors are announced for screen readers",
     mealPlanQueryState.isLoadingError = true;
     rerender(<MealPlanHomeScreen />);
     expect(screen.getByText("Couldn't load your calorie budget")).toBeDefined();
-    expect(callsWith(BUDGET_COPY)).toBe(1);
+    expect(announceSpy).toHaveBeenCalledExactlyOnceWith(BOTH_COPY);
 
     // Tap Try Again on the items error: TanStack resets a data-less query to
     // pending (skeleton, error cleared), then it fails again. The budget
@@ -1129,7 +1133,40 @@ describe("MealPlanHomeScreen — fetch errors are announced for screen readers",
     mealPlanQueryState.isLoadingError = true;
     rerender(<MealPlanHomeScreen />);
 
-    expect(callsWith(BUDGET_COPY)).toBe(1);
+    expect(callsWith(BUDGET_COPY)).toBe(0);
+    expect(callsWith(BOTH_COPY)).toBe(1);
+  });
+
+  it("speaks one combined announcement when both errors appear in the same commit", () => {
+    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+
+    // A shared outage: both queries fail in the same render.
+    dailyBudgetQueryState.data = undefined;
+    dailyBudgetQueryState.isError = true;
+    mealPlanQueryState.isLoading = false;
+    mealPlanQueryState.isLoadingError = true;
+    rerender(<MealPlanHomeScreen />);
+
+    expect(announceSpy).toHaveBeenCalledExactlyOnceWith(BOTH_COPY);
+  });
+
+  it("does not announce when the screen mounts with the items error already showing", () => {
+    mealPlanQueryState.isLoading = false;
+    mealPlanQueryState.isLoadingError = true;
+    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+    rerender(<MealPlanHomeScreen />);
+
+    expect(announceSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not announce when the screen mounts with the budget error already showing", () => {
+    mealPlanQueryState.isLoading = false;
+    dailyBudgetQueryState.data = undefined;
+    dailyBudgetQueryState.isError = true;
+    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+    rerender(<MealPlanHomeScreen />);
+
+    expect(announceSpy).not.toHaveBeenCalled();
   });
 
   it("does not announce the budget error while the skeleton hides it, then announces once it is visible", () => {

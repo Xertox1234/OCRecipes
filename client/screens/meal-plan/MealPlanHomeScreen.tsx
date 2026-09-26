@@ -811,34 +811,38 @@ export default function MealPlanHomeScreen() {
   // Budget: its EmptyState is hidden while the full-screen items skeleton is
   // up (`isLoading`), so the announce is deferred until it is actually on
   // screen. The skeleton covering it is not "clearing" — only
-  // budgetErrorNoData falling re-arms it.
+  // budgetErrorNoData falling re-arms it. Items: rendered in the scroll
+  // content on isLoadingError (see below); isLoading and isLoadingError are
+  // mutually exclusive, so it needs no skeleton gate.
+  //
+  // ONE effect for both: they can rise in the same commit (a shared outage,
+  // or items failing while a skeleton-deferred budget error waits), and iOS
+  // drops the second of two same-commit announcements — so a joint rise is
+  // spoken as one combined utterance.
   const budgetErrorAnnouncedRef = useRef(budgetErrorNoData && !isLoading);
-  useEffect(() => {
-    if (!budgetErrorNoData) {
-      budgetErrorAnnouncedRef.current = false;
-      return;
-    }
-    if (isLoading || budgetErrorAnnouncedRef.current) return;
-    budgetErrorAnnouncedRef.current = true;
-    AccessibilityInfo.announceForAccessibility(
-      "Couldn't load your calorie budget. Try again.",
-    );
-  }, [budgetErrorNoData, isLoading]);
-
-  // Items: rendered in the scroll content on isLoadingError (see below).
-  // isLoading and isLoadingError are mutually exclusive, so no skeleton gate.
   const mealPlanErrorAnnouncedRef = useRef(isLoadingError);
   useEffect(() => {
-    if (!isLoadingError) {
-      mealPlanErrorAnnouncedRef.current = false;
-      return;
+    if (!budgetErrorNoData) budgetErrorAnnouncedRef.current = false;
+    if (!isLoadingError) mealPlanErrorAnnouncedRef.current = false;
+    const budgetRose =
+      budgetErrorNoData && !isLoading && !budgetErrorAnnouncedRef.current;
+    const itemsRose = isLoadingError && !mealPlanErrorAnnouncedRef.current;
+    if (budgetRose) budgetErrorAnnouncedRef.current = true;
+    if (itemsRose) mealPlanErrorAnnouncedRef.current = true;
+    if (budgetRose && itemsRose) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your meal plan or calorie budget. Try again.",
+      );
+    } else if (budgetRose) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your calorie budget. Try again.",
+      );
+    } else if (itemsRose) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your meal plan. Try again.",
+      );
     }
-    if (mealPlanErrorAnnouncedRef.current) return;
-    mealPlanErrorAnnouncedRef.current = true;
-    AccessibilityInfo.announceForAccessibility(
-      "Couldn't load your meal plan. Try again.",
-    );
-  }, [isLoadingError]);
+  }, [budgetErrorNoData, isLoading, isLoadingError]);
 
   const dailyTotals = useMemo(() => {
     let calories = 0;
