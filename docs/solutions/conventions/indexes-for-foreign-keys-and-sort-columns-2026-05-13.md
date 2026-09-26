@@ -33,7 +33,7 @@ match each other:
 The planner matches `NULLS` placement **syntactically**, and `NOT NULL` columns do not
 relax it. So a `DESC NULLS LAST` index serves only the equality filter, and the query still
 gets a `Sort` node. #1103 first shipped exactly this, with an "after" EXPLAIN that did not
-reproduce for the app's literal query (independent review, 2026-09-26). To verify,
+reproduce with the app's literal `ORDER BY` (independent review, 2026-09-26). To verify,
 EXPLAIN the query **exactly as the app emits it** (copy its `ORDER BY` clause literally),
 and confirm there is no `Sort` node.
 
@@ -78,8 +78,10 @@ index("chat_messages_conv_created_id_idx").on(
 ```
 
 which `db:push` applies as `btree (conversation_id, created_at DESC, id DESC)`. Verified
-with `EXPLAIN (ANALYZE, BUFFERS)` of the app's literal query
-(`ORDER BY created_at DESC, id DESC LIMIT 20`) on a seeded 350-row conversation:
+with `EXPLAIN (ANALYZE, BUFFERS)` of a single-table query using the app's literal `ORDER BY`
+(`ORDER BY created_at DESC, id DESC LIMIT 20`) on a seeded 350-row conversation. The
+app's `chat_conversations` join and its default limit were left out; an independent
+join-inclusive EXPLAIN gave the same result:
 
 - **No index, or the bare-`.desc()` NULLS LAST version:** a `Sort` (top-N heapsort) over
   a `Seq Scan`, reading 13 buffers.
