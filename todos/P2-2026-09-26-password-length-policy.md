@@ -54,7 +54,8 @@ That makes this a genuine trade-off for the user, not a mechanical fix:
 ## Acceptance Criteria
 
 - [ ] Reproduce the 14-character requirement and record where it comes from, with a screenshot or the exact message. If it isn't app code, record that too.
-- [ ] The user decides the policy with the NIST Rev. 4 figures above in front of them: minimum length (15 for password-only per Rev. 4, or a deliberate deviation with the reason recorded), maximum length (at least 64), dropping the letter-and-digit rule (Rev. 4 forbids composition rules), and breached-password screening (Rev. 4 requires it).
+- [x] **DECIDED by the user (2026-09-26): minimum 8 characters, paired with a second (optionally third) factor.** The user does not want the 15-character minimum. Rev. 4 allows 8 only for passwords used as part of multi-factor authentication, so this policy is compliant **only once MFA ships**; see `todos/P2-2026-09-26-add-second-factor-authentication.md`. Until MFA exists, an 8-character password-only login falls below Rev. 4, and that is a known, accepted gap. The remaining Rev. 4 points still apply: maximum length of at least 64, no composition rules (drop the letter-and-digit rule), and breached-password screening.
+- [ ] (Original criterion, answered above:) The user decides the policy with the NIST Rev. 4 figures above in front of them: minimum length (15 for password-only per Rev. 4, or a deliberate deviation with the reason recorded), maximum length (at least 64), dropping the letter-and-digit rule (Rev. 4 forbids composition rules), and breached-password screening (Rev. 4 requires it).
 - [ ] Server `registerSchema` and client `LoginScreen-utils.ts` enforce the same policy, and any other place a password is set (the reset flow from the paired todo) uses one shared source of truth for the rule and its message.
 - [ ] Existing accounts with passwords that met the old rule can still log in. Login validation stays bounds-only (`loginSchema`).
 - [ ] Error copy says exactly what's required, in one sentence.
@@ -77,6 +78,7 @@ That makes this a genuine trade-off for the user, not a mechanical fix:
 ## Dependencies
 
 - Pairs with `P1-2026-09-26-no-password-reset-or-account-recovery.md`.
+- The 8-character minimum depends on `P2-2026-09-26-add-second-factor-authentication.md`. Removing the letter-and-digit rule and adding breached-password screening do not depend on it.
 
 ## Risks
 
@@ -87,3 +89,4 @@ That makes this a genuine trade-off for the user, not a mechanical fix:
 ### 2026-09-26
 
 - Filed at the user's request (auth parked for a broader review). The security-auditor review corrected the NIST figures to Rev. 4, verified against the published text.
+- 2026-09-26: the user chose a minimum of 8 characters together with a second (or third) factor, over the 15-character password-only minimum. The MFA todo was filed as its prerequisite.
