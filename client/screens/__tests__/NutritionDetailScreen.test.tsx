@@ -1761,14 +1761,20 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
       // but `correctionNotice` and `showPer100gInfo` survive, so `NoticeStack`
       // still announces and collides with `InlineError` in the same commit —
       // TWO utterances, which on iOS means the first is cut off.
-      // Reachable in production, not just constructible: nothing in
-      // `useNutritionLookup` resets `correctionNotice` between lookups (there is
-      // no `setCorrectionNotice(null)` in the file) and `isPer100g` is not
-      // re-armed at the top of `fetchBarcodeData`, so a label RETAKE carries a
-      // stale correction into a lookup that errors.
-      // Pinned so that fixing it — resetting both per lookup, which lives in
-      // `useNutritionLookup` and is on this slice's do-not-touch list — turns
-      // this RED and has to be updated deliberately rather than silently.
+      //
+      // CLOSED as a production path (P2-2026-09-23-correction-notice-not-reset-
+      // per-lookup): `useNutritionLookup.ts`'s per-lookup reset block now calls
+      // `setCorrectionNotice(null)` and `setIsPer100g(false)` at the top of
+      // `fetchBarcodeData`, so a label RETAKE can no longer carry a stale
+      // correction or a stale per-100g flag into a lookup that errors — pinned
+      // by `client/hooks/__tests__/useNutritionLookup.test.ts`. This screen has
+      // no gate of its own on the combination, though, so the fixture below
+      // still constructs it directly and still exercises real defense-in-depth
+      // behavior (what the screen does IF handed this combination), not a
+      // reachable production state. The fix lives entirely in the hook, and
+      // this test never touches the hook (`renderScan` supplies the fixture
+      // props directly) — so it stays green, unchanged, both before and after
+      // the fix.
       // Literal rather than a `noticeAnnouncementKey` call, for the same reason
       // given on the open-gate test above.
       expect(announce.mock.calls.map((c) => c[0])).toEqual([
@@ -1813,10 +1819,14 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
    * no utterance is issued at all. That is what this test pins: one call, and
    * it is the error's.
    *
-   * It does NOT close the collision class. `correctionNotice` and
-   * `showPer100gInfo` are not gated on `error`, so either surviving alongside
-   * a fresh error still produces two announces in one commit — see the
-   * "routes error through InlineError" test above, which pins that residual.
+   * It does NOT close the collision class at the SCREEN level: this screen
+   * still has no gate of its own on `correctionNotice`/`showPer100gInfo`
+   * surviving alongside a fresh `error` — see the "routes error through
+   * InlineError" test above. That combination is no longer reachable in
+   * PRODUCTION, though (CLOSED, P2-2026-09-23-correction-notice-not-reset-per-
+   * lookup): `useNutritionLookup.ts` now resets both per lookup, so this is
+   * defense-in-depth coverage of a fixture the hook itself can no longer
+   * produce, not a live gap.
    */
   it("suppresses the label notice while an error is showing", () => {
     const announce = vi

@@ -1,9 +1,9 @@
 ---
 title: "useNutritionLookup never resets correctionNotice or isPer100g per lookup — a stale serving-correction notice can carry into the next product"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 assignee:
 labels: [deferred, audit, accessibility, code-quality]
 github_issue:
@@ -25,10 +25,10 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 ## Acceptance Criteria
 
-- [ ] `setCorrectionNotice(null)` and an `isPer100g` reset are added to the top-of-lookup reset block
-- [ ] The characterization test pinning the residual is updated to assert the fixed behavior
-- [ ] The solution doc and the NutritionDetailScreen comment are updated to say the residual is closed
-- [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
+- [x] `setCorrectionNotice(null)` and an `isPer100g` reset are added to the top-of-lookup reset block
+- [x] The characterization test pinning the residual is updated to assert the fixed behavior
+- [x] The solution doc and the NutritionDetailScreen comment are updated to say the residual is closed
+- [x] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes
 
@@ -57,3 +57,17 @@ Small, independent fix — land it before the useNutritionLookup atomic-state re
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (M14).
+
+### 2026-09-25
+
+- Implemented: `setCorrectionNotice(null)` and `setIsPer100g(false)` added to
+  `fetchBarcodeData`'s per-lookup reset block in `client/hooks/useNutritionLookup.ts`.
+  Two new hook-level tests in `client/hooks/__tests__/useNutritionLookup.test.ts`
+  (out-of-contract, needed for AC #4 — `NutritionDetailScreen.test.tsx` mocks the
+  hook wholesale and cannot exercise the reset) written first and confirmed RED on
+  pre-fix code, then GREEN after the fix. Comments in `NutritionDetailScreen.tsx`
+  and its test file updated to record the residual as closed (screen-level
+  behavior unchanged — the fixture-driven characterization test still passes,
+  now documented as defense-in-depth rather than a reachable production path).
+  Solution doc extended with a closure note; general Rule left intact.
+  Reviewed clean by `code-reviewer` and `mobile-reviewer` (no findings, 0 rounds).
