@@ -647,8 +647,9 @@ export function useNutritionLookup(params: {
             }
 
             // Narrowed explicitly: `isBeverage` is intentionally left as
-            // `z.unknown()` in the schema above (see its comment) rather than
-            // `z.boolean()`, so a wire field can still arrive as anything.
+            // `z.unknown()` in `@shared/types/barcode-lookup.ts` (see the
+            // comment there) rather than `z.boolean()`, so a wire field can
+            // still arrive as anything.
             // Anything that is not a real boolean becomes null — "no signal"
             // — which resolveBasis treats as unknown rather than silently
             // defaulting to the food scale (which would halve the strictness
