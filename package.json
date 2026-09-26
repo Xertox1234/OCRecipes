@@ -201,6 +201,14 @@
     "typescript-eslint": "^8.59.4",
     "vitest": "^4.1.11"
   },
+  "expo": {
+    "install": {
+      "exclude": [
+        "expo-notifications",
+        "expo-application"
+      ]
+    }
+  },
   "overrides": {
     "body-parser": "^2.3.0",
     "brace-expansion@^1.0.0": "^1.1.18",
