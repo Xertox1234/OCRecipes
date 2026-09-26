@@ -65,7 +65,8 @@ That makes this a genuine trade-off for the user, not a mechanical fix:
 ## Implementation Notes
 
 - Changing the policy only affects _new_ passwords; don't re-validate stored ones.
-- Keep `max` bounded (bcrypt truncates at 72 bytes; the server currently allows 200). Decide whether to cap at 72 bytes, or pre-hash, so that characters after byte 72 aren't silently ignored.
+- bcrypt ignores everything past 72 bytes, and the server currently allows 200 characters. Rev. 4 says the verifier SHALL verify the entire submitted password (no truncation) and SHOULD accept at least 64 characters. Multibyte characters can push 64 characters past 72 bytes, so a 72-byte cap can conflict with that. The compliant options are pre-hashing, or rejecting over-long input outright; never silently truncate.
+- Rev. 4 counts each Unicode code point as one character and SHOULD apply NFC normalization. JavaScript's `.length` counts UTF-16 code units, so length checks and boundary tests must use code points (e.g. `[...pw.normalize('NFC')].length`), identically on server and client.
 - If you pre-hash before bcrypt, encode the digest (base64/hex of an HMAC or SHA-256). Raw digest bytes can contain NUL, which some bcrypt bindings stop at. Stored hashes also need a version marker, so existing passwords still verify.
 - Breached-password screening can use the Have I Been Pwned range API (k-anonymity: only the first 5 characters of the SHA-1 are sent) or a bundled blocklist. The request must never send the password or its full hash.
 
