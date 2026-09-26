@@ -1,6 +1,6 @@
 ---
 title: "useNutritionLookup never resets correctionNotice or isPer100g per lookup — a stale serving-correction notice can carry into the next product"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23
@@ -25,10 +25,10 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 ## Acceptance Criteria
 
-- [ ] `setCorrectionNotice(null)` and an `isPer100g` reset are added to the top-of-lookup reset block
-- [ ] The characterization test pinning the residual is updated to assert the fixed behavior
-- [ ] The solution doc and the NutritionDetailScreen comment are updated to say the residual is closed
-- [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
+- [x] `setCorrectionNotice(null)` and an `isPer100g` reset are added to the top-of-lookup reset block
+- [x] The characterization test pinning the residual is updated to assert the fixed behavior
+- [x] The solution doc and the NutritionDetailScreen comment are updated to say the residual is closed
+- [x] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes
 

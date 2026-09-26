@@ -7,6 +7,7 @@ tags: [client-state, hooks, react-native, accessibility, code-review, invariants
 applies_to: [client/hooks/**/*.ts, client/hooks/**/*.tsx, client/screens/**/*.tsx]
 symptoms: ["A review verdict of verified mutually exclusive justified by enumerating assignment sites", "A setX with no corresponding reset anywhere in the file", "A per-invocation reset block that covers some fields of a related group but not others", "A bug that only reproduces on the second run of the same flow (a retake / retry / re-fetch)"]
 created: '2026-08-06'
+last_updated: '2026-09-25'
 ---
 
 # Mutual exclusion proven per call site holds only within one invocation
@@ -71,6 +72,8 @@ commit — two `announceForAccessibility` calls, and on iOS
 - Good: enumerate the same sites, then ask **"is either value reset per invocation?"** — `grep -n 'setCorrectionNotice' client/hooks/useNutritionLookup.ts` returns a declaration and two assignments and no reset, which ends the analysis immediately.
 - Good: diff the per-invocation reset block against the state the claim ranges over. Any member of the group that is missing from the block is a value that outlives the invocation.
 
+**Update (2026-09-25): the specific instance is closed, the Rule is not.** `useNutritionLookup.ts`'s reset block now resets both `correctionNotice` and `isPer100g` at the top of `fetchBarcodeData`, so this hook no longer produces the stale-carryover combination described above. The Rule this doc teaches — that a per-call-site mutual-exclusion proof only holds within one invocation — remains a durable, general lesson independent of this one fix; do not read the closure as invalidating it.
+
 ## Exceptions
 
 - **State that genuinely cannot outlive one invocation.** Locals, values recomputed every render, and refs explicitly cleared on mount are bounded by construction — the per-call-site analysis is the whole analysis there.
@@ -78,8 +81,10 @@ commit — two `announceForAccessibility` calls, and on iOS
 
 ## Related Files
 
-- `client/hooks/useNutritionLookup.ts` — `fetchBarcodeData`'s reset block; `correctionNotice` and `isPer100g` are the two omissions
-- `client/screens/__tests__/NutritionDetailScreen.test.tsx` — the characterization assertion pinning the residual two-announce collision
+- `client/hooks/useNutritionLookup.ts` — `fetchBarcodeData`'s reset block now calls `setCorrectionNotice(null)` and `setIsPer100g(false)` alongside the other per-lookup resets (closed 2026-09-25, `P2-2026-09-23-correction-notice-not-reset-per-lookup`)
+- `client/hooks/__tests__/useNutritionLookup.test.ts` — the two reset-per-lookup tests that pin the fix ("resets correctionNotice to null…" / "resets isPer100g to false…")
+- `client/screens/__tests__/NutritionDetailScreen.test.tsx` — the characterization assertion pinning the two-announce collision; now marked defense-in-depth (the screen still has no gate of its own on the combination), not a reachable production path
+- `client/screens/NutritionDetailScreen.tsx` — the `NoticeStack` comment documenting the same closure
 
 ## See Also
 

@@ -437,6 +437,18 @@ export function useNutritionLookup(params: {
       // product's data, which is a wrong health claim rather than a missing
       // one. Every state `selectBandSource` reads belongs in this block.
       setValidatedData(null);
+      // Same fail-safe reason as `isBeverage`/`validatedData` above:
+      // `correctionNotice` is written only in a successful branch
+      // (`servingInfo.wasCorrected`), so every other exit must not keep the
+      // PRIOR product's notice. Without this, a label RETAKE could carry a
+      // stale correction into a lookup that errors, and `NoticeStack` would
+      // announce it alongside `InlineError` in the same commit.
+      setCorrectionNotice(null);
+      // Same reason: `isPer100g` is written only in a successful branch
+      // (`!isServingDataTrusted && !wasCorrected`), and `false` is its
+      // declared initial value — the same "no signal yet" default every
+      // other exit falls back to.
+      setIsPer100g(false);
       // Distinguishes "the server responded but its 200 body failed schema
       // validation" from a genuine network/connectivity failure, so the
       // OFF-fallback and total-outage branches below can pick copy that

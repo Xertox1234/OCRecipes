@@ -1079,3 +1079,122 @@ describe("useNutritionLookup — isBeverage (Task 8)", () => {
     expect(result.current.isBeverage).toBeNull();
   });
 });
+
+describe("useNutritionLookup — correctionNotice/isPer100g reset per lookup (P2-2026-09-23)", () => {
+  // Out-of-contract file (not in this todo's Scope Contract): needed for AC #4.
+  // `NutritionDetailScreen.test.tsx` mocks the hook's return value directly
+  // (`renderScan`), so no edit there can ever exercise `fetchBarcodeData`'s
+  // reset block or go red on this bug — only a real hook render can.
+  const mockServerFetch = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockServerFetch);
+    // Non-critical follow-up call inside fetchBarcodeData — resolve it so it
+    // doesn't throw noise; the hook already treats its failure as harmless.
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: async () => ({ hasFrontLabelData: false }),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("resets correctionNotice to null on a re-fetch (same hook instance) that takes a non-success path", async () => {
+    // `correctionNotice` is written ONLY on a successful lookup whose
+    // `servingInfo.wasCorrected` is true, so it needs its own entry in the
+    // per-lookup reset block alongside `flags`, `conflict`, `isBeverage`,
+    // etc. — otherwise a re-fetch on the same hook instance (e.g. a mounted
+    // screen handed a new barcode after a label retake) leaks the PRIOR
+    // product's correction notice into every non-success exit, including one
+    // that also sets `error` — the two-announce collision this todo closes.
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        productName: "Hot Chocolate K-Cup Pods",
+        brandName: undefined,
+        barcode: "0663447217174",
+        per100g: { calories: 400, protein: 5, carbs: 80, fat: 5 },
+        perServing: { calories: 60, protein: 0.8, carbs: 12, fat: 0.8 },
+        servingInfo: {
+          displayLabel: "~15g (estimated)",
+          grams: 15,
+          wasCorrected: true,
+          correctionReason:
+            "Original serving (236g) appears to be the full package — adjusted to ~15g.",
+        },
+        isServingDataTrusted: false,
+        source: "openfoodfacts",
+      }),
+    });
+
+    const { wrapper } = createQueryWrapper();
+    const { result, rerender } = renderHook(
+      ({ barcode }: { barcode: string }) => useNutritionLookup({ barcode }),
+      { wrapper, initialProps: { barcode: "0663447217174" } },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.correctionNotice).toMatch(/adjusted/i);
+
+    // Second barcode: the primary server fetch fails outright, and the
+    // direct-OFF fallback ALSO fails — landing on the total-outage catch,
+    // which never touches `correctionNotice`. Without the reset, the hook
+    // would still be reporting the FIRST product's stale notice here.
+    mockServerFetch.mockRejectedValueOnce(new Error("network down"));
+    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
+
+    rerender({ barcode: "00000000" });
+
+    await waitFor(() =>
+      expect(result.current.nutrition?.barcode).toBe("00000000"),
+    );
+    expect(result.current.correctionNotice).toBeNull();
+  });
+
+  it("resets isPer100g to false on a re-fetch (same hook instance) that takes a non-success path", async () => {
+    // `isPer100g` is written ONLY on a successful lookup (formula:
+    // `!isServingDataTrusted && !wasCorrected`), so — like `isBeverage` above
+    // — it needs its own entry in the per-lookup reset block. Without it, a
+    // re-fetch that takes a non-success path inherits the PRIOR product's
+    // `true`, mislabeling the "Values shown per 100g" banner state.
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        productName: "Mystery Snack",
+        brandName: "GenericBrand",
+        barcode: "012345678905",
+        per100g: { calories: 400, protein: 5, carbs: 60, fat: 10 },
+        perServing: { calories: 400, protein: 5, carbs: 60, fat: 10 },
+        servingInfo: {
+          displayLabel: "100g",
+          grams: 100,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: false,
+        source: "openfoodfacts",
+      }),
+    });
+
+    const { wrapper } = createQueryWrapper();
+    const { result, rerender } = renderHook(
+      ({ barcode }: { barcode: string }) => useNutritionLookup({ barcode }),
+      { wrapper, initialProps: { barcode: "012345678905" } },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isPer100g).toBe(true);
+
+    mockServerFetch.mockRejectedValueOnce(new Error("network down"));
+    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
+
+    rerender({ barcode: "00000000" });
+
+    await waitFor(() =>
+      expect(result.current.nutrition?.barcode).toBe("00000000"),
+    );
+    expect(result.current.isPer100g).toBe(false);
+  });
+});
