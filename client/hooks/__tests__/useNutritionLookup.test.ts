@@ -1197,4 +1197,116 @@ describe("useNutritionLookup — correctionNotice/isPer100g reset per lookup (P2
     );
     expect(result.current.isPer100g).toBe(false);
   });
+
+  // The inverse direction: states set only on a FAILURE (or conditional)
+  // exit must not survive into a later lookup that takes a different exit.
+  const SUCCESS_BODY = {
+    productName: "Mystery Snack",
+    brandName: "GenericBrand",
+    per100g: { calories: 400, protein: 5, carbs: 60, fat: 10 },
+    perServing: { calories: 400, protein: 5, carbs: 60, fat: 10 },
+    servingInfo: { displayLabel: "100g", grams: 100, wasCorrected: false },
+    isServingDataTrusted: true,
+    source: "openfoodfacts",
+  };
+
+  function renderLookup(barcode: string) {
+    const { wrapper } = createQueryWrapper();
+    return renderHook(
+      ({ barcode: code }: { barcode: string }) =>
+        useNutritionLookup({ barcode: code }),
+      { wrapper, initialProps: { barcode } },
+    );
+  }
+
+  it("clears a prior lookup's error when the next lookup succeeds", async () => {
+    mockServerFetch.mockRejectedValueOnce(new Error("network down"));
+    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
+    const { result, rerender } = renderLookup("00000000");
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ...SUCCESS_BODY, barcode: "012345678905" }),
+    });
+    rerender({ barcode: "012345678905" });
+
+    await waitFor(() =>
+      expect(result.current.nutrition?.productName).toBe("Mystery Snack"),
+    );
+    expect(result.current.error).toBeNull();
+  });
+
+  it("hides a prior lookup's manual-search card when the next barcode resolves", async () => {
+    mockServerFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => ({ notInDatabase: true }),
+    });
+    const { result, rerender } = renderLookup("11111111");
+    await waitFor(() => expect(result.current.showManualSearch).toBe(true));
+
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ...SUCCESS_BODY, barcode: "012345678905" }),
+    });
+    rerender({ barcode: "012345678905" });
+
+    await waitFor(() =>
+      expect(result.current.nutrition?.productName).toBe("Mystery Snack"),
+    );
+    expect(result.current.showManualSearch).toBe(false);
+  });
+
+  it("does not carry a prior product's verification level into a lookup without one", async () => {
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        ...SUCCESS_BODY,
+        barcode: "012345678905",
+        verificationLevel: "verified",
+      }),
+    });
+    const { result, rerender } = renderLookup("012345678905");
+    await waitFor(() =>
+      expect(result.current.verificationLevel).toBe("verified"),
+    );
+
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        ...SUCCESS_BODY,
+        productName: "Other Snack",
+        barcode: "098765432109",
+      }),
+    });
+    rerender({ barcode: "098765432109" });
+
+    await waitFor(() =>
+      expect(result.current.nutrition?.productName).toBe("Other Snack"),
+    );
+    expect(result.current.verificationLevel).toBe("unverified");
+  });
+
+  it("does not carry a prior product's front-label flag into a lookup that fails", async () => {
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ hasFrontLabelData: true }),
+    });
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ...SUCCESS_BODY, barcode: "012345678905" }),
+    });
+    const { result, rerender } = renderLookup("012345678905");
+    await waitFor(() => expect(result.current.hasFrontLabelData).toBe(true));
+
+    mockServerFetch.mockRejectedValueOnce(new Error("network down"));
+    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
+    rerender({ barcode: "00000000" });
+
+    await waitFor(() =>
+      expect(result.current.nutrition?.barcode).toBe("00000000"),
+    );
+    expect(result.current.hasFrontLabelData).toBe(false);
+  });
 });

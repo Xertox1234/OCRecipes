@@ -449,6 +449,17 @@ export function useNutritionLookup(params: {
       // declared initial value — the same "no signal yet" default every
       // other exit falls back to.
       setIsPer100g(false);
+      // The inverse direction: these four are written only on a failing or
+      // conditional exit, so without a reset a later lookup that takes a
+      // different exit inherits the PRIOR product's value — a stale `error`
+      // beside valid nutrition (and it blanks the fresh `labelReadNotice`),
+      // the manual-search card under a found product, or the previous
+      // product's verification tier and front-label CTA. Each resets to its
+      // declared initial value.
+      setError(null);
+      setShowManualSearch(false);
+      setVerificationLevel("unverified");
+      setHasFrontLabelData(false);
       // Distinguishes "the server responded but its 200 body failed schema
       // validation" from a genuine network/connectivity failure, so the
       // OFF-fallback and total-outage branches below can pick copy that

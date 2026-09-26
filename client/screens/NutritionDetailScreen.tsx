@@ -366,7 +366,7 @@ export default function NutritionDetailScreen() {
             Nothing mutes its announcer, deliberately — not even while the log
             gate is unmet. The gated screen IS the screen carrying "Label not
             used" (`deriveLogGate` gates on a label that could not be used;
-            `useNutritionLookup.ts:382` sets the notice on the same failure), so
+            `useNutritionLookup.ts` (`setLabelReadNotice`) sets the notice on the same failure), so
             muting there would switch the announcer off exactly where it earns
             its keep. There is nothing to collide with: the acknowledge
             announcement fires from a click handler that re-renders only
