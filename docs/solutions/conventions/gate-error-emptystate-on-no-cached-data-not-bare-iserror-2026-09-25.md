@@ -165,6 +165,17 @@ budget."). Assert the **total** call count (`toHaveBeenCalledExactlyOnceWith`),
 not a filter on one string; a per-copy filter cannot see the second post. Pin
 each mount-time seed with a "mounts already errored → no announcement" test.
 
+**The global error toast is a second announcer.** `Toast.tsx` announces its
+message on iOS, and the `QueryCache.onError` net shows it from the same
+query-settling event as the screen's own error state, so the two collide in
+one commit. You cannot always opt the query out: a `silentError` on a
+shared key is mount-order-dependent. `FeaturedRecipeDetailScreen`'s
+community query keeps the toast because `RecipeChatScreen` reads the same key
+with no error UI of its own. Instead, the screen asks the net's own predicate,
+`shouldSurfaceQueryError(error, meta)`. When that returns true the toast will
+speak, so the screen stays quiet. A 404 is suppressed by the net, so "Recipe
+not found." is still announced by the screen.
+
 ## Related Files
 
 - `client/hooks/useHistoryData.ts`

@@ -1135,6 +1135,9 @@ describe("MealPlanHomeScreen — fetch errors are announced for screen readers",
 
     expect(callsWith(BUDGET_COPY)).toBe(0);
     expect(callsWith(BOTH_COPY)).toBe(1);
+    // The items error cleared (pending) and failed again, so IT re-announces
+    // on its own — this pins the items re-arm.
+    expect(callsWith(ITEMS_COPY)).toBe(1);
   });
 
   it("speaks one combined announcement when both errors appear in the same commit", () => {

@@ -49,7 +49,12 @@ vi.mock("@react-navigation/native", () => ({
   useRoute: () => ({ params: mockRouteParams.current }),
 }));
 
-vi.mock("@/lib/query-client", () => ({
+vi.mock("@/lib/query-client", async (importOriginal) => ({
+  // The real predicate: the screen defers to it to know when the global
+  // error toast will announce a failure itself.
+  shouldSurfaceQueryError: (
+    await importOriginal<typeof import("@/lib/query-client")>()
+  ).shouldSurfaceQueryError,
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
   resolveImageUrl: (uri: string | null | undefined) => uri ?? null,
 }));
@@ -171,6 +176,62 @@ describe("FeaturedRecipeDetailScreen — generic error is announced for screen r
     await screen.findByText("Pancakes");
 
     expect(announceSpy).not.toHaveBeenCalled();
+  });
+});
+
+// The community query keeps the global error toast (RecipeChatScreen shares
+// its key and has no error UI of its own). Toast.tsx announces its message on
+// iOS, and it lands in the same commit as this screen's own announcement —
+// iOS drops one of two same-commit announcements. So when the toast will
+// surface the error (network/5xx), the screen stays quiet; a 404 is
+// suppressed by the toast net, so the screen still announces it.
+describe("FeaturedRecipeDetailScreen — community errors don't double-announce with the global toast", () => {
+  let announceSpy: ReturnType<typeof vi.spyOn>;
+
+  function renderCommunity(queryError: Error) {
+    mockRouteParams.current = {
+      recipeId: 42,
+      recipeType: "community",
+    } as unknown as typeof mockRouteParams.current;
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          queryFn: () => Promise.reject(queryError),
+        },
+      },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <FeaturedRecipeDetailScreen />
+      </QueryClientProvider>,
+    );
+  }
+
+  beforeEach(() => {
+    announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+  });
+
+  afterEach(() => {
+    announceSpy.mockRestore();
+    cleanup();
+    mockRouteParams.current = { recipeId: 42, recipeType: "mealPlan" };
+  });
+
+  it("does not announce a network failure the global toast will announce", async () => {
+    renderCommunity(new TypeError("Network request failed"));
+    await screen.findByText("Couldn't load this recipe");
+
+    expect(announceSpy).not.toHaveBeenCalled();
+  });
+
+  it("still announces a 404, which the global toast suppresses", async () => {
+    renderCommunity(
+      new ApiError("404: Recipe not found", ErrorCode.NOT_FOUND, 404),
+    );
+    await screen.findByText("Recipe not found");
+
+    expect(announceSpy).toHaveBeenCalledExactlyOnceWith("Recipe not found.");
   });
 });
 

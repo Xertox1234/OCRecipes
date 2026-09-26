@@ -20,7 +20,11 @@ import {
   formatTimeDisplay,
   parseNutritionData,
 } from "@/components/recipe-detail/recipe-detail-utils";
-import { apiRequest, resolveImageUrl } from "@/lib/query-client";
+import {
+  apiRequest,
+  resolveImageUrl,
+  shouldSurfaceQueryError,
+} from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, withOpacity } from "@/constants/theme";
@@ -189,13 +193,24 @@ export default function FeaturedRecipeDetailScreen() {
   const showsGenericError = Boolean(error) && !isNotFoundError && !normalized;
 
   // Announce whichever EmptyState branch (below) is about to render — it has
-  // no live region either (same pattern as mealPlanErrorAnnouncedRef in
-  // MealPlanHomeScreen.tsx). Skip the mount render so a screen that opens
+  // no live region either. Skip the mount render so a screen that opens
   // already-errored/not-found doesn't announce on top of focus.
+  //
+  // The community query keeps the global error toast (see its useQuery), and
+  // Toast.tsx announces its message in the same commit — iOS drops one of
+  // two same-commit announcements. So when the toast will surface this error
+  // (per the net's own predicate), stay quiet and let it speak; a 404 is
+  // suppressed by the net, so "Recipe not found." is still announced here.
+  const toastAnnouncesError =
+    resolvedRecipeType === "community" &&
+    Boolean(communityError) &&
+    shouldSurfaceQueryError(communityError, undefined);
   const announcement = isLoading
     ? null
     : showsGenericError
-      ? "Couldn't load this recipe. Try again."
+      ? toastAnnouncesError
+        ? null
+        : "Couldn't load this recipe. Try again."
       : !normalized
         ? "Recipe not found."
         : null;
