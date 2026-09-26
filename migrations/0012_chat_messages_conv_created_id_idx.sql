@@ -1,0 +1,42 @@
+-- Add a covering index for getChatMessages' newest-first ORDER BY.
+--
+-- `getChatMessages` (server/storage/chat.ts) does
+--   ORDER BY created_at DESC, id DESC LIMIT n
+-- per conversation_id. No existing index matches that ordering:
+--   chat_messages_conversation_id_idx           (conversation_id)               -- filters only
+--   chat_messages_conv_role_created_idx          (conversation_id, role, created_at) -- role sits
+--                                                 between the equality and sort columns
+-- so Postgres sorts (or scans) every message in the conversation to return the
+-- newest N. Every coach turn, recipe turn, warm-up, and `GET /messages` runs
+-- this query. Verified via EXPLAIN (ANALYZE, BUFFERS) on a seeded ~350-row
+-- conversation (dev, 2026-09-26): before this index, a Seq Scan + top-N
+-- heapsort Sort; after, an Index Scan on this index with no Sort node. See
+-- todos/archive/P3-2026-09-24-chat-messages-newest-first-order-index.md
+-- "Updates" for the full before/after plans.
+--
+-- KEEPING chat_messages_conversation_id_idx: several other queries filter on
+-- conversation_id alone (notably getChatMessageCount), and while this new
+-- index's leading column can serve them too (verified structurally via
+-- EXPLAIN with the old index dropped + seq scan disabled), the table is still
+-- small pre-launch scale — not worth the drop's risk/prod-migration-ordering
+-- cost yet. Revisit with fresh EXPLAIN evidence once real traffic volume
+-- exists.
+--
+-- CONCURRENTLY: chat_messages is hit on every coach/recipe turn, so build
+-- without locking out writes. CREATE INDEX CONCURRENTLY cannot run inside a
+-- transaction block — run this file's statement on its own (psql runs each
+-- top-level statement outside an implicit transaction by default; do NOT
+-- wrap it in BEGIN/COMMIT). Not combined with IF NOT EXISTS: this is a new
+-- index name with no prior partial/failed build to guard against, and
+-- migrations/0009 already flags that CONCURRENTLY + IF NOT EXISTS isn't safe
+-- to assume everywhere.
+--
+-- ORDERING: order-independent w.r.t. the deploy — an additive index does not
+-- change the query the old running server bundle already issues, and once
+-- built it simply gives that same query a faster plan. Apply before or after
+-- the deploy that ships this migration file.
+--
+-- Apply with:  psql "$DATABASE_URL" -f migrations/0012_chat_messages_conv_created_id_idx.sql
+
+CREATE INDEX CONCURRENTLY chat_messages_conv_created_id_idx
+  ON chat_messages (conversation_id, created_at DESC, id DESC);

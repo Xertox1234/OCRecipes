@@ -1024,11 +1024,24 @@ export const chatMessages = pgTable(
       .notNull(),
   },
   (table) => [
+    // Kept alongside the composite index below: several queries (e.g.
+    // getChatMessageCount) filter on conversationId alone, and while the
+    // composite index's leading column can serve them too, this table is
+    // still small pre-launch scale — see the EXPLAIN evidence in
+    // todos/archive/P3-2026-09-24-chat-messages-newest-first-order-index.md.
     index("chat_messages_conversation_id_idx").on(table.conversationId),
     index("chat_messages_conv_role_created_idx").on(
       table.conversationId,
       table.role,
       table.createdAt,
+    ),
+    // Covers getChatMessages' `ORDER BY created_at DESC, id DESC LIMIT n`
+    // per-conversation — without this, Postgres sorts (or scans) every
+    // message in the conversation to return the newest N.
+    index("chat_messages_conv_created_id_idx").on(
+      table.conversationId,
+      table.createdAt.desc(),
+      table.id.desc(),
     ),
     uniqueIndex("chat_messages_turn_key_idx")
       .on(table.conversationId, table.turnKey)
