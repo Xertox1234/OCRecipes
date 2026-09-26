@@ -68,7 +68,7 @@ Related gaps found at the same time:
 
 ## Dependencies
 
-- Pairs with `P2-2026-09-26-password-length-policy.md`: the reset form should enforce the same password policy.
+- Pairs with `P2-2026-09-26-password-length-policy.md`: the reset form enforces that todo's state-dependent minimum: 15 characters for an account without MFA, 8 with MFA.
 
 ## Risks
 
