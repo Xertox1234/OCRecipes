@@ -1024,11 +1024,12 @@ export const chatMessages = pgTable(
       .notNull(),
   },
   (table) => [
-    // Kept alongside the composite index below: several queries (e.g.
-    // getChatMessageCount) filter on conversationId alone, and while the
-    // composite index's leading column can serve them too, this table is
-    // still small pre-launch scale — see the EXPLAIN evidence in
-    // todos/archive/P3-2026-09-24-chat-messages-newest-first-order-index.md.
+    // Kept alongside the composite index below: getChatMessageCount is the
+    // only other query that filters on conversationId alone, and while the
+    // composite index's leading column can serve it too, this table is
+    // still small pre-launch scale — see the EXPLAIN evidence in this
+    // todo's Updates section (todos/ or todos/archive/, by the time it's
+    // read — P3-2026-09-24-chat-messages-newest-first-order-index.md).
     index("chat_messages_conversation_id_idx").on(table.conversationId),
     index("chat_messages_conv_role_created_idx").on(
       table.conversationId,

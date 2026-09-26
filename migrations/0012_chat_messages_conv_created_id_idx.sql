@@ -11,25 +11,42 @@
 -- this query. Verified via EXPLAIN (ANALYZE, BUFFERS) on a seeded ~350-row
 -- conversation (dev, 2026-09-26): before this index, a Seq Scan + top-N
 -- heapsort Sort; after, an Index Scan on this index with no Sort node. See
--- todos/archive/P3-2026-09-24-chat-messages-newest-first-order-index.md
--- "Updates" for the full before/after plans.
+-- this todo's Updates section for the full before/after plans (filename
+-- P3-2026-09-24-chat-messages-newest-first-order-index.md, under todos/ or
+-- todos/archive/ depending on whether it has been archived yet).
 --
--- KEEPING chat_messages_conversation_id_idx: several other queries filter on
--- conversation_id alone (notably getChatMessageCount), and while this new
--- index's leading column can serve them too (verified structurally via
--- EXPLAIN with the old index dropped + seq scan disabled), the table is still
--- small pre-launch scale — not worth the drop's risk/prod-migration-ordering
--- cost yet. Revisit with fresh EXPLAIN evidence once real traffic volume
--- exists.
+-- KEEPING chat_messages_conversation_id_idx: getChatMessageCount is the only
+-- other query that filters on conversation_id alone, and while this new
+-- index's leading column can serve it too (verified structurally via EXPLAIN
+-- with the old index dropped + seq scan disabled), the table is still small
+-- pre-launch scale — not worth the drop's risk/prod-migration-ordering cost
+-- yet. Revisit with fresh EXPLAIN evidence once real traffic volume exists.
 --
 -- CONCURRENTLY: chat_messages is hit on every coach/recipe turn, so build
 -- without locking out writes. CREATE INDEX CONCURRENTLY cannot run inside a
 -- transaction block — run this file's statement on its own (psql runs each
 -- top-level statement outside an implicit transaction by default; do NOT
--- wrap it in BEGIN/COMMIT). Not combined with IF NOT EXISTS: this is a new
--- index name with no prior partial/failed build to guard against, and
--- migrations/0009 already flags that CONCURRENTLY + IF NOT EXISTS isn't safe
--- to assume everywhere.
+-- wrap it in BEGIN/COMMIT).
+--
+-- NOT idempotent (no IF NOT EXISTS), deliberately: if a CONCURRENTLY build
+-- fails partway through, Postgres leaves an INVALID index under this name
+-- rather than rolling it back (there's no transaction to roll back). Re-run
+-- with IF NOT EXISTS and Postgres would see the name already exists and
+-- silently skip — leaving the invalid index in place instead of retrying. If
+-- this statement ever needs to be re-run because "relation ... already
+-- exists": first check
+--   SELECT indisvalid FROM pg_index
+--   WHERE indexrelid = 'chat_messages_conv_created_id_idx'::regclass;
+-- If `f` (invalid), `DROP INDEX chat_messages_conv_created_id_idx;` and
+-- re-run this file. If `t`, the earlier run already succeeded — nothing to
+-- do. After a successful apply, re-run the same SELECT and confirm `t`.
+--
+-- NULLS LAST is explicit on both DESC columns to match exactly what Drizzle
+-- produces for `.desc()` (and what `db:push` created in dev): Postgres's
+-- default null-ordering for a plain DESC column is NULLS FIRST, so omitting
+-- this clause would leave prod's catalog entry subtly different from the
+-- schema.ts-declared index even though both are harmless today (created_at
+-- and id are NOT NULL).
 --
 -- ORDERING: order-independent w.r.t. the deploy — an additive index does not
 -- change the query the old running server bundle already issues, and once
@@ -39,4 +56,4 @@
 -- Apply with:  psql "$DATABASE_URL" -f migrations/0012_chat_messages_conv_created_id_idx.sql
 
 CREATE INDEX CONCURRENTLY chat_messages_conv_created_id_idx
-  ON chat_messages (conversation_id, created_at DESC, id DESC);
+  ON chat_messages (conversation_id, created_at DESC NULLS LAST, id DESC NULLS LAST);
