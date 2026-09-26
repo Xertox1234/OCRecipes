@@ -135,6 +135,55 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
     warnSpy.mockRestore();
   });
 
+  // Positive control for the branch this fix left unchanged: a genuine
+  // connectivity failure must still warn (not error) and still tell the user
+  // we couldn't reach the service. Without this, inverting the
+  // `serverResponseInvalid` guard would ship with every test green.
+  it("still reports a genuine network failure as unreachable, via logger.warn", async () => {
+    const errorSpy = vi
+      .spyOn(logger, "error")
+      .mockImplementation(() => undefined);
+    const warnSpy = vi
+      .spyOn(logger, "warn")
+      .mockImplementation(() => undefined);
+
+    mockServerFetch
+      .mockRejectedValueOnce(new TypeError("Network request failed"))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 1,
+          product: {
+            product_name: "Fallback Snack",
+            nutriments: {
+              "energy-kcal_100g": 400,
+              proteins_100g: 5,
+              carbohydrates_100g: 60,
+              fat_100g: 10,
+            },
+          },
+        }),
+      });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "000000000006" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.flags).toHaveLength(1);
+    expect(result.current.flags[0].detail).toBe(
+      "We couldn't reach our service to check this against your allergies — check the package label.",
+    );
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).not.toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
   it("still fails safe when the OFF fallback ALSO fails after a malformed 200", async () => {
     const errorSpy = vi
       .spyOn(logger, "error")

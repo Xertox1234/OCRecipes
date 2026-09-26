@@ -52,6 +52,15 @@ expectResponseToMatch(res.body, barcodeLookupResponseSchema);
 
 Prefer adding the one-line assertion to an **existing** route test over writing a new test file — the guard only needs the identifier referenced from real, already-passing code exercising the route; it does not require a dedicated test.
 
+**Splitting one catch into two branches needs a test on each branch.** The
+fix introduced a flag (`serverResponseInvalid`) that routes a malformed body
+away from the old network-failure copy. The new tests only asserted the
+negative: the malformed path does *not* say "couldn't reach our service". So
+inverting the guard, or a flag stuck true, would have given a real outage the
+wrong copy with every test still green. `useNutritionLookup.malformedResponse.test.tsx`
+now also pins the unchanged network-failure branch (exact copy, `logger.warn`
+once, no `logger.error`). Both mutants fail it.
+
 ## Exceptions
 
 - A schema that validates a form, local component state, or any input that never crosses from a server response (`NON_RESPONSE_SCHEMAS` in the guard) — keep it wherever is otherwise appropriate; do not relocate it to `shared/` just to satisfy this guard.

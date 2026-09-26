@@ -56,9 +56,11 @@ export const barcodeServingInfoSchema = z.object({
   correctionReason: z.string().optional(),
 });
 
-// Shape shared by the top-level lookup result and the label-conflict's
-// nested `conflict.label` — `server/routes/nutrition.ts`'s
-// `buildBarcodeResponseBody` builds both the same way.
+// Core nutrition shape shared by the top-level lookup result and the
+// label-conflict's nested `conflict.label`. `server/routes/nutrition.ts`'s
+// `buildBarcodeResponseBody` builds both, so `conflict.label` also carries
+// isBeverage/verificationLevel/verificationCount — Zod strips them here
+// because no client code reads them off the nested label.
 export const barcodeNutritionResultSchema = z.object({
   productName: z.string(),
   brandName: z.string().optional(),
