@@ -106,8 +106,7 @@ export default function ChatListScreen() {
   useRefreshOnFocus(refetchOnFocus);
   // Local flag (not the query's own `isRefetching`) so a background,
   // focus-triggered refetch above doesn't flash the pull-to-refresh spinner —
-  // only a user-initiated pull should show it. Same pattern as the
-  // multi-query "coordinated pull-to-refresh" convention elsewhere in the app.
+  // only a user-initiated pull should show it.
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const handleManualRefresh = useCallback(() => {
     setIsManualRefreshing(true);
