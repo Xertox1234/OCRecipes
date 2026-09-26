@@ -3,6 +3,12 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { onlineManager } from "@tanstack/react-query";
 import { useQuickLogSession, MAX_LOG_ITEMS } from "../useQuickLogSession";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
+
+const GENERIC_PARSE_MESSAGE = "Failed to parse food text. Please try again.";
+const QUICK_LOG_PREMIUM_MESSAGE =
+  "Quick Log is a premium feature. Upgrade to log food by text or voice.";
 
 const { mockApiRequest, mockTokenStorage, mockEnqueue } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
@@ -171,6 +177,54 @@ describe("useQuickLogSession", () => {
 
     await waitFor(() => expect(result.current.parseError).not.toBeNull());
     expect(result.current.parsedItems).toHaveLength(0);
+  });
+
+  it("shows the premium message (not a parse failure) when text parse returns PREMIUM_REQUIRED", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockRejectedValueOnce(
+      new ApiError("403: Premium required", ErrorCode.PREMIUM_REQUIRED, 403),
+    );
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("some food"));
+    act(() => result.current.handleTextSubmit());
+
+    await waitFor(() => expect(result.current.parseError).not.toBeNull());
+    expect(result.current.parseError).toBe(QUICK_LOG_PREMIUM_MESSAGE);
+  });
+
+  it("keeps the generic parse message for a non-premium ApiError", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockRejectedValueOnce(
+      new ApiError("500: boom", ErrorCode.INTERNAL_ERROR, 500),
+    );
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("some food"));
+    act(() => result.current.handleTextSubmit());
+
+    await waitFor(() => expect(result.current.parseError).not.toBeNull());
+    expect(result.current.parseError).toBe(GENERIC_PARSE_MESSAGE);
+  });
+
+  it("shows the premium message when voice auto-parse returns PREMIUM_REQUIRED", async () => {
+    const { useSpeechToText } = await import("@/hooks/useSpeechToText");
+    (useSpeechToText as ReturnType<typeof vi.fn>).mockReturnValue({
+      ...mockSpeechToText,
+      isFinal: true,
+      transcript: "3 eggs",
+    });
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockRejectedValueOnce(
+      new ApiError("403: Premium required", ErrorCode.PREMIUM_REQUIRED, 403),
+    );
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    await waitFor(() => expect(result.current.parseError).not.toBeNull());
+    expect(result.current.parseError).toBe(QUICK_LOG_PREMIUM_MESSAGE);
   });
 
   it("removes item by index", async () => {
