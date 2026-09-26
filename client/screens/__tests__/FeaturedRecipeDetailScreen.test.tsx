@@ -16,7 +16,14 @@
 // regardless of which query supplies the error, so this is full coverage of
 // the fix, not a narrowed one.
 import React from "react";
-import { cleanup, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import FeaturedRecipeDetailScreen from "../FeaturedRecipeDetailScreen";
@@ -164,6 +171,36 @@ describe("FeaturedRecipeDetailScreen — generic error is announced for screen r
     await screen.findByText("Pancakes");
 
     expect(announceSpy).not.toHaveBeenCalled();
+  });
+});
+
+// The meal-plan recipe query renders its own error UI (above) and its key has
+// no other live reader (useMealPlanRecipeDetail has no production call site),
+// so it opts out of the global QueryCache error toast — otherwise a failure
+// shows BOTH the inline error and a toast. The community query must NOT opt
+// out: RecipeChatScreen shares `/api/recipes/${id}` with no error UI of its
+// own and relies on the global toast.
+describe("FeaturedRecipeDetailScreen — global error toast opt-out", () => {
+  it("marks the meal-plan recipe query silentError, but not the shared community query", async () => {
+    mockApiRequest.mockRejectedValue(new TypeError("Network request failed"));
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <FeaturedRecipeDetailScreen />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Couldn't load this recipe");
+
+    const cache = queryClient.getQueryCache();
+    expect(
+      cache.find({ queryKey: ["/api/meal-plan/recipes", 42] })?.meta,
+    ).toEqual({ silentError: true });
+    const communityQuery = cache.find({ queryKey: ["/api/recipes/42"] });
+    expect(communityQuery).toBeDefined();
+    expect(communityQuery?.meta?.silentError).toBeUndefined();
   });
 });
 

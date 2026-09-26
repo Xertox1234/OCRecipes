@@ -86,28 +86,73 @@ if (isError) return <EmptyState title="Couldn't load your meal plan" .../>;
 // successful fetch now shows the error state instead of the cached week.
 ```
 
-**Correct — only the no-data case shows the error branch:**
+**Correct — only the no-data case shows the error, rendered where the data would go:**
 
 ```tsx
-const { data, isLoadingError, refetch } = useMealPlanItems(startDate, endDate);
-if (isLoadingError) {
-  return (
-    <EmptyState
-      variant="temporary"
-      icon="alert-circle"
-      title="Couldn't load your meal plan"
-      description="Something went wrong loading this week's meals. Check your connection and try again."
-      actionLabel="Try Again"
-      onAction={() => void refetch()}
-    />
-  );
-}
-// isRefetchError falls through here unchanged — `data` is still the last
+const { data, isLoading, isLoadingError, refetch } = useMealPlanItems(start, end);
+if (isLoading) return <Skeleton />; // first load only; unchanged
+
+return (
+  <ScrollView refreshControl={<RefreshControl onRefresh={handleRefresh} ... />}>
+    <TopActions />   {/* don't depend on this query — stay usable */}
+    <DateStrip />    {/* week navigation stays usable */}
+    {isLoadingError ? (
+      <EmptyState
+        variant="temporary"
+        icon="alert-circle"
+        title="Couldn't load your meal plan"
+        actionLabel="Try Again"
+        onAction={() => void refetch()}
+      />
+    ) : data.length === 0 ? (
+      <EmptyState variant="firstTime" title="No meals planned yet" ... />
+    ) : (
+      <MealList items={data} />
+    )}
+  </ScrollView>
+);
+// isRefetchError falls through unchanged — `data` is still the last
 // successfully-fetched week, so the normal render keeps showing it.
 ```
 
+Render the error **in place of the failed query's content**, not as a
+full-screen early return. An early return discards everything that doesn't
+depend on the failed query — on `MealPlanHomeScreen` that was the week
+navigation (so the user couldn't even try a different week), the top-action
+buttons, and pull-to-refresh (whose handler also refreshes sibling queries the
+lone Try Again didn't). The error branch must come **before** the empty-data
+branch, or a failed fetch falls into "No meals planned yet" again. The same
+file's `budgetErrorNoData` calorie-ring EmptyState was already in-scroll; follow
+that precedent.
+
 For a hook combining multiple queries by hand (no single `useQuery` to read
 `isLoadingError` off), derive the equivalent directly: `error && !data`.
+
+## Announcing the error EmptyState: edge-detect, don't re-test state
+
+An error `EmptyState` has no live region, so screens announce it with
+`AccessibilityInfo.announceForAccessibility`. Make that effect
+**edge-triggered on the visible error itself**: announce when the error rises,
+re-arm only when it clears. The broken shape re-tests state inside an effect
+whose deps include something else:
+
+```tsx
+// WRONG — fires on ANY deps change while the budget error is up
+useEffect(() => {
+  if (budgetErrorNoData && !isLoadingError) announce("Couldn't load your calorie budget…");
+}, [budgetErrorNoData, isLoadingError]);
+```
+
+TanStack resets a data-less query to `pending`/`error: null` on refetch, so
+tapping the *items* Try Again flipped `isLoadingError` false (skeleton on
+screen) and the budget announcement fired — describing UI that was hidden —
+and again on every tap. The fix (`MealPlanHomeScreen.tsx`,
+`budgetErrorAnnouncedRef`): a ref seeded with the mount-time visibility (so a
+screen that opens already errored stays quiet), cleared only when
+`budgetErrorNoData` falls, and the announce deferred while the skeleton
+(`isLoading`) replaces the EmptyState — a skeleton covering the error is not
+the error clearing. Test it with a rerender walk: happy → both queries fail →
+announced once → items retry (pending, then error) → still once.
 
 ## Related Files
 

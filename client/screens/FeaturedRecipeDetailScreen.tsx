@@ -102,6 +102,12 @@ export default function FeaturedRecipeDetailScreen() {
       return res.json();
     },
     enabled: resolvedRecipeType === "mealPlan" && recipeId > 0,
+    // This screen renders its own error UI for this query, and the key has no
+    // other live reader (useMealPlanRecipeDetail has no production call site),
+    // so opt out of the global error toast — no double error surface. NOT set
+    // on the community query above: RecipeChatScreen shares that key with no
+    // error UI of its own and relies on the global toast.
+    meta: { silentError: true },
   });
 
   // --- Normalize into RecipeDetailContent props ---

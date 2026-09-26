@@ -798,41 +798,46 @@ export default function MealPlanHomeScreen() {
   // showing the ring, so the announce must track the no-data error only.
   const budgetErrorNoData = budgetError && !budgetData;
 
-  // Announce the error transition for screen readers. The EmptyState has no
-  // live region, so a cross-platform announce carries both VoiceOver and
-  // TalkBack with no double-announce. Skip the mount render so a screen that
-  // opens already-errored does not announce on top of focus.
-  const budgetErrorAnnouncedRef = useRef(false);
+  // Announce each error EmptyState for screen readers — neither has a live
+  // region, so a cross-platform announce carries both VoiceOver and TalkBack
+  // with no double-announce. Both are EDGE-triggered on the error itself
+  // (announce on the rise, re-arm only when the error clears), never a
+  // re-test of state on every deps change: TanStack resets a data-less query
+  // to pending/error:null on refetch, so a state re-test re-announced on
+  // unrelated transitions (e.g. the budget copy on every items Try Again).
+  // The refs start at their mount value, so a screen that opens already
+  // errored does not announce on top of initial focus.
+  //
+  // Budget: its EmptyState is hidden while the full-screen items skeleton is
+  // up (`isLoading`), so the announce is deferred until it is actually on
+  // screen. The skeleton covering it is not "clearing" — only
+  // budgetErrorNoData falling re-arms it.
+  const budgetErrorAnnouncedRef = useRef(budgetErrorNoData && !isLoading);
   useEffect(() => {
-    if (!budgetErrorAnnouncedRef.current) {
-      budgetErrorAnnouncedRef.current = true;
+    if (!budgetErrorNoData) {
+      budgetErrorAnnouncedRef.current = false;
       return;
     }
-    // Gated on !isLoadingError too: the meal-plan-items isLoadingError branch
-    // below early-returns before this section (and its EmptyState) ever
-    // renders, so announcing this copy while that branch is on screen would
-    // describe UI the user isn't looking at.
-    if (budgetErrorNoData && !isLoadingError) {
-      AccessibilityInfo.announceForAccessibility(
-        "Couldn't load your calorie budget. Try again.",
-      );
-    }
-  }, [budgetErrorNoData, isLoadingError]);
+    if (isLoading || budgetErrorAnnouncedRef.current) return;
+    budgetErrorAnnouncedRef.current = true;
+    AccessibilityInfo.announceForAccessibility(
+      "Couldn't load your calorie budget. Try again.",
+    );
+  }, [budgetErrorNoData, isLoading]);
 
-  // Same announce pattern as budgetErrorAnnouncedRef above, for the meal-plan
-  // items fetch — the EmptyState rendered on isLoadingError below has no live
-  // region either.
-  const mealPlanErrorAnnouncedRef = useRef(false);
+  // Items: rendered in the scroll content on isLoadingError (see below).
+  // isLoading and isLoadingError are mutually exclusive, so no skeleton gate.
+  const mealPlanErrorAnnouncedRef = useRef(isLoadingError);
   useEffect(() => {
-    if (!mealPlanErrorAnnouncedRef.current) {
-      mealPlanErrorAnnouncedRef.current = true;
+    if (!isLoadingError) {
+      mealPlanErrorAnnouncedRef.current = false;
       return;
     }
-    if (isLoadingError) {
-      AccessibilityInfo.announceForAccessibility(
-        "Couldn't load your meal plan. Try again.",
-      );
-    }
+    if (mealPlanErrorAnnouncedRef.current) return;
+    mealPlanErrorAnnouncedRef.current = true;
+    AccessibilityInfo.announceForAccessibility(
+      "Couldn't load your meal plan. Try again.",
+    );
   }, [isLoadingError]);
 
   const dailyTotals = useMemo(() => {
@@ -1430,39 +1435,6 @@ export default function MealPlanHomeScreen() {
     );
   }
 
-  // A failed fetch with no cached data — distinct from `isRefetching` (pull-
-  // to-refresh, which keeps showing the already-loaded week) and from a
-  // background refetch failure with cached data still on hand (isRefetchError,
-  // which falls through to the normal render below and keeps the stale week
-  // rather than blanking it out). Without this gate, a failed initial fetch
-  // rendered `mealPlanItems` as undefined/empty and looked like a legitimately
-  // empty week (2026-09-23 audit, M18).
-  if (isLoadingError) {
-    return (
-      <View
-        style={[
-          styles.container,
-          {
-            paddingTop: headerHeight,
-            paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
-            backgroundColor: theme.backgroundRoot,
-          },
-        ]}
-      >
-        <EmptyState
-          variant="temporary"
-          icon="alert-circle"
-          title="Couldn't load your meal plan"
-          description="Something went wrong loading this week's meals. Check your connection and try again."
-          actionLabel="Try Again"
-          onAction={() => {
-            void refetchMealPlanItems();
-          }}
-        />
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <ScrollView
@@ -1596,7 +1568,27 @@ export default function MealPlanHomeScreen() {
           />
         )}
 
-        {selectedDayItems.length === 0 ? (
+        {/* A failed items fetch with no cached data (isLoadingError) renders
+            HERE, where the list would go — distinct from `isRefetching`
+            (pull-to-refresh keeps the loaded week) and from isRefetchError
+            (a background failure with cached data, which keeps showing the
+            stale week). Without this branch a failed initial fetch looked
+            like a legitimately empty week (2026-09-23 audit, M18). Rendered
+            in-scroll, not as an early return, so the week navigation, top
+            actions and pull-to-refresh — none of which depend on this query
+            — stay usable. */}
+        {isLoadingError ? (
+          <EmptyState
+            variant="temporary"
+            icon="alert-circle"
+            title="Couldn't load your meal plan"
+            description="Something went wrong loading this week's meals. Pull down to refresh or tap below to try again."
+            actionLabel="Try Again"
+            onAction={() => {
+              void refetchMealPlanItems();
+            }}
+          />
+        ) : selectedDayItems.length === 0 ? (
           <EmptyState
             variant="firstTime"
             icon="calendar"

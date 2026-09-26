@@ -69,6 +69,7 @@ const {
   hookCalls,
   mealPlanItemsData,
   mealPlanQueryState,
+  dailyBudgetQueryState,
   refreshControlProps,
   capturedPressables,
   addItemMenuProps,
@@ -106,8 +107,18 @@ const {
   // below; every other describe block relies on these (successful, non-error)
   // defaults.
   mealPlanQueryState: {
+    isLoading: false,
     isLoadingError: false,
     isRefetchError: false,
+    refetch: vi.fn(),
+  },
+  // Overridden per-test by the budget-announcement tests below; defaults to a
+  // successful fetch so every other describe block renders the CalorieRing.
+  dailyBudgetQueryState: {
+    data: { calorieGoal: 2000, foodCalories: 0, remaining: 2000 } as
+      | undefined
+      | { calorieGoal: number; foodCalories: number; remaining: number },
+    isError: false,
     refetch: vi.fn(),
   },
   // The test/mocks/react-native.ts ScrollView mock never actually renders its
@@ -144,10 +155,16 @@ vi.mock("@/hooks/useMealPlan", () => ({
     hookCalls.mealPlanItems.push(args);
     return {
       data: mealPlanItemsData.value,
-      isLoading: false,
+      isLoading: mealPlanQueryState.isLoading,
       isRefetching: false,
       isLoadingError: mealPlanQueryState.isLoadingError,
       isRefetchError: mealPlanQueryState.isRefetchError,
+      // TanStack v5: isError is true for BOTH a no-data failure and a
+      // background-refetch failure. Derived (not omitted) so a reversion of
+      // the screen's gate to a bare `if (isError)` blanks the stale week in
+      // the isRefetchError test below instead of passing on `undefined`.
+      isError:
+        mealPlanQueryState.isLoadingError || mealPlanQueryState.isRefetchError,
       refetch: mealPlanQueryState.refetch,
     };
   },
@@ -162,9 +179,9 @@ vi.mock("@/hooks/useDailyBudget", () => ({
   useDailyBudget: (...args: unknown[]) => {
     hookCalls.dailyBudget.push(args);
     return {
-      data: { calorieGoal: 2000, foodCalories: 0, remaining: 2000 },
-      isError: false,
-      refetch: vi.fn(),
+      data: dailyBudgetQueryState.data,
+      isError: dailyBudgetQueryState.isError,
+      refetch: dailyBudgetQueryState.refetch,
     };
   },
 }));
@@ -961,13 +978,45 @@ describe("MealPlanHomeScreen — meal-plan fetch error handling", () => {
 
   beforeEach(() => {
     mealPlanItemsData.value = [];
+    mealPlanQueryState.isLoading = false;
     mealPlanQueryState.isLoadingError = false;
     mealPlanQueryState.isRefetchError = false;
     mealPlanQueryState.refetch = vi.fn();
+    // Module-level capture — reset so a RefreshControl captured by an earlier
+    // describe block can't make the "refresh stays wired" assertion pass.
+    refreshControlProps.current = null;
   });
 
   afterEach(() => {
     cleanup();
+  });
+
+  // The items error renders IN the scroll content where the list would go —
+  // week navigation, the top-action buttons and pull-to-refresh don't depend
+  // on the failed query and must stay usable (a full-screen early return used
+  // to discard all three).
+  it("keeps the week navigation, top actions and pull-to-refresh alive in the items-error state", () => {
+    mealPlanQueryState.isLoadingError = true;
+
+    renderComponent(<MealPlanHomeScreen />);
+
+    expect(screen.getByText("Couldn't load your meal plan")).toBeDefined();
+    expect(screen.getByLabelText("Previous week")).toBeDefined();
+    expect(screen.getByLabelText("Next week")).toBeDefined();
+    expect(screen.getByText("Grocery Lists")).toBeDefined();
+    expect(refreshControlProps.current?.onRefresh).toBeInstanceOf(Function);
+  });
+
+  it("pull-to-refresh in the items-error state invalidates the meal plan", async () => {
+    mealPlanQueryState.isLoadingError = true;
+    vi.mocked(invalidateMealPlanItems).mockClear();
+
+    renderComponent(<MealPlanHomeScreen />);
+    await act(async () => {
+      await refreshControlProps.current?.onRefresh?.();
+    });
+
+    expect(invalidateMealPlanItems).toHaveBeenCalledOnce();
   });
 
   it("shows an inline error state with retry on isLoadingError, instead of the empty-week state", () => {
@@ -997,6 +1046,121 @@ describe("MealPlanHomeScreen — meal-plan fetch error handling", () => {
 
     expect(screen.getByText("Stale Pancakes")).toBeDefined();
     expect(screen.queryByText("Couldn't load your meal plan")).toBeNull();
+  });
+});
+
+// The items and budget error EmptyStates have no live region, so each is
+// announced cross-platform on its own error transition. Both announcements
+// skip a screen that MOUNTS already errored (announcing on top of initial
+// focus), so every test here starts in the loading skeleton and rerenders
+// into the error — the transition a real failed fetch produces.
+describe("MealPlanHomeScreen — fetch errors are announced for screen readers", () => {
+  const ITEMS_COPY = "Couldn't load your meal plan. Try again.";
+  const BUDGET_COPY = "Couldn't load your calorie budget. Try again.";
+  const HAPPY_BUDGET = { calorieGoal: 2000, foodCalories: 0, remaining: 2000 };
+  let announceSpy: ReturnType<typeof vi.spyOn>;
+
+  const callsWith = (copy: string) =>
+    announceSpy.mock.calls.filter((c: unknown[]) => c[0] === copy).length;
+
+  beforeEach(() => {
+    mockApiRequest.mockReset();
+    mockApiRequest.mockResolvedValue({ json: async () => ({}) });
+    mealPlanItemsData.value = [];
+    mealPlanQueryState.isLoading = true;
+    mealPlanQueryState.isLoadingError = false;
+    mealPlanQueryState.isRefetchError = false;
+    mealPlanQueryState.refetch = vi.fn();
+    dailyBudgetQueryState.data = HAPPY_BUDGET;
+    dailyBudgetQueryState.isError = false;
+    dailyBudgetQueryState.refetch = vi.fn();
+    announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+  });
+
+  afterEach(() => {
+    announceSpy.mockRestore();
+    cleanup();
+    mealPlanQueryState.isLoading = false;
+    mealPlanQueryState.isLoadingError = false;
+    dailyBudgetQueryState.data = HAPPY_BUDGET;
+    dailyBudgetQueryState.isError = false;
+  });
+
+  it("announces the meal-plan error exactly once on the isLoadingError transition", () => {
+    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+
+    mealPlanQueryState.isLoading = false;
+    mealPlanQueryState.isLoadingError = true;
+    rerender(<MealPlanHomeScreen />);
+    // An unrelated re-render with the error still showing must not repeat it.
+    rerender(<MealPlanHomeScreen />);
+
+    expect(announceSpy).toHaveBeenCalledExactlyOnceWith(ITEMS_COPY);
+  });
+
+  it("does not announce on the happy path", () => {
+    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+
+    mealPlanQueryState.isLoading = false;
+    rerender(<MealPlanHomeScreen />);
+
+    expect(announceSpy).not.toHaveBeenCalled();
+  });
+
+  it("announces the budget error once when both queries fail, and not again when the items query is retried", () => {
+    dailyBudgetQueryState.data = undefined;
+    dailyBudgetQueryState.isError = true;
+    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+
+    // Items fetch fails too — both EmptyStates are now on screen.
+    mealPlanQueryState.isLoading = false;
+    mealPlanQueryState.isLoadingError = true;
+    rerender(<MealPlanHomeScreen />);
+    expect(screen.getByText("Couldn't load your calorie budget")).toBeDefined();
+    expect(callsWith(BUDGET_COPY)).toBe(1);
+
+    // Tap Try Again on the items error: TanStack resets a data-less query to
+    // pending (skeleton, error cleared), then it fails again. The budget
+    // error never cleared, so it must not be re-announced.
+    mealPlanQueryState.isLoading = true;
+    mealPlanQueryState.isLoadingError = false;
+    rerender(<MealPlanHomeScreen />);
+    mealPlanQueryState.isLoading = false;
+    mealPlanQueryState.isLoadingError = true;
+    rerender(<MealPlanHomeScreen />);
+
+    expect(callsWith(BUDGET_COPY)).toBe(1);
+  });
+
+  it("does not announce the budget error while the skeleton hides it, then announces once it is visible", () => {
+    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+
+    // Budget fails while the items query is still loading (skeleton up).
+    dailyBudgetQueryState.data = undefined;
+    dailyBudgetQueryState.isError = true;
+    rerender(<MealPlanHomeScreen />);
+    expect(callsWith(BUDGET_COPY)).toBe(0);
+
+    mealPlanQueryState.isLoading = false;
+    rerender(<MealPlanHomeScreen />);
+    expect(callsWith(BUDGET_COPY)).toBe(1);
+  });
+
+  it("re-announces the budget error after it clears and fails again", () => {
+    mealPlanQueryState.isLoading = false;
+    const { rerender } = renderComponent(<MealPlanHomeScreen />);
+
+    dailyBudgetQueryState.data = undefined;
+    dailyBudgetQueryState.isError = true;
+    rerender(<MealPlanHomeScreen />);
+    // Budget Try Again: the data-less query resets to pending (error cleared)…
+    dailyBudgetQueryState.isError = false;
+    rerender(<MealPlanHomeScreen />);
+    // …and fails again.
+    dailyBudgetQueryState.isError = true;
+    rerender(<MealPlanHomeScreen />);
+
+    expect(callsWith(BUDGET_COPY)).toBe(2);
   });
 });
 
