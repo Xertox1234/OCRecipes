@@ -12,6 +12,7 @@ import {
   ScrollView,
   StyleSheet,
   AppState,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -38,7 +39,11 @@ import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePremiumContext } from "@/context/PremiumContext";
 import CoachDashboard from "@/components/coach/CoachDashboard";
 import CoachChat from "@/components/coach/CoachChat";
-import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
+import {
+  SkeletonBox,
+  SkeletonLoadingRegion,
+  SkeletonProvider,
+} from "@/components/SkeletonLoader";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import { logger } from "@/lib/logger";
@@ -60,6 +65,18 @@ export default function CoachProScreen() {
     isError: isContextError,
     refetch: refetchContext,
   } = useCoachContext(contextEnabled);
+  // Tell screen-reader users the coach context is loading. Delayed 500ms to
+  // match the modal-safe pattern (docs/solutions/conventions/on-open-announce-
+  // must-delay-past-modal-present-focus-shift-2026-06-25.md) — harmless on
+  // this non-modal route, kept for consistency with the other skeleton
+  // screens fixed alongside this one.
+  useEffect(() => {
+    if (!isContextLoading) return;
+    const timer = setTimeout(() => {
+      AccessibilityInfo.announceForAccessibility("Loading");
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [isContextLoading]);
   // CoachChat's own catch (handleSend) shows a visible streamingError on a
   // creation failure — opt out so the global net doesn't double it.
   const { mutateAsync: createConversation } = useCreateConversation({
@@ -180,10 +197,9 @@ export default function CoachProScreen() {
     >
       {isContextLoading && (
         <SkeletonProvider>
-          <View
+          <SkeletonLoadingRegion
             style={styles.loadingContainer}
-            accessibilityLabel="Loading..."
-            accessibilityElementsHidden
+            testID="coach-pro-loading-skeleton"
           >
             <SkeletonBox
               width="60%"
@@ -202,7 +218,7 @@ export default function CoachProScreen() {
               borderRadius={BorderRadius.xs}
               style={{ marginTop: Spacing.sm }}
             />
-          </View>
+          </SkeletonLoadingRegion>
         </SkeletonProvider>
       )}
       {isContextError && (

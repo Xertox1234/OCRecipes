@@ -310,6 +310,46 @@ function AnimatedStandaloneSkeletonBox({
   );
 }
 
+interface SkeletonLoadingRegionProps {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+  testID?: string;
+}
+
+/**
+ * Wraps skeleton placeholder content so the WHOLE subtree is excluded from
+ * the accessibility tree on both platforms, as one paired unit —
+ * `accessibilityElementsHidden` (iOS) alone leaves the subtree fully
+ * readable to TalkBack, since it is iOS-only; `importantForAccessibility="no"`
+ * would exclude only this view, not its children. A container with children
+ * needs `"no-hide-descendants"` alongside it. See
+ * docs/solutions/conventions/a11y-hide-visually-hidden-surfaces-2026-06-10.md.
+ *
+ * This component only hides — it does not announce. A screen that wants
+ * screen-reader users told content is loading fires its own
+ * `AccessibilityInfo.announceForAccessibility` (see NutritionDetailScreen /
+ * the four screens fixed alongside this component); baking an announcement
+ * in here would double-announce at call sites that already fire their own
+ * (e.g. SavedItemsScreen's `SavedItemsSkeleton`), since iOS drops the second
+ * of two announcements posted in the same commit.
+ */
+export function SkeletonLoadingRegion({
+  children,
+  style,
+  testID,
+}: SkeletonLoadingRegionProps) {
+  return (
+    <View
+      style={style}
+      testID={testID}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      {children}
+    </View>
+  );
+}
+
 interface SkeletonItemProps {
   /** Index for staggered opacity effect */
   index?: number;
@@ -321,6 +361,12 @@ interface SkeletonItemProps {
 /**
  * A skeleton list item with image and text placeholders.
  * Default layout matches common list item patterns.
+ *
+ * Purely decorative — it carries no `accessibilityLabel` of its own.
+ * `SkeletonList` wraps every item in a `SkeletonLoadingRegion`, so an
+ * item-level label would either be unreachable (nested inside a hidden
+ * subtree) or, worse, one of several identical "Loading..." labels
+ * announced per item. Only used inside `SkeletonList` today.
  */
 export function SkeletonItem({
   index = 0,
@@ -341,13 +387,13 @@ export function SkeletonItem({
 
   return (
     <View
+      testID="skeleton-item"
       style={[
         styles.skeletonItem,
         { backgroundColor: theme.backgroundDefault },
         { opacity: 1 - index * 0.1 },
         style,
       ]}
-      accessibilityLabel="Loading..."
     >
       {children || defaultContent}
     </View>
@@ -367,11 +413,17 @@ interface SkeletonListProps {
  * Wraps its children in a `SkeletonProvider` so every nested
  * `SkeletonBox` (default or `renderItem`-supplied) shares one shimmer
  * driver. A 10-item list with 3 boxes each runs 1 worklet instead of 30.
+ *
+ * The whole list is one `SkeletonLoadingRegion` — items are not
+ * individually reachable, and there is no per-item "Loading..." label.
  */
 export function SkeletonList({ count = 5, renderItem }: SkeletonListProps) {
   return (
     <SkeletonProvider>
-      <View style={styles.skeletonContainer}>
+      <SkeletonLoadingRegion
+        style={styles.skeletonContainer}
+        testID="skeleton-list"
+      >
         {Array.from({ length: count }, (_, i) =>
           renderItem ? (
             <React.Fragment key={i}>{renderItem(i)}</React.Fragment>
@@ -379,7 +431,7 @@ export function SkeletonList({ count = 5, renderItem }: SkeletonListProps) {
             <SkeletonItem key={i} index={i} />
           ),
         )}
-      </View>
+      </SkeletonLoadingRegion>
     </SkeletonProvider>
   );
 }

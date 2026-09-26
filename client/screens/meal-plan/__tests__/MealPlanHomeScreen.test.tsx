@@ -1660,3 +1660,71 @@ describe("MealSlotItem touch targets (P2-2026-09-23, M13)", () => {
     expect(remove.height).toBeGreaterThanOrEqual(44);
   });
 });
+
+// P2-2026-09-23 (M15): the loading skeleton must be one hidden region (both
+// platforms) with a delayed announce, not a container whose own
+// accessibilityLabel is hidden along with the decorative boxes. Fake timers
+// scoped to this describe only, mirroring NutritionDetailScreen.test.tsx's
+// loading-branch characterisation.
+describe("MealPlanHomeScreen — loading skeleton screen-reader signal", () => {
+  beforeEach(() => {
+    mealPlanQueryState.isLoading = true;
+    mealPlanQueryState.isLoadingError = false;
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    cleanup();
+    mealPlanQueryState.isLoading = false;
+  });
+
+  it("hides the skeleton region from screen readers as one unit", () => {
+    renderComponent(<MealPlanHomeScreen />);
+    const region = screen.getByTestId("meal-plan-loading-skeleton");
+    expect(region.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  // Fails on main: today the region itself carries `accessibilityLabel=
+  // "Loading..."` alongside `accessibilityElementsHidden`, which hides the
+  // label along with the decorative boxes on iOS.
+  it("does not carry its own hidden Loading label", () => {
+    renderComponent(<MealPlanHomeScreen />);
+    expect(screen.queryByLabelText("Loading...")).toBeNull();
+  });
+
+  it("does not announce Loading synchronously, then announces it once after the delay", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      renderComponent(<MealPlanHomeScreen />);
+
+      expect(announceSpy).not.toHaveBeenCalledWith("Loading");
+
+      vi.advanceTimersByTime(500);
+
+      expect(announceSpy).toHaveBeenCalledExactlyOnceWith("Loading");
+    } finally {
+      announceSpy.mockRestore();
+    }
+  });
+
+  it("cancels the pending Loading announce if the screen unmounts before the delay elapses", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const { unmount } = renderComponent(<MealPlanHomeScreen />);
+      unmount();
+      vi.advanceTimersByTime(500);
+
+      expect(announceSpy).not.toHaveBeenCalledWith("Loading");
+    } finally {
+      announceSpy.mockRestore();
+    }
+  });
+});

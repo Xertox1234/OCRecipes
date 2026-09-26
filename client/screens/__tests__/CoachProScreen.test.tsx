@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import { REFRESH_ON_FOCUS_SETTLE_MS } from "@/hooks/useRefreshOnFocus";
 import CoachProScreen from "../CoachProScreen";
@@ -200,6 +201,76 @@ describe("CoachProScreen — thread bar refetch on refocus", () => {
       expect(mockRefetchConversations).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+// P2-2026-09-23 (M15): the loading skeleton must be one hidden region (both
+// platforms) with a delayed announce, not a container whose own
+// accessibilityLabel is hidden along with the decorative boxes. Fake timers
+// scoped to this describe only, mirroring NutritionDetailScreen.test.tsx's
+// loading-branch characterisation.
+describe("CoachProScreen — loading skeleton screen-reader signal", () => {
+  beforeEach(() => {
+    mockUseCoachContext.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  it("hides the skeleton region from screen readers as one unit", () => {
+    renderComponent(<CoachProScreen />);
+    const region = screen.getByTestId("coach-pro-loading-skeleton");
+    expect(region.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  // Fails on main: today the region itself carries `accessibilityLabel=
+  // "Loading..."` alongside `accessibilityElementsHidden`, which hides the
+  // label along with the decorative boxes on iOS.
+  it("does not carry its own hidden Loading label", () => {
+    renderComponent(<CoachProScreen />);
+    expect(screen.queryByLabelText("Loading...")).toBeNull();
+  });
+
+  it("does not announce Loading synchronously, then announces it once after the delay", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      renderComponent(<CoachProScreen />);
+
+      expect(announceSpy).not.toHaveBeenCalledWith("Loading");
+
+      vi.advanceTimersByTime(500);
+
+      expect(announceSpy).toHaveBeenCalledExactlyOnceWith("Loading");
+    } finally {
+      announceSpy.mockRestore();
+    }
+  });
+
+  it("cancels the pending Loading announce if the screen unmounts before the delay elapses", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const { unmount } = renderComponent(<CoachProScreen />);
+      unmount();
+      vi.advanceTimersByTime(500);
+
+      expect(announceSpy).not.toHaveBeenCalledWith("Loading");
+    } finally {
+      announceSpy.mockRestore();
     }
   });
 });

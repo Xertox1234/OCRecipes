@@ -37,7 +37,11 @@ import { SwipeableRow } from "@/components/SwipeableRow";
 import { DraggableList } from "@/components/DraggableList";
 import { CalorieRing } from "@/components/CalorieRing";
 import { EmptyState } from "@/components/EmptyState";
-import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
+import {
+  SkeletonBox,
+  SkeletonLoadingRegion,
+  SkeletonProvider,
+} from "@/components/SkeletonLoader";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
 import { useTheme } from "@/hooks/useTheme";
@@ -854,6 +858,19 @@ export default function MealPlanHomeScreen() {
     }
   }, [budgetErrorNoData, isLoading, isLoadingError]);
 
+  // Tell screen-reader users the screen is loading. Delayed 500ms to match
+  // the modal-safe pattern (docs/solutions/conventions/on-open-announce-
+  // must-delay-past-modal-present-focus-shift-2026-06-25.md) even though
+  // this route isn't a modal — harmless here, and keeps the announce shape
+  // identical across every skeleton screen fixed alongside this one.
+  useEffect(() => {
+    if (!isLoading) return;
+    const timer = setTimeout(() => {
+      AccessibilityInfo.announceForAccessibility("Loading");
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [isLoading]);
+
   const dailyTotals = useMemo(() => {
     let calories = 0;
     let protein = 0;
@@ -1427,10 +1444,9 @@ export default function MealPlanHomeScreen() {
         ]}
       >
         <SkeletonProvider>
-          <View
+          <SkeletonLoadingRegion
             style={styles.skeletonContainer}
-            accessibilityLabel="Loading..."
-            accessibilityElementsHidden
+            testID="meal-plan-loading-skeleton"
           >
             <SkeletonBox width="60%" height={24} borderRadius={8} />
             <View style={{ height: Spacing.lg }} />
@@ -1443,7 +1459,7 @@ export default function MealPlanHomeScreen() {
                 <SkeletonBox width="100%" height={48} borderRadius={8} />
               </View>
             ))}
-          </View>
+          </SkeletonLoadingRegion>
         </SkeletonProvider>
       </View>
     );
