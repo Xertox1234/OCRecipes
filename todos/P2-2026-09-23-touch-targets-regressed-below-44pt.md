@@ -1,6 +1,6 @@
 ---
 title: "Touch targets regressed to 32–36pt on Scan, Label analysis, Recipe browser and Plan after the June AAA sweep"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23

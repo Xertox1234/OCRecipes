@@ -1528,3 +1528,135 @@ describe("MealSlotSection suggest accessibility action", () => {
     expect(onSuggest).toHaveBeenCalledWith("breakfast");
   });
 });
+
+// Regression coverage for todos/archive/P2-2026-09-23-touch-targets-regressed-below-44pt.md
+// (M13, 2026-09-23 front-end audit): the confirm (20pt icon + hitSlop 8 =
+// 36pt) and remove (16pt icon + hitSlop 8 = 32pt) Pressables on a meal-slot
+// row both fall below the 44pt platform minimum. Reuses this file's
+// `capturedPressables` mock-boundary capture (see the "MealSlotItem
+// accessibility actions" describe block above) rather than a DOM-based
+// assertion — the shared react-native mock's Pressable drops `style` before
+// rendering, so a rendered node can't reveal it either way.
+describe("MealSlotItem touch targets (P2-2026-09-23, M13)", () => {
+  function makeItem(
+    overrides: Record<string, unknown> = {},
+  ): MealPlanItemWithRelations {
+    return {
+      id: 7,
+      userId: "test-user",
+      recipeId: null,
+      scannedItemId: null,
+      plannedDate: "2026-09-02",
+      mealType: "breakfast",
+      servings: "1",
+      sortOrder: 0,
+      createdAt: new Date("2026-09-01T00:00:00Z"),
+      recipe: null,
+      scannedItem: null,
+      ...overrides,
+    } as MealPlanItemWithRelations;
+  }
+
+  beforeEach(() => {
+    capturedPressables.length = 0;
+  });
+
+  afterEach(() => cleanup());
+
+  function flattenStyle(
+    style: unknown,
+    pressed = false,
+  ): Record<string, unknown> {
+    if (typeof style === "function") {
+      return flattenStyle(
+        (style as (state: { pressed: boolean }) => unknown)({ pressed }),
+      );
+    }
+    if (Array.isArray(style)) {
+      return style.reduce(
+        (acc: Record<string, unknown>, s) => ({ ...acc, ...flattenStyle(s) }),
+        {},
+      );
+    }
+    return (style as Record<string, unknown> | null | undefined) ?? {};
+  }
+
+  function flattenHitSlop(hitSlop: unknown): {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  } {
+    if (typeof hitSlop === "number") {
+      return { top: hitSlop, bottom: hitSlop, left: hitSlop, right: hitSlop };
+    }
+    if (hitSlop && typeof hitSlop === "object") {
+      const h = hitSlop as Record<string, number>;
+      return {
+        top: h.top ?? 0,
+        bottom: h.bottom ?? 0,
+        left: h.left ?? 0,
+        right: h.right ?? 0,
+      };
+    }
+    return { top: 0, bottom: 0, left: 0, right: 0 };
+  }
+
+  /** visual box size (explicit width/height, or minWidth/minHeight, or the
+   * given fallback) PLUS hitSlop on each axis — hitSlop always adds to the
+   * visual box, it never gets shadowed by an explicit size. */
+  function effectiveTouchSize(
+    props: Record<string, unknown> | undefined,
+    fallbackVisualSize: number,
+  ): { width: number; height: number } {
+    const style = flattenStyle(props?.style);
+    const hitSlop = flattenHitSlop(props?.hitSlop);
+    const visualWidth =
+      typeof style.width === "number"
+        ? style.width
+        : typeof style.minWidth === "number"
+          ? style.minWidth
+          : fallbackVisualSize;
+    const visualHeight =
+      typeof style.height === "number"
+        ? style.height
+        : typeof style.minHeight === "number"
+          ? style.minHeight
+          : fallbackVisualSize;
+    return {
+      width: visualWidth + hitSlop.left + hitSlop.right,
+      height: visualHeight + hitSlop.top + hitSlop.bottom,
+    };
+  }
+
+  it("Confirm and Remove buttons both reach 44pt on both axes", () => {
+    renderComponent(
+      <MealSlotItem
+        item={makeItem()}
+        isConfirmed={false}
+        onPress={vi.fn()}
+        onRemove={vi.fn()}
+        onConfirm={vi.fn()}
+        canConfirm={true}
+      />,
+    );
+
+    const confirmProps = capturedPressables.find(
+      (p) => p.accessibilityLabel === "Confirm Item removed as eaten",
+    );
+    const removeProps = capturedPressables.find(
+      (p) => p.accessibilityLabel === "Remove Item removed",
+    );
+    expect(confirmProps, "confirm Pressable not captured").toBeDefined();
+    expect(removeProps, "remove Pressable not captured").toBeDefined();
+
+    // Feather "circle" (confirm) is rendered at size={20}; Feather "x"
+    // (remove) at size={16} — both from MealPlanHomeScreen.tsx's MealSlotItem.
+    const confirm = effectiveTouchSize(confirmProps, 20);
+    const remove = effectiveTouchSize(removeProps, 16);
+    expect(confirm.width).toBeGreaterThanOrEqual(44);
+    expect(confirm.height).toBeGreaterThanOrEqual(44);
+    expect(remove.width).toBeGreaterThanOrEqual(44);
+    expect(remove.height).toBeGreaterThanOrEqual(44);
+  });
+});

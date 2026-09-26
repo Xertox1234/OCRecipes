@@ -282,12 +282,17 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
       {item.source !== "spoonacular" && (
         <Pressable
           onPress={handleFavourite}
-          hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={
             isFavourited ? "Remove from favourites" : "Add to favourites"
           }
-          style={{ marginRight: Spacing.sm }}
+          style={{
+            width: 44,
+            height: 44,
+            justifyContent: "center",
+            alignItems: "center",
+            marginRight: Spacing.sm,
+          }}
         >
           <Ionicons
             name={isFavourited ? "heart" : "heart-outline"}

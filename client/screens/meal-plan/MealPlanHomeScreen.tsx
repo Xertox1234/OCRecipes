@@ -313,8 +313,13 @@ export const MealSlotItem = React.memo(function MealSlotItem({
       {canConfirm && (
         <Pressable
           onPress={() => !isConfirmed && onConfirm(item.id)}
-          hitSlop={8}
-          style={{ marginRight: Spacing.sm }}
+          style={{
+            width: 44,
+            height: 44,
+            justifyContent: "center",
+            alignItems: "center",
+            marginRight: Spacing.sm,
+          }}
           accessibilityRole="button"
           accessibilityLabel={
             isConfirmed ? `${name} confirmed` : `Confirm ${name} as eaten`
@@ -349,7 +354,12 @@ export const MealSlotItem = React.memo(function MealSlotItem({
       </View>
       <Pressable
         onPress={() => onRemove(item.id)}
-        hitSlop={8}
+        style={{
+          width: 44,
+          height: 44,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
         accessibilityRole="button"
         accessibilityLabel={`Remove ${name}`}
       >
