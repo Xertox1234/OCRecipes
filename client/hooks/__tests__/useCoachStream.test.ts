@@ -12,6 +12,7 @@ import {
   XHR_TIMEOUT_MS,
   type UseCoachStreamReturn,
 } from "../useCoachStream";
+import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 
 // ── Pure helper tests (no timers, no XHR) ────────────────────────
 
@@ -472,11 +473,14 @@ describe("useCoachStream guaranteed termination", () => {
   // double-fires while still ending with isStreaming === false.
 
   it("orders the ceilings: server SSE cap < inactivity < XHR timeout", () => {
-    // server/routes/chat.ts SSE_TIMEOUT_MS. The server sends its own
-    // `{ error: "Response timeout" }` at this cap, so on a live connection that
-    // graceful error must arrive before either client ceiling fires.
-    const SERVER_SSE_TIMEOUT_MS = 120_000;
-    expect(STREAM_INACTIVITY_MS).toBeGreaterThan(SERVER_SSE_TIMEOUT_MS);
+    // SSE_TIMEOUT_MS (server/routes/chat.ts's own cap) is imported from
+    // shared/constants/sse.ts, not hand-copied, so this assertion can't drift
+    // out of sync with the server value. The server sends its own
+    // `{ error: "Response timeout" }` at this cap, so on a live connection
+    // that graceful error must arrive before either client ceiling fires.
+    // STREAM_INACTIVITY_MS is derived from SSE_TIMEOUT_MS (see
+    // useCoachStream.ts), which pins the derivation's direction here.
+    expect(STREAM_INACTIVITY_MS).toBeGreaterThan(SSE_TIMEOUT_MS);
     expect(XHR_TIMEOUT_MS).toBeGreaterThan(STREAM_INACTIVITY_MS);
   });
 

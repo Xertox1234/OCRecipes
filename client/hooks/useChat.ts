@@ -8,6 +8,14 @@ import {
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { useCallback, useState, useRef } from "react";
+import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
+
+// Must exceed the server's SSE_TIMEOUT_MS (same route, server/routes/chat.ts):
+// the server arms its timer only after auth and the daily-limit write, so an
+// equal client timer fires first and the server's graceful
+// `{ error: "Response timeout" }` never arrives. Same 150s ceiling as
+// useCoachStream's XHR_TIMEOUT_MS; this hook has no inactivity watchdog.
+export const CHAT_XHR_TIMEOUT_MS = SSE_TIMEOUT_MS + 30_000;
 
 export interface ChatConversation {
   id: number;
@@ -267,7 +275,7 @@ export function useSendMessage(conversationId: number | null) {
           const xhr = new XMLHttpRequest();
           xhrRef.current = xhr;
           xhr.open("POST", url.href, true);
-          xhr.timeout = 120_000;
+          xhr.timeout = CHAT_XHR_TIMEOUT_MS;
           Object.entries(headers).forEach(([k, v]) =>
             xhr.setRequestHeader(k, v),
           );

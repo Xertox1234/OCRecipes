@@ -7,6 +7,7 @@ import {
   useUpdateNotebookEntry,
 } from "../useChat";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 
 const { mockApiRequest, mockGetApiUrl, mockTokenStorage } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
@@ -207,6 +208,22 @@ describe("useSendMessage", () => {
 
     expect(result.current.isStreaming).toBe(false);
     expect(result.current.requestError).toBe("Internal Server Error");
+  });
+
+  it("arms the XHR timeout above the server's SSE cap, so the server's graceful timeout arrives first", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+
+    await act(async () => {
+      const p = result.current.sendMessage("test");
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(xhrInstance.timeout).toBeGreaterThan(SSE_TIMEOUT_MS);
+      xhrInstance.simulateTimeout();
+      await p;
+    });
   });
 
   it("sets requestError on timeout", async () => {
