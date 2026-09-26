@@ -687,13 +687,19 @@ export default function HistoryScreen() {
   // Covers both skeleton render sites below (the dashboard early-return and
   // the full-history FlatList's ListEmptyComponent) — both key off this same
   // `isLoading` flag.
+  //
+  // Gated on !isError too: isLoading and isError key off two independent
+  // queries (client/hooks/useHistoryData.ts), so one can error while the
+  // other is still loading. Without this guard, a fast error could announce
+  // "Couldn't load..." and then, once this timer elapses, "Loading" — a
+  // stale announcement after the failure was already reported.
   useEffect(() => {
-    if (!isLoading) return;
+    if (!isLoading || isError) return;
     const timer = setTimeout(() => {
       AccessibilityInfo.announceForAccessibility("Loading");
     }, 500);
     return () => clearTimeout(timer);
-  }, [isLoading]);
+  }, [isLoading, isError]);
 
   // Offline transitions are announced by the always-mounted global OfflineBanner
   // (client/components/OfflineBanner.tsx) — iOS via announceForAccessibility,
