@@ -14,7 +14,7 @@ human_led: true
 
 ## Summary
 
-OCRecipes logs in with a username and password only. The user chose a minimum password length of 8 characters "with a second or even third factor" (2026-09-26). NIST SP 800-63B-4 allows 8 only when the password is part of multi-factor authentication, so this second factor is a prerequisite for that policy.
+OCRecipes logs in with a username and password only. The user chose to offer an 8-character password option "with a second or even third factor" (2026-09-26). NIST SP 800-63B-4 allows 8 only when the password is part of multi-factor authentication, so this second factor is a prerequisite for that policy.
 
 ## Background
 
@@ -39,6 +39,7 @@ Candidate factors, strongest and simplest first:
 - [x] **DECIDED by the user (2026-09-26): both an authenticator app (TOTP) and passkeys** are supported second factors. A user can enroll either or both. (A user-verifying passkey is itself multi-factor and phishing-resistant, so it could later also serve as a standalone passwordless login. That's optional and not part of this todo.)
 - [x] **DECIDED by the user (2026-09-26): the second factor is also required after a Google or Apple sign-in.** For an account with MFA enabled, a verified provider sign-in yields only the short-lived MFA-challenge token (the same one a correct password yields), never an access token, until our second factor passes. So a takeover of the Google/Apple account alone can't get in.
 - [x] **DECIDED by the user (2026-09-26): MFA is optional, tied to password length.** An account either has MFA (password minimum 8) or doesn't (password minimum 15); see the password-policy todo for the enforcement points: signup can't finish on the 8-character path without enrolling, disabling MFA requires a 15+ password, and existing short-password accounts are prompted at login to enroll or lengthen. Every account therefore meets SP 800-63B-4.
+- [ ] **Signup enrollment (8-character path):** the factor is enrolled during signup using its own restricted, short-lived token audience (like the MFA-challenge token), accepted only by the enrollment endpoints. **Never issue a normal access token "temporarily"** to let the user enroll.
 - [ ] Enrollment: set up the factor from the Profile/Settings screen after confirming the password, with one-time **recovery codes** issued at enrollment. Each code has at least 64 bits from a secure random generator, is stored hashed, is single-use and consumed atomically (a conditional `UPDATE`/`DELETE … RETURNING`, so two concurrent requests can't both redeem it), and is verification-throttled like any other authenticator. After each use the code is invalidated and **a replacement is issued**, and issuing it sends a notification (SP 800-63B-4, "Saved Recovery Codes"). Codes can also be regenerated on demand, which sends a notification too.
 - [ ] Login: after the password succeeds, an MFA challenge. The session token is issued only after the second factor passes; an intermediate "password verified" state must not work as an access token (use its own short-lived token audience, the same concern as the reset-token note in the account-recovery todo).
 - [ ] TOTP: verify with a small time-window tolerance. Reject replay by storing the last accepted time-step per authenticator and rejecting any step at or below it, updated atomically (a seen-code check fails once the window allows ±1 step). Encrypt the stored secret at rest. Count failed attempts against the challenge token as well as the account, and keep the password and TOTP failure counters separate. Passkey assertion failures count against the same per-authenticator limit (and the challenge token) as TOTP failures, and limit failed attempts per account (within Rev. 4's cap of 100 before disabling the authenticator; a much lower lockout or back-off is fine).
@@ -58,12 +59,12 @@ Candidate factors, strongest and simplest first:
 
 ## Risks
 
-- Mandatory MFA locks out users who lose their device, so recovery codes and a support path must exist before enforcing it.
+- MFA is optional, but it is effectively mandatory for accounts on the 8-character path, so losing a device can lock those users out. Recovery codes and a support path must exist before the 8-character path ships.
 - Passkeys need a new native build, so they can't ship by OTA.
 
 ## Dependencies
 
-- Prerequisite for the 8-character minimum in `P2-2026-09-26-password-length-policy.md`.
+- Prerequisite for the 8-character password option in `P2-2026-09-26-password-length-policy.md`.
 - Interacts with `P1-2026-09-26-no-password-reset-or-account-recovery.md` (reset flow and MFA).
 
 ## Updates
