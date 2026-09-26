@@ -10,6 +10,8 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { useParseFoodText, type ParsedFoodItem } from "@/hooks/useFoodParse";
 import { apiRequest } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { enqueue } from "@/lib/offline-queue";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import type { ScannedItem } from "@shared/schema";
@@ -29,6 +31,15 @@ export interface LogSummary {
 interface UseQuickLogSessionOptions {
   onLogSuccess?: (summary: LogSummary) => void;
   isOpen?: boolean;
+}
+
+// A free-tier 403 (PREMIUM_REQUIRED) is not a parse failure — retrying can
+// never succeed, so say what is actually wrong. Shared by both parse paths.
+function parseErrorMessage(err: unknown): string {
+  if (err instanceof ApiError && err.code === ErrorCode.PREMIUM_REQUIRED) {
+    return "Quick Log is a premium feature. Upgrade to log food by text or voice.";
+  }
+  return "Failed to parse food text. Please try again.";
 }
 
 interface PartialLogError extends Error {
@@ -118,10 +129,10 @@ export function useQuickLogSession({
           );
           haptics.notification(Haptics.NotificationFeedbackType.Success);
         },
-        onError: () => {
+        onError: (err) => {
           if (sessionEpochRef.current !== epoch) return;
           haptics.notification(Haptics.NotificationFeedbackType.Error);
-          setParseError("Failed to parse food text. Please try again.");
+          setParseError(parseErrorMessage(err));
         },
       });
     }
@@ -142,10 +153,10 @@ export function useQuickLogSession({
         );
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       },
-      onError: () => {
+      onError: (err) => {
         if (sessionEpochRef.current !== epoch) return;
         haptics.notification(Haptics.NotificationFeedbackType.Error);
-        setParseError("Failed to parse food text. Please try again.");
+        setParseError(parseErrorMessage(err));
       },
     });
   }, [inputText, isParsing, haptics, parseFoodTextMutate]);
