@@ -116,6 +116,9 @@ export function useCreateMealPlanRecipe() {
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
+    // Every call site (MealPlanHomeScreen, WizardShell, SimpleEntrySheet)
+    // already toasts/alerts on failure via a shared try/catch.
+    meta: { silentError: true },
   });
 }
 
@@ -158,6 +161,9 @@ export function useSaveCatalogRecipe() {
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
+    // Its one call site (CoachChat.handleConfirmPlanSlot) already
+    // toast.error()s on failure via its own try/catch.
+    meta: { silentError: true },
   });
 }
 
@@ -192,5 +198,8 @@ export function useParseRecipeFromUrl() {
       });
       return res.json();
     },
+    // Its one call site (RecipeImportScreen) already shows an inline error
+    // + retry on failure via its own try/catch.
+    meta: { silentError: true },
   });
 }

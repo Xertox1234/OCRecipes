@@ -56,7 +56,11 @@ export default function CoachProScreen() {
     isError: isContextError,
     refetch: refetchContext,
   } = useCoachContext(contextEnabled);
-  const { mutateAsync: createConversation } = useCreateConversation();
+  // CoachChat's own catch (handleSend) shows a visible streamingError on a
+  // creation failure — opt out so the global net doesn't double it.
+  const { mutateAsync: createConversation } = useCreateConversation({
+    silentError: true,
+  });
   const [conversationId, setConversationId] = useState<number | null>(null);
   const {
     data: coachConversations = [],

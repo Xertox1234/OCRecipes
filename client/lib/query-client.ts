@@ -1,6 +1,7 @@
 import {
   QueryClient,
   QueryCache,
+  MutationCache,
   QueryFunction,
   onlineManager,
   focusManager,
@@ -271,6 +272,43 @@ export function shouldSurfaceQueryError(
   return true;
 }
 
+/**
+ * Per-mutation opt-out flag. Set `meta: { silentError: true }` on a mutation
+ * whose call site already shows its own visible error (an `onError` with
+ * Alert/toast, a try/catch around `mutateAsync` that surfaces one, or an
+ * `isError`-driven inline error view), to suppress the global toast and
+ * avoid double-reporting the same failure. Mirrors `QueryErrorMeta`.
+ */
+export interface MutationErrorMeta extends Record<string, unknown> {
+  silentError?: boolean;
+}
+
+/**
+ * Decides whether a failed mutation should surface a global toast. Pure and
+ * exported so it can be unit-tested directly. Mirrors `shouldSurfaceQueryError`
+ * exactly — same two suppressed cases (an explicit opt-out, and 4xx client
+ * errors most call sites already branch on for a specific code).
+ */
+export function shouldSurfaceMutationError(
+  error: unknown,
+  meta: MutationErrorMeta | undefined,
+): boolean {
+  if (meta?.silentError === true) return false;
+  // A caller-initiated abort (useReceiptScan aborts on unmount and when a new
+  // scan supersedes the old one) is not a failure. TanStack calls the
+  // cache-level onError on any rejection, with no view of user-level aborts.
+  // RN's fetch rejects with a DOMException, so check `name`, not `instanceof`.
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { name?: unknown }).name === "AbortError"
+  ) {
+    return false;
+  }
+  if (error instanceof Error && /^4\d\d:/.test(error.message)) return false;
+  return true;
+}
+
 type QueryErrorListener = (message: string) => void;
 
 const queryErrorListeners = new Set<QueryErrorListener>();
@@ -296,17 +334,22 @@ const GLOBAL_QUERY_ERROR_MESSAGE =
 /**
  * Global error net for the TanStack Query client.
  *
- * Mutation policy (documented per the acceptance criteria): the global net is
- * scoped to **queries only**. Mutations keep their existing local `onError`
- * handlers — a cache-level `onError` fires _in addition to_ each observer's
- * local handler in TanStack Query v5, so a global mutation handler would
- * double-toast against the many existing mutation handlers. See
- * `docs/LEARNINGS.md` "mutate onError Missing cancelled Guard" for the local
- * mutation-handler convention.
+ * Mutation policy (reversed 2026-09-25 — was previously "queries only", see
+ * `docs/solutions/design-patterns/module-level-emitter-bridge-out-of-tree-to-toast-2026-05-28.md`
+ * and `docs/rules/client-state.md`): the net now covers mutations too. A
+ * cache-level `onError` fires _in addition to_ each observer's local
+ * handler in TanStack Query v5 for BOTH queries and mutations, so every
+ * existing `useMutation` in the app was audited and any call site that
+ * already shows its own visible error (an `onError` with Alert/toast, a
+ * try/catch around `mutateAsync`, or an `isError`-driven inline view) was
+ * given `meta: { silentError: true }` (see `MutationErrorMeta` above) to
+ * avoid double-toasting. A mutation with no prior visible handling gets the
+ * backstop toast for the first time — that is the fix this net exists for,
+ * not a regression.
  *
  * Dedup is free: `ToastProvider.show` replaces the toast list (`setToasts([...])`)
- * rather than appending, so an offline storm of failing queries collapses to a
- * single visible toast. Do not reintroduce a queue here.
+ * rather than appending, so an offline storm of failing queries/mutations
+ * collapses to a single visible toast. Do not reintroduce a queue here.
  */
 const queryCache = new QueryCache({
   onError: (error, query) => {
@@ -318,8 +361,30 @@ const queryCache = new QueryCache({
   },
 });
 
+const GLOBAL_MUTATION_ERROR_MESSAGE = "Something went wrong. Please try again.";
+
+/**
+ * Global error net for mutations — the mutation-side counterpart to
+ * `queryCache` above. Reuses the same listener set / toast bridge
+ * (`queryErrorListeners`/`subscribeToQueryErrors`) rather than a second
+ * emitter, since both ultimately just need to show one toast.
+ */
+const mutationCache = new MutationCache({
+  onError: (error, _variables, _onMutateResult, mutation) => {
+    if (!shouldSurfaceMutationError(error, mutation.meta)) return;
+    reportError(
+      error,
+      `MutationCache.onError [${String(mutation.options.mutationKey ?? mutation.mutationId)}]`,
+    );
+    queryErrorListeners.forEach((listener) => {
+      listener(GLOBAL_MUTATION_ERROR_MESSAGE);
+    });
+  },
+});
+
 export const queryClient = new QueryClient({
   queryCache,
+  mutationCache,
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),

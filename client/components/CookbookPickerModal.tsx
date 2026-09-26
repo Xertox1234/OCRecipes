@@ -61,7 +61,11 @@ export function CookbookPickerModal({
   const { mutate: addRecipeMutate, isPending: isAdding } =
     useAddRecipeToCookbook();
   const isFavourited = useIsRecipeFavourited(recipeId, recipeType);
-  const { mutate: toggleFavouriteMutate } = useToggleFavouriteRecipe();
+  // handleSaveToFavourites' own onError below already shows an Alert for a
+  // generic failure — opt out so the global net doesn't double it.
+  const { mutate: toggleFavouriteMutate } = useToggleFavouriteRecipe({
+    silentError: true,
+  });
 
   const [showNewInput, setShowNewInput] = useState(false);
   const [newName, setNewName] = useState("");

@@ -10,24 +10,29 @@ import {
   filterValidBlocks,
 } from "@/components/coach/coach-chat-utils";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 
 // Exported so tests can import and verify against them
 export const HOLD_GATE_MS = 700;
 export const DRAIN_INTERVAL_MS = 50;
 export const CHARS_PER_TICK = 20;
 
-// Termination ceilings. Order: server SSE_TIMEOUT_MS (120s,
-// server/routes/chat.ts) < STREAM_INACTIVITY_MS < XHR_TIMEOUT_MS.
-// The server sends its own `{ error: "Response timeout" }` at 120s, so on a
-// live connection that graceful error always arrives first; these fire only
-// on a dead or half-open one. The inactivity window can't be shorter:
-// Coach Pro flushes tool-status labels only with the next content chunk, so a
-// multi-round tool turn is legitimately silent on the wire for up to the whole
-// server budget (5 tool calls, each a 30s-capped OpenAI call).
-export const STREAM_INACTIVITY_MS = 125_000;
+// Termination ceilings. Order: server SSE_TIMEOUT_MS (shared/constants/sse.ts,
+// enforced by server/routes/chat.ts) < STREAM_INACTIVITY_MS < XHR_TIMEOUT_MS.
+// The server sends its own `{ error: "Response timeout" }` at SSE_TIMEOUT_MS,
+// so on a live connection that graceful error always arrives first; these
+// fire only on a dead or half-open one. Coach Pro now flushes a status event
+// immediately when a tool round is detected — before the tools run — instead
+// of deferring it to the next content chunk (see
+// todos/archive/P3-2026-09-25-coach-pro-flush-tool-status-immediately.md), so
+// a multi-round tool turn is no longer silent for the whole server budget.
+// This constant is kept at the server budget anyway: tool execution itself
+// has no explicit per-call timeout, so the wire can still legitimately go
+// quiet for longer than a single OpenAI call's cap while a slow tool runs.
+export const STREAM_INACTIVITY_MS = SSE_TIMEOUT_MS + 5_000;
 // A backstop in case the JS timer is starved. On Android, xhr.timeout is an
 // OkHttp total-call cap, not an idle one.
-export const XHR_TIMEOUT_MS = 150_000;
+export const XHR_TIMEOUT_MS = STREAM_INACTIVITY_MS + 25_000;
 
 /**
  * Pure helper — returns the slice of buffer to release this drain tick.

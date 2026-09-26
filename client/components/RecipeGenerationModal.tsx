@@ -106,6 +106,9 @@ export function RecipeGenerationModal({
         );
       }
     },
+    // The error banner below (driven by `generateMutation.isError`) already
+    // shows a visible error.
+    meta: { silentError: true },
   });
 
   const handleGenerate = useCallback(() => {

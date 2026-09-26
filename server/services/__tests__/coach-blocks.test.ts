@@ -108,6 +108,28 @@ describe("Coach Blocks Service", () => {
     );
   });
 
+  it("forbids markdown images and links in prose and names recipes instead", () => {
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(
+      /never put a recipe image or link in your prose/i,
+    );
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(/refer to a recipe by its name/i);
+  });
+
+  // search_recipes returns no calories/protein/prep time, and recipe_card
+  // requires all three: steering every search hit into a card would make the
+  // model invent nutrition numbers in an authoritative-looking card.
+  it("allows a recipe_card only when real calories, protein and prep time came from a tool", () => {
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(
+      /recipe_card only when you have real calories, protein and prep time/i,
+    );
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(
+      /search_recipes does not return calories or protein/i,
+    );
+    expect(BLOCKS_SYSTEM_PROMPT).not.toMatch(
+      /Present each recipe from that result as a recipe_card/,
+    );
+  });
+
   it("parses both fences when content contains two coach_blocks fences", () => {
     const content = `Here is chart one.\n\`\`\`coach_blocks\n[{"type":"quick_replies","options":[{"label":"Yes","message":"yes"}]}]\n\`\`\`\nAnd here is another.\n\`\`\`coach_blocks\n[{"type":"quick_replies","options":[{"label":"No","message":"no"}]}]\n\`\`\``;
     const result = parseBlocksFromContent(content);

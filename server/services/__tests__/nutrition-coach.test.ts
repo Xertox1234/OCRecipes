@@ -4,7 +4,7 @@ import {
   generateCoachResponse,
   SAFETY_OVERRIDE_SENTINEL,
 } from "../nutrition-coach";
-import type { CoachContext } from "../nutrition-coach";
+import type { CoachContext, CoachProChunk } from "../nutrition-coach";
 import { openai } from "../../lib/openai";
 import { executeToolCall } from "../coach-tools";
 import {
@@ -52,13 +52,18 @@ vi.mock("../../lib/ai-safety", () => ({
   SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
 }));
 
+// A hoisted singleton (not a per-call factory return) — `nutrition-coach.ts`
+// calls `createServiceLogger("nutrition-coach")` once at module load, so
+// tests need a stable reference to assert on `mockLog.error`/`mockLog.debug`.
+const mockLog = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+
 vi.mock("../../lib/logger", () => ({
-  createServiceLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
+  createServiceLogger: () => mockLog,
   toError: (e: unknown) => (e instanceof Error ? e : new Error(String(e))),
 }));
 
@@ -111,11 +116,24 @@ function createMockStream(
   };
 }
 
-/** Collect all yielded chunks from an async generator into a single string. */
-async function collectStream(gen: AsyncGenerator<string>): Promise<string> {
+/**
+ * Collect all yielded chunks from an async generator into a single string.
+ * Accepts either generateCoachResponse's plain-string stream or
+ * generateCoachProResponse's CoachProChunk stream — a tool_calls chunk
+ * contributes nothing to the concatenated result, matching what the caller
+ * would forward to the client as text.
+ */
+async function collectStream(
+  gen: AsyncGenerator<string> | AsyncGenerator<CoachProChunk>,
+): Promise<string> {
   let result = "";
   for await (const chunk of gen) {
-    result += chunk;
+    result +=
+      typeof chunk === "string"
+        ? chunk
+        : chunk.type === "content"
+          ? chunk.content
+          : "";
   }
   return result;
 }
@@ -217,6 +235,70 @@ describe("generateCoachProResponse", () => {
       generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
     );
 
+    expect(result).toBe("Chicken has 165 calories.");
+    expect(executeToolCall).toHaveBeenCalledWith(
+      "lookup_nutrition",
+      { query: "chicken" },
+      "user-1",
+      undefined,
+      "UTC",
+    );
+  });
+
+  it("yields a tool_calls chunk before the tools run, not deferred to the next content chunk", async () => {
+    const toolCallStream = createMockStream([
+      {
+        tool_calls: [
+          {
+            index: 0,
+            id: "call_abc",
+            function: {
+              name: "lookup_nutrition",
+              arguments: '{"query":"chicken"}',
+            },
+          },
+        ],
+      },
+      { finish_reason: "tool_calls" },
+    ]);
+    const textStream = createMockStream([
+      { content: "Chicken has 165 calories." },
+      { finish_reason: "stop" },
+    ]);
+
+    vi.mocked(openai.chat.completions.create)
+      .mockResolvedValueOnce(toolCallStream as any)
+      .mockResolvedValueOnce(textStream as any);
+
+    // Resolves only when the test lets it, so we can assert on the state of
+    // the generator's iteration BEFORE the tool call has actually settled.
+    let resolveToolCall!: (value: { name: string; calories: number }) => void;
+    vi.mocked(executeToolCall).mockReturnValue(
+      new Promise((resolve) => {
+        resolveToolCall = resolve;
+      }),
+    );
+
+    const messages = [
+      { role: "user" as const, content: "How many calories in chicken?" },
+    ];
+    const gen = generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1");
+
+    const first = await gen.next();
+    expect(first.done).toBe(false);
+    expect(first.value).toEqual({
+      type: "tool_calls",
+      toolNames: ["lookup_nutrition"],
+    });
+    // The tool_calls chunk was yielded — the tool itself must not have run yet.
+    expect(executeToolCall).not.toHaveBeenCalled();
+
+    // Now let the tool call resolve and drain the rest of the generator.
+    resolveToolCall({ name: "chicken", calories: 165 });
+    let result = "";
+    for await (const chunk of gen) {
+      if (chunk.type === "content") result += chunk.content;
+    }
     expect(result).toBe("Chicken has 165 calories.");
     expect(executeToolCall).toHaveBeenCalledWith(
       "lookup_nutrition",
@@ -472,6 +554,60 @@ describe("generateCoachProResponse", () => {
     expect(result).toBe(
       "Sorry, I'm having trouble responding right now. Please try again.",
     );
+    // Control: a real (non-abort) failure still logs at ERROR.
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach pro API error",
+    );
+  });
+
+  // Production always passes a live signal, so the control must too (see the
+  // free-tier equivalent).
+  it("still logs a real API failure at ERROR when a live, never-aborted signal is passed", async () => {
+    vi.mocked(openai.chat.completions.create).mockRejectedValue(
+      new Error("API down"),
+    );
+    const controller = new AbortController();
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    await collectStream(
+      generateCoachProResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        "user-1",
+        controller.signal,
+      ),
+    );
+
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach pro API error",
+    );
+  });
+
+  it("does not log at ERROR and yields nothing when the API call is aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    vi.mocked(openai.chat.completions.create).mockRejectedValue(
+      new Error("This operation was aborted"),
+    );
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    const result = await collectStream(
+      generateCoachProResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        "user-1",
+        controller.signal,
+      ),
+    );
+
+    expect(result).toBe("");
+    expect(mockLog.error).not.toHaveBeenCalled();
+    expect(mockLog.debug).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach pro stream aborted",
+    );
   });
 
   it("yields error message without partial content when streaming throws mid-stream", async () => {
@@ -506,13 +642,77 @@ describe("generateCoachProResponse", () => {
 
     const messages = [{ role: "user" as const, content: "Hello" }];
     const result = await collectStream(
-      generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
+      generateCoachProResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        "user-1",
+        // Live, never-aborted signal, as production always passes one.
+        new AbortController().signal,
+      ),
     );
 
     expect(result).toBe(
       "Sorry, the response was interrupted. Please try again.",
     );
     expect(result).not.toContain("Partial response");
+    // Control: a real (non-abort) mid-stream failure still logs at ERROR.
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach pro streaming error",
+    );
+  });
+
+  it("does not log at ERROR and yields no partial content when the stream is aborted mid-stream", async () => {
+    const controller = new AbortController();
+    const abortedStream = {
+      [Symbol.asyncIterator]() {
+        let count = 0;
+        return {
+          async next() {
+            count++;
+            if (count === 1) {
+              return {
+                done: false,
+                value: {
+                  choices: [
+                    {
+                      delta: { content: "Partial response" },
+                      finish_reason: null,
+                    },
+                  ],
+                },
+              };
+            }
+            controller.abort();
+            throw new Error("This operation was aborted");
+          },
+        };
+      },
+    };
+
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      abortedStream as any,
+    );
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    const result = await collectStream(
+      generateCoachProResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        "user-1",
+        controller.signal,
+      ),
+    );
+
+    // `contentInThisRound` is only yielded AFTER the streaming loop — the
+    // mid-loop throw skips that yield entirely, so "Partial response" was
+    // never sent to the caller even before this todo.
+    expect(result).toBe("");
+    expect(mockLog.error).not.toHaveBeenCalled();
+    expect(mockLog.debug).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach pro stream aborted",
+    );
   });
 
   it("handles parallel tool calls via Promise.allSettled", async () => {
@@ -766,6 +966,146 @@ describe("generateCoachResponse", () => {
     expect(result).toBe(
       "Sorry, I'm having trouble responding right now. Please try again.",
     );
+    // Control: a real (non-abort) failure still logs at ERROR.
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach API error",
+    );
+  });
+
+  // Production always passes a live signal (abortController.signal), so the
+  // control must too: a regression to a bare `if (abortSignal)` presence check
+  // would otherwise pass while hiding every real failure.
+  it("still logs a real API failure at ERROR when a live, never-aborted signal is passed", async () => {
+    vi.mocked(openai.chat.completions.create).mockRejectedValue(
+      new Error("API down"),
+    );
+    const controller = new AbortController();
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    await collectStream(
+      generateCoachResponse(messages, DEFAULT_CONTEXT, controller.signal),
+    );
+
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach API error",
+    );
+  });
+
+  it("does not log at ERROR and yields nothing when the API call is aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    vi.mocked(openai.chat.completions.create).mockRejectedValue(
+      new Error("This operation was aborted"),
+    );
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    const result = await collectStream(
+      generateCoachResponse(messages, DEFAULT_CONTEXT, controller.signal),
+    );
+
+    expect(result).toBe("");
+    expect(mockLog.error).not.toHaveBeenCalled();
+    expect(mockLog.debug).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach stream aborted",
+    );
+  });
+
+  it("yields the interrupted message after already-delivered partial content when streaming throws mid-stream", async () => {
+    const errorStream = {
+      [Symbol.asyncIterator]() {
+        let count = 0;
+        return {
+          async next() {
+            count++;
+            if (count === 1) {
+              return {
+                done: false,
+                value: {
+                  choices: [
+                    { delta: { content: "Partial " }, finish_reason: null },
+                  ],
+                },
+              };
+            }
+            throw new Error("Stream interrupted");
+          },
+        };
+      },
+    };
+
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      errorStream as any,
+    );
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    const result = await collectStream(
+      generateCoachResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        // Live, never-aborted signal, as production always passes one.
+        new AbortController().signal,
+      ),
+    );
+
+    // Unlike Pro, the free-tier generator yields each delta as it arrives
+    // (not after the loop), so content streamed before the throw is already
+    // in the caller's buffer.
+    expect(result).toBe(
+      "Partial Sorry, the response was interrupted. Please try again.",
+    );
+    // Control: a real (non-abort) mid-stream failure still logs at ERROR.
+    expect(mockLog.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach streaming error",
+    );
+  });
+
+  it("does not log at ERROR and skips the interrupted-message yield when the stream is aborted mid-stream", async () => {
+    const controller = new AbortController();
+    const abortedStream = {
+      [Symbol.asyncIterator]() {
+        let count = 0;
+        return {
+          async next() {
+            count++;
+            if (count === 1) {
+              return {
+                done: false,
+                value: {
+                  choices: [
+                    { delta: { content: "Partial " }, finish_reason: null },
+                  ],
+                },
+              };
+            }
+            controller.abort();
+            throw new Error("This operation was aborted");
+          },
+        };
+      },
+    };
+
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      abortedStream as any,
+    );
+
+    const messages = [{ role: "user" as const, content: "Hello" }];
+    const result = await collectStream(
+      generateCoachResponse(messages, DEFAULT_CONTEXT, controller.signal),
+    );
+
+    // Content already streamed before the abort stays delivered; only the
+    // interrupted-message yield is skipped (the route breaks on
+    // `isAborted()` before it would ever reach the client anyway).
+    expect(result).toBe("Partial ");
+    expect(mockLog.error).not.toHaveBeenCalled();
+    expect(mockLog.debug).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      "coach stream aborted",
+    );
   });
 
   it("does not stream unsafe final content before the safety fallback", async () => {
@@ -914,6 +1254,23 @@ describe("Pro tier prompt differentiation", () => {
     expect(prompt).not.toContain("advice builds week over week");
     expect(prompt).not.toContain("Last week you mentioned");
     expect(prompt).not.toContain("inline_chart");
+  });
+
+  it("tells the model never to write markdown images or links, in both tiers", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(
+      generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
+    );
+    expect(capturedSystemPrompt()).toContain("Never write markdown images");
+
+    vi.mocked(openai.chat.completions.create).mockClear();
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+    expect(capturedSystemPrompt()).toContain("Never write markdown images");
   });
 
   it("renders the tool-confirm instruction only for the tool-bearing Pro tier", async () => {
@@ -1232,7 +1589,6 @@ describe("current time rendering", () => {
         undefined,
         undefined,
         undefined,
-        undefined,
         "America/Los_Angeles",
       ),
     );
@@ -1275,7 +1631,6 @@ describe("current time rendering", () => {
         messages,
         DEFAULT_CONTEXT,
         "user-1",
-        undefined,
         undefined,
         undefined,
         undefined,

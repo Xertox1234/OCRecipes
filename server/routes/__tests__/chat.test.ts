@@ -550,8 +550,8 @@ describe("Chat Routes", () => {
 
       // Mock an async generator yielding chunks
       async function* fakeStream() {
-        yield "Hello ";
-        yield "world!";
+        yield { type: "content" as const, content: "Hello " };
+        yield { type: "content" as const, content: "world!" };
       }
       vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
 
@@ -582,7 +582,7 @@ describe("Chat Routes", () => {
       mockStreamingSetup();
 
       async function* errorStream() {
-        yield "Partial";
+        yield { type: "content" as const, content: "Partial" };
         throw new Error("AI crash");
       }
       vi.mocked(generateCoachProResponse).mockReturnValue(errorStream());
@@ -601,7 +601,7 @@ describe("Chat Routes", () => {
       mockStreamingSetup();
 
       async function* hugeStream() {
-        yield "x".repeat(60 * 1024);
+        yield { type: "content" as const, content: "x".repeat(60 * 1024) };
       }
       vi.mocked(generateCoachProResponse).mockReturnValue(hugeStream());
 
@@ -621,7 +621,7 @@ describe("Chat Routes", () => {
         createMockUser({ dailyCalorieGoal: null }),
       );
       async function* emptyStream() {
-        yield "Ok";
+        yield { type: "content" as const, content: "Ok" };
       }
       vi.mocked(generateCoachProResponse).mockReturnValue(emptyStream());
 
@@ -814,8 +814,8 @@ describe("Chat Routes", () => {
         setupDisconnect();
         vi.mocked(generateCoachProResponse).mockImplementation(
           async function* (_h, _c, _u, signal) {
-            yield "Eat more ";
-            yield "protein.";
+            yield { type: "content" as const, content: "Eat more " };
+            yield { type: "content" as const, content: "protein." };
             await untilAborted(signal!);
             throw Object.assign(new Error("Request was aborted."), {
               name: "AbortError",
@@ -836,7 +836,10 @@ describe("Chat Routes", () => {
         setupDisconnect();
         vi.mocked(generateCoachProResponse).mockImplementation(
           async function* (_h, _c, _u, signal) {
-            yield 'Try this:\n```coach_blocks\n[{"type":';
+            yield {
+              type: "content" as const,
+              content: 'Try this:\n```coach_blocks\n[{"type":',
+            };
             await untilAborted(signal!);
           },
         );
@@ -851,7 +854,10 @@ describe("Chat Routes", () => {
         setupDisconnect();
         vi.mocked(generateCoachProResponse).mockImplementation(
           async function* (_h, _c, _u, signal) {
-            yield '```coach_blocks\n[{"type":';
+            yield {
+              type: "content" as const,
+              content: '```coach_blocks\n[{"type":',
+            };
             await untilAborted(signal!);
           },
         );
@@ -896,7 +902,7 @@ describe("Chat Routes", () => {
         vi.mocked(generateCoachProResponse).mockImplementation(
           async function* (_h, _c, _u, signal) {
             capturedSignal = signal;
-            yield "Full answer.";
+            yield { type: "content" as const, content: "Full answer." };
           },
         );
         // The service's own write lands, and only then does the close
@@ -928,7 +934,7 @@ describe("Chat Routes", () => {
         setupDisconnect();
         vi.mocked(generateCoachProResponse).mockImplementation(
           async function* () {
-            yield "All done.";
+            yield { type: "content" as const, content: "All done." };
           },
         );
 

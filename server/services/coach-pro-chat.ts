@@ -760,29 +760,31 @@ export async function* handleCoachChat(
       }
     }
   } else if (isCoachPro) {
-    const pendingStatusLabels: string[] = [];
     for await (const chunk of generateCoachProResponse(
       messageHistory,
       context,
       userId,
       abortSignal,
-      (toolNames) => {
-        for (const name of toolNames) {
-          pendingStatusLabels.push(getToolStatusLabel(name));
-        }
-      },
       profile,
       // Reuse the intent classified once at the top of the turn — skips a
       // redundant classifyIntent call inside the generator.
       intent,
       tz,
     )) {
-      for (const label of pendingStatusLabels.splice(0)) {
-        if (!isAborted()) yield { type: "status", label };
+      if (chunk.type === "tool_calls") {
+        // Yielded immediately when the tools are detected, before they run —
+        // surface the status event on the wire now instead of waiting for
+        // the next content chunk.
+        for (const name of chunk.toolNames) {
+          if (!isAborted())
+            yield { type: "status", label: getToolStatusLabel(name) };
+        }
+        if (isAborted()) break;
+        continue;
       }
       if (isAborted()) break;
-      fullResponse += chunk;
-      yield { type: "content", content: chunk };
+      fullResponse += chunk.content;
+      yield { type: "content", content: chunk.content };
     }
   } else {
     for await (const chunk of generateCoachResponse(

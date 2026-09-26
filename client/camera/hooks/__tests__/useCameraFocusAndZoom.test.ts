@@ -14,7 +14,10 @@ import { logger } from "@/lib/logger";
 // module-scope declarations.
 const captured = vi.hoisted(() => ({
   tapEnd: undefined as ((e: { x: number; y: number }) => void) | undefined,
+  pinchBegin: undefined as (() => void) | undefined,
+  pinchStart: undefined as (() => void) | undefined,
   pinchUpdate: undefined as ((e: { scale: number }) => void) | undefined,
+  pinchFinalize: undefined as (() => void) | undefined,
 }));
 
 vi.mock("react-native-gesture-handler", () => {
@@ -25,11 +28,20 @@ vi.mock("react-native-gesture-handler", () => {
     }
   }
   class PinchMock {
-    onStart() {
+    onBegin(cb: () => void) {
+      captured.pinchBegin = cb;
+      return this;
+    }
+    onStart(cb: () => void) {
+      captured.pinchStart = cb;
       return this;
     }
     onUpdate(cb: (e: { scale: number }) => void) {
       captured.pinchUpdate = cb;
+      return this;
+    }
+    onFinalize(cb: () => void) {
+      captured.pinchFinalize = cb;
       return this;
     }
   }
@@ -41,6 +53,32 @@ vi.mock("react-native-gesture-handler", () => {
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
+
+// The global react-native-reanimated mock (test/mocks/react-native-reanimated.ts)
+// returns a fresh, non-persistent { value } object from useSharedValue on every
+// render — fine for tests that only assert call counts, but the per-frame
+// pinch-zoom gating below (lastAppliedZoom/lastZoomLabelText) depends on those
+// shared values surviving across re-renders. Ref-backed inline mock per
+// docs/legacy-patterns/testing.md -> "Stateful Animation Mock Pattern"
+// (canonical example: useScrollLinkedHeader.test.ts). vitest.config.mts
+// aliases "react-native-worklets" to the same physical mock file as
+// "react-native-reanimated", so this override also intercepts this hook's
+// `import { scheduleOnRN } from "react-native-worklets"`.
+vi.mock("react-native-reanimated", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- mock needs synchronous require
+  const { useRef } = require("react");
+  return {
+    useSharedValue: <T>(initial: T) => {
+      const ref = useRef(null as { value: T } | null);
+      if (ref.current === null) {
+        ref.current = { value: initial };
+      }
+      return ref.current;
+    },
+    scheduleOnRN: (fn: (...args: unknown[]) => unknown, ...args: unknown[]) =>
+      fn(...args),
+  };
+});
 
 // Only the metering flags and zoom range are read by the SUT; the real
 // CameraDevice is a native HybridObject with ~60 members.
@@ -82,6 +120,29 @@ async function pinch(scale: number) {
   });
 }
 
+async function startPinch() {
+  // A real pinch passes through onBegin before onStart.
+  await act(async () => {
+    captured.pinchBegin?.();
+    captured.pinchStart?.();
+  });
+}
+
+// What a single-finger tap looks like to the pinch recognizer on Android
+// (PinchGestureHandler.kt): begin, then fail — onFinalize without onStart.
+async function tapThroughPinch() {
+  await act(async () => {
+    captured.pinchBegin?.();
+    captured.pinchFinalize?.();
+  });
+}
+
+async function endPinch() {
+  await act(async () => {
+    captured.pinchFinalize?.();
+  });
+}
+
 function mount(
   focusTo: CameraRef["focusTo"],
   device: CameraDevice | undefined,
@@ -100,7 +161,10 @@ describe("useCameraFocusAndZoom", () => {
 
   beforeEach(() => {
     captured.tapEnd = undefined;
+    captured.pinchBegin = undefined;
+    captured.pinchStart = undefined;
     captured.pinchUpdate = undefined;
+    captured.pinchFinalize = undefined;
     vi.mocked(logger.error).mockClear();
     // Platform.OS is a plain string property, not a function — assign directly.
     RN.Platform.OS = "ios";
@@ -285,6 +349,191 @@ describe("useCameraFocusAndZoom", () => {
       expect(vi.mocked(logger.error).mock.calls[1][1]).toMatchObject({
         message: "persistent zoom failure",
       });
+    });
+  });
+
+  describe("pinch-to-zoom — per-frame bridge call gating", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("applies setZoom only once the value moves past the epsilon", async () => {
+      const setZoom = vi.fn().mockResolvedValue(undefined);
+      mount(vi.fn().mockResolvedValue(undefined), makeDevice(), setZoom);
+
+      await pinch(1.5);
+      expect(setZoom).toHaveBeenCalledTimes(1);
+      expect(setZoom).toHaveBeenLastCalledWith(1.5);
+
+      // 0.005 delta from the last APPLIED value (1.5) — below the epsilon.
+      await pinch(1.505);
+      expect(setZoom).toHaveBeenCalledTimes(1);
+
+      // 0.03 delta from the last applied value — crosses it.
+      await pinch(1.53);
+      expect(setZoom).toHaveBeenCalledTimes(2);
+      expect(setZoom).toHaveBeenLastCalledWith(1.53);
+    });
+
+    it("keeps the zoom label visible for the whole gesture and hides it ~600ms after the gesture ends", async () => {
+      const { result } = mount(
+        vi.fn().mockResolvedValue(undefined),
+        makeDevice(),
+      );
+
+      await startPinch();
+      await pinch(1.5);
+      expect(result.current.zoomLabel).toBe("1.5x");
+
+      // Fingers held steady in one displayed bucket well past 600ms: the
+      // gated frames send nothing to JS, and the label must NOT fade mid-pinch.
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+      });
+      await pinch(1.53);
+      expect(result.current.zoomLabel).toBe("1.5x");
+
+      await endPinch();
+      await act(async () => {
+        vi.advanceTimersByTime(599);
+      });
+      expect(result.current.zoomLabel).toBe("1.5x");
+      await act(async () => {
+        vi.advanceTimersByTime(2);
+      });
+      expect(result.current.zoomLabel).toBeNull();
+    });
+
+    it("applies the final zoom when the gesture ends, even if the last frame was within the epsilon", async () => {
+      const setZoom = vi.fn().mockResolvedValue(undefined);
+      mount(vi.fn().mockResolvedValue(undefined), makeDevice(), setZoom);
+
+      await startPinch();
+      await pinch(1.5);
+      await pinch(1.505); // below the epsilon: not sent mid-gesture
+      expect(setZoom).toHaveBeenCalledTimes(1);
+
+      await endPinch();
+      expect(setZoom).toHaveBeenCalledTimes(2);
+      expect(setZoom).toHaveBeenLastCalledWith(1.505);
+    });
+
+    it("does nothing when a tap drives the pinch recognizer through begin and finalize without activating it", async () => {
+      const setZoom = vi.fn().mockResolvedValue(undefined);
+      const { result } = mount(
+        vi.fn().mockResolvedValue(undefined),
+        makeDevice(),
+        setZoom,
+      );
+
+      await startPinch();
+      await pinch(1.5);
+      await endPinch();
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+      });
+      expect(result.current.zoomLabel).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+
+      await tapThroughPinch();
+
+      // No re-armed hide timer and no extra setZoom for a gesture that never
+      // activated.
+      expect(vi.getTimerCount()).toBe(0);
+      expect(setZoom).toHaveBeenCalledTimes(1);
+    });
+
+    // iOS: UIPinchGestureRecognizer goes .possible -> .failed for a one-finger
+    // tap, so onFinalize arrives with NO onBegin before it.
+    it("does nothing when onFinalize arrives with no onBegin at all (iOS failed attempt)", async () => {
+      const setZoom = vi.fn().mockResolvedValue(undefined);
+      mount(vi.fn().mockResolvedValue(undefined), makeDevice(), setZoom);
+
+      await startPinch();
+      await pinch(1.5);
+      await endPinch();
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+      });
+      expect(vi.getTimerCount()).toBe(0);
+
+      await endPinch(); // bare onFinalize
+
+      expect(vi.getTimerCount()).toBe(0);
+      expect(setZoom).toHaveBeenCalledTimes(1);
+    });
+
+    it("sends nothing extra at gesture end when the last value was already applied, or the pinch never moved", async () => {
+      const setZoom = vi.fn().mockResolvedValue(undefined);
+      const { result } = mount(
+        vi.fn().mockResolvedValue(undefined),
+        makeDevice(),
+        setZoom,
+      );
+
+      await startPinch();
+      await endPinch(); // no update frames at all
+      expect(setZoom).not.toHaveBeenCalled();
+      expect(result.current.zoomLabel).toBeNull();
+
+      await startPinch();
+      await pinch(1.5);
+      await endPinch();
+      expect(setZoom).toHaveBeenCalledTimes(1);
+    });
+
+    it("cancels the previous pinch's pending hide when a new pinch starts before it fires", async () => {
+      const { result } = mount(
+        vi.fn().mockResolvedValue(undefined),
+        makeDevice(),
+      );
+
+      await startPinch();
+      await pinch(1.5);
+      await endPinch(); // arms the 600ms hide
+      await act(async () => {
+        vi.advanceTimersByTime(300);
+      });
+
+      await startPinch(); // baseline 1.5
+      await pinch(1.2); // 1.5 * 1.2 = 1.8 -> "1.8x"
+      await act(async () => {
+        vi.advanceTimersByTime(400); // past the FIRST pinch's hide deadline
+      });
+      expect(result.current.zoomLabel).toBe("1.8x");
+
+      await endPinch();
+      await act(async () => {
+        vi.advanceTimersByTime(601);
+      });
+      expect(result.current.zoomLabel).toBeNull();
+    });
+
+    it("shows the zoom label again at the start of a new gesture even when it ends in the same displayed bucket", async () => {
+      const { result } = mount(
+        vi.fn().mockResolvedValue(undefined),
+        makeDevice(),
+      );
+
+      await startPinch();
+      await pinch(1.5);
+      expect(result.current.zoomLabel).toBe("1.5x");
+
+      await endPinch();
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+      });
+      expect(result.current.zoomLabel).toBeNull();
+
+      // Second gesture's first frame lands on the exact same displayed zoom
+      // (scale 1.0 off the new gesture-start baseline of 1.5).
+      await startPinch();
+      await pinch(1.0);
+      expect(result.current.zoomLabel).toBe("1.5x");
     });
   });
 

@@ -1022,6 +1022,8 @@ export function useNutritionLookup(params: {
           : "Couldn't add this to your log. Please try again.",
       );
     },
+    // The onError above already toasts on any generic failure.
+    meta: { silentError: true },
   });
 
   const handleAddToLog = () => {

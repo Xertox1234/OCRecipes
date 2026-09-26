@@ -37,6 +37,18 @@ const TOOL_DEFINITIONS = Object.freeze(getToolDefinitions());
 export const SAFETY_OVERRIDE_SENTINEL = "\x00SAFETY_OVERRIDE\x00";
 
 /**
+ * Chunk yielded by generateCoachProResponse. A `tool_calls` chunk is yielded
+ * as soon as a tool round is detected — before the tools run — so the caller
+ * can surface a status event on the wire immediately instead of waiting for
+ * the next `content` chunk (a generator can't yield from inside the
+ * Promise.all that executes the tool calls, so this replaces the old
+ * onBeforeToolCalls callback with a direct yield).
+ */
+export type CoachProChunk =
+  | { type: "content"; content: string }
+  | { type: "tool_calls"; toolNames: string[] };
+
+/**
  * Allergy at the prompt boundary. Severity is optional defense-in-depth:
  * the jsonb column can carry legacy rows without one (or with a bogus value,
  * which the context boundary drops).
@@ -308,6 +320,7 @@ function buildSystemPrompt(
       : []),
     "Be conversational, supportive, and evidence-based. Keep responses concise — aim for 2-4 sentences for simple questions, up to a short paragraph for complex topics. Use bullet points when listing foods or suggestions. Never write more than 150 words unless the user asks for detail.",
     "Use **bold** and *italic* for emphasis and bullet points for lists. Do not use headers, tables, or code blocks — they render poorly in chat.",
+    "Never write markdown images (`![alt](url)`) or markdown links (`[text](url)`) in your reply — the chat renderer does not support them and they show up as broken raw text.",
     "Never diagnose medical conditions or replace professional medical advice.",
     "Never recommend extreme calorie restriction (below 1200 cal/day), extreme fasting protocols, or any advice that could promote disordered eating.",
     "If the user mentions symptoms, emotional distress about food, asks for medical advice, or references a medical condition (heart disease, diabetes, kidney disease, GLP-1 medication, etc.), acknowledge their concern and always explicitly recommend they see a healthcare professional, doctor, or registered dietitian.",
@@ -548,6 +561,12 @@ export async function* generateCoachResponse(
       { timeout: OPENAI_TIMEOUT_STREAM_MS, signal: abortSignal },
     );
   } catch (error) {
+    if (abortSignal?.aborted) {
+      // Aborted (client disconnect or SSE timeout) before
+      // any content arrived — expected, not a failure.
+      log.debug({ err: toError(error) }, "coach stream aborted");
+      return;
+    }
     log.error({ err: toError(error) }, "coach API error");
     yield "Sorry, I'm having trouble responding right now. Please try again.";
     return;
@@ -564,6 +583,14 @@ export async function* generateCoachResponse(
       }
     }
   } catch (error) {
+    if (abortSignal?.aborted) {
+      // A client disconnect or SSE timeout aborts the
+      // OpenAI stream — the expected exit, not a failure. The interrupted-
+      // message yield below is skipped: the caller breaks out of its own
+      // loop on `isAborted()` before this event would ever reach the client.
+      log.debug({ err: toError(error) }, "coach stream aborted");
+      return;
+    }
     log.error({ err: toError(error) }, "coach streaming error");
     yield "Sorry, the response was interrupted. Please try again.";
     return;
@@ -586,7 +613,6 @@ export async function* generateCoachProResponse(
   context: CoachContext,
   userId: string,
   abortSignal?: AbortSignal,
-  onBeforeToolCalls?: (toolNames: string[]) => void,
   preloadedProfile?: UserProfile | null,
   /**
    * Pre-classified intent from the caller. When provided, the internal
@@ -597,7 +623,7 @@ export async function* generateCoachProResponse(
   intent?: CoachIntent,
   /** IANA timezone of the requesting user — threads through to day-bucketed tool calls and the prompt's "Current time" line. */
   tz: string = "UTC",
-): AsyncGenerator<string> {
+): AsyncGenerator<CoachProChunk> {
   const lastUserMessage =
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
   const resolvedIntent = intent ?? classifyIntent(lastUserMessage).intent;
@@ -651,8 +677,18 @@ export async function* generateCoachProResponse(
         { timeout: OPENAI_TIMEOUT_STREAM_MS, signal: abortSignal },
       );
     } catch (error) {
+      if (abortSignal?.aborted) {
+        // Aborted (client disconnect or SSE timeout)
+        // before any content arrived — expected, not a failure.
+        log.debug({ err: toError(error) }, "coach pro stream aborted");
+        return;
+      }
       log.error({ err: toError(error) }, "coach pro API error");
-      yield "Sorry, I'm having trouble responding right now. Please try again.";
+      yield {
+        type: "content",
+        content:
+          "Sorry, I'm having trouble responding right now. Please try again.",
+      };
       return;
     }
 
@@ -700,18 +736,35 @@ export async function* generateCoachProResponse(
         }
       }
     } catch (error) {
+      if (abortSignal?.aborted) {
+        // A client disconnect or SSE timeout aborts the
+        // OpenAI stream — the expected exit, not a failure. The interrupted-
+        // message yield below is skipped: the caller breaks out of its own
+        // loop on `isAborted()` before this event would ever reach the
+        // client, and `contentInThisRound` is discarded with the early
+        // return regardless.
+        log.debug({ err: toError(error) }, "coach pro stream aborted");
+        return;
+      }
       log.error({ err: toError(error) }, "coach pro streaming error");
-      yield "Sorry, the response was interrupted. Please try again.";
+      yield {
+        type: "content",
+        content: "Sorry, the response was interrupted. Please try again.",
+      };
       return;
     }
 
     if (containsUnsafeCoachAdvice(fullResponse)) {
-      yield "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider.";
+      yield {
+        type: "content",
+        content:
+          "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider.",
+      };
       return;
     }
 
     if (contentInThisRound) {
-      yield contentInThisRound;
+      yield { type: "content", content: contentInThisRound };
     }
 
     if (finishReason === "length") {
@@ -734,7 +787,7 @@ export async function* generateCoachProResponse(
       const truncationMsg =
         "\n\n*I've run out of tool-call budget for this response. Please ask a follow-up and I'll continue.*";
       fullResponse += truncationMsg;
-      yield truncationMsg;
+      yield { type: "content", content: truncationMsg };
       break;
     }
 
@@ -751,8 +804,15 @@ export async function* generateCoachProResponse(
       tool_calls: toolCallsArray,
     });
 
+    // Yield a tool_calls chunk immediately — before the tools run — so the
+    // caller can surface a status event on the wire without waiting for the
+    // next content chunk.
+    yield {
+      type: "tool_calls",
+      toolNames: toolCallsArray.map((tc) => tc.function.name),
+    };
+
     // Execute tool calls in parallel — preserve order when appending results
-    onBeforeToolCalls?.(toolCallsArray.map((tc) => tc.function.name));
     const toolResults = await Promise.all(
       toolCallsArray.map(async (tc) => {
         // Parse JSON args explicitly so malformed/truncated argument strings

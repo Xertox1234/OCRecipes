@@ -33,6 +33,9 @@ export function useCreateCookSession() {
       const res = await apiRequest("POST", "/api/cooking/sessions");
       return res.json();
     },
+    // Its one call site (CookSessionCaptureScreen.handleAnalyzePhoto) already
+    // toasts on failure via its own try/catch.
+    meta: { silentError: true },
   });
 }
 
@@ -100,6 +103,9 @@ export function useAddCookPhoto() {
         queryKey: ["/api/cooking/sessions", sessionId],
       });
     },
+    // Its one call site (CookSessionCaptureScreen.handleAnalyzePhoto) already
+    // toasts on failure via its own try/catch.
+    meta: { silentError: true },
   });
 }
 
@@ -156,6 +162,16 @@ export function useDeleteIngredient(sessionId: string | null) {
 // Nutrition
 // ============================================================================
 
+/**
+ * No opt-out (deliberate): this one mutation instance is driven from two
+ * different call sites in CookSessionReviewScreen — `fetchNutrition()`
+ * (visible inline error banner + retry) and `handlePreparationChange`
+ * (no error handling at all). `meta` is fixed per `useMutation()` call and
+ * can't differ per `.mutate()` invocation, so opting out would silence the
+ * global net for the already-silent path too. Leaving it unset accepts a
+ * redundant toast on the visible path in exchange for finally covering the
+ * silent one.
+ */
 export function useCookNutrition(sessionId: string | null) {
   return useMutation<
     CookSessionNutritionSummary,
@@ -192,6 +208,9 @@ export function useLogCookSession(sessionId: string | null) {
     },
     // The server writes a scanned item + daily log for the cooked meal.
     onSuccess: () => invalidateFoodLogQueries(queryClient),
+    // Its one call site (CookSessionReviewScreen.handleLogMeal) already
+    // toasts on failure via its own try/catch.
+    meta: { silentError: true },
   });
 }
 
@@ -205,6 +224,9 @@ export function useCookRecipe(sessionId: string | null) {
       );
       return res.json();
     },
+    // Its one call site (CookSessionReviewScreen.handleGenerateRecipe)
+    // already toasts on failure via its own try/catch.
+    meta: { silentError: true },
   });
 }
 
@@ -219,5 +241,8 @@ export function useCookSubstitutions(sessionId: string | null) {
       );
       return res.json();
     },
+    // Its one call site (CookSessionReviewScreen.handleSubstitutions)
+    // already toasts on failure via its own try/catch.
+    meta: { silentError: true },
   });
 }

@@ -87,7 +87,12 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<HomeScreenNavigationProp>();
-  const haptics = useHaptics();
+  // Destructure rather than depend on the whole useHaptics() return —
+  // although useHaptics() now memoizes it (see useHaptics.ts), depending on
+  // the specific method each callback actually calls is the primary fix
+  // (docs/rules/hooks.md) and keeps these four callbacks' deps minimal.
+  const { impact: hapticImpact, notification: hapticNotification } =
+    useHaptics();
   const { reducedMotion } = useAccessibility();
   const { user } = useAuthContext();
   const { theme } = useTheme();
@@ -242,17 +247,17 @@ export default function HomeScreen() {
       queryKey: ["/api/carousel"],
     });
     void queryClient.invalidateQueries({ queryKey: ["/api/curated-recipes"] });
-    void refetch().then(() => haptics.impact());
-  }, [queryClient, refetch, haptics]);
+    void refetch().then(() => hapticImpact());
+  }, [queryClient, refetch, hapticImpact]);
 
   const handleActionPress = useCallback(
     (action: HomeAction) => {
       if (action.premium && !isPremium) {
-        haptics.notification(Haptics.NotificationFeedbackType.Warning);
+        hapticNotification(Haptics.NotificationFeedbackType.Warning);
         setShowUpgradeModal(true);
         return;
       }
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      hapticImpact(Haptics.ImpactFeedbackStyle.Light);
       recordAction(action.id);
       if (action.id === "import-recipe") {
         importSheetRef.current?.present();
@@ -261,7 +266,7 @@ export default function HomeScreen() {
       }
       navigateAction(action, navigation);
     },
-    [isPremium, haptics, recordAction, navigation],
+    [isPremium, hapticNotification, hapticImpact, recordAction, navigation],
   );
 
   const glideRowToTop = useCallback(
@@ -295,11 +300,11 @@ export default function HomeScreen() {
       // Premium gate reimplemented here (inline path bypasses handleActionPress)
       const opening = openDrawerId !== action.id;
       if (opening && action.premium && !isPremium) {
-        haptics.notification(Haptics.NotificationFeedbackType.Warning);
+        hapticNotification(Haptics.NotificationFeedbackType.Warning);
         setShowUpgradeModal(true);
         return;
       }
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      hapticImpact(Haptics.ImpactFeedbackStyle.Light);
       // Any tap supersedes a pending drawer-switch reopen — cancel it first so a
       // fast re-tap during the collapse window (which sees openDrawerId already
       // null → the non-switch branch below) can't be clobbered by the stale timer.
@@ -326,7 +331,14 @@ export default function HomeScreen() {
         if (next) glideRowToTop(next);
       }
     },
-    [openDrawerId, isPremium, haptics, glideRowToTop, reducedMotion],
+    [
+      openDrawerId,
+      isPremium,
+      hapticNotification,
+      hapticImpact,
+      glideRowToTop,
+      reducedMotion,
+    ],
   );
 
   useFocusEffect(
@@ -387,13 +399,13 @@ export default function HomeScreen() {
   const budgetErrored = budgetIsError && !budget;
 
   const handleCalorieTap = useCallback(() => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     if (budgetErrored) {
       void refetch();
       return;
     }
     navigation.navigate("DailyNutritionDetail");
-  }, [haptics, navigation, budgetErrored, refetch]);
+  }, [hapticImpact, navigation, budgetErrored, refetch]);
 
   const calorieText = budget
     ? `${Math.round(budget.foodCalories).toLocaleString()} / ${Math.round(budget.calorieGoal).toLocaleString()} cal`

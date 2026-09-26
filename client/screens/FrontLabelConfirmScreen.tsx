@@ -181,6 +181,8 @@ export default function FrontLabelConfirmScreen() {
         AccessibilityInfo.announceForAccessibility(message);
       }
     },
+    // The onError above already sets a visible confirmError on failure.
+    meta: { silentError: true },
   });
 
   const handleConfirm = useCallback(() => {

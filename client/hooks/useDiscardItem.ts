@@ -87,5 +87,9 @@ export function useDiscardItem() {
       if (data?.queued) return;
       invalidateFoodLogQueries(queryClient);
     },
+    // Reviewed for the global mutation net (2026-09-25): no opt-out — its
+    // one call site (useHistoryData.handleDiscard, via HistoryScreen) shows
+    // no visible failure feedback beyond this rollback (only a success
+    // toast), so the global toast is a genuine improvement here.
   });
 }

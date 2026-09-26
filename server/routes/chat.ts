@@ -16,6 +16,7 @@ import { chatRateLimit } from "./_rate-limiters";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 import {
   generateRecipeChatResponse,
   buildRecipeContext,
@@ -36,7 +37,6 @@ import {
 } from "../lib/ai-safety";
 import { parseBlocksFromContent } from "../services/coach-blocks";
 
-const SSE_TIMEOUT_MS = 120_000; // 2 minutes max per SSE connection
 const SSE_MAX_RESPONSE_BYTES = 50 * 1024; // 50KB max response size
 
 export function register(app: Express): void {
@@ -399,6 +399,12 @@ export function register(app: Express): void {
         const sseTimeout = setTimeout(() => {
           aborted = true;
           abortController.abort();
+          // The coach generators' own "streaming error" log is downgraded to
+          // debug on any abort (a disconnect and this timeout share the
+          // signal — see nutrition-coach.ts), so a genuine hang
+          // would otherwise vanish above debug. Log it here, where the
+          // SSE-timeout cause is unambiguous.
+          logger.warn({ conversationId: id }, "chat SSE stream timed out");
           if (!res.writableEnded) {
             res.write(
               `data: ${JSON.stringify({ error: "Response timeout" })}\n\n`,
@@ -479,6 +485,12 @@ export function register(app: Express): void {
               if (responseBytes > SSE_MAX_RESPONSE_BYTES) {
                 aborted = true;
                 abortController.abort();
+                // Closes the generator via return(), not a catch, so nothing
+                // else logs this runaway response; record it here.
+                logger.warn(
+                  { conversationId: id, responseBytes },
+                  "chat SSE response exceeded the size limit",
+                );
                 if (!res.writableEnded) {
                   res.write(
                     `data: ${JSON.stringify({ error: "Response too large" })}\n\n`,
@@ -587,6 +599,12 @@ export function register(app: Express): void {
               if (responseBytes > SSE_MAX_RESPONSE_BYTES) {
                 aborted = true;
                 abortController.abort();
+                // Closes the generator via return(), not a catch, so nothing
+                // else logs this runaway response; record it here.
+                logger.warn(
+                  { conversationId: id, responseBytes },
+                  "chat SSE response exceeded the size limit",
+                );
                 if (!res.writableEnded) {
                   res.write(
                     `data: ${JSON.stringify({ error: "Response too large" })}\n\n`,

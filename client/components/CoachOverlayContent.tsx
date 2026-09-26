@@ -108,7 +108,10 @@ export function CoachOverlayContent({
     void setCoachDisclaimerDismissed();
   }, []);
 
-  const createConversation = useCreateConversation();
+  // The create-on-mount effect below already shows a visible createError
+  // state (with retry) on failure — opt out so the global net doesn't
+  // double it.
+  const createConversation = useCreateConversation({ silentError: true });
   const { data: messages } = useChatMessages(conversationId);
   const { acknowledge } = useAcknowledgeReminders();
   // Reminders clear when the user actually sends a follow-up, not on the

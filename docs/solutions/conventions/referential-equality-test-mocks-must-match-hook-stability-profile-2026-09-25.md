@@ -6,6 +6,7 @@ tags: [testing, react, hooks, mocking, performance, react-native]
 module: client
 applies_to: ["client/**/__tests__/*.test.tsx"]
 created: 2026-09-25
+last_updated: 2026-09-25
 ---
 
 # A referential-equality test's mocks must match each real hook's re-render stability profile
@@ -44,6 +45,34 @@ that should have triggered a re-render actually did (e.g. the component's own vi
 changed). Without one, a component that silently never re-renders (a broken wiring seam) trivially
 keeps every prop "stable" and the test passes for the wrong reason.
 
+**The denominator inverts when the capture point sits INSIDE a `React.memo`'d parent.** A plain
+`FlatList`/`SectionList` capture always gets a fresh props object on every parent render (JSX
+`createElement` allocates a new object regardless of prop values), so the correct denominator is
+`expect(secondCapture).not.toBe(firstCapture)` — proof the parent re-rendered at all — paired with
+`expect(secondCapture.renderItem).toBe(firstCapture.renderItem)` for the actual fix. But when the
+capture target (e.g. a list component rendered *inside* a memoized row like `MealSlotSection`) is
+itself gated by `React.memo`, a CORRECT fix means the memo bails and the wrapped component **never
+re-renders at all** — its captured props object stays the exact SAME reference, not merely its
+individual fields. Asserting `not.toBe` here would be backwards: it passes on the UNFIXED code
+(where the memo fails to bail and the child re-renders with new field values inside a new object)
+and would need to be rewritten to `toBe` once the fix lands, or it silently tests nothing. Get the
+denominator from an INDEPENDENT, visible signal instead — e.g. a sibling row's own expand/collapse
+state, or any DOM output that changes for a reason unrelated to the props under test — never from
+the capture object itself when the capture sits behind a memo boundary. Confirm memo eligibility
+first: EVERY prop the memoized parent receives (not only the ones under test) must be stable across
+the trigger, including pre-existing `useMemo`d array/derived-value props unrelated to this specific
+fix.
+
+**Reading a captured `renderItem`'s nested props without rendering.** When the value passed to a
+captured list prop is itself a callback that constructs and returns a child element (rather than
+the list capturing the child's props directly), invoke the captured function as a plain JS call —
+`const element = capturedProps.renderItem(item)` — and read `element.props`/`element.props.children.props`
+directly. This works because such a `renderItem` closure typically calls no hooks itself (it just
+builds JSX from already-resolved closure variables), so calling it outside a render pass is safe,
+and it exposes the exact prop values (e.g. an `onRemove`/`onConfirm` handler) that a real render
+pass would have handed to the nested element — without needing to mock every intermediate
+component in the chain just to reach a leaf's props.
+
 ## Smell patterns
 
 - A referential-equality assertion (`expect(x).toBe(y)`) fails even though the code path you
@@ -52,6 +81,8 @@ keeps every prop "stable" and the test passes for the wrong reason.
 - A mock factory shaped `() => ({ ... })` used in a test that asserts identity stability of
   anything downstream of it.
 - An identity-stability test with no assertion that the triggering state change actually landed.
+- A `.not.toBe(...)` denominator on a capture point that sits inside a `React.memo`'d component —
+  once the fix under test lands, that memo should bail and the assertion should flip to `.toBe(...)`.
 
 ## Why
 
@@ -110,6 +141,17 @@ to identity-stability assertions.
 - `client/components/coach/CoachChat.tsx` — the component under test
 - `client/screens/meal-plan/__tests__/RecipeBrowserScreen.params.test.tsx` — the sibling
   `SectionList`-capture pattern this test's capture technique is based on
+- `client/screens/meal-plan/__tests__/RecipeBrowserScreen.render-item-stability.test.tsx` — same
+  `not.toBe`-then-`toBe` denominator pattern, applied to a `useMutation()` destructuring fix
+- `client/screens/meal-plan/__tests__/MealPlanHomeScreen.render-item-stability.test.tsx` — the
+  inverted (`toBe`-only) denominator case: the capture target (`DraggableList`) sits inside a
+  `React.memo`'d parent (`MealSlotSection`), and the plain-function `renderItem(item)` invocation
+  technique for reading a nested `MealSlotItem` element's props without rendering
+- `client/screens/__tests__/HomeScreen.render-item-stability.test.tsx` — a third variant: multiple
+  unmemoized capture targets (`DailySummaryHeader`/`RecentActionsRow`/`RefreshControl`), so
+  field-level identity assertions are correct there, with the denominator coming from an
+  independent accessibility-attribute signal (`importantForAccessibility`) rather than the
+  captures themselves
 
 ## See Also
 

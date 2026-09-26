@@ -22,8 +22,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
-import { BottomSheetModal, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
-import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -71,6 +70,7 @@ import {
 } from "@/hooks/useMealPlan";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
 import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
+import { useSheetHostProps } from "@/hooks/useSheetHostProps";
 import { apiRequest } from "@/lib/query-client";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
@@ -105,6 +105,21 @@ import { toLocalDateString } from "@shared/lib/date";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
 type MealType = (typeof MEAL_TYPES)[number];
+
+// The 4 bottom sheets this screen hosts, collapsed into one union so at most
+// one can ever be "active" at a time (matches production reality — the app
+// never opens two of these simultaneously).
+type SheetKind = "addItemMenu" | "importRecipe" | "quickAdd" | "simpleEntry";
+type ActiveSheet = { kind: SheetKind; mealType: MealType } | null;
+
+interface TopAction {
+  id: string;
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  accessibilityLabel: string;
+  onPress: () => void;
+  badgeCount?: number;
+}
 const MEAL_ICONS: Record<MealType, string> = {
   breakfast: "sunrise",
   lunch: "sun",
@@ -204,7 +219,7 @@ const DateStripItem = React.memo(function DateStripItem({
 
 // ── Meal Slot Card ───────────────────────────────────────────────────
 
-const MealSlotItem = React.memo(function MealSlotItem({
+export const MealSlotItem = React.memo(function MealSlotItem({
   item,
   isConfirmed,
   onPress,
@@ -231,15 +246,51 @@ const MealSlotItem = React.memo(function MealSlotItem({
   // Scanned items carry no derived-allergen cache (that's product-level data,
   // a separate concept) — only a recipe-backed item can have one. The card
   // Pressable is accessible by default, which collapses its whole subtree
-  // into a single VoiceOver/TalkBack focus stop, so fold the allergen text
-  // into the card's own label (same pattern as RecipeBrowserScreen's
-  // UnifiedRecipeCard) rather than relying on the nested label's own
-  // container.
+  // into a single iOS VoiceOver focus stop (device-verified: an RN
+  // accessible={true} wrapper collapses its subtree on iOS but NOT on
+  // Android — see docs/solutions/best-practices/adb-uiautomator-ondevice-android-verification-2026-07-12.md
+  // item 9), so fold the allergen text into the card's own label (same
+  // pattern as RecipeBrowserScreen's UnifiedRecipeCard) rather than relying
+  // on the nested label's own container.
   const allergenA11ySuffix = toRecipeAllergenA11ySuffix(item.recipe?.allergens);
 
   const accessLabel = macros
     ? `${name}, ${macros.calories} calories, ${macros.protein}g protein, ${macros.carbs}g carbs, ${macros.fat}g fat${isConfirmed ? ", confirmed" : ""}${allergenA11ySuffix}`
     : `${name}${isConfirmed ? ", confirmed" : ""}${allergenA11ySuffix}`;
+
+  // The card Pressable above is accessible by default, which collapses its
+  // whole subtree into a single iOS VoiceOver focus stop (same device-verified
+  // iOS-only collapse cited above) — the nested Confirm and Remove Pressables
+  // below are never independently reachable on iOS VoiceOver (Android keeps
+  // them independently reachable regardless — see the same citation).
+  // Expose both as accessibilityActions on the card instead (additive/
+  // harmless on Android; same pattern as CarouselRecipeCard's
+  // toggleFavourite/dismiss actions) so the primary
+  // label stays the single focus stop while Confirm/Remove are still
+  // independently activatable via the screen reader's actions/rotor. Confirm
+  // is omitted once there's nothing left to confirm (mirrors `canConfirm`
+  // gating the nested button's render + the `!isConfirmed &&` guard on its
+  // onPress); Remove has no such gate, matching its unconditional render.
+  const accessibilityActions = useMemo(
+    () => [
+      ...(canConfirm && !isConfirmed
+        ? [{ name: "confirm", label: `Confirm ${name} as eaten` }]
+        : []),
+      { name: "remove", label: `Remove ${name}` },
+    ],
+    [canConfirm, isConfirmed, name],
+  );
+
+  const handleAccessibilityAction = useCallback(
+    (event: { nativeEvent: { actionName: string } }) => {
+      if (event.nativeEvent.actionName === "confirm") {
+        if (!isConfirmed) onConfirm(item.id);
+      } else if (event.nativeEvent.actionName === "remove") {
+        onRemove(item.id);
+      }
+    },
+    [isConfirmed, onConfirm, onRemove, item.id],
+  );
 
   return (
     <Pressable
@@ -256,6 +307,8 @@ const MealSlotItem = React.memo(function MealSlotItem({
       ]}
       accessibilityRole="button"
       accessibilityLabel={accessLabel}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={handleAccessibilityAction}
     >
       {canConfirm && (
         <Pressable
@@ -308,7 +361,7 @@ const MealSlotItem = React.memo(function MealSlotItem({
 
 // ── Meal Slot Section ────────────────────────────────────────────────
 
-const MealSlotSection = React.memo(function MealSlotSection({
+export const MealSlotSection = React.memo(function MealSlotSection({
   mealType,
   items,
   confirmedIds,
@@ -352,6 +405,42 @@ const MealSlotSection = React.memo(function MealSlotSection({
     ? `${label}, expanded`
     : `${label}${summaryText}, collapsed`;
 
+  // The header Pressable is accessible by default, which collapses its whole
+  // subtree into a single iOS VoiceOver focus stop (device-verified: an RN
+  // accessible={true} wrapper collapses its subtree on iOS but NOT on
+  // Android — see docs/solutions/best-practices/adb-uiautomator-ondevice-android-verification-2026-07-12.md
+  // item 9) — the nested "Suggest" chip below is never independently
+  // reachable on iOS VoiceOver when the section is expanded (Android keeps
+  // it independently reachable regardless). Expose it as an
+  // accessibilityAction on the header instead (additive/harmless on
+  // Android; same pattern as CarouselRecipeCard's toggleFavourite/dismiss
+  // actions), gated to
+  // isExpanded since that's also what gates the chip's own render — a
+  // collapsed section has no Suggest chip to route the action to.
+  const headerAccessibilityActions = useMemo(
+    () =>
+      isExpanded
+        ? [
+            {
+              name: "suggest",
+              label: canSuggest
+                ? `AI suggest ${label.toLowerCase()}`
+                : `Upgrade to suggest ${label.toLowerCase()}`,
+            },
+          ]
+        : undefined,
+    [isExpanded, canSuggest, label],
+  );
+
+  const handleHeaderAccessibilityAction = useCallback(
+    (event: { nativeEvent: { actionName: string } }) => {
+      if (event.nativeEvent.actionName === "suggest") {
+        onSuggest(mealType);
+      }
+    },
+    [onSuggest, mealType],
+  );
+
   return (
     <View style={styles.mealSlotSection}>
       <Pressable
@@ -360,6 +449,8 @@ const MealSlotSection = React.memo(function MealSlotSection({
         accessibilityRole="button"
         accessibilityState={{ expanded: isExpanded }}
         accessibilityLabel={headerAccessLabel}
+        accessibilityActions={headerAccessibilityActions}
+        onAccessibilityAction={handleHeaderAccessibilityAction}
       >
         <Feather
           name={iconName as keyof typeof Feather.glyphMap}
@@ -496,10 +587,6 @@ const MealSlotSection = React.memo(function MealSlotSection({
 const FREE_MAX_DAYS_FORWARD = 7;
 const PREMIUM_MAX_DAYS_FORWARD = 90;
 
-// Sheet contents draw their own drag indicators — hide the library's default
-// (otherwise both render). Module-level so BottomSheetModal's memo holds.
-const SHEET_HANDLE_HIDDEN = { display: "none" as const };
-
 export default function MealPlanHomeScreen() {
   const navigation = useNavigation<MealPlanHomeScreenNavigationProp>();
   const headerHeight = useHeaderHeight();
@@ -526,25 +613,15 @@ export default function MealPlanHomeScreen() {
   const simpleEntrySheetContentRef =
     useRef<SimpleEntrySheetContentHandle>(null);
 
-  const renderSheetBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.35}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
-
-  // BottomSheetModal's own background defaults to white regardless of theme —
-  // it must be themed explicitly (memoized so the modals' memo holds).
-  const sheetBackgroundStyle = useMemo(
-    () => ({ backgroundColor: theme.backgroundDefault }),
-    [theme.backgroundDefault],
-  );
+  // Shared host prop bundle for all 4 sheets below (backdrop, themed
+  // background, hidden handle, and the accessible={false} iOS a11y fix —
+  // see useSheetHostProps' own JSDoc). BottomSheetModal's own background
+  // defaults to white regardless of theme, so it must be themed explicitly.
+  const sheetHostProps = useSheetHostProps({
+    backgroundColor: theme.backgroundDefault,
+    backdropOpacity: 0.35,
+    backdropPressBehavior: "close",
+  });
 
   const [today, setToday] = useState(() => {
     const d = new Date();
@@ -570,37 +647,55 @@ export default function MealPlanHomeScreen() {
   const [expandedSections, setExpandedSections] = useState<Set<MealType>>(
     () => new Set([getAutoExpandedMealType()]),
   );
-  const [quickAddMealType, setQuickAddMealType] = useState<MealType | null>(
-    null,
-  );
-  const [addItemMenuMealType, setAddItemMenuMealType] =
-    useState<MealType | null>(null);
-  const [simpleEntryMealType, setSimpleEntryMealType] =
-    useState<MealType | null>(null);
-  const [importRecipeMealType, setImportRecipeMealType] =
-    useState<MealType | null>(null);
+  // One union replaces the 4 hand-duplicated xxxMealType atoms — at most one
+  // sheet is ever active. Each kind's own local (addItemMenuMealType, etc.)
+  // is derived below so the rest of this component (memoized children,
+  // effects) reads the same names it always has.
+  const [activeSheet, setActiveSheet] = useState<ActiveSheet>(null);
+  const addItemMenuMealType =
+    activeSheet?.kind === "addItemMenu" ? activeSheet.mealType : null;
+  const importRecipeMealType =
+    activeSheet?.kind === "importRecipe" ? activeSheet.mealType : null;
+  const quickAddMealType =
+    activeSheet?.kind === "quickAdd" ? activeSheet.mealType : null;
+  const simpleEntryMealType =
+    activeSheet?.kind === "simpleEntry" ? activeSheet.mealType : null;
+
+  // Opens/closes a sheet by kind. `closeSheet` is guarded (only clears when
+  // its OWN kind is still active) because gorhom's `onDismiss` fires on
+  // close-ANIMATION-complete, which is not guaranteed to run strictly before
+  // the destination sheet's InteractionManager-scheduled open during a
+  // same-screen handoff (e.g. `handleChooseRecipe` below) — an unguarded
+  // `setActiveSheet(null)` from a late-firing onDismiss would clobber the
+  // sheet that opened in the meantime.
+  const openSheet = useCallback((kind: SheetKind, mealType: MealType) => {
+    setActiveSheet({ kind, mealType });
+  }, []);
+  const closeSheet = useCallback((kind: SheetKind) => {
+    setActiveSheet((prev) => (prev?.kind === kind ? null : prev));
+  }, []);
 
   // Android TalkBack background focus trap (iOS already trapped via
-  // accessibilityViewIsModal on each sheet's own content root, PR #1000). No
-  // new state — a pure read of the 4 existing xxxMealType booleans, the same
-  // ones already passed as `isOpen` to each sheet's own useSheetBackHandler
-  // call below. Applied to the screen's own background ScrollView while ANY
-  // sheet is open; releases as soon as its owning xxxMealType clears to null
-  // (see docs/solutions/logic-errors/
+  // accessibilityViewIsModal on each sheet's own content root, PR #1000).
+  // Applied to the screen's own background ScrollView while ANY sheet is
+  // active; releases as soon as activeSheet clears to null (see
+  // docs/solutions/logic-errors/
   // gorhom-onchange-fires-on-animation-complete-not-start-2026-07-07.md for
   // why that can be a little ahead of the close animation finishing — the
   // accepted early-release direction, not the never-releases one).
-  const isAnySheetOpen =
-    addItemMenuMealType !== null ||
-    importRecipeMealType !== null ||
-    quickAddMealType !== null ||
-    simpleEntryMealType !== null;
+  const isAnySheetOpen = activeSheet !== null;
 
   const selectedDateStr = toLocalDateString(selectedDate);
 
-  const createRecipeMutation = useCreateMealPlanRecipe();
-  const addItemMutation = useAddMealPlanItem();
-  const confirmMutation = useConfirmMealPlanItem();
+  // Destructure rather than depend on the mutation objects themselves —
+  // useMutation returns a new object identity every render, which would
+  // make every useCallback below that depends on it re-create every render
+  // (and, since those callbacks feed the memoized MealSlotSection/
+  // MealSlotItem rows, defeat their React.memo). See CoachChat.tsx for the
+  // same pattern.
+  const { mutateAsync: createRecipe } = useCreateMealPlanRecipe();
+  const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
+  const { mutate: confirmItem } = useConfirmMealPlanItem();
   const { data: expiringItems } = useExpiringPantryItems(
     features.pantryTracking,
   );
@@ -646,8 +741,8 @@ export default function MealPlanHomeScreen() {
     isRefetching,
   } = useMealPlanItems(startDate, endDate);
 
-  const removeMutation = useRemoveMealPlanItem();
-  const reorderMutation = useReorderMealPlanItems();
+  const { mutate: removeItem } = useRemoveMealPlanItem();
+  const { mutate: reorderItems } = useReorderMealPlanItems();
 
   // Group items by date and meal type
   const dayItems = useMemo(() => {
@@ -777,12 +872,12 @@ export default function MealPlanHomeScreen() {
   const handleRemoveItem = useCallback(
     (id: number) => {
       haptics.selection();
-      removeMutation.mutate(id, {
+      removeItem(id, {
         onError: () =>
           toast.error("Couldn't remove the item. Please try again."),
       });
     },
-    [removeMutation, haptics, toast],
+    [removeItem, haptics, toast],
   );
 
   const handleReorder = useCallback(
@@ -791,12 +886,12 @@ export default function MealPlanHomeScreen() {
         id: item.id,
         sortOrder: idx,
       }));
-      reorderMutation.mutate(updates, {
+      reorderItems(updates, {
         onError: () =>
           toast.error("Couldn't save the new order. Please try again."),
       });
     },
-    [reorderMutation, toast],
+    [reorderItems, toast],
   );
 
   const handleToggleSection = useCallback(
@@ -825,157 +920,157 @@ export default function MealPlanHomeScreen() {
   const handleAddItem = useCallback(
     (mealType: MealType) => {
       haptics.selection();
-      setAddItemMenuMealType(mealType);
+      openSheet("addItemMenu", mealType);
     },
-    [haptics],
+    [haptics, openSheet],
   );
 
   const handleAddItemMenuDismiss = useCallback(() => {
-    setAddItemMenuMealType(null);
-  }, []);
+    closeSheet("addItemMenu");
+  }, [closeSheet]);
 
   const handleChooseRecipe = useCallback(() => {
     const mt = addItemMenuMealType;
-    setAddItemMenuMealType(null);
-    InteractionManager.runAfterInteractions(() => setQuickAddMealType(mt));
-  }, [addItemMenuMealType]);
+    closeSheet("addItemMenu");
+    InteractionManager.runAfterInteractions(() => {
+      if (mt !== null) openSheet("quickAdd", mt);
+    });
+  }, [addItemMenuMealType, closeSheet, openSheet]);
 
   const handleSimpleEntry = useCallback(() => {
     const mt = addItemMenuMealType;
-    setAddItemMenuMealType(null);
-    InteractionManager.runAfterInteractions(() => setSimpleEntryMealType(mt));
-  }, [addItemMenuMealType]);
+    closeSheet("addItemMenu");
+    InteractionManager.runAfterInteractions(() => {
+      if (mt !== null) openSheet("simpleEntry", mt);
+    });
+  }, [addItemMenuMealType, closeSheet, openSheet]);
 
   const handleQuickAddDismiss = useCallback(() => {
-    setQuickAddMealType(null);
-  }, []);
+    closeSheet("quickAdd");
+  }, [closeSheet]);
 
   const handleSimpleEntryDismiss = useCallback(() => {
-    setSimpleEntryMealType(null);
-  }, []);
+    closeSheet("simpleEntry");
+  }, [closeSheet]);
 
   const handleImportRecipe = useCallback(() => {
     const mt = addItemMenuMealType;
-    setAddItemMenuMealType(null);
-    InteractionManager.runAfterInteractions(() => setImportRecipeMealType(mt));
-  }, [addItemMenuMealType]);
+    closeSheet("addItemMenu");
+    InteractionManager.runAfterInteractions(() => {
+      if (mt !== null) openSheet("importRecipe", mt);
+    });
+  }, [addItemMenuMealType, closeSheet, openSheet]);
 
   const handleImportRecipeDismiss = useCallback(() => {
-    setImportRecipeMealType(null);
-  }, []);
+    closeSheet("importRecipe");
+  }, [closeSheet]);
 
+  // Stable lookup from kind to its own BottomSheetModal ref — refs never
+  // change identity, so this object literal (recreated per render) still
+  // resolves the same 4 targets every time; no memoization needed.
+  const sheetRefs: Record<
+    SheetKind,
+    React.RefObject<BottomSheetModal | null>
+  > = {
+    addItemMenu: addItemMenuSheetRef,
+    importRecipe: importRecipeSheetRef,
+    quickAdd: quickAddSheetRef,
+    simpleEntry: simpleEntrySheetRef,
+  };
+
+  // The ref the unified back-handler below should dismiss. Only ever
+  // reassigned when a sheet OPENS (never cleared on close) — mirrors
+  // useSheetBackHandler's own asymmetric isOpenRef bias, so a back press
+  // during a close animation still targets the sheet the user can still see.
+  const activeSheetRef = useRef<BottomSheetModal | null>(null);
+  const prevSheetKindRef = useRef<SheetKind | null>(null);
+
+  // ONE present/dismiss effect for all 4 sheets, replacing the 4
+  // near-identical per-kind effects above. Dismisses only the PREVIOUSLY
+  // active kind (not every other kind on every change) so this fires exactly
+  // like the 4 independent effects it replaces: one dismiss (closing) plus
+  // one present (opening) per transition, not a dismiss on every sibling.
   useEffect(() => {
-    if (addItemMenuMealType) {
-      addItemMenuSheetRef.current?.present();
-    } else {
-      addItemMenuSheetRef.current?.dismiss();
+    const kind = activeSheet?.kind ?? null;
+    const prevKind = prevSheetKindRef.current;
+    if (prevKind && prevKind !== kind) {
+      sheetRefs[prevKind].current?.dismiss();
     }
-  }, [addItemMenuMealType]);
-
-  useEffect(() => {
-    if (importRecipeMealType) {
-      importRecipeSheetRef.current?.present();
-    } else {
-      importRecipeSheetRef.current?.dismiss();
+    if (kind) {
+      activeSheetRef.current = sheetRefs[kind].current;
+      sheetRefs[kind].current?.present();
     }
-  }, [importRecipeMealType]);
+    prevSheetKindRef.current = kind;
+    // sheetRefs' values are stable useRef objects (see the comment above) —
+    // only `activeSheet` itself needs to be a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSheet]);
 
-  useEffect(() => {
-    if (quickAddMealType) {
-      quickAddSheetRef.current?.present();
-    } else {
-      quickAddSheetRef.current?.dismiss();
-    }
-  }, [quickAddMealType]);
-
-  useEffect(() => {
-    if (simpleEntryMealType) {
-      simpleEntrySheetRef.current?.present();
-    } else {
-      simpleEntrySheetRef.current?.dismiss();
-    }
-  }, [simpleEntryMealType]);
-
-  // Android hardware back dismisses whichever sheet is open, consuming the
+  // Android hardware back dismisses whichever sheet is active, consuming the
   // event instead of popping the screen underneath — @gorhom/bottom-sheet has
-  // no built-in BackHandler wiring. State-driven hosts pass isOpen directly,
-  // AND must wire the returned onSheetChange/onSheetAnimate onto the
-  // BottomSheetModal's own onChange/onAnimate props below — isOpen flipping
-  // false no longer closes the ref by itself; only onSheetChange(-1) does,
-  // so the ref stays "open" for the sheet's full close animation instead of
-  // racing ahead of what the user still sees on screen (see
-  // useSheetBackHandler's JSDoc).
+  // no built-in BackHandler wiring. ONE call for all 4 sheets: `activeSheetRef`
+  // (assigned by the present/dismiss effect above) always points at whichever
+  // of the 4 real refs is currently active, and `activeSheet !== null` is the
+  // isOpen signal. The returned onSheetChange/onSheetAnimate are wired onto
+  // every <BottomSheetModal>'s own onChange/onAnimate props below — isOpen
+  // flipping false no longer closes the ref by itself; only onSheetChange(-1)
+  // does, so the ref stays "open" for the sheet's full close animation
+  // instead of racing ahead of what the user still sees on screen (see
+  // useSheetBackHandler's JSDoc). A single call also means there is no
+  // multi-listener registration order to get wrong during a same-screen
+  // handoff (e.g. handleChooseRecipe) — the prior 4-call architecture needed
+  // a documented load-bearing declaration order for exactly that reason.
   //
-  // Declaration order below is load-bearing, not cosmetic: each call
-  // registers its own `BackHandler.addEventListener` in a mount-time effect,
-  // and Android's BackHandler consults listeners in REVERSE registration
-  // order (last-registered first — see
-  // node_modules/react-native/Libraries/Utilities/BackHandler.android.js).
-  // During a same-screen handoff (e.g. handleChooseRecipe closes
-  // addItemMenu and opens quickAdd via InteractionManager), the
-  // later-declared destination sheet's listener is consulted before the
-  // earlier-declared source sheet's — which is why a stray back press
-  // during the crossover dismisses the newly-opened sheet rather than the
-  // one still finishing its close animation. Reordering these four calls
-  // would silently flip that precedence with no type error and no test
-  // coverage (each hook instance is unit-tested in isolation) — keep
-  // addItemMenu first and the other three declared after it.
-  //
-  // Each of the 4 calls below independently subscribes to useIsFocused()
-  // rather than sharing one instance for the screen — an examined, deliberate
-  // trade-off, not an oversight. See useSheetBackHandler's JSDoc and
-  // todos/archive/P3-2026-07-09-usesheetbackhandler-duplicate-isfocused-listeners.md
-  // for why de-duplicating isn't worth it here.
-  const {
-    onSheetChange: onAddItemMenuSheetChange,
-    onSheetAnimate: onAddItemMenuSheetAnimate,
-  } = useSheetBackHandler(addItemMenuSheetRef, addItemMenuMealType !== null);
-  const {
-    onSheetChange: onImportRecipeSheetChange,
-    onSheetAnimate: onImportRecipeSheetAnimate,
-  } = useSheetBackHandler(importRecipeSheetRef, importRecipeMealType !== null);
-  const {
-    onSheetChange: onQuickAddSheetBackHandlerChange,
-    onSheetAnimate: onQuickAddSheetAnimate,
-  } = useSheetBackHandler(quickAddSheetRef, quickAddMealType !== null);
-  const {
-    onSheetChange: onSimpleEntrySheetBackHandlerChange,
-    onSheetAnimate: onSimpleEntrySheetAnimate,
-  } = useSheetBackHandler(simpleEntrySheetRef, simpleEntryMealType !== null);
+  // Because onSheetChange/onSheetAnimate are now SHARED across all 4
+  // BottomSheetModal instances (unlike the old 4-hook-instance design, where
+  // each had its own private isOpenRef), any one of them firing onChange(-1)
+  // — a late close from a just-abandoned sheet during a handoff, or the
+  // spurious blur/refocus duplicate event useSheetBackHandler's own JSDoc
+  // documents — clears the ONE shared isOpenRef even while a different sheet
+  // is genuinely open. Correctness in that window depends entirely on
+  // useSheetBackHandler's `stateIsOpenRef` fallback (derived here from
+  // `activeSheet !== null`), which was originally added for an unrelated
+  // single-sheet blur/refocus bug and is now silently load-bearing for this
+  // screen's multi-sheet aliasing too — do not change that fallback's logic
+  // without checking this call site.
+  const { onSheetChange, onSheetAnimate } = useSheetBackHandler(
+    activeSheetRef,
+    activeSheet !== null,
+  );
 
   const handleNavigateUrlImport = useCallback(
     (mt: MealType | null, date?: string) => {
       if (mt === null || date === undefined) return;
-      setImportRecipeMealType(null);
+      closeSheet("importRecipe");
       navigation.navigate("RecipeImport", {
         returnToMealPlan: { mealType: mt, plannedDate: date },
       });
     },
-    [navigation],
+    [navigation, closeSheet],
   );
 
   const handlePhotoImport = useCallback(
     (uri: string, mt: MealType | null, date?: string) => {
       if (mt === null || date === undefined) return;
-      setImportRecipeMealType(null);
+      closeSheet("importRecipe");
       navigation.navigate("RecipePhotoImport", {
         photoUri: uri,
         returnToMealPlan: { mealType: mt, plannedDate: date },
       });
     },
-    [navigation],
+    [navigation, closeSheet],
   );
 
   const handleTextImport = useCallback(
     (text: string, mt: MealType | null, date?: string) => {
       if (mt === null || date === undefined) return;
-      setImportRecipeMealType(null);
+      closeSheet("importRecipe");
       navigation.navigate("RecipeTextImport", {
         pastedText: text,
         returnToMealPlan: { mealType: mt, plannedDate: date },
       });
     },
-    [navigation],
+    [navigation, closeSheet],
   );
 
   const handleNavigateCreate = useCallback(
@@ -987,9 +1082,14 @@ export default function MealPlanHomeScreen() {
     [navigation],
   );
 
-  const handleOpenImportSheet = useCallback((mt: MealType) => {
-    InteractionManager.runAfterInteractions(() => setImportRecipeMealType(mt));
-  }, []);
+  const handleOpenImportSheet = useCallback(
+    (mt: MealType) => {
+      InteractionManager.runAfterInteractions(() =>
+        openSheet("importRecipe", mt),
+      );
+    },
+    [openSheet],
+  );
 
   const handleSuggest = useCallback(
     (mealType: MealType) => {
@@ -1009,7 +1109,7 @@ export default function MealPlanHomeScreen() {
     async (suggestion: MealSuggestion) => {
       try {
         // Create recipe from suggestion
-        const recipe = await createRecipeMutation.mutateAsync({
+        const recipe = await createRecipe({
           title: suggestion.title,
           description: suggestion.description,
           difficulty: suggestion.difficulty,
@@ -1029,7 +1129,7 @@ export default function MealPlanHomeScreen() {
         });
 
         // Add to meal plan
-        await addItemMutation.mutateAsync({
+        await addMealPlanItem({
           recipeId: recipe.id,
           plannedDate: selectedDateStr,
           mealType: suggestMealType,
@@ -1046,8 +1146,8 @@ export default function MealPlanHomeScreen() {
       }
     },
     [
-      createRecipeMutation,
-      addItemMutation,
+      createRecipe,
+      addMealPlanItem,
       selectedDateStr,
       suggestMealType,
       haptics,
@@ -1059,11 +1159,11 @@ export default function MealPlanHomeScreen() {
   const handleConfirmItem = useCallback(
     (id: number) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-      confirmMutation.mutate(id, {
+      confirmItem(id, {
         onError: () => toast.error("Couldn't log the meal. Please try again."),
       });
     },
-    [confirmMutation, haptics, toast],
+    [confirmItem, haptics, toast],
   );
 
   const handleBrowseRecipes = useCallback(() => {
@@ -1182,10 +1282,10 @@ export default function MealPlanHomeScreen() {
 
   const handleQuickAddSheetChange = useCallback(
     (index: number) => {
-      onQuickAddSheetBackHandlerChange(index);
+      onSheetChange(index);
       if (index === 0) quickAddSheetContentRef.current?.focusSearchInput();
     },
-    [onQuickAddSheetBackHandlerChange],
+    [onSheetChange],
   );
 
   const quickAddSheetChildren = useMemo(
@@ -1210,10 +1310,10 @@ export default function MealPlanHomeScreen() {
 
   const handleSimpleEntrySheetChange = useCallback(
     (index: number) => {
-      onSimpleEntrySheetBackHandlerChange(index);
+      onSheetChange(index);
       if (index === 0) simpleEntrySheetContentRef.current?.focusDishNameInput();
     },
-    [onSimpleEntrySheetBackHandlerChange],
+    [onSheetChange],
   );
 
   const simpleEntrySheetChildren = useMemo(
@@ -1226,6 +1326,51 @@ export default function MealPlanHomeScreen() {
       />
     ),
     [simpleEntryMealType, selectedDateStr, handleSimpleEntryDismiss],
+  );
+
+  // Config-driven top action row, replacing 4 near-identical Pressables
+  // (mirrors client/components/home/action-config.ts's data-driven pattern).
+  // Built in-component (not module-level like HOME_ACTIONS) because these
+  // actions close over per-render handlers/data (expiringItems' badge count).
+  const topActions: TopAction[] = useMemo(
+    () => [
+      {
+        id: "recipes",
+        icon: "book-open",
+        label: "Recipes",
+        accessibilityLabel: "Browse Recipes",
+        onPress: handleBrowseRecipes,
+      },
+      {
+        id: "pantry",
+        icon: "package",
+        label: "Pantry",
+        accessibilityLabel: `Pantry${expiringItems?.length ? `, ${expiringItems.length} expiring` : ""}`,
+        onPress: handlePantry,
+        badgeCount: expiringItems?.length,
+      },
+      {
+        id: "grocery",
+        icon: "shopping-cart",
+        label: "Grocery Lists",
+        accessibilityLabel: "Grocery Lists",
+        onPress: handleGroceryLists,
+      },
+      {
+        id: "cookbooks",
+        icon: "book",
+        label: "Cookbooks",
+        accessibilityLabel: "Cookbooks",
+        onPress: handleCookbooks,
+      },
+    ],
+    [
+      handleBrowseRecipes,
+      handlePantry,
+      handleGroceryLists,
+      handleCookbooks,
+      expiringItems,
+    ],
   );
 
   if (isLoading) {
@@ -1290,91 +1435,43 @@ export default function MealPlanHomeScreen() {
       >
         {/* Top Action Buttons */}
         <View style={styles.topActions}>
-          <Pressable
-            onPress={handleBrowseRecipes}
-            hitSlop={8}
-            style={[
-              styles.groceryButton,
-              { backgroundColor: withOpacity(theme.link, 0.1) },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Browse Recipes"
-          >
-            <Feather name="book-open" size={16} color={theme.link} />
-            <ThemedText
-              style={[styles.groceryButtonText, { color: theme.link }]}
+          {topActions.map((action) => (
+            <Pressable
+              key={action.id}
+              onPress={action.onPress}
+              hitSlop={8}
+              style={[
+                styles.groceryButton,
+                { backgroundColor: withOpacity(theme.link, 0.1) },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={action.accessibilityLabel}
             >
-              Recipes
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={handlePantry}
-            hitSlop={8}
-            style={[
-              styles.groceryButton,
-              { backgroundColor: withOpacity(theme.link, 0.1) },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={`Pantry${expiringItems?.length ? `, ${expiringItems.length} expiring` : ""}`}
-          >
-            <Feather name="package" size={16} color={theme.link} />
-            <ThemedText
-              style={[styles.groceryButtonText, { color: theme.link }]}
-            >
-              Pantry
-            </ThemedText>
-            {(expiringItems?.length ?? 0) > 0 && (
-              <View
-                style={[
-                  styles.expiringBadge,
-                  { backgroundColor: theme.calorieAccent },
-                ]}
+              <Feather name={action.icon} size={16} color={theme.link} />
+              <ThemedText
+                style={[styles.groceryButtonText, { color: theme.link }]}
               >
-                <ThemedText
+                {action.label}
+              </ThemedText>
+              {!!action.badgeCount && (
+                <View
                   style={[
-                    styles.expiringBadgeText,
-                    { color: theme.buttonText },
+                    styles.expiringBadge,
+                    { backgroundColor: theme.calorieAccent },
                   ]}
                 >
-                  {expiringItems!.length}
-                </ThemedText>
-              </View>
-            )}
-          </Pressable>
-          <Pressable
-            onPress={handleGroceryLists}
-            hitSlop={8}
-            style={[
-              styles.groceryButton,
-              { backgroundColor: withOpacity(theme.link, 0.1) },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Grocery Lists"
-          >
-            <Feather name="shopping-cart" size={16} color={theme.link} />
-            <ThemedText
-              style={[styles.groceryButtonText, { color: theme.link }]}
-            >
-              Grocery Lists
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={handleCookbooks}
-            hitSlop={8}
-            style={[
-              styles.groceryButton,
-              { backgroundColor: withOpacity(theme.link, 0.1) },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Cookbooks"
-          >
-            <Feather name="book" size={16} color={theme.link} />
-            <ThemedText
-              style={[styles.groceryButtonText, { color: theme.link }]}
-            >
-              Cookbooks
-            </ThemedText>
-          </Pressable>
+                  <ThemedText
+                    style={[
+                      styles.expiringBadgeText,
+                      { color: theme.buttonText },
+                    ]}
+                  >
+                    {action.badgeCount}
+                  </ThemedText>
+                </View>
+              )}
+            </Pressable>
+          ))}
         </View>
 
         {/* Month/Year Header with arrows */}
@@ -1493,40 +1590,28 @@ export default function MealPlanHomeScreen() {
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
       />
+      {/* NOTE: `accessibilityViewIsModal` was previously set on each sheet
+          below too, but @gorhom/bottom-sheet's BottomSheet has no
+          rest-spread, so it was silently dropped — a no-op / false
+          focus-trap assurance (same dead prop ConfirmationModal.tsx's own
+          fix removed). The real fix lives on each sheet's own inner content
+          View, not here: AddItemMenuSheetContent, ImportRecipeSheetContent
+          (shared — already had it), QuickAddSheetContent, and
+          SimpleEntrySheetContent all set accessibilityViewIsModal on their
+          own root View. See docs/solutions/conventions/
+          a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
+          The other focus-trap todo
+          (P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md)
+          is scoped to ConfirmationModal.tsx and its useConfirmationModal()
+          callers only, not this screen. */}
       <BottomSheetModal
         ref={addItemMenuSheetRef}
         snapPoints={ADD_ITEM_MENU_SNAP_POINTS}
         enableDynamicSizing={false}
-        backdropComponent={renderSheetBackdrop}
-        backgroundStyle={sheetBackgroundStyle}
-        handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleAddItemMenuDismiss}
-        onChange={onAddItemMenuSheetChange}
-        onAnimate={onAddItemMenuSheetAnimate}
-        // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
-        // "Bottom Sheet" on the DraggableView that WRAPS these children. On
-        // new-arch Fabric that makes the wrapper an accessibility LEAF
-        // (isAccessibilityElement=YES), so VoiceOver — and Maestro's iOS driver —
-        // see one opaque "Bottom Sheet" element and this sheet's content
-        // (incl. testIDs) becomes unreachable. accessible={false} keeps the
-        // children individually exposed. MUST be `false`, not `null`: gorhom does
-        // `_providedAccessible ?? undefined`, so null re-defaults to true.
-        // See docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
-        // (Same fix applies to the 3 sibling sheets below.)
-        accessible={false}
-        // NOTE: `accessibilityViewIsModal` was here but @gorhom/bottom-sheet's
-        // BottomSheet has no rest-spread, so it was silently dropped — a no-op /
-        // false focus-trap assurance (same dead prop ConfirmationModal.tsx's own
-        // fix removed). The real fix lives on each sheet's own inner content
-        // View, not here: AddItemMenuSheetContent, ImportRecipeSheetContent
-        // (shared — already had it), QuickAddSheetContent, and
-        // SimpleEntrySheetContent all set accessibilityViewIsModal on their own
-        // root View. See docs/solutions/conventions/
-        // a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md.
-        // The other focus-trap todo
-        // (P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md)
-        // is scoped to ConfirmationModal.tsx and its useConfirmationModal()
-        // callers only, not this screen.
+        onChange={onSheetChange}
+        onAnimate={onSheetAnimate}
+        {...sheetHostProps}
       >
         {addItemMenuSheetChildren}
       </BottomSheetModal>
@@ -1534,16 +1619,10 @@ export default function MealPlanHomeScreen() {
         ref={importRecipeSheetRef}
         snapPoints={IMPORT_RECIPE_SNAP_POINTS}
         enableDynamicSizing={false}
-        backdropComponent={renderSheetBackdrop}
-        backgroundStyle={sheetBackgroundStyle}
-        handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleImportRecipeDismiss}
-        onChange={onImportRecipeSheetChange}
-        onAnimate={onImportRecipeSheetAnimate}
-        // accessible={false}: same iOS a11y-leaf fix as the sheet above (dead
-        // accessibilityViewIsModal removed too) — see
-        // docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
-        accessible={false}
+        onChange={onSheetChange}
+        onAnimate={onSheetAnimate}
+        {...sheetHostProps}
       >
         {importRecipeSheetChildren}
       </BottomSheetModal>
@@ -1553,16 +1632,10 @@ export default function MealPlanHomeScreen() {
         enableDynamicSizing={false}
         keyboardBehavior="extend"
         keyboardBlurBehavior="restore"
-        backdropComponent={renderSheetBackdrop}
-        backgroundStyle={sheetBackgroundStyle}
-        handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleQuickAddDismiss}
         onChange={handleQuickAddSheetChange}
-        onAnimate={onQuickAddSheetAnimate}
-        // accessible={false}: same iOS a11y-leaf fix as the sheet above (dead
-        // accessibilityViewIsModal removed too) — see
-        // docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
-        accessible={false}
+        onAnimate={onSheetAnimate}
+        {...sheetHostProps}
       >
         {quickAddSheetChildren}
       </BottomSheetModal>
@@ -1572,16 +1645,10 @@ export default function MealPlanHomeScreen() {
         enableDynamicSizing={false}
         keyboardBehavior="fillParent"
         keyboardBlurBehavior="restore"
-        backdropComponent={renderSheetBackdrop}
-        backgroundStyle={sheetBackgroundStyle}
-        handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleSimpleEntryDismiss}
         onChange={handleSimpleEntrySheetChange}
-        onAnimate={onSimpleEntrySheetAnimate}
-        // accessible={false}: same iOS a11y-leaf fix as the sheet above (dead
-        // accessibilityViewIsModal removed too) — see
-        // docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
-        accessible={false}
+        onAnimate={onSheetAnimate}
+        {...sheetHostProps}
       >
         {simpleEntrySheetChildren}
       </BottomSheetModal>

@@ -333,6 +333,10 @@ export function useQuickLogSession({
           : "Some items failed to log. Please try again.",
       );
     },
+    // The onError above already sets a visible submitError for any
+    // generic failure — both consumers (QuickLogScreen, QuickLogDrawer)
+    // surface it via toast/InlineError.
+    meta: { silentError: true },
   });
 
   const { data: frequentItems } = useQuery({
