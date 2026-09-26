@@ -106,10 +106,13 @@ change" constraint given for this run):**
    `./assets/images/android-icon-foreground.png`). Fixing this means re-encoding/replacing binary
    image assets, not editing `package.json`/`package-lock.json`/`app.json` — outside this todo's
    Scope Contract file list. Not fixed.
-2. **`expo-modules-core` installed directly.** `grep -rn "from ['\"]expo-modules-core" client/
-shared/ server/` found no direct imports in app code, so this is a transitive/peer pin, not an
-   app-code dependency. Removing it from `package.json` would still change the dependency graph
-   (and `package-lock.json`/`node_modules`), which the run's hard constraints forbid. Not fixed.
+2. **`expo-modules-core` installed directly.** `expo-modules-core` is declared directly in
+   `package.json`'s top-level `dependencies` (`^3.0.29`) — that literal declaration is exactly
+   what expo-doctor's "packages that should not be installed directly" check flags, independent
+   of whether any app file imports it. No app code does: `grep -rn "expo-modules-core" client/
+shared/ server/` finds only comments, so it may be a removable direct dependency the Expo core
+   packages already provide transitively — but removing it is still a `package.json`/
+   `package-lock.json`/`node_modules` change, which the run's hard constraints forbid. Not fixed.
 3. **Duplicate native deps.** The `expo-constants@55.0.16` duplicate (nested under
    `expo-notifications/node_modules`) is a direct consequence of keeping `expo-notifications` on
    its SDK-55 major above — not an independent bug. The `expo-image-loader@6.0.0` ×2 duplicate is
