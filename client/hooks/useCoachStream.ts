@@ -123,6 +123,9 @@ export function useCoachStream({
   const firstCharDrainedRef = useRef(false); // cleared status on first drain?
   const fullTextRef = useRef(""); // fence-stripped text to pass to onDone
   const blocksRef = useRef<CoachBlock[]>([]);
+  // Mirrors `isStreaming` for a synchronous, stale-closure-safe guard read in
+  // startStream — see the guard there.
+  const isStreamingRef = useRef(false);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
   const drainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -157,6 +160,7 @@ export function useCoachStream({
         if (isDoneRef.current && bufferRef.current.length === 0) {
           // Buffer exhausted and server is done — finish
           stopDrain();
+          isStreamingRef.current = false;
           setIsStreaming(false);
           setStatusText("");
           onDoneRef.current?.(
@@ -188,6 +192,7 @@ export function useCoachStream({
     displayedLengthRef.current = 0;
     fenceStateRef.current = createFenceScanState();
     firstCharDrainedRef.current = false;
+    isStreamingRef.current = false;
     setIsStreaming(false);
     setStatusText("");
     setStreamingContent("");
@@ -208,6 +213,14 @@ export function useCoachStream({
       userMessage: string,
       extras?: { warmUpId?: string | null; screenContext?: string },
     ) => {
+      // Refuse an overlapping stream: most internal state here (buffer,
+      // accumulated text, xhrRef, timers) is a single shared slot, not
+      // per-request, so a second concurrent startStream would corrupt or
+      // orphan the first — see
+      // todos/archive/P3-2026-09-24-chat-stream-hooks-xhrref-last-write-wins.md.
+      if (isStreamingRef.current) return;
+      isStreamingRef.current = true;
+
       // Reset all state for a fresh stream
       clearInactivity();
       bufferRef.current = "";
@@ -249,6 +262,7 @@ export function useCoachStream({
             settled = true;
             clearInactivity();
             stopDrain();
+            isStreamingRef.current = false;
             setIsStreaming(false);
             setStatusText("");
             onErrorRef.current?.(msg, code);
@@ -372,6 +386,7 @@ export function useCoachStream({
         })
         .catch((err: unknown) => {
           stopDrain();
+          isStreamingRef.current = false;
           setIsStreaming(false);
           setStatusText("");
           onErrorRef.current?.(

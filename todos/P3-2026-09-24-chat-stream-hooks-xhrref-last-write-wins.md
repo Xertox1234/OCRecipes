@@ -1,6 +1,6 @@
 ---
 title: "useSendMessage / useCoachStream track only the latest XHR — an overlapping send can't be aborted"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-24
 updated: 2026-09-24

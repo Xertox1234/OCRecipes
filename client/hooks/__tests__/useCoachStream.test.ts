@@ -329,6 +329,70 @@ describe("useCoachStream abort", () => {
   });
 });
 
+// P3-2026-09-24: most of this hook's internal state (buffer, accumulated
+// text, xhrRef, timers) is a single shared slot, not per-request, so an
+// overlapping startStream call is refused outright rather than tracking a
+// second in-flight XHR (the same-instance XHR mock below can't distinguish
+// two different XHR objects, so these assert via call counts instead).
+describe("useCoachStream overlapping starts", () => {
+  it("refuses a second startStream while one is already in flight", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    expect(mockXhr.open).toHaveBeenCalledTimes(1);
+    expect(mockXhr.send).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      result.current.startStream(2, "second message");
+      await Promise.resolve();
+    });
+
+    // No second request was opened or sent.
+    expect(mockXhr.open).toHaveBeenCalledTimes(1);
+    expect(mockXhr.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("abortStream still reaches the original in-flight XHR after a refused overlap", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    await act(async () => {
+      result.current.startStream(2, "second message");
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.abortStream();
+    });
+
+    expect(mockXhr.abort).toHaveBeenCalled();
+    expect(result.current.isStreaming).toBe(false);
+  });
+
+  it("allows a new stream to start once the first one has finished", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Hi" });
+      mockXhr.emit({ done: true });
+      mockXhr.complete();
+    });
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 5);
+    });
+    expect(result.current.isStreaming).toBe(false);
+    expect(mockXhr.open).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      result.current.startStream(2, "second message");
+      await Promise.resolve();
+    });
+
+    expect(mockXhr.open).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("useCoachStream onDone", () => {
   it("calls onDone with full text after buffer drains", async () => {
     const { result, onDone } = await setupHook();

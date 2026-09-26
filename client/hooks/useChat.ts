@@ -162,6 +162,11 @@ export function useSendMessage(conversationId: number | null) {
     ) => {
       const effectiveId = conversationIdOverride ?? conversationId;
       if (!effectiveId) return;
+      // Refuse an overlapping send: `xhrRef`/`isStreamingRef` are single-slot
+      // state for this hook instance, so a second concurrent call would
+      // overwrite (and orphan) the first in-flight request's XHR reference —
+      // see todos/archive/P3-2026-09-24-chat-stream-hooks-xhrref-last-write-wins.md.
+      if (isStreamingRef.current) return;
       isStreamingRef.current = true;
       streamingContentRef.current = "";
       setIsStreaming(true);
@@ -172,6 +177,11 @@ export function useSendMessage(conversationId: number | null) {
       setRequestError(null);
 
       let receivedDone = false;
+      // Captured separately from xhrRef so the `finally` below (outside this
+      // `try` block's own scope) can tell whether xhrRef still points at
+      // THIS request's XHR before nulling it — defense in depth alongside
+      // the isStreamingRef guard above.
+      let ownXhr: XMLHttpRequest | null = null;
 
       try {
         const baseUrl = getApiUrl();
@@ -273,6 +283,7 @@ export function useSendMessage(conversationId: number | null) {
 
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
+          ownXhr = xhr;
           xhrRef.current = xhr;
           xhr.open("POST", url.href, true);
           xhr.timeout = CHAT_XHR_TIMEOUT_MS;
@@ -359,7 +370,12 @@ export function useSendMessage(conversationId: number | null) {
             : "Something went wrong. Please try again.",
         );
       } finally {
-        xhrRef.current = null;
+        // Only clear the ref if it still points at this request's XHR — a
+        // guard against a future caller that bypasses the isStreamingRef
+        // check above and starts a second request; without this, the
+        // second request's cleanup could null out the first request's
+        // still-live reference (or vice versa).
+        if (xhrRef.current === ownXhr) xhrRef.current = null;
         isStreamingRef.current = false;
         setIsStreaming(false);
         setStreamingContent("");
