@@ -27,7 +27,11 @@ import { ThemedText } from "@/components/ThemedText";
 import { Chip } from "@/components/Chip";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
 import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
-import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
+import {
+  SkeletonBox,
+  SkeletonLoadingRegion,
+  SkeletonProvider,
+} from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
@@ -73,6 +77,7 @@ import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
 import { planBannerA11yLabel } from "@/components/coach/coach-chat-utils";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 const RECIPE_HEADER_EXPANDED = 160;
 const RECIPE_HEADER_COLLAPSED = 0;
@@ -524,6 +529,14 @@ export default function RecipeBrowserScreen() {
     announcedOnlineErrorRef.current = true;
   }, [ctaState]);
 
+  // Tell screen-reader users the local search results are loading. Delayed
+  // 500ms to match the modal-safe pattern (docs/solutions/conventions/on-open-
+  // announce-must-delay-past-modal-present-focus-shift-2026-06-25.md) — this
+  // screen is pushed plainly under "RecipeBrowser" but presented as a modal
+  // under "RecipeBrowserModal", so the delay is required on one route and
+  // harmless on the other.
+  useDelayedLoadingAnnouncement(isLoading);
+
   const onPressOnlineCta = useCallback(() => {
     haptics.selection();
     // Reuse the shared premium gate (spec §5.4) — free users get the upgrade hook.
@@ -970,17 +983,16 @@ export default function RecipeBrowserScreen() {
         />
       ) : isLoading ? (
         <SkeletonProvider>
-          <View
+          <SkeletonLoadingRegion
             style={styles.loadingContainer}
-            accessibilityLabel="Loading..."
-            accessibilityElementsHidden
+            testID="recipe-browser-loading-skeleton"
           >
             <SkeletonBox width="100%" height={64} borderRadius={12} />
             <View style={{ height: Spacing.sm }} />
             <SkeletonBox width="100%" height={64} borderRadius={12} />
             <View style={{ height: Spacing.sm }} />
             <SkeletonBox width="100%" height={64} borderRadius={12} />
-          </View>
+          </SkeletonLoadingRegion>
         </SkeletonProvider>
       ) : localResults.length === 0 && onlineResults.length === 0 ? (
         <View style={styles.emptyContainer}>

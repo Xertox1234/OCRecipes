@@ -22,7 +22,11 @@ import { ScanFlowStepIndicator } from "@/components/ScanFlowStepIndicator";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { PreparationPicker } from "@/components/PreparationPicker";
-import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
+import {
+  SkeletonBox,
+  SkeletonLoadingRegion,
+  SkeletonProvider,
+} from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
@@ -37,6 +41,7 @@ import { FoodCategory } from "@shared/constants/preparation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { FoodItem } from "@/lib/photo-upload";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -391,6 +396,12 @@ export default function PhotoAnalysisScreen() {
     haptics,
   } = usePhotoAnalysis(imageUri, intent);
 
+  // Tell screen-reader users the photo is being analyzed. Delayed 500ms
+  // since this route is `presentation: "modal"` — an immediate announce
+  // races the OS's own present-focus-shift (docs/solutions/conventions/
+  // on-open-announce-must-delay-past-modal-present-focus-shift-2026-06-25.md).
+  useDelayedLoadingAnnouncement(isAnalyzing);
+
   if (isAnalyzing) {
     return (
       <ThemedView style={styles.container}>
@@ -411,10 +422,9 @@ export default function PhotoAnalysisScreen() {
             This may take a few seconds
           </ThemedText>
           <SkeletonProvider>
-            <View
-              accessibilityLabel="Loading..."
-              accessibilityElementsHidden
+            <SkeletonLoadingRegion
               style={styles.analysisSkeleton}
+              testID="photo-analysis-loading-skeleton"
             >
               {/* Food item rows */}
               {[1, 2, 3].map((i) => (
@@ -437,7 +447,7 @@ export default function PhotoAnalysisScreen() {
                 borderRadius={BorderRadius.md}
                 style={{ marginTop: Spacing.lg }}
               />
-            </View>
+            </SkeletonLoadingRegion>
           </SkeletonProvider>
         </View>
       </ThemedView>
