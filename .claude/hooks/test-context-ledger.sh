@@ -147,9 +147,10 @@ else
 fi
 
 # Test 10: digest over the cap -> stays within the 6144-byte cap, newest curated entries survive.
-# The pressure MUST come from a large curated.md, not a large transcript: the floor is
-# already bounded (12 lines, commands clipped to 100 chars), so a big transcript cannot
-# breach the cap and such a test would pass against an unenforced cap. See ledger Ruling 1.
+# The pressure comes from a large curated.md, so the trim loop's curated branch is what is
+# exercised. (Under the original 12-row floor a transcript alone could not breach the cap;
+# the four section caps, 6+5+8+8 rows, now can — the sectioned-cap case covers that.) See
+# ledger Ruling 1.
 SID10="sess-task2-cap"; L10="$CONTEXT_LEDGER_ROOT/$SID10"; mkdir -p "$L10"
 : > "$L10/curated.md"
 i=0
@@ -1352,6 +1353,16 @@ cat > "$TXS" <<'EOF'
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_C3","content":""}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_M1","name":"Bash","input":{"command":"/usr/bin/git merge-tree --write-tree main feat/x && git merge-base main feat/x","description":"Probe mergeability read-only"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_M1","content":"abc123"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_P1","name":"mcp__github__merge_pull_request","input":{"owner":"o","repo":"r","pullNumber":1093}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_P1","is_error":true,"content":"PreToolUse:mcp__github__merge_pull_request hook error: merge-review-guard: no review record"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_P2","name":"mcp__github__create_pull_request","input":{"owner":"o","repo":"r","title":"t"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_P2","is_error":true,"content":"Permission to use mcp__github__create_pull_request has been denied."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_T1","name":"Bash","input":{"command":"git tag v1.2.0","description":"Tag the release"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T1","content":""}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_T2","name":"Bash","input":{"command":"git tag -l 'v*'","description":"List release tags"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T2","content":"v1.1.0"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_T3","name":"Bash","input":{"command":"git tag","description":"Show all tags"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T3","content":"v1.1.0"}]}}
 EOF
 i=1
 while [ $i -le 15 ]; do
@@ -1359,11 +1370,13 @@ while [ $i -le 15 ]; do
   printf '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_Q%02d","content":"filler-%02d"}]}}\n' "$i" "$i" >> "$TXS"
   i=$((i+1))
 done
-# A successful Edit AFTER the fillers: placed before them, RECENT's own cap would evict it
+# A successful Edit and MCP call AFTER the fillers: placed before them, RECENT's own cap would evict them
 # and "absent from every section" would pass even if successful edits were kept as rows.
 cat >> "$TXS" <<'EOF'
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_E3","name":"Write","input":{"file_path":"/repo/client/success-edit-sentinel-late.ts","content":"x"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_E3","content":"File created successfully."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_P3","name":"mcp__github__pull_request_read","input":{"method":"get","pullNumber":7777}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_P3","content":"mcp-read-success-sentinel"}]}}
 EOF
 printf '{"session_id":"%s","transcript_path":"%s"}' "$SIDS" "$TXS" | bash "$PRECOMPACT" >/dev/null 2>&1
 RS="$LS/resume.md"
@@ -1417,9 +1430,28 @@ grep -q "Merge PR 1093 ← ALLOW_OUTWARD_CLI=1 gh pr merge" <<< "$STC" \
 grep -q "Probe mergeability read-only" <<< "$STC" \
   && no "read-only git merge-tree/merge-base classed as a state change" \
   || ok "git merge-tree / merge-base are not state changes (verb must end at whitespace)"
+# MCP tools: this repo prefers mcp__github__* for PR work and wires merge-review-guard onto
+# them, so a denied MCP merge is exactly the call a resumed session would retry.
+grep -q "mcp__github__merge_pull_request.*merge-review-guard: no review record" <<< "$BLK" \
+  && ok "BLOCKED carries a guard-denied MCP tool call" \
+  || no "guard-denied MCP call missing from BLOCKED: [$BLK]"
+grep -q "Permission to use mcp__github__create_pull_request" <<< "$BLK" \
+  && ok "BLOCKED carries a permission-refused MCP tool call" \
+  || no "permission-refused MCP call missing from BLOCKED"
+grep -q "mcp-read-success-sentinel\|7777" "$RS" 2>/dev/null \
+  && no "a SUCCESSFUL MCP call leaked into the digest" \
+  || ok "a successful MCP call appears in no section"
+grep -q "Tag the release ← git tag v1.2.0" <<< "$STC" \
+  && ok "STATE carries git tag <name>" \
+  || no "git tag <name> missing from STATE"
+if grep -q "List release tags\|Show all tags" <<< "$STC"; then
+  no "read-only git tag / git tag -l classed as a state change"
+else
+  ok "read-only git tag and git tag -l are not state changes"
+fi
 rct_n=$(printf '%s\n' "$RCT" | grep -c "Filler")
-if [ "$rct_n" -le 8 ] && grep -q "Filler 15" <<< "$RCT" \
-   && ! grep -q "Filler 01 " <<< "$RCT"; then
+rct_set=$(grep -o "Filler [0-9][0-9]" <<< "$RCT" | tr '\n' ' ')
+if [ "$rct_n" -eq 8 ] && [ "$rct_set" = "Filler 08 Filler 09 Filler 10 Filler 11 Filler 12 Filler 13 Filler 14 Filler 15 " ]; then
   ok "RECENT keeps the newest 8 fillers; filler evicts only RECENT rows ($rct_n rows)"
 else
   no "RECENT cap/recency wrong ($rct_n filler rows): [$RCT]"
@@ -1491,7 +1523,7 @@ else
   no "trim reached BLOCKED/FAILED/curated too early ($bf_n of 11 kept)"
 fi
 
-EXPECTED_TOTAL=116
+EXPECTED_TOTAL=121
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -187,8 +187,10 @@ if [ -n "$TRANSCRIPT" ]; then
   # One section per kind, so bookkeeping filler can only ever evict RECENT rows (a real
   # "last 12 commands" floor held 12 PR-merge rows and none of the session's 18 denials):
   #   BLOCKED — is_error and the FIRST line is a guard denial, a permission refusal, a
-  #             harness block, or the user rejecting the call. Any tool: a denied Edit is
-  #             exactly what a resumed session would otherwise retry. Result = that line.
+  #             harness block, or the user rejecting the call. Any tool, so the tool-name
+  #             class is `[^ ]+`: MCP names carry `_` (mcp__github__merge_pull_request, the path
+  #             this repo prefers for PR work). A denied Edit or MCP merge is exactly what a
+  #             resumed session would otherwise retry. Result = that line.
   #   FAILED  — a Bash is_error that is not BLOCKED-shaped. Keyed on is_error, the flag the
   #             tool itself sets — real failures also start "---", "{", or nothing, not only
   #             "Exit code N". Only when no LATER non-error run has the same FULL command:
@@ -211,7 +213,7 @@ if [ -n "$TRANSCRIPT" ]; then
       END {
         for (i=n; i>=1; i--) {
           id=order[i]; m=(id in matched); e=(m && err[id]=="1"); k="RECENT"
-          if (e && first[id] ~ /^(PreToolUse:[A-Za-z]+ hook error|Permission to use |<tool_use_error>Blocked|The user doesn.t want to proceed)/) k="BLOCKED"
+          if (e && first[id] ~ /^(PreToolUse:[^ ]+ hook error|Permission to use |<tool_use_error>Blocked|The user doesn.t want to proceed)/) k="BLOCKED"
           else if (tool[id]!="Bash") k=""
           else if (e) k=((key[id] in ok_later) ? "RECENT" : "FAILED")
           else if (m && st[id]=="1") k="STATE"
@@ -228,7 +230,7 @@ if [ -n "$TRANSCRIPT" ]; then
   # Secrets now land in this file because captured RESULT text can carry them (env dumps,
   # curl auth headers, a printed token) in a way a bare command line rarely did. Redact
   # VISIBLY ("[redacted]") rather than dropping the row silently, so a reader can tell
-  # something was removed. Runs on the id-free "desc\tcmd\tresult" rows from join_ur —
+  # something was removed. Runs on the id-free "kind\tdesc\tcmd\tresult" rows from classify_ur —
   # after the join (so a long id can never be mistaken for a secret and corrupt the join)
   # but before format_floor's display clamp (so a token isn't sliced in half first, see
   # above). `#` as the sed delimiter throughout, since several patterns contain `/`.
@@ -372,24 +374,26 @@ if [ -n "$TRANSCRIPT" ]; then
   # field), description, displayed first line. The state regex runs on the FULL command so
   # `git push` on line 2 still counts, and tolerates `/usr/bin/git`, `rtk proxy git`,
   # `git -C <dir>`, and a leading `VAR=value ` env prefix (it anchors at any word start). A
-# verb must END at whitespace or end of string, not a mere `\b`: a word boundary sits before
-# the hyphen in `git merge-tree`/`git merge-base`, and a real digest listed that read-only
-# probe as a state change.
+  # verb must END at whitespace or end of string, not a mere `\b`: a word boundary sits before
+  # the hyphen in `git merge-tree`/`git merge-base`, and a real digest listed that read-only
+  # probe as a state change. `git tag` counts only when it creates or deletes (a name, or
+  # -a/-s/-d/-f/-m/-u): bare `git tag` and `git tag -l` just list. Every other tool_use is
+  # extracted too (display = file_path, else the input JSON); it survives only as BLOCKED.
   ROWS=$(jq -R -r '
       def content_text:
         if type=="string" then .
         elif type=="array" then (map(if type=="object" then (.text? // "") else (.|tostring) end) | join(" "))
         else (.|tostring) end;
       def state_change:
-        test("(^|[\\s;&|(])((rtk\\s+proxy\\s+)?(/usr/bin/)?git(\\s+-C\\s+\\S+)?\\s+(commit|push|merge|rebase|reset|tag|worktree\\s+(add|remove)|checkout\\s+-b|switch\\s+-c)(\\s|$)|gh\\s+pr\\s+(create|merge|close)(\\s|$)|npm\\s+run\\s+(update:|db:push|seed|backfill|cleanup))");
+        test("(^|[\\s;&|(])((rtk\\s+proxy\\s+)?(/usr/bin/)?git(\\s+-C\\s+\\S+)?\\s+((commit|push|merge|rebase|reset|worktree\\s+(add|remove)|checkout\\s+-b|switch\\s+-c)(\\s|$)|tag\\s+([^-\\s]|-[asdfmu](\\s|$)|--(annotate|sign|delete|force|message)))|gh\\s+pr\\s+(create|merge|close)(\\s|$)|npm\\s+run\\s+(update:|db:push|seed|backfill|cleanup))");
       fromjson?
       | if (.type // "")=="assistant" then
-          (.message.content[]? | select(.type=="tool_use" and (.name=="Bash" or .name=="Edit" or .name=="Write" or .name=="MultiEdit"))
+          (.message.content[]? | select(.type=="tool_use")
             | if .name=="Bash" then
                 (.input.command // "") as $c
                 | "U\t\(.id // "")\tBash\t\(if ($c | state_change) then "1" else "0" end)\t\($c | tojson)\t\((.input.description // "(no description)") | gsub("\t";" ") | .[0:300])\t\($c | split("\n")[0] // "" | gsub("\t";" ") | .[0:2000])"
               else
-                "U\t\(.id // "")\t\(.name)\t0\t\t(\(.name))\t\((.input.file_path // "") | gsub("\t";" ") | .[0:2000])"
+                "U\t\(.id // "")\t\(.name // "")\t0\t\t(\(.name // "tool"))\t\((.input.file_path // (.input | tojson)) | gsub("\t";" ") | .[0:2000])"
               end)
         elif (.type // "")=="user" then
           (.message.content[]? | select(.type=="tool_result")
@@ -404,7 +408,7 @@ if [ -n "$TRANSCRIPT" ]; then
     printf '%s\n' "$ROWS" | awk -F'\t' -v k="$1" '$1==k { print substr($0, length(k)+2) }' \
       | rev_lines | awk '!seen[$0]++' | awk -v c="$2" 'NR<=c' | rev_lines
   }
-  BLOCKED=$(section BLOCKED 6)
+  BLOCKED=$(section BLOCKED 8)
   FAILED=$(section FAILED 5)
   STATE=$(section STATE 8)
   RECENT=$(section RECENT 8)
