@@ -2,23 +2,36 @@
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { REFRESH_ON_FOCUS_SETTLE_MS } from "@/hooks/useRefreshOnFocus";
 import CoachProScreen from "../CoachProScreen";
 
 const {
   mockAcknowledge,
   mockUsePremiumFeature,
   mockUseCoachContext,
+  mockRefetchConversations,
+  focusEffectCb,
   premiumContextState,
 } = vi.hoisted(() => ({
   mockAcknowledge: vi.fn(),
   mockUsePremiumFeature: vi.fn(),
   mockUseCoachContext: vi.fn(),
+  // Hoisted so it stays referentially stable across renders, matching the
+  // real useChatConversations().refetch (see the referential-equality-test-
+  // mocks-must-match-hook-stability-profile solution doc).
+  mockRefetchConversations: vi.fn(),
+  // Captures the latest callback CoachProScreen's useRefreshOnFocus passes to
+  // useFocusEffect, so tests can simulate a refocus by invoking it directly.
+  focusEffectCb: { current: null as (() => void) | null },
   premiumContextState: { isLoading: false },
 }));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn(), setParams: vi.fn() }),
   useRoute: () => ({ params: {} }),
+  useFocusEffect: (cb: () => void) => {
+    focusEffectCb.current = cb;
+  },
 }));
 
 vi.mock("@react-navigation/bottom-tabs", () => ({
@@ -39,7 +52,11 @@ vi.mock("@/hooks/useCoachContext", () => ({
 
 vi.mock("@/hooks/useChat", () => ({
   useCreateConversation: () => ({ mutateAsync: vi.fn() }),
-  useChatConversations: () => ({ data: [], isError: false, refetch: vi.fn() }),
+  useChatConversations: () => ({
+    data: [],
+    isError: false,
+    refetch: mockRefetchConversations,
+  }),
   useNotebookEntries: () => ({ data: [], isLoading: false }),
 }));
 
@@ -82,6 +99,7 @@ vi.mock("@/components/coach/CoachChat", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  focusEffectCb.current = null;
   mockAcknowledge.mockResolvedValue(undefined);
   // Defaults preserve the original harness: Coach Pro user, premium resolved.
   premiumContextState.isLoading = false;
@@ -149,5 +167,39 @@ describe("CoachProScreen — premium gate (coachPro)", () => {
     renderComponent(<CoachProScreen />);
 
     expect(mockUseCoachContext).toHaveBeenCalledWith(true);
+  });
+});
+
+describe("CoachProScreen — thread bar refetch on refocus", () => {
+  // The thread bar (coachConversations) stays mounted across a tab
+  // blur/refocus — a conversation whose reply finished after the user left
+  // is marked stale (`refetchType: "none"`, #1060) and only shows up here
+  // once this observer refetches. See P3-2026-09-24-mounted-chat-list-stays-
+  // stale-after-abort.
+  it("does not refetch on the initial focus, then refetches on a later one", () => {
+    renderComponent(<CoachProScreen />);
+
+    expect(focusEffectCb.current).toBeTypeOf("function");
+    focusEffectCb.current?.(); // initial focus (mount) — skipped
+    expect(mockRefetchConversations).not.toHaveBeenCalled();
+
+    focusEffectCb.current?.(); // returning focus — triggers a refetch
+    expect(mockRefetchConversations).toHaveBeenCalledTimes(1);
+  });
+  it("re-reads once more after the settle margin (opts in to the follow-up)", () => {
+    // The refocus usually lands in the same transition as the Ask Coach
+    // overlay's `refetchType: "none"` dismissal — before the server settles.
+    vi.useFakeTimers();
+    try {
+      renderComponent(<CoachProScreen />);
+      focusEffectCb.current?.(); // initial focus (mount) — skipped
+      focusEffectCb.current?.(); // returning focus
+      expect(mockRefetchConversations).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(REFRESH_ON_FOCUS_SETTLE_MS);
+      expect(mockRefetchConversations).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

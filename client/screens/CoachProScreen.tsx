@@ -24,6 +24,10 @@ import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useCoachContext } from "@/hooks/useCoachContext";
 import {
+  REFRESH_ON_FOCUS_SETTLE_MS,
+  useRefreshOnFocus,
+} from "@/hooks/useRefreshOnFocus";
+import {
   useChatConversations,
   useCreateConversation,
   useNotebookEntries,
@@ -67,6 +71,24 @@ export default function CoachProScreen() {
     isError: conversationsError,
     refetch: refetchConversations,
   } = useChatConversations("coach");
+  // This screen is the Coach tab's persistent stack root, so the thread bar
+  // below never remounts. Its reachable stale trigger: dismissing the Ask
+  // Coach overlay (CoachOverlayContent, hosted by the root-stack
+  // `fullScreenModal` CoachChat route — this screen is blurred while it is up)
+  // mid-answer invalidates the `["/api/chat/conversations"]` prefix with
+  // `refetchType: "none"`, which matches this `{ type: "coach" }` key but only
+  // refetches on an observer mount. Pick it up on refocus instead; the hook's
+  // settle-margin follow-up covers the refocus landing in the same transition
+  // as that dismissal, before the server's post-disconnect write.
+  const refetchConversationsOnFocus = useCallback(() => {
+    void refetchConversations();
+  }, [refetchConversations]);
+  // settleMs: the refocus usually lands in the same transition as the abort
+  // that invalidated this list with `refetchType: "none"` — re-read once the
+  // server's post-disconnect write has settled (see the constant's comment).
+  useRefreshOnFocus(refetchConversationsOnFocus, {
+    settleMs: REFRESH_ON_FOCUS_SETTLE_MS,
+  });
   const warmUpHook = useCoachWarmUp(conversationId);
   const navigation = useNavigation<CoachChatNavigationProp>();
   const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();

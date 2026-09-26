@@ -21,6 +21,10 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
+  REFRESH_ON_FOCUS_SETTLE_MS,
+  useRefreshOnFocus,
+} from "@/hooks/useRefreshOnFocus";
+import {
   useChatConversations,
   useCreateConversation,
   useDeleteConversation,
@@ -91,8 +95,31 @@ export default function ChatListScreen() {
     data: conversations,
     isLoading,
     refetch,
-    isRefetching,
   } = useChatConversations(activeSegment);
+  // A conversation whose reply finished after the user left is marked stale
+  // with `refetchType: "none"` (#1060/#1065) — that only refetches once a
+  // query observer mounts, and this screen stays mounted across a stack
+  // push/pop. Pick it up the next time the list regains focus instead of
+  // waiting for a manual pull-to-refresh. `refetch` is stable across
+  // `activeSegment` switches (react-query keeps the same observer instance
+  // for this component's lifetime), so no extra guard/memo is needed here.
+  const refetchOnFocus = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+  // settleMs: the refocus usually lands in the same transition as the abort
+  // that invalidated this list with `refetchType: "none"` — re-read once the
+  // server's post-disconnect write has settled (see the constant's comment).
+  useRefreshOnFocus(refetchOnFocus, { settleMs: REFRESH_ON_FOCUS_SETTLE_MS });
+  // Local flag (not the query's own `isRefetching`) so a background,
+  // focus-triggered refetch above doesn't flash the pull-to-refresh spinner —
+  // only a user-initiated pull should show it.
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const handleManualRefresh = useCallback(() => {
+    setIsManualRefreshing(true);
+    void refetch()
+      .then(() => haptics.impact())
+      .finally(() => setIsManualRefreshing(false));
+  }, [refetch, haptics]);
   // handleNewChat's own catch below already toasts on a creation failure —
   // opt out so the global net doesn't double it.
   const { mutateAsync: createConversationAsync, isPending: isCreatingChat } =
@@ -335,8 +362,8 @@ export default function ChatListScreen() {
         }}
         refreshControl={
           <RefreshControl
-            refreshing={isRefetching}
-            onRefresh={() => refetch().then(() => haptics.impact())}
+            refreshing={isManualRefreshing}
+            onRefresh={handleManualRefresh}
             tintColor={theme.link}
           />
         }
