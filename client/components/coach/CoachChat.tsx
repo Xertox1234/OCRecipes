@@ -33,6 +33,7 @@ import {
   toPlannedDateSet,
 } from "@/components/coach/plan-slot-picker-utils";
 import { useTheme } from "@/hooks/useTheme";
+import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import {
   useChatMessages,
   useDeleteChatMessageForRetry,
@@ -334,6 +335,26 @@ export default function CoachChat({
     isError: isHistoryError,
     refetch: refetchMessages,
   } = useChatMessages(conversationId, { silentError: true });
+
+  // A reply that finished after the user left is marked stale with
+  // `refetchType: "none"` (see the unmount cleanup below, #1060) — that only
+  // refetches once a query observer mounts, and this component stays mounted
+  // across a tab blur/refocus (the Coach Pro thread bar's CoachChat instance
+  // has no unmountOnBlur). Pick it up on refocus instead of waiting for a
+  // remount. Guarded on conversationId: a manual refetch() bypasses
+  // useChatMessages' `enabled: !!conversationId` gate (verified against the
+  // pinned @tanstack/query-core source — Query.fetch() has no enabled check),
+  // so an unguarded call while conversationId is null would fetch
+  // `/api/chat/conversations/null/messages`. refetchMessages itself is
+  // referentially stable across conversationId changes (react-query keeps one
+  // QueryObserver instance per component and only retargets it via
+  // setOptions), so this wrapper only gets a new identity when conversationId
+  // itself changes — the one extra refetch that causes is a harmless
+  // duplicate of the new conversation's own mount-triggered fetch.
+  const refetchOnFocus = useCallback(() => {
+    if (conversationId !== null) void refetchMessages();
+  }, [conversationId, refetchMessages]);
+  useRefreshOnFocus(refetchOnFocus);
 
   // Distinguish a failed history fetch (show error + retry) from a genuinely
   // empty conversation (render nothing): only surface the error when the query

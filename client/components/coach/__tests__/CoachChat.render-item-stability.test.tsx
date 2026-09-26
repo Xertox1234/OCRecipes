@@ -65,6 +65,13 @@ const stable = vi.hoisted(() => ({
   // useMemo (deps: [messages]) — which IS in renderItem's own deps — on
   // every keystroke, for a reason unrelated to this test.
   messages: [] as unknown[],
+  // QueryObserver.refetch is bound once in its constructor and the observer
+  // instance persists for this component's lifetime (react-query only
+  // retargets it via setOptions), so the real useChatMessages().refetch is
+  // stable across re-renders — a fresh vi.fn() per call would falsely give
+  // CoachChat's guarded useRefreshOnFocus callback a new identity every
+  // keystroke, unrelated to this test.
+  refetchMessages: vi.fn(),
 }));
 
 vi.mock("react-native", async (importOriginal) => {
@@ -90,7 +97,10 @@ vi.mock("@/hooks/useCoachStream", () => ({
 }));
 
 vi.mock("@/hooks/useChat", () => ({
-  useChatMessages: () => ({ data: stable.messages }),
+  useChatMessages: () => ({
+    data: stable.messages,
+    refetch: stable.refetchMessages,
+  }),
   // Fresh WRAPPER object each call (faithful to real useMutation), but a
   // stable `mutateAsync` inside it — see the `stable` comment above.
   useDeleteChatMessageForRetry: () => ({
@@ -131,6 +141,11 @@ vi.mock("@/components/UpgradeModal", () => ({
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => stable.navigation,
+  // Not exercised by this file (renderItem-identity only) — a no-op keeps
+  // CoachChat's new useRefreshOnFocus call from crashing on an undefined
+  // useFocusEffect without firing it and disturbing the keystroke assertions
+  // below. See CoachChat.branches.test.tsx for refetch-on-refocus coverage.
+  useFocusEffect: vi.fn(),
 }));
 
 vi.mock("@/hooks/useMealPlanRecipes", () => ({

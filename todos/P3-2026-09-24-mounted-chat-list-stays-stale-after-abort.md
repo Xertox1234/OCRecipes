@@ -1,6 +1,6 @@
 ---
 title: "A chat screen that stays mounted doesn't pick up a reply the server finished after the user left"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-24
 updated: 2026-09-24

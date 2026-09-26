@@ -23,6 +23,7 @@ import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useCoachContext } from "@/hooks/useCoachContext";
+import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
 import {
   useChatConversations,
   useCreateConversation,
@@ -67,6 +68,14 @@ export default function CoachProScreen() {
     isError: conversationsError,
     refetch: refetchConversations,
   } = useChatConversations("coach");
+  // The thread bar below stays mounted across a tab blur/refocus, so a
+  // conversation whose reply finished after the user left (marked stale with
+  // `refetchType: "none"`, #1060) only shows up here once this observer
+  // refetches — pick that up on refocus rather than requiring a remount.
+  const refetchConversationsOnFocus = useCallback(() => {
+    void refetchConversations();
+  }, [refetchConversations]);
+  useRefreshOnFocus(refetchConversationsOnFocus);
   const warmUpHook = useCoachWarmUp(conversationId);
   const navigation = useNavigation<CoachChatNavigationProp>();
   const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();
