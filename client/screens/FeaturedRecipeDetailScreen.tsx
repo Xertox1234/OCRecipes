@@ -1,5 +1,11 @@
-import React, { useMemo } from "react";
-import { Pressable, StyleSheet, View, ScrollView } from "react-native";
+import React, { useEffect, useMemo, useRef } from "react";
+import {
+  AccessibilityInfo,
+  Pressable,
+  StyleSheet,
+  View,
+  ScrollView,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
@@ -174,6 +180,29 @@ export default function FeaturedRecipeDetailScreen() {
   // client/screens/LabelAnalysisScreen.tsx.
   const isNotFoundError =
     error instanceof ApiError && error.code === ErrorCode.NOT_FOUND;
+  const showsGenericError = Boolean(error) && !isNotFoundError && !normalized;
+
+  // Announce whichever EmptyState branch (below) is about to render — it has
+  // no live region either (same pattern as mealPlanErrorAnnouncedRef in
+  // MealPlanHomeScreen.tsx). Skip the mount render so a screen that opens
+  // already-errored/not-found doesn't announce on top of focus.
+  const announcement = isLoading
+    ? null
+    : showsGenericError
+      ? "Couldn't load this recipe. Try again."
+      : !normalized
+        ? "Recipe not found."
+        : null;
+  const errorAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (!errorAnnouncedRef.current) {
+      errorAnnouncedRef.current = true;
+      return;
+    }
+    if (announcement) {
+      AccessibilityInfo.announceForAccessibility(announcement);
+    }
+  }, [announcement]);
 
   const imageUri = useMemo(
     () => resolveImageUrl(normalized?.imageUrl),
@@ -223,7 +252,7 @@ export default function FeaturedRecipeDetailScreen() {
         <ScrollView contentInsetAdjustmentBehavior="never">
           <RecipeDetailSkeleton />
         </ScrollView>
-      ) : error && !isNotFoundError && !normalized ? (
+      ) : showsGenericError ? (
         <View style={styles.center}>
           <EmptyState
             variant="temporary"

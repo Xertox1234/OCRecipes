@@ -17,6 +17,7 @@
 // the fix, not a narrowed one.
 import React from "react";
 import { cleanup, screen, fireEvent, waitFor } from "@testing-library/react";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import FeaturedRecipeDetailScreen from "../FeaturedRecipeDetailScreen";
 import { ApiError } from "@/lib/api-error";
@@ -118,6 +119,51 @@ describe("FeaturedRecipeDetailScreen — a genuine 404 is 'not found', not a ret
     expect(await screen.findByText("Recipe not found")).toBeDefined();
     expect(screen.queryByText("Try Again")).toBeNull();
     expect(screen.queryByText("Couldn't load this recipe")).toBeNull();
+  });
+});
+
+describe("FeaturedRecipeDetailScreen — generic error is announced for screen readers", () => {
+  let announceSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+  });
+
+  afterEach(() => {
+    announceSpy.mockRestore();
+  });
+
+  it("announces once when the generic-error state is reached", async () => {
+    mockApiRequest.mockRejectedValue(new TypeError("Network request failed"));
+
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    await screen.findByText("Couldn't load this recipe");
+
+    expect(announceSpy).toHaveBeenCalledExactlyOnceWith(
+      "Couldn't load this recipe. Try again.",
+    );
+  });
+
+  it("announces 'Recipe not found.' (not the generic-error copy) for a 404", async () => {
+    mockApiRequest.mockRejectedValue(
+      new ApiError("404: Recipe not found", ErrorCode.NOT_FOUND, 404),
+    );
+
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    await screen.findByText("Recipe not found");
+
+    expect(announceSpy).toHaveBeenCalledExactlyOnceWith("Recipe not found.");
+  });
+
+  it("does not announce on the happy path", async () => {
+    mockApiRequest.mockResolvedValue({
+      json: async () => ({ id: 42, title: "Pancakes", ingredients: [] }),
+    });
+
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    await screen.findByText("Pancakes");
+
+    expect(announceSpy).not.toHaveBeenCalled();
   });
 });
 

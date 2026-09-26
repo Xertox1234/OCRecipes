@@ -808,12 +808,16 @@ export default function MealPlanHomeScreen() {
       budgetErrorAnnouncedRef.current = true;
       return;
     }
-    if (budgetErrorNoData) {
+    // Gated on !isLoadingError too: the meal-plan-items isLoadingError branch
+    // below early-returns before this section (and its EmptyState) ever
+    // renders, so announcing this copy while that branch is on screen would
+    // describe UI the user isn't looking at.
+    if (budgetErrorNoData && !isLoadingError) {
       AccessibilityInfo.announceForAccessibility(
         "Couldn't load your calorie budget. Try again.",
       );
     }
-  }, [budgetErrorNoData]);
+  }, [budgetErrorNoData, isLoadingError]);
 
   // Same announce pattern as budgetErrorAnnouncedRef above, for the meal-plan
   // items fetch — the EmptyState rendered on isLoadingError below has no live
