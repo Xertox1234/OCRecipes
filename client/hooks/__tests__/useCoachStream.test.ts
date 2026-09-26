@@ -329,6 +329,172 @@ describe("useCoachStream abort", () => {
   });
 });
 
+// P3-2026-09-24: most of this hook's internal state (buffer, accumulated
+// text, xhrRef, timers) is a single shared slot, not per-request, so an
+// overlapping startStream call is refused outright rather than tracking a
+// second in-flight XHR (the same-instance XHR mock below can't distinguish
+// two different XHR objects, so these assert via call counts instead).
+describe("useCoachStream overlapping starts", () => {
+  it("refuses a second startStream while one is already in flight", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    expect(mockXhr.open).toHaveBeenCalledTimes(1);
+    expect(mockXhr.send).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      result.current.startStream(2, "second message");
+      await Promise.resolve();
+    });
+
+    // No second request was opened or sent.
+    expect(mockXhr.open).toHaveBeenCalledTimes(1);
+    expect(mockXhr.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("abortStream still reaches the original in-flight XHR after a refused overlap", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    await act(async () => {
+      result.current.startStream(2, "second message");
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.abortStream();
+    });
+
+    expect(mockXhr.abort).toHaveBeenCalled();
+    expect(result.current.isStreaming).toBe(false);
+  });
+
+  // The token read is async: an abort (or unmount) that lands while it is
+  // still pending must stop its continuation from sending a request later —
+  // otherwise it races the next startStream, reopening the overlap above.
+  function deferToken() {
+    let resolve!: (token: string) => void;
+    mockTokenStorage.get.mockImplementationOnce(
+      () => new Promise<string>((r) => (resolve = r)),
+    );
+    return (token = "test-token") => resolve(token);
+  }
+
+  it("does not send a request when aborted before the token read resolves", async () => {
+    const { result } = await setupHook();
+    const resolveToken = deferToken();
+
+    act(() => {
+      result.current.startStream(1, "first");
+    });
+    act(() => {
+      result.current.abortStream();
+    });
+    await act(async () => {
+      resolveToken();
+      await Promise.resolve();
+    });
+
+    expect(mockXhr.open).not.toHaveBeenCalled();
+    expect(mockXhr.send).not.toHaveBeenCalled();
+  });
+
+  it("sends only the new stream's request after an abort-then-restart during the token read", async () => {
+    const { result } = await setupHook();
+    const resolveFirst = deferToken();
+    const resolveSecond = deferToken();
+
+    act(() => {
+      result.current.startStream(1, "first");
+    });
+    act(() => {
+      result.current.abortStream();
+    });
+    act(() => {
+      result.current.startStream(2, "second");
+    });
+    await act(async () => {
+      resolveFirst();
+      resolveSecond();
+      await Promise.resolve();
+    });
+
+    expect(mockXhr.open).toHaveBeenCalledTimes(1);
+    expect(mockXhr.open.mock.calls[0][1]).toContain("/conversations/2/");
+    expect(mockXhr.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a stale token-read failure from an aborted stream while a new one runs", async () => {
+    const { result, onError } = await setupHook();
+    let rejectFirst!: (err: Error) => void;
+    mockTokenStorage.get.mockImplementationOnce(
+      () => new Promise<string>((_, reject) => (rejectFirst = reject)),
+    );
+    deferToken(); // the second stream's read stays pending
+
+    act(() => {
+      result.current.startStream(1, "first");
+    });
+    act(() => {
+      result.current.abortStream();
+    });
+    act(() => {
+      result.current.startStream(2, "second");
+    });
+    await act(async () => {
+      rejectFirst(new Error("keychain locked"));
+      await Promise.resolve();
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(result.current.isStreaming).toBe(true);
+  });
+
+  it("does not send a request when unmounted before the token read resolves", async () => {
+    const onDone = vi.fn();
+    const onError = vi.fn();
+    const { useCoachStream } = await import("../useCoachStream");
+    const { result, unmount } = renderHook(() =>
+      useCoachStream({ onDone, onError }),
+    );
+    const resolveToken = deferToken();
+
+    act(() => {
+      result.current.startStream(1, "first");
+    });
+    unmount();
+    await act(async () => {
+      resolveToken();
+      await Promise.resolve();
+    });
+
+    expect(mockXhr.send).not.toHaveBeenCalled();
+  });
+
+  it("allows a new stream to start once the first one has finished", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Hi" });
+      mockXhr.emit({ done: true });
+      mockXhr.complete();
+    });
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 5);
+    });
+    expect(result.current.isStreaming).toBe(false);
+    expect(mockXhr.open).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      result.current.startStream(2, "second message");
+      await Promise.resolve();
+    });
+
+    expect(mockXhr.open).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("useCoachStream onDone", () => {
   it("calls onDone with full text after buffer drains", async () => {
     const { result, onDone } = await setupHook();

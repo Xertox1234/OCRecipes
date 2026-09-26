@@ -358,6 +358,49 @@ describe("useSendMessage", () => {
     expect(() => result.current.abortStream()).not.toThrow();
   });
 
+  // P3-2026-09-24: xhrRef/isStreamingRef are single-slot state on this hook
+  // instance. Before the fix, a second overlapping sendMessage call
+  // overwrote xhrRef with the newer XHR, orphaning the first — abortStream
+  // could then only ever reach the LAST call, and the first request's own
+  // `finally` unconditionally nulled xhrRef out from under the second.
+  it("refuses an overlapping sendMessage while one is already in flight, so abortStream still reaches the original request", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockTokenStorage.get.mockResolvedValue("token");
+
+    const { result } = renderHook(() => useSendMessage(1), { wrapper });
+
+    let firstXhr!: MockXHR;
+    let p1!: Promise<void>;
+    let p2!: Promise<void>;
+
+    await act(async () => {
+      p1 = result.current.sendMessage("first");
+      // Flush the tokenStorage.get() microtask so the first XHR is created.
+      await Promise.resolve();
+      await Promise.resolve();
+      firstXhr = xhrInstance;
+      const callsAfterFirst = xhrConstructorCalls;
+
+      // Second call while the first is still streaming — must be refused:
+      // no second XHR, no state reset for the in-flight request.
+      p2 = result.current.sendMessage("second");
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(xhrConstructorCalls).toBe(callsAfterFirst);
+      expect(xhrInstance).toBe(firstXhr);
+
+      // abortStream reaches the ONLY (original) in-flight request.
+      result.current.abortStream();
+      expect(firstXhr.abort).toHaveBeenCalledOnce();
+
+      await p1;
+      await p2;
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+  });
+
   it("silently ignores incomplete JSON chunks", async () => {
     const { wrapper } = createQueryWrapper();
     mockTokenStorage.get.mockResolvedValue("token");
