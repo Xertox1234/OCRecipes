@@ -63,9 +63,9 @@ describe("SkeletonItem", () => {
 
   // Rule 1a pairing: the absence half. SkeletonItem is only ever rendered
   // inside SkeletonList's SkeletonLoadingRegion, which hides the whole
-  // subtree and announces "Loading" once for the list — a per-item label
-  // would be unreachable (nested in a hidden region) or, if it were
-  // reachable, one of several identical announced labels. Fails on main
+  // subtree. The region does NOT announce: each screen announces "Loading"
+  // itself. A per-item label would be unreachable (nested in a hidden region)
+  // or, if it were reachable, one of several identical labels. Fails on main
   // (SkeletonItem currently sets `accessibilityLabel="Loading..."`).
   it("does not carry its own Loading accessibility label", () => {
     renderComponent(<SkeletonItem />);

@@ -56,43 +56,48 @@ export function SkeletonBox({ width, height, borderRadius, style }: SkeletonBoxP
 ### Hide skeletons from screen readers
 
 ```typescript
+// SkeletonList wraps its items in one SkeletonLoadingRegion, which hides the
+// subtree on BOTH platforms. No wrapper View needed.
 <FlatList
-  ListEmptyComponent={
-    isLoading ? (
-      <View accessibilityElementsHidden>
-        <SkeletonList count={5} />
-      </View>
-    ) : (
-      <EmptyState />
-    )
-  }
+  ListEmptyComponent={isLoading ? <SkeletonList count={5} /> : <EmptyState />}
 />
+
+// A custom skeleton: wrap it in SkeletonLoadingRegion yourself.
+<SkeletonLoadingRegion>
+  <SkeletonBox width="80%" height={20} />
+</SkeletonLoadingRegion>
 ```
 
-Screen readers shouldn't announce loading placeholders. `accessibilityElementsHidden` hides the entire subtree from assistive technologies.
+Screen readers shouldn't read out loading placeholders. `SkeletonLoadingRegion`
+(`client/components/SkeletonLoader.tsx`) pairs `accessibilityElementsHidden`
+(iOS) with `importantForAccessibility="no-hide-descendants"` (Android). Don't
+hand-roll `<View accessibilityElementsHidden>` alone: Android ignores it, so
+TalkBack can focus every decorative box. The general pairing rule:
+[Visually-hidden-but-mounted surfaces must be hidden from the a11y tree](../conventions/a11y-hide-visually-hidden-surfaces-2026-06-10.md).
 
-**Note:** The example above only sets `accessibilityElementsHidden` (iOS-only). On Android, that prop is ignored — TalkBack can still focus and announce each decorative box. To hide skeletons on both platforms, **pair** `accessibilityElementsHidden` with `importantForAccessibility="no-hide-descendants"`. The reusable `SkeletonLoadingRegion` component exported from `client/components/SkeletonLoader.tsx` wraps both props together and is the corrected, recommended approach. See the general pairing rule in [Visually-hidden-but-mounted surfaces must be hidden from the a11y tree](../conventions/a11y-hide-visually-hidden-surfaces-2026-06-10.md).
+### Announce loading at the call site
 
-### Announce loading for VoiceOver
-
-Since `accessibilityElementsHidden` makes skeletons invisible to screen readers, add an explicit announcement so users know content is loading:
+A hidden skeleton is silent, so the **screen** announces loading.
+`SkeletonLoadingRegion` does not announce, and neither does `SkeletonList`.
+Delay the announcement ~500ms and clear the timer in the effect's cleanup, so
+no stale "Loading" is spoken after the content appears:
 
 ```typescript
-function MySkeleton() {
-  React.useEffect(() => {
-    AccessibilityInfo.announceForAccessibility("Loading");
-  }, []);
-
-  return (
-    <View accessibilityElementsHidden>
-      <SkeletonBox width="80%" height={20} />
-      {/* ... */}
-    </View>
+useEffect(() => {
+  if (!isLoading) return;
+  const timer = setTimeout(
+    () => AccessibilityInfo.announceForAccessibility("Loading"),
+    500,
   );
-}
+  return () => clearTimeout(timer);
+}, [isLoading]);
 ```
 
-**Note:** On screens presented as a modal (`presentation: "modal"` in the navigator), this announcement must be **delayed ~500ms** via `setTimeout` because the OS’s modal-present focus shift races the announcement, causing it to be swallowed on iOS. See [On-open announce must delay past modal present focus shift](../conventions/on-open-announce-must-delay-past-modal-present-focus-shift-2026-06-25.md). The delay is harmless on non-modal screens too, so components shared across modal/non-modal contexts can use the same delayed pattern uniformly.
+The delay is required on screens presented as a modal
+(`presentation: "modal"`), where the OS's modal-present focus shift swallows an
+immediate announcement on iOS
+([On-open announce must delay past modal present focus shift](../conventions/on-open-announce-must-delay-past-modal-present-focus-shift-2026-06-25.md)).
+It is harmless elsewhere, so use it everywhere.
 
 ### FlatList screens — prefer `ListEmptyComponent` over early return
 
@@ -113,7 +118,7 @@ return <FlatList data={items} ... />;
 
 - **Screen-specific skeletons:** Define skeleton components inline in each screen file (not centralized), matching the screen's actual content layout. Skeletons are tightly coupled to their screen — they change when the layout changes.
 - **Skeletons trigger on `isLoading` only** (not `isFetching`). TanStack Query's `isLoading` is true only on first load with no cached data. Using `isFetching` would flash the skeleton on every pull-to-refresh or refetch.
-- **Root Cause of the shipped accessibility bug:** This doc’s own prior guidance (the original un-paired, un-delayed examples in items 1 and 2 above) is what shipped the real bug. The archived todo `todos/archive/ui-skeleton-loader-migration.md`'s acceptance criteria required `accessibilityLabel="Loading..."` **and** `accessibilityElementsHidden` on the same `<View>`, which hid the label along with the decorative boxes on iOS and left Android fully exposed (TalkBack could focus every box) because the Android pairing prop was never required. This was fixed in `todos/archive/P2-2026-09-23-skeleton-loaders-screen-reader-busy-state.md` via a new exported `SkeletonLoadingRegion` component in `client/components/SkeletonLoader.tsx`.
+- **Root Cause of the shipped accessibility bug:** This doc’s own prior guidance (earlier versions of the two sections above showed an un-paired `<View accessibilityElementsHidden>` and an un-delayed announcement) is what shipped the real bug. The archived todo `todos/archive/ui-skeleton-loader-migration.md`'s acceptance criteria required `accessibilityLabel="Loading..."` **and** `accessibilityElementsHidden` on the same `<View>`, which hid the label along with the decorative boxes on iOS and left Android fully exposed (TalkBack could focus every box) because the Android pairing prop was never required. This was fixed in `todos/archive/P2-2026-09-23-skeleton-loaders-screen-reader-busy-state.md` via a new exported `SkeletonLoadingRegion` component in `client/components/SkeletonLoader.tsx`.
 - **Do not bake announcements into shared low-level primitives:** A call site that already fires its own `announceForAccessibility` for the same loading state (e.g., `client/screens/SavedItemsScreen.tsx`’s `SavedItemsSkeleton`, which calls the announce itself) would **double-announce** in the same commit, and iOS drops the second of two same-commit announcements (see [Two announceForAccessibility calls in the same commit collide on iOS](../logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md)). Keep hiding props in the shared primitive; keep the announce at each call site. **When a shared a11y-bearing primitive’s hiding shape changes, audit EVERY consumer for BOTH directions** — not just for double-announce collision, but also the opposite: a consumer with no announce of its own can silently **lose** its only loading signal (an a11y regression by omission, not just duplication). This was caught only on a second reviewer’s confirmation pass after a first review already checked for collisions and cleared it.
 
 ## Related Files

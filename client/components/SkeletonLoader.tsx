@@ -363,10 +363,9 @@ interface SkeletonItemProps {
  * Default layout matches common list item patterns.
  *
  * Purely decorative — it carries no `accessibilityLabel` of its own.
- * `SkeletonList` wraps every item in a `SkeletonLoadingRegion`, so an
- * item-level label would either be unreachable (nested inside a hidden
- * subtree) or, worse, one of several identical "Loading..." labels
- * announced per item. Only used inside `SkeletonList` today.
+ * `SkeletonList` renders all its items inside ONE `SkeletonLoadingRegion`,
+ * so an item-level label would either be unreachable (nested inside a hidden
+ * subtree) or, worse, one of several identical "Loading..." labels. Only used inside `SkeletonList` today.
  */
 export function SkeletonItem({
   index = 0,

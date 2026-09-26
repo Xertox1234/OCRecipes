@@ -87,6 +87,37 @@ describe("PhotoAnalysisScreen — loading skeleton screen-reader signal", () => 
     }
   });
 
+  it("does not announce a stale Loading when loading ends before the delay elapses", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const { rerender } = renderLoading();
+      vi.advanceTimersByTime(200);
+      // Minimal empty-results shape: the screen's only early return is
+      // isAnalyzing, so the results branch needs its collections present.
+      mockUsePhotoAnalysis.mockReturnValue({
+        isAnalyzing: false,
+        loadingText: "Analyzing your photo...",
+        foods: [],
+        selectedFoods: [],
+        selectedItems: new Set(),
+        prepMethods: {},
+        totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+        error: null,
+        BeverageSheet: () => null,
+        haptics: { impact: vi.fn(), notification: vi.fn(), selection: vi.fn() },
+      });
+      rerender(<PhotoAnalysisScreen />);
+      vi.advanceTimersByTime(500);
+
+      expect(announceSpy).not.toHaveBeenCalledWith("Loading");
+    } finally {
+      announceSpy.mockRestore();
+    }
+  });
+
   it("cancels the pending Loading announce if the screen unmounts before the delay elapses", () => {
     const announceSpy = vi.spyOn(
       RN.AccessibilityInfo,

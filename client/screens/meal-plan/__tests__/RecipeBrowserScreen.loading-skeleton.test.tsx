@@ -157,6 +157,24 @@ describe("RecipeBrowserScreen — loading skeleton screen-reader signal", () => 
     }
   });
 
+  it("does not announce a stale Loading when loading ends before the delay elapses", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const { rerender } = renderLoading();
+      vi.advanceTimersByTime(200);
+      mockSearchState.value = { ...DEFAULT_SEARCH_STATE, isLoading: false };
+      rerender(<RecipeBrowserScreen />);
+      vi.advanceTimersByTime(500);
+
+      expect(announceSpy).not.toHaveBeenCalledWith("Loading");
+    } finally {
+      announceSpy.mockRestore();
+    }
+  });
+
   it("cancels the pending Loading announce if the screen unmounts before the delay elapses", () => {
     const announceSpy = vi.spyOn(
       RN.AccessibilityInfo,
