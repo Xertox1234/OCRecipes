@@ -6,7 +6,7 @@ module: client
 tags: [react-native, loading, skeleton, reanimated, accessibility]
 applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx]
 created: '2026-05-13'
-last_updated: '2026-09-25'
+last_updated: '2026-09-26'
 ---
 
 # Skeleton loader pattern with shimmer and reduced motion support
@@ -79,18 +79,15 @@ TalkBack can focus every decorative box. The general pairing rule:
 
 A hidden skeleton is silent, so the **screen** announces loading.
 `SkeletonLoadingRegion` does not announce, and neither does `SkeletonList`.
-Delay the announcement ~500ms and clear the timer in the effect's cleanup, so
-no stale "Loading" is spoken after the content appears:
+Use the shared hook, which delays the announcement 500ms and cancels it if
+loading ends first (or the screen unmounts), so no stale "Loading" is spoken:
 
 ```typescript
-useEffect(() => {
-  if (!isLoading) return;
-  const timer = setTimeout(
-    () => AccessibilityInfo.announceForAccessibility("Loading"),
-    500,
-  );
-  return () => clearTimeout(timer);
-}, [isLoading]);
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
+
+useDelayedLoadingAnnouncement(isLoading);
+// HistoryScreen: loading and error come from two independent queries, so it
+// passes `isLoading && !isError` — an error must not be followed by "Loading".
 ```
 
 The delay is required on screens presented as a modal

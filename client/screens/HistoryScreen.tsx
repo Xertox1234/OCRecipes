@@ -46,6 +46,7 @@ import {
 import { pressSpringConfig, expandTimingConfig } from "@/constants/animations";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { ScannedItemResponse } from "@/types/api";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 /** Height of the expanded action row */
 const ACTION_ROW_HEIGHT = 90;
@@ -693,13 +694,7 @@ export default function HistoryScreen() {
   // other is still loading. Without this guard, a fast error could announce
   // "Couldn't load..." and then, once this timer elapses, "Loading" — a
   // stale announcement after the failure was already reported.
-  useEffect(() => {
-    if (!isLoading || isError) return;
-    const timer = setTimeout(() => {
-      AccessibilityInfo.announceForAccessibility("Loading");
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [isLoading, isError]);
+  useDelayedLoadingAnnouncement(isLoading && !isError);
 
   // Offline transitions are announced by the always-mounted global OfflineBanner
   // (client/components/OfflineBanner.tsx) — iOS via announceForAccessibility,

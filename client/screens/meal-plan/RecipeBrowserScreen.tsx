@@ -77,6 +77,7 @@ import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
 import { planBannerA11yLabel } from "@/components/coach/coach-chat-utils";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 const RECIPE_HEADER_EXPANDED = 160;
 const RECIPE_HEADER_COLLAPSED = 0;
@@ -534,13 +535,7 @@ export default function RecipeBrowserScreen() {
   // screen is pushed plainly under "RecipeBrowser" but presented as a modal
   // under "RecipeBrowserModal", so the delay is required on one route and
   // harmless on the other.
-  useEffect(() => {
-    if (!isLoading) return;
-    const timer = setTimeout(() => {
-      AccessibilityInfo.announceForAccessibility("Loading");
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [isLoading]);
+  useDelayedLoadingAnnouncement(isLoading);
 
   const onPressOnlineCta = useCallback(() => {
     haptics.selection();

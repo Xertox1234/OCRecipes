@@ -12,7 +12,6 @@ import {
   ScrollView,
   StyleSheet,
   AppState,
-  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -49,6 +48,7 @@ import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import { logger } from "@/lib/logger";
 import type { CoachChatNavigationProp } from "@/types/navigation";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 export default function CoachProScreen() {
   const { theme } = useTheme();
@@ -70,13 +70,7 @@ export default function CoachProScreen() {
   // must-delay-past-modal-present-focus-shift-2026-06-25.md) — harmless on
   // this non-modal route, kept for consistency with the other skeleton
   // screens fixed alongside this one.
-  useEffect(() => {
-    if (!isContextLoading) return;
-    const timer = setTimeout(() => {
-      AccessibilityInfo.announceForAccessibility("Loading");
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [isContextLoading]);
+  useDelayedLoadingAnnouncement(isContextLoading);
   // CoachChat's own catch (handleSend) shows a visible streamingError on a
   // creation failure — opt out so the global net doesn't double it.
   const { mutateAsync: createConversation } = useCreateConversation({

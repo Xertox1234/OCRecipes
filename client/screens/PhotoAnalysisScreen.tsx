@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import {
   StyleSheet,
   View,
@@ -8,7 +8,6 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
-  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -42,6 +41,7 @@ import { FoodCategory } from "@shared/constants/preparation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { FoodItem } from "@/lib/photo-upload";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -400,13 +400,7 @@ export default function PhotoAnalysisScreen() {
   // since this route is `presentation: "modal"` — an immediate announce
   // races the OS's own present-focus-shift (docs/solutions/conventions/
   // on-open-announce-must-delay-past-modal-present-focus-shift-2026-06-25.md).
-  useEffect(() => {
-    if (!isAnalyzing) return;
-    const timer = setTimeout(() => {
-      AccessibilityInfo.announceForAccessibility("Loading");
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [isAnalyzing]);
+  useDelayedLoadingAnnouncement(isAnalyzing);
 
   if (isAnalyzing) {
     return (

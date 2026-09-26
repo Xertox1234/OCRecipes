@@ -106,6 +106,7 @@ import type { MealSuggestion } from "@shared/types/meal-suggestions";
 // (`setHours(0,0,0,0)`, `getDate()`). `toDateString` (UTC) would key a
 // UTC-positive device one calendar day earlier than its own chip label.
 import { toLocalDateString } from "@shared/lib/date";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
 type MealType = (typeof MEAL_TYPES)[number];
@@ -863,13 +864,7 @@ export default function MealPlanHomeScreen() {
   // must-delay-past-modal-present-focus-shift-2026-06-25.md) even though
   // this route isn't a modal — harmless here, and keeps the announce shape
   // identical across every skeleton screen fixed alongside this one.
-  useEffect(() => {
-    if (!isLoading) return;
-    const timer = setTimeout(() => {
-      AccessibilityInfo.announceForAccessibility("Loading");
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [isLoading]);
+  useDelayedLoadingAnnouncement(isLoading);
 
   const dailyTotals = useMemo(() => {
     let calories = 0;
