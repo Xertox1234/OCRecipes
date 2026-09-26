@@ -7,6 +7,7 @@ tags: [harness, hooks, bash, jq, awk, regex, testing]
 applies_to: [".claude/hooks/**/*.sh", "scripts/**/*.sh"]
 symptoms: ['A read-only `git merge-tree` / `git merge-base` probe lands in a STATE CHANGES list meant for commits and merges', 'A failed `python3 - <<EOF` heredoc reads as resolved because a DIFFERENT heredoc succeeded later', 'A `git push` on line 2 of a multi-line command is not recognised as a state change']
 created: '2026-09-26'
+last_updated: '2026-09-26'
 severity: medium
 ---
 
@@ -65,6 +66,14 @@ git(\s+-C\s+\S+)?\s+(commit|push|merge|…)(\s|$)
   that swapped only one side of the join (`ok_later[cmd]` against a `key[id]` lookup) turned the
   suite red by breaking *every* join, not the one under test. Re-run it with both sides swapped
   and check which test fired: `test-context-ledger.sh`'s heredoc case must be the one that goes red.
+- **An absence assertion needs a row nothing ELSE would remove.** "A successful Edit (or MCP
+  call) appears in no section" passed with successful edits being KEPT — twice, in two PRs —
+  because the fixture row sat before 15 filler commands and RECENT's recency cap evicted it
+  anyway. Place the row where only the rule under test can drop it (after the fillers), then
+  mutate that rule and watch the assertion — not a neighbour — go red.
+- **A tool-name class written for one tool family misses the next.** `PreToolUse:[A-Za-z]+
+  hook error` matched `Bash`/`Edit` and silently dropped every denied `mcp__github__*` call
+  (underscores) — the exact PR-merge path this repo prefers. Match the name as `[^ ]+`.
 - **A regex that classifies commands gets checked against a real transcript's counts**, not
   just fixtures. The `merge-tree` false positive only showed up as "233 of 995 is suspiciously
   high"; a hand-written fixture had no reason to contain it.
