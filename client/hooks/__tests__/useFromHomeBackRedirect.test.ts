@@ -78,4 +78,19 @@ describe("useFromHomeBackRedirect", () => {
     expect(navigation.setParams).not.toHaveBeenCalled();
     expect(parentNavigate).not.toHaveBeenCalled();
   });
+
+  // CookbookCreateScreen's close relies on POP_TO passing through: it is how
+  // the form route is actually removed. Adding POP_TO to BACK_ACTION_TYPES
+  // would leave the form stuck in the Plan tab again.
+  it("re-dispatches POP_TO (CookbookCreate's close) instead of redirecting", () => {
+    const { navigation, parentNavigate } = makeNavigation();
+
+    renderHook(() => useFromHomeBackRedirect(navigation, true));
+    const action = { type: "POP_TO", payload: { name: "MealPlanHome" } };
+    getCallback()({ data: { action } });
+
+    expect(navigation.dispatch).toHaveBeenCalledWith(action);
+    expect(navigation.setParams).not.toHaveBeenCalled();
+    expect(parentNavigate).not.toHaveBeenCalled();
+  });
 });

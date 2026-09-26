@@ -23,11 +23,11 @@ export function redirectToHomeTab(navigation: FromHomeNavigation) {
 
 /**
  * A screen reached via a cross-tab shortcut from Home (e.g. "Grocery List",
- * "Create Cookbook") sits on top of the Plan tab's own initial route —
- * React Navigation inserts a nested navigator's initial screen beneath the
- * first screen it's asked to show inside that navigator. A plain back
- * action from here pops to that initial route (MealPlanHome), not back to
- * Home.
+ * "Create Cookbook") is pushed onto the Plan stack. If the Plan tab was
+ * already mounted, that stack starts with MealPlanHome, so a plain back action
+ * pops to MealPlanHome, not back to Home. (If it was never mounted, core's
+ * `getStateFromParams` makes the shortcut's screen the ONLY route, and there
+ * is nothing to pop at all: see CookbookCreateScreen's `dismiss`.)
  *
  * Intercept the back action and redirect to HomeTab instead — but only for
  * an actual back gesture (GO_BACK/POP), never the screen's own forward
