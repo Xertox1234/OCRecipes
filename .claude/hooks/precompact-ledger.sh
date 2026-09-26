@@ -377,15 +377,17 @@ if [ -n "$TRANSCRIPT" ]; then
   # verb must END at whitespace or end of string, not a mere `\b`: a word boundary sits before
   # the hyphen in `git merge-tree`/`git merge-base`, and a real digest listed that read-only
   # probe as a state change. `git tag` counts only when it creates or deletes (a name, or
-  # -a/-s/-d/-f/-m/-u): bare `git tag` and `git tag -l` just list. Every other tool_use is
-  # extracted too (display = file_path, else the input JSON); it survives only as BLOCKED.
+  # -a/-s/-d/-f/-m/-u, combined like -af): bare `git tag` and `git tag -l` just list. Every
+  # other tool_use is extracted too and survives only as BLOCKED. Its display is file_path,
+  # else the input's KEYS — never its values: redaction keys on NAME=value and 32+-char digit
+  # runs, and a JSON "password":"<20 chars>" matches neither (measured on #1104).
   ROWS=$(jq -R -r '
       def content_text:
         if type=="string" then .
         elif type=="array" then (map(if type=="object" then (.text? // "") else (.|tostring) end) | join(" "))
         else (.|tostring) end;
       def state_change:
-        test("(^|[\\s;&|(])((rtk\\s+proxy\\s+)?(/usr/bin/)?git(\\s+-C\\s+\\S+)?\\s+((commit|push|merge|rebase|reset|worktree\\s+(add|remove)|checkout\\s+-b|switch\\s+-c)(\\s|$)|tag\\s+([^-\\s]|-[asdfmu](\\s|$)|--(annotate|sign|delete|force|message)))|gh\\s+pr\\s+(create|merge|close)(\\s|$)|npm\\s+run\\s+(update:|db:push|seed|backfill|cleanup))");
+        test("(^|[\\s;&|(])((rtk\\s+proxy\\s+)?(/usr/bin/)?git(\\s+-C\\s+\\S+)?\\s+((commit|push|merge|rebase|reset|worktree\\s+(add|remove)|checkout\\s+-b|switch\\s+-c)(\\s|$)|tag\\s+([^-\\s]|-[asdfmu]+(\\s|$)|--(annotate|sign|delete|force|message)))|gh\\s+pr\\s+(create|merge|close)(\\s|$)|npm\\s+run\\s+(update:|db:push|seed|backfill|cleanup))");
       fromjson?
       | if (.type // "")=="assistant" then
           (.message.content[]? | select(.type=="tool_use")
@@ -393,7 +395,7 @@ if [ -n "$TRANSCRIPT" ]; then
                 (.input.command // "") as $c
                 | "U\t\(.id // "")\tBash\t\(if ($c | state_change) then "1" else "0" end)\t\($c | tojson)\t\((.input.description // "(no description)") | gsub("\t";" ") | .[0:300])\t\($c | split("\n")[0] // "" | gsub("\t";" ") | .[0:2000])"
               else
-                "U\t\(.id // "")\t\(.name // "")\t0\t\t(\(.name // "tool"))\t\((.input.file_path // (.input | tojson)) | gsub("\t";" ") | .[0:2000])"
+                "U\t\(.id // "")\t\(.name // "")\t0\t\t(\(.name // "tool"))\t\((.input.file_path // (.input | if type=="object" then "{" + (keys | join(",")) + "}" else "" end)) | gsub("\t";" ") | .[0:2000])"
               end)
         elif (.type // "")=="user" then
           (.message.content[]? | select(.type=="tool_result")

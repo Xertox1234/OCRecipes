@@ -149,7 +149,7 @@ fi
 # Test 10: digest over the cap -> stays within the 6144-byte cap, newest curated entries survive.
 # The pressure comes from a large curated.md, so the trim loop's curated branch is what is
 # exercised. (Under the original 12-row floor a transcript alone could not breach the cap;
-# the four section caps, 6+5+8+8 rows, now can — the sectioned-cap case covers that.) See
+# the four section caps, 8+5+8+8 rows, now can — the sectioned-cap case covers that.) See
 # ledger Ruling 1.
 SID10="sess-task2-cap"; L10="$CONTEXT_LEDGER_ROOT/$SID10"; mkdir -p "$L10"
 : > "$L10/curated.md"
@@ -1363,6 +1363,10 @@ cat > "$TXS" <<'EOF'
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T2","content":"v1.1.0"}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_T3","name":"Bash","input":{"command":"git tag","description":"Show all tags"}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T3","content":"v1.1.0"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_T4","name":"Bash","input":{"command":"git tag -af v1.2.0 -m 'release'","description":"Force annotate tag combined flags"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T4","content":""}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_T5","name":"Bash","input":{"command":"git tag --delete v0.9.0","description":"Delete old tag long flag"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T5","content":"Deleted tag 'v0.9.0'"}]}}
 EOF
 i=1
 while [ $i -le 15 ]; do
@@ -1377,6 +1381,8 @@ cat >> "$TXS" <<'EOF'
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_E3","content":"File created successfully."}]}}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_P3","name":"mcp__github__pull_request_read","input":{"method":"get","pullNumber":7777}}]}}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_P3","content":"mcp-read-success-sentinel"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_P4","name":"mcp__infra__set_variables","input":{"password":"Hunter2PasswordXyz20","owner":"o"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_P4","is_error":true,"content":"Permission to use mcp__infra__set_variables has been denied."}]}}
 EOF
 printf '{"session_id":"%s","transcript_path":"%s"}' "$SIDS" "$TXS" | bash "$PRECOMPACT" >/dev/null 2>&1
 RS="$LS/resume.md"
@@ -1444,6 +1450,17 @@ grep -q "mcp-read-success-sentinel\|7777" "$RS" 2>/dev/null \
 grep -q "Tag the release ← git tag v1.2.0" <<< "$STC" \
   && ok "STATE carries git tag <name>" \
   || no "git tag <name> missing from STATE"
+grep -q "Force annotate tag combined flags" <<< "$STC" && grep -q "Delete old tag long flag" <<< "$STC" \
+  && ok "STATE carries git tag with combined short flags (-af) and a long flag (--delete)" \
+  || no "combined-flag or long-flag git tag missing from STATE: [$STC]"
+# A denied non-Bash call shows its input KEYS, never values: redaction keys on NAME=value and
+# 32+-char digit runs, and a JSON "password":"<20 chars>" matches neither (measured on #1104).
+if ! grep -q "Hunter2PasswordXyz20" "$RS" 2>/dev/null \
+   && grep -q "mcp__infra__set_variables.*password" <<< "$BLK"; then
+  ok "a denied MCP call shows its input keys, not a short secret value"
+else
+  no "a denied MCP call leaked its input value, or its row is missing: [$BLK]"
+fi
 if grep -q "List release tags\|Show all tags" <<< "$STC"; then
   no "read-only git tag / git tag -l classed as a state change"
 else
@@ -1485,12 +1502,14 @@ else
   no "allow rule missing, or the instruction spells the command differently"
 fi
 
-# --- Cap: every section full + oversized curated must fit, trimming RECENT first ---
+# --- Cap: every section full + curated must fit, trimming RECENT first ---
+# Curated is 10 rows (~1.2 KB), not the 2 KB window: with BLOCKED at its real cap of 8, a full
+# window left no room for any STATE row, and "newest STATE kept" could not be observed.
 LEDGER_CAP=6144
 SIDX="sess-sections-cap"; LX="$CONTEXT_LEDGER_ROOT/$SIDX"; mkdir -p "$LX"
 : > "$LX/curated.md"
 i=0
-while [ $i -lt 40 ]; do
+while [ $i -lt 10 ]; do
   printf 'VERIFIED | claim about subsystem behavior number %03d confirmed by direct measurement | inspect-subsystem-%03d.sh --check\n' "$i" "$i" >> "$LX/curated.md"
   i=$((i+1))
 done
@@ -1500,7 +1519,7 @@ emit() { # emit <id> <desc> <cmd> <is_error:true|false> <content>
   printf '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"%s","is_error":%s,"content":"%s"}]}}\n' "$1" "$4" "$5" >> "$TXX"
 }
 PAD="padding-padding-padding-padding-padding-padding-padding-padding-padding-padding"
-i=1; while [ $i -le 6 ]; do emit "b$i" "blocked-row-$i $PAD" "blocked-cmd-$i $PAD $PAD" true "PreToolUse:Bash hook error: blocked-reason-$i $PAD"; i=$((i+1)); done
+i=1; while [ $i -le 8 ]; do emit "b$i" "blocked-row-$i $PAD" "blocked-cmd-$i $PAD $PAD" true "PreToolUse:Bash hook error: blocked-reason-$i $PAD"; i=$((i+1)); done
 i=1; while [ $i -le 5 ]; do emit "f$i" "failed-row-$i $PAD" "failed-cmd-$i $PAD $PAD" true "Exit code 1\\nfailed-tail-$i $PAD"; i=$((i+1)); done
 i=1; while [ $i -le 8 ]; do emit "s$i" "state-row-$i $PAD" "git commit -m state-$i $PAD $PAD" false "state-out-$i $PAD"; i=$((i+1)); done
 i=1; while [ $i -le 8 ]; do emit "r$i" "recent-row-$i $PAD" "echo recent-cmd-$i $PAD $PAD" false "recent-out-$i $PAD"; i=$((i+1)); done
@@ -1516,14 +1535,14 @@ if ! grep -q "recent-row-" "$LX/resume.md" && grep -q "state-row-8 " "$LX/resume
 else
   no "trim order wrong between RECENT and STATE"
 fi
-bf_n=$(grep -cE "blocked-row-[1-6] |failed-row-[1-5] " "$LX/resume.md")
-if [ "$bf_n" -eq 11 ] && grep -q "number 039" "$LX/resume.md"; then
+bf_n=$(grep -cE "blocked-row-[1-8] |failed-row-[1-5] " "$LX/resume.md")
+if [ "$bf_n" -eq 13 ] && grep -q "number 009" "$LX/resume.md"; then
   ok "BLOCKED and FAILED rows and the newest curated row survive while STATE is trimmed"
 else
-  no "trim reached BLOCKED/FAILED/curated too early ($bf_n of 11 kept)"
+  no "trim reached BLOCKED/FAILED/curated too early ($bf_n of 13 kept)"
 fi
 
-EXPECTED_TOTAL=121
+EXPECTED_TOTAL=123
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
