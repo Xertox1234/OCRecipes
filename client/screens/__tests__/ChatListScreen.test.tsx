@@ -10,25 +10,33 @@ import React from "react";
 import { act, screen } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import ChatListScreen from "../ChatListScreen";
+import { REFRESH_ON_FOCUS_SETTLE_MS } from "@/hooks/useRefreshOnFocus";
 
-const { mockRefetch, focusEffectCb, refreshControlProps } = vi.hoisted(() => ({
-  // Hoisted so it stays referentially stable across renders, matching the
-  // real useChatConversations().refetch (see the referential-equality-test-
-  // mocks-must-match-hook-stability-profile solution doc).
-  mockRefetch: vi.fn(),
-  // Captures the latest callback ChatListScreen's useRefreshOnFocus passes to
-  // useFocusEffect, so tests can simulate a refocus by invoking it directly.
-  focusEffectCb: { current: null as (() => void) | null },
-  // Captures the props ChatListScreen's <RefreshControl> was last rendered
-  // with, so a test can assert `refreshing` stays false for a background
-  // focus-triggered refetch and only flips true for a user-initiated pull.
-  refreshControlProps: {
-    current: null as null | {
-      refreshing?: boolean;
-      onRefresh?: () => void | Promise<void>;
+const { mockRefetch, focusEffectCb, refreshControlProps, conversations } =
+  vi.hoisted(() => ({
+    // Lets a test's mocked refetch() change what useChatConversations returns
+    // (and re-render the screen), the way a real refetch writes new data into
+    // the query cache. `setData` is captured from the mock hook's own useState.
+    conversations: {
+      setData: null as null | ((data: unknown[]) => void),
     },
-  },
-}));
+    // Hoisted so it stays referentially stable across renders, matching the
+    // real useChatConversations().refetch (see the referential-equality-test-
+    // mocks-must-match-hook-stability-profile solution doc).
+    mockRefetch: vi.fn(),
+    // Captures the latest callback ChatListScreen's useRefreshOnFocus passes to
+    // useFocusEffect, so tests can simulate a refocus by invoking it directly.
+    focusEffectCb: { current: null as (() => void) | null },
+    // Captures the props ChatListScreen's <RefreshControl> was last rendered
+    // with, so a test can assert `refreshing` stays false for a background
+    // focus-triggered refetch and only flips true for a user-initiated pull.
+    refreshControlProps: {
+      current: null as null | {
+        refreshing?: boolean;
+        onRefresh?: () => void | Promise<void>;
+      },
+    },
+  }));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
@@ -79,12 +87,16 @@ vi.mock("@react-navigation/bottom-tabs", () => ({
 }));
 
 vi.mock("@/hooks/useChat", () => ({
-  useChatConversations: () => ({
-    data: [],
-    isLoading: false,
-    refetch: mockRefetch,
-    isRefetching: false,
-  }),
+  useChatConversations: () => {
+    const [data, setData] = React.useState<unknown[]>([]);
+    conversations.setData = setData;
+    return {
+      data,
+      isLoading: false,
+      refetch: mockRefetch,
+      isRefetching: false,
+    };
+  },
   useCreateConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteConversation: () => ({ mutate: vi.fn() }),
 }));
@@ -118,6 +130,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   focusEffectCb.current = null;
   refreshControlProps.current = null;
+  conversations.setData = null;
 });
 
 describe("ChatListScreen — refetch on refocus", () => {
@@ -185,5 +198,57 @@ describe("ChatListScreen — refetch on refocus", () => {
       await onRefreshPromise;
     });
     expect(refreshControlProps.current?.refreshing).toBe(false);
+  });
+});
+
+describe("ChatListScreen — refocus in the same transition as an abort", () => {
+  // The refocus usually lands in the SAME transition as the abort that marked
+  // the list stale with `refetchType: "none"` — i.e. before the server's
+  // post-disconnect settle (partial-reply persist / refund) has written. The
+  // immediate refetch therefore returns pre-settle data; without a follow-up
+  // the list would keep showing it for the whole 5-min staleTime.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const conv = (title: string) => ({
+    id: 1,
+    userId: "u1",
+    title,
+    type: "coach",
+    isPinned: false,
+    pinnedAt: null,
+    createdAt: "2026-09-25T10:00:00.000Z",
+    updatedAt: "2026-09-25T10:00:00.000Z",
+  });
+
+  it("ends up showing the settled list, not the pre-settle one the immediate refetch returned", async () => {
+    vi.useFakeTimers();
+    mockRefetch
+      .mockImplementationOnce(() => {
+        conversations.setData?.([conv("Pre-settle title")]);
+        return Promise.resolve();
+      })
+      .mockImplementationOnce(() => {
+        conversations.setData?.([conv("Settled title")]);
+        return Promise.resolve();
+      });
+
+    renderComponent(<ChatListScreen />);
+    act(() => {
+      focusEffectCb.current?.(); // initial focus (mount) — skipped
+    });
+    act(() => {
+      focusEffectCb.current?.(); // refocus, same transition as the abort
+    });
+    expect(screen.getByText("Pre-settle title")).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REFRESH_ON_FOCUS_SETTLE_MS);
+    });
+
+    expect(mockRefetch).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Settled title")).toBeTruthy();
+    expect(screen.queryByText("Pre-settle title")).toBeNull();
   });
 });

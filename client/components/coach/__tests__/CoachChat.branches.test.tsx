@@ -62,11 +62,6 @@ const state = vi.hoisted(() => ({
   canSaveCatalog: true,
   // navigation
   navigate: vi.fn(),
-  // Captures the latest callback CoachChat's useRefreshOnFocus passes to
-  // useFocusEffect, so tests can simulate additional focus events by
-  // invoking it directly (react-navigation's real useFocusEffect isn't
-  // exercised here — see the "refetch on refocus" describe block below).
-  focusEffectCb: null as (() => void) | null,
   // apiRequest (commitment accept)
   apiRequest: vi.fn().mockResolvedValue(undefined),
   // add_recipe_to_plan: captured from the mocked BlockRenderer's onAction prop
@@ -145,9 +140,6 @@ vi.mock("@/hooks/usePremiumFeatures", () => ({
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: state.navigate }),
-  useFocusEffect: (cb: () => void) => {
-    state.focusEffectCb = cb;
-  },
 }));
 
 vi.mock("@/lib/query-client", () => ({
@@ -369,7 +361,6 @@ function resetState() {
   state.hasVoice = false;
   state.canSaveCatalog = true;
   state.navigate = vi.fn();
-  state.focusEffectCb = null;
   state.apiRequest = vi.fn().mockResolvedValue(undefined);
   state.onAction = null;
   state.saveCatalog = vi.fn().mockResolvedValue({ id: 99 });
@@ -1512,30 +1503,5 @@ describe("add_recipe_to_plan", () => {
     });
     expect(state.toastSuccess).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: /add to plan/i })).toBeNull();
-  });
-});
-
-// ── refetch on refocus (useRefreshOnFocus) ────────────────────────────────
-describe("CoachChat — refetch on refocus", () => {
-  it("does not refetch on the initial focus, then refetches on a later one", () => {
-    renderCoachChat({ conversationId: 7 });
-
-    expect(state.focusEffectCb).toBeTypeOf("function");
-    state.focusEffectCb?.(); // initial focus (mount) — skipped
-    expect(state.refetchMessages).not.toHaveBeenCalled();
-
-    state.focusEffectCb?.(); // returning focus — triggers a refetch
-    expect(state.refetchMessages).toHaveBeenCalledTimes(1);
-  });
-
-  it("never refetches while there is no conversation yet (conversationId null)", () => {
-    // A manual refetch() bypasses useChatMessages' `enabled: !!conversationId`
-    // gate, so this guard is load-bearing, not just a null check for its own
-    // sake — see the comment on CoachChat's refetchOnFocus.
-    renderCoachChat({ conversationId: null });
-
-    state.focusEffectCb?.(); // initial focus — skipped regardless
-    state.focusEffectCb?.(); // returning focus — still no conversation to refetch
-    expect(state.refetchMessages).not.toHaveBeenCalled();
   });
 });

@@ -48,15 +48,19 @@ Two consequences to check for at every call site:
 ## Examples
 
 ```ts
-// The wrapped callback's identity changes whenever `conversationId` changes,
-// which also refires the effect while the tab stays focused (not just on a
-// genuine blur/refocus). Here that's fine: refetchMessages is idempotent, and
-// it deduplicates against the new conversation's own mount fetch.
+// The wrapped callback's identity changes whenever `id` changes, which also
+// refires the effect while the screen stays focused (not just on a genuine
+// blur/refocus). Fine only if the side effect is idempotent — verify it.
 const refetchOnFocus = useCallback(() => {
-  if (conversationId !== null) void refetchMessages();
-}, [conversationId, refetchMessages]);
-useFocusEffect(refetchOnFocus); // via useRefreshOnFocus's own internal useCallback
+  if (id !== null) void refetch();
+}, [id, refetch]);
+useRefreshOnFocus(refetchOnFocus); // passes it through its own useCallback to useFocusEffect
 ```
+
+With `useRefreshOnFocus` called with `settleMs`, an identity change while focused runs the previous
+callback's cleanup (cancelling its pending settle-margin follow-up refetch) and then the new one
+(an immediate refetch plus a fresh follow-up timer) — so a refire costs one immediate refetch and
+restarts the follow-up; it never stacks two follow-ups.
 
 ## Exceptions
 
@@ -70,9 +74,9 @@ special handling beyond the usual `useCallback` deps hygiene.
 - `node_modules/@react-navigation/core/src/useFocusEffect.tsx` — the effect-scheduling logic this
   documents (`[effect, navigation]` deps, `navigation.isFocused()` check)
 - `client/hooks/useRefreshOnFocus.ts` — the skip-first-focus wrapper this project uses around
-  `useFocusEffect`
-- `client/components/coach/CoachChat.tsx` — `refetchOnFocus`'s `conversationId` dependency
+  `useFocusEffect` (immediate refetch, plus one opt-in `settleMs` follow-up cleared by the focus cleanup)
 
 ## See Also
 
+- [A focus refetch in the same transition as a refetchType: "none" invalidation races the server write](../logic-errors/focus-refetch-races-refetchtype-none-invalidation-2026-09-25.md)
 - [A manual refetch() bypasses TanStack Query's enabled gate](manual-refetch-bypasses-tanstack-query-enabled-gate-2026-09-25.md)

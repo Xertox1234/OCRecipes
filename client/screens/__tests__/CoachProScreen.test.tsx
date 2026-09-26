@@ -2,6 +2,7 @@
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { REFRESH_ON_FOCUS_SETTLE_MS } from "@/hooks/useRefreshOnFocus";
 import CoachProScreen from "../CoachProScreen";
 
 const {
@@ -184,5 +185,21 @@ describe("CoachProScreen — thread bar refetch on refocus", () => {
 
     focusEffectCb.current?.(); // returning focus — triggers a refetch
     expect(mockRefetchConversations).toHaveBeenCalledTimes(1);
+  });
+  it("re-reads once more after the settle margin (opts in to the follow-up)", () => {
+    // The refocus usually lands in the same transition as the Ask Coach
+    // overlay's `refetchType: "none"` dismissal — before the server settles.
+    vi.useFakeTimers();
+    try {
+      renderComponent(<CoachProScreen />);
+      focusEffectCb.current?.(); // initial focus (mount) — skipped
+      focusEffectCb.current?.(); // returning focus
+      expect(mockRefetchConversations).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(REFRESH_ON_FOCUS_SETTLE_MS);
+      expect(mockRefetchConversations).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

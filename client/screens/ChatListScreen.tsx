@@ -20,7 +20,10 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { useRefreshOnFocus } from "@/hooks/useRefreshOnFocus";
+import {
+  REFRESH_ON_FOCUS_SETTLE_MS,
+  useRefreshOnFocus,
+} from "@/hooks/useRefreshOnFocus";
 import {
   useChatConversations,
   useCreateConversation,
@@ -103,7 +106,10 @@ export default function ChatListScreen() {
   const refetchOnFocus = useCallback(() => {
     void refetch();
   }, [refetch]);
-  useRefreshOnFocus(refetchOnFocus);
+  // settleMs: the refocus usually lands in the same transition as the abort
+  // that invalidated this list with `refetchType: "none"` — re-read once the
+  // server's post-disconnect write has settled (see the constant's comment).
+  useRefreshOnFocus(refetchOnFocus, { settleMs: REFRESH_ON_FOCUS_SETTLE_MS });
   // Local flag (not the query's own `isRefetching`) so a background,
   // focus-triggered refetch above doesn't flash the pull-to-refresh spinner —
   // only a user-initiated pull should show it.

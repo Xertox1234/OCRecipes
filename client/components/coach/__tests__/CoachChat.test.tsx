@@ -20,16 +20,10 @@ import CoachChat from "../CoachChat";
 // Mutable container for the onError callback CoachChat passes to useCoachStream,
 // so the test can trigger a 429 limit error after render. vi.hoisted is required
 // because vi.mock factories are hoisted above imports.
-const { coachStreamRef, mockRefetchMessages } = vi.hoisted(() => ({
+const { coachStreamRef } = vi.hoisted(() => ({
   coachStreamRef: {
     onError: null as ((message: string, code?: string) => void) | null,
   },
-  // Hoisted so it stays referentially stable across renders, matching the
-  // real useChatMessages().refetch — an unstable mock here would make
-  // CoachChat's guarded useRefreshOnFocus callback re-create (and refire)
-  // on every render (see referential-equality-test-mocks-must-match-hook-
-  // stability-profile-2026-09-25.md).
-  mockRefetchMessages: vi.fn(),
 }));
 
 vi.mock("@/hooks/useCoachStream", () => ({
@@ -68,7 +62,7 @@ vi.mock("@/components/UpgradeModal", () => ({
 }));
 
 vi.mock("@/hooks/useChat", () => ({
-  useChatMessages: () => ({ data: [], refetch: mockRefetchMessages }),
+  useChatMessages: () => ({ data: [] }),
   useDeleteChatMessageForRetry: () => ({ mutateAsync: vi.fn() }),
 }));
 
@@ -98,10 +92,6 @@ vi.mock("@/hooks/usePremiumFeatures", () => ({
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
-  // Not exercised by this file's own assertions (see CoachChat.branches.test.tsx
-  // for the refetch-on-refocus coverage) — required so CoachChat's new
-  // useRefreshOnFocus call doesn't crash on `useFocusEffect` being undefined.
-  useFocusEffect: vi.fn(),
 }));
 
 // New CoachChat dependencies (add_recipe_to_plan wiring) — this file only

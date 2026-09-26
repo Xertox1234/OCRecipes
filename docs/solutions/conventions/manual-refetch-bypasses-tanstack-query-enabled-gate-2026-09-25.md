@@ -59,12 +59,21 @@ from a scope where the enabling condition is already guaranteed true (e.g. a scr
 renders once its data exists), no guard is needed — but say so, since the next reader can't tell
 the difference from the call site alone.
 
+No live call site uses this guard today: it was found while wiring `useRefreshOnFocus` into
+`CoachChat`'s `useChatMessages` query, but that wiring was removed in the same PR (#1096) because
+CoachChat's host never unmounts it, so its messages key had no reachable stale trigger (see the
+settle-margin logic-error doc below). No current `useRefreshOnFocus` caller refetches a gated
+query: `ChatListScreen`/`CoachProScreen` refetch `useChatConversations`, and
+`useLibraryCounts`/`useProfileWidgets` refetch queries with no `enabled` option either.
+The "Good" shape above is the pattern to use the next time a refresh trigger meets a gated query.
+
 ## Related Files
 
 - `client/hooks/useRefreshOnFocus.ts` — the focus-refetch hook this gotcha was found wiring up
-- `client/components/coach/CoachChat.tsx` — `refetchOnFocus`'s `conversationId !== null` guard
-- `client/hooks/useChat.ts` — `useChatMessages`'s `enabled: !!conversationId`
+- `client/hooks/useChat.ts` — `useChatMessages`'s `enabled: !!conversationId` (the gated query the
+  guard was written for)
 
 ## See Also
 
+- [A focus refetch in the same transition as a refetchType: "none" invalidation races the server write](../logic-errors/focus-refetch-races-refetchtype-none-invalidation-2026-09-25.md)
 - [useFocusEffect refires on callback-identity change while focused](usefocuseffect-refires-on-callback-identity-change-while-focused-2026-09-25.md)
