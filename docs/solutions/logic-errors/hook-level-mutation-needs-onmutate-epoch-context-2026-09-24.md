@@ -66,6 +66,18 @@ const logAllMutation = useMutation<
 
 Any side effect that reflects a **real, already-persisted server write** (cache invalidation, partial-success invalidation) must stay unconditional and run *before* the epoch check — only the session's own **local UI state** (banners, parsed-item list, input text, success haptic/toast) should be gated on the epoch.
 
+### Variant: an async pre-step before a streaming request
+
+`useCoachStream.startStream` awaits `tokenStorage.get()` before it creates its
+XHR. `abortStream()` during that wait was a no-op, because `xhrRef` was still
+null. So the continuation later sent an orphaned request that raced the next
+`startStream`. A late *rejection* was worse: the `.catch` cleared `isStreaming`
+and fired `onError` on the NEW stream. The fix is the same generation counter:
+`streamEpochRef` is bumped by `startStream`, `abortStream` and the unmount
+cleanup, and both the `.then` and the `.catch` return early unless the epoch
+they captured is still current. Guard every settle path of the pre-step, not
+just the success path.
+
 ## Prevention
 
 When a `useMutation`'s `onSuccess`/`onError` are configured at the **hook level** rather than per `mutate()` call, and the hook already has (or needs) a generation/epoch ref to guard against a dismissed/reset session, use `onMutate: () => ({ epoch: currentEpochRef.current })` to carry the epoch through `context` — do not try to force a per-call closure pattern onto hook-level callbacks. Before assuming a codebase's existing epoch-guard pattern covers every mutation, check whether each mutation's callbacks are wired per-call or at the hook level; each shape needs a different capture mechanism.

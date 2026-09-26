@@ -126,6 +126,11 @@ export function useCoachStream({
   // Mirrors `isStreaming` for a synchronous, stale-closure-safe guard read in
   // startStream — see the guard there.
   const isStreamingRef = useRef(false);
+  // Bumped by every startStream, abortStream and unmount. startStream's
+  // token read is async; its continuation sends only if the epoch it captured
+  // is still current, so an abort/unmount during the read can't leave an
+  // orphaned request that races the next stream.
+  const streamEpochRef = useRef(0);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
   const drainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,6 +187,7 @@ export function useCoachStream({
   }, [stopDrain]);
 
   const abortStream = useCallback(() => {
+    streamEpochRef.current += 1;
     xhrRef.current?.abort();
     xhrRef.current = null;
     clearInactivity();
@@ -201,6 +207,7 @@ export function useCoachStream({
   // Abort XHR and drain interval on unmount
   useEffect(() => {
     return () => {
+      streamEpochRef.current += 1;
       xhrRef.current?.abort();
       clearInactivity();
       stopDrain();
@@ -220,6 +227,7 @@ export function useCoachStream({
       // todos/archive/P3-2026-09-24-chat-stream-hooks-xhrref-last-write-wins.md.
       if (isStreamingRef.current) return;
       isStreamingRef.current = true;
+      const epoch = ++streamEpochRef.current;
 
       // Reset all state for a fresh stream
       clearInactivity();
@@ -240,6 +248,7 @@ export function useCoachStream({
       tokenStorage
         .get()
         .then((token) => {
+          if (epoch !== streamEpochRef.current) return;
           const xhr = new XMLHttpRequest();
           xhrRef.current = xhr;
           const url = `${getApiUrl()}/api/chat/conversations/${conversationId}/messages`;
@@ -385,6 +394,8 @@ export function useCoachStream({
           xhr.send(JSON.stringify(body));
         })
         .catch((err: unknown) => {
+          // A stale stream's failure must not tear down the current one.
+          if (epoch !== streamEpochRef.current) return;
           stopDrain();
           isStreamingRef.current = false;
           setIsStreaming(false);
