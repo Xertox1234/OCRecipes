@@ -1,12 +1,18 @@
-import React, { useMemo } from "react";
-import { Pressable, StyleSheet, View, ScrollView } from "react-native";
+import React, { useEffect, useMemo, useRef } from "react";
+import {
+  AccessibilityInfo,
+  Pressable,
+  StyleSheet,
+  View,
+  ScrollView,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
 
-import { ThemedText } from "@/components/ThemedText";
+import { EmptyState } from "@/components/EmptyState";
 import { RecipeDetailContent } from "@/components/RecipeDetailContent";
 import { RecipeDetailSkeleton } from "@/components/recipe-detail";
 import type { IngredientItem } from "@/components/recipe-detail";
@@ -14,7 +20,12 @@ import {
   formatTimeDisplay,
   parseNutritionData,
 } from "@/components/recipe-detail/recipe-detail-utils";
-import { apiRequest, resolveImageUrl } from "@/lib/query-client";
+import {
+  apiRequest,
+  resolveImageUrl,
+  shouldSurfaceQueryError,
+} from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, withOpacity } from "@/constants/theme";
 import { safeGoBack } from "@/navigation/safeGoBack";
@@ -26,6 +37,7 @@ import type {
   RecipeIngredient,
 } from "@shared/schema";
 import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 const HANDLE_WIDTH = 36;
 const HANDLE_HEIGHT = 5;
@@ -75,6 +87,7 @@ export default function FeaturedRecipeDetailScreen() {
     data: communityRecipe,
     isLoading: communityLoading,
     error: communityError,
+    refetch: refetchCommunityRecipe,
   } = useQuery<CommunityRecipe>({
     queryKey: [`/api/recipes/${recipeId}`],
     enabled: resolvedRecipeType === "community" && recipeId > 0,
@@ -85,6 +98,7 @@ export default function FeaturedRecipeDetailScreen() {
     data: mealPlanRecipe,
     isLoading: mealPlanLoading,
     error: mealPlanError,
+    refetch: refetchMealPlanRecipe,
   } = useQuery<MealPlanRecipeWithIngredients>({
     queryKey: ["/api/meal-plan/recipes", recipeId],
     queryFn: async () => {
@@ -92,6 +106,12 @@ export default function FeaturedRecipeDetailScreen() {
       return res.json();
     },
     enabled: resolvedRecipeType === "mealPlan" && recipeId > 0,
+    // This screen renders its own error UI for this query, and the key has no
+    // other live reader (useMealPlanRecipeDetail has no production call site),
+    // so opt out of the global error toast — no double error surface. NOT set
+    // on the community query above: RecipeChatScreen shares that key with no
+    // error UI of its own and relies on the global toast.
+    meta: { silentError: true },
   });
 
   // --- Normalize into RecipeDetailContent props ---
@@ -156,6 +176,54 @@ export default function FeaturedRecipeDetailScreen() {
     resolvedRecipeType === "community" ? communityLoading : mealPlanLoading;
   const error =
     resolvedRecipeType === "community" ? communityError : mealPlanError;
+  const refetch =
+    resolvedRecipeType === "community"
+      ? refetchCommunityRecipe
+      : refetchMealPlanRecipe;
+  // A genuine 404 means the recipe doesn't exist — retrying won't help, and
+  // labeling it a generic failure would assert a false cause (see
+  // docs/solutions/logic-errors/network-failure-rendered-as-wrong-credentials-2026-08-08.md).
+  // Any other error (network, 5xx, etc.) gets a generic message + retry.
+  // Branching on the machine-readable `code` (not the message string or the
+  // numeric status) matches the established convention — see
+  // client/screens/meal-plan/GroceryListScreen.tsx and
+  // client/screens/LabelAnalysisScreen.tsx.
+  const isNotFoundError =
+    error instanceof ApiError && error.code === ErrorCode.NOT_FOUND;
+  const showsGenericError = Boolean(error) && !isNotFoundError && !normalized;
+
+  // Announce whichever EmptyState branch (below) is about to render — it has
+  // no live region either. Skip the mount render so a screen that opens
+  // already-errored/not-found doesn't announce on top of focus.
+  //
+  // The community query keeps the global error toast (see its useQuery), and
+  // Toast.tsx announces its message in the same commit — iOS drops one of
+  // two same-commit announcements. So when the toast will surface this error
+  // (per the net's own predicate), stay quiet and let it speak; a 404 is
+  // suppressed by the net, so "Recipe not found." is still announced here.
+  const toastAnnouncesError =
+    resolvedRecipeType === "community" &&
+    Boolean(communityError) &&
+    shouldSurfaceQueryError(communityError, undefined);
+  const announcement = isLoading
+    ? null
+    : showsGenericError
+      ? toastAnnouncesError
+        ? null
+        : "Couldn't load this recipe. Try again."
+      : !normalized
+        ? "Recipe not found."
+        : null;
+  const errorAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (!errorAnnouncedRef.current) {
+      errorAnnouncedRef.current = true;
+      return;
+    }
+    if (announcement) {
+      AccessibilityInfo.announceForAccessibility(announcement);
+    }
+  }, [announcement]);
 
   const imageUri = useMemo(
     () => resolveImageUrl(normalized?.imageUrl),
@@ -205,14 +273,27 @@ export default function FeaturedRecipeDetailScreen() {
         <ScrollView contentInsetAdjustmentBehavior="never">
           <RecipeDetailSkeleton />
         </ScrollView>
-      ) : error || !normalized ? (
+      ) : showsGenericError ? (
         <View style={styles.center}>
-          <Feather name="alert-circle" size={32} color={theme.textSecondary} />
-          <ThemedText
-            style={{ marginTop: Spacing.sm, color: theme.textSecondary }}
-          >
-            Recipe not found
-          </ThemedText>
+          <EmptyState
+            variant="temporary"
+            icon="alert-circle"
+            title="Couldn't load this recipe"
+            description="Something went wrong. Check your connection and try again."
+            actionLabel="Try Again"
+            onAction={() => {
+              void refetch();
+            }}
+          />
+        </View>
+      ) : !normalized ? (
+        <View style={styles.center}>
+          <EmptyState
+            variant="temporary"
+            icon="alert-circle"
+            title="Recipe not found"
+            description="This recipe may have been removed or is no longer available."
+          />
         </View>
       ) : (
         <RecipeDetailContent

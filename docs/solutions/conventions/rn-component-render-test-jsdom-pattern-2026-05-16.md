@@ -6,7 +6,7 @@ module: client
 tags: [testing, vitest, react-native, render-tests, jsdom]
 applies_to: [client/**/__tests__/*.test.tsx, test/utils/render-component.tsx, test/mocks/react-native.ts]
 created: '2026-05-16'
-last_updated: '2026-08-16'
+last_updated: '2026-09-25'
 ---
 
 # RN component render-test pattern (jsdom)
@@ -22,7 +22,7 @@ React Native component render tests in this repo are **not** written with
 3. The component is mounted with `renderComponent` from
    `test/utils/render-component.tsx`, which wraps it in a `QueryClientProvider`.
 
-This works because `vitest.config.ts` aliases the `react-native` module to
+This works because `vitest.config.mts` aliases the `react-native` module to
 `test/mocks/react-native.ts`, a DOM-rendering mock — `Pressable` → `<button>`,
 `View` → `<div>`, `Text` → `<span>`, `accessibilityLabel` → `aria-label`,
 `accessibilityRole` → `role`. So `fireEvent.click` and
@@ -168,15 +168,40 @@ This is the repo's first navigator render test —
 `client/navigation/__tests__/ChatStackNavigator.test.tsx` is the worked
 example (see `## Related Files`).
 
+### Testing a screen whose query relies on the default queryFn
+
+`renderComponent`'s `QueryClient` (`test/utils/render-component.tsx`) sets
+only `retry: false` in `defaultOptions.queries` — it registers **no default
+`queryFn`**. The production `queryClient` singleton
+(`client/lib/query-client.ts`) does (`queryFn: getQueryFn({ on401: "throw"
+})`), so a screen's `useQuery` call that omits its own `queryFn` (relying on
+that production default) cannot be rendered through `renderComponent` at
+all — it fails immediately with "Missing queryFn" on every render, not just
+the error-path tests.
+
+When a screen has two parallel `useQuery` calls gated by a discriminator prop
+— one with an explicit `queryFn`, one relying on the default (e.g.
+`FeaturedRecipeDetailScreen`'s `community` vs `mealPlan` recipe fetch) — test
+the shared branching logic (loading / error / not-found / content) through
+the explicit-`queryFn` branch only, by mocking its fetcher
+(`vi.mock("@/lib/query-client", () => ({ apiRequest: (...args) =>
+mockApiRequest(...args) }))`) and rejecting with a real error instance. The
+branch logic under test is shared code, not duplicated per query, so this is
+full coverage of the branching, not a narrowed test — see
+`client/screens/__tests__/FeaturedRecipeDetailScreen.test.tsx` for the worked
+example.
+
 ## Related Files
 
 - `client/components/coach/__tests__/CoachChat.test.tsx` — full worked example
 - `client/navigation/__tests__/ChatStackNavigator.test.tsx` — navigator-mount pattern worked example (mocked `createNativeStackNavigator`, no `NavigationContainer`)
+- `client/screens/__tests__/FeaturedRecipeDetailScreen.test.tsx` — worked example of testing through the explicit-`queryFn` branch only
 - `test/utils/render-component.tsx` — the `QueryClientProvider` render helper
 - `test/mocks/react-native.ts` — the DOM-rendering RN mock
-- `vitest.config.ts` — aliases `react-native` to the mock
+- `vitest.config.mts` — aliases `react-native` to the mock
 
 ## See Also
 
 - `docs/solutions/design-patterns/controllable-mock-via-vi-hoisted-2026-05-13.md`
 - `docs/solutions/design-patterns/vitest-alias-mocks-native-libraries-2026-05-13.md`
+- [Gate an error EmptyState on no-cached-data (isLoadingError), never bare isError](gate-error-emptystate-on-no-cached-data-not-bare-iserror-2026-09-25.md) — the convention this default-queryFn testing gotcha was extracted from

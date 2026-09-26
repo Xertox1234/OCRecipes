@@ -739,6 +739,8 @@ export default function MealPlanHomeScreen() {
     data: mealPlanItems,
     isLoading,
     isRefetching,
+    isLoadingError,
+    refetch: refetchMealPlanItems,
   } = useMealPlanItems(startDate, endDate);
 
   const { mutate: removeItem } = useRemoveMealPlanItem();
@@ -796,22 +798,51 @@ export default function MealPlanHomeScreen() {
   // showing the ring, so the announce must track the no-data error only.
   const budgetErrorNoData = budgetError && !budgetData;
 
-  // Announce the error transition for screen readers. The EmptyState has no
-  // live region, so a cross-platform announce carries both VoiceOver and
-  // TalkBack with no double-announce. Skip the mount render so a screen that
-  // opens already-errored does not announce on top of focus.
-  const budgetErrorAnnouncedRef = useRef(false);
+  // Announce each error EmptyState for screen readers — neither has a live
+  // region, so a cross-platform announce carries both VoiceOver and TalkBack
+  // with no double-announce. Both are EDGE-triggered on the error itself
+  // (announce on the rise, re-arm only when the error clears), never a
+  // re-test of state on every deps change: TanStack resets a data-less query
+  // to pending/error:null on refetch, so a state re-test re-announced on
+  // unrelated transitions (e.g. the budget copy on every items Try Again).
+  // The refs start at their mount value, so a screen that opens already
+  // errored does not announce on top of initial focus.
+  //
+  // Budget: its EmptyState is hidden while the full-screen items skeleton is
+  // up (`isLoading`), so the announce is deferred until it is actually on
+  // screen. The skeleton covering it is not "clearing" — only
+  // budgetErrorNoData falling re-arms it. Items: rendered in the scroll
+  // content on isLoadingError (see below); isLoading and isLoadingError are
+  // mutually exclusive, so it needs no skeleton gate.
+  //
+  // ONE effect for both: they can rise in the same commit (a shared outage,
+  // or items failing while a skeleton-deferred budget error waits), and iOS
+  // drops the second of two same-commit announcements — so a joint rise is
+  // spoken as one combined utterance.
+  const budgetErrorAnnouncedRef = useRef(budgetErrorNoData && !isLoading);
+  const mealPlanErrorAnnouncedRef = useRef(isLoadingError);
   useEffect(() => {
-    if (!budgetErrorAnnouncedRef.current) {
-      budgetErrorAnnouncedRef.current = true;
-      return;
-    }
-    if (budgetErrorNoData) {
+    if (!budgetErrorNoData) budgetErrorAnnouncedRef.current = false;
+    if (!isLoadingError) mealPlanErrorAnnouncedRef.current = false;
+    const budgetRose =
+      budgetErrorNoData && !isLoading && !budgetErrorAnnouncedRef.current;
+    const itemsRose = isLoadingError && !mealPlanErrorAnnouncedRef.current;
+    if (budgetRose) budgetErrorAnnouncedRef.current = true;
+    if (itemsRose) mealPlanErrorAnnouncedRef.current = true;
+    if (budgetRose && itemsRose) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your meal plan or calorie budget. Try again.",
+      );
+    } else if (budgetRose) {
       AccessibilityInfo.announceForAccessibility(
         "Couldn't load your calorie budget. Try again.",
       );
+    } else if (itemsRose) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your meal plan. Try again.",
+      );
     }
-  }, [budgetErrorNoData]);
+  }, [budgetErrorNoData, isLoading, isLoadingError]);
 
   const dailyTotals = useMemo(() => {
     let calories = 0;
@@ -1541,7 +1572,27 @@ export default function MealPlanHomeScreen() {
           />
         )}
 
-        {selectedDayItems.length === 0 ? (
+        {/* A failed items fetch with no cached data (isLoadingError) renders
+            HERE, where the list would go — distinct from `isRefetching`
+            (pull-to-refresh keeps the loaded week) and from isRefetchError
+            (a background failure with cached data, which keeps showing the
+            stale week). Without this branch a failed initial fetch looked
+            like a legitimately empty week (2026-09-23 audit, M18). Rendered
+            in-scroll, not as an early return, so the week navigation, top
+            actions and pull-to-refresh — none of which depend on this query
+            — stay usable. */}
+        {isLoadingError ? (
+          <EmptyState
+            variant="temporary"
+            icon="alert-circle"
+            title="Couldn't load your meal plan"
+            description="Something went wrong loading this week's meals. Pull down to refresh or tap below to try again."
+            actionLabel="Try Again"
+            onAction={() => {
+              void refetchMealPlanItems();
+            }}
+          />
+        ) : selectedDayItems.length === 0 ? (
           <EmptyState
             variant="firstTime"
             icon="calendar"
