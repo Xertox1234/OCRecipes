@@ -7,6 +7,8 @@ updated: 2026-09-26
 assignee:
 labels: [premium, react-native, ux]
 github_issue:
+human_led: true
+blocked_reason: "User to confirm lock/hide vs a free-tier daily quota (free tier lists dailyNlpLogs: 5, read nowhere) before implementing — see Risks"
 ---
 
 # Quick Log is offered to free-tier users but the server refuses them — lock, grey out, or hide it
@@ -14,15 +16,15 @@ github_issue:
 ## Summary
 
 Free-tier users can open Quick Log and type or dictate food, but every parse fails.
-`POST /api/food/parse-text` requires the premium feature `textFoodParsing`, and voice
-(`/api/food/transcribe`) requires `voiceLogging`. Both are `false` for the free tier.
+Both typed and dictated text go to `POST /api/food/parse-text`, which requires the premium
+feature `textFoodParsing` (`false` for the free tier). Dictation is transcribed on-device first.
 The entry points should show Quick Log as a premium feature, or not offer it at all.
 
 ## Background
 
 The user hit this on device on 2026-09-26: their account was on the free tier, and Quick Log showed
 "Failed to parse food text. Please try again." That message was misleading. A separate fix
-(branch `fix/quicklog-premium-error-2026-09-26`) makes the error honest ("Quick Log is a premium
+(#1113, merged 2026-09-26) makes the error honest ("Quick Log is a premium
 feature…"). Showing an error only after the user has typed a meal is still the wrong
 experience. User direction: "If the user does not have access then it should either be locked,
 greyed out or just not visible."
@@ -36,7 +38,13 @@ Entry points found:
 - **Coach navigation:** `client/components/coach/CoachChat.tsx` (`case "QuickLog"`) opens the
   `QuickLog` root modal (`client/screens/QuickLogScreen.tsx`,
   `client/navigation/RootStackNavigator.tsx`).
-- **Voice:** `client/hooks/useQuickLogSession.ts` (voice auto-parse, `voiceLogging`).
+- **Voice:** `client/hooks/useQuickLogSession.ts`'s voice auto-parse transcribes on-device
+  (`useSpeechToText`), then calls the same `parse-text` mutation. It shares the
+  `textFoodParsing` gate. `/api/food/transcribe` (`voiceLogging`) has no client caller and is
+  not part of this bug.
+- **Existing partial gate:** `client/screens/QuickLogScreen.tsx` already hides
+  `<VoiceLogButton>` behind the expiry-aware `usePremiumContext().isPremium`, while leaving the
+  text input and Parse button ungated. Build the screen guard on that; don't duplicate it.
 
 ## Acceptance Criteria
 
@@ -83,8 +91,8 @@ actions and advertises the feature.
 
 ## Dependencies
 
-- Lands cleanly after `fix/quicklog-premium-error-2026-09-26` (it touches
-  `useQuickLogSession.ts`, which is out of this todo's scope).
+- None. The honest-error fix (#1113) is already merged; `useQuickLogSession.ts` stays out of
+  this todo's scope.
 
 ## Risks
 
