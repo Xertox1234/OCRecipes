@@ -1,7 +1,11 @@
 {
   "enabledPlugins": {},
   "permissions": {
-    "allow": ["Bash(npx vitest run *)", "Bash(npx eslint *)"]
+    "allow": [
+      "Bash(npx vitest run *)",
+      "Bash(npx eslint *)",
+      "Bash(bash .claude/hooks/ledger-note.sh *)"
+    ]
   },
   "hooks": {
     "SessionStart": [
@@ -48,6 +52,15 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-resume-ledger.sh\"",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-ledger-instruction.sh\"",
+            "timeout": 5
           }
         ]
       }
