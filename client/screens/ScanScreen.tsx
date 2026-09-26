@@ -807,6 +807,7 @@ export default function ScanScreen() {
 
       {/* Top overlay */}
       <View
+        testID="scan-top-overlay"
         style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}
         importantForAccessibility={overlayA11y.staticUI}
       >

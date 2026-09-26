@@ -103,7 +103,20 @@ vi.mock("react-native", async (importOriginal) => {
     },
   );
   CapturingPressable.displayName = "Pressable";
-  return { ...actual, Pressable: CapturingPressable };
+  // Plain Views are captured by testID: their style is often an ARRAY, which
+  // the shared mock passes to the DOM unflattened (and dropped).
+  const CapturingView = React.forwardRef<unknown, Record<string, unknown>>(
+    (props, ref) => {
+      const testID = props.testID as string | undefined;
+      if (testID) capturedPressProps[`view:${testID}`] = props;
+      return React.createElement(
+        actual.View as React.ComponentType<Record<string, unknown>>,
+        { ...props, ref },
+      );
+    },
+  );
+  CapturingView.displayName = "View";
+  return { ...actual, Pressable: CapturingPressable, View: CapturingView };
 });
 
 vi.mock("@gorhom/bottom-sheet", async (importOriginal) => {
@@ -297,5 +310,11 @@ describe("RecipeBrowserScreen — touch targets meet the 44pt minimum (P2-2026-0
     expect(flattenHitSlop(capturedPressProps["Clear search"]?.hitSlop)).toEqual(
       { top: 0, bottom: 0, left: 0, right: 0 },
     );
+    // The 44pt box must fit inside the search bar, or RN clips the part
+    // outside its parent's bounds. The bar is captured by testID.
+    const bar = flattenStyle(
+      capturedPressProps["view:recipe-search-bar"]?.style,
+    );
+    expect(Number(bar.minHeight ?? 0)).toBeGreaterThanOrEqual(44);
   });
 });

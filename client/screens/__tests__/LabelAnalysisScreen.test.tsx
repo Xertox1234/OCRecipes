@@ -252,14 +252,10 @@ describe("LabelAnalysisScreen — touch targets meet the 44pt minimum (P2-2026-0
     }
   });
 
-  // NOTE: this assertion reads the raw hitSlop/style PROPS the Pressable
-  // receives — it proves the numbers add up to >=44, but RN also clips
-  // hitSlop to the parent view's bounds, which this jsdom mock does not
-  // model. styles.servingControls (LabelAnalysisScreen.tsx) carries
-  // `padding: Spacing.xs` (4) specifically so the +/- buttons' hitSlop={4}
-  // has real room to expand into on every axis — verified by inspection, not
-  // by this test. A future edit that shrinks/removes that padding would pass
-  // this test while still clipping the touch target on-device.
+  // RN clips hitSlop to the parent view's bounds, so the +/- buttons'
+  // hitSlop={4} only works because styles.servingControls carries
+  // `padding: Spacing.xs` (4). The parent's padding is asserted below via the
+  // DOM: the shared react-native mock keeps a plain View's style.
   it("Decrease/Increase servings buttons reach 44pt on both axes (visual 36x36 + hitSlop)", async () => {
     renderComponent(<LabelAnalysisScreen />);
 
@@ -278,5 +274,7 @@ describe("LabelAnalysisScreen — touch targets meet the 44pt minimum (P2-2026-0
     expect(decrease.height).toBeGreaterThanOrEqual(44);
     expect(increase.width).toBeGreaterThanOrEqual(44);
     expect(increase.height).toBeGreaterThanOrEqual(44);
+    const parent = screen.getByLabelText("Decrease servings").parentElement;
+    expect(parseFloat(parent?.style.padding ?? "0")).toBeGreaterThanOrEqual(4);
   });
 });

@@ -82,6 +82,18 @@ inside it. `RecipeBrowserScreen`'s Clear search button uses an explicit
 the padding instead of growing the bar. The bar also gets `minHeight: 44`, so
 it doesn't change height when the button appears on the first keystroke.
 
+**Test the parent, not just the control.** A test that adds up the control's
+size plus its `hitSlop` passes even when the parent clips it, and clipping is
+the defect this pattern exists to prevent. Also assert the geometry the fix
+depends on: the parent's padding or `minHeight`, and the control's own margin.
+The shared react-native mock passes a `View`'s `style` to the DOM *unflattened*.
+A single style object is readable from `element.style`, but an array
+(`[styles.x, { paddingTop }]`) is silently dropped. For an array-styled
+parent, wrap `View` in the test's `vi.mock("react-native")` override, capture
+its props by `testID`, and flatten the style yourself. Examples:
+`ScanScreen.test.tsx` (`view:scan-top-overlay`) and
+`RecipeBrowserScreen.touch-targets.test.tsx` (`view:recipe-search-bar`).
+
 ## Related Files
 
 - `docs/rules/react-native.md` — touch-target rule (binding one-liner)

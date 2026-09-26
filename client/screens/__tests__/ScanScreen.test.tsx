@@ -248,6 +248,10 @@ vi.mock("react-native", async (importOriginal) => {
       (props, ref) => {
         const label = props.accessibilityLabel as string | undefined;
         if (label) capturedPressProps[label] = props;
+        // Plain Views are captured by testID: their style is often an ARRAY,
+        // which the shared mock passes to the DOM unflattened (and dropped).
+        const testID = props.testID as string | undefined;
+        if (testID) capturedPressProps[`view:${testID}`] = props;
         return React.createElement(Component, { ...props, ref });
       },
     );
@@ -258,6 +262,7 @@ vi.mock("react-native", async (importOriginal) => {
     ...actual,
     Pressable: capture(actual.Pressable),
     TouchableOpacity: capture(actual.TouchableOpacity),
+    View: capture(actual.View),
   };
 });
 
@@ -1765,6 +1770,19 @@ describe("ScanScreen — touch targets meet the 44pt minimum (P2-2026-09-23, M13
     );
     expect(width).toBeGreaterThanOrEqual(44);
     expect(height).toBeGreaterThanOrEqual(44);
+
+    // RN clips hitSlop to the parent's bounds: the 4pt slop needs room on
+    // the right (the button's own marginRight inside the full-width overlay)
+    // and on top (the overlay's paddingTop). The overlay is a plain View, so
+    // its props are captured by testID.
+    const closeStyle = (capturedPressProps["Close camera"]?.style ?? {}) as {
+      marginRight?: number;
+    };
+    expect(closeStyle.marginRight ?? 0).toBeGreaterThanOrEqual(4);
+    const overlay = flattenStyle(
+      capturedPressProps["view:scan-top-overlay"]?.style,
+    );
+    expect(Number(overlay.paddingTop ?? 0)).toBeGreaterThanOrEqual(4);
   });
 
   describe("confirm-card Dismiss / Log It buttons", () => {

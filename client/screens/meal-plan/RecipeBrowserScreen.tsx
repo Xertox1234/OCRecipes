@@ -684,6 +684,7 @@ export default function RecipeBrowserScreen() {
       >
         {/* Search bar always visible */}
         <View
+          testID="recipe-search-bar"
           style={[
             styles.searchBar,
             {
