@@ -36,7 +36,8 @@ This also bears on the owner's lockout (`P1-2026-09-26-no-password-reset-or-acco
   - For accounts without MFA, auto-link only when the provider is **authoritative** for the address **and** it equals the account's _verified_ `email` (never `pendingEmail`).
   - **Google is authoritative only for `@gmail.com` addresses, or when `email_verified` is true and `hd` is set (Google Workspace)**, per Google's "Verify the Google ID token" guide. For any other address, `email_verified` only means Google verified it when the Google account was created, and "ownership of the third party email account may have since changed". Require a password sign-in, then link.
   - Apple: link on a matching verified email only for non-relay addresses; a Hide My Email relay never matches an existing account.
-  - Otherwise, create a new account or require password sign-in and then link. Record the linking rule in the PR.
+  - Create a new account **only when the email matches no existing account**. When it matches an account that can't be auto-linked (MFA enabled, provider not authoritative, relay address), require a password sign-in and then link. Creating would hit the unique `users.email` / `users_email_lower_unique` index, and the error could reveal that the address is registered. Record the linking rule in the PR.
+- [ ] **Our second factor still applies (user decision, 2026-09-26).** Signing in with Google or Apple to an account that has MFA enabled yields only the MFA-challenge token; the session is issued after our TOTP or passkey check passes (see the MFA todo). Test: a provider sign-in on an MFA account can't reach any authenticated endpoint before the challenge.
 - [ ] **Apple specifics:**
   - Apple sends the user's name and email only on the _first_ authorization, so persist them then.
   - Handle Hide My Email relay addresses.
@@ -68,7 +69,7 @@ This also bears on the owner's lockout (`P1-2026-09-26-no-password-reset-or-acco
 
 ## Dependencies
 
-- Interacts with `P1-2026-09-26-no-password-reset-or-account-recovery.md` (recovery for accounts with no password; possible lockout relief) and `P2-2026-09-26-add-second-factor-authentication.md` (MFA for password logins; provider sign-ins rely on the provider's own protections).
+- Interacts with `P1-2026-09-26-no-password-reset-or-account-recovery.md` (recovery for accounts with no password; possible lockout relief) and `P2-2026-09-26-add-second-factor-authentication.md` (the second factor applies to password **and** provider sign-ins on MFA-enabled accounts).
 - Blocked in practice on the user's Apple developer account setup.
 
 ## Updates
