@@ -17,21 +17,30 @@ Add indexes to columns used in WHERE clauses and ORDER BY. When a query filters 
 equality column and then orders by one or more other columns, a single composite index
 `(equalityCol, sortCol1 [DESC], sortCol2 [DESC], ...)` lets Postgres serve the whole
 query — filter, order, and `LIMIT` — with one `Index Scan` and no `Sort` node, instead of
-sorting (or scanning) every row that matches the equality filter. Add `DESC` (via
-`.desc()` on the column, inside `.on(...)`) to any sort column whose `ORDER BY` clause is
-descending; a tiebreak column (e.g. a serial `id`) belongs in the index too, in the same
-direction as its `ORDER BY` clause, so ties resolve without an extra sort step.
+sorting (or scanning) every row that matches the equality filter. Add `DESC` to any sort
+column whose `ORDER BY` clause is descending. A tiebreak column (e.g. a serial `id`)
+belongs in the index too, in the same direction, so ties resolve without an extra sort.
 
-When a **hand-written migration file** mirrors a Drizzle-declared index that uses
-`.desc()`, don't hand-transcribe the column list from `schema.ts` — copy the DDL from
-`pg_indexes.indexdef` (or `pg_get_indexdef()`) on a dev DB the schema was actually
-`db:push`'d onto, and diff the two. Drizzle's `.desc()` compiles to an explicit
-`DESC NULLS LAST`, while Postgres's own `CREATE INDEX ... DESC` (with no `NULLS` clause)
-defaults to `NULLS FIRST` — so a migration written by hand from the schema source, rather
-than from the actual applied DDL, silently produces a **different** index than the one
-`db:push` creates in dev/CI. It's harmless only as long as every indexed column stays
-`NOT NULL` (verify this explicitly, don't assume it) — the two orderings diverge the
-moment a NULL can appear.
+**A descending index column must be `.desc().nullsFirst()`, not bare `.desc()`.** The
+index column's `NULLS` placement has to match the query's, and the Drizzle defaults don't
+match each other:
+
+- The query-builder helper `desc(col)` emits a bare `col desc`, which Postgres reads as
+  `DESC NULLS FIRST`.
+- The index builder defaults **every** column to `NULLS LAST`, so `.desc()` in an
+  `index().on(...)` produces `DESC NULLS LAST`.
+
+The planner matches `NULLS` placement **syntactically**, and `NOT NULL` columns do not
+relax it. So a `DESC NULLS LAST` index serves only the equality filter, and the query still
+gets a `Sort` node. #1103 first shipped exactly this, with an "after" EXPLAIN that did not
+reproduce for the app's literal query (independent review, 2026-09-26). To verify,
+EXPLAIN the query **exactly as the app emits it** (copy its `ORDER BY` clause literally),
+and confirm there is no `Sort` node.
+
+When a **hand-written migration file** mirrors a Drizzle-declared index, copy the DDL from
+`pg_indexes.indexdef` on a dev DB the schema was `db:push`'d onto, rather than transcribing
+`schema.ts` by hand. Postgres omits the default `NULLS` clause from `indexdef`: a
+`DESC NULLS FIRST` column shows as plain `DESC`.
 
 ## Examples
 
@@ -63,19 +72,22 @@ A composite covering index for an equality filter + descending order + tiebreak,
 ```typescript
 index("chat_messages_conv_created_id_idx").on(
   table.conversationId,
-  table.createdAt.desc(),
-  table.id.desc(),
+  table.createdAt.desc().nullsFirst(),
+  table.id.desc().nullsFirst(),
 ),
 ```
 
-which `db:push` applies as
-`btree (conversation_id, created_at DESC NULLS LAST, id DESC NULLS LAST)` — verified via
-`EXPLAIN (ANALYZE, BUFFERS)`: before the index, `Sort` (top-N heapsort) over a `Seq Scan`
-of the conversation's rows; after, an `Index Scan` on this index with no `Sort` node, that
-stops at the `LIMIT`. The corresponding hand-written prod migration
-(`migrations/0012_chat_messages_conv_created_id_idx.sql`) spells out `NULLS LAST`
-explicitly for exactly the reason in the Rule above, rather than writing
-`created_at DESC, id DESC` and relying on Postgres's default matching Drizzle's.
+which `db:push` applies as `btree (conversation_id, created_at DESC, id DESC)`. Verified
+with `EXPLAIN (ANALYZE, BUFFERS)` of the app's literal query
+(`ORDER BY created_at DESC, id DESC LIMIT 20`) on a seeded 350-row conversation:
+
+- **No index, or the bare-`.desc()` NULLS LAST version:** a `Sort` (top-N heapsort) over
+  a `Seq Scan`, reading 13 buffers.
+- **The `.nullsFirst()` version:** an `Index Scan` on this index with no `Sort` node,
+  stopping at the `LIMIT`, reading 4 buffers.
+
+The hand-written prod migration (`migrations/0012_chat_messages_conv_created_id_idx.sql`)
+spells out `DESC NULLS FIRST` explicitly.
 
 ## Why
 
@@ -94,7 +106,7 @@ explicitly for exactly the reason in the Rule above, rather than writing
 - `shared/schema.ts` — index declarations on every domain table
 - `shared/schema.ts` (`chatMessages` table) — the composite covering index example above
 - `migrations/0012_chat_messages_conv_created_id_idx.sql` — the hand-written prod
-  migration that spells out `NULLS LAST` to match `db:push`'s actual output
+  migration that spells out `DESC NULLS FIRST` to match the query's ordering
 - `migrations/0009_users_email_lower_unique.sql` — the sibling "match Drizzle's output"
   concern for a functional index's constraint name
 

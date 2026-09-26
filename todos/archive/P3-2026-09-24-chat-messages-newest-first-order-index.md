@@ -29,7 +29,7 @@ Existing indexes on `chat_messages` (`shared/schema.ts`):
 
 - [x] `EXPLAIN (ANALYZE, BUFFERS)` of the `getChatMessages` query (`server/storage/chat.ts`) on a conversation with a few hundred messages, captured before the change. It shows a Sort node or a scan of all rows in the conversation. → Confirmed: Seq Scan of `chat_messages` (`Rows Removed by Filter: 1066`) into a `Sort` (top-N heapsort). See Updates.
 - [x] Add an index `(conversation_id, created_at DESC, id DESC)` in `shared/schema.ts`, unless the EXPLAIN shows it doesn't help. Record the decision either way. → Added `chat_messages_conv_created_id_idx`. It helps (see below).
-- [x] `EXPLAIN` after the change shows an index scan that stops at the limit (no Sort node) → Confirmed: `Index Scan using chat_messages_conv_created_id_idx`, no Sort node, `actual rows=100` out of 350 in the conversation (stops at the limit). See Updates.
+- [x] `EXPLAIN` after the change shows an index scan that stops at the limit (no Sort node) → **Corrected 2026-09-26 (see the last Updates entry).** The first version of the index (`.desc()`, i.e. `DESC NULLS LAST`) did NOT remove the Sort for the app's literal query; the shipped `.desc().nullsFirst()` version does: `Index Scan`, no Sort, stops at the `LIMIT`.
 - [x] Decide whether `chat_messages_conversation_id_idx` becomes redundant and can be dropped, because the new index's leading column covers it. Check other queries that filter on `conversation_id` alone first. → **Decision: KEEP.** Every `conversation_id`-alone query was enumerated (`getChatMessageCount` is the only one); the new index's leading column structurally CAN serve it too (verified with the old index dropped + seq scan disabled — see Updates), but at this table's current pre-launch scale the planner doesn't reliably prefer either index over a seq scan anyway, so dropping buys no measurable win today while adding prod-migration-ordering risk. Kept both; documented so a later pass can drop it once real traffic volume makes the difference measurable.
 
 ## Implementation Notes
@@ -84,3 +84,32 @@ Existing indexes on `chat_messages` (`shared/schema.ts`):
 - Added `migrations/0012_chat_messages_conv_created_id_idx.sql` for the manual prod apply (see Implementation Notes).
 - No change needed to `server/storage/chat.ts` — the query shape was already correct (fixed under #1064); this was purely a missing-index gap.
 - **Review round 1** (`code-reviewer` + `server-reviewer`, no CRITICALs — "No findings." / "No blocking findings."): `server-reviewer` caught two real WARNINGs, both fixed on-branch — (1) `migrations/0012` omitted `NULLS LAST` on the DESC columns, which would have built a prod index with a different catalog `indexdef` than the Drizzle-declared one (fixed, and the fixed DDL's `indexdef` was verified byte-identical to the dev index's, modulo name/`CONCURRENTLY`); (2) both new comments pointed at `todos/archive/...` before the todo was archived — reworded path-agnostic. Also tightened "several queries filter on conversation_id alone" to "getChatMessageCount is the only other query" in both comments to match this file's own enumeration (both reviewers independently re-verified that enumeration against `server/` and found it accurate).
+- **2026-09-26 — correction after independent review (#1103).** The index as first committed (`table.createdAt.desc(), table.id.desc()`, which Drizzle builds as `DESC NULLS LAST`) did **not** serve the app's query. `getChatMessages` orders with Drizzle's `desc()` helper, which emits a bare `DESC` = `DESC NULLS FIRST`, and the planner matches `NULLS` placement syntactically even though `created_at`/`id` are `NOT NULL`. The "AFTER" plan above did not reproduce for the app's literal query. Fixed: the index is now `.desc().nullsFirst()` in `shared/schema.ts`, and `migrations/0012` uses `DESC NULLS FIRST` (dev `indexdef`: `btree (conversation_id, created_at DESC, id DESC)`). Re-measured on a seeded 350-row conversation inside `BEGIN … ROLLBACK` (0 residual rows; the dev DB is back to 16 messages / 10 conversations), with the query copied literally (`ORDER BY created_at DESC, id DESC LIMIT 20`):
+  - With the NULLS LAST index present (the PR as first committed):
+    ```
+                                                       QUERY PLAN
+       Limit  (cost=40.01..40.06 rows=20 width=1534) (actual rows=20.00 loops=1)
+         Buffers: shared hit=13
+         ->  Sort  (cost=40.01..40.89 rows=350 width=1534) (actual rows=20.00 loops=1)
+               Sort Key: created_at DESC, id DESC
+               Sort Method: top-N heapsort  Memory: 26kB
+               Buffers: shared hit=13
+               ->  Seq Scan on chat_messages  (cost=0.00..30.70 rows=350 width=1534) (actual rows=350.00 loops=1)
+                     Filter: (conversation_id = 98839)
+                     Rows Removed by Filter: 1066
+                     Buffers: shared hit=13
+       Planning:
+         Buffers: shared hit=75
+    ```
+  - With the corrected `.nullsFirst()` index:
+    ```
+                                                                        QUERY PLAN
+       Limit  (cost=0.28..4.40 rows=20 width=1534) (actual rows=20.00 loops=1)
+         Buffers: shared hit=4
+         ->  Index Scan using chat_messages_conv_created_id_idx on chat_messages  (cost=0.28..72.46 rows=350 width=1534) (actual rows=20.00 loops=1)
+               Index Cond: (conversation_id = 98843)
+               Index Searches: 1
+               Buffers: shared hit=4
+       Planning:
+         Buffers: shared hit=75
+    ```

@@ -1039,10 +1039,15 @@ export const chatMessages = pgTable(
     // Covers getChatMessages' `ORDER BY created_at DESC, id DESC LIMIT n`
     // per-conversation — without this, Postgres sorts (or scans) every
     // message in the conversation to return the newest N.
+    // `.nullsFirst()` is load-bearing: Drizzle's index builder defaults every
+    // column to NULLS LAST, but the query's `desc()` helper emits a bare
+    // `DESC`, which Postgres reads as NULLS FIRST. The planner matches NULLS
+    // placement syntactically (NOT NULL columns don't relax it), so a NULLS
+    // LAST index still leaves a Sort node on this query.
     index("chat_messages_conv_created_id_idx").on(
       table.conversationId,
-      table.createdAt.desc(),
-      table.id.desc(),
+      table.createdAt.desc().nullsFirst(),
+      table.id.desc().nullsFirst(),
     ),
     uniqueIndex("chat_messages_turn_key_idx")
       .on(table.conversationId, table.turnKey)

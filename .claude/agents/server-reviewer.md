@@ -237,6 +237,7 @@ Context: `shared/schema.ts` defines the full PostgreSQL schema (33 tables); stor
 
 - [ ] `text()` for enum-like columns, never `pgEnum` — `pgEnum` requires an `ALTER TYPE` migration to add values; validate with a Zod enum at the boundary instead.
 - [ ] Unique indexes on cache composite keys.
+- [ ] **A descending index column's NULLS placement must match the query's.** Drizzle's query `desc(col)` emits a bare `DESC` (= `NULLS FIRST`), but the index builder defaults every column to `NULLS LAST`, so a bare `.desc()` in `index().on(...)` does not serve that `ORDER BY`. The planner still adds a `Sort` node, even on `NOT NULL` columns. Require `.desc().nullsFirst()`, and an `EXPLAIN` of the app's literal `ORDER BY` showing no `Sort` node (#1103; `docs/solutions/conventions/indexes-for-foreign-keys-and-sort-columns-2026-05-13.md`).
 - [ ] CHECK constraints don't conflict with `ON DELETE SET NULL` — prefer `ON DELETE CASCADE` or `ON DELETE RESTRICT` when a CHECK references the FK column.
 - [ ] New tables with secrets have safe-column sets.
 - [ ] All nutrition-bearing tables have `>= 0` CHECK constraints on calories, protein, carbs, fat columns (existing tables scannedItems, mealPlanRecipes, barcodeNutrition all have them).

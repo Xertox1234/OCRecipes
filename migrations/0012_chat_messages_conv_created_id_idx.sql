@@ -41,12 +41,13 @@
 -- re-run this file. If `t`, the earlier run already succeeded — nothing to
 -- do. After a successful apply, re-run the same SELECT and confirm `t`.
 --
--- NULLS LAST is explicit on both DESC columns to match exactly what Drizzle
--- produces for `.desc()` (and what `db:push` created in dev): Postgres's
--- default null-ordering for a plain DESC column is NULLS FIRST, so omitting
--- this clause would leave prod's catalog entry subtly different from the
--- schema.ts-declared index even though both are harmless today (created_at
--- and id are NOT NULL).
+-- NULLS FIRST is explicit on both DESC columns, and it is load-bearing. The
+-- query (Drizzle's `desc()` helper) emits a bare `DESC`, which Postgres reads
+-- as DESC NULLS FIRST. The planner matches NULLS placement syntactically, even
+-- though created_at and id are NOT NULL, so a NULLS LAST index is used only
+-- to filter and still leaves a Sort node. schema.ts declares
+-- `.desc().nullsFirst()` for the same reason; this DDL matches what `db:push`
+-- creates from it.
 --
 -- ORDERING: order-independent w.r.t. the deploy — an additive index does not
 -- change the query the old running server bundle already issues, and once
@@ -54,6 +55,8 @@
 -- the deploy that ships this migration file.
 --
 -- Apply with:  psql "$DATABASE_URL" -f migrations/0012_chat_messages_conv_created_id_idx.sql
+-- Do NOT pass -1 / --single-transaction: that wraps the file in a transaction,
+-- and CREATE INDEX CONCURRENTLY fails inside one.
 
 CREATE INDEX CONCURRENTLY chat_messages_conv_created_id_idx
-  ON chat_messages (conversation_id, created_at DESC NULLS LAST, id DESC NULLS LAST);
+  ON chat_messages (conversation_id, created_at DESC NULLS FIRST, id DESC NULLS FIRST);
