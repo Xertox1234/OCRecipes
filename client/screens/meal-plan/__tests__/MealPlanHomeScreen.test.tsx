@@ -68,6 +68,7 @@ const {
   capturedSheets,
   hookCalls,
   mealPlanItemsData,
+  mealPlanQueryState,
   refreshControlProps,
   capturedPressables,
   addItemMenuProps,
@@ -101,6 +102,14 @@ const {
   // populates this, to reach the per-meal-type sections (and their "Add
   // item" buttons) instead of the empty state's "Browse Recipes" CTA.
   mealPlanItemsData: { value: [] as unknown[] },
+  // Overridden per-test by the isLoadingError/isRefetchError describe block
+  // below; every other describe block relies on these (successful, non-error)
+  // defaults.
+  mealPlanQueryState: {
+    isLoadingError: false,
+    isRefetchError: false,
+    refetch: vi.fn(),
+  },
   // The test/mocks/react-native.ts ScrollView mock never actually renders its
   // `refreshControl` prop's element as a child (real RN's ScrollView natively
   // owns that render; the mock only spreads unrecognized props onto the DOM
@@ -137,6 +146,9 @@ vi.mock("@/hooks/useMealPlan", () => ({
       data: mealPlanItemsData.value,
       isLoading: false,
       isRefetching: false,
+      isLoadingError: mealPlanQueryState.isLoadingError,
+      isRefetchError: mealPlanQueryState.isRefetchError,
+      refetch: mealPlanQueryState.refetch,
     };
   },
   useAddMealPlanItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -904,6 +916,87 @@ describe("MealPlanHomeScreen — pull-to-refresh refreshes meal-plan, daily-budg
     });
 
     invalidateSpy.mockRestore();
+  });
+});
+
+// P2-2026-09-23 (M18): a failed initial fetch (isLoadingError — no cached
+// data) previously rendered as an ordinary empty week (the screen only ever
+// destructured isLoading/isRefetching from useMealPlanItems). A background
+// refetch failure with cached data already on hand (isRefetchError) must NOT
+// blank the screen — it should keep showing the stale week, the same "only
+// error when there's no cached data" rule HistoryScreen's isError already
+// follows (client/hooks/useHistoryData.ts).
+describe("MealPlanHomeScreen — meal-plan fetch error handling", () => {
+  // Same clock pin as the "Android TalkBack background trap" block above:
+  // 00:30 Europe/Berlin on the local calendar day 2026-09-02 -> hour 0 ->
+  // getAutoExpandedMealType() auto-expands "breakfast", so a breakfast item
+  // for that date renders without needing to click a section header open.
+  const originalTz = process.env.TZ;
+  const INSTANT = new Date("2026-09-01T22:30:00Z");
+  const FAKE_BREAKFAST_ITEM = {
+    id: 1,
+    userId: "test-user",
+    recipeId: null,
+    scannedItemId: null,
+    plannedDate: "2026-09-02",
+    mealType: "breakfast",
+    servings: "1",
+    sortOrder: 0,
+    createdAt: INSTANT,
+    recipe: { title: "Stale Pancakes" },
+    scannedItem: null,
+  };
+
+  beforeAll(() => {
+    process.env.TZ = "Europe/Berlin";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(INSTANT);
+  });
+
+  afterAll(() => {
+    vi.useRealTimers();
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+
+  beforeEach(() => {
+    mealPlanItemsData.value = [];
+    mealPlanQueryState.isLoadingError = false;
+    mealPlanQueryState.isRefetchError = false;
+    mealPlanQueryState.refetch = vi.fn();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("shows an inline error state with retry on isLoadingError, instead of the empty-week state", () => {
+    mealPlanQueryState.isLoadingError = true;
+
+    renderComponent(<MealPlanHomeScreen />);
+
+    expect(screen.getByText("Couldn't load your meal plan")).toBeDefined();
+    expect(screen.getByText("Try Again")).toBeDefined();
+    expect(screen.queryByText("No meals planned yet")).toBeNull();
+  });
+
+  it("calls the meal-plan query's refetch when Try Again is pressed", () => {
+    mealPlanQueryState.isLoadingError = true;
+
+    renderComponent(<MealPlanHomeScreen />);
+    fireEvent.click(screen.getByText("Try Again"));
+
+    expect(mealPlanQueryState.refetch).toHaveBeenCalledOnce();
+  });
+
+  it("keeps showing the stale week's items on isRefetchError instead of the error state", () => {
+    mealPlanItemsData.value = [FAKE_BREAKFAST_ITEM];
+    mealPlanQueryState.isRefetchError = true;
+
+    renderComponent(<MealPlanHomeScreen />);
+
+    expect(screen.getByText("Stale Pancakes")).toBeDefined();
+    expect(screen.queryByText("Couldn't load your meal plan")).toBeNull();
   });
 });
 

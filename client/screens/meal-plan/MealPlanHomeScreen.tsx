@@ -739,6 +739,8 @@ export default function MealPlanHomeScreen() {
     data: mealPlanItems,
     isLoading,
     isRefetching,
+    isLoadingError,
+    refetch: refetchMealPlanItems,
   } = useMealPlanItems(startDate, endDate);
 
   const { mutate: removeItem } = useRemoveMealPlanItem();
@@ -812,6 +814,22 @@ export default function MealPlanHomeScreen() {
       );
     }
   }, [budgetErrorNoData]);
+
+  // Same announce pattern as budgetErrorAnnouncedRef above, for the meal-plan
+  // items fetch — the EmptyState rendered on isLoadingError below has no live
+  // region either.
+  const mealPlanErrorAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (!mealPlanErrorAnnouncedRef.current) {
+      mealPlanErrorAnnouncedRef.current = true;
+      return;
+    }
+    if (isLoadingError) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your meal plan. Try again.",
+      );
+    }
+  }, [isLoadingError]);
 
   const dailyTotals = useMemo(() => {
     let calories = 0;
@@ -1404,6 +1422,39 @@ export default function MealPlanHomeScreen() {
             ))}
           </View>
         </SkeletonProvider>
+      </View>
+    );
+  }
+
+  // A failed fetch with no cached data — distinct from `isRefetching` (pull-
+  // to-refresh, which keeps showing the already-loaded week) and from a
+  // background refetch failure with cached data still on hand (isRefetchError,
+  // which falls through to the normal render below and keeps the stale week
+  // rather than blanking it out). Without this gate, a failed initial fetch
+  // rendered `mealPlanItems` as undefined/empty and looked like a legitimately
+  // empty week (2026-09-23 audit, M18).
+  if (isLoadingError) {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            paddingTop: headerHeight,
+            paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+            backgroundColor: theme.backgroundRoot,
+          },
+        ]}
+      >
+        <EmptyState
+          variant="temporary"
+          icon="alert-circle"
+          title="Couldn't load your meal plan"
+          description="Something went wrong loading this week's meals. Check your connection and try again."
+          actionLabel="Try Again"
+          onAction={() => {
+            void refetchMealPlanItems();
+          }}
+        />
       </View>
     );
   }
