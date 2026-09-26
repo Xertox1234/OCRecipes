@@ -7,8 +7,6 @@ updated: 2026-09-26
 assignee:
 labels: [premium, react-native, ux]
 github_issue:
-human_led: true
-blocked_reason: "User to confirm lock/hide vs a free-tier daily quota (free tier lists dailyNlpLogs: 5, read nowhere) before implementing — see Risks"
 ---
 
 # Quick Log is offered to free-tier users but the server refuses them — lock, grey out, or hide it
@@ -72,9 +70,8 @@ Reuse, don't invent:
   `handleDrawerToggle` (`action.premium && !isPremium` → upgrade).
 - `PhotoIntentScreen`'s locked-option accessibility wording.
 
-Decide between locked and hidden once, and apply it everywhere. The recommended default is
-**locked** (visible with a lock and routing to upgrade). It matches the other premium Home
-actions and advertises the feature.
+**DECIDED (user, 2026-09-26): locked.** Quick Log stays visible with a lock and routes to the
+upgrade flow. It is not hidden, and there is no free daily quota. Apply this everywhere.
 
 ## Scope Contract
 
@@ -98,9 +95,8 @@ actions and advertises the feature.
 
 - **Contradictory feature matrix:** the free tier lists `dailyNlpLogs: 5` in
   `shared/types/premium.ts`, but `textFoodParsing: false`, and no server code reads
-  `dailyNlpLogs`. If the product intent was "free users get 5 Quick Logs a day", the fix is a
-  server quota, not a lock. Confirm with the user before implementing; the current direction
-  is lock/hide.
+  `dailyNlpLogs`. The user chose a lock over a free daily quota (2026-09-26), so
+  `dailyNlpLogs` stays unused. Removing the dead field is out of scope here.
 - `HomeScreen`'s raw-tier `isPremium` is also used for the other premium rows. Switching only
   Quick Log to `usePremiumFeature` leaves the rows inconsistent for lapsed subscribers. Note
   it; don't widen scope.
@@ -110,3 +106,4 @@ actions and advertises the feature.
 ### 2026-09-26
 
 - Created from the user's on-device report and their direction on locking.
+- User decided: **lock** (not hide, not a 5-a-day free quota). The human-led gate is removed.
