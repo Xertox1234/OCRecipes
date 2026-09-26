@@ -3,7 +3,8 @@
 #
 # Two INDEPENDENT tiers (spec §3 decision 3):
 #   curated   — claims paired with the command that established them (ledger-note.sh)
-#   mechanical— commands that RAN, extracted from the transcript. NOT a verification tier.
+#   mechanical— what RAN, extracted from the transcript in four sections (BLOCKED,
+#               UNRESOLVED FAILURES, STATE CHANGES, RECENT). NOT a verification tier.
 # Independent inputs mean either can be absent; both absent yields an empty digest, which
 # is the one deliberate silent case (spec §9).
 #
@@ -114,7 +115,7 @@ if context_ledger_path_ok "$LEDGER_DIR/curated.md" && [ -r "$LEDGER_DIR/curated.
   fi
 fi
 
-FLOOR=""
+BLOCKED=""; FAILED=""; STATE=""; RECENT=""
 # THE TRANSCRIPT IS A LEAF LIKE ANY OTHER, and until 2026-09-15 it was the one path in
 # this file with no check at all -- not `-L`, not `-O`, nothing. That made it STRICTLY
 # WEAKER than the ledger leaves: at curated.md an attacker-OWNED file is refused by `-O`,
@@ -163,7 +164,7 @@ if [ -n "$TRANSCRIPT" ]; then
   # too short to match its own pattern, leaking half of it. format_floor applies the real
   # display clamp (in jq, so it slices by Unicode codepoint like the rest of this file, not
   # by byte like an awk substr would) only after redaction has already run.
-  # `tail -n 12` mirrors session-recent-issues.sh's cap; dedup via awk keeps repeats out.
+  # Each section has its own recency cap (section(), below); dedup via awk keeps repeats out.
   # Reversed first (pure-awk reverse — no GNU `tac`, and BSD `tail -r` doesn't exist on the
   # ubuntu-latest CI runner this hook's own tests run under; CI has no prior tail -r/tac use
   # to fall back on) so awk's "keep first occurrence" keeps each distinct command's MOST
@@ -172,30 +173,54 @@ if [ -n "$TRANSCRIPT" ]; then
   # recency; the trailing reverse restores chronological (oldest-of-the-kept-first) order.
   rev_lines() { awk '{ a[NR]=$0 } END { for (i=NR; i>=1; i--) print a[i] }'; }
 
-  # U/R join: keyed on tool_use id, done in awk (not jq) so the whole extraction stays one
-  # streaming pass with no buffering of the transcript. Emits "desc\tcmd\tresult" — the id
-  # has done its job and is dropped here, so redact_secrets below never risks touching a
-  # join key. A U with no matching R (call still in flight, or a truncated transcript)
-  # degrades to "(no result)"; a U whose R matched but carried empty output (e.g. `mkdir
-  # -p`, which prints nothing) is distinguished as "(empty)" rather than collapsing into
-  # the same placeholder as "never got a result at all". Falls back to a synthetic
-  # per-line key ("U<NR>") when `.id` is missing so distinct id-less records can't collide
-  # into one slot and silently overwrite each other.
-  join_ur() {
+  # U/R join + classify: keyed on tool_use id, done in awk (not jq) so the whole extraction
+  # stays one streaming pass with no buffering of the transcript. Emits
+  # "kind\tdesc\tcmd\tresult" — the id and the full-command join key have done their job and
+  # are dropped here, so redact_secrets below never risks touching a join key. A U with no
+  # matching R (call still in flight, or a truncated transcript) degrades to "(no result)";
+  # a U whose R matched but carried empty output (e.g. `mkdir -p`, which prints nothing) is
+  # distinguished as "(empty)" rather than collapsing into the same placeholder as "never
+  # got a result at all". Falls back to a synthetic per-line key ("U<NR>") when `.id` is
+  # missing so distinct id-less records can't collide into one slot and silently overwrite
+  # each other.
+  #
+  # One section per kind, so bookkeeping filler can only ever evict RECENT rows (a real
+  # "last 12 commands" floor held 12 PR-merge rows and none of the session's 18 denials):
+  #   BLOCKED — is_error and the FIRST line is a guard denial, a permission refusal, a
+  #             harness block, or the user rejecting the call. Any tool: a denied Edit is
+  #             exactly what a resumed session would otherwise retry. Result = that line.
+  #   FAILED  — a Bash is_error that is not BLOCKED-shaped. Keyed on is_error, the flag the
+  #             tool itself sets — real failures also start "---", "{", or nothing, not only
+  #             "Exit code N". Only when no LATER non-error run has the same FULL command:
+  #             keying on the displayed first line would let any later `python3 - <<'EOF'`
+  #             "resolve" every earlier failed heredoc. A resolved failure is plain RECENT.
+  #   STATE   — a successful Bash whose FULL command (flag set in jq, before the first-line
+  #             split) commits, pushes, merges, opens/merges a PR, or publishes.
+  #   RECENT  — every other Bash row. A successful Edit/Write is dropped: native
+  #             compaction's "Files and Code Sections" already lists edits.
+  # Walked newest-first so "a success seen so far" means "a success LATER in the session".
+  classify_ur() {
     awk -F'\t' '
       $1=="U" {
         id = ($2!="") ? $2 : ("U" NR)
-        desc[id]=$3; cmd[id]=$4
+        tool[id]=$3; st[id]=$4; key[id]=$5; desc[id]=$6; cmd[id]=$7
         if (!(id in seen)) { seen[id]=1; order[++n]=id }
         next
       }
-      $1=="R" { res[$2]=$3; matched[$2]=1; next }
+      $1=="R" { err[$2]=$3; first[$2]=$4; res[$2]=$5; matched[$2]=1; next }
       END {
-        for (i=1; i<=n; i++) {
-          id=order[i]
-          if (id in matched) { r = (res[id]=="") ? "(empty)" : res[id] } else { r = "(no result)" }
-          print desc[id] "\t" cmd[id] "\t" r
+        for (i=n; i>=1; i--) {
+          id=order[i]; m=(id in matched); e=(m && err[id]=="1"); k="RECENT"
+          if (e && first[id] ~ /^(PreToolUse:[A-Za-z]+ hook error|Permission to use |<tool_use_error>Blocked|The user doesn.t want to proceed)/) k="BLOCKED"
+          else if (tool[id]!="Bash") k=""
+          else if (e) k=((key[id] in ok_later) ? "RECENT" : "FAILED")
+          else if (m && st[id]=="1") k="STATE"
+          if (tool[id]=="Bash" && m && !e) ok_later[key[id]]=1
+          if (k=="") continue
+          if (!m) r="(no result)"; else if (k=="BLOCKED") r=first[id]; else r=((res[id]=="") ? "(empty)" : res[id])
+          row[i]=k "\t" desc[id] "\t" cmd[id] "\t" r
         }
+        for (i=1; i<=n; i++) if (i in row) print row[i]
       }
     '
   }
@@ -331,40 +356,72 @@ if [ -n "$TRANSCRIPT" ]; then
   # instead of recovering anything underneath.
 
   # Final display clamp — same 60/100 widths the pre-result floor used for description and
-  # command, plus 60 for the new result tail. Done in jq (not awk substr) so the cut is by
+  # command, plus 60 for the result tail (100 for a BLOCKED reason, whose "PreToolUse:<Tool>
+  # hook error: " prefix alone eats half of 60). Done in jq (not awk substr) so the cut is by
   # Unicode codepoint, matching how the rest of this file already slices text, rather than
-  # by byte.
+  # by byte. The kind tag stays as a leading tab-separated field for the section split.
   format_floor() {
     jq -R -r '
       split("\t") as $f
-      | "  \($f[0][0:60] // "") ← \($f[1][0:100] // "") → \($f[2][0:60] // "")"
+      | (if $f[0]=="BLOCKED" then 100 else 60 end) as $w
+      | "\($f[0])\t  \($f[1][0:60] // "") ← \($f[2][0:100] // "") → \(($f[3] // "")[0:$w])"
     '
   }
 
-  FLOOR=$(jq -R -r '
+  # U rows: tool, state flag, full-command join key (tojson: escapes tabs/newlines onto one
+  # field), description, displayed first line. The state regex runs on the FULL command so
+  # `git push` on line 2 still counts, and tolerates `/usr/bin/git`, `rtk proxy git`,
+  # `git -C <dir>`, and a leading `VAR=value ` env prefix (it anchors at any word start). A
+# verb must END at whitespace or end of string, not a mere `\b`: a word boundary sits before
+# the hyphen in `git merge-tree`/`git merge-base`, and a real digest listed that read-only
+# probe as a state change.
+  ROWS=$(jq -R -r '
       def content_text:
         if type=="string" then .
         elif type=="array" then (map(if type=="object" then (.text? // "") else (.|tostring) end) | join(" "))
         else (.|tostring) end;
+      def state_change:
+        test("(^|[\\s;&|(])((rtk\\s+proxy\\s+)?(/usr/bin/)?git(\\s+-C\\s+\\S+)?\\s+(commit|push|merge|rebase|reset|tag|worktree\\s+(add|remove)|checkout\\s+-b|switch\\s+-c)(\\s|$)|gh\\s+pr\\s+(create|merge|close)(\\s|$)|npm\\s+run\\s+(update:|db:push|seed|backfill|cleanup))");
       fromjson?
       | if (.type // "")=="assistant" then
-          (.message.content[]? | select(.type=="tool_use" and .name=="Bash")
-            | "U\t\(.id // "")\t\((.input.description // "(no description)") | gsub("\t";" ") | .[0:300])\t\((.input.command // "") | split("\n")[0] // "" | gsub("\t";" ") | .[0:2000])")
+          (.message.content[]? | select(.type=="tool_use" and (.name=="Bash" or .name=="Edit" or .name=="Write" or .name=="MultiEdit"))
+            | if .name=="Bash" then
+                (.input.command // "") as $c
+                | "U\t\(.id // "")\tBash\t\(if ($c | state_change) then "1" else "0" end)\t\($c | tojson)\t\((.input.description // "(no description)") | gsub("\t";" ") | .[0:300])\t\($c | split("\n")[0] // "" | gsub("\t";" ") | .[0:2000])"
+              else
+                "U\t\(.id // "")\t\(.name)\t0\t\t(\(.name))\t\((.input.file_path // "") | gsub("\t";" ") | .[0:2000])"
+              end)
         elif (.type // "")=="user" then
           (.message.content[]? | select(.type=="tool_result")
-            | "R\t\(.tool_use_id // "")\t\((.content // "") | content_text | gsub("\t";" ") | split("\n") | map(select(length>0)) | map(select((test("^Session cwd remains ") or test("^Shell cwd was reset to ")) | not)) | (.[-1] // "") | .[0:2000])")
+            | ((.content // "") | content_text | gsub("\t";" ") | split("\n") | map(select(length>0)) | map(select((test("^Session cwd remains ") or test("^Shell cwd was reset to ")) | not))) as $l
+            | "R\t\(.tool_use_id // "")\t\(if .is_error == true then "1" else "0" end)\t\(($l[0] // "") | .[0:2000])\t\(($l[-1] // "") | .[0:2000])")
         else empty end
-    ' "$TRANSCRIPT" 2>/dev/null | join_ur | redact_secrets | entropy_net | restore_protected | format_floor | rev_lines | awk '!seen[$0]++' | awk 'NR<=12' | rev_lines)
+    ' "$TRANSCRIPT" 2>/dev/null | classify_ur | redact_secrets | entropy_net | restore_protected | format_floor)
+
+  # section <kind> <cap>: that kind's rows, deduped keeping each row's MOST RECENT run,
+  # capped by recency, back in chronological order.
+  section() {
+    printf '%s\n' "$ROWS" | awk -F'\t' -v k="$1" '$1==k { print substr($0, length(k)+2) }' \
+      | rev_lines | awk '!seen[$0]++' | awk -v c="$2" 'NR<=c' | rev_lines
+  }
+  BLOCKED=$(section BLOCKED 6)
+  FAILED=$(section FAILED 5)
+  STATE=$(section STATE 8)
+  RECENT=$(section RECENT 8)
 fi
 
 # Both tiers empty -> write nothing. Spec §9: emitting "nothing captured" would spend
 # post-compact budget to convey no information.
-if [ -z "$CURATED" ] && [ -z "$FLOOR" ]; then
+if [ -z "$CURATED" ] && [ -z "$BLOCKED$FAILED$STATE$RECENT" ]; then
   exit 0
 fi
 
-# --- Assemble, then measure (spec §5.2's 4KB hard cap) -----------------------
-# A cap enforced only on the INPUTS (tail -c 2048, tail -n 12, per-field clamps) is only as
+# --- Assemble, then measure (hard cap LEDGER_CAP) -----------------------------
+# 6144, up from spec §5.2's 4096 when the floor split into four sections. Still well under
+# session-resume-ledger.sh's 8192 read clamp and SessionStart's 10,000-char context cap.
+LEDGER_CAP=6144
+floor_section() { [ -n "$2" ] || return 0; echo ""; echo "$1"; printf '%s\n' "$2"; }
+# A cap enforced only on the INPUTS (tail -c 2048, per-section caps, per-field clamps) is only as
 # good as the arithmetic behind it — that arithmetic assumed the floor stays ~1.8KB, and a
 # realistic fixture (long-but-legal descriptions, 12 distinct Bash calls) broke it: 4329
 # bytes against the 4096 cap. The bound that can't be defeated by an input the arithmetic
@@ -385,11 +442,14 @@ assemble_digest() {
     echo ""
     printf '%s\n' "$CURATED"
   fi
-  if [ -n "$FLOOR" ]; then
+  if [ -n "$BLOCKED$FAILED$STATE$RECENT" ]; then
     echo ""
-    echo "MECHANICAL FLOOR — commands run this session (most recent 12)"
+    echo "MECHANICAL FLOOR — extracted from this session's transcript"
     echo "NOTE: these record what RAN, not what was concluded. Not a verification tier."
-    printf '%s\n' "$FLOOR"
+    floor_section "BLOCKED — denied by a guard, a permission rule, or the user; do not retry the same way" "$BLOCKED"
+    floor_section "UNRESOLVED FAILURES — failed and not re-run successfully since" "$FAILED"
+    floor_section "STATE CHANGES — commits, pushes, merges, PRs, publishes" "$STATE"
+    floor_section "RECENT COMMANDS — the most recent 8 of everything else" "$RECENT"
   fi
   echo ""
   echo "Full history: session ${SID} — glob ~/.claude/projects/*/${SID}.jsonl"
@@ -406,9 +466,17 @@ DIGEST=$(assemble_digest)
 DSIZE=$(digest_size "$DIGEST") || DSIZE=0
 case "$DSIZE" in ''|*[!0-9]*) DSIZE=0 ;; esac
 
-while [ "$DSIZE" -gt 4096 ]; do
-  if [ -n "$FLOOR" ]; then
-    FLOOR=$(printf '%s\n' "$FLOOR" | tail -n +2)
+# Oldest row first, least valuable section first: RECENT, then STATE, then FAILED, then
+# BLOCKED — and only then the curated tier, the one part a person wrote deliberately.
+while [ "$DSIZE" -gt "$LEDGER_CAP" ]; do
+  if [ -n "$RECENT" ]; then
+    RECENT=$(printf '%s\n' "$RECENT" | tail -n +2)
+  elif [ -n "$STATE" ]; then
+    STATE=$(printf '%s\n' "$STATE" | tail -n +2)
+  elif [ -n "$FAILED" ]; then
+    FAILED=$(printf '%s\n' "$FAILED" | tail -n +2)
+  elif [ -n "$BLOCKED" ]; then
+    BLOCKED=$(printf '%s\n' "$BLOCKED" | tail -n +2)
   elif [ -n "$CURATED" ]; then
     CURATED=$(printf '%s\n' "$CURATED" | tail -n +2)
   else
