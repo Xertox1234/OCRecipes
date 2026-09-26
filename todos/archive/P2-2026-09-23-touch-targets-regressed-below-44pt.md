@@ -100,3 +100,4 @@ The archived sweep's notes (hitSlop vs row-height caps) apply — read them firs
   unaffected, icons stay centered), but worth an on-device eyeball on the
   next preview build. Both reviewers (code-reviewer, mobile-reviewer)
   returned no blocking findings on the diff itself.
+- 2026-09-25 (orchestrator, before independent review): also fixed the same file's Clear search button (16pt icon + hitSlop 8 = 32pt), which the executor had left out of scope. It now has an explicit 44pt box with negative margins, and the search bar a 44pt minHeight, because its ~36pt bar would clip a hitSlop.

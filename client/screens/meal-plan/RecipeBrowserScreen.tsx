@@ -711,7 +711,7 @@ export default function RecipeBrowserScreen() {
                 setSearchText("");
                 setDebouncedQuery("");
               }}
-              hitSlop={8}
+              style={styles.clearSearchButton}
               accessibilityRole="button"
               accessibilityLabel="Clear search"
             >
@@ -1119,9 +1119,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
+    // Room for the Clear search button's 44pt box (below) without the bar
+    // changing height when that button appears on the first keystroke.
+    minHeight: 44,
     borderRadius: BorderRadius.card,
     gap: Spacing.sm,
     marginBottom: Spacing.md,
+  },
+  // 44pt touch target for a 16pt icon. A hitSlop can't do it here: RN clips
+  // hitSlop to the parent's bounds, and the bar is only ~36pt of content +
+  // padding. The negative margins let the box fill the bar's padding instead
+  // of growing it (bar stays at its 44pt minHeight).
+  clearSearchButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: -Spacing.sm,
+    marginRight: -Spacing.md,
   },
   searchInput: {
     flex: 1,

@@ -276,4 +276,26 @@ describe("RecipeBrowserScreen — touch targets meet the 44pt minimum (P2-2026-0
     expect(width).toBeGreaterThanOrEqual(44);
     expect(height).toBeGreaterThanOrEqual(44);
   });
+
+  it("the Clear search button reaches 44pt on both axes (visual 16pt icon)", async () => {
+    // Route param seeds a non-empty search, so the clear button is mounted.
+    renderComponent(<RecipeBrowserScreen />);
+
+    await waitFor(() => {
+      expect(capturedPressProps["Clear search"]).toBeDefined();
+    });
+
+    // Feather "x" is rendered at size={16}. Its parent search bar is only
+    // ~36pt tall, which would clip a vertical hitSlop, so the button needs an
+    // explicit 44pt box rather than hitSlop alone.
+    const { width, height } = effectiveTouchSize(
+      capturedPressProps["Clear search"],
+      16,
+    );
+    expect(width).toBeGreaterThanOrEqual(44);
+    expect(height).toBeGreaterThanOrEqual(44);
+    expect(flattenHitSlop(capturedPressProps["Clear search"]?.hitSlop)).toEqual(
+      { top: 0, bottom: 0, left: 0, right: 0 },
+    );
+  });
 });

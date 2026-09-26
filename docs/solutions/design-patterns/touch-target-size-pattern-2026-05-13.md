@@ -73,6 +73,15 @@ This gives the parent real slack for the hitSlop to expand into.
 
 **General rule:** Before adding `hitSlop` to a control, check whether its immediate parent has padding or room on every axis the hitSlop needs. If not, add matching padding to the parent. When the parent is a tight row shared with an adjacent touchable target and even padding risks overlap, prefer the **explicit min 44 box** technique (set `minWidth: 44, minHeight: 44` on the control itself) which has no such clipping risk.
 
+**When the parent itself is shorter than 44pt.** A search bar whose content is a
+15pt `TextInput` with `padding: 0` is only about 36pt tall, including its 8pt
+vertical padding. Neither a `hitSlop` nor padding on the control can reach 44
+inside it. `RecipeBrowserScreen`'s Clear search button uses an explicit
+`width: 44, height: 44` box with negative margins equal to the bar's padding
+(`marginVertical: -Spacing.sm`, `marginRight: -Spacing.md`), so the box fills
+the padding instead of growing the bar. The bar also gets `minHeight: 44`, so
+it doesn't change height when the button appears on the first keystroke.
+
 ## Related Files
 
 - `docs/rules/react-native.md` — touch-target rule (binding one-liner)
