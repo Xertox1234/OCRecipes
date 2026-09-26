@@ -1,9 +1,9 @@
 ---
 title: "expo-notifications and expo-application are on SDK 55 majors while the app runs Expo SDK 54"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-26
 assignee:
 labels: [deferred, audit, dependencies]
 github_issue:
