@@ -1,9 +1,9 @@
 ---
 title: "getChatMessages' newest-first ORDER BY (created_at DESC, id DESC) has no covering index"
-status: in-progress
+status: done
 priority: low
 created: 2026-09-24
-updated: 2026-09-24
+updated: 2026-09-26
 assignee:
 labels: [deferred, performance, database]
 github_issue:
@@ -83,3 +83,4 @@ Existing indexes on `chat_messages` (`shared/schema.ts`):
 - **`getChatMessageCount` (the only other pure `conversation_id`-equality consumer, enumerated by grepping every `chatMessages` usage in `server/`)**: its plan was _unchanged_ by adding the new index (`Seq Scan on chat_messages ... Filter: (conversation_id = 98631)` before and after) — at this row count a plain seq scan is cheapest for a `count(*)` either way, so the planner doesn't pick either `conversation_id` index for it. To check the new index's leading column can still serve this query shape structurally (independent of today's cost-based choice), re-ran with the OLD single-column index dropped and `SET LOCAL enable_seqscan = off` (same rolled-back transaction): plan became `Aggregate -> Nested Loop -> Bitmap Heap Scan on chat_messages (Bitmap Index Scan on chat_messages_conv_created_id_idx, Index Cond: (conversation_id = 98635))` — i.e. the composite index's leading column alone serves the equality filter with no involvement of the dropped index. `getChatMessageById` / `deleteChatMessage` / `recipe-from-chat.ts` (id-primary, `conversation_id` as a secondary check) remain PK-driven either way; `getChatMessageByTurnKey` and the daily/role-count queries are unaffected (served by `chat_messages_turn_key_idx` and `chat_messages_conv_role_created_idx` respectively); `export.ts`'s full-user export filters on `chat_conversations.user_id`, not `chat_messages.conversation_id`, so neither index is its primary lookup.
 - Added `migrations/0012_chat_messages_conv_created_id_idx.sql` for the manual prod apply (see Implementation Notes).
 - No change needed to `server/storage/chat.ts` — the query shape was already correct (fixed under #1064); this was purely a missing-index gap.
+- **Review round 1** (`code-reviewer` + `server-reviewer`, no CRITICALs — "No findings." / "No blocking findings."): `server-reviewer` caught two real WARNINGs, both fixed on-branch — (1) `migrations/0012` omitted `NULLS LAST` on the DESC columns, which would have built a prod index with a different catalog `indexdef` than the Drizzle-declared one (fixed, and the fixed DDL's `indexdef` was verified byte-identical to the dev index's, modulo name/`CONCURRENTLY`); (2) both new comments pointed at `todos/archive/...` before the todo was archived — reworded path-agnostic. Also tightened "several queries filter on conversation_id alone" to "getChatMessageCount is the only other query" in both comments to match this file's own enumeration (both reviewers independently re-verified that enumeration against `server/` and found it accurate).
