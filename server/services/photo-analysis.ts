@@ -36,7 +36,9 @@ const MAX_PORTION_GRAMS = 5000;
 const foodItemSchema = z.object({
   name: z.string(),
   quantity: z.string(),
-  // A bad estimate drops to undefined ("portion unknown"), never failing the parse.
+  // A bad lookup name or estimate drops to undefined (look up by name /
+  // "portion unknown"), never failing the parse.
+  lookupName: z.string().trim().min(1).max(100).optional().catch(undefined),
   grams: z
     .number()
     .positive()
@@ -78,6 +80,7 @@ const LOG_PROMPT = `You are a nutrition analysis assistant. Analyze food photos 
 ${CATEGORY_INSTRUCTION}
 7. Cuisine classification: identify the cuisine origin if recognizable (e.g., "Japanese", "Mexican", "Indian", "Italian")
 8. "grams": your best estimate of the edible weight in grams of the portion shown, without bones, shells, peels or pits. Use typical reference weights (e.g., 1 cup of cooked rice ≈ 160, 1 medium apple ≈ 180, a 6 oz steak ≈ 170, 1 slice of bread ≈ 30)
+9. "lookupName": the same food the way a nutrition database lists it: main food first, then type and preparation, comma-separated (e.g., "beef, steak, sirloin, grilled", "bananas, raw", "rice, white, long-grain, cooked", "water, tap")
 
 Rules:
 - Use standard US portion sizes
@@ -91,6 +94,7 @@ Respond with JSON only matching this schema:
   "foods": [
     {
       "name": "food name",
+      "lookupName": "food, type, preparation",
       "quantity": "portion size",
       "grams": 150,
       "confidence": 0.85,
@@ -688,6 +692,7 @@ Respond with JSON matching this schema:
   "foods": [
     {
       "name": "food name",
+      "lookupName": "food, type, preparation",
       "quantity": "portion size",
       "grams": 150,
       "confidence": 0.95,
@@ -701,7 +706,7 @@ Respond with JSON matching this schema:
   "followUpQuestions": []
 }
 
-Update the food names, quantities, grams (edible weight of the portion), confidence, and categories based on the user's answer. Remove any clarification flags that are now resolved.`,
+Update the food names, lookup names (the food as a nutrition database lists it), quantities, grams (edible weight of the portion), confidence, and categories based on the user's answer. Remove any clarification flags that are now resolved.`,
           },
           {
             role: "user",

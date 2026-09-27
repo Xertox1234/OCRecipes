@@ -273,11 +273,17 @@ describe("Photos Routes", () => {
       vi.mocked(getFollowUpQuestions).mockReturnValue([]);
     }
 
-    function food(name: string, quantity: string, grams?: number) {
+    function food(
+      name: string,
+      quantity: string,
+      grams?: number,
+      lookupName?: string,
+    ) {
       return {
         name,
         quantity,
         grams,
+        lookupName,
         category: "other" as const,
         confidence: 0.9,
         needsClarification: false,
@@ -330,6 +336,26 @@ describe("Photos Routes", () => {
         "steamed white rice",
         "apple",
       ]);
+    });
+
+    it("looks a food up by its lookup name when the model gave one", async () => {
+      const res = await analyze(
+        [
+          food("banana slices", "1 banana", 120, "bananas, raw"),
+          food("apple", "1 medium"),
+        ],
+        { "bananas, raw": per100g("Banana, raw", { calories: 89 }) },
+      );
+
+      expect(batchNutritionLookup).toHaveBeenCalledWith([
+        "bananas, raw",
+        "apple",
+      ]);
+      expect(res.body.foods[0].nutrition).toMatchObject({
+        name: "Banana, raw",
+        calories: 107, // 89 × 1.2
+        servingSize: "1 banana (120 g)",
+      });
     });
 
     it("scales per-100 g values to the estimated weight", async () => {

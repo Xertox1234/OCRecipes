@@ -585,13 +585,16 @@ describe("getPromptForIntent", () => {
     expect(getPromptForIntent("calories").maxTokens).toBe(1000);
   });
 
-  it("asks for an edible weight in grams only where nutrition is looked up", () => {
-    expect(getPromptForIntent("log").prompt).toContain('"grams"');
-    expect(getPromptForIntent("calories").prompt).toContain('"grams"');
-    // Control: identify and recipe do not look nutrition up
-    expect(getPromptForIntent("identify").prompt).not.toContain('"grams"');
-    expect(getPromptForIntent("recipe").prompt).not.toContain('"grams"');
-  });
+  it.each(['"grams"', '"lookupName"'])(
+    "asks for %s only where nutrition is looked up",
+    (field) => {
+      expect(getPromptForIntent("log").prompt).toContain(field);
+      expect(getPromptForIntent("calories").prompt).toContain(field);
+      // Control: identify and recipe do not look nutrition up
+      expect(getPromptForIntent("identify").prompt).not.toContain(field);
+      expect(getPromptForIntent("recipe").prompt).not.toContain(field);
+    },
+  );
 
   it("throws for the menu intent — menus are parsed by analyzeMenuPhoto, not the logging pipeline", () => {
     expect(() => getPromptForIntent("menu")).toThrow(
@@ -657,6 +660,39 @@ describe("photo-analysis failure propagation", () => {
 
       expect(result.foods[0].grams).toBe(160);
     });
+
+    it("keeps the model's database-style lookup name, trimmed", async () => {
+      mockVisionResponse({
+        ...foodWithGrams(160),
+        foods: [
+          {
+            ...foodWithGrams(160).foods[0],
+            lookupName: "  rice, white, long-grain, cooked ",
+          },
+        ],
+      });
+
+      const result = await analyzePhoto("base64data", "log");
+
+      expect(result.foods[0].lookupName).toBe(
+        "rice, white, long-grain, cooked",
+      );
+    });
+
+    it.each([[123], [""], ["   "], ["x".repeat(101)]])(
+      "drops an invalid lookup name (%j) without failing the analysis",
+      async (lookupName) => {
+        mockVisionResponse({
+          ...foodWithGrams(160),
+          foods: [{ ...foodWithGrams(160).foods[0], lookupName }],
+        });
+
+        const result = await analyzePhoto("base64data", "log");
+
+        expect(result.foods[0].grams).toBe(160);
+        expect(result.foods[0].lookupName).toBeUndefined();
+      },
+    );
 
     it.each([["160"], [-5], [0], [9000], [null]])(
       "drops an invalid gram estimate (%j) without failing the analysis",
@@ -903,6 +939,7 @@ describe("refineAnalysis", () => {
           confidence: 0.95,
           needsClarification: false,
           grams: 195,
+          lookupName: "rice, brown, long-grain, cooked",
         },
       ],
       overallConfidence: 0.95,
@@ -916,8 +953,10 @@ describe("refineAnalysis", () => {
     );
 
     expect(result.foods[0].grams).toBe(195);
+    expect(result.foods[0].lookupName).toBe("rice, brown, long-grain, cooked");
     const request = mockCreate.mock.calls[0][0];
     expect(request.messages[0].content).toContain('"grams"');
+    expect(request.messages[0].content).toContain('"lookupName"');
     // It returns the whole food list, so it gets the same room as logging.
     expect(request.max_completion_tokens).toBe(1000);
   });

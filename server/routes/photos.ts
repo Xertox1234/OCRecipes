@@ -88,18 +88,25 @@ const structureRecipeTextSchema = z.object({
 
 /**
  * Attach nutrition data to a set of analyzed foods. Each food is looked up by
- * name and scaled to its estimated weight (`portionNutrition`). When
- * `needsNutrition` is false, every food gets `nutrition: null` with no lookup.
- * Generic over the food shape so callers keep their original field types.
+ * its database-style `lookupName` (else its name) and scaled to its estimated
+ * weight (`portionNutrition`). When `needsNutrition` is false, every food gets
+ * `nutrition: null` with no lookup. Generic over the food shape so callers
+ * keep their original field types.
  */
 async function attachNutrition<
-  F extends { name: string; quantity: string; grams?: number },
+  F extends {
+    name: string;
+    quantity: string;
+    lookupName?: string;
+    grams?: number;
+  },
 >(foods: F[], needsNutrition: boolean) {
+  const lookupKey = (f: F) => f.lookupName ?? f.name;
   const nutritionMap = needsNutrition
-    ? await batchNutritionLookup([...new Set(foods.map((f) => f.name))])
+    ? await batchNutritionLookup([...new Set(foods.map(lookupKey))])
     : null;
   return foods.map((food) => {
-    const nutrition = nutritionMap?.get(food.name);
+    const nutrition = nutritionMap?.get(lookupKey(food));
     return {
       ...food,
       nutrition: nutrition ? portionNutrition(nutrition, food) : null,
