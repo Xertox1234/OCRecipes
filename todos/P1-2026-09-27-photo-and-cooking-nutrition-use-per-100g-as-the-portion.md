@@ -52,12 +52,18 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
       The analysis prompt returns an estimated gram weight (bounded, Zod-validated, same
       approach as Quick Log's `grams`), and the result is normalized through its
       `servingSize` and scaled. Unknown weight → clearly marked, never silently
-      per 100 g.
+      per 100 g. "Marked" means the `servingSize` string, as Quick Log does
+      (`"100 g (portion unknown)"`), not a new field.
 - [ ] Cooking sessions: each ingredient's nutrition describes its quantity and unit.
       Metric and common units convert to grams. An unconvertible unit is marked, not
       silently per 100 g. Session totals sum portion values. This covers **fiber, sugar
       and sodium** too: `calculateSessionNutrition`'s per-ingredient items carry all seven
       nutrients (`shared/types/cook-session.ts`).
+- [ ] **Both** cooking functions are fixed: `calculateSessionMacros`
+      (`server/services/cooking-session.ts:268`) is what writes the diary entry
+      (`server/routes/cooking.ts` → `storage.createScannedItemWithLog`), and
+      `calculateSessionNutrition` powers the pre-log summary. Fixing only the summary
+      leaves the logged entries wrong.
 - [ ] Both callers look up the food by name (or a database-style lookup name), never
       with the quantity in the query.
 - [ ] Per-100 g → portion conversion is shared with Quick Log, not duplicated: `toPortion`
@@ -71,8 +77,11 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
 
 ## Implementation Notes
 
-- Photo analysis has four intents (`server/services/photo-analysis.ts`). Only the paths
-  that call `attachNutrition` need the weight. Prompt changes go through the
+- Photo analysis: only the intents with `INTENT_CONFIG[intent].needsNutrition`
+  (`shared/constants/preparation.ts`: `log`
+  and `calories`) call `attachNutrition`, so only their prompts need the weight.
+  `FoodItem` in `shared/types/photo-analysis.ts` is hand-kept in sync with
+  `foodItemSchema` in `photo-analysis.ts`; adding `grams` touches both. Prompt changes go through the
   ai-reviewer and must keep `SYSTEM_PROMPT_BOUNDARY` and input sanitization.
 - Cooking-session ingredients have a numeric `quantity` and a `unit` string
   (`shared/types/cook-session.ts`). A small unit→grams table (g, kg, oz, lb, ml, l, cup,
@@ -91,7 +100,8 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
   helper. Nothing new beyond a gram estimate in the photo prompt and a unit→grams table
   for cooking.
 - **Files in scope:**
-  - `server/routes/photos.ts`, `server/services/photo-analysis.ts`
+  - `server/routes/photos.ts`, `server/services/photo-analysis.ts`,
+    `shared/types/photo-analysis.ts`
   - `server/services/cooking-session.ts`
   - `server/services/food-nlp.ts` and `server/services/portion-nutrition.ts` (new), for
     the `toPortion` extraction, if this todo lands first
@@ -119,3 +129,7 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
 - Found while reviewing PR #1118 (Quick Log per-100 g fix). The user approved filing it.
 - PR #1119 review: fixed the `calculateSessionMacros` line anchor, named the shared
   helper's path, and added fiber/sugar/sodium to the cooking-session criterion.
+- PR #1119 re-review (advisory, applied in the codify PR): both cooking functions named in
+  the AC (`calculateSessionMacros` writes the diary), "marked" defined as the
+  `servingSize` string, `shared/types/photo-analysis.ts` added to scope, and the photo
+  intents narrowed to `log`/`calories`.
