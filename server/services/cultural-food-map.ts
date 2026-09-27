@@ -509,7 +509,8 @@ const CULTURAL_FOOD_MAP: CulturalFoodEntry[] = [
  * One whole-word pattern per alias, built once. An alias must stand as its own
  * word(s): as a plain substring, "wat" matched "water"/"watermelon", "pap"
  * matched "papaya"/"paprika" and "roti" matched "rotisserie", and each
- * rewritten query was cached for every user.
+ * rewritten query was cached for every user. A plural ending ("rotis",
+ * "tacos", "tamales") is allowed, as the substring test allowed it by accident.
  */
 const ALIAS_PATTERNS = new Map<CulturalFoodEntry, RegExp[]>(
   CULTURAL_FOOD_MAP.map((entry) => [
@@ -517,7 +518,7 @@ const ALIAS_PATTERNS = new Map<CulturalFoodEntry, RegExp[]>(
     entry.aliases.map(
       (alias) =>
         new RegExp(
-          `(?<![\\p{L}\\p{N}])${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`,
+          `(?<![\\p{L}\\p{N}])${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:e?s)?(?![\\p{L}\\p{N}])`,
           "u",
         ),
     ),

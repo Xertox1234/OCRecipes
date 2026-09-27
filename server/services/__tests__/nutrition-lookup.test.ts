@@ -1458,10 +1458,13 @@ describe("fuzzyMatchCNF — whole-word matching and head ranking", () => {
     );
   });
 
-  // Measured residual, deliberately not tuned away: bare "egg" still prefers
+  // Measured residuals, deliberately not tuned away: bare "egg" still prefers
   // "Bagel, egg" here (the whole-egg row's six comma parts cost it the
-  // many-parts penalty). Quick Log sends a database-style lookupName
-  // ("egg, chicken, whole, cooked"), which resolves correctly (above).
+  // many-parts penalty), and on the real list bare "eggs" lands on
+  // "Fish, salmon, native, eggs, raw" (same before and after this change).
+  // Quick Log sends a database-style lookupName ("egg, chicken, whole,
+  // cooked", server/services/food-nlp.ts since #1118), which resolves
+  // correctly (above).
 
   it("returns null rather than a food missing one of the query's words", () => {
     // Old scorer: "Guava, strawberry, raw" ("raw" inside "strawberry") and

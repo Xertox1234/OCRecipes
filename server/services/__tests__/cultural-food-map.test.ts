@@ -149,6 +149,19 @@ describe("Cultural Food Map", () => {
       expect(lookupCulturalFood(query)?.standardName).toBe(standardName);
     });
 
+    // Plural forms matched by accident under the old substring test; whole-word
+    // matching must keep them (singular controls above).
+    it.each([
+      ["2 rotis", "flatbread"],
+      ["naans", "flatbread"],
+      ["samosas", "deep fried pastry with filling"],
+      ["2 tacos", "corn tortilla with filling"],
+      ["burritos", "stuffed tortilla"],
+      ["3 tamales", "corn masa dumpling"],
+    ])("still rewrites the plural %s", (query, standardName) => {
+      expect(lookupCulturalFood(query)?.standardName).toBe(standardName);
+    });
+
     it("treats alias punctuation literally, not as a regex", () => {
       for (const entry of CULTURAL_FOOD_MAP) {
         for (const alias of entry.aliases) {
