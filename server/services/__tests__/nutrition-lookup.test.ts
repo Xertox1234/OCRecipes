@@ -1007,6 +1007,66 @@ describe("lookupNutrition", () => {
     expect(result!.protein).toBe(31);
   });
 
+  describe("USDA energy unit", () => {
+    function usdaReturns(foodNutrients: object[]) {
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => ({
+              foods: [{ description: "Quinoa, cooked", foodNutrients }],
+            }),
+          }),
+      });
+      return lookupNutrition("quinoa salad");
+    }
+
+    // Live USDA search, 2026-09-27: SR Legacy foods list the kJ entry first
+    // ("Quinoa, cooked": Energy 503 kJ; Energy 120 KCAL).
+    it("reads kcal when the kJ entry comes first", async () => {
+      const result = await usdaReturns([
+        { nutrientName: "Energy", value: 503, unitName: "kJ" },
+        { nutrientName: "Energy", value: 120, unitName: "KCAL" },
+        { nutrientName: "Protein", value: 4.4, unitName: "G" },
+      ]);
+
+      expect(result!.calories).toBe(120);
+      expect(result!.protein).toBe(4.4);
+    });
+
+    it("converts a kJ-only energy to kcal", async () => {
+      const result = await usdaReturns([
+        { nutrientName: "Energy", value: 503, unitName: "kJ" },
+      ]);
+
+      expect(result!.calories).toBe(120); // 503 / 4.184
+    });
+
+    it("reads a kcal Atwater energy beside a kJ one", async () => {
+      const result = await usdaReturns([
+        { nutrientName: "Energy", value: 700, unitName: "kJ" },
+        {
+          nutrientName: "Energy (Atwater General Factors)",
+          value: 168,
+          unitName: "KCAL",
+        },
+      ]);
+
+      expect(result!.calories).toBe(168);
+    });
+
+    it("keeps a kcal-only energy as is", async () => {
+      // Control: Branded and FNDDS foods list kcal only
+      const result = await usdaReturns([
+        { nutrientName: "Energy", value: 52, unitName: "KCAL" },
+      ]);
+
+      expect(result!.calories).toBe(52);
+    });
+  });
+
   it("falls back to API Ninjas as last resort", async () => {
     const originalKey = process.env.API_NINJAS_KEY;
     process.env.API_NINJAS_KEY = "test-key";
@@ -1401,6 +1461,35 @@ describe("PR #269 — USDA-UPC safeParse failure branches", () => {
   beforeEach(() => {
     mockFetch.mockReset();
     _resetCNFCacheForTesting();
+  });
+
+  it("reads kcal for a UPC food whose kJ entry comes first", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: "GRANOLA",
+                gtinUpc: "006073114236",
+                foodNutrients: [
+                  { nutrientName: "Energy", value: 1960, unitName: "kJ" },
+                  { nutrientName: "Energy", value: 468, unitName: "KCAL" },
+                ],
+              },
+            ],
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("6073114236");
+
+    expect(result!.per100g.calories).toBe(468);
   });
 
   it("tolerates a null `value` in USDA UPC food nutrients (coerces to 0, sibling food survives)", async () => {

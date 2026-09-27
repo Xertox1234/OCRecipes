@@ -64,6 +64,7 @@ const usdaFoodSchema = z.object({
   foodNutrients: z.array(
     z.object({
       nutrientName: z.string(),
+      unitName: z.string().nullish(),
       // USDA returns `value: null` for no-data nutrients; `.default(0)` only
       // fires on `undefined`, so coerce null→0 (replicates the prior `|| 0`)
       // — otherwise one sibling food with a null value fails the whole page.
@@ -713,9 +714,35 @@ if (USDA_API_KEY === "DEMO_KEY") {
  * Both USDA endpoints return the same `{ nutrientName, value }` nutrient shape,
  * and the Zod schema already coerces a null `value` to 0, so no `|| 0` is needed.
  */
+type UsdaNutrient = {
+  nutrientName: string;
+  unitName?: string | null;
+  value: number;
+};
+
+const KJ_PER_KCAL = 4.184;
+
+/**
+ * Energy in kcal. SR Legacy foods list a kJ entry before the kcal one
+ * ("Quinoa, cooked": Energy 503 kJ, then 120 KCAL, live 2026-09-27), so the
+ * first "Energy" match stored kJ as calories. Read the kcal entry; convert a
+ * kJ-only energy; read an entry without a unit as kcal.
+ */
+function usdaKcal(nutrients: UsdaNutrient[]): number {
+  const energy = nutrients.filter((n) =>
+    n.nutrientName.toLowerCase().includes("energy"),
+  );
+  const unit = (n: UsdaNutrient) => n.unitName?.toLowerCase();
+  const kcal =
+    energy.find((n) => unit(n) === "kcal") ?? energy.find((n) => !unit(n));
+  if (kcal) return kcal.value;
+  const kj = energy.find((n) => unit(n) === "kj");
+  return kj ? Math.round(kj.value / KJ_PER_KCAL) : 0;
+}
+
 function mapUsdaFoodToNutrition(food: {
   description?: string | null;
-  foodNutrients: { nutrientName: string; value: number }[];
+  foodNutrients: UsdaNutrient[];
 }): NutritionData {
   const findNutrient = (names: string[]) =>
     findNutrientValue(
@@ -727,7 +754,7 @@ function mapUsdaFoodToNutrition(food: {
 
   return {
     name: food.description || "Unknown",
-    calories: findNutrient(["Energy"]),
+    calories: usdaKcal(food.foodNutrients),
     protein: findNutrient(["Protein"]),
     carbs: findNutrient(["Carbohydrate"]),
     fat: findNutrient(["Total lipid", "Fat"]),
