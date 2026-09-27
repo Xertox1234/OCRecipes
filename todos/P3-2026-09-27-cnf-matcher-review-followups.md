@@ -76,6 +76,13 @@ list. Reviewers flagged, as advisory:
       sugars, granulated (`shared/constants/beverages.ts`, PR #1124). The route tests mock
       the lookup, so only the gold set would catch a matcher change moving them.
 
+- [ ] Dehydrated-form penalty residuals (PR #1126), each fixed or its attempt and gold-set
+      before/after recorded here: "cocoa" → "Hot chocolate, cocoa, homemade…" (was cocoa
+      powder); "currant(s)" → "Currant, red and white, raw" (was "Currant, zante, dried", the
+      baking currant); "thyme"/"rosemary"/"dill weed" → their fresh rows (were dried); bare
+      "cherries" → "Candied foods, cherries" (was dried; the fresh row loses on the plural
+      rule). Add these queries to the gold set either way.
+
 ## Implementation Notes
 
 - Every scorer change: re-run the gold set in all caller shapes (bare, `2 `, `1 cup `,
@@ -113,3 +120,14 @@ list. Reviewers flagged, as advisory:
 - Filed from the PR #1120 review passes (advisory findings, auto-filed per the Medium/Low
   policy).
 - Item 7 added from the cultural-map fallback fix, measured through `lookupNutrition`.
+- Dried/powder/flour forms now lose near ties (`isUnaskedDehydratedForm`, PR #1126, before
+  the cooking per-100 g P1 so scaling doesn't multiply "milk" → dry milk powder). Gold set
+  41/6/4 → 43/4/4 (51 queries); the six pinned beverage names are unchanged. Review found
+  "dry roasted" (a method) and a Nuts/Seeds "dried" part (the plain shelled nut) wrongly
+  penalized; both are exempt now (a generated 212-query nut/seed grid: 19 flips before the
+  exemptions, 0 after). A generated sweep of every row whose last part is a sole
+  dried/powder/dehydrated word (139 queries) flips 22, mostly toward the eaten form (soups,
+  drinks, coffee, tomato); the regressions are the residual criterion above. Bare "egg" →
+  "Egg, chicken, yolk, cooked" (the docstring's whole-egg claim was stale). Harnesses:
+  baseline vs candidate over the gold set plus 103 pantry names, the dried-form sweep and the
+  nut grid — a start for the committed-fixture criterion.

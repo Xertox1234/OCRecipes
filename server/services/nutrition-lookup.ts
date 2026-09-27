@@ -485,6 +485,39 @@ function startsWithWords(words: string[], prefix: string[]): boolean {
   );
 }
 
+const DEHYDRATED_WORDS = new Set([
+  "dry",
+  "dried",
+  "powder",
+  "dehydrated",
+  "flour",
+]);
+
+/**
+ * Whether the description is a dried, powdered or flour form the query did
+ * not name. Three CNF spellings are not dehydrated products and do not count:
+ * - a comma part that is only "dry": a grain or legume's raw state
+ *   ("Grains, quinoa, dry", "Soybeans, dry, raw"), unlike "Milk, dry whole";
+ * - "dry roasted": a roasting method ("Nuts, pecans, dry roasted"), whose
+ *   sibling is "oil roasted";
+ * - a comma part that is only "dried" on a Nuts or Seeds row: the plain
+ *   shelled nut ("Nuts, pecans, dried"), which has no fresh form.
+ */
+function isUnaskedDehydratedForm(parts: string[], qWords: string[]): boolean {
+  const nutOrSeed = parts[0] === "nuts" || parts[0] === "seeds";
+  return parts.some((part) => {
+    const words = matchWords(part);
+    const soleWord = words.length === 1;
+    return words.some(
+      (w) =>
+        DEHYDRATED_WORDS.has(w) &&
+        !qWords.includes(w) &&
+        !(w === "dry" && (soleWord || words.includes("roasted"))) &&
+        !(w === "dried" && soleWord && nutOrSeed),
+    );
+  });
+}
+
 /**
  * Score how well a query matches a CNF food description.
  * CNF descriptions use "Head, qualifier, qualifier" format, where the head is
@@ -496,12 +529,19 @@ function startsWithWords(words: string[], prefix: string[]): boolean {
  * singular/plural): a half match returns 0, so the lookup falls through to
  * USDA instead of settling on "Guava, strawberry, raw" for "almonds, raw".
  * A comma part that IS the query ranks above one that merely starts with it,
- * and the head part gets a small edge, so "egg" picks "Egg, chicken, whole…"
- * over "Bagel, egg" and "Egg Benedict".
+ * and the head part gets a small edge, so "egg" ranks the "Egg, chicken, …"
+ * rows over "Bagel, egg" and "Egg Benedict".
+ *
+ * A dried, powdered or flour form the query didn't name loses a point, which
+ * breaks a near tie: "milk" picks "Milk, fluid, …" over "Milk, dry whole".
  *
  * Measured on a 51-query gold set against the real EN list (2026-09-27):
- * right food 41, wrong 6, no match 4 — the previous substring scorer got
- * 12 / 37 / 2.
+ * right food 43, wrong 4, no match 4. Before the dehydrated-form penalty it
+ * was 41 / 6 / 4, and the previous substring scorer got 12 / 37 / 2.
+ * Residuals on the real list: bare "egg" picks "Egg, chicken, yolk, cooked";
+ * the penalty moves "cocoa" to hot chocolate, "currant" to fresh red currant,
+ * and "thyme"/"rosemary"/"dill weed" to their fresh rows (tracked in
+ * todos/P3-2026-09-27-cnf-matcher-review-followups.md).
  */
 function scoreCNFMatch(query: string, description: string): number {
   const q = query.toLowerCase().trim();
@@ -547,6 +587,10 @@ function scoreCNFMatch(query: string, description: string): number {
     }
     score += partMatchCount * 2;
   }
+
+  // A dehydrated form shares its head with the fresh food, and its shorter
+  // name would win the length tie-break ("milk" → "Milk, dry whole").
+  if (isUnaskedDehydratedForm(parts, qWords)) score -= 1;
 
   // Penalty for very long descriptions (less specific/relevant)
   score -= d.length / 100;
