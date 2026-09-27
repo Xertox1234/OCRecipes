@@ -71,7 +71,9 @@ export async function parseNaturalLanguageFood(
       {
         model: MODEL_FAST,
         temperature: 0.1,
-        max_completion_tokens: 500,
+        // ~46 tokens per item with lookupName + grams (measured 2026-09-26:
+        // 13 items = 597 tokens, which truncated at the old 500). 1500 fits ~30.
+        max_completion_tokens: 1500,
         response_format: { type: "json_object" },
         messages: [
           {
@@ -115,7 +117,11 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
   try {
     rawJson = JSON.parse(content);
   } catch {
-    log.warn("food NLP: AI returned invalid JSON");
+    // "length" means the reply was cut off at max_completion_tokens.
+    log.warn(
+      { finishReason: response.choices[0]?.finish_reason },
+      "food NLP: AI returned invalid JSON",
+    );
     throw new Error("Food parsing returned invalid data. Please try again.");
   }
   const parsed = validateAiResponse(rawJson, foodNlpResponseSchema);
