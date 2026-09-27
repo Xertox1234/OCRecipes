@@ -7,7 +7,6 @@ import { handleRouteError } from "./_helpers";
 import { storage } from "../storage";
 import { lookupNutrition } from "../services/nutrition-lookup";
 import {
-  nutrientValues,
   scaleToGrams,
   type NutrientValues,
 } from "../services/portion-nutrition";
@@ -44,29 +43,21 @@ const logBeverageSchema = z
   );
 
 /**
- * Nutrition for the whole drink: the drink scaled to its size plus a fixed
- * amount of each modifier. Null when any lookup finds nothing.
- *
- * Lookups answer per 100 g (CNF/USDA) or per serving (API Ninjas); a result
- * whose basis can't be weighed ("1 serving") is kept as it is, with its own
- * serving size, rather than scaled by a guess. Such a drink takes no
- * modifiers (null): grams of cream added to "1 serving" mix two bases. A
- * result with no serving size at all describes an unknown amount (null).
- * A non-numeric value counts as 0.
+ * Nutrition for the whole drink: the drink scaled to its size (ml ≈ g) plus a
+ * fixed amount of each modifier. Null when a lookup finds nothing, or when a
+ * result can't be scaled — its basis is "1 serving", missing, or zero (a gated
+ * API Ninjas field), so nothing says what amount its values describe.
  */
 async function lookupDrinkNutrition(
   lookupName: string,
   ml: number,
   modifiers: BeverageModifier[],
-): Promise<{ values: NutrientTotals; servingSize: string } | null> {
+): Promise<NutrientTotals | null> {
   const drink = await lookupNutrition(lookupName);
-  if (!drink) return null;
+  const scaled = drink && scaleToGrams(drink, ml);
+  if (!scaled) return null;
 
-  const scaled = scaleToGrams(drink, ml); // ml ≈ g for drinks
-  if (!scaled && (modifiers.length > 0 || !drink.servingSize)) return null;
-  const parts = [scaled ?? nutrientValues(drink)];
-  const servingSize = scaled ? `${ml} ml` : drink.servingSize;
-
+  const parts = [scaled];
   for (const modifier of modifiers) {
     const { lookupName: name, grams } = BEVERAGE_MODIFIER_PORTIONS[modifier];
     const found = await lookupNutrition(name);
@@ -75,7 +66,7 @@ async function lookupDrinkNutrition(
     parts.push(portion);
   }
 
-  return { values: sumNutrients(parts), servingSize };
+  return sumNutrients(parts);
 }
 
 type NutrientTotals = Record<keyof NutrientValues, number>;
@@ -163,14 +154,14 @@ export function register(app: Express): void {
               ErrorCode.NUTRITION_LOOKUP_FAILED,
             );
           }
-          calories = nutrition.values.calories;
-          protein = nutrition.values.protein;
-          carbs = nutrition.values.carbs;
-          fat = nutrition.values.fat;
-          fiber = nutrition.values.fiber;
-          sugar = nutrition.values.sugar;
-          sodium = nutrition.values.sodium;
-          servingSize = nutrition.servingSize;
+          calories = nutrition.calories;
+          protein = nutrition.protein;
+          carbs = nutrition.carbs;
+          fat = nutrition.fat;
+          fiber = nutrition.fiber;
+          sugar = nutrition.sugar;
+          sodium = nutrition.sodium;
+          servingSize = `${BEVERAGE_SIZES[size].ml} ml`;
         }
 
         const productName = buildProductName(

@@ -201,62 +201,25 @@ describe("Beverages Routes", () => {
       expect(savedItem().calories).toBe("148"); // 100 × 355 / 240
     });
 
-    it("keeps a result whose basis cannot be weighed as it is", async () => {
-      mockLookups({
-        "bubble tea": per100g("bubble tea", {
-          calories: 250,
-          servingSize: "1 serving",
-        }),
-      });
+    it("returns 422 for a result it can't scale to the drink's size", async () => {
+      // "1 serving", a missing basis, or a zero-gram basis (a gated API Ninjas
+      // field): nothing says what amount the values describe, so neither
+      // scaling them nor labelling them with the chosen size would be honest.
+      for (const servingSize of ["1 serving", "", "0g"]) {
+        vi.clearAllMocks();
+        mockLookups({
+          "coffee, brewed": per100g("coffee", { calories: 2, servingSize }),
+          "cream, table": per100g("Cream, table", { calories: 185 }),
+        });
 
-      await request(app)
-        .post("/api/beverages/log")
-        .send({
-          beverageType: "custom",
-          size: "large",
-          customName: "bubble tea",
-        })
-        .expect(201);
-
-      expect(savedItem()).toEqual(
-        expect.objectContaining({ calories: "250", servingSize: "1 serving" }),
-      );
-    });
-
-    it("returns 422 rather than add modifiers to a drink it can't weigh", async () => {
-      // The drink's values describe "1 serving", not the size; adding
-      // 15 g of cream to them would mix two bases under one label.
-      mockLookups({
-        "coffee, brewed": per100g("coffee", {
-          calories: 2,
-          servingSize: "1 serving",
-        }),
-        "cream, table": per100g("Cream, table", { calories: 185 }),
-      });
-
-      const res = await request(app)
-        .post("/api/beverages/log")
-        .send({ beverageType: "coffee", size: "large", modifiers: ["cream"] });
-
-      expect(res.status).toBe(422);
-      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
-    });
-
-    it("returns 422 for a result with no serving size", async () => {
-      // Nothing says what amount the values describe, so neither scaling
-      // them nor labelling them with the chosen size would be honest.
-      mockLookups({
-        kombucha: per100g("kombucha", { calories: 30, servingSize: "" }),
-      });
-
-      const res = await request(app).post("/api/beverages/log").send({
-        beverageType: "custom",
-        size: "medium",
-        customName: "kombucha",
-      });
-
-      expect(res.status).toBe(422);
-      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+        for (const modifiers of [[], ["cream"]]) {
+          const res = await request(app)
+            .post("/api/beverages/log")
+            .send({ beverageType: "coffee", size: "large", modifiers });
+          expect(res.status, `${servingSize} ${modifiers}`).toBe(422);
+        }
+        expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+      }
     });
 
     it("saves a non-numeric nutrient as 0", async () => {
