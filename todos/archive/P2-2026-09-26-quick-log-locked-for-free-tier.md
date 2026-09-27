@@ -1,6 +1,6 @@
 ---
 title: "Quick Log is offered to free-tier users but the server refuses them — lock, grey out, or hide it"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-26
 updated: 2026-09-26
@@ -46,20 +46,20 @@ Entry points found:
 
 ## Acceptance Criteria
 
-- [ ] **Free tier, Home:** the Quick Log row shows the existing locked treatment (lock icon /
+- [x] **Free tier, Home:** the Quick Log row shows the existing locked treatment (lock icon /
       `isLocked` on `HomeInlineDrawer`, as the other premium inline actions do). Tapping it opens
       the existing upgrade flow and does not open the text input.
-- [ ] **Free tier, other paths:** Coach-initiated navigation and a direct `QuickLog` modal open
+- [x] **Free tier, other paths:** Coach-initiated navigation and a direct `QuickLog` modal open
       show the upgrade flow instead of a working-looking input. Enforce this with a screen-level
       guard in `QuickLogScreen`, not only at the entry points.
-- [ ] **Premium tier:** unchanged behavior (control test).
-- [ ] **Gate source:** gates read `usePremiumFeature("textFoodParsing")`
+- [x] **Premium tier:** unchanged behavior (control test).
+- [x] **Gate source:** gates read `usePremiumFeature("textFoodParsing")`
       (`client/hooks/usePremiumFeatures.ts`), which is expiry-aware. Do not compare the raw
       `user.subscriptionTier === "premium"` as `HomeScreen` does today: a lapsed subscriber
       would see an unlocked row the server refuses.
-- [ ] **VoiceOver:** the locked row announces "Quick Log, premium feature" (match the
+- [x] **VoiceOver:** the locked row announces "Quick Log, premium feature" (match the
       `PhotoIntentScreen` locked-option wording).
-- [ ] **Tests:** co-located tests cover the free, premium and lapsed-premium cells for the Home
+- [x] **Tests:** co-located tests cover the free, premium and lapsed-premium cells for the Home
       row and the screen guard.
 
 ## Implementation Notes
@@ -107,3 +107,10 @@ upgrade flow. It is not hidden, and there is no free daily quota. Apply this eve
 
 - Created from the user's on-device report and their direction on locking.
 - User decided: **lock** (not hide, not a 5-a-day free quota). The human-led gate is removed.
+- Done in one branch with `quick-log-submit-and-results-ux` (user approved). Home locks the
+  row on `usePremiumFeature("textFoodParsing")`, unlocked until the subscription loads (the
+  server still gates). `QuickLogScreen` gates itself, so Coach, recent actions and deep
+  links get the upgrade flow; `CoachChat.tsx` needed no change. The locked-row label is set
+  in `HomeInlineDrawer` (outside the listed files), which also fixes Generate Recipe's
+  locked row. Simulator: free demo account shows the lock, announces "Quick Log, premium
+  feature", and a tap opens the upgrade modal.
