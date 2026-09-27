@@ -62,6 +62,13 @@ const CONFIDENCE_THRESHOLD = 0.7;
 
 const CATEGORY_INSTRUCTION = `6. Food category: one of "protein", "vegetable", "grain", "fruit", "dairy", "beverage", "other"`;
 
+/**
+ * Completion cap for a food list (logging and its follow-up refine). A
+ * multi-food photo ran the old 500 to the limit and truncated to invalid JSON
+ * (live burger photo, 2026-09-27); the cap bounds cost, not typical length.
+ */
+const LOG_MAX_TOKENS = 1000;
+
 const LOG_PROMPT = `You are a nutrition analysis assistant. Analyze food photos and identify:
 1. Each distinct food item visible
 2. Estimated portion size (e.g., "1 cup", "6 oz", "1 medium")
@@ -556,7 +563,7 @@ export function getPromptForIntent(intent: PhotoIntent): {
       return { prompt: LABEL_PROMPT, maxTokens: 800 };
     case "log":
     case "calories":
-      return { prompt: LOG_PROMPT, maxTokens: 500 };
+      return { prompt: LOG_PROMPT, maxTokens: LOG_MAX_TOKENS };
     case "menu":
       // Menu photos are parsed by analyzeMenuPhoto (/api/menu/scan), not the
       // food-logging pipeline. Reaching here means an internal caller routed a
@@ -665,7 +672,7 @@ export async function refineAnalysis(
     const response = await openai.chat.completions.create(
       {
         model: MODEL_HEAVY,
-        max_completion_tokens: 500,
+        max_completion_tokens: LOG_MAX_TOKENS,
         temperature: 0.3,
         messages: [
           {

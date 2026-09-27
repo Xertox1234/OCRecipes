@@ -320,11 +320,12 @@ describe("Photos Routes", () => {
     }
 
     it("looks each food up by name, without its quantity", async () => {
-      await analyze(
+      const res = await analyze(
         [food("steamed white rice", "1 cup", 160), food("apple", "1 medium")],
         {},
       );
 
+      expect(res.body).toMatchObject({ foods: expect.any(Array) });
       expect(batchNutritionLookup).toHaveBeenCalledWith([
         "steamed white rice",
         "apple",

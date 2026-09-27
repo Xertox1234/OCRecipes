@@ -579,8 +579,10 @@ describe("getPromptForIntent", () => {
     expect(getPromptForIntent("identify").maxTokens).toBe(300);
     expect(getPromptForIntent("recipe").maxTokens).toBe(300);
     expect(getPromptForIntent("label").maxTokens).toBe(800);
-    expect(getPromptForIntent("log").maxTokens).toBe(500);
-    expect(getPromptForIntent("calories").maxTokens).toBe(500);
+    // A multi-food answer ran 500 tokens and truncated to invalid JSON (live
+    // burger photo, 2026-09-27), so logging gets more room.
+    expect(getPromptForIntent("log").maxTokens).toBe(1000);
+    expect(getPromptForIntent("calories").maxTokens).toBe(1000);
   });
 
   it("asks for an edible weight in grams only where nutrition is looked up", () => {
@@ -914,7 +916,9 @@ describe("refineAnalysis", () => {
     );
 
     expect(result.foods[0].grams).toBe(195);
-    const system = mockCreate.mock.calls[0][0].messages[0].content;
-    expect(system).toContain('"grams"');
+    const request = mockCreate.mock.calls[0][0];
+    expect(request.messages[0].content).toContain('"grams"');
+    // It returns the whole food list, so it gets the same room as logging.
+    expect(request.max_completion_tokens).toBe(1000);
   });
 });
