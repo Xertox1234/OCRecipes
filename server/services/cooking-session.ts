@@ -147,6 +147,8 @@ const GRAMS_PER_UNIT: Record<string, number> = {
 /** Millilitres per volume unit, keyed by `normalizeUnit`'s output. */
 const ML_PER_UNIT: Record<string, number> = {
   ml: 1,
+  millilitre: 1,
+  millilitres: 1,
   l: 1000,
   litre: 1000,
   litres: 1000,
@@ -156,12 +158,23 @@ const ML_PER_UNIT: Record<string, number> = {
 };
 
 /**
- * Grams per millilitre for a volume unit. Most foods are assumed as dense as
- * water; dry grains pack lighter (a cup of flour weighs about 125 g, of raw
- * rice about 185 g), so a grain is weighed at 0.6 g/ml.
+ * Grams per millilitre for a volume unit. Liquids ("dairy", "beverage", and
+ * oils or stock under "other") are taken as dense as water. Chopped or dry
+ * solids pack lighter: a cup of flour weighs about 125 g, of raw rice about
+ * 185 g, of chopped carrots about 130 g, so "grain", "vegetable", "fruit" and
+ * "protein" are weighed at 0.6 g/ml. Leafy greens are lighter still (a cup of
+ * raw spinach is about 30 g).
  */
 function gramsPerMl(category: CookingSessionIngredient["category"]): number {
-  return category === "grain" ? 0.6 : 1;
+  switch (category) {
+    case "grain":
+    case "vegetable":
+    case "fruit":
+    case "protein":
+      return 0.6;
+    default:
+      return 1;
+  }
 }
 
 /** The ingredient's weight in grams, or null for a unit with no weight ("piece"). */

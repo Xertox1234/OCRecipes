@@ -60,7 +60,7 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
       and sodium** too: `calculateSessionNutrition`'s per-ingredient items carry all seven
       nutrients (`shared/types/cook-session.ts`).
 - [x] **Both** cooking functions are fixed: `calculateSessionMacros`
-      (`server/services/cooking-session.ts:268`) is what writes the diary entry
+      (`server/services/cooking-session.ts`) is what writes the diary entry
       (`server/routes/cooking.ts` → `storage.createScannedItemWithLog`), and
       `calculateSessionNutrition` powers the pre-log summary. Fixing only the summary
       leaves the logged entries wrong.
@@ -135,8 +135,9 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
   to fix the matcher first: bare "milk" matched dry milk powder, so scaling would have logged
   1 cup of milk at 1,190 kcal. #1126 makes dried/powder/flour forms lose near ties.
   - Each ingredient is looked up by name and scaled with `scaleToGrams`. Units: g, kg, oz,
-    lb; ml, l, cup, tbsp, tsp at 1 g/ml, or 0.6 g/ml for the "grain" category (at water
-    density, 2 cups of flour weighed 480 g, 1,829 kcal live). A unit with no weight keeps
+    lb; ml, l, cup, tbsp, tsp at 1 g/ml for liquids ("dairy", "beverage", "other") and
+    0.6 g/ml for chopped or dry solids ("grain", "vegetable", "fruit", "protein"). At water
+    density, 2 cups of flour weighed 480 g (1,829 kcal live) and 2 cups of spinach 480 g. A unit with no weight keeps
     per-100 g values marked `"100 g (portion unknown)"` and cooks as 100 g.
   - Both functions share one per-ingredient helper; the diary totals equal the summary's
     (before cooking adjustments, which only the summary applies, as before).
@@ -155,7 +156,10 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
     | milk 1 cup                      | 34   | 82     | "Milk, fluid, skim"                  |
     | long grain white rice 1 cup     | 365  | 526    | 144 g at 0.6 g/ml; a cup is ~185 g   |
     | flour 2 cup                     | 381  | 1,097  | "Yam, flour"; 288 g at 0.6 g/ml      |
-    | black beans 1 cup               | 341  | 818    | dry raw beans at 1 g/ml              |
+    | black beans 1 cup               | 341  | 491    | dry raw beans; 144 g at 0.6 g/ml     |
+    | carrot 1 cup                    | 41   | 59     | 144 g; chopped carrot ~128 g/cup     |
+    | blueberries 1 cup               | 57   | 82     | 144 g; ~148 g/cup                    |
+    | spinach 2 cup                   | 23   | 66     | 288 g; 2 cups of raw spinach ~60 g   |
     | whole milk 1 cup                | 108  | 259    | matcher: sheep's milk                |
     | large egg 3 piece               | 351  | 231    | marked "100 g (portion unknown)"     |
     | yellow onion 1 medium           | 132  | 132    | marked "100 g (portion unknown)"     |
@@ -163,5 +167,6 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
     | egg 3 piece, Pan-Fried          | 12   | 276    | cooked as 100 g                      |
 
   - Residuals: count units ("piece", "medium") are per 100 g, not per item; volume density is
-    a two-value assumption; matcher misses (bare "flour" → yam flour, "whole milk" → sheep)
+    a two-value assumption, and leafy greens by the cup come out about 4× high (spinach
+    above); matcher misses (bare "flour" → yam flour, "whole milk" → sheep)
     are the P2/P3 matcher todos.

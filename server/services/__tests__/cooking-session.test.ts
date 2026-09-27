@@ -352,6 +352,41 @@ describe("calculateSessionNutrition", () => {
     expect(result.items[0].calories).toBe(grams);
   });
 
+  // Chopped solids pack lighter than water; liquids and "other" do not.
+  it.each([
+    ["vegetable", 144],
+    ["fruit", 144],
+    ["protein", 144],
+    ["grain", 144],
+    ["dairy", 240],
+    ["beverage", 240],
+    ["other", 240],
+  ] as const)(
+    "weighs 1 cup of a %s at its density",
+    async (category, grams) => {
+      mockLookups({ food: per100g({ calories: 100 }) });
+
+      const result = await calculateSessionNutrition([
+        ingredient({ name: "food", quantity: 1, unit: "cup", category }),
+      ]);
+
+      expect(result.items[0].calories).toBe(grams);
+    },
+  );
+
+  it.each([
+    [250, "millilitres", 250],
+    [1, "millilitre", 1],
+  ])("converts %s %s to grams", async (quantity, unit, grams) => {
+    mockLookups({ stock: per100g({ calories: 100 }) });
+
+    const result = await calculateSessionNutrition([
+      ingredient({ name: "stock", quantity, unit }),
+    ]);
+
+    expect(result.items[0].calories).toBe(grams);
+  });
+
   it("does not scale a per-serving result twice", async () => {
     // API Ninjas answers per serving: 120 kcal in 240 g
     mockLookups({
