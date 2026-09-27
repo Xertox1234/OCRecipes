@@ -577,7 +577,7 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
         Promise.resolve({
           ok: true,
           json: async () => [
-            { food_code: 777, food_description: "Trail mix, generic" },
+            { food_code: 777, food_description: "Trail mix bar, generic" },
           ],
         }),
       "food/?lang=fr": emptyCNFFR,
@@ -631,7 +631,7 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
         Promise.resolve({
           ok: true,
           json: async () => [
-            { food_code: 778, food_description: "Trail mix, generic" },
+            { food_code: 778, food_description: "Trail mix bar, generic" },
           ],
         }),
       "food/?lang=fr": emptyCNFFR,

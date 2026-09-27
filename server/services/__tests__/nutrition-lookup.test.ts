@@ -4,6 +4,7 @@ import {
   lookupNutrition,
   batchNutritionLookup,
   _resetCNFCacheForTesting,
+  fuzzyMatchCNF,
 } from "../nutrition-lookup";
 import { lookupBarcode } from "../barcode-lookup";
 
@@ -219,7 +220,8 @@ describe("lookupBarcode", () => {
             },
           }),
         }),
-      // CNF will match "sugar" → "Sweets, sugars, granulated" → 387 kcal
+      // CNF matches "sugar" to a sugar row; the nutrient mock ignores the id,
+      // so either row yields 387 kcal
       "food/?lang=en": cnfWithSugarEN,
       "food/?lang=fr": cnfWithSugarFR,
       nutrientamount: cnfSugarNutrients,
@@ -290,7 +292,8 @@ describe("lookupBarcode", () => {
             },
           }),
         }),
-      // CNF food lists — hot chocolate should match
+      // CNF food lists (no CNF match: "k-cup"/"pods" are absent, so OFF's own
+      // per-100 g stands; this test is about the serving-size correction)
       "food/?lang=en": () =>
         Promise.resolve({
           ok: true,
@@ -739,7 +742,7 @@ describe("lookupBarcode", () => {
   });
 
   it("uses secondary data when OFF has no calorie data", async () => {
-    // OFF product name "sugar" matches CNF "Sweets, sugars, granulated"
+    // OFF product name "sugar" matches a CNF sugar row
     setupFetchMock({
       "openfoodfacts.org": () =>
         Promise.resolve({
@@ -1383,5 +1386,154 @@ describe("PR #269 — USDA-UPC safeParse failure branches", () => {
     const result = await lookupBarcode("0000000000000");
     // Invalid UPC response → no data at all → null
     expect(result).toBeNull();
+  });
+});
+
+// Real Canadian Nutrient File rows (EN list, fetched 2026-09-27). Each correct
+// food sits beside the trap the old substring scorer picked instead.
+describe("fuzzyMatchCNF — whole-word matching and head ranking", () => {
+  const foods = [
+    "Bagel, egg",
+    "Egg Benedict",
+    "Egg, chicken, whole, fresh or frozen, raw",
+    "Egg, chicken, whole, cooked, boiled in shell, hard-cooked",
+    "Fish, butterfish, raw",
+    "Seeds, sunflower seed butter, salted",
+    "Butter, regular",
+    "Butter, light, salted",
+    "Guava, strawberry, raw",
+    "Candies, Golden Almond Solitaires, chocolate with almonds",
+    "Nuts, almonds, dried, unblanched, unroasted",
+    "Pepper, banana, raw",
+    "Banana, raw",
+    "Strudel, apple",
+    "Crabapple, raw",
+    "Apple, raw, with skin",
+    "Dessert, frozen, juice, orange",
+    "Orange juice, raw",
+    "Vegetable oil, avocado",
+    "Avocado, raw, all commercial varieties",
+    "Melon, honeydew, raw",
+    "Sweets, honey, strained or extracted",
+    "Spices, paprika",
+    "Grains, rice, white with pasta and seasonings, cooked",
+    "Grains, rice, white, long-grain, regular, cooked",
+    "Potato, mashed, prepared from flakes without milk, 2% milk and margarine added",
+    "Milk, fluid, partly skimmed, 2% M.F.",
+    "Yogourt, Greek style, plain, 2% M.F.",
+    "Sweets, sugars, granulated",
+    "Sweets, sugar, brown",
+    "Sugar-apple, raw",
+  ].map((food_description, i) => ({ food_code: 1000 + i, food_description }));
+
+  const match = (q: string) => fuzzyMatchCNF(q, foods)?.food_description;
+
+  it.each([
+    ["butter", "Butter, regular"],
+    ["banana", "Banana, raw"],
+    ["apple", "Apple, raw, with skin"],
+    ["orange juice", "Orange juice, raw"],
+    ["avocado", "Avocado, raw, all commercial varieties"],
+    ["honey", "Sweets, honey, strained or extracted"],
+    ["butter, salted", "Butter, light, salted"],
+    ["apple, raw", "Apple, raw, with skin"],
+    [
+      "egg, chicken, whole, cooked",
+      "Egg, chicken, whole, cooked, boiled in shell, hard-cooked",
+    ],
+    [
+      "rice, white, long-grain, cooked",
+      "Grains, rice, white, long-grain, regular, cooked",
+    ],
+    ["milk, 2%", "Milk, fluid, partly skimmed, 2% M.F."],
+    ["yogurt, greek, plain", "Yogourt, Greek style, plain, 2% M.F."],
+    ["brown sugar", "Sweets, sugar, brown"],
+  ])("%s → %s", (query, expected) => {
+    expect(match(query)).toBe(expected);
+  });
+
+  it("prefers a food whose head is the query over a compound that starts with it", () => {
+    // Old scorer: "Sugar-apple, raw" style heads and "Egg Benedict"
+    expect(match("sugar")).toMatch(/^Sweets, sugars?, /);
+    expect(match("egg, chicken, whole, raw")).toBe(
+      "Egg, chicken, whole, fresh or frozen, raw",
+    );
+  });
+
+  // Measured residuals, deliberately not tuned away: bare "egg" still prefers
+  // "Bagel, egg" here (the whole-egg row's six comma parts cost it the
+  // many-parts penalty), and on the real list bare "eggs" lands on
+  // "Fish, salmon, native, eggs, raw" (same before and after this change).
+  // Quick Log sends a database-style lookupName ("egg, chicken, whole,
+  // cooked", server/services/food-nlp.ts since #1118), which resolves
+  // correctly (above).
+
+  it("returns null rather than a food missing one of the query's words", () => {
+    // Old scorer: "Guava, strawberry, raw" ("raw" inside "strawberry") and
+    // the almond candy, each matching only half the query.
+    expect(match("almonds, raw")).toBeUndefined();
+    // Positive control: the same row set does resolve almonds.
+    expect(match("almonds")).toBe(
+      "Nuts, almonds, dried, unblanched, unroasted",
+    );
+  });
+
+  // Photos ("<quantity> <name>") and cooking sessions ("<quantity> <unit>
+  // <name>") still send quantities in the query. Those words never appear in
+  // a CNF description, so they must not count against the every-word rule.
+  it.each([
+    ["2 large banana", "Banana, raw"],
+    ["1 tbsp butter", "Butter, regular"],
+    ["3 oz almonds", "Nuts, almonds, dried, unblanched, unroasted"],
+    [
+      "1 cup rice, white, long-grain, cooked",
+      "Grains, rice, white, long-grain, regular, cooked",
+    ],
+    ["12oz milk, 2%", "Milk, fluid, partly skimmed, 2% M.F."],
+    ["1/2 cup orange juice", "Orange juice, raw"],
+  ])("ignores the quantity and unit in %s", (query, expected) => {
+    expect(match(query)).toBe(expected);
+  });
+
+  // Only a LEADING quantity run is dropped: a food whose own name contains a
+  // unit word must keep it. Real CNF rows; each correct row sits beside the
+  // one a blanket unit filter picked instead.
+  it.each([
+    ["reese's pieces", "Candies, Reese's Pieces"],
+    ["green gram", "Beans, legumes, mung (green gram), raw"],
+    ["small white beans", "Beans, small white, raw"],
+    [
+      "cup noodles",
+      "Soup, NISSIN, CUP NOODLES, ramen noodle, chicken flavour, dry",
+    ],
+  ])(
+    "keeps a unit word that is part of the food name: %s",
+    (query, expected) => {
+      const rows = [
+        "Candies, Reese's Pieces",
+        "Candies, REESE'S, FAST BREAK, milk chocolate peanut butter and soft nougat",
+        "Beans, legumes, mung (green gram), raw",
+        "Peas, green, raw",
+        "Beans, small white, raw",
+        "Beans, white, raw",
+        "Soup, NISSIN, CUP NOODLES, ramen noodle, chicken flavour, dry",
+        "Restaurant, Chinese, noodles, crunchy",
+      ].map((food_description, i) => ({
+        food_code: 2000 + i,
+        food_description,
+      }));
+      expect(fuzzyMatchCNF(query, rows)?.food_description).toBe(expected);
+    },
+  );
+
+  it("keeps a percentage as a real word, not a quantity", () => {
+    expect(match("milk, 2%")).toBe("Milk, fluid, partly skimmed, 2% M.F.");
+    // A query that is only a quantity matches nothing
+    expect(match("2 cups")).toBeUndefined();
+  });
+
+  it("never matches a query word inside a longer word", () => {
+    expect(match("pap")).toBeUndefined(); // not "paprika"
+    expect(match("honeydew")).toBe("Melon, honeydew, raw"); // positive control
   });
 });
