@@ -10,6 +10,9 @@ import {
 } from "../../services/nutrition-lookup";
 
 vi.mock("../../middleware/auth");
+// Pass-through rate limiter: the suite sends more requests than crudRateLimit
+// allows per minute, and its counter is shared by every test in the file.
+vi.mock("express-rate-limit");
 
 vi.mock("../../services/nutrition-lookup", () => ({
   lookupNutrition: vi.fn(),
@@ -220,6 +223,23 @@ describe("Beverages Routes", () => {
         }
         expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
       }
+    });
+
+    it("returns 422 when a modifier's result can't be scaled", async () => {
+      mockLookups({
+        "coffee, brewed": per100g("Coffee, brewed", { calories: 1 }),
+        "cream, table": per100g("cream", {
+          calories: 50,
+          servingSize: "1 serving",
+        }),
+      });
+
+      const res = await request(app)
+        .post("/api/beverages/log")
+        .send({ beverageType: "coffee", size: "large", modifiers: ["cream"] });
+
+      expect(res.status).toBe(422);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
     });
 
     it("saves a non-numeric nutrient as 0", async () => {
