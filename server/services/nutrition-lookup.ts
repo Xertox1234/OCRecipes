@@ -64,6 +64,9 @@ const usdaFoodSchema = z.object({
   foodNutrients: z.array(
     z.object({
       nutrientName: z.string(),
+      // A malformed unit degrades to undefined (read as kcal for energy)
+      // instead of failing the whole `foods` array.
+      unitName: z.string().nullish().catch(undefined),
       // USDA returns `value: null` for no-data nutrients; `.default(0)` only
       // fires on `undefined`, so coerce null→0 (replicates the prior `|| 0`)
       // — otherwise one sibling food with a null value fails the whole page.
@@ -708,14 +711,44 @@ if (USDA_API_KEY === "DEMO_KEY") {
   log.warn("USDA_API_KEY not set — using DEMO_KEY with 40 requests/hour limit");
 }
 
+type UsdaNutrient = {
+  nutrientName: string;
+  unitName?: string | null;
+  value: number;
+};
+
+const KJ_PER_KCAL = 4.184;
+
+/**
+ * Energy in kcal. SR Legacy foods list both a kJ and a kcal entry, in either
+ * order (kJ first for "Quinoa, cooked": Energy 503 kJ, then 120 KCAL, live
+ * 2026-09-27), so the first "Energy" match could store kJ as calories. Read
+ * the kcal entry; convert a kJ-only energy; read an entry without a unit as
+ * kcal. A Foundation food with only the two Atwater kcal entries gets the
+ * first one USDA lists (General Factors in every sample), by array order, not
+ * by a nutritional choice.
+ */
+function usdaKcal(nutrients: UsdaNutrient[]): number {
+  const energy = nutrients.filter((n) =>
+    n.nutrientName.toLowerCase().includes("energy"),
+  );
+  const unit = (n: UsdaNutrient) => n.unitName?.toLowerCase();
+  const kcal =
+    energy.find((n) => unit(n) === "kcal") ?? energy.find((n) => !unit(n));
+  if (kcal) return kcal.value;
+  const kj = energy.find((n) => unit(n) === "kj");
+  return kj ? Math.round(kj.value / KJ_PER_KCAL) : 0;
+}
+
 /**
  * Map a parsed USDA food (search or branded-UPC shape) to NutritionData.
- * Both USDA endpoints return the same `{ nutrientName, value }` nutrient shape,
- * and the Zod schema already coerces a null `value` to 0, so no `|| 0` is needed.
+ * Both USDA endpoints return the same `{ nutrientName, unitName, value }`
+ * nutrient shape, and the Zod schema already coerces a null `value` to 0, so
+ * no `|| 0` is needed.
  */
 function mapUsdaFoodToNutrition(food: {
   description?: string | null;
-  foodNutrients: { nutrientName: string; value: number }[];
+  foodNutrients: UsdaNutrient[];
 }): NutritionData {
   const findNutrient = (names: string[]) =>
     findNutrientValue(
@@ -727,7 +760,7 @@ function mapUsdaFoodToNutrition(food: {
 
   return {
     name: food.description || "Unknown",
-    calories: findNutrient(["Energy"]),
+    calories: usdaKcal(food.foodNutrients),
     protein: findNutrient(["Protein"]),
     carbs: findNutrient(["Carbohydrate"]),
     fat: findNutrient(["Total lipid", "Fat"]),
