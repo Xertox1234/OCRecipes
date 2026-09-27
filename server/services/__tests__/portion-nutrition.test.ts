@@ -37,6 +37,17 @@ describe("scaleToGrams", () => {
     expect(scaleToGrams(perServing, 100)?.calories).toBe(50);
   });
 
+  it("reads a cache hit's basis from its stored serving size", () => {
+    // A cache hit reports source "cache" whichever API answered first.
+    const cachedPerServing = result({
+      source: "cache",
+      calories: 120,
+      servingSize: "240g",
+    });
+    expect(scaleToGrams(cachedPerServing, 100)?.calories).toBe(50);
+    expect(scaleToGrams(result({ source: "cache" }), 250)?.calories).toBe(100);
+  });
+
   it("reads a millilitre basis as grams", () => {
     expect(scaleToGrams(result({ servingSize: "200 ml" }), 400)?.calories).toBe(
       80,
