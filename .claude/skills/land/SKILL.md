@@ -38,10 +38,10 @@ Merging is the irreversible step: squash-merge to protected `main` auto-deploys 
 8. **Ledger note** — record what landed, so it survives a compaction:
 
    ```bash
-   bash .claude/hooks/ledger-note.sh VERIFIED "#<n> MERGED <squash sha>; main=<sha>; <open follow-ups>" "gh pr view <n> --json mergeCommit + git log --oneline -1 main"
+   bash .claude/hooks/ledger-note.sh VERIFIED "#<n> MERGED <short sha>; main=<short sha>; <open follow-ups>" "gh pr view <n> --json mergeCommit + git log --oneline -1 origin/main"
    ```
 
-   Run it as its own command from the repo or worktree root; a `cd … &&` prefix misses the allow rule. When several PRs land together, write one row naming all of them. Skip it only when nothing merged.
+   Run it as its own command from the repo or worktree root; a `cd … &&` prefix misses the allow rule. Each field is single-line and at most 500 bytes, so use 7-character SHAs, and when several PRs land together write one row with a range (`#1073–#1106 merged; main=<short sha>`) rather than listing each. Skip it only when nothing merged.
 
 ## The Review Gate
 
