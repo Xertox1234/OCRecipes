@@ -8,6 +8,8 @@ import type { FoodCategory } from "../constants/preparation";
 export interface FoodItem {
   name: string;
   quantity: string;
+  /** Estimated edible weight of the portion; absent when the model gave none or an invalid one. */
+  grams?: number;
   confidence: number;
   needsClarification: boolean;
   clarificationQuestion?: string;

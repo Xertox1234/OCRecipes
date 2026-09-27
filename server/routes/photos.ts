@@ -28,7 +28,12 @@ import {
   countNonNullNutritionFields,
   mapLabelToNutritionData,
   writeNutritionCache,
+  type NutritionData,
 } from "../services/nutrition-lookup";
+import {
+  scaleToGrams,
+  type NutrientValues,
+} from "../services/portion-nutrition";
 import {
   handleRouteError,
   checkPremiumFeature,
@@ -82,23 +87,67 @@ const structureRecipeTextSchema = z.object({
 });
 
 /**
- * Attach nutrition data to a set of analyzed foods, keyed by "<quantity> <name>".
- * When `needsNutrition` is false, every food gets `nutrition: null` with no
- * lookup; otherwise each food is matched to its `batchNutritionLookup` result.
+ * Attach nutrition data to a set of analyzed foods. Each food is looked up by
+ * name and scaled to its estimated weight (`portionNutrition`). When
+ * `needsNutrition` is false, every food gets `nutrition: null` with no lookup.
  * Generic over the food shape so callers keep their original field types.
  */
-async function attachNutrition<F extends { name: string; quantity: string }>(
-  foods: F[],
-  needsNutrition: boolean,
-) {
-  const foodNames = foods.map((f) => `${f.quantity} ${f.name}`);
+async function attachNutrition<
+  F extends { name: string; quantity: string; grams?: number },
+>(foods: F[], needsNutrition: boolean) {
   const nutritionMap = needsNutrition
-    ? await batchNutritionLookup(foodNames)
+    ? await batchNutritionLookup([...new Set(foods.map((f) => f.name))])
     : null;
-  return foods.map((food, index) => ({
-    ...food,
-    nutrition: nutritionMap?.get(foodNames[index]) || null,
-  }));
+  return foods.map((food) => {
+    const nutrition = nutritionMap?.get(food.name);
+    return {
+      ...food,
+      nutrition: nutrition ? portionNutrition(nutrition, food) : null,
+    };
+  });
+}
+
+/**
+ * The lookup answers per 100 g (or per serving, for API Ninjas); scale it to
+ * the food's estimated weight. With no estimate, keep per-100 g values under a
+ * marked serving size, as Quick Log does; a basis that can't be weighed
+ * ("1 serving") keeps its own values and label.
+ */
+function portionNutrition(
+  nutrition: NutritionData,
+  food: { quantity: string; grams?: number },
+): NutritionData {
+  if (food.grams) {
+    const portion = scaleToGrams(nutrition, food.grams);
+    if (portion) {
+      const grams = Math.round(food.grams);
+      return withValues(nutrition, portion, `${food.quantity} (${grams} g)`);
+    }
+  } else {
+    const per100g = scaleToGrams(nutrition, 100);
+    if (per100g) {
+      return withValues(nutrition, per100g, "100 g (portion unknown)");
+    }
+  }
+  return nutrition;
+}
+
+function withValues(
+  nutrition: NutritionData,
+  values: NutrientValues,
+  servingSize: string,
+): NutritionData {
+  return {
+    ...nutrition,
+    calories: values.calories ?? 0,
+    protein: values.protein ?? 0,
+    carbs: values.carbs ?? 0,
+    fat: values.fat ?? 0,
+    fiber: values.fiber ?? 0,
+    sugar: values.sugar ?? 0,
+    sodium: values.sodium ?? 0,
+    servingSize,
+  };
 }
 
 export function register(app: Express): void {

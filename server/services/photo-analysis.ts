@@ -30,9 +30,19 @@ import type { FoodItem, AnalysisResult } from "@shared/types/photo-analysis";
 const log = createServiceLogger("photo-analysis");
 
 // Zod schemas for runtime validation (from institutional learning: unsafe-type-cast-zod-validation)
+/** Upper bound on one food's estimated weight — a whole large pizza is ~2 kg. */
+const MAX_PORTION_GRAMS = 5000;
+
 const foodItemSchema = z.object({
   name: z.string(),
   quantity: z.string(),
+  // A bad estimate drops to undefined ("portion unknown"), never failing the parse.
+  grams: z
+    .number()
+    .positive()
+    .max(MAX_PORTION_GRAMS)
+    .optional()
+    .catch(undefined),
   confidence: z.number().min(0).max(1),
   needsClarification: z.boolean(),
   clarificationQuestion: z.string().optional(),
@@ -60,6 +70,7 @@ const LOG_PROMPT = `You are a nutrition analysis assistant. Analyze food photos 
 5. Be specific with food names (e.g., "grilled chicken breast" not just "chicken")
 ${CATEGORY_INSTRUCTION}
 7. Cuisine classification: identify the cuisine origin if recognizable (e.g., "Japanese", "Mexican", "Indian", "Italian")
+8. "grams": your best estimate of the edible weight in grams of the portion shown, without bones, shells, peels or pits. Use typical reference weights (e.g., 1 cup of cooked rice ≈ 160, 1 medium apple ≈ 180, a 6 oz steak ≈ 170, 1 slice of bread ≈ 30)
 
 Rules:
 - Use standard US portion sizes
@@ -74,6 +85,7 @@ Respond with JSON only matching this schema:
     {
       "name": "food name",
       "quantity": "portion size",
+      "grams": 150,
       "confidence": 0.85,
       "needsClarification": false,
       "clarificationQuestion": "optional question",
@@ -670,6 +682,7 @@ Respond with JSON matching this schema:
     {
       "name": "food name",
       "quantity": "portion size",
+      "grams": 150,
       "confidence": 0.95,
       "needsClarification": false,
       "clarificationQuestion": null,
@@ -681,7 +694,7 @@ Respond with JSON matching this schema:
   "followUpQuestions": []
 }
 
-Update the food names, quantities, confidence, and categories based on the user's answer. Remove any clarification flags that are now resolved.`,
+Update the food names, quantities, grams (edible weight of the portion), confidence, and categories based on the user's answer. Remove any clarification flags that are now resolved.`,
           },
           {
             role: "user",
