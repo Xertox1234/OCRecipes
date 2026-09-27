@@ -84,7 +84,7 @@ the route builds.
   it; the beverage route needs them.
 - **Shared helper location:** extract `toPortion` to `server/services/portion-nutrition.ts`
   (Quick Log imports it from there). Whichever of this todo and
-  `todos/P1-2026-09-27-photo-and-cooking-nutrition-use-per-100g-as-the-portion.md` lands
+  `todos/archive/P1-2026-09-27-photo-and-cooking-nutrition-use-per-100g-as-the-portion.md` lands
   first does the extraction; the other imports it.
 - Beverage sizes are exact, so no estimate is needed. This is simpler than Quick Log.
 - A small per-`BeverageType` lookup-name map (e.g. `soda` → "carbonated drinks, cola",
