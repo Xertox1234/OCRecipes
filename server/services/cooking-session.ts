@@ -136,16 +136,16 @@ export async function analyzeIngredientPhoto(
 
 type Nutrients = CookSessionNutritionSummary["total"];
 
-/**
- * Grams per unit, keyed by `normalizeUnit`'s output. Volumes assume the
- * density of water (1 g/ml): close for milk, stock and oil, but about double
- * for flour or sugar measured by the cup.
- */
+/** Grams per weight unit, keyed by `normalizeUnit`'s output. */
 const GRAMS_PER_UNIT: Record<string, number> = {
   g: 1,
   kg: 1000,
   oz: 28.35,
   lb: 453.59,
+};
+
+/** Millilitres per volume unit, keyed by `normalizeUnit`'s output. */
+const ML_PER_UNIT: Record<string, number> = {
   ml: 1,
   l: 1000,
   litre: 1000,
@@ -155,10 +155,27 @@ const GRAMS_PER_UNIT: Record<string, number> = {
   tsp: 5,
 };
 
+/**
+ * Grams per millilitre for a volume unit. Most foods are assumed as dense as
+ * water; dry grains pack lighter (a cup of flour weighs about 125 g, of raw
+ * rice about 185 g), so a grain is weighed at 0.6 g/ml.
+ */
+function gramsPerMl(category: CookingSessionIngredient["category"]): number {
+  return category === "grain" ? 0.6 : 1;
+}
+
 /** The ingredient's weight in grams, or null for a unit with no weight ("piece"). */
 function ingredientGrams(ingredient: CookingSessionIngredient): number | null {
-  const perUnit = GRAMS_PER_UNIT[normalizeUnit(ingredient.unit)];
-  return perUnit === undefined ? null : ingredient.quantity * perUnit;
+  const unit = normalizeUnit(ingredient.unit);
+  if (Object.hasOwn(GRAMS_PER_UNIT, unit)) {
+    return ingredient.quantity * GRAMS_PER_UNIT[unit];
+  }
+  if (Object.hasOwn(ML_PER_UNIT, unit)) {
+    return (
+      ingredient.quantity * ML_PER_UNIT[unit] * gramsPerMl(ingredient.category)
+    );
+  }
+  return null;
 }
 
 interface IngredientPortion {

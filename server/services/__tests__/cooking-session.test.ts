@@ -337,6 +337,21 @@ describe("calculateSessionNutrition", () => {
     expect(result.items[0].servingSize).toBe(`${quantity} ${unit}`);
   });
 
+  it.each([
+    [1, "cup", 144],
+    [2, "tbsp", 18],
+    [500, "ml", 300],
+    [200, "g", 200], // a weight needs no density
+  ])("weighs %s %s of a grain at 0.6 g/ml", async (quantity, unit, grams) => {
+    mockLookups({ flour: per100g({ calories: 100 }) });
+
+    const result = await calculateSessionNutrition([
+      ingredient({ name: "flour", quantity, unit, category: "grain" }),
+    ]);
+
+    expect(result.items[0].calories).toBe(grams);
+  });
+
   it("does not scale a per-serving result twice", async () => {
     // API Ninjas answers per serving: 120 kcal in 240 g
     mockLookups({
@@ -364,6 +379,22 @@ describe("calculateSessionNutrition", () => {
     });
     expect(result.total.calories).toBe(143);
   });
+
+  it.each(["pinch", "constructor", ""])(
+    "treats unit %j as having no weight",
+    async (unit) => {
+      mockLookups({ salt: per100g({ calories: 100 }) });
+
+      const result = await calculateSessionNutrition([
+        ingredient({ name: "salt", quantity: 1, unit }),
+      ]);
+
+      expect(result.items[0]).toMatchObject({
+        calories: 100,
+        servingSize: "100 g (portion unknown)",
+      });
+    },
+  );
 
   it("keeps a result it cannot weigh with the source's own serving size", async () => {
     mockLookups({
@@ -476,7 +507,7 @@ describe("calculateSessionNutrition", () => {
         sugar: 0,
         sodium: 4,
       },
-      480,
+      288, // 2 cups of a grain at 0.6 g/ml
       "grain",
       "boiled",
     );
