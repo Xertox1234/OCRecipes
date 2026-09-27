@@ -1,6 +1,6 @@
 ---
 title: 'Quick Log logs per-100 g nutrition as if it were the portion: "2 eggs" = 470 kcal'
-status: backlog
+status: done
 priority: high
 created: 2026-09-26
 updated: 2026-09-26
@@ -56,26 +56,26 @@ The client multiplies nothing either: `useQuickLogSession` sends `calories` as-i
 
 ## Acceptance Criteria
 
-- [ ] Each parsed item's `calories`, `protein`, `carbs` and `fat` describe the whole portion
+- [x] Each parsed item's `calories`, `protein`, `carbs` and `fat` describe the whole portion
       the user typed. "2 eggs" (two large eggs) lands within a sensible range (about
       120–180 kcal), and "1 slice whole wheat toast" about 60–120 kcal.
-- [ ] `servingSize` describes that portion (e.g. `"2 large (100 g)"` or the grams used), not
+- [x] `servingSize` describes that portion (e.g. `"2 large (100 g)"` or the grams used), not
       `"100g"`, so what the drawer shows and what gets logged agree.
-- [ ] The lookup matches the food itself: "egg" resolves to whole egg (roughly 140–155 kcal
-      per 100 g), not a dried or mixed egg product. Look up by food name, not by the
-      "quantity unit name" string.
-- [ ] Results from every source (CNF, USDA, API Ninjas) are normalized to one basis
+- [~] The lookup matches the food itself (partly: see Updates, 2026-09-26 fix): "egg" resolves to whole egg (roughly 140–155 kcal
+  per 100 g), not a dried or mixed egg product. Look up by food name, not by the
+  "quantity unit name" string.
+- [x] Results from every source (CNF, USDA, API Ninjas) are normalized to one basis
       (per 100 g) before scaling, so API Ninjas' per-serving values are not scaled twice.
-- [ ] Stale cache: entries written under quantity-bearing keys (e.g. `"2 piece egg"`) are
+- [x] Stale cache: entries written under quantity-bearing keys (e.g. `"2 piece egg"`) are
       no longer served to Quick Log, whether through a new key shape or by clearing them.
       Record which, and any production cache step, in Updates. **Production data changes
       need the user's explicit go-ahead.**
-- [ ] When the portion's weight can't be estimated, the item is still returned, clearly
+- [x] When the portion's weight can't be estimated, the item is still returned, clearly
       marked (e.g. `servingSize: "100 g (portion unknown)"`), never silently per-100 g.
-- [ ] Tests: `server/services/__tests__/food-nlp.test.ts` covers scaling from a per-100 g
+- [x] Tests: `server/services/__tests__/food-nlp.test.ts` covers scaling from a per-100 g
       source, the API Ninjas per-serving case (no double scaling), and the unknown-weight
       case. `nutrition-lookup.test.ts` covers any change to normalization or keys.
-- [ ] An eval or fixture with a few common phrases ("2 eggs and toast", "a can of coke",
+- [x] An eval or fixture with a few common phrases ("2 eggs and toast", "a can of coke",
       "1 cup of rice") asserts each total falls in a sane range.
 
 ## Implementation Notes
@@ -131,3 +131,44 @@ The client multiplies nothing either: `useQuickLogSession` sends `calories` as-i
 
 - Found while reproducing a Quick Log report on the simulator. The user approved filing
   ("yes file the calorie todo").
+
+### 2026-09-26 — fix
+
+- **Shape:** the parse prompt now also returns `grams` (whole-portion edible weight, with
+  reference weights such as "1 large egg ≈ 50") and `lookupName` (database-style
+  description, e.g. `"egg, chicken, whole, cooked"`). `food-nlp.ts` looks up
+  `lookupName ?? name`, never the quantity string. Each result is normalized through the
+  weight parsed from its `servingSize` (`parseServingGrams`), not its `source`, because a
+  cache hit reports `source: "cache"`. It is then scaled to `grams` with `scaleNutrients`.
+  An API Ninjas "250g" basis is therefore divided back to per 100 g first and never scaled
+  twice. Invalid `grams`/`lookupName` values degrade that one item; they never fail the
+  parse. Unknown weight → per 100 g, `servingSize: "100 g (portion unknown)"`. An
+  unweighable basis ("1 serving") is kept as-is with that label. **Scope note:** one
+  field beyond the contract (`lookupName`), added because the AC's match-quality bullet
+  needs it. `name` stays human-readable, since the client renders it in `productName`.
+- **Live measurement (real LLM + real CNF/USDA, local server, 2026-09-26):**
+  "2 eggs and toast" → egg 141 kcal (2 large, 100 g) + toast 92 kcal (1 slice, 30 g), in
+  5 of 5 runs (was 470 + 305). "a can of coke" → 146 kcal (355 g). "1 cup of rice" →
+  208 kcal (160 g). Banana 105 kcal (118 g).
+- **Match quality, 18-food comparison through `lookupNutrition`:** the bare name resolved
+  to the right food about 5/18 times ("rice" → sake, "avocado" → avocado oil at 885 kcal,
+  "egg" → egg bagel). The descriptive `lookupName` did so about 11/18 times. Remaining
+  misses come from CNF's `scoreCNFMatch` substring scoring, e.g. "almonds, raw" →
+  "Guava, strawberry, raw" ("raw" inside "st**raw**berry"), "butter, salted" → sunflower
+  seed butter, "juice, orange" → frozen orange dessert. That scorer is outside this
+  todo's scope, affects every `lookupNutrition` caller, and was surfaced to the user as
+  a separate HIGH finding.
+- **Cache (AC 5):** handled by the new key shape. Quick Log now keys by food name, so the
+  old `"2 piece egg"`-style entries are never read again and expire on their own 7-day
+  TTL. **No production cache step.** Side effect: Quick Log now shares cache entries with
+  the coach `lookup_nutrition` tool and `/api/nutrition/lookup`, which already key by name
+  with the same per-100 g meaning.
+- **Other callers with the same quantity-in-query, per-100 g-as-portion pattern (not
+  fixed, surfaced to the user as HIGH):** `server/routes/photos.ts` (`attachNutrition`,
+  `"${quantity} ${name}"`), `server/services/cooking-session.ts`
+  (`"${quantity} ${unit} ${name}"`, both nutrition summaries), and
+  `server/routes/beverages.ts` (`"${oz}oz ${name}"`, logged straight to the diary). The
+  coach tool and `/api/nutrition/lookup` return `servingSize` with the values, so they're
+  fine.
+- The eval AC is met by a recorded-output fixture in `food-nlp.test.ts` ("sanity
+  fixture"). `evals/` has no food-nlp runner, and adding one is out of scope.
