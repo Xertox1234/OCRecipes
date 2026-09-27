@@ -105,7 +105,7 @@ list. Reviewers flagged, as advisory:
 
 ## Dependencies
 
-- None. Coordinate with `todos/P1-2026-09-27-photo-and-cooking-nutrition-use-per-100g-as-the-portion.md`
+- None. Coordinate with `todos/archive/P1-2026-09-27-photo-and-cooking-nutrition-use-per-100g-as-the-portion.md`
   (it changes the cooking query shape).
 
 ## Risks

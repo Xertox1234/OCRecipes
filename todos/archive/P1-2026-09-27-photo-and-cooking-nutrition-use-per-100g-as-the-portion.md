@@ -1,6 +1,6 @@
 ---
 title: "Photo analysis and cooking sessions use per-100 g nutrition as the portion"
-status: backlog
+status: done
 priority: high
 created: 2026-09-27
 updated: 2026-09-27
@@ -48,7 +48,7 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
 
 ## Acceptance Criteria
 
-- [ ] Photo analysis: each identified food's nutrition describes the estimated portion.
+- [x] Photo analysis: each identified food's nutrition describes the estimated portion.
       The analysis prompt returns an estimated gram weight (bounded, Zod-validated, same
       approach as Quick Log's `grams`), and the result is normalized through its
       `servingSize` and scaled. Unknown weight → clearly marked, never silently
@@ -64,16 +64,16 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
       (`server/routes/cooking.ts` → `storage.createScannedItemWithLog`), and
       `calculateSessionNutrition` powers the pre-log summary. Fixing only the summary
       leaves the logged entries wrong.
-- [ ] Both callers look up the food by name (or a database-style lookup name), never
+- [x] Both callers look up the food by name (or a database-style lookup name), never
       with the quantity in the query.
-- [ ] Per-100 g → portion conversion is shared, not duplicated: use `scaleToGrams` /
+- [x] Per-100 g → portion conversion is shared, not duplicated: use `scaleToGrams` /
       `nutrientValues` from `server/services/portion-nutrition.ts` (all seven nutrients;
       null when the basis can't be weighed). The beverage P1 added it; Quick Log's
       `toPortion` and the beverage route already call it.
-- [ ] Tests cover scaling, no double scaling of per-serving results, and the
+- [x] Tests cover scaling, no double scaling of per-serving results, and the
       unknown-weight case for both callers. The cooking adjustment test still passes on
       the corrected basis.
-- [ ] Record a live before/after table (as above) in Updates.
+- [x] Record a live before/after table (as above) in Updates.
 
 ## Implementation Notes
 
@@ -170,3 +170,39 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
     a two-value assumption, and leafy greens by the cup come out about 4× high (spinach
     above); matcher misses (bare "flour" → yam flour, "whole milk" → sheep)
     are the P2/P3 matcher todos.
+
+- **Photo half done** (PR for `fix/photo-portion-nutrition`). Two blockers were fixed first,
+  both user rulings: #1126 (the matcher, above) and #1128. Before #1128, USDA SR Legacy rows
+  stored kJ as kcal (~4.2×, e.g. "Quinoa, cooked" 503 for 120); the user purges the cache
+  after deploy.
+  - The log/calories prompt and the follow-up refine return `grams` (bounded, ≤ 5000) and,
+    **out of the Scope Contract by user ruling**, a database-style `lookupName`, as Quick
+    Log does. Bare photo names hit dense wrong USDA rows once scaled: "banana slices" →
+    dehydrated bananas, "water" → a 42 kcal/100 g row. A bad value of either drops to
+    undefined: the food is looked up by name, or marked `"100 g (portion unknown)"`.
+  - `attachNutrition` looks up `lookupName ?? name` and scales with `scaleToGrams`
+    (`servingSize` `"<quantity> (<n> g)"`).
+  - The food-list completion cap goes 500 → 1000. Live, main's prompt truncated to invalid
+    JSON on the burger photo once and the steak photo once in three runs.
+  - Live on the 12 eval photos (one model run; main's attach logic, `"<quantity> <name>"`
+    unscaled, vs this branch's, on the same 40 foods), selected rows, kcal:
+
+    | Food                    | main (match)                    | branch (match)            |
+    | ----------------------- | ------------------------------- | ------------------------- |
+    | apple, 180 g            | 52 (Apple, raw)                 | 94 (Apple, raw)           |
+    | mango, 200 g            | 60 (Mango, raw)                 | 120 (Mango, raw)          |
+    | banana slices, 60 g     | 0 (API Ninjas gated 0)          | 53 (Banana, raw)          |
+    | steak, 200 g            | 260 (Pie, steak)                | 364 (T-bone steak, raw)   |
+    | burger patty, 150 g     | 223 (Quinoa burger patty)       | 408 (Beef, ground, patty) |
+    | bread slices, 60 g      | 357 (Cheese, provolone, sliced) | 160 (Bread, white)        |
+    | sesame seeds, 3 g       | 565 (sesame seeds)              | 17 (tahini)               |
+    | maple syrup, 40 g       | 260                             | 104                       |
+    | herbs, 10 g             | 392 (Cereal, oat bunches)       | 2 (Basil, fresh)          |
+    | cherry tomatoes, 60 g   | 71 (Cherries, raw)              | 43 (Cherries, raw)        |
+    | beef slices with greens | 24 (baby green beans)           | 0 (Pepperoni, 0 kcal row) |
+
+  - Residuals: some composite dishes still land on the wrong food ("burger" → veggie burger,
+    "egg yolk sauce" → dried yolk, "cherry tomatoes" → cherries), which is the P2
+    `usda-search-top-hit-is-an-unrelated-branded-product` todo. The confirm route logs one
+    composite entry with no serving size, so the "portion unknown" mark is visible only in
+    the analysis response, which the client does not render today.
