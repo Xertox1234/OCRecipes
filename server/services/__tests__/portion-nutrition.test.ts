@@ -46,6 +46,9 @@ describe("scaleToGrams", () => {
   it("returns null when the basis cannot be weighed", () => {
     expect(scaleToGrams(result({ servingSize: "1 serving" }), 355)).toBeNull();
     expect(scaleToGrams(result({ servingSize: "12 fl oz" }), 355)).toBeNull();
+    expect(scaleToGrams(result({ servingSize: "" }), 355)).toBeNull();
+    // A zero basis (a premium-gated API Ninjas serving_size_g coerces to 0)
+    expect(scaleToGrams(result({ servingSize: "0g" }), 355)).toBeNull();
   });
 
   it("keeps a non-numeric value as null rather than zero", () => {
