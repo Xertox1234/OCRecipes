@@ -494,9 +494,9 @@ export function fuzzyMatchCNF(query: string, foods: CNFFood[]): CNFFood | null {
     }
   }
 
-  // Require a minimum score to avoid false positives.
-  // Score ~7 = only half the query words matched → too ambiguous.
-  // Score ~10 = all words matched with some part relevance → good.
+  // A partial word match already scored 0 in scoreCNFMatch. The floor for an
+  // accepted row is 8: every word matched only via its singular/plural (0.8
+  // each) with no comma-part bonus.
   return bestScore >= 8 ? best : null;
 }
 

@@ -220,7 +220,8 @@ describe("lookupBarcode", () => {
             },
           }),
         }),
-      // CNF will match "sugar" → "Sweets, sugars, granulated" → 387 kcal
+      // CNF matches "sugar" to a sugar row; the nutrient mock ignores the id,
+      // so either row yields 387 kcal
       "food/?lang=en": cnfWithSugarEN,
       "food/?lang=fr": cnfWithSugarFR,
       nutrientamount: cnfSugarNutrients,
@@ -291,7 +292,8 @@ describe("lookupBarcode", () => {
             },
           }),
         }),
-      // CNF food lists — hot chocolate should match
+      // CNF food lists (no CNF match: "k-cup"/"pods" are absent, so OFF's own
+      // per-100 g stands; this test is about the serving-size correction)
       "food/?lang=en": () =>
         Promise.resolve({
           ok: true,
@@ -740,7 +742,7 @@ describe("lookupBarcode", () => {
   });
 
   it("uses secondary data when OFF has no calorie data", async () => {
-    // OFF product name "sugar" matches CNF "Sweets, sugars, granulated"
+    // OFF product name "sugar" matches a CNF sugar row
     setupFetchMock({
       "openfoodfacts.org": () =>
         Promise.resolve({
