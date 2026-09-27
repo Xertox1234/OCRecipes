@@ -830,25 +830,33 @@ export async function lookupUSDAByUPC(code: string): Promise<{
  * CNF 0-calorie results fall through to USDA, matching the original guard at
  * the write site. USDA and API Ninjas results are returned as-is; callers
  * apply the `calories > 0` write guard themselves.
+ *
+ * The query is looked up as typed first. A cultural food's standardized name
+ * ("injera" → "fermented flatbread") is tried only when CNF and USDA both find
+ * nothing: replacing the query up front looked up "buttermilk pancakes" as
+ * "yogurt drink", and injera as "Crackers, flatbread" (412 kcal) although USDA
+ * lists "Injera, Ethiopian bread" (93 kcal).
  */
 async function fetchNutritionFromSources(
   query: string,
 ): Promise<NutritionData | null> {
-  // Resolve cultural food names to standardized lookup terms
   const standardizedQuery = getStandardizedFoodName(query);
-  const effectiveQuery =
-    standardizedQuery !== query ? standardizedQuery : query;
+  const queries =
+    standardizedQuery !== query ? [query, standardizedQuery] : [query];
 
-  // Primary: Canadian Nutrient File (bilingual, supports French product names)
-  const cnfResult = await lookupCNF(effectiveQuery);
-  if (cnfResult && cnfResult.calories > 0) return cnfResult;
+  for (const q of queries) {
+    // Primary: Canadian Nutrient File (bilingual, supports French product names)
+    const cnfResult = await lookupCNF(q);
+    if (cnfResult && cnfResult.calories > 0) return cnfResult;
 
-  // Secondary: USDA FoodData Central (reliable government data)
-  const usdaResult = await lookupUSDA(effectiveQuery);
-  if (usdaResult) return usdaResult;
+    // Secondary: USDA FoodData Central (reliable government data)
+    const usdaResult = await lookupUSDA(q);
+    if (usdaResult) return usdaResult;
+  }
 
-  // Last-resort fallback: API Ninjas
-  return lookupAPINinjas(effectiveQuery);
+  // Last-resort fallback: API Ninjas, with the query as typed — it parses
+  // natural language, and the standardized names are vaguer search terms.
+  return lookupAPINinjas(query);
 }
 
 /**
