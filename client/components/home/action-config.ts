@@ -124,6 +124,8 @@ export const HOME_ACTIONS: HomeAction[] = [
     group: "nutrition",
     icon: "edit-3",
     label: "Quick Log",
+    subtitle: "Log food by text or voice",
+    premium: true,
     renderInline: true,
   },
   // Recipes

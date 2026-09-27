@@ -1,10 +1,11 @@
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Pressable,
   StyleSheet,
   TextInput,
   View,
   ActivityIndicator,
+  Keyboard,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -17,7 +18,10 @@ import { HomeInlineDrawer } from "@/components/home/HomeInlineDrawer";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { useQuickLogSession } from "@/hooks/useQuickLogSession";
+import {
+  useQuickLogSession,
+  EMPTY_PARSE_MESSAGE,
+} from "@/hooks/useQuickLogSession";
 import type { ParsedFoodItem, LogSummary } from "@/hooks/useQuickLogSession";
 import {
   Spacing,
@@ -120,24 +124,38 @@ const ParsedItemRow = React.memo(function ParsedItemRow({
 
 interface QuickLogDrawerProps {
   action: HomeAction;
+  /** Owned by HomeScreen, like the other inline drawers, so it can lock the
+   * row and glide it into view. */
+  isOpen: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  isLocked?: boolean;
+  /** Fires when parsed items first appear, so Home can glide the row up and
+   * keep the results and Log All on screen. */
+  onResultsShown?: () => void;
 }
 
-export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
+export function QuickLogDrawer({
+  action,
+  isOpen,
+  onToggle,
+  onClose,
+  isLocked,
+  onResultsShown,
+}: QuickLogDrawerProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
   const navigation = useNavigation<HomeScreenNavigationProp>();
 
-  const [isOpen, setIsOpen] = useState(false);
-
   const handleLogSuccess = useCallback(
     ({ firstName, totalCalories }: LogSummary) => {
-      setIsOpen(false);
+      onClose();
       const label =
         totalCalories > 0 ? `${firstName} · ${totalCalories} cal` : firstName;
       toast.success(`Logged! ${label}`);
     },
-    [toast],
+    [onClose, toast],
   );
 
   const session = useQuickLogSession({
@@ -159,12 +177,23 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
 
   const { reset: sessionReset } = session;
 
-  const handleToggle = useCallback(() => {
-    const next = !isOpen;
-    if (!next) sessionReset();
-    setIsOpen(next);
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-  }, [isOpen, sessionReset, haptics]);
+  // Home closes this drawer from several places (its header, opening another
+  // drawer, leaving the tab, a successful log), so reset on the transition
+  // rather than in one handler.
+  const wasOpenRef = useRef(isOpen);
+  useEffect(() => {
+    if (wasOpenRef.current && !isOpen) sessionReset();
+    wasOpenRef.current = isOpen;
+  }, [isOpen, sessionReset]);
+
+  const { handleTextSubmit } = session;
+  const canSubmit = session.inputText.trim().length > 0 && !session.isParsing;
+  const handleSubmitPress = useCallback(() => {
+    // The return key blurs a single-line input by itself; the button must too,
+    // or the keyboard covers the results.
+    Keyboard.dismiss();
+    handleTextSubmit();
+  }, [handleTextSubmit]);
 
   const handleCameraPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
@@ -181,12 +210,19 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
     [session.parsedItems],
   );
 
+  const hadParsedItemsRef = useRef(false);
+  useEffect(() => {
+    if (hasParsedItems && !hadParsedItemsRef.current) onResultsShown?.();
+    hadParsedItemsRef.current = hasParsedItems;
+  }, [hasParsedItems, onResultsShown]);
+
   return (
     <HomeInlineDrawer
       icon={action.icon}
       label={action.label}
       isOpen={isOpen}
-      onToggle={handleToggle}
+      onToggle={onToggle}
+      isLocked={isLocked}
       bodyBackgroundColor={withOpacity(theme.link, 0.04)}
     >
       {/* Text input row */}
@@ -205,10 +241,38 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
           placeholderTextColor={theme.textSecondary}
           value={session.inputText}
           onChangeText={session.setInputText}
-          onSubmitEditing={session.handleTextSubmit}
-          returnKeyType="search"
+          onSubmitEditing={handleTextSubmit}
+          returnKeyType="done"
           accessibilityLabel="Food description"
         />
+        <Pressable
+          onPress={handleSubmitPress}
+          disabled={!canSubmit}
+          accessibilityLabel="Find food"
+          accessibilityHint="Looks up what you typed. Nothing is logged until you tap Log All."
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canSubmit, busy: session.isParsing }}
+          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          style={({ pressed }) => [
+            styles.iconButton,
+            {
+              borderColor: canSubmit ? theme.accentSolid : theme.border,
+              backgroundColor: canSubmit ? theme.accentSolid : "transparent",
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          {session.isParsing ? (
+            <ActivityIndicator size="small" color={theme.textSecondary} />
+          ) : (
+            <Feather
+              name="arrow-right"
+              size={20}
+              color={canSubmit ? theme.buttonText : theme.textSecondary}
+              accessible={false}
+            />
+          )}
+        </Pressable>
         <VoiceLogButton
           isListening={session.isListening}
           volume={session.volume}
@@ -237,8 +301,9 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
         </Pressable>
       </View>
 
-      {/* Parse error */}
+      {/* Parse error, or a parse that found no food */}
       <InlineError message={session.parseError} />
+      <InlineError message={session.parseEmpty ? EMPTY_PARSE_MESSAGE : null} />
 
       {/* Frequent chips — only when no parsed items */}
       {!hasParsedItems &&

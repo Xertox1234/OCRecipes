@@ -17,6 +17,13 @@ describe("action-config", () => {
       }
     });
 
+    // The server refuses free-tier text parsing (textFoodParsing), so the row
+    // must be locked, not offered (user decision 2026-09-26: lock, not hide).
+    it("marks Quick Log as premium", () => {
+      const quickLog = HOME_ACTIONS.find((a) => a.id === "quick-log");
+      expect(quickLog?.premium).toBe(true);
+    });
+
     it("premium actions have subtitle (shown as feature cards)", () => {
       const premiumActions = HOME_ACTIONS.filter((a) => a.premium);
       for (const action of premiumActions) {

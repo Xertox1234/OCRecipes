@@ -129,6 +129,14 @@ vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({ user: null }),
 }));
 
+// HomeScreen gates Quick Log on the server-resolved premium feature.
+vi.mock("@/context/PremiumContext", () => ({
+  usePremiumContext: () => ({
+    features: { textFoodParsing: false },
+    isPremiumResolved: true,
+  }),
+}));
+
 vi.mock("@/hooks/useHomeActions", () => ({
   useHomeActions: () => ({
     sections: { nutrition: false, recipes: false, planning: false },

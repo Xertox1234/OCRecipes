@@ -209,6 +209,119 @@ describe("useQuickLogSession", () => {
     expect(result.current.parseError).toBe(GENERIC_PARSE_MESSAGE);
   });
 
+  // An empty parse is a successful request that found no food. It needs its
+  // own flag: a parseError would say "try again" about a request that worked,
+  // and no flag at all leaves the drawer looking unchanged (the device report).
+  it("sets parseEmpty (not parseError) when a text parse returns no items", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ items: [] }),
+    });
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("hello there"));
+    act(() => result.current.handleTextSubmit());
+
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+    expect(result.current.parseError).toBeNull();
+    expect(result.current.parsedItems).toHaveLength(0);
+  });
+
+  it("sets parseEmpty when a voice auto-parse returns no items", async () => {
+    const { useSpeechToText } = await import("@/hooks/useSpeechToText");
+    (useSpeechToText as ReturnType<typeof vi.fn>).mockReturnValue({
+      ...mockSpeechToText,
+      isFinal: true,
+      transcript: "um",
+    });
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ items: [] }),
+    });
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+    expect(result.current.parseError).toBeNull();
+  });
+
+  it("clears parseEmpty when the next parse finds food", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ items: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "toast",
+                quantity: 1,
+                unit: "slice",
+                calories: 80,
+                protein: 3,
+                carbs: 14,
+                fat: 1,
+                servingSize: null,
+              },
+            ],
+          }),
+      });
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("hello"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+
+    act(() => result.current.setInputText("1 slice toast"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
+    expect(result.current.parseEmpty).toBe(false);
+  });
+
+  it("clears parseEmpty on a new submit, before its result arrives", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ items: [] }),
+      })
+      .mockReturnValueOnce(new Promise(() => {})); // second parse never settles
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("hello"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+
+    act(() => result.current.handleTextSubmit());
+    expect(result.current.parseEmpty).toBe(false);
+  });
+
+  it("reset clears parseEmpty", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ items: [] }),
+    });
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("hello"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+
+    act(() => result.current.reset());
+    expect(result.current.parseEmpty).toBe(false);
+  });
+
   it("shows the premium message when voice auto-parse returns PREMIUM_REQUIRED", async () => {
     const { useSpeechToText } = await import("@/hooks/useSpeechToText");
     (useSpeechToText as ReturnType<typeof vi.fn>).mockReturnValue({

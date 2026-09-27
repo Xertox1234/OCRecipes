@@ -22,6 +22,10 @@ export type { ParsedFoodItem };
 
 export const MAX_LOG_ITEMS = 10;
 
+/** Shown when a parse succeeds but finds no food (see parseEmpty). */
+export const EMPTY_PARSE_MESSAGE =
+  "Couldn't find any food in that. Try something like \u201c2 eggs and toast\u201d.";
+
 export interface LogSummary {
   itemCount: number;
   totalCalories: number;
@@ -61,6 +65,10 @@ export function useQuickLogSession({
   const [inputText, setInputText] = useState("");
   const [parsedItems, setParsedItems] = useState<ParsedFoodItem[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
+  // A successful parse that found no food. Kept apart from parseError: the
+  // request worked, so "try again" would be wrong, and without a signal the
+  // UI looks unchanged after submit.
+  const [parseEmpty, setParseEmpty] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [capWarning, setCapWarning] = useState<string | null>(null);
 
@@ -120,6 +128,7 @@ export function useQuickLogSession({
       autoParsedTranscriptRef.current = transcript;
       setInputText(transcript);
       setParseError(null);
+      setParseEmpty(false);
       const epoch = sessionEpochRef.current;
       parseFoodTextMutate(transcript, {
         onSuccess: (data) => {
@@ -127,6 +136,7 @@ export function useQuickLogSession({
           setParsedItems(
             data.items.map((item) => ({ ...item, sourceType: "voice" })),
           );
+          setParseEmpty(data.items.length === 0);
           haptics.notification(Haptics.NotificationFeedbackType.Success);
         },
         onError: (err) => {
@@ -141,6 +151,7 @@ export function useQuickLogSession({
   const handleTextSubmit = useCallback(() => {
     if (!inputText.trim() || isParsing) return;
     setParseError(null);
+    setParseEmpty(false);
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     const source = pendingSourceRef.current;
     pendingSourceRef.current = "text";
@@ -151,6 +162,7 @@ export function useQuickLogSession({
         setParsedItems(
           data.items.map((item) => ({ ...item, sourceType: source })),
         );
+        setParseEmpty(data.items.length === 0);
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       },
       onError: (err) => {
@@ -387,6 +399,7 @@ export function useQuickLogSession({
     setInputText("");
     setParsedItems([]);
     setParseError(null);
+    setParseEmpty(false);
     setSubmitError(null);
     setCapWarning(null);
   }, [isListening, stopListening]);
@@ -399,6 +412,7 @@ export function useQuickLogSession({
     isParsing,
     parsedItems,
     parseError,
+    parseEmpty,
     submitError,
     capWarning,
     isSubmitting: logAllMutation.isPending,
