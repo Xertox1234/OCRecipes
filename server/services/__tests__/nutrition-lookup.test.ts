@@ -1023,8 +1023,8 @@ describe("lookupNutrition", () => {
       return lookupNutrition("quinoa salad");
     }
 
-    // Live USDA search, 2026-09-27: SR Legacy foods list the kJ entry first
-    // ("Quinoa, cooked": Energy 503 kJ; Energy 120 KCAL).
+    // Live USDA search, 2026-09-27: SR Legacy foods list both units in either
+    // order ("Quinoa, cooked": Energy 503 kJ, then 120 KCAL).
     it("reads kcal when the kJ entry comes first", async () => {
       const result = await usdaReturns([
         { nutrientName: "Energy", value: 503, unitName: "kJ" },
@@ -1055,6 +1055,16 @@ describe("lookupNutrition", () => {
       ]);
 
       expect(result!.calories).toBe(168);
+    });
+
+    it("ignores a malformed unit rather than failing the whole result", async () => {
+      const result = await usdaReturns([
+        { nutrientName: "Energy", value: 120, unitName: "KCAL" },
+        { nutrientName: "Protein", value: 4.4, unitName: 7 },
+      ]);
+
+      expect(result!.calories).toBe(120);
+      expect(result!.protein).toBe(4.4);
     });
 
     it("keeps a kcal-only energy as is", async () => {
