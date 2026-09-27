@@ -1478,6 +1478,29 @@ describe("fuzzyMatchCNF — whole-word matching and head ranking", () => {
     );
   });
 
+  // Photos ("<quantity> <name>") and cooking sessions ("<quantity> <unit>
+  // <name>") still send quantities in the query. Those words never appear in
+  // a CNF description, so they must not count against the every-word rule.
+  it.each([
+    ["2 large banana", "Banana, raw"],
+    ["1 tbsp butter", "Butter, regular"],
+    ["3 oz almonds", "Nuts, almonds, dried, unblanched, unroasted"],
+    [
+      "1 cup rice, white, long-grain, cooked",
+      "Grains, rice, white, long-grain, regular, cooked",
+    ],
+    ["12oz milk, 2%", "Milk, fluid, partly skimmed, 2% M.F."],
+    ["1/2 cup orange juice", "Orange juice, raw"],
+  ])("ignores the quantity and unit in %s", (query, expected) => {
+    expect(match(query)).toBe(expected);
+  });
+
+  it("keeps a percentage as a real word, not a quantity", () => {
+    expect(match("milk, 2%")).toBe("Milk, fluid, partly skimmed, 2% M.F.");
+    // A query that is only a quantity matches nothing
+    expect(match("2 cups")).toBeUndefined();
+  });
+
   it("never matches a query word inside a longer word", () => {
     expect(match("pap")).toBeUndefined(); // not "paprika"
     expect(match("honeydew")).toBe("Melon, honeydew, raw"); // positive control

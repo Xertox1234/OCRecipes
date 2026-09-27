@@ -384,6 +384,66 @@ function matchWords(text: string): string[] {
     .filter((w) => w.length > 1 || /\d/.test(w));
 }
 
+/**
+ * Serving units and sizes. Photo analysis ("<quantity> <name>") and cooking
+ * sessions ("<quantity> <unit> <name>") put these in the query, but CNF names
+ * never contain them, so they must not count against the every-word rule.
+ */
+const QUANTITY_UNITS = new Set([
+  "cup",
+  "cups",
+  "tbsp",
+  "tablespoon",
+  "tablespoons",
+  "tsp",
+  "teaspoon",
+  "teaspoons",
+  "oz",
+  "ounce",
+  "ounces",
+  "lb",
+  "lbs",
+  "pound",
+  "pounds",
+  "gram",
+  "grams",
+  "kg",
+  "mg",
+  "ml",
+  "liter",
+  "liters",
+  "litre",
+  "litres",
+  "slice",
+  "slices",
+  "piece",
+  "pieces",
+  "serving",
+  "servings",
+  "can",
+  "cans",
+  "bottle",
+  "bottles",
+  "glass",
+  "glasses",
+  "bowl",
+  "bowls",
+  "handful",
+  "handfuls",
+  "small",
+  "medium",
+  "large",
+]);
+
+/** A bare number or number+unit token ("2", "12oz", "200g"), never "2%". */
+function isQuantityWord(word: string): boolean {
+  if (QUANTITY_UNITS.has(word)) return true;
+  const m = /^\d+(?:[.,]\d+)?([a-z]*)$/.exec(word);
+  return (
+    m !== null && (m[1] === "" || QUANTITY_UNITS.has(m[1]) || m[1] === "g")
+  );
+}
+
 /** 1 for the exact word, 0.8 for its singular/plural, 0 otherwise. */
 function wordMatch(words: Set<string>, word: string): number {
   if (words.has(word)) return 1;
@@ -429,7 +489,7 @@ function scoreCNFMatch(query: string, description: string): number {
   // Exact match is best
   if (d === q) return 100;
 
-  const qWords = matchWords(q);
+  const qWords = matchWords(q).filter((w) => !isQuantityWord(w));
   if (qWords.length === 0) return 0;
 
   const dWords = new Set(matchWords(d));
