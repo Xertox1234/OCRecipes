@@ -223,6 +223,60 @@ describe("Beverages Routes", () => {
       );
     });
 
+    it("returns 422 rather than add modifiers to a drink it can't weigh", async () => {
+      // The drink's values describe "1 serving", not the size; adding
+      // 15 g of cream to them would mix two bases under one label.
+      mockLookups({
+        "coffee, brewed": per100g("coffee", {
+          calories: 2,
+          servingSize: "1 serving",
+        }),
+        "cream, table": per100g("Cream, table", { calories: 185 }),
+      });
+
+      const res = await request(app)
+        .post("/api/beverages/log")
+        .send({ beverageType: "coffee", size: "large", modifiers: ["cream"] });
+
+      expect(res.status).toBe(422);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+    });
+
+    it("keeps the size label when a result has no serving size", async () => {
+      mockLookups({
+        kombucha: per100g("kombucha", { calories: 30, servingSize: "" }),
+      });
+
+      await request(app)
+        .post("/api/beverages/log")
+        .send({
+          beverageType: "custom",
+          size: "medium",
+          customName: "kombucha",
+        })
+        .expect(201);
+
+      expect(savedItem().servingSize).toBe("12 fl oz");
+    });
+
+    it("saves a non-numeric nutrient as 0", async () => {
+      mockLookups({
+        cola: per100g("cola", {
+          calories: 41,
+          fiber: "n/a" as unknown as number,
+        }),
+      });
+
+      await request(app)
+        .post("/api/beverages/log")
+        .send({ beverageType: "soda", size: "medium" })
+        .expect(201);
+
+      expect(savedItem()).toEqual(
+        expect.objectContaining({ calories: "146", fiber: "0" }),
+      );
+    });
+
     it("adds each modifier as a fixed amount on top of the drink", async () => {
       mockLookups({
         "coffee, brewed": per100g("Coffee, brewed", { calories: 1, sodium: 2 }),

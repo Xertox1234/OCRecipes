@@ -54,7 +54,7 @@ The new fields cost ~46 completion tokens per item. Measure `usage.completion_to
 - `server/services/food-nlp.ts`: `toPortion`, `parseNaturalLanguageFood`
 - `server/services/nutrition-lookup.ts`: `lookupNutrition`, source chain, cache
 - `server/services/barcode-lookup.ts`: `parseServingGrams`, `scaleNutrients`
-- `todos/P1-2026-09-27-beverage-log-uses-per-100g-nutrition-as-the-drink.md`, `todos/P1-2026-09-27-photo-and-cooking-nutrition-use-per-100g-as-the-portion.md`: the remaining callers
+- `todos/archive/P1-2026-09-27-beverage-log-uses-per-100g-nutrition-as-the-drink.md`, `todos/P1-2026-09-27-photo-and-cooking-nutrition-use-per-100g-as-the-portion.md`: the remaining callers
 
 ## See Also
 

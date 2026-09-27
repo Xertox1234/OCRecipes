@@ -69,6 +69,12 @@ list. Reviewers flagged, as advisory:
 - [ ] Bare "taco" / "tacos" no longer resolve to the taco-flavoured chips row, or the
       attempt and its gold-set before/after are recorded here (item 7). Add these queries
       to the gold set either way.
+- [ ] The beverage route's pinned lookup names are in the gold set, each expected to
+      land on its row: "coffee, brewed" → Coffee, brewed; "tea, brewed" → Tea, brewed;
+      "milk, 2%" → Milk, fluid, partly skimmed, 2% M.F.; "cola" → Carbonated drinks, cola;
+      "cream, table" → Cream, table (coffee), 18% M.F.; "sugar, granulated" → Sweets,
+      sugars, granulated (`shared/constants/beverages.ts`, PR #1124). The route tests mock
+      the lookup, so only the gold set would catch a matcher change moving them.
 
 ## Implementation Notes
 

@@ -110,9 +110,9 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
 
 ## Dependencies
 
-- None blocking. Coordinate the shared helper with the beverage todo
-  (`todos/P1-2026-09-27-beverage-log-uses-per-100g-nutrition-as-the-drink.md`), since
-  whichever lands first extracts it.
+- None. The shared helper already landed with the beverage todo
+  (`todos/archive/P1-2026-09-27-beverage-log-uses-per-100g-nutrition-as-the-drink.md`):
+  `scaleToGrams` in `server/services/portion-nutrition.ts`.
 
 ## Risks
 

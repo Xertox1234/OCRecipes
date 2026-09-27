@@ -49,17 +49,20 @@ const logBeverageSchema = z
  *
  * Lookups answer per 100 g (CNF/USDA) or per serving (API Ninjas); a result
  * whose basis can't be weighed ("1 serving") is kept as it is, with its own
- * serving size, rather than scaled by a guess.
+ * serving size, rather than scaled by a guess. Such a drink takes no
+ * modifiers (null): grams of cream added to "1 serving" mix two bases.
+ * A non-numeric value counts as 0.
  */
 async function lookupDrinkNutrition(
   lookupName: string,
   ml: number,
   modifiers: BeverageModifier[],
-): Promise<{ values: NutrientValues; servingSize: string } | null> {
+): Promise<{ values: NutrientTotals; servingSize: string } | null> {
   const drink = await lookupNutrition(lookupName);
   if (!drink) return null;
 
   const scaled = scaleToGrams(drink, ml); // ml ≈ g for drinks
+  if (!scaled && modifiers.length > 0) return null;
   const parts = [scaled ?? nutrientValues(drink)];
   const servingSize = scaled ? `${ml} ml` : drink.servingSize;
 
@@ -74,7 +77,9 @@ async function lookupDrinkNutrition(
   return { values: sumNutrients(parts), servingSize };
 }
 
-function sumNutrients(parts: NutrientValues[]): NutrientValues {
+type NutrientTotals = Record<keyof NutrientValues, number>;
+
+function sumNutrients(parts: NutrientValues[]): NutrientTotals {
   const total = (key: keyof NutrientValues) =>
     roundToOneDecimal(parts.reduce((sum, part) => sum + (part[key] ?? 0), 0));
   return {
@@ -157,14 +162,14 @@ export function register(app: Express): void {
               ErrorCode.NUTRITION_LOOKUP_FAILED,
             );
           }
-          calories = nutrition.values.calories ?? 0;
-          protein = nutrition.values.protein ?? 0;
-          carbs = nutrition.values.carbs ?? 0;
-          fat = nutrition.values.fat ?? 0;
-          fiber = nutrition.values.fiber ?? 0;
-          sugar = nutrition.values.sugar ?? 0;
-          sodium = nutrition.values.sodium ?? 0;
-          servingSize = nutrition.servingSize;
+          calories = nutrition.values.calories;
+          protein = nutrition.values.protein;
+          carbs = nutrition.values.carbs;
+          fat = nutrition.values.fat;
+          fiber = nutrition.values.fiber;
+          sugar = nutrition.values.sugar;
+          sodium = nutrition.values.sodium;
+          if (nutrition.servingSize) servingSize = nutrition.servingSize;
         }
 
         const productName = buildProductName(
