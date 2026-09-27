@@ -1501,6 +1501,12 @@ if jq -e '.permissions.allow | index("Bash(bash .claude/hooks/ledger-note.sh *)"
 else
   no "allow rule missing, or the instruction spells the command differently"
 fi
+# /land's step 8 is a third copy of the same command; a drift there prompts on every merge.
+if grep -qE '^[[:space:]]*bash \.claude/hooks/ledger-note\.sh VERIFIED ' "$HOOKS_DIR/../skills/land/SKILL.md"; then
+  ok "/land skill spells the ledger-note command the allow rule matches"
+else
+  no "/land skill's ledger-note command drifted from the allow rule"
+fi
 
 # --- Cap: every section full + curated must fit, trimming RECENT first ---
 # Curated is 10 rows (~1.2 KB), not the 2 KB window: with BLOCKED at its real cap of 8, a full
@@ -1542,7 +1548,7 @@ else
   no "trim reached BLOCKED/FAILED/curated too early ($bf_n of 13 kept)"
 fi
 
-EXPECTED_TOTAL=123
+EXPECTED_TOTAL=124
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))
