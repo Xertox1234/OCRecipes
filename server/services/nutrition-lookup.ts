@@ -386,8 +386,9 @@ function matchWords(text: string): string[] {
 
 /**
  * Serving units and sizes. Photo analysis ("<quantity> <name>") and cooking
- * sessions ("<quantity> <unit> <name>") put these in the query, but CNF names
- * never contain them, so they must not count against the every-word rule.
+ * sessions ("<quantity> <unit> <name>") prefix the query with these, and CNF
+ * names never contain them, so that prefix must not count against the
+ * every-word rule.
  */
 const QUANTITY_UNITS = new Set([
   "cup",
@@ -436,12 +437,32 @@ const QUANTITY_UNITS = new Set([
 ]);
 
 /** A bare number or number+unit token ("2", "12oz", "200g"), never "2%". */
-function isQuantityWord(word: string): boolean {
-  if (QUANTITY_UNITS.has(word)) return true;
+function isNumberWord(word: string): boolean {
   const m = /^\d+(?:[.,]\d+)?([a-z]*)$/.exec(word);
   return (
-    m !== null && (m[1] === "" || QUANTITY_UNITS.has(m[1]) || m[1] === "g")
+    m !== null && (m[1] === "" || m[1] === "g" || QUANTITY_UNITS.has(m[1]))
   );
+}
+
+/**
+ * Drop the leading quantity run ("1 cup", "2 large", "12oz", "1/2 cup") the
+ * callers prepend. Only a run that STARTS with a number is dropped, and only up
+ * to the first other word, so a unit word inside a food's own name stays:
+ * "small white beans", "reese's pieces", "cup noodles". Residuals: "1 cup
+ * noodles" loses "cup" (a joined string can't tell a unit from a name word),
+ * and a quantity with no number ("a handful of almonds") is not stripped, so
+ * it misses CNF and falls through to USDA.
+ */
+function withoutLeadingQuantity(words: string[]): string[] {
+  if (words.length === 0 || !isNumberWord(words[0])) return words;
+  let i = 0;
+  while (
+    i < words.length &&
+    (isNumberWord(words[i]) || QUANTITY_UNITS.has(words[i]))
+  ) {
+    i++;
+  }
+  return words.slice(i);
 }
 
 /** 1 for the exact word, 0.8 for its singular/plural, 0 otherwise. */
@@ -489,7 +510,7 @@ function scoreCNFMatch(query: string, description: string): number {
   // Exact match is best
   if (d === q) return 100;
 
-  const qWords = matchWords(q).filter((w) => !isQuantityWord(w));
+  const qWords = withoutLeadingQuantity(matchWords(q));
   if (qWords.length === 0) return 0;
 
   const dWords = new Set(matchWords(d));

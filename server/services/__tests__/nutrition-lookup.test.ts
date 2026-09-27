@@ -1495,6 +1495,37 @@ describe("fuzzyMatchCNF — whole-word matching and head ranking", () => {
     expect(match(query)).toBe(expected);
   });
 
+  // Only a LEADING quantity run is dropped: a food whose own name contains a
+  // unit word must keep it. Real CNF rows; each correct row sits beside the
+  // one a blanket unit filter picked instead.
+  it.each([
+    ["reese's pieces", "Candies, Reese's Pieces"],
+    ["green gram", "Beans, legumes, mung (green gram), raw"],
+    ["small white beans", "Beans, small white, raw"],
+    [
+      "cup noodles",
+      "Soup, NISSIN, CUP NOODLES, ramen noodle, chicken flavour, dry",
+    ],
+  ])(
+    "keeps a unit word that is part of the food name: %s",
+    (query, expected) => {
+      const rows = [
+        "Candies, Reese's Pieces",
+        "Candies, REESE'S, FAST BREAK, milk chocolate peanut butter and soft nougat",
+        "Beans, legumes, mung (green gram), raw",
+        "Peas, green, raw",
+        "Beans, small white, raw",
+        "Beans, white, raw",
+        "Soup, NISSIN, CUP NOODLES, ramen noodle, chicken flavour, dry",
+        "Restaurant, Chinese, noodles, crunchy",
+      ].map((food_description, i) => ({
+        food_code: 2000 + i,
+        food_description,
+      }));
+      expect(fuzzyMatchCNF(query, rows)?.food_description).toBe(expected);
+    },
+  );
+
   it("keeps a percentage as a real word, not a quantity", () => {
     expect(match("milk, 2%")).toBe("Milk, fluid, partly skimmed, 2% M.F.");
     // A query that is only a quantity matches nothing
