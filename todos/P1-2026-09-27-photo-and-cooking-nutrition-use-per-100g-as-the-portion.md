@@ -41,7 +41,7 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
   `quantity` is a free-text AI estimate ("1 cup", "6 oz", "1 medium",
   `server/services/photo-analysis.ts`), with no gram weight.
 - **Cooking sessions:** `server/services/cooking-session.ts` → `calculateSessionNutrition`
-  and `calculateSessionMacros` (`:274`) builds
+  and `calculateSessionMacros` (`:272`) builds
   `` `${i.quantity} ${i.unit} ${i.name}` ``. Its per-ingredient totals and the session
   total add up per-100 g values. `calculateCookedNutrition` then applies a cooking
   adjustment on top of the wrong basis.
@@ -55,11 +55,15 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
       per 100 g.
 - [ ] Cooking sessions: each ingredient's nutrition describes its quantity and unit.
       Metric and common units convert to grams. An unconvertible unit is marked, not
-      silently per 100 g. Session totals sum portion values.
+      silently per 100 g. Session totals sum portion values. This covers **fiber, sugar
+      and sodium** too: `calculateSessionNutrition`'s per-ingredient items carry all seven
+      nutrients (`shared/types/cook-session.ts`).
 - [ ] Both callers look up the food by name (or a database-style lookup name), never
       with the quantity in the query.
-- [ ] Per-100 g → portion conversion is shared with Quick Log (`toPortion` in
-      `server/services/food-nlp.ts`), not duplicated.
+- [ ] Per-100 g → portion conversion is shared with Quick Log, not duplicated: `toPortion`
+      moves from `server/services/food-nlp.ts` to `server/services/portion-nutrition.ts`
+      and is widened from four nutrients to all seven that `scaleNutrients` computes
+      (its internal `scaled()` currently drops fiber/sugar/sodium).
 - [ ] Tests cover scaling, no double scaling of per-serving results, and the
       unknown-weight case for both callers. The cooking adjustment test still passes on
       the corrected basis.
@@ -89,7 +93,8 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
 - **Files in scope:**
   - `server/routes/photos.ts`, `server/services/photo-analysis.ts`
   - `server/services/cooking-session.ts`
-  - `server/services/food-nlp.ts` and one new shared helper module (for `toPortion`)
+  - `server/services/food-nlp.ts` and `server/services/portion-nutrition.ts` (new), for
+    the `toPortion` extraction, if this todo lands first
   - the matching `__tests__/` files
   - `client/hooks/usePhotoAnalysis.ts` / `client/screens/PhotoAnalysisScreen.tsx` only if
     the displayed serving label must change
@@ -112,3 +117,5 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
 ### 2026-09-27
 
 - Found while reviewing PR #1118 (Quick Log per-100 g fix). The user approved filing it.
+- PR #1119 review: fixed the `calculateSessionMacros` line anchor, named the shared
+  helper's path, and added fiber/sugar/sodium to the cooking-session criterion.

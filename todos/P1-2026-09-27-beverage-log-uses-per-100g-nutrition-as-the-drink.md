@@ -1,5 +1,5 @@
 ---
-title: "Beverage logging saves per-100 g nutrition as the whole drink: a 16 oz latte = 27 kcal"
+title: "Beverage logging saves per-100 g nutrition as the whole drink: a can of soda = whiskey and soda"
 status: backlog
 priority: high
 created: 2026-09-27
@@ -9,11 +9,11 @@ labels: [nutrition, beverages]
 github_issue:
 ---
 
-# Beverage logging saves per-100 g nutrition as the whole drink: a 16 oz latte = 27 kcal
+# Beverage logging saves per-100 g nutrition as the whole drink: a can of soda = whiskey and soda
 
 ## Summary
 
-`POST /api/beverages` (`server/routes/beverages.ts`) looks up `"<oz>oz <beverage>"` and
+`POST /api/beverages/log` (`server/routes/beverages.ts`) looks up `"<oz>oz <beverage>"` and
 writes the result straight to the diary. The lookup returns **per-100 g** values, so
 every logged drink except water is wrong, usually far too low. Some queries also match the
 wrong drink. Scale to the chosen size, which is known exactly (`BEVERAGE_SIZES[size].ml`),
@@ -25,31 +25,42 @@ This is the same defect class as Quick Log (fixed in PR #1118, archived todo
 `todos/archive/P1-2026-09-26-quick-log-calories-are-per-100g-not-per-portion.md`). The user
 approved filing it on 2026-09-27 ("file the rest").
 
-Measured through `lookupNutrition` on the local server, 2026-09-27, with the exact query
-shapes `buildNutritionQuery` produces:
+Measured through `lookupNutrition` on the local server, 2026-09-27, with query shapes the
+route can actually build (`BEVERAGE_TYPES` is `water, coffee, tea, milk, soda, custom`;
+modifiers are `cream`, `sugar`):
 
-| Query               | Match              | kcal | servingSize |
-| ------------------- | ------------------ | ---- | ----------- |
-| `12oz coffee`       | Coffee, brewed     | 1    | 100g        |
-| `16oz latte`        | Coffee, Iced Latte | 27   | 100g        |
-| `12oz orange_juice` | 12OZ Lime Seltzer  | 0    | 100g        |
-| `8oz milk`          | Coconut milk       | 31   | 100g        |
+| Query (path)                           | Match                                  | kcal | servingSize |
+| -------------------------------------- | -------------------------------------- | ---- | ----------- |
+| `12oz coffee` (standard)               | Coffee, brewed                         | 1    | 100g        |
+| `12oz tea` (standard)                  | Tea, bubble                            | 55   | 100g        |
+| `12oz soda` (standard)                 | Whiskey and soda                       | 59   | 100g        |
+| `12oz milk` (standard)                 | Coconut milk                           | 31   | 100g        |
+| `12oz coffee with milk and sugar` (\*) | Potato, mashed, dehydrated, granules … | 108  | 100g        |
+| `16oz latte` (custom name "latte")     | Coffee, Iced Latte                     | 27   | 100g        |
+
+(\*) A modifier-shaped query. The real modifiers are `cream`/`sugar`, so re-measure
+`12oz coffee with cream and sugar`. The shape (size plus a "with … and …" tail) is what
+the route builds.
 
 - **Scaling:** the route copies `nutrition.calories` etc. and `servingSize: "100g"` onto a
-  drink the user sized as 240/355/475 ml. A 16 oz latte should be roughly 190 kcal, not 27.
-- **Matching:** `buildNutritionQuery` puts the size (`12oz`) and the raw enum key
-  (`orange_juice`, with the underscore) into the search text. That's how orange juice
-  matched a 0-kcal lime seltzer, and why milk matched coconut milk.
+  drink the user sized as 240/355/475 ml. A 355 ml can of soda should be roughly 140 kcal;
+  a 16 oz latte roughly 190, not 27.
+- **Matching:** `buildNutritionQuery` puts the size (`12oz`) and a bare type word into the
+  search text. That's how soda matched "Whiskey and soda", milk matched coconut milk, and
+  tea matched bubble tea.
+- **Micronutrients too:** the route also saves `nutrition.fiber`, `sugar` and `sodium`
+  unscaled (`server/routes/beverages.ts:116-118`), so they're per 100 g as well.
 - The custom-name path (`${oz}oz ${customName}`) has the same shape.
 
 ## Acceptance Criteria
 
-- [ ] A logged beverage's calories and macros describe the whole chosen size: the lookup
+- [ ] A logged beverage's calories, protein, carbs, fat, **fiber, sugar and sodium** all
+      describe the whole chosen size: the lookup
       result is normalized to per 100 g through its `servingSize` and scaled by
       `BEVERAGE_SIZES[size].ml` (ml ≈ g). A per-serving result (API Ninjas) is never
       scaled twice.
-- [ ] The lookup query has no size and uses a readable drink name, not the enum key
-      (`orange_juice` → "orange juice"). Modifiers are kept.
+- [ ] The lookup query has no size and names the drink specifically enough to match it
+      (e.g. `soda` → a cola, `milk` → cow's milk, `tea` → brewed tea). Modifiers are kept.
 - [ ] Standard beverages resolve to sane values. Record a before/after table in Updates
       for every `BeverageType` at the medium size, measured live through `lookupNutrition`.
 - [ ] The saved `servingSize` describes the drink (e.g. `"355 ml"`), not `"100g"`.
@@ -62,11 +73,18 @@ shapes `buildNutritionQuery` produces:
 
 - Reuse the Quick Log conversion rather than writing a second one: `toPortion` in
   `server/services/food-nlp.ts` already does basis parsing (`parseServingGrams`) and
-  scaling (`scaleNutrients`, both in `barcode-lookup.ts`). Extracting it to a shared
-  helper is in scope if both callers use it.
+  scaling (`scaleNutrients`, both in `barcode-lookup.ts`). **It only returns
+  calories/protein/carbs/fat**, and its internal `scaled()` drops the fiber/sugar/sodium
+  that `scaleNutrients` already computes. Widen it to all seven nutrients when you extract
+  it; the beverage route needs them.
+- **Shared helper location:** extract `toPortion` to `server/services/portion-nutrition.ts`
+  (Quick Log imports it from there). Whichever of this todo and
+  `todos/P1-2026-09-27-photo-and-cooking-nutrition-use-per-100g-as-the-portion.md` lands
+  first does the extraction; the other imports it.
 - Beverage sizes are exact, so no estimate is needed. This is simpler than Quick Log.
-- If a standard drink still matches badly after the query fix, a small per-`BeverageType`
-  lookup-name map (e.g. `latte` → "coffee latte, prepared with whole milk") is acceptable.
+- A small per-`BeverageType` lookup-name map (e.g. `soda` → "carbonated drinks, cola",
+  `milk` → "milk, fluid, partly skimmed, 2%") is acceptable, and probably needed: bare type
+  words match badly.
   Measure first.
 - The CNF matcher and cultural-alias substring fixes (running in parallel, 2026-09-27)
   change which foods some queries match. Re-measure after they merge rather than
@@ -82,8 +100,8 @@ shapes `buildNutritionQuery` produces:
 - **Files in scope:**
   - `server/routes/beverages.ts`
   - `server/routes/__tests__/beverages.test.ts`
-  - `server/services/food-nlp.ts` and one new shared helper module under `server/lib/` or
-    `server/services/`, only if `toPortion` is extracted
+  - `server/services/food-nlp.ts` and `server/services/portion-nutrition.ts` (new), for the
+    `toPortion` extraction, if this todo lands first
   - `shared/constants/beverages.ts` only for a lookup-name map
 - No new mechanisms, files, or abstractions beyond those listed.
 
@@ -95,9 +113,14 @@ shapes `buildNutritionQuery` produces:
 
 - Changing the query shape changes cache keys. Old `"12oz latte"` entries simply stop
   being read and expire on the 7-day TTL.
+- Custom beverages go through `customName`, which is free text. Scale them the same way,
+  but their match quality is only as good as the name the user typed.
 
 ## Updates
 
 ### 2026-09-27
 
 - Found while reviewing PR #1118 (Quick Log per-100 g fix). The user approved filing it.
+- PR #1119 review: removed an unreachable `orange_juice` example (it isn't a
+  `BeverageType`), re-measured with reachable queries, flagged the unscaled
+  fiber/sugar/sodium, and fixed the route path.
