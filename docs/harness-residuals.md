@@ -55,16 +55,6 @@ Review-stamp writer, recorded from the #1019 review (no todo filed):
   NARROWED comment in `review-stamp-writer.sh` lists only `[TAG]`, `**TAG**` and `TAG:`, so it
   describes less than the code counts. The error is deny-only. Workaround: don't open a prose
   line with the word (the dispatch prompt already says not to use it in prose).
-- Found on PR #1124 (2026-09-27): the result of a background (async) review is delivered as a
-  hand-back. Any of the three severity words anywhere in that hand-back counts as an
-  objection (guard (a) arm 2), and **no record** is written. This includes a `[SUGGESTION]`
-  line and a mid-sentence mention of an earlier review's finding. So a
-  `No blocking findings.` review never stamps when dispatched in the background; only a
-  `No findings.` reply with no severity word in its prose does. Measured: four roster reviews
-  on PR #1124, all ending `No blocking findings.` or listing only advisory items, wrote no
-  record at any of the PR's heads. The error is deny-only. Workaround: clear or accept the
-  advisory items, then dispatch a fresh reviewer told to use the severity words only on
-  finding lines.
 
 ### Structural / hygiene
 
