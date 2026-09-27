@@ -4,6 +4,7 @@ import {
   lookupNutrition,
   batchNutritionLookup,
   _resetCNFCacheForTesting,
+  fuzzyMatchCNF,
 } from "../nutrition-lookup";
 import { lookupBarcode } from "../barcode-lookup";
 
@@ -1383,5 +1384,97 @@ describe("PR #269 — USDA-UPC safeParse failure branches", () => {
     const result = await lookupBarcode("0000000000000");
     // Invalid UPC response → no data at all → null
     expect(result).toBeNull();
+  });
+});
+
+// Real Canadian Nutrient File rows (EN list, fetched 2026-09-27). Each correct
+// food sits beside the trap the old substring scorer picked instead.
+describe("fuzzyMatchCNF — whole-word matching and head ranking", () => {
+  const foods = [
+    "Bagel, egg",
+    "Egg Benedict",
+    "Egg, chicken, whole, fresh or frozen, raw",
+    "Egg, chicken, whole, cooked, boiled in shell, hard-cooked",
+    "Fish, butterfish, raw",
+    "Seeds, sunflower seed butter, salted",
+    "Butter, regular",
+    "Butter, light, salted",
+    "Guava, strawberry, raw",
+    "Candies, Golden Almond Solitaires, chocolate with almonds",
+    "Nuts, almonds, dried, unblanched, unroasted",
+    "Pepper, banana, raw",
+    "Banana, raw",
+    "Strudel, apple",
+    "Crabapple, raw",
+    "Apple, raw, with skin",
+    "Dessert, frozen, juice, orange",
+    "Orange juice, raw",
+    "Vegetable oil, avocado",
+    "Avocado, raw, all commercial varieties",
+    "Melon, honeydew, raw",
+    "Sweets, honey, strained or extracted",
+    "Spices, paprika",
+    "Grains, rice, white with pasta and seasonings, cooked",
+    "Grains, rice, white, long-grain, regular, cooked",
+    "Potato, mashed, prepared from flakes without milk, 2% milk and margarine added",
+    "Milk, fluid, partly skimmed, 2% M.F.",
+    "Yogourt, Greek style, plain, 2% M.F.",
+    "Sweets, sugars, granulated",
+    "Sweets, sugar, brown",
+    "Sugar-apple, raw",
+  ].map((food_description, i) => ({ food_code: 1000 + i, food_description }));
+
+  const match = (q: string) => fuzzyMatchCNF(q, foods)?.food_description;
+
+  it.each([
+    ["butter", "Butter, regular"],
+    ["banana", "Banana, raw"],
+    ["apple", "Apple, raw, with skin"],
+    ["orange juice", "Orange juice, raw"],
+    ["avocado", "Avocado, raw, all commercial varieties"],
+    ["honey", "Sweets, honey, strained or extracted"],
+    ["butter, salted", "Butter, light, salted"],
+    ["apple, raw", "Apple, raw, with skin"],
+    [
+      "egg, chicken, whole, cooked",
+      "Egg, chicken, whole, cooked, boiled in shell, hard-cooked",
+    ],
+    [
+      "rice, white, long-grain, cooked",
+      "Grains, rice, white, long-grain, regular, cooked",
+    ],
+    ["milk, 2%", "Milk, fluid, partly skimmed, 2% M.F."],
+    ["yogurt, greek, plain", "Yogourt, Greek style, plain, 2% M.F."],
+    ["brown sugar", "Sweets, sugar, brown"],
+  ])("%s → %s", (query, expected) => {
+    expect(match(query)).toBe(expected);
+  });
+
+  it("prefers a food whose head is the query over a compound that starts with it", () => {
+    // Old scorer: "Sugar-apple, raw" style heads and "Egg Benedict"
+    expect(match("sugar")).toMatch(/^Sweets, sugars?, /);
+    expect(match("egg, chicken, whole, raw")).toBe(
+      "Egg, chicken, whole, fresh or frozen, raw",
+    );
+  });
+
+  // Measured residual, deliberately not tuned away: bare "egg" still prefers
+  // "Bagel, egg" here (the whole-egg row's six comma parts cost it the
+  // many-parts penalty). Quick Log sends a database-style lookupName
+  // ("egg, chicken, whole, cooked"), which resolves correctly (above).
+
+  it("returns null rather than a food missing one of the query's words", () => {
+    // Old scorer: "Guava, strawberry, raw" ("raw" inside "strawberry") and
+    // the almond candy, each matching only half the query.
+    expect(match("almonds, raw")).toBeUndefined();
+    // Positive control: the same row set does resolve almonds.
+    expect(match("almonds")).toBe(
+      "Nuts, almonds, dried, unblanched, unroasted",
+    );
+  });
+
+  it("never matches a query word inside a longer word", () => {
+    expect(match("pap")).toBeUndefined(); // not "paprika"
+    expect(match("honeydew")).toBe("Melon, honeydew, raw"); // positive control
   });
 });

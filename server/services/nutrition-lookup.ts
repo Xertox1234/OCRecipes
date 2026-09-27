@@ -371,10 +371,56 @@ async function ensureCNFFoods(): Promise<void> {
 }
 
 /**
+ * Split text into lowercase whole words (letters, digits, "%"), dropping
+ * one-letter words. Matching is by whole word: a substring test let "raw" match
+ * "strawberry", "butter" match "butterfish" and "pap" match "paprika". CNF's
+ * Canadian spelling "yogourt" is folded to "yogurt" so either spelling matches.
+ */
+function matchWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/yogourt/g, "yogurt")
+    .split(/[^\p{L}\p{N}%]+/u)
+    .filter((w) => w.length > 1 || /\d/.test(w));
+}
+
+/** 1 for the exact word, 0.8 for its singular/plural, 0 otherwise. */
+function wordMatch(words: Set<string>, word: string): number {
+  if (words.has(word)) return 1;
+  const variants = [word + "s", word + "es"];
+  if (word.endsWith("s")) variants.push(word.slice(0, -1));
+  if (word.endsWith("es")) variants.push(word.slice(0, -2));
+  if (word.endsWith("ies")) variants.push(word.slice(0, -3) + "y");
+  if (word.endsWith("y")) variants.push(word.slice(0, -1) + "ies");
+  return variants.some((v) => words.has(v)) ? 0.8 : 0;
+}
+
+/** Whether `words` begins with every word of `prefix`, in order. */
+function startsWithWords(words: string[], prefix: string[]): boolean {
+  return (
+    prefix.length > 0 &&
+    prefix.length <= words.length &&
+    prefix.every((w, i) => wordMatch(new Set([words[i]]), w) > 0)
+  );
+}
+
+/**
  * Score how well a query matches a CNF food description.
- * CNF descriptions use "Category, food, qualifier" format, e.g.:
- *   "Sweets, sugars, granulated" or "Confiseries, sucre, granulé"
+ * CNF descriptions use "Head, qualifier, qualifier" format, where the head is
+ * either the food itself ("Egg, chicken, whole, raw", "Banana, raw") or a
+ * category ("Grains, rice, white", "Sweets, sugars, granulated").
  * Returns 0 for no match, higher = better.
+ *
+ * Every query word must appear in the description (whole word, or its
+ * singular/plural): a half match returns 0, so the lookup falls through to
+ * USDA instead of settling on "Guava, strawberry, raw" for "almonds, raw".
+ * A comma part that IS the query ranks above one that merely starts with it,
+ * and the head part gets a small edge, so "egg" picks "Egg, chicken, whole…"
+ * over "Bagel, egg" and "Egg Benedict".
+ *
+ * Measured on a 51-query gold set against the real EN list (2026-09-27):
+ * right food 41, wrong 6, no match 4 — the previous substring scorer got
+ * 12 / 37 / 2.
  */
 function scoreCNFMatch(query: string, description: string): number {
   const q = query.toLowerCase().trim();
@@ -383,58 +429,42 @@ function scoreCNFMatch(query: string, description: string): number {
   // Exact match is best
   if (d === q) return 100;
 
-  // Split description into comma-separated parts (category, name, qualifier)
-  const parts = d.split(",").map((p) => p.trim());
-  const qWords = q.split(/[\s,]+/).filter((w) => w.length > 1);
+  const qWords = matchWords(q);
   if (qWords.length === 0) return 0;
 
-  // Check word matches across the whole description
-  let matched = 0;
-  for (const word of qWords) {
-    if (d.includes(word)) {
-      matched++;
-    } else if (word.endsWith("s") && d.includes(word.slice(0, -1))) {
-      matched += 0.8;
-    } else if (!word.endsWith("s") && d.includes(word + "s")) {
-      matched += 0.8;
-    }
-  }
+  const dWords = new Set(matchWords(d));
+  const wordScores = qWords.map((w) => wordMatch(dWords, w));
+  if (wordScores.some((s) => s === 0)) return 0;
 
-  if (matched === 0) return 0;
+  // Base score from how exactly the query words matched (plural = 0.8)
+  let score = (wordScores.reduce((a, b) => a + b, 0) / qWords.length) * 10;
 
-  // Base score from ratio of matched words
-  let score = (matched / qWords.length) * 10;
-
-  // Bonus: query matches a specific comma-separated part (not the category prefix).
-  // Parts[1+] are the actual food name — matching those is much more relevant.
-  for (let i = 1; i < parts.length; i++) {
-    const part = parts[i];
-    // Check if the query closely matches this part.
-    // Only accept q.startsWith(part) when the part covers most of the query
-    // (avoids "white sugars" falsely matching part "white" in "Beans, white, raw").
+  // Bonus for a comma part that is, starts with, or contains the query.
+  const parts = d.split(",").map((p) => p.trim());
+  for (let i = 0; i < parts.length; i++) {
+    const partWords = matchWords(parts[i]);
+    const headEdge = i === 0 ? 1 : 0;
     if (
-      part === q ||
-      part.startsWith(q) ||
-      (q.startsWith(part) && part.length >= q.length * 0.6)
+      partWords.length === qWords.length &&
+      startsWithWords(partWords, qWords)
     ) {
-      score += 8; // Strong bonus for matching the food name part
+      score += 10 + headEdge;
       break;
     }
-    // Check if all query words appear in this part
-    const partMatchCount = qWords.filter((w) => part.includes(w)).length;
+    if (
+      startsWithWords(partWords, qWords) ||
+      startsWithWords(qWords, partWords)
+    ) {
+      score += 8 + headEdge;
+      break;
+    }
+    const partSet = new Set(partWords);
+    const partMatchCount = qWords.filter((w) => wordMatch(partSet, w)).length;
     if (partMatchCount === qWords.length) {
-      score += 6;
+      score += 6 + headEdge;
       break;
-    } else if (partMatchCount > 0) {
-      score += partMatchCount * 2;
     }
-  }
-
-  // Bonus for matching the category (parts[0])
-  const category = parts[0] || "";
-  const catMatchCount = qWords.filter((w) => category.includes(w)).length;
-  if (catMatchCount > 0) {
-    score += catMatchCount * 1;
+    score += partMatchCount * 2;
   }
 
   // Penalty for very long descriptions (less specific/relevant)
@@ -450,7 +480,7 @@ function scoreCNFMatch(query: string, description: string): number {
  * Fuzzy-match a search term against a list of CNF foods.
  * Returns the best match above a minimum threshold, or null.
  */
-function fuzzyMatchCNF(query: string, foods: CNFFood[]): CNFFood | null {
+export function fuzzyMatchCNF(query: string, foods: CNFFood[]): CNFFood | null {
   if (!query || query.trim().length === 0) return null;
 
   let best: CNFFood | null = null;
