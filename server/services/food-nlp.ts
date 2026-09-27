@@ -1,7 +1,11 @@
 import pLimit from "p-limit";
 import { z } from "zod";
 import { lookupNutrition, type NutritionData } from "./nutrition-lookup";
-import { parseServingGrams, scaleNutrients } from "./barcode-lookup";
+import {
+  nutrientValues,
+  scaleToGrams,
+  type NutrientValues,
+} from "./portion-nutrition";
 import { openai, OPENAI_TIMEOUT_FAST_MS, MODEL_FAST } from "../lib/openai";
 import {
   sanitizeUserInput,
@@ -163,12 +167,8 @@ type PortionNutrition = Pick<
 >;
 
 /**
- * Convert a lookup result to the portion the user described.
- *
- * The basis comes from `servingSize`, never `source`: CNF/USDA return "100g",
- * API Ninjas a per-serving "<n>g", and a cache hit reports `source: "cache"`
- * whatever it held. Normalizing through the basis means a per-serving result
- * is never scaled twice. Drinks' "ml" bases are read as grams (density ≈ 1).
+ * Convert a lookup result to the portion the user described (see
+ * `scaleToGrams` for how the result's basis is read).
  */
 function toPortion(
   nutrition: NutritionData | null,
@@ -184,56 +184,31 @@ function toPortion(
     };
   }
 
-  const values = {
-    calories: toNumber(nutrition.calories),
-    protein: toNumber(nutrition.protein),
-    carbs: toNumber(nutrition.carbs),
-    fat: toNumber(nutrition.fat),
-  };
-  const basisGrams = parseServingGrams(nutrition.servingSize);
+  if (item.grams) {
+    const portion = scaleToGrams(nutrition, item.grams);
+    if (portion) {
+      const grams = Math.round(item.grams);
+      return {
+        ...macros(portion),
+        servingSize: `${item.quantity} ${item.unit} (${grams} g)`,
+      };
+    }
+  } else {
+    const per100g = scaleToGrams(nutrition, 100);
+    if (per100g) {
+      return { ...macros(per100g), servingSize: "100 g (portion unknown)" };
+    }
+  }
 
   // A basis we can't weigh ("1 serving"): the values describe that basis, so
   // keep both rather than guess.
-  if (!basisGrams) {
-    return { ...values, servingSize: nutrition.servingSize || null };
-  }
-
-  if (item.grams) {
-    const grams = Math.round(item.grams);
-    return {
-      ...scaled(values, item.grams / basisGrams),
-      servingSize: `${item.quantity} ${item.unit} (${grams} g)`,
-    };
-  }
-
   return {
-    ...scaled(values, 100 / basisGrams),
-    servingSize: "100 g (portion unknown)",
+    ...macros(nutrientValues(nutrition)),
+    servingSize: nutrition.servingSize || null,
   };
 }
 
-function toNumber(value: unknown): number | null {
-  const n = parseFloat(String(value));
-  return Number.isFinite(n) ? n : null;
-}
-
-function scaled(
-  values: Omit<PortionNutrition, "servingSize">,
-  factor: number,
-): Omit<PortionNutrition, "servingSize"> {
-  const s = scaleNutrients(
-    {
-      calories: values.calories ?? undefined,
-      protein: values.protein ?? undefined,
-      carbs: values.carbs ?? undefined,
-      fat: values.fat ?? undefined,
-    },
-    factor,
-  );
-  return {
-    calories: s.calories ?? null,
-    protein: s.protein ?? null,
-    carbs: s.carbs ?? null,
-    fat: s.fat ?? null,
-  };
+function macros(values: NutrientValues): Omit<PortionNutrition, "servingSize"> {
+  const { calories, protein, carbs, fat } = values;
+  return { calories, protein, carbs, fat };
 }

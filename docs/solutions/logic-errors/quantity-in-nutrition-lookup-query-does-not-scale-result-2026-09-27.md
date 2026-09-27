@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 tags: [architecture, ai-prompting, nutrition, unit-conversion, caching]
 module: server
-applies_to: [server/services/food-nlp.ts, server/services/nutrition-lookup.ts, server/services/cooking-session.ts, server/routes/photos.ts, server/routes/beverages.ts]
+applies_to: [server/services/portion-nutrition.ts, server/services/food-nlp.ts, server/services/nutrition-lookup.ts, server/services/cooking-session.ts, server/routes/photos.ts, server/routes/beverages.ts]
 symptoms: ["A logged entry's calories are the food's per-100 g values regardless of the amount typed — \"2 eggs and toast\" = 470 + 305 kcal", "The lookup result carries servingSize \"100g\" while the UI shows the user's own quantity", "The only source that returns a per-serving value (API Ninjas) is the last-resort fallback, so the bug hides on the rare path that happens to work"]
 created: 2026-09-27
 severity: high
@@ -51,10 +51,12 @@ The new fields cost ~46 completion tokens per item. Measure `usage.completion_to
 
 ## Related Files
 
+- `server/services/portion-nutrition.ts`: `scaleToGrams`, the shared per-100 g → portion conversion (all seven nutrients)
 - `server/services/food-nlp.ts`: `toPortion`, `parseNaturalLanguageFood`
 - `server/services/nutrition-lookup.ts`: `lookupNutrition`, source chain, cache
 - `server/services/barcode-lookup.ts`: `parseServingGrams`, `scaleNutrients`
-- `todos/P1-2026-09-27-beverage-log-uses-per-100g-nutrition-as-the-drink.md`, `todos/P1-2026-09-27-photo-and-cooking-nutrition-use-per-100g-as-the-portion.md`: the remaining callers
+- `server/routes/beverages.ts`: fixed by `todos/archive/P1-2026-09-27-beverage-log-uses-per-100g-nutrition-as-the-drink.md` (PR #1124)
+- `todos/P1-2026-09-27-photo-and-cooking-nutrition-use-per-100g-as-the-portion.md`: the remaining callers
 
 ## See Also
 

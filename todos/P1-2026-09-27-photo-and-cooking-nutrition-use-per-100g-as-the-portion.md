@@ -66,10 +66,10 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
       leaves the logged entries wrong.
 - [ ] Both callers look up the food by name (or a database-style lookup name), never
       with the quantity in the query.
-- [ ] Per-100 g → portion conversion is shared with Quick Log, not duplicated: `toPortion`
-      moves from `server/services/food-nlp.ts` to `server/services/portion-nutrition.ts`
-      and is widened from four nutrients to all seven that `scaleNutrients` computes
-      (its internal `scaled()` currently drops fiber/sugar/sodium).
+- [ ] Per-100 g → portion conversion is shared, not duplicated: use `scaleToGrams` /
+      `nutrientValues` from `server/services/portion-nutrition.ts` (all seven nutrients;
+      null when the basis can't be weighed). The beverage P1 added it; Quick Log's
+      `toPortion` and the beverage route already call it.
 - [ ] Tests cover scaling, no double scaling of per-serving results, and the
       unknown-weight case for both callers. The cooking adjustment test still passes on
       the corrected basis.
@@ -96,15 +96,13 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
 ## Scope Contract
 
 - **Mechanisms to use:** the existing `lookupNutrition` / `batchNutritionLookup` chain,
-  `parseServingGrams` / `scaleNutrients`, and Quick Log's `toPortion` moved to a shared
-  helper. Nothing new beyond a gram estimate in the photo prompt and a unit→grams table
+  `parseServingGrams` / `scaleNutrients`, and the shared `scaleToGrams` in
+  `server/services/portion-nutrition.ts`. Nothing new beyond a gram estimate in the photo prompt and a unit→grams table
   for cooking.
 - **Files in scope:**
   - `server/routes/photos.ts`, `server/services/photo-analysis.ts`,
     `shared/types/photo-analysis.ts`
   - `server/services/cooking-session.ts`
-  - `server/services/food-nlp.ts` and `server/services/portion-nutrition.ts` (new), for
-    the `toPortion` extraction, if this todo lands first
   - the matching `__tests__/` files
   - `client/hooks/usePhotoAnalysis.ts` / `client/screens/PhotoAnalysisScreen.tsx` only if
     the displayed serving label must change
@@ -112,9 +110,9 @@ Measured through `lookupNutrition` on the local server, 2026-09-27:
 
 ## Dependencies
 
-- None blocking. Coordinate the shared helper with the beverage todo
-  (`todos/P1-2026-09-27-beverage-log-uses-per-100g-nutrition-as-the-drink.md`), since
-  whichever lands first extracts it.
+- None. The shared helper already landed with the beverage todo
+  (`todos/archive/P1-2026-09-27-beverage-log-uses-per-100g-nutrition-as-the-drink.md`):
+  `scaleToGrams` in `server/services/portion-nutrition.ts`.
 
 ## Risks
 
