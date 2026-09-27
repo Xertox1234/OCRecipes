@@ -45,8 +45,8 @@ Substring containment is not word matching, and a ranking rule was written from 
 3. **Run it in every caller's query shape**, not just bare names: `"2 <name>"` (photos), `"1 cup <name>"`/`"3 oz <name>"` (cooking), `"12oz <name>"` (beverages), `"1/2 cup <name>"`. The coverage gate disabled CNF for every quantity-shaped caller while the bare-name gold set looked perfect.
 4. **Sweep the collision axis of any stoplist**: every real name that contains a stripped word must still resolve to its own row (all 18 multi-word CNF names containing a unit word).
 5. **Generate a sweep from the list's own structure**, beside the hand-labeled gold set. The gold set carries the cases you already thought of. For the dehydrated-form tie-break (#1126, below) the gold set improved 41/6/4 → 43/4/4, while two review sweeps generated from CNF rows found regressions it could not see:
-   - every row whose last part is a sole "dried"/"powder"/"dehydrated": 25 of 139 flipped, including "thyme"/"rosemary" → fresh and "currant" → fresh red currant;
-   - a 53-name × 4-shape nut/seed grid: 19 flips to oil-roasted rows.
+   - every row whose last part is a sole "dried"/"powder"/"dehydrated" (139 queries): 25 flipped before the review exemptions, 22 on the merged code. They include "thyme"/"rosemary" → fresh and "currant" → fresh red currant;
+   - a 53-name × 4-shape nut/seed grid: 19 flips, 13 of them to oil-roasted rows (0 after the exemptions).
 
    Run the grid against the pre-fix commit as a control: a clean zero only counts if the same grid shows the flips before the fix.
 6. Report both versions' numbers and the residuals. One tuning pass, then stop.

@@ -64,7 +64,8 @@ hit kcal-only rows.
 `mapUsdaFoodToNutrition` took the first nutrient whose name contained "Energy" and never
 read the unit. Every kJ-first row stored kilojoules as calories, ~4.2× high, for every
 caller that reached it (Quick Log, beverages, cooking, photos, barcode fallback). Live
-2026-09-27: "Quinoa, cooked" stored 503 (120 kcal), "BURGER KING, CROISSAN'WICH" 1180 (283).
+2026-09-27: "Quinoa, cooked" stored 503 (USDA's own kcal entry: 120), "BURGER KING,
+CROISSAN'WICH" 1180 (kcal entry: 283).
 Fixed in #1128:
 
 ```typescript
