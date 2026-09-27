@@ -1180,9 +1180,9 @@ describe("lookupNutrition — cultural food names are a fallback, not a rewrite"
       await lookupNutrition("doro wat");
 
       const ninjasQueries = mockFetch.mock.calls
-        .map(([url]) => String(url))
-        .filter((url) => url.includes("api-ninjas.com"))
-        .map((url) => new URL(url).searchParams.get("query"));
+        .map(([url]) => new URL(String(url)))
+        .filter((url) => url.hostname === "api.api-ninjas.com")
+        .map((url) => url.searchParams.get("query"));
       // Both forms were tried at USDA, so the cultural name was available.
       expect(usdaQueries()).toEqual(["doro wat", "spicy stew"]);
       expect(ninjasQueries).toEqual(["doro wat"]);
