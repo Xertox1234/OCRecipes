@@ -1662,3 +1662,52 @@ describe("fuzzyMatchCNF — whole-word matching and head ranking", () => {
     expect(match("honeydew")).toBe("Melon, honeydew, raw"); // positive control
   });
 });
+
+describe("fuzzyMatchCNF — dried, powdered and flour forms", () => {
+  // Real CNF rows. Each dehydrated form shares its head with the fresh food
+  // and has the shorter name, so the length tie-break used to pick it:
+  // "milk" logged dry milk powder (496 kcal/100 g).
+  const foods = [
+    "Milk, dry whole",
+    "Milk, fluid, skim",
+    "Beans, black, flour",
+    "Beans, black, mature seeds, raw",
+    "Coffee, instant with chicory, powder",
+    "Coffee, brewed, prepared with tap water",
+    "Egg, chicken, white, dried",
+    "Egg, chicken, white, fresh or frozen, raw",
+    "Tomato, sun-dried",
+    "Tomato, green, raw",
+    "Grains, quinoa, dry",
+    "Grains, quinoa, cooked",
+  ].map((food_description, i) => ({ food_code: 3000 + i, food_description }));
+
+  const match = (q: string) => fuzzyMatchCNF(q, foods)?.food_description;
+
+  it.each([
+    ["milk", "Milk, fluid, skim"],
+    ["1 cup milk", "Milk, fluid, skim"],
+    ["black beans", "Beans, black, mature seeds, raw"],
+    ["coffee", "Coffee, brewed, prepared with tap water"],
+    ["egg white", "Egg, chicken, white, fresh or frozen, raw"],
+    ["tomato", "Tomato, green, raw"],
+  ])("%s → the fresh form, %s", (query, expected) => {
+    expect(match(query)).toBe(expected);
+  });
+
+  it.each([
+    ["dry milk", "Milk, dry whole"],
+    ["black bean flour", "Beans, black, flour"],
+    ["coffee powder", "Coffee, instant with chicory, powder"],
+    ["dried egg white", "Egg, chicken, white, dried"],
+    ["sun-dried tomato", "Tomato, sun-dried"],
+  ])("keeps the form the query names: %s", (query, expected) => {
+    expect(match(query)).toBe(expected);
+  });
+
+  it("does not penalize a grain's raw state, a comma part that is only 'dry'", () => {
+    // A cooking-session ingredient is the raw grain; "Pasta, dry" and
+    // "Grains, quinoa, dry" are how CNF names it.
+    expect(match("quinoa")).toBe("Grains, quinoa, dry");
+  });
+});

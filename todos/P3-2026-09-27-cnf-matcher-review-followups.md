@@ -113,3 +113,11 @@ list. Reviewers flagged, as advisory:
 - Filed from the PR #1120 review passes (advisory findings, auto-filed per the Medium/Low
   policy).
 - Item 7 added from the cultural-map fallback fix, measured through `lookupNutrition`.
+- Dried/powder/flour forms now lose near ties (`isUnaskedDehydratedForm`, before the cooking
+  per-100 g P1 so scaling doesn't multiply "milk" → dry milk powder). Gold set 41/6/4 →
+  43/4/4 (51 queries); the six pinned beverage names are unchanged. Measured residuals on
+  the real list: bare "egg" → "Egg, chicken, yolk, cooked" (the docstring's whole-egg claim
+  was stale); "cocoa" moved from cocoa powder to "Hot chocolate, cocoa, homemade…";
+  "cherries" moved from dried to candied (wrong both ways, plural rule). The comparison
+  harness (baseline vs candidate over the gold set plus 103 pantry names) is a good start
+  for the committed-fixture criterion above.
