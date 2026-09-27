@@ -81,10 +81,10 @@ export function HomeInlineDrawer({
         // (PhotoIntentScreen's locked-option wording). A locked row opens the
         // upgrade prompt, never the drawer, so it must not hint "expand".
         accessibilityLabel={isLocked ? `${label}, premium feature` : label}
-        accessibilityState={{ expanded: isOpen }}
+        accessibilityState={isLocked ? undefined : { expanded: isOpen }}
         accessibilityHint={
           isLocked
-            ? "Double tap to see premium options"
+            ? "Opens the upgrade screen"
             : `Double tap to ${isOpen ? "collapse" : "expand"} ${label}`
         }
       >

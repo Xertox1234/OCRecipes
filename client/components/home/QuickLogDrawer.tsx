@@ -6,6 +6,8 @@ import {
   View,
   ActivityIndicator,
   Keyboard,
+  AccessibilityInfo,
+  Platform,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -210,6 +212,21 @@ export function QuickLogDrawer({
     [session.parsedItems],
   );
 
+  // "No food found" is an outcome, not a failure, so it is a quiet note, not
+  // InlineError's assertive alert. The note's live region covers Android;
+  // iOS needs the imperative announce, once per empty result.
+  const wasParseEmptyRef = useRef(false);
+  useEffect(() => {
+    if (
+      session.parseEmpty &&
+      !wasParseEmptyRef.current &&
+      Platform.OS === "ios"
+    ) {
+      AccessibilityInfo.announceForAccessibility(EMPTY_PARSE_MESSAGE);
+    }
+    wasParseEmptyRef.current = session.parseEmpty;
+  }, [session.parseEmpty]);
+
   const hadParsedItemsRef = useRef(false);
   useEffect(() => {
     if (hasParsedItems && !hadParsedItemsRef.current) onResultsShown?.();
@@ -303,7 +320,15 @@ export function QuickLogDrawer({
 
       {/* Parse error, or a parse that found no food */}
       <InlineError message={session.parseError} />
-      <InlineError message={session.parseEmpty ? EMPTY_PARSE_MESSAGE : null} />
+      {session.parseEmpty && (
+        <ThemedText
+          type="small"
+          style={{ color: theme.textSecondary }}
+          accessibilityLiveRegion="polite"
+        >
+          {EMPTY_PARSE_MESSAGE}
+        </ThemedText>
+      )}
 
       {/* Frequent chips — only when no parsed items */}
       {!hasParsedItems &&

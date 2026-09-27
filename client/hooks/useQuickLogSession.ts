@@ -193,6 +193,9 @@ export function useQuickLogSession({
     (text: string) => {
       pendingSourceRef.current = "chip";
       setInputText(text);
+      // The last parse's outcome no longer describes this input.
+      setParseEmpty(false);
+      setParseError(null);
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     },
     [haptics],

@@ -24,8 +24,11 @@ describe("action-config", () => {
       expect(quickLog?.premium).toBe(true);
     });
 
-    it("premium actions have subtitle (shown as feature cards)", () => {
-      const premiumActions = HOME_ACTIONS.filter((a) => a.premium);
+    // Inline drawers render only their label, so the rule covers row actions.
+    it("premium row actions have a subtitle (shown under the label)", () => {
+      const premiumActions = HOME_ACTIONS.filter(
+        (a) => a.premium && !a.renderInline,
+      );
       for (const action of premiumActions) {
         expect(action.subtitle).toBeTruthy();
       }

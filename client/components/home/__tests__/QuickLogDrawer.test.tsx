@@ -17,18 +17,26 @@ vi.mock("../HomeInlineDrawer", async (importOriginal) => {
   };
 });
 
-const { mockToastError, mockToastInfo, mockNavigate, mockKeyboardDismiss } =
-  vi.hoisted(() => ({
-    mockToastError: vi.fn(),
-    mockToastInfo: vi.fn(),
-    mockNavigate: vi.fn(),
-    mockKeyboardDismiss: vi.fn(),
-  }));
+const {
+  mockToastError,
+  mockToastInfo,
+  mockNavigate,
+  mockKeyboardDismiss,
+  mockAnnounce,
+} = vi.hoisted(() => ({
+  mockToastError: vi.fn(),
+  mockToastInfo: vi.fn(),
+  mockNavigate: vi.fn(),
+  mockKeyboardDismiss: vi.fn(),
+  mockAnnounce: vi.fn(),
+}));
 
 // The shared react-native mock has no Keyboard; the submit button dismisses it.
+// AccessibilityInfo is spied on for the iOS empty-parse announcement.
 vi.mock("react-native", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   Keyboard: { dismiss: mockKeyboardDismiss },
+  AccessibilityInfo: { announceForAccessibility: mockAnnounce },
 }));
 
 const mockSession = {
@@ -210,6 +218,24 @@ describe("QuickLogDrawer", () => {
     ).toBeTruthy();
   });
 
+  it("does not announce a disclosure state on a locked row (it never expands)", () => {
+    renderComponent(<Harness isLocked />);
+    const header = screen.getByRole("button", {
+      name: "Quick Log, premium feature",
+    });
+    expect(header.hasAttribute("aria-expanded")).toBe(false);
+  });
+
+  // Positive control for the test above: without it, an unmapped
+  // accessibilityState would pass that test vacuously.
+  it("announces the disclosure state on an unlocked row", () => {
+    renderComponent(<Harness />);
+    const header = screen.getByRole("button", { name: "Quick Log" });
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    openDrawer();
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("announces an unlocked row by its label alone", () => {
     renderComponent(<Harness />);
     expect(screen.getByRole("button", { name: "Quick Log" })).toBeTruthy();
@@ -288,6 +314,48 @@ describe("QuickLogDrawer", () => {
     renderComponent(<Harness />);
     openDrawer();
     expect(screen.getByText(/couldn.t find any food in that/i)).toBeTruthy();
+  });
+
+  // "No food found" is an outcome, not a failure: it must not use the
+  // error banner's alert role (an assertive VoiceOver interruption).
+  it("presents the no-food message as a note, not an alert", () => {
+    vi.mocked(useQuickLogSessionModule.useQuickLogSession).mockReturnValue({
+      ...mockSession,
+      parseEmpty: true,
+    });
+    renderComponent(<Harness />);
+    openDrawer();
+    expect(screen.queryByRole("alert")).toBeNull();
+    const note = screen.getByText(/couldn.t find any food in that/i);
+    expect(note.closest('[aria-live="polite"]')).not.toBeNull();
+  });
+
+  // accessibilityLiveRegion is Android-only; iOS needs the imperative
+  // announce, once per empty result (not on unrelated re-renders).
+  it("announces the no-food message on iOS once per empty result", () => {
+    const props = {
+      action: testAction,
+      isOpen: true,
+      onToggle: vi.fn(),
+      onClose: vi.fn(),
+    };
+    const session = vi.mocked(useQuickLogSessionModule.useQuickLogSession);
+    const { rerender } = renderComponent(<QuickLogDrawer {...props} />);
+    expect(mockAnnounce).not.toHaveBeenCalled();
+
+    session.mockReturnValue({ ...mockSession, parseEmpty: true });
+    rerender(<QuickLogDrawer {...props} />);
+    rerender(<QuickLogDrawer {...props} />);
+    expect(mockAnnounce).toHaveBeenCalledTimes(1);
+    expect(mockAnnounce).toHaveBeenCalledWith(
+      "Couldn't find any food in that.",
+    );
+
+    session.mockReturnValue(mockSession); // next submit clears it
+    rerender(<QuickLogDrawer {...props} />);
+    session.mockReturnValue({ ...mockSession, parseEmpty: true });
+    rerender(<QuickLogDrawer {...props} />);
+    expect(mockAnnounce).toHaveBeenCalledTimes(2);
   });
 
   it("shows no no-food message otherwise", () => {

@@ -305,6 +305,26 @@ describe("useQuickLogSession", () => {
     expect(result.current.parseEmpty).toBe(false);
   });
 
+  // A chip is a known-good suggestion; leaving "couldn't find any food" beside
+  // it implies the chip's item failed too.
+  it("tapping a chip clears a stale empty-parse message", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ items: [] }),
+    });
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("asdf"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+
+    act(() => result.current.handleChipPress("Coffee"));
+    expect(result.current.parseEmpty).toBe(false);
+    expect(result.current.inputText).toBe("Coffee");
+  });
+
   it("reset clears parseEmpty", async () => {
     const { wrapper } = createQueryWrapper();
     mockApiRequest.mockResolvedValueOnce({
