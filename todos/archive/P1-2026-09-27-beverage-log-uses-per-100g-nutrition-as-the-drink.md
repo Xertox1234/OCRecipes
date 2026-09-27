@@ -137,7 +137,8 @@ the route builds.
   `BEVERAGE_SIZES[size].ml` through the shared `scaleToGrams`
   (`server/services/portion-nutrition.ts`, all seven nutrients). Each modifier is looked up
   separately (`BEVERAGE_MODIFIER_PORTIONS`) and added at a fixed amount. A custom name is
-  looked up bare. A result whose basis can't be weighed keeps its values and serving size.
+  looked up bare. A result whose basis can't be weighed keeps its values and serving size,
+  unless modifiers are requested or it has no serving size at all (422, review follow-up).
 - `toPortion` stays in `food-nlp.ts` as a thin wrapper that formats Quick Log's serving
   size; the shared conversion it calls is `scaleToGrams`. The photo/cooking P1 should reuse
   `scaleToGrams`.

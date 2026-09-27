@@ -242,21 +242,21 @@ describe("Beverages Routes", () => {
       expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
     });
 
-    it("keeps the size label when a result has no serving size", async () => {
+    it("returns 422 for a result with no serving size", async () => {
+      // Nothing says what amount the values describe, so neither scaling
+      // them nor labelling them with the chosen size would be honest.
       mockLookups({
         kombucha: per100g("kombucha", { calories: 30, servingSize: "" }),
       });
 
-      await request(app)
-        .post("/api/beverages/log")
-        .send({
-          beverageType: "custom",
-          size: "medium",
-          customName: "kombucha",
-        })
-        .expect(201);
+      const res = await request(app).post("/api/beverages/log").send({
+        beverageType: "custom",
+        size: "medium",
+        customName: "kombucha",
+      });
 
-      expect(savedItem().servingSize).toBe("12 fl oz");
+      expect(res.status).toBe(422);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
     });
 
     it("saves a non-numeric nutrient as 0", async () => {

@@ -50,7 +50,8 @@ const logBeverageSchema = z
  * Lookups answer per 100 g (CNF/USDA) or per serving (API Ninjas); a result
  * whose basis can't be weighed ("1 serving") is kept as it is, with its own
  * serving size, rather than scaled by a guess. Such a drink takes no
- * modifiers (null): grams of cream added to "1 serving" mix two bases.
+ * modifiers (null): grams of cream added to "1 serving" mix two bases. A
+ * result with no serving size at all describes an unknown amount (null).
  * A non-numeric value counts as 0.
  */
 async function lookupDrinkNutrition(
@@ -62,7 +63,7 @@ async function lookupDrinkNutrition(
   if (!drink) return null;
 
   const scaled = scaleToGrams(drink, ml); // ml ≈ g for drinks
-  if (!scaled && modifiers.length > 0) return null;
+  if (!scaled && (modifiers.length > 0 || !drink.servingSize)) return null;
   const parts = [scaled ?? nutrientValues(drink)];
   const servingSize = scaled ? `${ml} ml` : drink.servingSize;
 
@@ -169,7 +170,7 @@ export function register(app: Express): void {
           fiber = nutrition.values.fiber;
           sugar = nutrition.values.sugar;
           sodium = nutrition.values.sodium;
-          if (nutrition.servingSize) servingSize = nutrition.servingSize;
+          servingSize = nutrition.servingSize;
         }
 
         const productName = buildProductName(
