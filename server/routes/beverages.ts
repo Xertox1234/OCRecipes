@@ -7,11 +7,19 @@ import { handleRouteError } from "./_helpers";
 import { storage } from "../storage";
 import { lookupNutrition } from "../services/nutrition-lookup";
 import {
+  nutrientValues,
+  scaleToGrams,
+  type NutrientValues,
+} from "../services/portion-nutrition";
+import { roundToOneDecimal } from "../lib/math";
+import {
   BEVERAGE_TYPES,
   BEVERAGE_SIZES,
   BEVERAGE_MODIFIERS,
   ZERO_CAL_BEVERAGES,
   BEVERAGE_DISPLAY,
+  BEVERAGE_LOOKUP_NAMES,
+  BEVERAGE_MODIFIER_PORTIONS,
   type BeverageType,
   type BeverageSize,
   type BeverageModifier,
@@ -35,15 +43,49 @@ const logBeverageSchema = z
     { message: "Custom beverages require either a name or calorie count" },
   );
 
-function buildNutritionQuery(
-  beverage: BeverageType,
-  size: BeverageSize,
+/**
+ * Nutrition for the whole drink: the drink scaled to its size plus a fixed
+ * amount of each modifier. Null when any lookup finds nothing.
+ *
+ * Lookups answer per 100 g (CNF/USDA) or per serving (API Ninjas); a result
+ * whose basis can't be weighed ("1 serving") is kept as it is, with its own
+ * serving size, rather than scaled by a guess.
+ */
+async function lookupDrinkNutrition(
+  lookupName: string,
+  ml: number,
   modifiers: BeverageModifier[],
-): string {
-  const oz = BEVERAGE_SIZES[size].oz;
-  const base = `${oz}oz ${beverage}`;
-  if (modifiers.length === 0) return base;
-  return `${base} with ${modifiers.join(" and ")}`;
+): Promise<{ values: NutrientValues; servingSize: string } | null> {
+  const drink = await lookupNutrition(lookupName);
+  if (!drink) return null;
+
+  const scaled = scaleToGrams(drink, ml); // ml ≈ g for drinks
+  const parts = [scaled ?? nutrientValues(drink)];
+  const servingSize = scaled ? `${ml} ml` : drink.servingSize;
+
+  for (const modifier of modifiers) {
+    const { lookupName: name, grams } = BEVERAGE_MODIFIER_PORTIONS[modifier];
+    const found = await lookupNutrition(name);
+    const portion = found && scaleToGrams(found, grams);
+    if (!portion) return null;
+    parts.push(portion);
+  }
+
+  return { values: sumNutrients(parts), servingSize };
+}
+
+function sumNutrients(parts: NutrientValues[]): NutrientValues {
+  const total = (key: keyof NutrientValues) =>
+    roundToOneDecimal(parts.reduce((sum, part) => sum + (part[key] ?? 0), 0));
+  return {
+    calories: Math.round(total("calories")),
+    protein: total("protein"),
+    carbs: total("carbs"),
+    fat: total("fat"),
+    fiber: total("fiber"),
+    sugar: total("sugar"),
+    sodium: total("sodium"),
+  };
 }
 
 function buildProductName(
@@ -94,13 +136,19 @@ export function register(app: Express): void {
           // Custom with raw calorie entry — no macros
           calories = customCalories;
         } else {
-          // Standard beverage or custom with name — run nutrition lookup
-          const query =
-            beverageType === "custom" && customName
-              ? `${BEVERAGE_SIZES[size].oz}oz ${customName}`
-              : buildNutritionQuery(beverageType, size, modifiers);
-
-          const nutrition = await lookupNutrition(query);
+          // Standard beverage or custom with name — look up the drink by
+          // name (no size: lookups answer per 100 g) and scale it to the size.
+          const lookupName =
+            beverageType === "custom"
+              ? (customName ?? "")
+              : BEVERAGE_LOOKUP_NAMES[
+                  beverageType as keyof typeof BEVERAGE_LOOKUP_NAMES
+                ];
+          const nutrition = await lookupDrinkNutrition(
+            lookupName,
+            BEVERAGE_SIZES[size].ml,
+            beverageType === "custom" ? [] : modifiers,
+          );
           if (!nutrition) {
             return sendError(
               res,
@@ -109,14 +157,14 @@ export function register(app: Express): void {
               ErrorCode.NUTRITION_LOOKUP_FAILED,
             );
           }
-          calories = nutrition.calories;
-          protein = nutrition.protein;
-          carbs = nutrition.carbs;
-          fat = nutrition.fat;
-          fiber = nutrition.fiber;
-          sugar = nutrition.sugar;
-          sodium = nutrition.sodium;
-          if (nutrition.servingSize) servingSize = nutrition.servingSize;
+          calories = nutrition.values.calories ?? 0;
+          protein = nutrition.values.protein ?? 0;
+          carbs = nutrition.values.carbs ?? 0;
+          fat = nutrition.values.fat ?? 0;
+          fiber = nutrition.values.fiber ?? 0;
+          sugar = nutrition.values.sugar ?? 0;
+          sodium = nutrition.values.sodium ?? 0;
+          servingSize = nutrition.servingSize;
         }
 
         const productName = buildProductName(
