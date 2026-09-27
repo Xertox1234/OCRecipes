@@ -6,13 +6,15 @@ import {
   type CookSessionNutritionItem,
   type CookSessionNutritionSummary,
 } from "@shared/types/cook-session";
-import { batchNutritionLookup } from "./nutrition-lookup";
+import { batchNutritionLookup, type NutritionData } from "./nutrition-lookup";
+import { nutrientValues, scaleToGrams } from "./portion-nutrition";
 import {
   calculateCookedNutrition,
   preparationToCookingMethod,
 } from "./cooking-adjustment";
 import { createServiceLogger } from "../lib/logger";
 import { roundToOneDecimal } from "../lib/math";
+import { normalizeUnit } from "../lib/recipe-normalization";
 
 const log = createServiceLogger("cooking-session");
 
@@ -132,6 +134,144 @@ export async function analyzeIngredientPhoto(
 // NUTRITION CALCULATION
 // ============================================================================
 
+type Nutrients = CookSessionNutritionSummary["total"];
+
+/** Grams per weight unit, keyed by `normalizeUnit`'s output. */
+const GRAMS_PER_UNIT: Record<string, number> = {
+  g: 1,
+  kg: 1000,
+  oz: 28.35,
+  lb: 453.59,
+};
+
+/** Millilitres per volume unit, keyed by `normalizeUnit`'s output. */
+const ML_PER_UNIT: Record<string, number> = {
+  ml: 1,
+  millilitre: 1,
+  millilitres: 1,
+  l: 1000,
+  litre: 1000,
+  litres: 1000,
+  cup: 240,
+  tbsp: 15,
+  tsp: 5,
+};
+
+/**
+ * Grams per millilitre for a volume unit. Liquids ("dairy", "beverage", and
+ * oils or stock under "other") are taken as dense as water. Chopped or dry
+ * solids pack lighter: a cup of flour weighs about 125 g, of raw rice about
+ * 185 g, of chopped carrots about 130 g, so "grain", "vegetable", "fruit" and
+ * "protein" are weighed at 0.6 g/ml. Leafy greens are lighter still (a cup of
+ * raw spinach is about 30 g).
+ */
+function gramsPerMl(category: CookingSessionIngredient["category"]): number {
+  switch (category) {
+    case "grain":
+    case "vegetable":
+    case "fruit":
+    case "protein":
+      return 0.6;
+    default:
+      return 1;
+  }
+}
+
+/** The ingredient's weight in grams, or null for a unit with no weight ("piece"). */
+function ingredientGrams(ingredient: CookingSessionIngredient): number | null {
+  const unit = normalizeUnit(ingredient.unit);
+  if (Object.hasOwn(GRAMS_PER_UNIT, unit)) {
+    return ingredient.quantity * GRAMS_PER_UNIT[unit];
+  }
+  if (Object.hasOwn(ML_PER_UNIT, unit)) {
+    return (
+      ingredient.quantity * ML_PER_UNIT[unit] * gramsPerMl(ingredient.category)
+    );
+  }
+  return null;
+}
+
+interface IngredientPortion {
+  nutrients: Nutrients;
+  servingSize: string;
+  /** Raw per-100 g values and weight for the cooking adjustment; null when the source can't be weighed. */
+  cookable: { per100g: Nutrients; grams: number } | null;
+}
+
+/**
+ * One ingredient's nutrition for its quantity. The lookup answers per 100 g
+ * (or per serving, for API Ninjas), so it is scaled to the ingredient's weight.
+ * A unit with no weight keeps the per-100 g values under a marked serving
+ * size, as Quick Log does; a source basis that can't be weighed ("1 serving")
+ * keeps its own values and label.
+ */
+function ingredientPortion(
+  ingredient: CookingSessionIngredient,
+  nutrition: NutritionData | null | undefined,
+): IngredientPortion {
+  const label = `${ingredient.quantity} ${ingredient.unit}`;
+  if (!nutrition) {
+    return { nutrients: ZERO_NUTRIENTS, servingSize: label, cookable: null };
+  }
+
+  const per100g = scaleToGrams(nutrition, 100);
+  if (!per100g) {
+    return {
+      nutrients: orZero(nutrientValues(nutrition)),
+      servingSize: nutrition.servingSize || label,
+      cookable: null,
+    };
+  }
+
+  const grams = ingredientGrams(ingredient);
+  const portion = grams === null ? null : scaleToGrams(nutrition, grams);
+  if (grams === null || !portion) {
+    return {
+      nutrients: orZero(per100g),
+      servingSize: "100 g (portion unknown)",
+      cookable: { per100g: orZero(per100g), grams: 100 },
+    };
+  }
+  return {
+    nutrients: orZero(portion),
+    servingSize: label,
+    cookable: { per100g: orZero(per100g), grams },
+  };
+}
+
+const ZERO_NUTRIENTS: Nutrients = {
+  calories: 0,
+  protein: 0,
+  carbs: 0,
+  fat: 0,
+  fiber: 0,
+  sugar: 0,
+  sodium: 0,
+};
+
+function orZero(values: Record<keyof Nutrients, number | null>): Nutrients {
+  return {
+    calories: values.calories ?? 0,
+    protein: values.protein ?? 0,
+    carbs: values.carbs ?? 0,
+    fat: values.fat ?? 0,
+    fiber: values.fiber ?? 0,
+    sugar: values.sugar ?? 0,
+    sodium: values.sodium ?? 0,
+  };
+}
+
+/** Look up each ingredient by name; the quantity is applied by scaling. */
+async function lookupIngredients(
+  ingredients: CookingSessionIngredient[],
+): Promise<IngredientPortion[]> {
+  const names = [...new Set(ingredients.map((i) => i.name))];
+  const nutritionMap = await batchNutritionLookup(names);
+  return ingredients.map((ingredient) =>
+    ingredientPortion(ingredient, nutritionMap.get(ingredient.name)),
+  );
+}
+
 /**
  * Calculate full nutrition summary for a cooking session's ingredients.
  *
@@ -142,71 +282,29 @@ export async function calculateSessionNutrition(
   ingredients: CookingSessionIngredient[],
   globalCookingMethod?: string,
 ): Promise<CookSessionNutritionSummary> {
-  // Build lookup queries: "quantity unit name"
-  const lookupQueries = ingredients.map(
-    (i) => `${i.quantity} ${i.unit} ${i.name}`,
-  );
-
-  const nutritionMap = await batchNutritionLookup(lookupQueries);
+  const portions = await lookupIngredients(ingredients);
 
   const items: CookSessionNutritionItem[] = [];
-  const total = {
-    calories: 0,
-    protein: 0,
-    carbs: 0,
-    fat: 0,
-    fiber: 0,
-    sugar: 0,
-    sodium: 0,
-  };
+  const total = { ...ZERO_NUTRIENTS };
 
   for (let i = 0; i < ingredients.length; i++) {
     const ingredient = ingredients[i];
-    const query = lookupQueries[i];
-    const nutrition = nutritionMap.get(query);
-
-    if (!nutrition) {
-      items.push({
-        ingredientId: ingredient.id,
-        name: ingredient.name,
-        calories: 0,
-        protein: 0,
-        carbs: 0,
-        fat: 0,
-        fiber: 0,
-        sugar: 0,
-        sodium: 0,
-        servingSize: `${ingredient.quantity} ${ingredient.unit}`,
-      });
-      continue;
-    }
+    const portion = portions[i];
+    let finalNutrition = portion.nutrients;
 
     // Apply cooking method adjustment if specified
     const methodStr = ingredient.preparationMethod || globalCookingMethod;
-    let finalNutrition = {
-      calories: nutrition.calories,
-      protein: nutrition.protein,
-      carbs: nutrition.carbs,
-      fat: nutrition.fat,
-      fiber: nutrition.fiber,
-      sugar: nutrition.sugar,
-      sodium: nutrition.sodium,
-    };
-
     let appliedMethod: string | undefined;
-    if (methodStr && methodStr !== "raw" && methodStr !== "As Served") {
+    if (
+      portion.cookable &&
+      methodStr &&
+      methodStr !== "raw" &&
+      methodStr !== "As Served"
+    ) {
       const cookingMethod = preparationToCookingMethod(methodStr);
       const cooked = calculateCookedNutrition(
-        {
-          calories: nutrition.calories,
-          protein: nutrition.protein,
-          carbs: nutrition.carbs,
-          fat: nutrition.fat,
-          fiber: nutrition.fiber,
-          sugar: nutrition.sugar,
-          sodium: nutrition.sodium,
-        },
-        ingredient.quantity,
+        portion.cookable.per100g,
+        portion.cookable.grams,
         ingredient.category,
         cookingMethod,
       );
@@ -228,14 +326,8 @@ export async function calculateSessionNutrition(
     const item: CookSessionNutritionItem = {
       ingredientId: ingredient.id,
       name: ingredient.name,
-      calories: finalNutrition.calories,
-      protein: finalNutrition.protein,
-      carbs: finalNutrition.carbs,
-      fat: finalNutrition.fat,
-      fiber: finalNutrition.fiber,
-      sugar: finalNutrition.sugar,
-      sodium: finalNutrition.sodium,
-      servingSize: `${ingredient.quantity} ${ingredient.unit}`,
+      ...finalNutrition,
+      servingSize: portion.servingSize,
       cookingMethodApplied: appliedMethod,
     };
     items.push(item);
@@ -268,20 +360,14 @@ export async function calculateSessionNutrition(
 export async function calculateSessionMacros(
   ingredients: CookingSessionIngredient[],
 ): Promise<{ calories: number; protein: number; carbs: number; fat: number }> {
-  const lookupQueries = ingredients.map(
-    (i) => `${i.quantity} ${i.unit} ${i.name}`,
-  );
-  const nutritionMap = await batchNutritionLookup(lookupQueries);
+  const portions = await lookupIngredients(ingredients);
 
   const totals = { calories: 0, protein: 0, carbs: 0, fat: 0 };
-  for (let i = 0; i < ingredients.length; i++) {
-    const nutrition = nutritionMap.get(lookupQueries[i]);
-    if (nutrition) {
-      totals.calories += nutrition.calories;
-      totals.protein += nutrition.protein;
-      totals.carbs += nutrition.carbs;
-      totals.fat += nutrition.fat;
-    }
+  for (const { nutrients } of portions) {
+    totals.calories += nutrients.calories;
+    totals.protein += nutrients.protein;
+    totals.carbs += nutrients.carbs;
+    totals.fat += nutrients.fat;
   }
 
   // Round consistently with calculateSessionNutrition

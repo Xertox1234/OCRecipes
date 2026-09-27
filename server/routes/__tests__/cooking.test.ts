@@ -662,15 +662,16 @@ describe("Cooking Routes", () => {
       vi.mocked(batchNutritionLookup).mockResolvedValue(
         new Map<string, NutritionData | null>([
           [
-            "200 g chicken breast",
+            "chicken breast",
+            // per 100 g; the 200 g ingredient is twice this
             createMockNutritionData({
-              calories: 330,
-              protein: 62,
+              calories: 165,
+              protein: 31,
               carbs: 0,
-              fat: 7.2,
+              fat: 3.6,
               fiber: 0,
               sugar: 0,
-              sodium: 120,
+              sodium: 60,
             }),
           ],
         ]),
@@ -743,15 +744,16 @@ describe("Cooking Routes", () => {
       vi.mocked(batchNutritionLookup).mockResolvedValue(
         new Map<string, NutritionData | null>([
           [
-            "200 g chicken breast",
+            "chicken breast",
+            // per 100 g; the 200 g ingredient is twice this
             createMockNutritionData({
-              calories: 330,
-              protein: 62,
+              calories: 165,
+              protein: 31,
               carbs: 0,
-              fat: 7.2,
+              fat: 3.6,
               fiber: 0,
               sugar: 0,
-              sodium: 120,
+              sodium: 60,
             }),
           ],
         ]),
@@ -791,12 +793,13 @@ describe("Cooking Routes", () => {
       vi.mocked(batchNutritionLookup).mockResolvedValue(
         new Map<string, NutritionData | null>([
           [
-            "200 g chicken breast",
+            "chicken breast",
+            // per 100 g; the 200 g ingredient is twice this
             createMockNutritionData({
-              calories: 330,
-              protein: 62,
+              calories: 165,
+              protein: 31,
               carbs: 0,
-              fat: 7.2,
+              fat: 3.6,
             }),
           ],
         ]),
@@ -826,6 +829,9 @@ describe("Cooking Routes", () => {
         expect.objectContaining({
           userId: "1",
           sourceType: "cook_session",
+          calories: "330",
+          protein: "62",
+          fat: "7.2",
         }),
         expect.objectContaining({ mealType: "dinner" }),
       );
