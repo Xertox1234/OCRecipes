@@ -27,7 +27,8 @@ Found while fixing the substring version of this matcher in PR #1120 (which made
 match whole words only). The user chose to file it on 2026-09-27 ("file the todo").
 
 Measured on `main` after #1120 (2026-09-27), over the 5,690 foods in the Canadian Nutrient
-File (CNF) English list: 127 are still rewritten, by 64 entries.
+File (CNF) English list: 127 are still rewritten, by 19 of the map's 64 entries (the other 45 match no CNF
+name).
 
 - **A different food:** all 27 buttermilk rows (e.g. "Milk, fluid, buttermilk, cultured,
   1% M.F.", "Pancake, buttermilk, homemade") → "yogurt drink". "Wonton wrapper (egg roll
@@ -65,9 +66,12 @@ lower stakes).
       one's result before and after.
 - [ ] Measured, not reasoned: over the CNF EN list, report how many foods the map rewrites
       and how many of those rewrites are wrong, before and after (baseline 127 rewrites,
-      2026-09-27). Also run the gold set from
-      `docs/solutions/logic-errors/food-name-matcher-whole-words-gold-set-2026-09-27.md`
-      in each caller's query shape; its right/wrong/no-match counts must not get worse.
+      2026-09-27). Also run the **gold set below** (Implementation Notes) through
+      `lookupNutrition`'s CNF step in each caller's query shape (bare, `2 `, `1 cup `,
+      `3 oz `, `1 medium `, `12oz `, `1/2 cup `). Its right/wrong/no-match counts must not
+      get worse (2026-09-27 baseline through `fuzzyMatchCNF` alone: 41 / 6 / 4 in every
+      shape). The method is in
+      `docs/solutions/logic-errors/food-name-matcher-whole-words-gold-set-2026-09-27.md`.
 - [ ] `getCuisineForFood` behavior is either unchanged or deliberately changed and noted.
 - [ ] Tests: negatives above with positive controls beside them in the same block, plus a
       `nutrition-lookup` test that the original query is tried before the standardized
@@ -87,6 +91,34 @@ lower stakes).
   as they expire (7-day TTL). No production cache step is needed, but say so in Updates.
 - Several `standardName`s are vague ("yogurt drink", "stuffed tortilla") and match poorly
   on their own. Improving them is optional, and must be measured the same way.
+- **Gold set** (the 51 queries behind the 41 / 6 / 4 baseline, not committed elsewhere yet;
+  `todos/P3-2026-09-27-cnf-matcher-review-followups.md` item 2 turns it into a fixture).
+  Each query is `query → regex the correct CNF description must match`; a match that fails
+  the regex is "wrong", no match is "no match":
+  - Bare names: egg → `^Egg, chicken, whole` · butter → `^Butter, ` · banana →
+    `^Banana, raw` · apple → `^Apple,` · almonds → `^Nuts, almonds` · orange juice →
+    `^Orange juice` · bagel → `^Bagel, ` · rice → `^Grains, rice` · avocado →
+    `^Avocado, raw` · potato → `^Potato,` · tomato → `^Tomato,` · carrot → `^Carrot,` ·
+    onion → `^Onion,` · corn → `^Corn, ` · salmon → `^Fish, salmon` · tofu → `^Tofu` ·
+    spinach → `^Spinach,` · broccoli → `^Broccoli,` · cheddar cheese →
+    `^Cheese, cheddar` · peanut butter → `^Peanut butter` · honey → `^Sweets, honey` ·
+    sugar → `^Sweets, sugars?, ` · white sugar → `^Sweets, sugars, granulated` · olive
+    oil → `^Vegetable oil, olive` · ground beef → `^Beef, ground` · lentils → `^Lentils,`
+    · black beans → `^Beans, black` · strawberries → `^Strawberry,` · watermelon →
+    `^Watermelon` · papaya → `^Papaya, raw` · milk → `^Milk, fluid` · coffee →
+    `^Coffee, brewed` · greek yogurt → `^Yogourt, Greek` · chicken breast →
+    `^Chicken, broiler, breast`
+  - Database-style names: egg, chicken, whole, cooked → `^Egg, chicken, whole, cooked` ·
+    egg chicken whole raw → `^Egg, chicken, whole, fresh or frozen, raw` · bread, whole
+    wheat, toasted → `^Bread, whole wheat.*toasted` · butter, salted → `^Butter,` ·
+    banana, raw → `^Banana, raw` · apple, raw → `^Apple, raw` · almonds, raw →
+    `^Nuts, almonds` · juice, orange, fresh-squeezed → `^Orange juice` · bread, bagel,
+    plain → `^Bagel, plain` · rice, white, long-grain, cooked →
+    `^Grains, rice, white, long-grain.*cooked` · carbonated drinks, cola →
+    `^Carbonated drinks, cola` · yogurt, greek, plain → `^Yogourt, Greek style, plain` ·
+    chicken, breast, roasted → `^Chicken, broiler, breast` · avocado, raw →
+    `^Avocado, raw` · coffee, brewed → `^Coffee, brewed` · milk, 2% →
+    `^Milk, fluid, partly skimmed, 2%` · watermelon, raw → `^Watermelon, raw`
 
 ## Scope Contract
 
@@ -115,3 +147,5 @@ lower stakes).
 ### 2026-09-27
 
 - Surfaced as HIGH during PR #1120. The user chose to file it ("file the todo").
+- PR #1122 review: corrected the entry count (19 of 64 entries rewrite anything, not 64),
+  and inlined the 51-query gold set so the measurement criterion is runnable.
