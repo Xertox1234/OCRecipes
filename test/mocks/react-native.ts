@@ -152,6 +152,9 @@ function mockComponent(
           ...(a11y?.checked != null && {
             "aria-checked": a11y.checked,
           }),
+          ...(a11y?.expanded != null && {
+            "aria-expanded": a11y.expanded,
+          }),
           ...ariaHiddenProps(
             accessibilityElementsHidden,
             importantForAccessibility,
@@ -219,6 +222,7 @@ export const Pressable = React.forwardRef<unknown, Record<string, unknown>>(
             ...(a11y?.selected != null && { "aria-selected": a11y.selected }),
             ...(a11y?.busy != null && { "aria-busy": a11y.busy }),
             ...(a11y?.checked != null && { "aria-checked": a11y.checked }),
+            ...(a11y?.expanded != null && { "aria-expanded": a11y.expanded }),
           };
         })(),
         ...ariaHiddenProps(

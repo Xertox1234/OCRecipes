@@ -1,6 +1,6 @@
 ---
 title: "Quick Log: pressing the keyboard's search key logs nothing and shows nothing — fix submit, results visibility, and the empty result"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-26
 updated: 2026-09-26
@@ -60,19 +60,19 @@ Cause not yet pinned down. It is one of these:
       realistic meal (e.g. "2 eggs and toast"), press the return key. Record which of causes
       1–3 happened, with evidence (screenshot or network log), in this todo's Updates. Check
       the API IP first (`curl $EXPO_PUBLIC_DOMAIN/api/health`).
-- [ ] **Return key:** both the drawer and `QuickLogScreen` use a return key that reads as
+- [x] **Return key:** both the drawer and `QuickLogScreen` use a return key that reads as
       submitting (`returnKeyType="done"` or `"go"`), not `"search"`. On `QuickLogScreen` the
       key must actually submit: set `submitBehavior="submit"` on its multiline input.
-- [ ] **Visible submit (drawer):** the drawer gets an on-screen submit control next to the
+- [x] **Visible submit (drawer):** the drawer gets an on-screen submit control next to the
       input (44pt target, labelled for VoiceOver), disabled while the input is empty or a parse
       is running. `QuickLogScreen` already has one; don't add a second.
-- [ ] **Parse status (drawer):** a visible parsing indicator shows while the request is in
+- [x] **Parse status (drawer):** a visible parsing indicator shows while the request is in
       flight. `QuickLogScreen`'s Parse button already shows a spinner.
-- [ ] **Empty parse:** shows an inline message such as "Couldn't find any food in that — try
+- [x] **Empty parse:** shows an inline message such as "Couldn't find any food in that — try
       '2 eggs and toast'", announced for VoiceOver.
-- [ ] **Scroll into view:** after a successful parse, the results and **Log All** are scrolled
+- [x] **Scroll into view:** after a successful parse, the results and **Log All** are scrolled
       into view on Home, with the keyboard dismissed or the list kept above it.
-- [ ] **Tests:** co-located tests cover the return key, a disabled/enabled submit button, the
+- [x] **Tests:** co-located tests cover the return key, a disabled/enabled submit button, the
       empty-parse message, the parsing indicator, and that the drawer calls its
       results-shown callback once when items first appear. The glide itself (`measure` /
       `scrollTo` worklets) is verified on the simulator, not in Vitest — a deliberate omission.
@@ -141,3 +141,13 @@ Cause not yet pinned down. It is one of these:
   reproduced on the simulator; the device failure is not reproduced. The single haptic
   suggests the request had not settled while the user watched (a hypothesis, not a
   measurement); prod logs for `parse-text` at the time of the attempt would tell.
+- Done in one branch with `quick-log-locked-for-free-tier`. The drawer is controlled by
+  Home and glides into view when items first appear; it has a "Find food" button with a
+  spinner, a "done" return key, and an empty-parse message (`parseEmpty`). `QuickLogScreen`
+  submits on return with `submitBehavior="blurAndSubmit"` (blur, as the drawer does) and
+  toasts the empty-parse message. Vitest asserts the `returnKeyType` / `submitBehavior`
+  values only: the RN mock drops `onSubmitEditing`, so the key press itself was checked on
+  the simulator (return submitted; items and Log All glided on screen).
+- Seen on the simulator, not fixed here (filed separately): while typing, the keyboard
+  covers the drawer's input on a short Home page, because Home has no keyboard avoidance
+  and the glide cannot scroll past the content's end.

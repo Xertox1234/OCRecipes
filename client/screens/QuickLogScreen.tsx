@@ -26,8 +26,13 @@ import { AnimatedCheckmark } from "@/components/AnimatedCheckmark";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { useQuickLogSession } from "@/hooks/useQuickLogSession";
+import {
+  useQuickLogSession,
+  EMPTY_PARSE_MESSAGE,
+} from "@/hooks/useQuickLogSession";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { UpgradeModal } from "@/components/UpgradeModal";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import {
   Spacing,
@@ -62,7 +67,13 @@ export default function QuickLogScreen() {
   const toast = useToast();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { isPremium } = usePremiumContext();
+  const { isPremium, isPremiumResolved } = usePremiumContext();
+  // Coach, recent actions and deep links open this screen directly, so the
+  // gate lives here, not only on Home's row. It reads the server-resolved,
+  // expiry-aware feature, and waits for the subscription to load so a premium
+  // user never sees the upgrade flow flash (the server still enforces it).
+  const canQuickLog = usePremiumFeature("textFoodParsing");
+  const isLocked = isPremiumResolved && !canQuickLog;
   const { isOffline, offlineLabel } = useOfflineGuard();
 
   // Offline transitions are announced by the always-mounted global OfflineBanner
@@ -96,6 +107,10 @@ export default function QuickLogScreen() {
   }, [session.parseError, toast]);
 
   React.useEffect(() => {
+    if (session.parseEmpty) toast.info(EMPTY_PARSE_MESSAGE);
+  }, [session.parseEmpty, toast]);
+
+  React.useEffect(() => {
     if (session.submitError) toast.error(session.submitError);
   }, [session.submitError, toast]);
 
@@ -118,6 +133,16 @@ export default function QuickLogScreen() {
 
   const hasPreviousItems =
     session.frequentItems !== undefined && session.frequentItems.length > 0;
+
+  if (isLocked) {
+    return (
+      <View
+        style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+      >
+        <UpgradeModal visible={true} onClose={() => navigation.goBack()} />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -157,7 +182,10 @@ export default function QuickLogScreen() {
               value={session.inputText}
               onChangeText={session.setInputText}
               onSubmitEditing={session.handleTextSubmit}
-              returnKeyType="search"
+              returnKeyType="done"
+              // Multiline defaults to "newline" (the key would never submit); blur
+              // too, so the keyboard leaves the results visible, as in the drawer.
+              submitBehavior="blurAndSubmit"
               multiline
               accessibilityLabel="Food description"
             />

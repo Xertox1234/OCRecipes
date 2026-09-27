@@ -17,8 +17,18 @@ describe("action-config", () => {
       }
     });
 
-    it("premium actions have subtitle (shown as feature cards)", () => {
-      const premiumActions = HOME_ACTIONS.filter((a) => a.premium);
+    // The server refuses free-tier text parsing (textFoodParsing), so the row
+    // must be locked, not offered (user decision 2026-09-26: lock, not hide).
+    it("marks Quick Log as premium", () => {
+      const quickLog = HOME_ACTIONS.find((a) => a.id === "quick-log");
+      expect(quickLog?.premium).toBe(true);
+    });
+
+    // Inline drawers render only their label, so the rule covers row actions.
+    it("premium row actions have a subtitle (shown under the label)", () => {
+      const premiumActions = HOME_ACTIONS.filter(
+        (a) => a.premium && !a.renderInline,
+      );
       for (const action of premiumActions) {
         expect(action.subtitle).toBeTruthy();
       }
