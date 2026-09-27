@@ -1705,6 +1705,40 @@ describe("fuzzyMatchCNF — dried, powdered and flour forms", () => {
     expect(match(query)).toBe(expected);
   });
 
+  describe("nuts and seeds", () => {
+    const nuts = [
+      "Nuts, pecans, dried",
+      "Nuts, pecans, dry roasted",
+      "Nuts, pecans, oil roasted",
+      "Nuts, cashew nuts, dry roasted",
+      "Nuts, cashew nuts, oil roasted",
+      "Seeds, sunflower seed kernels, dried",
+      "Seeds, sunflower seed kernels, oil roasted",
+    ].map((food_description, i) => ({ food_code: 3100 + i, food_description }));
+    const matchNut = (q: string) => fuzzyMatchCNF(q, nuts)?.food_description;
+
+    // CNF names a plain shelled nut or seed "dried"; it has no fresh form.
+    it.each([
+      ["pecans", "Nuts, pecans, dried"],
+      ["1 cup pecans", "Nuts, pecans, dried"],
+      ["sunflower seed kernels", "Seeds, sunflower seed kernels, dried"],
+    ])("keeps the plain nut or seed for %s", (query, expected) => {
+      expect(matchNut(query)).toBe(expected);
+    });
+
+    // "Dry roasted" is a roasting method, not a dehydrated form.
+    it.each([
+      ["roasted pecans", "Nuts, pecans, dry roasted"],
+      ["roasted cashews", "Nuts, cashew nuts, dry roasted"],
+    ])("does not push %s to the oil-roasted row", (query, expected) => {
+      expect(matchNut(query)).toBe(expected);
+    });
+
+    it("still lets a query name the oil-roasted row", () => {
+      expect(matchNut("oil roasted pecans")).toBe("Nuts, pecans, oil roasted");
+    });
+  });
+
   it("does not penalize a grain's raw state, a comma part that is only 'dry'", () => {
     // A cooking-session ingredient is the raw grain; "Pasta, dry" and
     // "Grains, quinoa, dry" are how CNF names it.

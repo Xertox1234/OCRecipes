@@ -495,18 +495,25 @@ const DEHYDRATED_WORDS = new Set([
 
 /**
  * Whether the description is a dried, powdered or flour form the query did
- * not name. A comma part that is only "dry" is a grain or legume's raw state
- * ("Grains, quinoa, dry", "Soybeans, dry, raw"), not a dehydrated product
- * ("Milk, dry whole"), so it does not count.
+ * not name. Three CNF spellings are not dehydrated products and do not count:
+ * - a comma part that is only "dry": a grain or legume's raw state
+ *   ("Grains, quinoa, dry", "Soybeans, dry, raw"), unlike "Milk, dry whole";
+ * - "dry roasted": a roasting method ("Nuts, pecans, dry roasted"), whose
+ *   sibling is "oil roasted";
+ * - a comma part that is only "dried" on a Nuts or Seeds row: the plain
+ *   shelled nut ("Nuts, pecans, dried"), which has no fresh form.
  */
 function isUnaskedDehydratedForm(parts: string[], qWords: string[]): boolean {
+  const nutOrSeed = parts[0] === "nuts" || parts[0] === "seeds";
   return parts.some((part) => {
     const words = matchWords(part);
+    const soleWord = words.length === 1;
     return words.some(
       (w) =>
         DEHYDRATED_WORDS.has(w) &&
         !qWords.includes(w) &&
-        !(w === "dry" && words.length === 1),
+        !(w === "dry" && (soleWord || words.includes("roasted"))) &&
+        !(w === "dried" && soleWord && nutOrSeed),
     );
   });
 }
@@ -531,7 +538,10 @@ function isUnaskedDehydratedForm(parts: string[], qWords: string[]): boolean {
  * Measured on a 51-query gold set against the real EN list (2026-09-27):
  * right food 43, wrong 4, no match 4. Before the dehydrated-form penalty it
  * was 41 / 6 / 4, and the previous substring scorer got 12 / 37 / 2.
- * Residual: bare "egg" picks "Egg, chicken, yolk, cooked" on the real list.
+ * Residuals on the real list: bare "egg" picks "Egg, chicken, yolk, cooked";
+ * the penalty moves "cocoa" to hot chocolate, "currant" to fresh red currant,
+ * and "thyme"/"rosemary"/"dill weed" to their fresh rows (tracked in
+ * todos/P3-2026-09-27-cnf-matcher-review-followups.md).
  */
 function scoreCNFMatch(query: string, description: string): number {
   const q = query.toLowerCase().trim();
