@@ -44,6 +44,13 @@ list. Reviewers flagged, as advisory:
 6. **Docstring residual.** Open Food Facts product names with brand/form words ("Hot
    Chocolate K-Cup Pods") now fail the every-word rule, so barcode CNF cross-validation
    fires less often for them. List it beside the other residuals.
+7. **A bare dish word picks a row that only mentions it.** Once the cultural-map fallback
+   (P1 cultural todo) let CNF see dish names as typed, bare "taco" and "tacos" (and
+   "1 taco") match "Snacks, tortilla chips, taco" (480 kcal/100 g) because a comma-part
+   that _is_ the query outranks "Fast foods, mexican, taco with beef, …" (206), where it
+   only starts the part. "beef taco" and "chicken taco" resolve correctly. Same class:
+   "guacamole" → "Fast foods, mexican, tostada with guacamole", "buttermilk" →
+   "Pancake, buttermilk, homemade", "ramen" → "Soup, ramen noodles, any flavour, dry".
 
 ## Acceptance Criteria
 
@@ -59,6 +66,9 @@ list. Reviewers flagged, as advisory:
 - [ ] Tokenization is precomputed once per CNF list load. Scoring results are identical on
       the gold set.
 - [ ] The OFF brand-name residual is in the `scoreCNFMatch` docstring.
+- [ ] Bare "taco" / "tacos" no longer resolve to the taco-flavoured chips row, or the
+      attempt and its gold-set before/after are recorded here (item 7). Add these queries
+      to the gold set either way.
 
 ## Implementation Notes
 
@@ -96,3 +106,4 @@ list. Reviewers flagged, as advisory:
 
 - Filed from the PR #1120 review passes (advisory findings, auto-filed per the Medium/Low
   policy).
+- Item 7 added from the cultural-map fallback fix, measured through `lookupNutrition`.

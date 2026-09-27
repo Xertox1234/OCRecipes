@@ -1077,6 +1077,131 @@ describe("lookupNutrition", () => {
   });
 });
 
+describe("lookupNutrition — cultural food names are a fallback, not a rewrite", () => {
+  /** A USDA search response that answers only the listed queries. */
+  const usdaAnswering =
+    (answers: Record<string, { description: string; kcal: number }>) =>
+    (url: string) => {
+      const query = new URL(url).searchParams.get("query") ?? "";
+      const hit = answers[query];
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          foods: hit
+            ? [
+                {
+                  description: hit.description,
+                  foodNutrients: [{ nutrientName: "Energy", value: hit.kcal }],
+                },
+              ]
+            : [],
+        }),
+      });
+    };
+
+  /** Every query string sent to the USDA search, in call order. */
+  const usdaQueries = () =>
+    mockFetch.mock.calls
+      .map(([url]) => String(url))
+      .filter((url) => url.includes("fdc/v1/foods/search"))
+      .map((url) => new URL(url).searchParams.get("query"));
+
+  function mockSources(
+    usda: Record<string, { description: string; kcal: number }>,
+    cnfEN: { food_code: number; food_description: string }[] = [],
+  ) {
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes("food/?lang=en"))
+        return Promise.resolve({ ok: true, json: async () => cnfEN });
+      if (url.includes("food/?lang=fr"))
+        return Promise.resolve({ ok: true, json: async () => [] });
+      if (url.includes("nutrientamount"))
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 1,
+              nutrient_value: 227,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        });
+      if (url.includes("fdc/v1/foods/search")) return usdaAnswering(usda)(url);
+      return Promise.resolve({ ok: false, json: async () => ({}) });
+    });
+  }
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("looks up a food containing a dish word as itself: buttermilk pancakes stay pancakes", async () => {
+    // "buttermilk" is an alias of the "yogurt drink" entry.
+    mockSources({}, [
+      { food_code: 1, food_description: "Pancake, buttermilk, homemade" },
+    ]);
+
+    const result = await lookupNutrition("buttermilk pancakes");
+
+    expect(result!.name).toBe("Pancake, buttermilk, homemade");
+    expect(usdaQueries()).toEqual([]);
+  });
+
+  it("uses the database's own row for a dish it lists: injera is not searched as 'fermented flatbread'", async () => {
+    mockSources({
+      injera: { description: "Injera, Ethiopian bread", kcal: 93 },
+      "fermented flatbread": { description: "Crackers, flatbread", kcal: 412 },
+    });
+
+    const result = await lookupNutrition("injera");
+
+    expect(result!.name).toBe("Injera, Ethiopian bread");
+    expect(usdaQueries()).toEqual(["injera"]);
+  });
+
+  it("falls back to the cultural name only after the original query finds nothing", async () => {
+    // Positive control for the two tests above: the fallback is still reachable.
+    mockSources({ "spicy stew": { description: "Stew, chicken", kcal: 84 } });
+
+    const result = await lookupNutrition("doro wat");
+
+    expect(result!.name).toBe("Stew, chicken");
+    expect(usdaQueries()).toEqual(["doro wat", "spicy stew"]);
+  });
+
+  it("sends API Ninjas the query as typed, not the cultural name", async () => {
+    const originalKey = process.env.API_NINJAS_KEY;
+    process.env.API_NINJAS_KEY = "test-key";
+    try {
+      mockSources({});
+
+      await lookupNutrition("doro wat");
+
+      const ninjasQueries = mockFetch.mock.calls
+        .map(([url]) => new URL(String(url)))
+        .filter((url) => url.hostname === "api.api-ninjas.com")
+        .map((url) => url.searchParams.get("query"));
+      // Both forms were tried at USDA, so the cultural name was available.
+      expect(usdaQueries()).toEqual(["doro wat", "spicy stew"]);
+      expect(ninjasQueries).toEqual(["doro wat"]);
+    } finally {
+      if (originalKey === undefined) delete process.env.API_NINJAS_KEY;
+      else process.env.API_NINJAS_KEY = originalKey;
+    }
+  });
+
+  it("does not retry a query that has no cultural name", async () => {
+    mockSources({});
+
+    const result = await lookupNutrition("xyznonexistent");
+
+    expect(result).toBeNull();
+    expect(usdaQueries()).toEqual(["xyznonexistent"]);
+  });
+});
+
 describe("batchNutritionLookup", () => {
   beforeEach(() => {
     mockFetch.mockReset();

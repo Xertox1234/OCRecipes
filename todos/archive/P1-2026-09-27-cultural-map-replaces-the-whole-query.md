@@ -1,6 +1,6 @@
 ---
 title: 'Cultural food map replaces the whole query once an alias appears: "buttermilk pancakes" is looked up as "yogurt drink"'
-status: backlog
+status: done
 priority: high
 created: 2026-09-27
 updated: 2026-09-27
@@ -55,16 +55,16 @@ lower stakes).
 
 ## Acceptance Criteria
 
-- [ ] A query that contains an alias alongside other food words is **not** replaced
+- [x] A query that contains an alias alongside other food words is **not** replaced
       wholesale: "buttermilk pancakes", "taco seasoning", "egg roll wrapper" and "lasagna
       noodles" are looked up as themselves.
-- [ ] A query CNF or USDA can already match is not rewritten: "hummus" and "couscous"
+- [x] A query CNF or USDA can already match is not rewritten: "hummus" and "couscous"
       resolve to their own CNF rows. The simplest design satisfying this is: look up the
       original query first, and use the cultural `standardName` only if that fails.
 - [ ] Genuinely cultural queries still benefit: "doro wat", "injera", "2 naan", "jollof
       rice" and "chicken bulgogi bowl" resolve at least as well as today. Record each
       one's result before and after.
-- [ ] Measured, not reasoned: over the CNF EN list, report how many foods the map rewrites
+- [x] Measured, not reasoned: over the CNF EN list, report how many foods the map rewrites
       and how many of those rewrites are wrong, before and after (baseline 127 rewrites,
       2026-09-27). Also run the **gold set below** (Implementation Notes) through
       `lookupNutrition`'s CNF step in each caller's query shape (bare, `2 `, `1 cup `,
@@ -72,8 +72,8 @@ lower stakes).
       get worse (2026-09-27 baseline through `fuzzyMatchCNF` alone: 41 / 6 / 4 in every
       shape). The method is in
       `docs/solutions/logic-errors/food-name-matcher-whole-words-gold-set-2026-09-27.md`.
-- [ ] `getCuisineForFood` behavior is either unchanged or deliberately changed and noted.
-- [ ] Tests: negatives above with positive controls beside them in the same block, plus a
+- [x] `getCuisineForFood` behavior is either unchanged or deliberately changed and noted.
+- [x] Tests: negatives above with positive controls beside them in the same block, plus a
       `nutrition-lookup` test that the original query is tried before the standardized
       one (if the fallback design is chosen).
 
@@ -149,3 +149,39 @@ lower stakes).
 - Surfaced as HIGH during PR #1120. The user chose to file it ("file the todo").
 - PR #1122 review: corrected the entry count (19 of 64 entries rewrite anything, not 64),
   and inlined the 51-query gold set so the measurement criterion is runnable.
+- **Done: fallback design.** `fetchNutritionFromSources` looks up the query as typed (CNF,
+  then USDA), and tries the cultural `standardName` only if both return nothing. API Ninjas
+  gets the query as typed. `cultural-food-map.ts` is unchanged, so `getCuisineForFood`
+  behaves exactly as before (AC5). Design 2 (rewrite on a whole-query match) was not built:
+  the probe showed the standardized name is the worse search term for the map's own dishes
+  ("injera" → "Crackers, flatbread" 412 kcal vs "Injera, Ethiopian bread" 93; "jollof rice"
+  → "Spices, pumpkin pie spice"; "pad thai" → "Mushrooms, shiitake, stir-fried"), and design
+  2 would keep all of those.
+- **Measured through `lookupNutrition`, before (main `8edffe81`) and after**, with the cache
+  read bypassed (`DATABASE_URL` pointed at an unreachable database, so the read fails soft),
+  over 31 queries: **20 better, 7 unchanged or wrong both times, 4 worse.**
+  - Better: injera, naan, 2 naan, jollof rice, hummus, 1 cup hummus, couscous, lasagna, pho,
+    dal, 1 cup dal, biryani, pad thai, falafel, tamales, borscht, buttermilk pancakes, taco
+    seasoning, egg roll wrapper, taco shell.
+  - Unchanged or wrong both times: kimchi, sushi, chicken bulgogi bowl ("KOREAN BBQ BEEF" →
+    "Burrito bowl, chicken"), ramen, guacamole, lasagna noodles, buttermilk.
+  - Worse: doro wat ("Stew, chicken" 84 → "BAMBI, YO DORO WAFERS" 522) and gyoza
+    ("STEAMED DUMPLINGS" → "GYOZA DIPPING SAUCE"), because USDA's top hit for the typed name
+    is a wrong branded product; filed as
+    `todos/P2-2026-09-27-usda-search-top-hit-is-an-unrelated-branded-product.md`. Bare
+    "taco" / "2 tacos" ("Tortilla, corn" 218 → "Snacks, tortilla chips, taco" 480), a CNF
+    ranking residual, added to the P3 matcher todo as item 7. "beef taco", "chicken taco",
+    "taco, beef" now find CNF's taco rows (206 / 189 kcal); "burrito" went from "Bread
+    stuffing" to "Burrito, beef and bean, frozen".
+  - **AC3 is only partly met:** injera, naan, 2 naan and jollof rice improved, chicken
+    bulgogi bowl is about the same, and doro wat got worse.
+- **CNF corpus (5,690 EN rows):** the map rewrites 127 names (19 entries). Before, 1 of the
+  127 reached its own CNF row (115 matched nothing once rewritten). After, all 127 do,
+  because CNF sees the name as typed.
+- **Gold set:** none of the 51 queries triggers an alias in any of the 7 caller shapes (0 of
+  357), so it is unchanged at 41 / 6 / 4 in every shape, through the chain's CNF order.
+- **The map's nutrition role is now near-dormant.** USDA's top-1 search returned a hit for
+  every query probed, so the standardized name is reached only when USDA is down,
+  rate-limited or empty. Whether the map should stay in the nutrition path is a separate
+  decision. The P2 USDA todo would make the fallback reachable again for wrong-product hits.
+- Cache: entries written under the old behaviour expire within 7 days. No production step.
