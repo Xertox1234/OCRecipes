@@ -391,6 +391,11 @@ async function ensureCNFFoods(): Promise<void> {
       if (enParsed.success && frParsed.success) {
         cnfFoodsEN = enParsed.data;
         cnfFoodsFR = frParsed.data;
+        // Precompute each description's tokens once here, right after load,
+        // instead of on first query — see `tokenizeDescription`.
+        for (const food of [...cnfFoodsEN, ...cnfFoodsFR]) {
+          tokenizeDescription(food.food_description.toLowerCase());
+        }
         log.info(
           { enCount: cnfFoodsEN.length, frCount: cnfFoodsFR.length },
           "CNF food lists loaded",
@@ -473,11 +478,40 @@ const QUANTITY_UNITS = new Set([
   "small",
   "medium",
   "large",
+  "pinch",
+  "pinches",
+  "dash",
+  "dashes",
+  "stalk",
+  "stalks",
+  "sprig",
+  "sprigs",
+  "bunch",
+  "bunches",
+  "head",
+  "heads",
+  "ear",
+  "ears",
+  "wedge",
+  "wedges",
+  "sheet",
+  "sheets",
+  "stick",
+  "sticks",
+  "container",
+  "containers",
+  "envelope",
+  "envelopes",
 ]);
 
-/** A bare number or number+unit token ("2", "12oz", "200g"), never "2%". */
+/**
+ * A bare number or number+unit token ("2", "12oz", "200g"), never "2%".
+ * No decimal branch: `matchWords` already splits "1.5"/"1,5" into "1" and
+ * "5" on the non-letter/digit separator, so a word reaching this function
+ * never contains "." or ",".
+ */
 function isNumberWord(word: string): boolean {
-  const m = /^\d+(?:[.,]\d+)?([a-z]*)$/.exec(word);
+  const m = /^\d+([a-z]*)$/.exec(word);
   return (
     m !== null && (m[1] === "" || m[1] === "g" || QUANTITY_UNITS.has(m[1]))
   );
@@ -534,27 +568,70 @@ const DEHYDRATED_WORDS = new Set([
 
 /**
  * Whether the description is a dried, powdered or flour form the query did
- * not name. Three CNF spellings are not dehydrated products and do not count:
+ * not name. Four CNF spellings are not dehydrated products and do not count:
  * - a comma part that is only "dry": a grain or legume's raw state
  *   ("Grains, quinoa, dry", "Soybeans, dry, raw"), unlike "Milk, dry whole";
  * - "dry roasted": a roasting method ("Nuts, pecans, dry roasted"), whose
  *   sibling is "oil roasted";
  * - a comma part that is only "dried" on a Nuts or Seeds row: the plain
- *   shelled nut ("Nuts, pecans, dried"), which has no fresh form.
+ *   shelled nut ("Nuts, pecans, dried"), which has no fresh form;
+ * - a comma part that is only "dried" on a Spices row: the dried herb is the
+ *   retail default ("Spices, thyme, dried" for bare "thyme"), unlike a
+ *   Nuts/Seeds row, CNF also lists a "fresh" sibling for some spices
+ *   (dill weed, rosemary, thyme, spearmint). Exempting the penalty restores
+ *   a tie between the two rows, broken by list order (both score equally),
+ *   not by a preference for "dried" — CNF happens to list "dried" first for
+ *   dill weed/rosemary/thyme (so bare "thyme" resolves to dried, matching
+ *   the pre-#1126 behaviour) and "fresh" first for spearmint (so bare
+ *   "spearmint" still resolves to fresh). This is the same tie the scorer
+ *   had before the dehydrated-form penalty was added; it is not a scored
+ *   preference for "dried" and would change if CNF ever reordered its list.
  */
-function isUnaskedDehydratedForm(parts: string[], qWords: string[]): boolean {
-  const nutOrSeed = parts[0] === "nuts" || parts[0] === "seeds";
-  return parts.some((part) => {
-    const words = matchWords(part);
+function isUnaskedDehydratedForm(
+  parts: string[],
+  partWordsList: string[][],
+  qWords: string[],
+): boolean {
+  const exemptHead =
+    parts[0] === "nuts" || parts[0] === "seeds" || parts[0] === "spices";
+  return partWordsList.some((words) => {
     const soleWord = words.length === 1;
     return words.some(
       (w) =>
         DEHYDRATED_WORDS.has(w) &&
         !qWords.includes(w) &&
         !(w === "dry" && (soleWord || words.includes("roasted"))) &&
-        !(w === "dried" && soleWord && nutOrSeed),
+        !(w === "dried" && soleWord && exemptHead),
     );
   });
+}
+
+/**
+ * Tokens derived from a CNF description, memoized per description string so
+ * a query batch (`fuzzyMatchCNF` scores every query against the whole CNF
+ * list) tokenizes each description at most once instead of on every query.
+ * `ensureCNFFoods` warms this eagerly right after a successful load; a test
+ * that passes an ad-hoc food list not loaded through `ensureCNFFoods` still
+ * gets correct (if lazily computed) tokens via the cache-miss path.
+ */
+interface DescriptionTokens {
+  dWords: Set<string>;
+  parts: string[];
+  partWordsList: string[][];
+}
+const descriptionTokenCache = new Map<string, DescriptionTokens>();
+
+function tokenizeDescription(d: string): DescriptionTokens {
+  const cached = descriptionTokenCache.get(d);
+  if (cached) return cached;
+  const parts = d.split(",").map((p) => p.trim());
+  const tokens: DescriptionTokens = {
+    dWords: new Set(matchWords(d)),
+    parts,
+    partWordsList: parts.map((p) => matchWords(p)),
+  };
+  descriptionTokenCache.set(d, tokens);
+  return tokens;
 }
 
 /**
@@ -574,13 +651,24 @@ function isUnaskedDehydratedForm(parts: string[], qWords: string[]): boolean {
  * A dried, powdered or flour form the query didn't name loses a point, which
  * breaks a near tie: "milk" picks "Milk, fluid, …" over "Milk, dry whole".
  *
- * Measured on a 51-query gold set against the real EN list (2026-09-27):
- * right food 43, wrong 4, no match 4. Before the dehydrated-form penalty it
- * was 41 / 6 / 4, and the previous substring scorer got 12 / 37 / 2.
- * Residuals on the real list: bare "egg" picks "Egg, chicken, yolk, cooked";
- * the penalty moves "cocoa" to hot chocolate, "currant" to fresh red currant,
- * and "thyme"/"rosemary"/"dill weed" to their fresh rows (tracked in
- * todos/P3-2026-09-27-cnf-matcher-review-followups.md).
+ * Measured on the 67-query gold set (`server/services/__tests__/fixtures/
+ * cnf-gold-set.json`) against the real EN list (2026-09-27): right food 52,
+ * wrong 11, no match 4. The base 51 queries alone are 43 / 4 / 4, unchanged
+ * from before this file's fixes; before the dehydrated-form penalty (#1126)
+ * they were 41 / 6 / 4, and the previous substring scorer got 12 / 37 / 2.
+ * Residuals on the real list, none fixed (see the gold set for the measured
+ * before/after of each): bare "egg" picks "Egg, chicken, yolk, cooked";
+ * "rice" and bare "taco"/"tacos" pick a short dish name over CNF's longer
+ * canonical row (the head-part edge and the parts-count penalty favour the
+ * shorter description); "cocoa", "currant"/"currants" and "cherries" keep
+ * losing to a processed or plural-spelled sibling even after the
+ * dehydrated-form penalty (the penalty pushes the wrong direction for cocoa
+ * and currant, whose common form IS processed/dried, and "cherries" loses
+ * on the 0.8 plural-word-match discount, not the penalty). "thyme",
+ * "rosemary" and "dill weed" are fixed — see `isUnaskedDehydratedForm`'s
+ * Spices exemption. Open Food Facts product names with brand or form words
+ * ("Hot Chocolate K-Cup Pods") fail the every-word rule, so barcode CNF
+ * cross-validation fires less often for them than a plain CNF/CNF query.
  */
 function scoreCNFMatch(query: string, description: string): number {
   const q = query.toLowerCase().trim();
@@ -592,7 +680,7 @@ function scoreCNFMatch(query: string, description: string): number {
   const qWords = withoutLeadingQuantity(matchWords(q));
   if (qWords.length === 0) return 0;
 
-  const dWords = new Set(matchWords(d));
+  const { dWords, parts, partWordsList } = tokenizeDescription(d);
   const wordScores = qWords.map((w) => wordMatch(dWords, w));
   if (wordScores.some((s) => s === 0)) return 0;
 
@@ -600,9 +688,8 @@ function scoreCNFMatch(query: string, description: string): number {
   let score = (wordScores.reduce((a, b) => a + b, 0) / qWords.length) * 10;
 
   // Bonus for a comma part that is, starts with, or contains the query.
-  const parts = d.split(",").map((p) => p.trim());
   for (let i = 0; i < parts.length; i++) {
-    const partWords = matchWords(parts[i]);
+    const partWords = partWordsList[i];
     const headEdge = i === 0 ? 1 : 0;
     if (
       partWords.length === qWords.length &&
@@ -629,7 +716,7 @@ function scoreCNFMatch(query: string, description: string): number {
 
   // A dehydrated form shares its head with the fresh food, and its shorter
   // name would win the length tie-break ("milk" → "Milk, dry whole").
-  if (isUnaskedDehydratedForm(parts, qWords)) score -= 1;
+  if (isUnaskedDehydratedForm(parts, partWordsList, qWords)) score -= 1;
 
   // Penalty for very long descriptions (less specific/relevant)
   score -= d.length / 100;
@@ -1107,4 +1194,5 @@ export function _resetCNFCacheForTesting(): void {
   cnfFoodsEN = null;
   cnfFoodsFR = null;
   cnfFetchPromise = null;
+  descriptionTokenCache.clear();
 }
