@@ -7,6 +7,7 @@ tags: [architecture, database, code-review, sentinel, third-party-api, zod, fals
 applies_to: [server/services/**/*.ts, server/storage/**/*.ts, shared/**/*.ts]
 symptoms: [A review flags a magic constant (0, 100, -1, "unknown") as a fabricated default, The finding is written as "maps X to N rather than failing" without saying what failing would break, A proposed fix would make a third-party integration reject responses it currently handles, The value's definition has an explanatory comment directly above it that the finding does not mention]
 created: '2026-08-10'
+last_updated: '2026-09-27'
 ---
 
 # A sentinel with readers is a contract, not a fabricated default
@@ -69,6 +70,23 @@ throughout the module: `if (cnfResult && cnfResult.calories > 0)`,
 `if (result && result.calories > 0)`, `if (data && data.calories > 0)`. It is an interface,
 not a leak.
 
+**2026-09-27 update — the downstream consequence, closed.** The "Examples" section below
+flagged a consequence worth noting separately: a gated `serving_size_g` would leave the
+per-100g basis unresolvable. That is not the only shape the gate takes, and it was not the
+one that shipped a real bug. On the measured key, `serving_size_g` is real (100) while
+`calories`/`protein_g` are the ones gated — a real, scalable basis riding alongside a gated
+calorie count. `scaleToGrams` doesn't reject that: it only checks the basis, not whether the
+values it's scaling were genuine, so the gated `0` scales cleanly into a real-looking 0-kcal
+result. That is the bug `todos/archive/P2-2026-09-27-api-ninjas-free-tier-returns-zero-calories.md`
+fixed: `calories`/`protein_g` now use a `numericOrGated` transform (string → `null`, not `0`),
+and `lookupAPINinjas` refuses the whole result when `calories` is `null` — still safely
+`safeParse`-ing the gated string per this doc's rule, never rejecting the parse. The other
+fields (`carbohydrates_total_g`, `fat_total_g`, `fiber_g`, `sugar_g`, `sodium_mg`,
+`serving_size_g`) keep the original `coerceNumber` unchanged; they are not observed gated on
+the free tier today, and `scaleToGrams`/`normalizeToPerHundredGrams` already reject a falsy/
+zero basis, so a hypothetical future `serving_size_g` gating still resolves to "no data," not
+a mislabeled scaled result.
+
 The proposed "fix" — reject non-numeric strings — would have made **every free-tier API
 Ninjas response fail to parse**, removing a whole nutrition source in production. The
 misreading also propagated into a merged PR body and two todos before it was caught, and cost
@@ -107,9 +125,15 @@ of ignoring it. Argue against the contract explicitly, with the consumer list in
 
 ## Related Files
 
-- `server/services/nutrition-lookup.ts` — `coerceNumber` (`:40-42`), its docblock (`:38`),
-  and the `calories > 0` readers at `:733`, `:758`, `:794`
+- `server/services/nutrition-lookup.ts` — `coerceNumber` (line numbers drift; grep for the
+  definition) and its docblock, the sibling `numericOrGated` transform (2026-09-27, keeps
+  `calories`/`protein_g` distinguishable from a real 0), and the `calories > 0` readers
+  (grep `calories > 0` — three call sites as of this writing)
 - `server/services/barcode-lookup.ts` — downstream consumer of the gated `serving_size_g`
+  (`normalizeToPerHundredGrams`'s `!(grams > 0)` guard)
+- `todos/archive/P2-2026-09-27-api-ninjas-free-tier-returns-zero-calories.md` — the 2026-09-27
+  follow-up that closed the real downstream consequence (see the dated update in `## Why`
+  above)
 
 ## See Also
 
