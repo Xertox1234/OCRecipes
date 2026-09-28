@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Session coordination v2 (spec 2026-09-27 §5–§6): per-actor records, Bash coverage,
-# sibling visibility, collision ask. Throwaway DB like test-session-coord.sh; SKIPS
+# sibling visibility. Throwaway DB like test-session-coord.sh; SKIPS
 # (prints "skip:", exit 0) when Postgres is unreachable — CI's Lint job has none.
 set -uo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

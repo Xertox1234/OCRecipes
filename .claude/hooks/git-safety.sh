@@ -83,8 +83,12 @@ lex_collapse() {
 }
 # emit_write_targets lives in lib/write-targets.sh (shared with session-coord.sh). If the lib
 # fails to load, the write-shaped branch below FAILS CLOSED rather than seeing zero targets.
+# Probed in a subshell first: a brace group is NOT a subshell, so a lib that is PRESENT but
+# BROKEN (e.g. its body runs `exit 0`, or expands an unset var under this file's `set -u`)
+# would otherwise take the whole hook down before the fail-closed check below ever runs.
 case "${BASH_SOURCE[0]}" in */*) _WT_HERE="${BASH_SOURCE[0]%/*}" ;; *) _WT_HERE=. ;; esac
-{ . "$_WT_HERE/lib/write-targets.sh"; } >/dev/null 2>&1
+_WT_OK=$( { . "$_WT_HERE/lib/write-targets.sh"; } >/dev/null 2>&1; declare -F emit_write_targets >/dev/null && echo ok )
+[ "$_WT_OK" = ok ] && { . "$_WT_HERE/lib/write-targets.sh"; } >/dev/null 2>&1
 # git_c_target: read ONE shell segment (already matched MUTATING_GIT_SEG_RE) on STDIN and emit the
 # repo-redirect COMPONENTS present, one per TAGGED line, for the caller to reconstruct git's TWO
 # INDEPENDENT write targets from (see emit_effective + the caller loop):
