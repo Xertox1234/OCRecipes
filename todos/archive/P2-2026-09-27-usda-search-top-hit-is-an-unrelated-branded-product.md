@@ -1,6 +1,6 @@
 ---
 title: 'USDA search takes the top hit even when it is an unrelated branded product: "doro wat" → hazelnut wafers'
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-27
 updated: 2026-09-27
@@ -44,14 +44,14 @@ top-1 search almost never does. Every one of the 31 probed queries got a USDA hi
 
 ## Acceptance Criteria
 
-- [ ] "doro wat" and "gyoza" no longer resolve to the wafer / dipping-sauce rows. Record
+- [x] "doro wat" and "gyoza" no longer resolve to the wafer / dipping-sauce rows. Record
       what they resolve to before and after.
-- [ ] Measured over a query set that includes the 31 cultural-fix queries (listed in the
+- [x] Measured over a query set that includes the 31 cultural-fix queries (listed in the
       cultural todo's Updates in `todos/archive/`), plus plain foods that reach USDA today
       ("chicken breast", "fish tacos", "chicken burrito", "pad thai", "jollof rice"):
       right / wrong / no-match before and after, through `lookupNutrition` with the cache
       bypassed. No query that is right today becomes wrong.
-- [ ] USDA request count per lookup is stated before and after. The DEMO_KEY limit is 40
+- [x] USDA request count per lookup is stated before and after. The DEMO_KEY limit is 40
       requests/hour when `USDA_API_KEY` is unset.
 
 ## Implementation Notes
@@ -97,3 +97,52 @@ Two candidate designs; measure both if unsure:
 ### 2026-09-27
 
 - Filed from the cultural-map fallback fix (Medium, auto-filed).
+
+### 2026-09-27 (implementation)
+
+- **Neither of the two candidate designs above survived contact with the live API**, tested
+  independently before implementation:
+  - Design 2 (word coverage) alone fixes "doro wat" but cannot fix "gyoza" — every top
+    Branded candidate for "gyoza" trivially contains the single query word "gyoza"
+    (confirmed live, exactly as this todo's Implementation Notes already anticipated).
+  - Design 1 (generic-types-first) regresses "jollof rice": live-probed, the generic-only
+    result set is `["Dirty rice", "Rice dressing", ...]` — plausible but wrong — ranked
+    above the correct Branded answer once the type filter is applied.
+  - A comma-joined multi-value `dataType` GET param returns HTTP 400 from the live USDA API
+    (confirmed); values must be sent as repeated `dataType=` params.
+- **Shipped design:** accept the first of up to 5 candidates (still one GET request) whose
+  description covers every query word (`matchWords`/`wordMatch`, same rule as
+  `scoreCNFMatch`), AND — only for a `dataType: "Branded"` candidate — additionally require
+  the description's head (its first comma-part) to be an exact bidirectional word-set match
+  for the query. A generic (Foundation/SR Legacy/Survey (FNDDS)) row skips the head check,
+  because it legitimately carries qualifier words a Branded product name does not ("Injera,
+  Ethiopian bread", "Biryani with vegetables", "Soup, pho, with meat" are all preserved).
+- **AC1 — before/after:**
+  - "doro wat": before "BAMBI, YO DORO WAFERS WITH HAZELNUTS" [Branded] 522 kcal → after: no
+    match (USDA rejects every candidate for both "doro wat" and its cultural fallback "spicy
+    stew"; API Ninjas has no "doro wat" entry). No longer the wafer row.
+  - "gyoza": before "GYOZA DIPPING SAUCE, GYOZA" [Branded] 133 kcal → after "STEAMED
+    DUMPLINGS" [Branded] 224 kcal, via the cultural-map fallback query ("gyoza" →
+    "steamed dumplings"), which now passes the head-match check cleanly. No longer the
+    dipping-sauce row, and this is an improvement, not just a non-regression.
+- **AC2 — measured live through `lookupNutrition`** over the 31 cultural-fix queries + chicken
+  breast / fish tacos / chicken burrito (34 total), `DATABASE_URL` pointed at an unreachable
+  host so the cache read fails soft: **28 right / 6 wrong / 0 no-match → 29 right / 3 wrong /
+  2 no-match.** Zero regressions (no right-today query became wrong or no-match). The two
+  new no-match results are "doro wat" (was wrong) and "lasagna noodles" (was wrong — "Lasagna
+  with meat" for a noodle ingredient query; its API Ninjas fallback also exists but is
+  calorie-gated on this account's free tier, an unrelated, already-shipped guard from
+  #1131). "chicken bulgogi bowl" changed from "Burrito bowl, chicken" to "KOREAN BBQ BEEF"
+  (both wrong; not a regression). "taco"/"2 tacos" are unaffected (CNF-sourced, tracked in
+  the P3 matcher todo).
+- **AC3 — USDA request count per lookup: unchanged**, still at most 2 requests per
+  `lookupNutrition` call (once per query variant tried — as typed, then the cultural
+  standardized name on a miss — the same call pattern as before). Only `pageSize` changed
+  (1 → 5) within each request, not the request count. Across the 34-query batch the total
+  went 15 → 19, because 4 more queries now need the second (standardized-name) pass since
+  their as-typed pass now correctly rejects a top-1 that used to be accepted blindly.
+- Review: `code-reviewer` + `ai-reviewer`, both independently verified the fix's correctness
+  with constructed probes (both confirmed the mechanism, not just the prose) and converged on
+  one WARNING — the new Branded-rejection path had no direct test coverage. Fixed inline with
+  3 new tests (verified via mutation testing: reverting to the old blind top-1 behavior fails
+  2 of the 3). No blocking findings from either reviewer.
