@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Session coordination v2 (spec 2026-09-27 §5–§6): per-actor records, Bash coverage,
-# sibling visibility. Throwaway DB like test-session-coord.sh; SKIPS
+# sibling visibility, collision ask. Throwaway DB like test-session-coord.sh; SKIPS
 # (prints "skip:", exit 0) when Postgres is unreachable — CI's Lint job has none.
 set -uo pipefail
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -129,6 +129,53 @@ assert_empty "Bash consult: non-writing → silent" "$(bcon 'ls src')"
 q "INSERT INTO harness.files_in_flight (session_id, agent_id, abs_path, rel_path) VALUES ('$OTHER', '', '$R1/src/late.ts', 'src/late.ts')" >/dev/null
 snap "[]"; age_file "$SNAPF" 600
 assert_contains "stale snapshot: new holder seen on the first consult" "$(ctx "$(consult '' "$R1/src/late.ts")")" "Session ${OTHER:0:8}"
+
+# --- collision ask (Task 9) ------------------------------------------------------------------
+dec()    { jq -r '.hookSpecificOutput.permissionDecision // "none"' <<<"$1" 2>/dev/null; }
+reason() { jq -r '.hookSpecificOutput.permissionDecisionReason // ""' <<<"$1" 2>/dev/null; }
+hold()   { # $1 sid, $2 agent, $3 abs, $4 rel, $5 seconds ago — DB row
+  q "INSERT INTO harness.files_in_flight (session_id, agent_id, abs_path, rel_path, last_touch) VALUES ('$1', '$2', '$3', '$4', now() - make_interval(secs => $5)) ON CONFLICT (session_id, agent_id, abs_path) DO UPDATE SET last_touch = EXCLUDED.last_touch" >/dev/null
+}
+q "INSERT INTO harness.session_registry (session_id, repo_root) VALUES ('$ME', '$R1') ON CONFLICT (session_id) DO UPDATE SET expires_at = now() + interval '15 minutes'" >/dev/null
+q "UPDATE harness.session_registry SET expires_at = now() + interval '15 minutes'" >/dev/null
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+
+hold "$OTHER" '' "$R1/src/k.ts" src/k.ts 60
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"
+LOG_BEFORE=$(q "SELECT count(*) FROM harness.coordination_log WHERE event='ask-collision' AND session_id='$ME'")
+OUT=$(consult '' "$R1/src/k.ts")
+assert_eq "ask: confirmed live other-session hold" "$(dec "$OUT")" "ask"
+assert_contains "ask: reason names the holder" "$(reason "$OUT")" "Session ${OTHER:0:8}"
+assert_contains "ask: reason says approve" "$(reason "$OUT")" "Approve to edit anyway."
+assert_contains "ask: model context present" "$(ctx "$OUT")" "Collision:"
+sleep 1   # log_event is backgrounded
+LOG_AFTER=$(q "SELECT count(*) FROM harness.coordination_log WHERE event='ask-collision' AND session_id='$ME'")
+assert_eq "ask: exactly one telemetry row for this ask" "$((LOG_AFTER - LOG_BEFORE))" "1"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/ghost.ts" src/ghost.ts '' 60)]")]"
+assert_eq "ask: snapshot hit not confirmed live → warn" "$(dec "$(consult '' "$R1/src/ghost.ts")")" "none"
+
+hold "$OTHER" '' "$R1/src/b14.ts" src/b14.ts 840
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/b14.ts" src/b14.ts '' 840)]")]"
+assert_eq "ask: boundary 14 min → ask" "$(dec "$(consult '' "$R1/src/b14.ts")")" "ask"
+hold "$OTHER" '' "$R1/src/b16.ts" src/b16.ts 960
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/b16.ts" src/b16.ts '' 960)]")]"
+assert_eq "ask: boundary 16 min → warn" "$(dec "$(consult '' "$R1/src/b16.ts")")" "none"
+
+hold "$ME" agentA1 "$R1/src/sib.ts" src/sib.ts 60
+snap "[$(ses "$ME" "[$(fil "$R1/src/sib.ts" src/sib.ts agentA1 60)]")]"
+assert_eq "ask: sibling agent confirmed → ask" "$(dec "$(consult agentB "$R1/src/sib.ts")")" "ask"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"
+assert_eq "ask: SKIP_COLLISION_ASK=1 → warn" "$(dec "$(SKIP_COLLISION_ASK=1 consult '' "$R1/src/k.ts")")" "none"
+
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"
+assert_eq "ask: pg down + fresh snapshot → ask" "$(dec "$(LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" consult '' "$R1/src/k.ts")")" "ask"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"; age_file "$SNAPF" 70
+assert_eq "ask: pg down + 70 s snapshot → warn" "$(dec "$(LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" consult '' "$R1/src/k.ts")")" "none"
 
 . "$HOOK_DIR/lib/mutants.sh"
 mutant "is_self ignores agent_id (all own rows = self)" "scripts/pg-lab/session-coord.sh" \

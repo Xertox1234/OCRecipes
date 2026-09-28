@@ -217,6 +217,37 @@ emit_context() { # $1 message -> PreToolUse additionalContext JSON (drift-detect
   jq -n --arg m "$1" '{ "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": $m } }'
 }
 
+emit_ask() { # $1 reason (shown to the user), $2 context (delivered to the model — probe §9.0.1)
+  jq -n --arg r "$1" --arg c "$2" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"ask",permissionDecisionReason:$r,additionalContext:$c}}'
+}
+
+live_confirm() { # $1 holder session, $2 holder agent ('' = main), $3 abs path -> yes | no | error
+  local out
+  out=$(psql -X -qtA -v ON_ERROR_STOP=1 -d "$LAB_DATABASE_URL" -v hs="$1" -v ha="$2" -v p="$3" -v win="$WINDOW_SECS" 2>/dev/null <<'SQL'
+SELECT 1 FROM harness.files_in_flight f JOIN harness.session_registry r USING (session_id)
+WHERE f.session_id = :'hs' AND f.agent_id = :'ha' AND f.abs_path = :'p'
+  AND f.last_touch > now() - make_interval(secs => :win) AND r.expires_at > now()
+LIMIT 1;
+SQL
+  ) || { echo error; return 0; }
+  if [ "$out" = "1" ]; then echo yes; else echo no; fi
+}
+
+ask_dir() { printf '/tmp/claude-session-coord-%s.asks' "$1"; }
+ask_key() { printf '%s\037%s' "$1" "$2" | shasum | cut -c1-40; }   # $1 abs path, $2 CURRENT agent
+ask_mark_pending() { # $1 sid, $2 agent, $3 file, $4 holder "<sid>:<agent>"
+  local d; d=$(ask_dir "$1"); mkdir -p "$d" 2>/dev/null || return 0
+  printf 'pending %s %s\n' "$4" "$(date +%s)" > "$d/$(ask_key "$3" "$2")" 2>/dev/null
+  return 0
+}
+ask_suppressed() { # rc 0 iff an APPROVED marker for this (file, current agent, holder) is within the window
+  local m st h ts
+  m="$(ask_dir "$1")/$(ask_key "$3" "$2")"
+  [ -f "$m" ] || return 1
+  read -r st h ts < "$m" || return 1
+  [ "$st" = approved ] && [ "$h" = "$4" ] && [ $(( $(date +%s) - ${ts:-0} )) -le "$WINDOW_SECS" ]
+}
+
 refresh_bounded() { # $1 sid — synchronous refresh capped at ~1 s (spec §6.2 step 0)
   bash "$SELF_DIR/session-coord.sh" refresh-snapshot --session "$1" >/dev/null 2>&1 &
   local rpid=$! i=0
@@ -256,6 +287,35 @@ decide_and_emit() { # $1 sid, $2 agent, $3 snapshot age (s), $4 target file, $5 
   mins=$(( ( $(date +%s) - ${otouch:-0} ) / 60 ))
   det="{\"file\":$(jq -Rn --arg v "$file" '$v'),\"agent\":$(jq -Rn --arg v "$oagent" '$v')}"
   if [ -n "$oagent" ]; then who="Agent ${oagent:0:8} in this same session"; else who="The main agent of this same session"; fi
+  if [ "$lvl" = "collision" ]; then
+    local reason="" ask_reason ctx ev wt
+    if [ $(( $(date +%s) - ${otouch:-0} )) -gt "$WINDOW_SECS" ]; then reason="stale-touch"
+    elif [ "${SKIP_COLLISION_ASK:-}" = "1" ]; then reason="bypass"
+    elif ask_suppressed "$sid" "$2" "$file" "$osid:$oagent"; then reason="suppressed"
+    else
+      case "$(live_confirm "$osid" "$oagent" "$file")" in
+        yes) ;;
+        no)  reason="live-unconfirmed" ;;
+        *)   [ "$3" -lt 60 ] || reason="pg-down-stale-snapshot" ;;
+      esac
+    fi
+    if [ -z "$reason" ]; then
+      wt=$(basename "${xroot:-?}")
+      if [ "$own" = "1" ]; then
+        ask_reason="${who} (worktree ${wt}) last touched ${rel:-$file} ${mins} min ago. Approve to edit anyway."
+        ev="ask-collision-sibling"
+      else
+        ask_reason="Session ${osid:0:8} (${okind}, branch ${obranch}, worktree ${wt}) last touched ${rel:-$file} ${mins} min ago. Approve to edit anyway."
+        ev="ask-collision"
+      fi
+      ctx="Collision: ${ask_reason} The user was asked to approve this edit; if it is denied, coordinate with that session instead of retrying."
+      ask_mark_pending "$sid" "$2" "$file" "$osid:$oagent"
+      log_event "$ev" "$sid" "$osid" "$det" >/dev/null 2>&1 &
+      emit_ask "$ask_reason" "$ctx"
+      return 0
+    fi
+    log_event "ask-downgraded" "$sid" "$osid" "{\"reason\":\"$reason\",\"file\":$(jq -Rn --arg v "$file" '$v')}" >/dev/null 2>&1 &
+  fi
   if [ "$own" = "1" ]; then
     case "$lvl" in
       collision) msg="${who} touched this same file ${mins} min ago. Coordinate before editing. (Warn-only.)"

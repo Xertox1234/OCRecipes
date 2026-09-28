@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS harness.coordination_log (
     ts            TIMESTAMPTZ NOT NULL DEFAULT now(),
     event         TEXT NOT NULL, -- warn-collision | warn-collision-sibling | warn-worktree |
                                  -- warn-worktree-sibling | drift-attributed | drift-unattributed |
+                                 -- ask-collision | ask-collision-sibling | ask-downgraded |
                                  -- lock-acquired | lock-waited | lock-timeout | lock-released |
                                  -- lock-orphan-released
     session_id    TEXT,
