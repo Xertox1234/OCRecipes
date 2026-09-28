@@ -45,7 +45,20 @@ describe("RecipeCard", () => {
     expect(onAction).toHaveBeenCalledWith({
       type: "navigate",
       screen: "FeaturedRecipeDetail",
-      params: { recipeId: 88, source: "community" },
+      params: { recipeId: 88, recipeType: "community" },
+    });
+  });
+
+  it("opens a Spoonacular card as a catalog preview", () => {
+    const onAction = vi.fn();
+    renderComponent(
+      <RecipeCard block={spoonacularBlock} onAction={onAction} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /view recipe/i }));
+    expect(onAction).toHaveBeenCalledWith({
+      type: "navigate",
+      screen: "FeaturedRecipeDetail",
+      params: { recipeId: 715538, recipeType: "catalog" },
     });
   });
 
