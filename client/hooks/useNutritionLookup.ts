@@ -67,8 +67,9 @@ export function useNutritionLookup(params: {
   // a `LookupOutcome` (see `nutrition-lookup-outcome.ts`). `beginLookup` and
   // `lookupStateFromOutcome` are pure and total, so no exit path can forget
   // to reset a field or leak a prior product's value into a failing lookup —
-  // there is no per-field reset to forget, because nothing is ever set
-  // field-by-field here.
+  // a lookup's result is always committed as one whole-object swap. (The
+  // field-level `setLookup` updates below are user-driven edits — serving
+  // changes, source toggles, manual search — not lookup exits.)
   const [lookup, setLookup] = useState<LookupState>(INITIAL_LOOKUP_STATE);
   const [isLoading, setIsLoading] = useState(true);
   const [servingQuantity, setServingQuantity] = useState(1);

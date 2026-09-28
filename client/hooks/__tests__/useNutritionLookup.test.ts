@@ -1408,11 +1408,10 @@ describe("useNutritionLookup — correctionNotice/isPer100g reset per lookup (P2
   // Added for P1-2026-09-23 (atomic lookup state refactor). Also closes the
   // separately-tracked todos/P3-2026-09-26-nutrition-lookup-serving-size-grams-not-reset.md
   // as a side effect: `lookupStateFromOutcome` commits a FULL LookupState for
-  // every outcome, and no non-success `LookupOutcome` variant carries a
-  // `servingSizeGrams` field, so there is nothing for a future exit to forget
-  // to reset — it always falls back to `INITIAL_LOOKUP_STATE.servingSizeGrams`
-  // (null). See this file's final report for the recommendation to close that
-  // todo rather than leave its (now-inapplicable) implementation notes open.
+  // every outcome. `not-in-database`, `off-not-found` and `total-outage` carry
+  // no `servingSizeGrams` field, so they fall back to
+  // `INITIAL_LOOKUP_STATE.servingSizeGrams` (null); `off-fallback` carries its
+  // own (possibly null) value. Either way nothing inherits the prior product's.
   it("resets servingSizeGrams to null on a re-fetch (same hook instance) that takes a non-success path", async () => {
     mockServerFetch.mockResolvedValueOnce({
       ok: true,

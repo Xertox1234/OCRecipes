@@ -160,7 +160,9 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # (useCookSession) an earlier version of this PR's own test suite had asserted was
 # "confirmed non-sensitive." See scripts/__tests__/todo-automerge-guard.test.ts's
 # "drift detection" block below for the mechanism that now re-runs this hunt as a test,
-# so the ELEVENTH such file fails loudly instead of silently auto-merging.
+# so the ELEVENTH such file fails loudly instead of silently auto-merging. (It did:
+# client/hooks/nutrition-lookup-outcome.ts, where useNutritionLookup's Bearer-header
+# construction moved in the P1-2026-09-23 atomic-lookup-state refactor.)
 #
 # client/context/OnboardingContext.tsx, client/hooks/useDietaryProfileForm.ts, and
 # client/hooks/useAllergenCheck.ts hold real health-PII (allergies, healthConditions)
@@ -176,7 +178,7 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # generically-named, allowlisted-directory file — named individually since none shares a
 # signature generic enough for the drift-detection test to generalize without becoming a
 # broad "security detector" (deliberately avoided — see that test's own comment).
-SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)docs/legacy-patterns/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW(\.md$|/)|(^|/)docs/PATTERNS(\.md$|/)|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|(^|/)docs/legacy-patterns/|(^|/)\.claude/(agents|skills)/|(^|/)docs/AI_WORKFLOW(\.md$|/)|(^|/)docs/PATTERNS(\.md$|/)|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|nutrition-lookup-outcome|useReceiptScan|useSavedItems|useCoachStream'
 
 # Structural subset of the above: whole-directory and exact-path entries ONLY, no
 # free-text keywords. Read by the PATH GATE's structural-sensitivity check (below)
