@@ -15,11 +15,14 @@
 set -uo pipefail
 export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-2}"
 LAB_DATABASE_URL="${LAB_DATABASE_URL:-postgresql://localhost/ocrecipes_lab}"
-TTL='10 minutes'
+TTL='15 minutes'
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/ps-walk.sh
 . "$SELF_DIR/lib/ps-walk.sh" 2>/dev/null || exit 0
+# Shared write-target parser (spec 2026-09-27 §5.2). Missing lib = no Bash coverage, never an error.
+. "$SELF_DIR/../../.claude/hooks/lib/write-targets.sh" 2>/dev/null || true
+WINDOW_SECS=900   # 15-min touch/liveness window (spec §6.1). Single line: mutated by text in tests.
 
 # Hard safety rail — mirrors log-injection.sh:43-50 exactly, incl. query-string strip.
 LAB_DB_PATH="${LAB_DATABASE_URL%%\?*}"; LAB_DB_PATH="${LAB_DB_PATH%%\#*}"
@@ -48,6 +51,20 @@ SQL
 }
 
 git_root_of() { git -C "$1" rev-parse --show-toplevel 2>/dev/null; }
+
+target_paths() { # $1 hook JSON -> absolute target paths, one per line
+  local tool cmd cwd
+  tool=$(jq -r '.tool_name // ""' <<<"$1" 2>/dev/null)
+  case "$tool" in
+    Bash)
+      cmd=$(jq -r '.tool_input.command // ""' <<<"$1" 2>/dev/null)
+      grep -qE '>|(^|[^[:alnum:]_])(tee|rm|cp|mv)([^[:alnum:]_]|$)|sed[^|;]*-i' <<<"$cmd" || return 0
+      declare -F resolve_write_targets >/dev/null || return 0
+      cwd=$(jq -r '.cwd // ""' <<<"$1" 2>/dev/null)
+      printf '%s' "$cmd" | resolve_write_targets "$cwd" | sort -u ;;
+    *) jq -r '.tool_input.file_path // empty' <<<"$1" 2>/dev/null ;;
+  esac
+}
 
 upsert_registry() { # $1 sid, $2 root, $3 kind-or-empty (empty = don't clobber kind)
   local branch head
@@ -108,25 +125,31 @@ bridge_read_via_seam() {
   cat "$f"
 }
 
-do_record() {
-  local input sid file dir root rel
-  input=$(cat)
-  sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
-  file=$(jq -re '.tool_input.file_path // empty' <<<"$input" 2>/dev/null) || exit 0
-  [ -n "$file" ] || exit 0
+record_one() { # $1 sid, $2 agent ('' = main), $3 absolute file
+  local sid="$1" agent="$2" file="$3" dir root rel
   # rel_path from the FILE's containing worktree root — never the session cwd
   # (feedback_subagent_worktree_cwd). Walk up until an existing dir (Write may create).
   dir=$(dirname "$file")
   while [ ! -d "$dir" ] && [ "$dir" != "/" ]; do dir=$(dirname "$dir"); done
-  root=$(git_root_of "$dir") || exit 0
-  [ -n "$root" ] || exit 0
+  root=$(git_root_of "$dir") || return 0
+  [ -n "$root" ] || return 0
   rel="${file#"$root"/}"
   upsert_registry "$sid" "$root" ""
-  run_sql -v sid="$sid" -v abs="$file" -v rel="$rel" <<'SQL'
-INSERT INTO harness.files_in_flight (session_id, abs_path, rel_path)
-VALUES (:'sid', :'abs', :'rel')
-ON CONFLICT (session_id, abs_path) DO UPDATE SET last_touch = now();
+  run_sql -v sid="$sid" -v agent="$agent" -v abs="$file" -v rel="$rel" <<'SQL'
+INSERT INTO harness.files_in_flight (session_id, agent_id, abs_path, rel_path)
+VALUES (:'sid', :'agent', :'abs', :'rel')
+ON CONFLICT (session_id, agent_id, abs_path) DO UPDATE SET last_touch = now();
 SQL
+}
+
+do_record() {
+  local input sid agent f
+  input=$(cat)
+  sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
+  agent=$(jq -r '.agent_id // ""' <<<"$input" 2>/dev/null)
+  while IFS= read -r f; do
+    [ -n "$f" ] && record_one "$sid" "$agent" "$f"
+  done <<<"$(target_paths "$input")"
 }
 
 do_reap() {
