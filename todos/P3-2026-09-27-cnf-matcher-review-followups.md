@@ -1,6 +1,6 @@
 ---
 title: "CNF matcher follow-ups: missing serving units, a committed gold set, and cheaper scoring"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-27
 updated: 2026-09-27
@@ -54,29 +54,29 @@ list. Reviewers flagged, as advisory:
 
 ## Acceptance Criteria
 
-- [ ] The safe units above are in `QUANTITY_UNITS`, with a test per new unit that
+- [x] The safe units above are in `QUANTITY_UNITS`, with a test per new unit that
       "<n> <unit> <food>" resolves like "<food>", plus a positive control that a food name
       containing the word (if any exists in CNF) still resolves to its own row.
-- [ ] The gold set (queries + expected-row patterns) is committed as a fixture, with a test
+- [x] The gold set (queries + expected-row patterns) is committed as a fixture, with a test
       or script that prints right/wrong/no-match counts against a CNF list, and the
       docstring points at it.
-- [ ] Bare "rice" resolves to a plain rice row, or the attempt and its gold-set
+- [x] Bare "rice" resolves to a plain rice row, or the attempt and its gold-set
       before/after are recorded here if no tie-break helps without new wrong answers.
-- [ ] The dead decimal branch is removed, or its comment says decimals arrive pre-split.
-- [ ] Tokenization is precomputed once per CNF list load. Scoring results are identical on
+- [x] The dead decimal branch is removed, or its comment says decimals arrive pre-split.
+- [x] Tokenization is precomputed once per CNF list load. Scoring results are identical on
       the gold set.
-- [ ] The OFF brand-name residual is in the `scoreCNFMatch` docstring.
-- [ ] Bare "taco" / "tacos" no longer resolve to the taco-flavoured chips row, or the
+- [x] The OFF brand-name residual is in the `scoreCNFMatch` docstring.
+- [x] Bare "taco" / "tacos" no longer resolve to the taco-flavoured chips row, or the
       attempt and its gold-set before/after are recorded here (item 7). Add these queries
       to the gold set either way.
-- [ ] The beverage route's pinned lookup names are in the gold set, each expected to
+- [x] The beverage route's pinned lookup names are in the gold set, each expected to
       land on its row: "coffee, brewed" → Coffee, brewed; "tea, brewed" → Tea, brewed;
       "milk, 2%" → Milk, fluid, partly skimmed, 2% M.F.; "cola" → Carbonated drinks, cola;
       "cream, table" → Cream, table (coffee), 18% M.F.; "sugar, granulated" → Sweets,
       sugars, granulated (`shared/constants/beverages.ts`, PR #1124). The route tests mock
       the lookup, so only the gold set would catch a matcher change moving them.
 
-- [ ] Dehydrated-form penalty residuals (PR #1126), each fixed or its attempt and gold-set
+- [x] Dehydrated-form penalty residuals (PR #1126), each fixed or its attempt and gold-set
       before/after recorded here: "cocoa" → "Hot chocolate, cocoa, homemade…" (was cocoa
       powder); "currant(s)" → "Currant, red and white, raw" (was "Currant, zante, dried", the
       baking currant); "thyme"/"rosemary"/"dill weed" → their fresh rows (were dried); bare
@@ -119,6 +119,83 @@ list. Reviewers flagged, as advisory:
 
 - Filed from the PR #1120 review passes (advisory findings, auto-filed per the Medium/Low
   policy).
+- **Implemented (todo-executor run), measured against the real 5,690-row CNF EN list
+  (downloaded fresh, not committed):**
+  - **Units (item 1):** added `pinch(es)`, `dash(es)`, `stalk(s)`, `sprig(s)`, `bunch(es)`,
+    `head(s)`, `ear(s)`, `wedge(s)`, `sheet(s)`, `stick(s)`, `container(s)`, `envelope(s)` to
+    `QUANTITY_UNITS` (not `clove`/`cloves` — still a CNF spice name). Verified: none of the
+    12 is the _leading_ word of any real CNF row, so `withoutLeadingQuantity`'s guard (only
+    strips a leading run) has no real collision to protect against; mid-name occurrences
+    ("Broccoli, stalks, raw", "Fish, fish sticks, …", "Pork, ears, …", "Potato, …, wedge
+    cut, …") are untouched regardless and are covered by tests anyway.
+  - **Gold set (item 2):** committed as `server/services/__tests__/fixtures/
+cnf-gold-set.json` — the original 51 queries (from the archived
+    `P1-2026-09-27-cultural-map-replaces-the-whole-query.md`, reproduced byte-for-byte:
+    43/4/4 against the real list, confirming the fixture's patterns are correct) plus 16
+    new queries for items 7/8 and the beverage-pinned names. A new
+    `nutrition-lookup.test.ts` describe block ("fuzzyMatchCNF — committed gold set") loads
+    the fixture, scores it against a curated ~60-row subset of real CNF descriptions
+    (verified 2026-09-27 to reproduce the SAME classification, query-for-query, as the full
+    5,690-row list — 0 mismatches), logs the counts, and asserts both the exact right/
+    wrong/no-match counts (52/11/4) AND the exact wrong/no-match query SETS, so a tie-break
+    that trades one wrong answer for another fails the test even if the totals still add
+    up. `scoreCNFMatch`'s docstring points at the fixture.
+  - **Rice (item 3) — attempted, not fixed.** Every plain "rice" row in CNF has ≥4 comma
+    parts ("Grains, rice, white, long-grain, …, cooked"); there is no 2–3 part canonical
+    row. The only lever tried was removing the head-part edge entirely: this did NOT flip
+    "rice" (the parts-count and length penalties alone still favour "Rice, Spanish rice")
+    and regressed 5 other correct bare-name matches (egg → "Bagel, egg", apple → "Strudel,
+    apple", potato → "Bread, potato", corn → "Tamale, corn", milk → "Cracker, milk"; full
+    gold set 43/4/4 → 38/9/4). No safe tie-break found; recorded per the AC's own escape
+    hatch. Unchanged from #1120/#1122's baseline.
+  - **Dead regex branch (item 4):** removed `isNumberWord`'s `(?:[.,]\d+)?` group; comment
+    now says why (matchWords already splits on "." and ",", so a word never contains one).
+  - **Tokenization (item 5):** added a `tokenizeDescription` memo cache keyed by the
+    lowercased description string, warmed eagerly right after `ensureCNFFoods` parses a
+    fresh CNF list (satisfies "precomputed once per CNF list load" literally) with a
+    cache-miss fallback so ad-hoc test food lists (not loaded through `ensureCNFFoods`)
+    still score correctly. Gold set counts identical before/after (52/11/4; base-51 alone
+    43/4/4). Cache is cleared in `_resetCNFCacheForTesting`.
+  - **OFF docstring (item 6):** added to `scoreCNFMatch`'s docstring.
+  - **Taco (item 7) — attempted, not fixed.** One measured probe: removing the parts-count
+    penalty (`>3` → multiplier 0) entirely does not flip "taco" (still "Snacks, tortilla
+    chips, taco" at ~19.7 vs. the correct "Fast foods, mexican, taco with beef/chicken, …"
+    at ~17.4 even with the penalty zeroed — the exact-part-match bonus and length penalty
+    alone are enough) and the base-51 gold set is unaffected (still 43/4/4). No safe
+    tie-break found. "taco"/"tacos"/"1 taco" added to the gold set as documented
+    residuals; "beef taco"/"chicken taco" added as positive controls (already resolve
+    correctly, unaffected). "guacamole", "buttermilk" and "ramen" (also named in the
+    Background as "same class") were deliberately NOT added to the gold set: the todo
+    names their current wrong answers but not a verified correct one, and inventing a
+    target pattern would poison the fixture future executors short-circuit onto.
+  - **Beverage pinned names:** "coffee, brewed" and "milk, 2%" were already in the base 51;
+    added "tea, brewed", "cola", "cream, table", "sugar, granulated" (all 4 already resolve
+    correctly — no code change, regression coverage only).
+  - **Dehydrated-form residuals (item 8) — 3 of 6 fixed, 3 recorded.** Extended
+    `isUnaskedDehydratedForm`'s Nuts/Seeds exemption to also cover a Spices row (a sole
+    "dried" comma-part on a row headed "spices"): fixes bare "thyme"/"rosemary"/"dill weed"
+    → their dried rows, restoring the pre-#1126 behaviour, with base-51 unaffected
+    (43/4/4). **This is an order-dependent tie, not a scored preference**: with the penalty
+    exempted, a spice's "dried" and "fresh" rows score identically, and `fuzzyMatchCNF`
+    keeps the first max found. CNF's real EN list happens to list "dried" before "fresh"
+    for dill weed/rosemary/thyme (so bare queries land on "dried") and "fresh" before
+    "dried" for spearmint (so bare "spearmint" still resolves to fresh, untouched — not a
+    gold-set item). If CNF ever reorders its list this tie flips; the docstring/comment say
+    so. "Cocoa", "currant"/"currants" and "cherries" were NOT fixed: for cocoa and currant
+    the dehydrated-form penalty pushes the WRONG direction (their common form is the
+    processed/dried one, unlike milk/beans/tomato), and even fully removing the penalty
+    only just barely re-flips the winner (measured: cocoa's powder row would edge the hot-
+    chocolate row by ~0.2 points — too thin a margin to trust, and there's no natural
+    category (unlike Nuts/Seeds/Spices) to hang an exemption on without it being a
+    single-food special case); "cherries" loses on the existing 0.8 plural-word-match
+    discount, unrelated to the dehydrated-form penalty at all (a fix there would touch
+    `wordMatch`'s plural handling broadly, unmeasured against the wider corpus — out of
+    scope for this pass). All 6 added to the gold set as documented residuals/fixes per
+    the AC's own escape hatch.
+  - Net gold set: 52 right / 11 wrong / 4 no-match (67 queries). Before this pass's fixes,
+    scoring all 67 queries would have been 49 right / 14 wrong / 4 no-match (thyme,
+    rosemary and dill weed wrong instead of right); the base-51 subset is unchanged at
+    43/4/4 either way.
 - Item 7 added from the cultural-map fallback fix, measured through `lookupNutrition`.
 - Dried/powder/flour forms now lose near ties (`isUnaskedDehydratedForm`, PR #1126, before
   the cooking per-100 g P1 so scaling doesn't multiply "milk" → dry milk powder). Gold set

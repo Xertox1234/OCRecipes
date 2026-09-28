@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 
 import {
   lookupNutrition,
@@ -1799,6 +1801,14 @@ describe("fuzzyMatchCNF — whole-word matching and head ranking", () => {
       "cup noodles",
       "Soup, NISSIN, CUP NOODLES, ramen noodle, chicken flavour, dry",
     ],
+    // The same property for the serving units added by the P3 matcher todo
+    // (item 1): each is now a stripped LEADING quantity unit, but none of
+    // them is the leading word of a real CNF row, so a mid-name occurrence
+    // is never at risk of being stripped — these real rows document that.
+    ["broccoli stalks", "Broccoli, stalks, raw"],
+    ["fish sticks", "Fish, fish sticks, frozen, prepared"],
+    ["pork ears", "Pork, ears, frozen, raw"],
+    ["potato wedge", "Potato, french-fried, wedge cut, frozen, unprepared"],
   ])(
     "keeps a unit word that is part of the food name: %s",
     (query, expected) => {
@@ -1811,6 +1821,10 @@ describe("fuzzyMatchCNF — whole-word matching and head ranking", () => {
         "Beans, white, raw",
         "Soup, NISSIN, CUP NOODLES, ramen noodle, chicken flavour, dry",
         "Restaurant, Chinese, noodles, crunchy",
+        "Broccoli, stalks, raw",
+        "Fish, fish sticks, frozen, prepared",
+        "Pork, ears, frozen, raw",
+        "Potato, french-fried, wedge cut, frozen, unprepared",
       ].map((food_description, i) => ({
         food_code: 2000 + i,
         food_description,
@@ -1818,6 +1832,43 @@ describe("fuzzyMatchCNF — whole-word matching and head ranking", () => {
       expect(fuzzyMatchCNF(query, rows)?.food_description).toBe(expected);
     },
   );
+
+  // New serving units (P3 matcher todo item 1): callers send "<quantity>
+  // <unit> <name>" for units CNF names never use, so they must join the
+  // existing "2 large banana"/"1 tbsp butter" stripping behaviour above.
+  it.each([
+    ["1 pinch salt", "Salt, table"],
+    ["1 dash salt", "Salt, table"],
+    ["3 stalk celery", "Celery, raw"],
+    ["2 sprig thyme", "Spices, thyme, dried"],
+    ["1 bunch spinach", "Spinach, raw"],
+    ["1 head lettuce", "Lettuce, butterhead (Boston, bibb)"],
+    ["1 ear corn", "Corn, sweet, white, raw"],
+    ["1 wedge lime", "Lime, raw"],
+    ["1 sheet phyllo", "Phyllo dough"],
+    ["1 stick butter", "Butter, regular"],
+    ["1 container cottage cheese", "Cheese, cottage, (1% M.F.)"],
+    ["1 envelope yeast", "Leavening agent, yeast, baker's, active, dry"],
+  ])("strips the new serving unit in %s", (query, expected) => {
+    const rows = [
+      "Salt, table",
+      "Celery, raw",
+      "Spices, thyme, dried",
+      "Spices, thyme, fresh",
+      "Spinach, raw",
+      "Lettuce, butterhead (Boston, bibb)",
+      "Corn, sweet, white, raw",
+      "Lime, raw",
+      "Phyllo dough",
+      "Butter, regular",
+      "Cheese, cottage, (1% M.F.)",
+      "Leavening agent, yeast, baker's, active, dry",
+    ].map((food_description, i) => ({
+      food_code: 5000 + i,
+      food_description,
+    }));
+    expect(fuzzyMatchCNF(query, rows)?.food_description).toBe(expected);
+  });
 
   it("keeps a percentage as a real word, not a quantity", () => {
     expect(match("milk, 2%")).toBe("Milk, fluid, partly skimmed, 2% M.F.");
@@ -1911,5 +1962,204 @@ describe("fuzzyMatchCNF — dried, powdered and flour forms", () => {
     // A cooking-session ingredient is the raw grain; "Pasta, dry" and
     // "Grains, quinoa, dry" are how CNF names it.
     expect(match("quinoa")).toBe("Grains, quinoa, dry");
+  });
+});
+
+describe("fuzzyMatchCNF — committed gold set", () => {
+  // Real CNF EN rows (food_code + food_description exactly as published),
+  // hand-picked so this fixed-size list reproduces the SAME right/wrong/
+  // no-match outcome fuzzyMatchCNF gets on the full 5,690-row CNF EN list
+  // (verified 2026-09-27 by scoring every gold-set query against both the
+  // full list and this subset: identical classification for all queries).
+  // Order matters for the three spices rows below — see the comment there.
+  const rows = [
+    { food_code: 16, food_description: "Butter, whipped" },
+    { food_code: 1704, food_description: "Banana, raw" },
+    { food_code: 1696, food_description: "Apple, raw, with skin" },
+    { food_code: 2539, food_description: "Nuts, almonds, toasted, unblanched" },
+    { food_code: 1619, food_description: "Orange juice, raw" },
+    { food_code: 3673, food_description: "Bagel, egg" },
+    { food_code: 1513, food_description: "Avocado, raw, florida" },
+    { food_code: 2418, food_description: "Potato, skin, raw" },
+    { food_code: 2255, food_description: "Tomato, green, raw" },
+    { food_code: 2380, food_description: "Carrot, raw" },
+    { food_code: 2401, food_description: "Onion, raw" },
+    { food_code: 6408, food_description: "Corn, sweet, white, raw" },
+    { food_code: 6577, food_description: "Tofu, fried" },
+    { food_code: 2213, food_description: "Spinach, raw" },
+    { food_code: 2374, food_description: "Broccoli, raw" },
+    { food_code: 119, food_description: "Cheese, cheddar" },
+    { food_code: 6289, food_description: "Peanut butter, natural" },
+    {
+      food_code: 4294,
+      food_description: "Sweets, honey, strained or extracted",
+    },
+    { food_code: 4317, food_description: "Sweets, sugar, brown" },
+    { food_code: 422, food_description: "Vegetable oil, olive" },
+    { food_code: 2698, food_description: "Beef, ground, regular" },
+    { food_code: 3392, food_description: "Lentils, raw" },
+    { food_code: 3376, food_description: "Beans, black, mature seeds, raw" },
+    { food_code: 1749, food_description: "Strawberry, raw" },
+    { food_code: 1691, food_description: "Watermelon, raw" },
+    { food_code: 1628, food_description: "Papaya, raw" },
+    { food_code: 114, food_description: "Milk, fluid, skim" },
+    {
+      food_code: 2873,
+      food_description: "Coffee, brewed, prepared with tap water",
+    },
+    {
+      food_code: 7469,
+      food_description: "Yogourt, Greek style, plain, 2% M.F.",
+    },
+    { food_code: 129, food_description: "Egg, chicken, whole, cooked, fried" },
+    {
+      food_code: 125,
+      food_description: "Egg, chicken, whole, fresh or frozen, raw",
+    },
+    {
+      food_code: 4068,
+      food_description: "Bread, whole wheat, commercial, toasted",
+    },
+    { food_code: 5307, food_description: "Butter, light, salted" },
+    {
+      food_code: 4523,
+      food_description: "Grains, rice, white, long-grain, regular, cooked",
+    },
+    { food_code: 5288, food_description: "Carbonated drinks, cola" },
+    {
+      food_code: 842,
+      food_description: "Chicken, broiler, breast, meat, roasted",
+    },
+    { food_code: 61, food_description: "Milk, fluid, partly skimmed, 2% M.F." },
+    // Baseline (#1120) residuals — real wrong-attractor rows, unrelated to
+    // this fixture's own fixes; kept so the gold set reproduces them.
+    { food_code: 6718, food_description: "Egg, chicken, yolk, cooked" },
+    { food_code: 7448, food_description: "Rice, Spanish rice" },
+    { food_code: 461, food_description: "Fish oil, salmon" },
+    { food_code: 3049, food_description: "Fish, salmon, atlantic, wild, raw" },
+    {
+      food_code: 1220,
+      food_description: "Deli-meat, chicken breast, cooked, extra lean",
+    },
+    // Taco family (P3 matcher todo item 7) — not fixed, see the gold set.
+    { food_code: 4134, food_description: "Snacks, tortilla chips, taco" },
+    {
+      food_code: 7098,
+      food_description:
+        "Fast foods, mexican, taco with beef, cheese and lettuce, soft",
+    },
+    {
+      food_code: 7100,
+      food_description:
+        "Fast foods, mexican, taco with chicken, cheese and lettuce, soft",
+    },
+    // Dehydrated-form residuals (P3 matcher todo item 8).
+    {
+      food_code: 71,
+      food_description: "Hot chocolate, cocoa, homemade, prepared with 2% milk",
+    },
+    { food_code: 4223, food_description: "Sweets, cocoa, powder, unsweetened" },
+    { food_code: 1709, food_description: "Currant, red and white, raw" },
+    { food_code: 1542, food_description: "Currant, zante, dried" },
+    // Real CNF list order: "dried" precedes "fresh" for these three spices,
+    // so the exemption's tie (see isUnaskedDehydratedForm) resolves to
+    // "dried" here — keep this order or the test stops matching production.
+    { food_code: 185, food_description: "Spices, dill weed, dried" },
+    { food_code: 204, food_description: "Spices, rosemary, dried" },
+    { food_code: 210, food_description: "Spices, thyme, dried" },
+    { food_code: 213, food_description: "Spices, dill weed, fresh" },
+    { food_code: 4723, food_description: "Spices, rosemary, fresh" },
+    { food_code: 215, food_description: "Spices, thyme, fresh" },
+    { food_code: 4397, food_description: "Candied foods, cherries" },
+    { food_code: 1531, food_description: "Cherry, sweet, raw" },
+    // Beverage route's pinned lookup names (shared/constants/beverages.ts).
+    { food_code: 2909, food_description: "Tea, brewed" },
+    { food_code: 136, food_description: "Cream, table (coffee), 18% M.F." },
+    { food_code: 4318, food_description: "Sweets, sugars, granulated" },
+  ];
+
+  interface GoldSetEntry {
+    query: string;
+    pattern: string;
+  }
+  const fixturePath = path.join(
+    process.cwd(),
+    "server",
+    "services",
+    "__tests__",
+    "fixtures",
+    "cnf-gold-set.json",
+  );
+  const goldSet: GoldSetEntry[] = JSON.parse(
+    fs.readFileSync(fixturePath, "utf8"),
+  ).entries;
+
+  function classify(entry: GoldSetEntry): "right" | "wrong" | "no-match" {
+    const match = fuzzyMatchCNF(entry.query, rows);
+    if (!match) return "no-match";
+    return new RegExp(entry.pattern).test(match.food_description)
+      ? "right"
+      : "wrong";
+  }
+
+  it("scores right/wrong/no-match on the committed gold set", () => {
+    const counts = { right: 0, wrong: 0, "no-match": 0 };
+    const wrongQueries: string[] = [];
+    const noMatchQueries: string[] = [];
+    for (const entry of goldSet) {
+      const status = classify(entry);
+      counts[status]++;
+      if (status === "wrong") wrongQueries.push(entry.query);
+      if (status === "no-match") noMatchQueries.push(entry.query);
+    }
+
+    // eslint-disable-next-line no-console -- the AC asks this be printed
+    console.log("CNF gold set:", counts);
+
+    // Assert the exact residual SET, not just the counts: a tie-break that
+    // trades one wrong answer for another must fail this test even when
+    // the totals happen to still add up.
+    expect(wrongQueries.sort()).toEqual(
+      [
+        "egg",
+        "rice",
+        "salmon",
+        "chicken breast",
+        "taco",
+        "tacos",
+        "1 taco",
+        "cocoa",
+        "currant",
+        "currants",
+        "cherries",
+      ].sort(),
+    );
+    expect(noMatchQueries.sort()).toEqual(
+      [
+        "white sugar",
+        "almonds, raw",
+        "juice, orange, fresh-squeezed",
+        "bread, bagel, plain",
+      ].sort(),
+    );
+    expect(counts).toEqual({ right: 52, wrong: 11, "no-match": 4 });
+  });
+
+  it("keeps beef/chicken taco resolving to their own row (positive controls beside the bare-taco residual)", () => {
+    expect(fuzzyMatchCNF("beef taco", rows)?.food_description).toBe(
+      "Fast foods, mexican, taco with beef, cheese and lettuce, soft",
+    );
+    expect(fuzzyMatchCNF("chicken taco", rows)?.food_description).toBe(
+      "Fast foods, mexican, taco with chicken, cheese and lettuce, soft",
+    );
+  });
+
+  it("fixes bare thyme/rosemary/dill weed to the dried spice row, without disturbing an explicit fresh/dried query", () => {
+    expect(fuzzyMatchCNF("thyme", rows)?.food_description).toBe(
+      "Spices, thyme, dried",
+    );
+    expect(fuzzyMatchCNF("fresh thyme", rows)?.food_description).toBe(
+      "Spices, thyme, fresh",
+    );
   });
 });
