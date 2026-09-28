@@ -68,7 +68,8 @@ export function normalizeDifficulty(
   difficulty: string | null | undefined,
 ): string | null {
   if (!difficulty) return null;
-  return DIFFICULTY_MAP[difficulty.toLowerCase().trim()] ?? null;
+  const key = difficulty.toLowerCase().trim();
+  return Object.hasOwn(DIFFICULTY_MAP, key) ? DIFFICULTY_MAP[key] : null;
 }
 
 // ── Instructions ────────────────────────────────────────────────────────────

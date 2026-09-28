@@ -267,10 +267,11 @@ async function writeNutritionCache(
  *
  * The free tier gates calories and protein behind a non-numeric string —
  * `numericOrGated` parses that as `null`, distinct from a genuine numeric 0.
- * A gated calorie count can't be trusted as the food's actual energy, so a
- * gated result is refused entirely (see the `null` check below) rather than
- * returned as a food that looks like a real 0-kcal match; the caller treats
- * it the same as "not found" (todo P2-2026-09-27).
+ * A gated value can't be trusted as the food's actual energy or protein, so
+ * a result with either field gated is refused entirely (see the `null` check
+ * below) rather than returned as a food that looks like a real 0-kcal or
+ * 0 g-protein match; the caller treats it the same as "not found" (todo
+ * P2-2026-09-27).
  */
 async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
   const apiKey = process.env.API_NINJAS_KEY;
@@ -302,10 +303,10 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
     }
 
     const item = parsed.data[0];
-    if (item.calories === null) {
+    if (item.calories === null || item.protein_g === null) {
       log.info(
         { query },
-        "API Ninjas: calories premium-gated — refusing result",
+        "API Ninjas: calories or protein premium-gated — refusing result",
       );
       return null;
     }
@@ -313,12 +314,7 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
     return {
       name: item.name,
       calories: item.calories,
-      // Protein is gated on the same free-tier restriction as calories (see
-      // the docblock above); every observed gated response gates both
-      // together, so a real `calories` has meant a real `protein_g` too.
-      // Fall back to 0 — the module's existing "incomplete" sentinel — in
-      // case that ever splits, rather than propagate a `null`.
-      protein: item.protein_g ?? 0,
+      protein: item.protein_g,
       carbs: item.carbohydrates_total_g,
       fat: item.fat_total_g,
       fiber: item.fiber_g,
@@ -1092,7 +1088,7 @@ export async function lookupUSDAByUPC(code: string): Promise<{
  *
  * CNF 0-calorie results fall through to USDA, matching the original guard at
  * the write site. USDA results are returned as-is; API Ninjas returns `null`
- * when its calories are premium-gated (see `lookupAPINinjas`), otherwise
+ * when its calories or protein are premium-gated (see `lookupAPINinjas`), otherwise
  * as-is. Callers apply the `calories > 0` write guard themselves for
  * whatever non-null result comes back.
  *
