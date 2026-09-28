@@ -487,13 +487,15 @@ export function getSystemPromptTemplateVersion(): string {
     todayIntake: { calories: 0, protein: 0, carbs: 0, fat: 0 },
     dietaryProfile: { dietType: null, allergies: [], dislikes: [] },
   };
-  // Hash all intent × tier variants (4 × 2 = 8) so any prompt change —
-  // including Pro-only lines — invalidates the cache.
+  // Hash all intent × tier variants (5 × 2 = 10) so any prompt change —
+  // including Pro-only lines — invalidates the cache. recipe_request renders
+  // the default (personalized) block; it is listed so the hash covers it (R4).
   const allIntents: CoachIntent[] = [
     "safety_refusal",
     "general_fact",
     "vague_request",
     "personalized_advice",
+    "recipe_request",
   ];
   const allTiers = ["free", "pro"] as const;
   const combined = allTiers
@@ -530,7 +532,8 @@ export async function* generateCoachResponse(
 ): AsyncGenerator<string> {
   const lastUserMessage =
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
-  const resolvedIntent = intent ?? classifyIntent(lastUserMessage).intent;
+  const resolvedIntent =
+    intent ?? classifyIntent(lastUserMessage, { recipeRequests: false }).intent;
   const systemPrompt = buildSystemPrompt(context, resolvedIntent, {
     tz,
     tier: "free",
@@ -626,7 +629,8 @@ export async function* generateCoachProResponse(
 ): AsyncGenerator<CoachProChunk> {
   const lastUserMessage =
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
-  const resolvedIntent = intent ?? classifyIntent(lastUserMessage).intent;
+  const resolvedIntent =
+    intent ?? classifyIntent(lastUserMessage, { recipeRequests: false }).intent;
   const systemPrompt = buildSystemPrompt(context, resolvedIntent, {
     tz,
     tier: "pro",

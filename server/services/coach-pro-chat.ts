@@ -527,7 +527,9 @@ export async function* handleCoachChat(
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
-  const { intent } = classifyIntent(content);
+  // recipe_request is routed by the recipe finder (Task 20); until then this
+  // path keeps its legacy prompt intent.
+  const { intent } = classifyIntent(content, { recipeRequests: false });
 
   const today = new Date();
 
