@@ -536,3 +536,32 @@ describe("subscribe", () => {
     expect(removeNotification).toHaveBeenCalledTimes(1);
   });
 });
+
+// A catalog (Spoonacular) preview spends a shared Spoonacular quota point on
+// open, so only an in-app tap may select it. `type` was already parsed; the
+// `recipeType` alias passed through unparsed, so `?recipeType=catalog` reached
+// the screen as a string.
+describe("FeaturedRecipeDetail links never select the catalog branch", () => {
+  const rootRoute = (path: string) => {
+    const state = linking.getStateFromPath!(path, linking.config);
+    return state?.routes[state.routes.length - 1] as
+      | { name: string; params?: Record<string, unknown> }
+      | undefined;
+  };
+
+  it("maps type=catalog to community", () => {
+    const route = rootRoute("recipe/42?type=catalog");
+    expect(route?.name).toBe("FeaturedRecipeDetail");
+    expect(route?.params).toEqual({ recipeId: 42, type: "community" });
+  });
+
+  it("maps recipeType=catalog to community", () => {
+    const route = rootRoute("recipe/42?recipeType=catalog");
+    expect(route?.params).toEqual({ recipeId: 42, recipeType: "community" });
+  });
+
+  it("positive control: recipeType=mealPlan still selects the meal-plan branch", () => {
+    const route = rootRoute("recipe/42?recipeType=mealPlan");
+    expect(route?.params).toEqual({ recipeId: 42, recipeType: "mealPlan" });
+  });
+});
