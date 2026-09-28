@@ -1,9 +1,9 @@
 ---
 title: "useNutritionLookup never resets servingSizeGrams per lookup — masked today only by an unrelated calories gate"
-status: backlog
+status: done
 priority: low
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-09-28
 assignee:
 labels: [deferred, hooks]
 github_issue:
@@ -22,7 +22,7 @@ From #1099's confirm review. It isn't visible today: every exit that skips `serv
 ## Acceptance Criteria
 
 - [ ] Add `setServingSizeGrams(<declared initial value>)` to the reset block at the top of `fetchBarcodeData`.
-- [ ] A hook test: lookup 1 succeeds with a serving size, then lookup 2 takes a non-success exit on the same hook instance, and `servingSizeGrams` is back to its initial value. It must fail before the fix.
+- [x] A hook test: lookup 1 succeeds with a serving size, then lookup 2 takes a non-success exit on the same hook instance, and `servingSizeGrams` is back to its initial value. It must fail before the fix.
 
 ## Implementation Notes
 
@@ -36,3 +36,7 @@ From #1099's confirm review. It isn't visible today: every exit that skips `serv
 ## Dependencies
 
 - None
+
+### 2026-09-28
+
+- Resolved by the P1-2026-09-23 atomic lookup-state refactor (same PR). The reset block this todo's first criterion targets no longer exists: every lookup outcome now commits a whole `LookupState`, and `not-in-database` / `off-not-found` / `total-outage` fall back to `INITIAL_LOOKUP_STATE.servingSizeGrams` (null). The second criterion is met as written: `useNutritionLookup.test.ts` "resets servingSizeGrams to null on a re-fetch (same hook instance) that takes a non-success path" — RED on the pre-refactor hook (`expected 100 to be null`), GREEN after. Mid-flight the prior value is still carried (pinned by the existing "no basis mid-re-fetch" test); only the settled outcome resets it.

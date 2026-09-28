@@ -1,9 +1,9 @@
 ---
 title: "useNutritionLookup: replace 23 independent state atoms with one atomic per-lookup state and a pure lookupBarcode() outcome union"
-status: backlog
+status: done
 priority: high
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-28
 assignee:
 labels: [deferred, audit, maintainability]
 github_issue:
@@ -26,12 +26,12 @@ Found by the 2026-09-23 front-end audit (read-only, 6 lenses + Context7 research
 
 ## Acceptance Criteria
 
-- [ ] A pure `lookupBarcode(code, ocrText, signal): Promise<LookupOutcome>` returns a discriminated union (server-ok / server-ok-conflict / not-in-database / off-fallback / off-not-found / total-outage), unit-tested without React
-- [ ] Per-lookup result state is ONE object set atomically from the outcome; the reset-rationale comment block is deleted because the invariant holds by construction
-- [ ] One `toNutritionData(...)` mapper replaces the three copies
-- [ ] Out-of-order responses for a superseded barcode are discarded (test)
-- [ ] All existing useNutritionLookup / NutritionDetailScreen characterization tests stay green (update the correctionNotice pin if the correction-notice todo lands first)
-- [ ] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
+- [x] A pure `lookupBarcode(code, ocrText, signal): Promise<LookupOutcome>` returns a discriminated union (server-ok / server-ok-conflict / not-in-database / off-fallback / off-not-found / total-outage), unit-tested without React
+- [x] Per-lookup result state is ONE object set atomically from the outcome; the reset-rationale comment block is deleted because the invariant holds by construction
+- [x] One `toNutritionData(...)` mapper replaces the three copies
+- [x] Out-of-order responses for a superseded barcode are discarded (test)
+- [x] All existing useNutritionLookup / NutritionDetailScreen characterization tests stay green (update the correctionNotice pin if the correction-notice todo lands first)
+- [x] Failing test written first (TDD), then the fix; the test fails on current `main` and passes after.
 
 ## Implementation Notes
 
@@ -61,3 +61,11 @@ Characterize current behavior first (existing tests + any gaps), then refactor b
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (H8, L8).
+
+### 2026-09-28
+
+- Done via /todo-fast. New `client/hooks/nutrition-lookup-outcome.ts`: a total `lookupBarcode()` returning a six-variant `LookupOutcome`, one `toNutritionData`, and pure `beginLookup` / `lookupStateFromOutcome`; the hook holds every lookup-owned field in one `useState` object and the reset-rationale block is gone.
+- Supersession is keyed on the effect run (AbortController checked at commit), not on barcode equality — a label retake re-fires for the SAME barcode, so "barcode ≠ current" alone would not discard it. Both cases tested; RED on the pre-refactor hook.
+- Deviation from the Risks line, left for the user: `not-in-database` and `off-not-found` carry no "couldn't verify allergens" flag, exactly as before (no product ⇒ no flag). The union makes the flag REQUIRED on `off-fallback` and `total-outage` and absent on those two.
+- Intended behaviour change: a non-success outcome resets `servingSizeGrams` instead of inheriting the prior product's (closes P3-2026-09-26-nutrition-lookup-serving-size-grams-not-reset, archived in the same PR).
+- Out of contract, required: `scripts/todo-automerge-guard.sh` gains `nutrition-lookup-outcome` in SENSITIVE_OVERRIDE — the Bearer-header construction moved there from `useNutritionLookup` (already listed), and the guard's drift test failed on the unguarded file.
