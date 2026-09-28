@@ -1,5 +1,6 @@
 import { ApiError } from "@/lib/api-error";
 import type { SearchFilters } from "@/components/meal-plan/SearchFilterSheet";
+import type { SearchableRecipe } from "@shared/types/recipe-search";
 
 /**
  * Consolidated RecipeBrowserScreen filter state: the chip-row toggles
@@ -107,4 +108,17 @@ export function resolveOnlineCtaState(a: {
   if (a.onlineRequested && a.quotaExhausted) return "quota-exhausted";
   if (a.onlineRequested && a.onlineLoading) return "loading";
   return "actionable";
+}
+
+/**
+ * Detail-screen params for a search row. A Spoonacular id is NOT a community
+ * id — it previews through /api/meal-plan/catalog/:id (R1, 2026-09-28).
+ */
+export function detailParamsForSearchResult(
+  item: Pick<SearchableRecipe, "id" | "source">,
+): { recipeId: number; recipeType: "community" | "mealPlan" | "catalog" } {
+  const recipeId = parseInt(item.id.split(":")[1], 10);
+  if (item.source === "spoonacular") return { recipeId, recipeType: "catalog" };
+  if (item.source === "personal") return { recipeId, recipeType: "mealPlan" };
+  return { recipeId, recipeType: "community" };
 }

@@ -5,6 +5,7 @@ import {
   resolveOnlineCtaState,
   computeActiveFilterCount,
   DEFAULT_FILTERS,
+  detailParamsForSearchResult,
 } from "../recipe-browser-utils";
 import { ApiError } from "../../../lib/api-error";
 
@@ -145,5 +146,28 @@ describe("computeActiveFilterCount", () => {
         pantryMode: true,
       }),
     ).toBe(0);
+  });
+});
+
+describe("detailParamsForSearchResult", () => {
+  it("opens a Spoonacular result as a catalog preview, not a community id", () => {
+    expect(
+      detailParamsForSearchResult({
+        id: "spoonacular:715538",
+        source: "spoonacular",
+      }),
+    ).toEqual({ recipeId: 715538, recipeType: "catalog" });
+  });
+
+  it("opens a community result as community", () => {
+    expect(
+      detailParamsForSearchResult({ id: "community:17", source: "community" }),
+    ).toEqual({ recipeId: 17, recipeType: "community" });
+  });
+
+  it("opens a personal result as mealPlan", () => {
+    expect(
+      detailParamsForSearchResult({ id: "personal:42", source: "personal" }),
+    ).toEqual({ recipeId: 42, recipeType: "mealPlan" });
   });
 });
