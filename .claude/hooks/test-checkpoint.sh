@@ -108,14 +108,17 @@ cap "$R" & cap "$R" & wait
 assert_eq "parallel: ref is a commit" "$(git -C "$R" cat-file -t refs/checkpoints/sess0001/main 2>/dev/null)" "commit"
 assert_eq "parallel: ref tree has the edit" "$(git -C "$R" show refs/checkpoints/sess0001/main:tracked.txt)" "$(printf 'base\nx')"
 
-# Review Focus 3: conflicted index → silent skip, nothing touched.
+# Review Focus 3: conflicted index → checkpoint of the marker-laden tree; real index (unmerged entries) untouched.
 R=$(mkrepo rconf)
 git -C "$R" checkout -q -b b1; printf 'b1\n' > "$R/tracked.txt"; git -C "$R" commit -qam b1
 git -C "$R" checkout -q main;  printf 'm\n'  > "$R/tracked.txt"; git -C "$R" commit -qam m
 git -C "$R" merge -q b1 >/dev/null 2>&1
+assert_ne "conflict: precondition — index has unmerged entries" "$(git -C "$R" ls-files -u)" ""
 I0=$(idx_sum "$R"); OUT=$(cap "$R" 2>&1); RC=$?
 assert_eq "conflict: exit 0" "$RC" "0"; assert_empty "conflict: silent" "$OUT"
 assert_eq "conflict: index untouched" "$(idx_sum "$R")" "$I0"
+assert_ne "conflict: real index still has unmerged entries" "$(git -C "$R" ls-files -u)" ""
+assert_contains "conflict: checkpoint tree holds the marker-laden file" "$(git -C "$R" show refs/checkpoints/sess0001/main:tracked.txt)" "<<<<<<<"
 
 # Review Focus 4: no commits yet → no ref, no error.
 R="$TMPROOT/rempty"; mkdir -p "$R"; git -C "$R" init -q -b main; printf 'u\n' > "$R/u.txt"
@@ -137,6 +140,10 @@ OUT=$(bash "$CKPT" list --cwd "$R")
 assert_contains "list: ref"        "$OUT" "refs/checkpoints/sesslist/main"
 assert_contains "list: trigger"    "$OUT" "checkpoint: agent"
 assert_contains "list: file count" "$OUT" "1 files"
+printf 'y\n' >> "$R/other.txt"; cap "$R" sesslist agent
+assert_eq "list: chained checkpoint has 2 parents" "$(git -C "$R" rev-list --parents -n1 refs/checkpoints/sesslist/main | wc -w | tr -d ' ')" "3"
+OUT=$(bash "$CKPT" list --cwd "$R")
+assert_contains "list: file count still against HEAD, not previous checkpoint" "$OUT" "2 files"
 
 # fail-open + guards
 OUT=$(bash "$CKPT" capture --session s --trigger agent --cwd /nonexistent 2>&1); RC=$?
