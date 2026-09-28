@@ -10,6 +10,7 @@ SCRIPT="$PROJECT_ROOT/scripts/pg-lab/session-coord.sh"
 INIT="$PROJECT_ROOT/scripts/pg-lab/init.sh"
 SCHEMA="$PROJECT_ROOT/scripts/pg-lab/schema/session-coordination.sql"
 FAIL=0
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
 assert_exit0()    { if [ "$2" -eq 0 ]; then echo "ok: $1"; else echo "FAIL: $1 — expected exit 0, got $2"; FAIL=1; fi; }
 assert_exit()     { if [ "$2" -eq "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 — expected exit $3, got $2"; FAIL=1; fi; }
 assert_contains() { if grep -qF -- "$3" <<<"$2"; then echo "ok: $1"; else echo "FAIL: $1 — missing: $3"; FAIL=1; fi; }
@@ -178,9 +179,9 @@ bash "$SCRIPT" refresh-snapshot --session "$MYSID" >/dev/null 2>&1
 assert_exit0 "refresh-snapshot exits 0" "$?"
 SNAP="/tmp/claude-session-coord-${MYSID}.json"
 N_OTHER=$(jq -r '.sessions | length' "$SNAP" 2>/dev/null)
-assert_eq "snapshot lists only OTHER sessions" "$N_OTHER" "1"
-assert_eq "snapshot session id" "$(jq -r '.sessions[0].session_id' "$SNAP")" "$OTHERSID"
-assert_eq "snapshot carries files" "$(jq -r '.sessions[0].files[0].rel_path' "$SNAP")" "server/index.ts"
+assert_eq "snapshot lists all live sessions, own included (v2 §5.1)" "$N_OTHER" "2"
+assert_eq "snapshot carries the other session" "$(jq -r --arg o "$OTHERSID" '[.sessions[] | select(.session_id == $o)] | length' "$SNAP")" "1"
+assert_eq "snapshot carries files" "$(jq -r --arg o "$OTHERSID" '.sessions[] | select(.session_id == $o) | .files[0].rel_path' "$SNAP")" "server/index.ts"
 rm -f "$SNAP"
 [ ! -d "/tmp/claude-session-coord-${MYSID}.refresh-lock" ] && echo "ok: refresh released its lockdir" || { echo "FAIL: lockdir leaked after successful refresh"; FAIL=1; }
 

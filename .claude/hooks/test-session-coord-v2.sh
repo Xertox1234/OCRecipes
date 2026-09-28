@@ -10,6 +10,7 @@ SHIM="$HOOK_DIR/session-coord-hook.sh"
 INIT="$PROJECT_ROOT/scripts/pg-lab/init.sh"
 SCHEMA="$PROJECT_ROOT/scripts/pg-lab/schema/session-coordination.sql"
 FAIL=0
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
 assert_eq()       { if [ "$2" = "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 — expected [$3], got [$2]"; FAIL=1; fi; }
 assert_empty()    { if [ -z "$2" ]; then echo "ok: $1"; else echo "FAIL: $1 — expected empty, got [$2]"; FAIL=1; fi; }
 assert_contains() { if grep -qF -- "$3" <<<"$2"; then echo "ok: $1"; else echo "FAIL: $1 — missing [$3] in [$2]"; FAIL=1; fi; }
@@ -75,5 +76,71 @@ assert_eq "record: Bash writes past /dev/null still records the real target" "$(
 assert_eq "record: nothing under /dev is ever recorded" "$(q "SELECT count(*) FROM harness.files_in_flight WHERE abs_path LIKE '/dev/%'")" "0"
 
 assert_eq "record: TTL is 15 minutes" "$(q "SELECT extract(epoch FROM expires_at - last_seen_at)::int FROM harness.session_registry WHERE session_id='$ME'")" "900"
+
+# --- snapshot (Task 8) ---------------------------------------------------------------------
+q "INSERT INTO harness.session_registry (session_id, repo_root, session_kind, branch) VALUES ('$OTHER', '$R2', 'todo-executor', 'todo/foo') ON CONFLICT DO NOTHING" >/dev/null
+q "INSERT INTO harness.files_in_flight (session_id, agent_id, abs_path, rel_path) VALUES ('$OTHER', '', '$R2/src/z.ts', 'src/z.ts')" >/dev/null
+rm -f "$SNAPF"; bash "$SCRIPT" refresh-snapshot --session "$ME"
+assert_eq "snapshot: includes own session" "$(jq -r --arg me "$ME" '[.sessions[] | select(.session_id == $me)] | length' "$SNAPF")" "1"
+assert_eq "snapshot: file carries agent_id" "$(jq -r --arg me "$ME" '.sessions[] | select(.session_id == $me) | .files[] | select(.rel_path == "src/a.ts" and .agent_id == "agentA1") | .agent_id' "$SNAPF")" "agentA1"
+assert_eq "snapshot: last_touch is epoch seconds" "$(jq -r '[.sessions[].files[].last_touch | type] | unique | join(",")' "$SNAPF")" "number"
+
+# --- consult cells (Task 8: warn tiers) ----------------------------------------------------
+NOW=$(date +%s)
+snap() { # $1 = JSON array of session objects -> fresh snapshot file
+  printf '{"sessions":%s}\n' "$1" > "$SNAPF"
+}
+ses() { # $1 sid, $2 files JSON array
+  printf '{"session_id":"%s","session_kind":"interactive","branch":"b","repo_root":"%s","last_seen_at":"t","files":%s}' "$1" "$R1" "$2"
+}
+fil() { # $1 abs, $2 rel, $3 agent, $4 seconds ago
+  printf '{"abs_path":"%s","rel_path":"%s","agent_id":"%s","last_touch":%s}' "$1" "$2" "$3" "$((NOW - $4))"
+}
+consult() { # $1 current agent ('' = main), $2 abs path
+  jq -n --arg s "$ME" --arg a "$1" --arg f "$2" \
+    '{session_id:$s, tool_name:"Edit", tool_input:{file_path:$f}} + (if $a == "" then {} else {agent_id:$a} end)' \
+    | bash "$SCRIPT" consult --stdin-json 2>/dev/null
+}
+ctx()  { jq -r '.hookSpecificOutput.additionalContext // ""' <<<"$1" 2>/dev/null; }
+
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/x.ts" src/x.ts '' 60)]")]"
+assert_contains "cell other/same abs: warns" "$(ctx "$(consult agentB "$R1/src/x.ts")")" "same checkout"
+snap "[$(ses "$OTHER" "[$(fil "$R2/src/x.ts" src/x.ts '' 60)]")]"
+assert_contains "cell other/same rel other root: warns" "$(ctx "$(consult agentB "$R1/src/x.ts")")" "another worktree"
+snap "[$(ses "$ME" "[$(fil "$R1/src/x.ts" src/x.ts agentA1 60)]")]"
+assert_contains "cell own/different agent/same abs: warns" "$(ctx "$(consult agentB "$R1/src/x.ts")")" "Agent agentA1 in this same session"
+snap "[$(ses "$ME" "[$(fil "$R1/src/x.ts" src/x.ts agentA1 60)]")]"
+assert_empty "cell own/same agent/same abs: silent" "$(consult agentA1 "$R1/src/x.ts")"
+snap "[$(ses "$ME" "[$(fil "$R1/src/x.ts" src/x.ts '' 60)]")]"
+assert_contains "cell own/main-agent row vs subagent: warns" "$(ctx "$(consult agentB "$R1/src/x.ts")")" "main agent of this same session"
+snap "[$(ses "$ME" "[$(fil "$R2/src/x.ts" src/x.ts agentA1 60)]")]"
+assert_contains "cell own/different agent/other worktree fresh: warns" "$(ctx "$(consult agentB "$R1/src/x.ts")")" "another worktree"
+snap "[$(ses "$ME" "[$(fil "$R2/src/x.ts" src/x.ts agentA1 960)]")]"
+assert_empty "cell own/different agent/other worktree 16 min old: silent" "$(consult agentB "$R1/src/x.ts")"
+
+# Bash consult (Review Focus 2: ./ spelling matches the recorded path)
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/x.ts" src/x.ts '' 60)]")]"
+bcon() { jq -n --arg s "$ME" --arg c "$1" --arg cwd "$R1" '{session_id:$s, tool_name:"Bash", cwd:$cwd, tool_input:{command:$c}}' | bash "$SCRIPT" consult --stdin-json 2>/dev/null; }
+assert_contains "Bash consult: rm ./src/x.ts matches" "$(ctx "$(bcon 'rm ./src/x.ts')")" "same checkout"
+assert_empty "Bash consult: after cd → silent" "$(bcon 'cd src && rm x.ts')"
+assert_empty "Bash consult: non-writing → silent" "$(bcon 'ls src')"
+
+# Stale snapshot + a holder that appeared since → refreshed synchronously (spec §6.2 step 0)
+q "INSERT INTO harness.files_in_flight (session_id, agent_id, abs_path, rel_path) VALUES ('$OTHER', '', '$R1/src/late.ts', 'src/late.ts')" >/dev/null
+snap "[]"; age_file "$SNAPF" 600
+assert_contains "stale snapshot: new holder seen on the first consult" "$(ctx "$(consult '' "$R1/src/late.ts")")" "Session ${OTHER:0:8}"
+
+. "$HOOK_DIR/lib/mutants.sh"
+mutant "is_self ignores agent_id (all own rows = self)" "scripts/pg-lab/session-coord.sh" \
+  's/^( *def is_self\(\$s; \$x\): \(\$s\.session_id == \$me\)) and .*;$/\1;/'
+mutant "is_self never true (own same-agent rows collide)" "scripts/pg-lab/session-coord.sh" \
+  's/^( *def is_self\(\$s; \$x\):).*;$/\1 false;/'
+mutant "own-session 15-min gate dropped" "scripts/pg-lab/session-coord.sh" \
+  's/^( *def own_gate\(\$s; \$x\):).*;$/\1 true;/'
+mutant "refresh excludes own session again" "scripts/pg-lab/session-coord.sh" \
+  "s/^  WHERE r\\.expires_at > now\\(\\)\$/  WHERE r.session_id <> :'sid' AND r.expires_at > now()/"
+mutant "stale snapshot refreshed in background only" "scripts/pg-lab/session-coord.sh" \
+  's/then refresh_bounded "\$sid";/then refresh_bounded "$sid" \&/'
+run_mutants "$PROJECT_ROOT" ".claude/hooks/test-session-coord-v2.sh" || FAIL=1
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

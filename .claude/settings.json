@@ -309,6 +309,16 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" consult",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SubagentStop": [
@@ -399,6 +409,15 @@
             "timeout": 60,
             "statusMessage": "eslint --fix on changed file..."
           },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" record"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" record"
