@@ -30,22 +30,36 @@ import FeaturedRecipeDetailScreen from "../FeaturedRecipeDetailScreen";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 
-const { mockApiRequest, mockRouteParams, mockNavigate, mockReset } = vi.hoisted(
-  () => ({
-    mockApiRequest: vi.fn(),
-    mockRouteParams: {
-      current: {
-        recipeId: 42,
-        recipeType: "mealPlan" as const,
-      },
+const {
+  mockApiRequest,
+  mockRouteParams,
+  mockNavigate,
+  mockReset,
+  mockReplace,
+  mockDetailProps,
+} = vi.hoisted(() => ({
+  mockApiRequest: vi.fn(),
+  mockRouteParams: {
+    current: {
+      recipeId: 42,
+      recipeType: "mealPlan",
+    } as {
+      recipeId: number;
+      recipeType: "mealPlan" | "community" | "catalog";
     },
-    mockNavigate: vi.fn(),
-    mockReset: vi.fn(),
-  }),
-);
+  },
+  mockNavigate: vi.fn(),
+  mockReset: vi.fn(),
+  mockReplace: vi.fn(),
+  mockDetailProps: { current: null as Record<string, unknown> | null },
+}));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: mockNavigate, reset: mockReset }),
+  useNavigation: () => ({
+    navigate: mockNavigate,
+    reset: mockReset,
+    replace: mockReplace,
+  }),
   useRoute: () => ({ params: mockRouteParams.current }),
 }));
 
@@ -63,9 +77,15 @@ vi.mock("@/lib/query-client", async (importOriginal) => ({
 // system under test; RecipeDetailContent's internals (nutrition cards,
 // favouriting, cookbook picker, etc.) are a different component's concern.
 vi.mock("@/components/RecipeDetailContent", () => ({
-  RecipeDetailContent: (props: { title: string }) => (
-    <div data-testid="recipe-detail-content">{props.title}</div>
-  ),
+  RecipeDetailContent: (props: { title: string } & Record<string, unknown>) => {
+    mockDetailProps.current = props;
+    return <div data-testid="recipe-detail-content">{props.title}</div>;
+  },
+}));
+
+vi.mock("@/components/UpgradeModal", () => ({
+  UpgradeModal: ({ visible }: { visible: boolean }) =>
+    visible ? <div data-testid="upgrade-modal" /> : null,
 }));
 
 vi.mock("@/components/recipe-detail", () => ({
@@ -280,5 +300,139 @@ describe("FeaturedRecipeDetailScreen — happy path is unaffected", () => {
     expect(await screen.findByText("Pancakes")).toBeDefined();
     expect(screen.queryByText("Recipe not found")).toBeNull();
     expect(screen.queryByText("Couldn't load this recipe")).toBeNull();
+  });
+});
+
+describe("FeaturedRecipeDetailScreen — catalog (Spoonacular) preview", () => {
+  const catalogDetail = {
+    recipe: {
+      title: "Spoonacular Chili",
+      description: "Warm",
+      servings: 4,
+      prepTimeMinutes: 10,
+      cookTimeMinutes: 30,
+      imageUrl: null,
+      instructions: ["Cook"],
+      dietTags: [],
+      caloriesPerServing: "420",
+      proteinPerServing: "30",
+      carbsPerServing: "40",
+      fatPerServing: "12",
+    },
+    ingredients: [{ name: "beans", quantity: "1", unit: "can" }],
+  };
+
+  beforeEach(() => {
+    mockRouteParams.current = { recipeId: 715538, recipeType: "catalog" };
+    mockDetailProps.current = null;
+  });
+
+  function mockCatalogApi(saveResult: unknown = { id: 901 }) {
+    mockApiRequest.mockImplementation(async (method: string) =>
+      method === "GET"
+        ? { json: async () => catalogDetail }
+        : saveResult instanceof Error
+          ? Promise.reject(saveResult)
+          : { json: async () => saveResult },
+    );
+  }
+
+  it("fetches the preview from the catalog endpoint, not /api/recipes", async () => {
+    mockCatalogApi();
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    expect(await screen.findByText("Spoonacular Chili")).toBeDefined();
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/api/meal-plan/catalog/715538",
+    );
+  });
+
+  it("hands RecipeDetailContent recipeId 0 so favourite/cookbook/remix never touch a DB row", async () => {
+    mockCatalogApi();
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    await screen.findByText("Spoonacular Chili");
+    expect(mockDetailProps.current?.recipeId).toBe(0);
+    expect(mockDetailProps.current?.recipeType).toBe("mealPlan");
+  });
+
+  it("saves via the catalog save endpoint, shows the saved state, and opens the saved copy", async () => {
+    mockCatalogApi({ id: 901 });
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    fireEvent.click(
+      await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
+    );
+    expect(await screen.findByText("Saved · View recipe")).toBeDefined();
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/meal-plan/catalog/715538/save",
+    );
+    fireEvent.click(
+      screen.getByLabelText("Saved. Open Spoonacular Chili in your recipes"),
+    );
+    expect(mockReplace).toHaveBeenCalledWith("FeaturedRecipeDetail", {
+      recipeId: 901,
+      recipeType: "mealPlan",
+    });
+  });
+
+  it("shows an inline error when Save fails", async () => {
+    mockCatalogApi(new TypeError("Network request failed"));
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    fireEvent.click(
+      await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
+    );
+    expect(
+      await screen.findByText("Couldn't save this recipe. Try again."),
+    ).toBeDefined();
+  });
+
+  it("shows the Premium state for a 403 PREMIUM_REQUIRED", async () => {
+    mockApiRequest.mockRejectedValue(
+      new ApiError(
+        "403: Recipe catalog requires a premium subscription",
+        ErrorCode.PREMIUM_REQUIRED,
+        403,
+      ),
+    );
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    expect(
+      await screen.findByText("Online recipes are a Premium feature"),
+    ).toBeDefined();
+    expect(screen.queryByText("Try Again")).toBeNull();
+    fireEvent.click(screen.getByText("See Premium"));
+    expect(screen.getByTestId("upgrade-modal")).toBeDefined();
+  });
+
+  it("shows 'Recipe not found' for a catalog 404", async () => {
+    mockApiRequest.mockRejectedValue(
+      new ApiError(
+        "404: Recipe not found in catalog",
+        ErrorCode.NOT_FOUND,
+        404,
+      ),
+    );
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    expect(await screen.findByText("Recipe not found")).toBeDefined();
+    expect(screen.queryByText("Try Again")).toBeNull();
+    // The no-data fallback also reads "Recipe not found" — pin that this is
+    // the catalog request's 404, not a branch that never fetched.
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/api/meal-plan/catalog/715538",
+    );
+  });
+
+  it("shows the unavailable state for a 402 quota error", async () => {
+    mockApiRequest.mockRejectedValue(
+      new ApiError(
+        "402: Spoonacular API quota exceeded",
+        ErrorCode.CATALOG_QUOTA_EXCEEDED,
+        402,
+      ),
+    );
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    expect(
+      await screen.findByText("Spoonacular isn't available right now"),
+    ).toBeDefined();
   });
 });
