@@ -147,6 +147,16 @@ describe("normalizeUnit", () => {
     expect(normalizeUnit(null)).toBe("");
     expect(normalizeUnit(undefined)).toBe("");
   });
+  // `MAP[key] ?? fallback` would return an inherited Object.prototype member
+  // for "constructor"/"__proto__" — those are the only two Object.prototype
+  // member names that survive .toLowerCase() (every other one, e.g.
+  // "toString", "hasOwnProperty", has an uppercase letter), so this pair is
+  // exhaustive, not a sample. The guard must be own-property only
+  // (Object.hasOwn).
+  it("treats prototype member names as plain unknown units, not map hits", () => {
+    expect(normalizeUnit("constructor")).toBe("constructor");
+    expect(normalizeUnit("__proto__")).toBe("__proto__");
+  });
 });
 
 describe("normalizeIngredient", () => {

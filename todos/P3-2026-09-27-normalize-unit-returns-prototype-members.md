@@ -1,6 +1,6 @@
 ---
 title: 'normalizeUnit returns an Object prototype member for "constructor" or "__proto__"'
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-27
 updated: 2026-09-27

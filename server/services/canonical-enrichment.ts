@@ -83,11 +83,14 @@ const UNIT_NORMALIZATION_MAP: Record<string, string> = {
 
 function normalizeUnit(unit: string): string {
   const lower = unit.toLowerCase().trim();
-  return (
-    UNIT_NORMALIZATION_MAP[lower] ??
-    UNIT_NORMALIZATION_MAP[lower.replace(/s$/, "")] ??
-    unit
-  );
+  if (Object.hasOwn(UNIT_NORMALIZATION_MAP, lower)) {
+    return UNIT_NORMALIZATION_MAP[lower];
+  }
+  const singular = lower.replace(/s$/, "");
+  if (Object.hasOwn(UNIT_NORMALIZATION_MAP, singular)) {
+    return UNIT_NORMALIZATION_MAP[singular];
+  }
+  return unit;
 }
 
 function normalizeIngredients(
