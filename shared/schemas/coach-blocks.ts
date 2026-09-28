@@ -74,7 +74,10 @@ const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   // stricter than an unlisted one, which safeParse always tolerated.
   FeaturedRecipeDetail: z.object({
     recipeId: z.number(),
-    recipeType: z.enum(["community", "mealPlan"]).optional().catch(undefined),
+    recipeType: z
+      .enum(["community", "mealPlan", "catalog"])
+      .optional()
+      .catch(undefined),
     type: z.enum(["community", "mealPlan"]).optional().catch(undefined),
   }),
   // initialMessage/remixSourceRecipeId/remixSourceRecipeTitle: real,

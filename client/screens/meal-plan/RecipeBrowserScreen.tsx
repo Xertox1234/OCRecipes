@@ -67,6 +67,7 @@ import {
   resolveOnlineCtaState,
   computeActiveFilterCount,
   DEFAULT_FILTERS,
+  detailParamsForSearchResult,
   type RecipeFilters,
 } from "@/screens/meal-plan/recipe-browser-utils";
 import type {
@@ -550,22 +551,17 @@ export default function RecipeBrowserScreen() {
   const handleRecipePress = useCallback(
     async (item: SearchableRecipe) => {
       haptics.selection();
-      const numericId = parseInt(item.id.split(":")[1], 10);
+      const detailParams = detailParamsForSearchResult(item);
+      const numericId = detailParams.recipeId;
 
       if (item.source === "community" || item.source === "spoonacular") {
-        navigation.navigate("FeaturedRecipeDetail", {
-          recipeId: numericId,
-          recipeType: "community",
-        });
+        navigation.navigate("FeaturedRecipeDetail", detailParams);
         return;
       }
 
       // Personal recipe
       if (isBrowseOnly) {
-        navigation.navigate("FeaturedRecipeDetail", {
-          recipeId: numericId,
-          recipeType: "mealPlan",
-        });
+        navigation.navigate("FeaturedRecipeDetail", detailParams);
         return;
       }
 

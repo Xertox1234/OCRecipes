@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AccessibilityInfo,
   Pressable,
@@ -15,6 +21,8 @@ import type { RouteProp } from "@react-navigation/native";
 import { EmptyState } from "@/components/EmptyState";
 import { RecipeDetailContent } from "@/components/RecipeDetailContent";
 import { RecipeDetailSkeleton } from "@/components/recipe-detail";
+import { ThemedText } from "@/components/ThemedText";
+import { UpgradeModal } from "@/components/UpgradeModal";
 import type { IngredientItem } from "@/components/recipe-detail";
 import {
   formatTimeDisplay,
@@ -27,7 +35,13 @@ import {
 } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, withOpacity } from "@/constants/theme";
+import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
+import {
+  normalizeCatalogDetail,
+  resolveFeaturedRecipeType,
+  type CatalogDetailResponse,
+} from "@/screens/featured-recipe-detail-utils";
+import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { FeaturedRecipeDetailScreenNavigationProp } from "@/types/navigation";
@@ -41,6 +55,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 
 const HANDLE_WIDTH = 36;
 const HANDLE_HEIGHT = 5;
+const SAVE_BAR_HEIGHT = 72;
 
 type FeaturedRecipeDetailRouteProp = RouteProp<
   RootStackParamList,
@@ -77,7 +92,7 @@ interface NormalizedRecipe {
 export default function FeaturedRecipeDetailScreen() {
   const route = useRoute<FeaturedRecipeDetailRouteProp>();
   const { recipeId, recipeType, type } = route.params;
-  const resolvedRecipeType = recipeType ?? type ?? "community";
+  const resolvedRecipeType = resolveFeaturedRecipeType(recipeType, type);
   const navigation = useNavigation<FeaturedRecipeDetailScreenNavigationProp>();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
@@ -114,8 +129,44 @@ export default function FeaturedRecipeDetailScreen() {
     meta: { silentError: true },
   });
 
+  // --- Catalog (Spoonacular) preview — nothing is saved until Save ---
+  const {
+    data: catalogDetail,
+    isLoading: catalogLoading,
+    error: catalogError,
+    refetch: refetchCatalogDetail,
+  } = useQuery<CatalogDetailResponse>({
+    queryKey: ["/api/meal-plan/catalog", recipeId],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/meal-plan/catalog/${recipeId}`);
+      return res.json();
+    },
+    enabled: resolvedRecipeType === "catalog" && recipeId > 0,
+    // This screen renders its own 403/404/402/generic states for this query.
+    meta: { silentError: true },
+  });
+  const { mutateAsync: saveCatalogRecipe, isPending: isSavingCatalog } =
+    useSaveCatalogRecipe();
+  const [savedRecipeId, setSavedRecipeId] = useState<number | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
   // --- Normalize into RecipeDetailContent props ---
   const normalized = useMemo((): NormalizedRecipe | null => {
+    if (resolvedRecipeType === "catalog") {
+      if (!catalogDetail) return null;
+      return {
+        ...normalizeCatalogDetail(catalogDetail),
+        allergens: null,
+        isCanonical: false,
+        canonicalImages: [],
+        instructionDetails: [],
+        toolsRequired: [],
+        chefTips: [],
+        cuisineOrigin: null,
+      };
+    }
+
     if (resolvedRecipeType === "mealPlan" && mealPlanRecipe) {
       return {
         title: mealPlanRecipe.title,
@@ -170,16 +221,26 @@ export default function FeaturedRecipeDetailScreen() {
     }
 
     return null;
-  }, [resolvedRecipeType, mealPlanRecipe, communityRecipe]);
+  }, [resolvedRecipeType, catalogDetail, mealPlanRecipe, communityRecipe]);
 
   const isLoading =
-    resolvedRecipeType === "community" ? communityLoading : mealPlanLoading;
+    resolvedRecipeType === "catalog"
+      ? catalogLoading
+      : resolvedRecipeType === "community"
+        ? communityLoading
+        : mealPlanLoading;
   const error =
-    resolvedRecipeType === "community" ? communityError : mealPlanError;
+    resolvedRecipeType === "catalog"
+      ? catalogError
+      : resolvedRecipeType === "community"
+        ? communityError
+        : mealPlanError;
   const refetch =
-    resolvedRecipeType === "community"
-      ? refetchCommunityRecipe
-      : refetchMealPlanRecipe;
+    resolvedRecipeType === "catalog"
+      ? refetchCatalogDetail
+      : resolvedRecipeType === "community"
+        ? refetchCommunityRecipe
+        : refetchMealPlanRecipe;
   // A genuine 404 means the recipe doesn't exist — retrying won't help, and
   // labeling it a generic failure would assert a false cause (see
   // docs/solutions/logic-errors/network-failure-rendered-as-wrong-credentials-2026-08-08.md).
@@ -190,7 +251,17 @@ export default function FeaturedRecipeDetailScreen() {
   // client/screens/LabelAnalysisScreen.tsx.
   const isNotFoundError =
     error instanceof ApiError && error.code === ErrorCode.NOT_FOUND;
-  const showsGenericError = Boolean(error) && !isNotFoundError && !normalized;
+  const isPremiumDenied =
+    error instanceof ApiError && error.code === ErrorCode.PREMIUM_REQUIRED;
+  const isCatalogUnavailable =
+    error instanceof ApiError &&
+    error.code === ErrorCode.CATALOG_QUOTA_EXCEEDED;
+  const showsGenericError =
+    Boolean(error) &&
+    !isNotFoundError &&
+    !isPremiumDenied &&
+    !isCatalogUnavailable &&
+    !normalized;
 
   // Announce whichever EmptyState branch (below) is about to render — it has
   // no live region either. Skip the mount render so a screen that opens
@@ -207,13 +278,17 @@ export default function FeaturedRecipeDetailScreen() {
     shouldSurfaceQueryError(communityError, undefined);
   const announcement = isLoading
     ? null
-    : showsGenericError
-      ? toastAnnouncesError
-        ? null
-        : "Couldn't load this recipe. Try again."
-      : !normalized
-        ? "Recipe not found."
-        : null;
+    : isPremiumDenied
+      ? "Online recipes are a Premium feature."
+      : isCatalogUnavailable
+        ? "Spoonacular isn't available right now."
+        : showsGenericError
+          ? toastAnnouncesError
+            ? null
+            : "Couldn't load this recipe. Try again."
+          : !normalized
+            ? "Recipe not found."
+            : null;
   const errorAnnouncedRef = useRef(false);
   useEffect(() => {
     if (!errorAnnouncedRef.current) {
@@ -229,6 +304,33 @@ export default function FeaturedRecipeDetailScreen() {
     () => resolveImageUrl(normalized?.imageUrl),
     [normalized?.imageUrl],
   );
+
+  const handleSaveCatalog = useCallback(async () => {
+    setSaveError(null);
+    try {
+      const saved = await saveCatalogRecipe(recipeId);
+      setSavedRecipeId(saved.id);
+      AccessibilityInfo.announceForAccessibility("Recipe saved");
+    } catch (err) {
+      if (err instanceof ApiError && err.code === ErrorCode.PREMIUM_REQUIRED) {
+        setShowUpgrade(true);
+        return;
+      }
+      setSaveError(
+        err instanceof ApiError && err.code === ErrorCode.CATALOG_QUOTA_EXCEEDED
+          ? "Spoonacular isn't available right now. Try again later."
+          : "Couldn't save this recipe. Try again.",
+      );
+    }
+  }, [saveCatalogRecipe, recipeId]);
+
+  const handleOpenSaved = useCallback(() => {
+    if (savedRecipeId === null) return;
+    navigation.replace("FeaturedRecipeDetail", {
+      recipeId: savedRecipeId,
+      recipeType: "mealPlan",
+    });
+  }, [navigation, savedRecipeId]);
 
   return (
     <View
@@ -273,6 +375,26 @@ export default function FeaturedRecipeDetailScreen() {
         <ScrollView contentInsetAdjustmentBehavior="never">
           <RecipeDetailSkeleton />
         </ScrollView>
+      ) : isPremiumDenied ? (
+        <View style={styles.center}>
+          <EmptyState
+            variant="temporary"
+            icon="lock"
+            title="Online recipes are a Premium feature"
+            description="Upgrade to preview and save Spoonacular recipes."
+            actionLabel="See Premium"
+            onAction={() => setShowUpgrade(true)}
+          />
+        </View>
+      ) : isCatalogUnavailable ? (
+        <View style={styles.center}>
+          <EmptyState
+            variant="temporary"
+            icon="cloud-off"
+            title="Spoonacular isn't available right now"
+            description="Try again later, or pick a community recipe."
+          />
+        </View>
       ) : showsGenericError ? (
         <View style={styles.center}>
           <EmptyState
@@ -297,8 +419,12 @@ export default function FeaturedRecipeDetailScreen() {
         </View>
       ) : (
         <RecipeDetailContent
-          recipeId={recipeId}
-          recipeType={resolvedRecipeType}
+          // A catalog preview is not a row in our DB yet: recipeId 0 hides
+          // the favourite/cookbook/remix affordances that key on it.
+          recipeId={resolvedRecipeType === "catalog" ? 0 : recipeId}
+          recipeType={
+            resolvedRecipeType === "catalog" ? "mealPlan" : resolvedRecipeType
+          }
           title={normalized.title}
           description={normalized.description}
           imageUrl={imageUri}
@@ -310,7 +436,11 @@ export default function FeaturedRecipeDetailScreen() {
           allergens={normalized.allergens}
           ingredients={normalized.ingredients}
           instructions={normalized.instructions}
-          contentPaddingBottom={insets.bottom + Spacing.xl}
+          contentPaddingBottom={
+            insets.bottom +
+            Spacing.xl +
+            (resolvedRecipeType === "catalog" ? SAVE_BAR_HEIGHT : 0)
+          }
           remixedFromId={normalized.remixedFromId}
           remixedFromTitle={normalized.remixedFromTitle}
           isCanonical={normalized.isCanonical}
@@ -321,6 +451,55 @@ export default function FeaturedRecipeDetailScreen() {
           cuisineOrigin={normalized.cuisineOrigin}
         />
       )}
+      {resolvedRecipeType === "catalog" && normalized ? (
+        <View
+          style={[
+            styles.saveBar,
+            {
+              paddingBottom: insets.bottom + Spacing.sm,
+              backgroundColor: theme.backgroundRoot,
+            },
+          ]}
+        >
+          {saveError ? (
+            <ThemedText
+              style={{ color: theme.error }}
+              accessibilityLiveRegion="polite"
+            >
+              {saveError}
+            </ThemedText>
+          ) : null}
+          <Pressable
+            onPress={
+              savedRecipeId !== null ? handleOpenSaved : handleSaveCatalog
+            }
+            disabled={isSavingCatalog}
+            accessibilityRole="button"
+            accessibilityLabel={
+              savedRecipeId !== null
+                ? `Saved. Open ${normalized.title} in your recipes`
+                : `Save ${normalized.title} to your recipes`
+            }
+            accessibilityState={{
+              disabled: isSavingCatalog,
+              busy: isSavingCatalog,
+            }}
+            style={[styles.saveButton, { backgroundColor: theme.accentSolid }]}
+          >
+            <ThemedText style={{ color: theme.buttonText, fontWeight: "600" }}>
+              {isSavingCatalog
+                ? "Saving…"
+                : savedRecipeId !== null
+                  ? "Saved · View recipe"
+                  : "Save to My Recipes"}
+            </ThemedText>
+          </Pressable>
+        </View>
+      ) : null}
+      <UpgradeModal
+        visible={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+      />
     </View>
   );
 }
@@ -355,5 +534,20 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  saveBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  saveButton: {
+    minHeight: 48,
+    borderRadius: BorderRadius.sm,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
