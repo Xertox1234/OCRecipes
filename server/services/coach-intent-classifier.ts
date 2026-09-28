@@ -2,7 +2,8 @@ export type CoachIntent =
   | "safety_refusal"
   | "general_fact"
   | "vague_request"
-  | "personalized_advice";
+  | "personalized_advice"
+  | "recipe_request";
 
 export interface IntentClassification {
   intent: CoachIntent;
