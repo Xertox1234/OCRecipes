@@ -25,7 +25,7 @@ import {
   type CoachContext,
 } from "./nutrition-coach";
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
-import { parseBlocksFromContent, BLOCKS_SYSTEM_PROMPT } from "./coach-blocks";
+import { parseBlocksFromContent, getBlocksSystemPrompt } from "./coach-blocks";
 import { extractNotebookEntries } from "./notebook-extraction";
 import {
   sanitizeContextField,
@@ -51,6 +51,7 @@ import type { FinderAction } from "@shared/schemas/recipe-finder";
 import {
   classifyTurn,
   decideCoachFinderEntry,
+  isRecipeFinderEnabled,
   type FinderFeatures,
 } from "./recipe-finder";
 import {
@@ -719,7 +720,7 @@ export async function* handleCoachChat(
   // ── Coach Pro: inject notebook context ──────────────
   if (tierConfig.fetchNotebook) {
     // Always provide blocks formatting instructions for Pro responses
-    context.blocksPrompt = BLOCKS_SYSTEM_PROMPT;
+    context.blocksPrompt = getBlocksSystemPrompt(isRecipeFinderEnabled());
 
     // notebookEntries fetched in parallel above (audit 2026-05-10, H4)
     if (notebookEntries.length > 0) {

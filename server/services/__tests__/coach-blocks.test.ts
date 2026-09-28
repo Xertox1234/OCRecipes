@@ -4,6 +4,7 @@ import {
   validateBlocks,
   parseBlocksFromContent,
   BLOCKS_SYSTEM_PROMPT,
+  getBlocksSystemPrompt,
 } from "../coach-blocks";
 import {
   coachBlockSchema,
@@ -170,5 +171,21 @@ describe("server-only finder blocks", () => {
       "\n```";
     const { blocks } = parseBlocksFromContent(content);
     expect(blocks.map((b) => b.type)).toEqual(["quick_replies"]);
+  });
+});
+
+describe("getBlocksSystemPrompt", () => {
+  it("is the unchanged prompt with the finder off", () => {
+    expect(getBlocksSystemPrompt(false)).toBe(BLOCKS_SYSTEM_PROMPT);
+  });
+
+  it("drops every search_recipes instruction with the finder on", () => {
+    // Positive control: the source prompt really has the lines being replaced.
+    expect(BLOCKS_SYSTEM_PROMPT).toContain("search_recipes");
+    const on = getBlocksSystemPrompt(true);
+    expect(on).not.toContain("search_recipes");
+    expect(on).toContain("recipe finder");
+    // The example still validates.
+    expect(parseBlocksFromContent(on).blocks.length).toBeGreaterThan(0);
   });
 });

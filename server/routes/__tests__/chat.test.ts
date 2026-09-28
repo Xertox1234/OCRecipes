@@ -73,6 +73,7 @@ vi.mock("../../services/coach-blocks", () => ({
     .fn()
     .mockImplementation((content: string) => ({ text: content, blocks: [] })),
   BLOCKS_SYSTEM_PROMPT: "test prompt",
+  getBlocksSystemPrompt: vi.fn().mockReturnValue("test prompt"),
 }));
 
 vi.mock("../../services/notebook-extraction", () => ({

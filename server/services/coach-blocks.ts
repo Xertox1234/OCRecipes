@@ -104,3 +104,21 @@ You're at 1,400 of 2,000 cal with 60g protein still to go — dinner has room fo
 [{"type":"quick_replies","options":[{"label":"Dinner ideas","message":"Suggest a dinner that fits my remaining macros"},{"label":"Show my progress","message":"How is my day looking so far?"}]}]
 \`\`\`
 `.trim();
+
+const SEARCH_RECIPES_RULE =
+  "- For recipe suggestions, use search_recipes tool first to get real recipe data";
+const RECIPE_CARD_RULE =
+  "- Use a recipe_card only when you have real calories, protein and prep time for that recipe from a tool result — search_recipes does not return calories or protein, so never estimate them to fill a card; name the recipe in prose instead. When you do use a recipe_card, put its image URL in the imageUrl field.";
+const FINDER_RECIPE_RULE =
+  '- Recipe requests are answered by the app\'s recipe finder, not by you. If the user wants a recipe, tell them to ask for one directly (for example "find me a chicken dinner recipe") and do not search for or invent recipes yourself';
+const FINDER_RECIPE_CARD_RULE =
+  "- Never emit a recipe_card: you have no tool that returns real recipe data";
+
+/** BLOCKS_SYSTEM_PROMPT, minus search_recipes when the finder is on. */
+export function getBlocksSystemPrompt(finderEnabled: boolean): string {
+  if (!finderEnabled) return BLOCKS_SYSTEM_PROMPT;
+  return BLOCKS_SYSTEM_PROMPT.replace(
+    SEARCH_RECIPES_RULE,
+    FINDER_RECIPE_RULE,
+  ).replace(RECIPE_CARD_RULE, FINDER_RECIPE_CARD_RULE);
+}

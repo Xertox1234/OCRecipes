@@ -15,6 +15,7 @@ import {
   serviceUnavailable,
 } from "./coach-tools";
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
+import { isRecipeFinderEnabled } from "./recipe-finder/config";
 import type { UserProfile } from "@shared/schema";
 import { weightFromKg, weightUnitLabel } from "@shared/lib/units";
 import type { MeasurementUnit } from "@shared/lib/units";
@@ -639,7 +640,15 @@ export async function* generateCoachProResponse(
   // (its types require a mutable `ChatCompletionTool[]`). The copy is O(n)
   // over references, not over the full tool tree — still far cheaper than
   // re-running `getToolDefinitions()` per request.
-  const tools = [...TOOL_DEFINITIONS];
+  // With the recipe finder on, search_recipes is retired: otherwise the model
+  // could still call it on any message the classifier does not route to
+  // recipe_request and give the prose "couldn't find" answer the finder
+  // replaces (spec §3.3). Flag off → today's tools.
+  const tools = isRecipeFinderEnabled()
+    ? TOOL_DEFINITIONS.filter(
+        (t) => !("function" in t && t.function.name === "search_recipes"),
+      )
+    : [...TOOL_DEFINITIONS];
 
   const sanitizedMessages = messages.map((m) => ({
     role: m.role,
