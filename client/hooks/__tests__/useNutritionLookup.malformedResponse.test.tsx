@@ -281,4 +281,57 @@ describe("useNutritionLookup — malformed barcode lookup response (M7)", () => 
     errorSpy.mockRestore();
     warnSpy.mockRestore();
   });
+
+  // Characterization test added for P1-2026-09-23 (atomic lookup state
+  // refactor): the 404 branch's OWN try/catch swallows an unparseable body
+  // silently — distinct from the schema-validation-failure path above (which
+  // DOES call logger.error) and from the network-failure path (logger.warn).
+  it("falls through to OFF when a 404 body is unparseable, with no logger call at all", async () => {
+    const errorSpy = vi
+      .spyOn(logger, "error")
+      .mockImplementation(() => undefined);
+    const warnSpy = vi
+      .spyOn(logger, "warn")
+      .mockImplementation(() => undefined);
+
+    mockServerFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        json: async () => {
+          throw new SyntaxError("Unexpected token < in JSON at position 0");
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 1,
+          product: {
+            product_name: "Fallback Snack",
+            brands: "GenericBrand",
+            nutriments: {
+              "energy-kcal_100g": 400,
+              proteins_100g: 5,
+              carbohydrates_100g: 60,
+              fat_100g: 10,
+            },
+          },
+        }),
+      });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "000000000009" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.nutrition?.productName).toBe("Fallback Snack");
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
 });

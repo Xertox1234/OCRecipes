@@ -532,6 +532,60 @@ describe("useNutritionLookup — trust-the-label override (Task 5)", () => {
     expect(result.current.conflict).toBeNull();
     expect(result.current.activeSource).toBe("database");
   });
+
+  // Characterization test added for P1-2026-09-23 (atomic lookup state
+  // refactor): pins the current asymmetry — `correctionNotice` always comes
+  // from the DB leg's servingInfo, even when the label is the ACTIVE
+  // (displayed) source and carries its OWN, different correction.
+  it("correctionNotice comes from the DB's servingInfo, not the label's, even though the label is active", async () => {
+    mockBarcodeFetch({
+      servingInfo: {
+        displayLabel: "355 ml",
+        grams: 355,
+        wasCorrected: true,
+        correctionReason: "DB serving corrected",
+      },
+      conflict: {
+        fields: ["calories"],
+        label: baseBody({
+          perServing: {
+            calories: 150,
+            protein: 0,
+            carbs: 39,
+            fat: 0,
+            fiber: 0,
+            sugar: 39,
+            sodium: 5,
+            saturatedFat: 0,
+            transFat: 0,
+            cholesterol: 0,
+            caffeine: 10,
+          },
+          servingInfo: {
+            displayLabel: "1 can (355 mL)",
+            grams: 355,
+            wasCorrected: true,
+            correctionReason: "Label serving corrected",
+          },
+        }),
+      },
+    });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () =>
+        useNutritionLookup({
+          barcode: "06772408",
+          ocrText: "Per 355 mL\nCalories 150\nSugars / Sucres 39 g",
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    expect(result.current.activeSource).toBe("label");
+    expect(result.current.nutrition?.calories).toBe(150);
+    expect(result.current.correctionNotice).toBe("DB serving corrected");
+  });
 });
 
 describe("useNutritionLookup — unknown serving weight (direct-OFF fallback)", () => {
@@ -741,6 +795,47 @@ describe("useNutritionLookup — unknown serving weight (direct-OFF fallback)", 
     act(() => result.current.recalculateNutrition(355, 2));
     expect(result.current.nutrition?.calories).toBeCloseTo(142, 5);
     expect(result.current.nutrition?.servingSize).toBe("355g");
+  });
+
+  // Characterization test added for P1-2026-09-23 (atomic lookup state
+  // refactor): `correctionNotice` must be populated on the direct-OFF
+  // fallback path too, not just the server-ok path — driven through a real
+  // `validateAndNormalizeNutrition` correction (an implausible K-cup-pod
+  // per-serving calorie count), not by forcing the derived fields directly.
+  it("sets correctionNotice on the OFF-fallback path when validateAndNormalizeNutrition corrects an implausible serving", async () => {
+    mockOffFallback({
+      product_name: "Hot Chocolate K-Cup Pods",
+      brands: "GenericBrand",
+      serving_size: "236g",
+      nutriments: {
+        "energy-kcal_100g": 400,
+        "energy-kcal_serving": 944,
+        proteins_100g: 5,
+        proteins_serving: 11.8,
+        carbohydrates_100g: 80,
+        carbohydrates_serving: 188,
+        fat_100g: 5,
+        fat_serving: 11.8,
+      },
+    });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "0663447217174" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // 944 cal/serving > MAX_PLAUSIBLE_SERVING_CALORIES (800) — a genuine
+    // OFF-shape trigger for `validateAndNormalizeNutrition`'s correction
+    // branch, not a hand-forced value.
+    expect(result.current.correctionNotice).toBe(
+      "944 cal per serving seems too high — this may be the total for the entire package.",
+    );
+    // K-cup pods correct to an estimated 15g serving.
+    expect(result.current.servingSizeGrams).toBe(15);
+    expect(result.current.isPer100g).toBe(false);
   });
 });
 
@@ -1308,5 +1403,220 @@ describe("useNutritionLookup — correctionNotice/isPer100g reset per lookup (P2
       expect(result.current.nutrition?.barcode).toBe("00000000"),
     );
     expect(result.current.hasFrontLabelData).toBe(false);
+  });
+
+  // Added for P1-2026-09-23 (atomic lookup state refactor). Also closes the
+  // separately-tracked todos/P3-2026-09-26-nutrition-lookup-serving-size-grams-not-reset.md
+  // as a side effect: `lookupStateFromOutcome` commits a FULL LookupState for
+  // every outcome, and no non-success `LookupOutcome` variant carries a
+  // `servingSizeGrams` field, so there is nothing for a future exit to forget
+  // to reset — it always falls back to `INITIAL_LOOKUP_STATE.servingSizeGrams`
+  // (null). See this file's final report for the recommendation to close that
+  // todo rather than leave its (now-inapplicable) implementation notes open.
+  it("resets servingSizeGrams to null on a re-fetch (same hook instance) that takes a non-success path", async () => {
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ...SUCCESS_BODY, barcode: "012345678905" }),
+    });
+    const { result, rerender } = renderLookup("012345678905");
+    await waitFor(() => expect(result.current.servingSizeGrams).toBe(100));
+
+    mockServerFetch.mockRejectedValueOnce(new Error("network down"));
+    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
+    rerender({ barcode: "00000000" });
+
+    await waitFor(() =>
+      expect(result.current.nutrition?.barcode).toBe("00000000"),
+    );
+    expect(result.current.servingSizeGrams).toBeNull();
+  });
+});
+
+// Characterization test added for P1-2026-09-23 (atomic lookup state
+// refactor): the front-label verification call is non-critical — a failure
+// there must not block or corrupt the rest of an otherwise-successful lookup.
+describe("useNutritionLookup — verification endpoint failure (P1-2026-09-23 characterization)", () => {
+  const mockServerFetch = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockServerFetch);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("hasFrontLabelData stays false when the verification call fails, without blocking the rest of a successful lookup", async () => {
+    mockApiRequest.mockRejectedValueOnce(
+      new Error("verification endpoint down"),
+    );
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        productName: "Cherry Coke",
+        brandName: "Coca-Cola",
+        barcode: "06772408",
+        perServing: { calories: 39, protein: 0, carbs: 10, fat: 0 },
+        per100g: { calories: 11, protein: 0, carbs: 2.8, fat: 0 },
+        servingInfo: {
+          displayLabel: "355 ml",
+          grams: 355,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        flags: [],
+      }),
+    });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "06772408" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.nutrition?.productName).toBe("Cherry Coke");
+    expect(result.current.error).toBeNull();
+    expect(result.current.hasFrontLabelData).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P1-2026-09-23 AC #4: out-of-order responses for a superseded lookup are
+// discarded. Hand-rolled deferreds (no Promise.withResolvers) so the test
+// controls exactly when each network call resolves, and in which order.
+// ---------------------------------------------------------------------------
+describe("useNutritionLookup — stale-response discard (P1-2026-09-23, AC #4)", () => {
+  const mockServerFetch = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockServerFetch);
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: async () => ({ hasFrontLabelData: false }),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function serverOkResponse(productName: string, barcode: string) {
+    return {
+      ok: true,
+      json: async () => ({
+        productName,
+        barcode,
+        perServing: { calories: 100, protein: 0, carbs: 0, fat: 0 },
+        per100g: { calories: 100, protein: 0, carbs: 0, fat: 0 },
+        servingInfo: {
+          displayLabel: "1 serving",
+          grams: 100,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        flags: [],
+      }),
+    };
+  }
+
+  it("(i) barcode A in flight, rerender to barcode B, resolve B then A late — final state is B's, isLoading false", async () => {
+    let resolveA!: (v: Response) => void;
+    const pA = new Promise<Response>((r) => {
+      resolveA = r;
+    });
+    let resolveB!: (v: Response) => void;
+    const pB = new Promise<Response>((r) => {
+      resolveB = r;
+    });
+
+    mockServerFetch
+      .mockImplementationOnce(() => pA)
+      .mockImplementationOnce(() => pB);
+
+    const { wrapper } = createQueryWrapper();
+    const { result, rerender } = renderHook(
+      ({ barcode }: { barcode: string }) => useNutritionLookup({ barcode }),
+      { wrapper, initialProps: { barcode: "AAAAAAAA" } },
+    );
+
+    // Barcode A's fetch is genuinely in flight before we supersede it.
+    await waitFor(() => expect(mockServerFetch).toHaveBeenCalledTimes(1));
+
+    rerender({ barcode: "BBBBBBBB" });
+    await waitFor(() => expect(mockServerFetch).toHaveBeenCalledTimes(2));
+
+    resolveB(serverOkResponse("Product B", "BBBBBBBB") as unknown as Response);
+    await waitFor(() =>
+      expect(result.current.nutrition?.productName).toBe("Product B"),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // A resolves late — its outcome must be discarded, not overwrite B's.
+    await act(async () => {
+      resolveA(
+        serverOkResponse("Product A", "AAAAAAAA") as unknown as Response,
+      );
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(result.current.nutrition?.productName).toBe("Product B");
+    expect(result.current.nutrition?.barcode).toBe("BBBBBBBB");
+    expect(result.current.flags).toEqual([]);
+    expect(result.current.validatedData?.perServing.calories).toBe(100);
+    expect(result.current.isLoading).toBe(false);
+  });
+
+  it("(ii) same barcode, ocrText retake fires a newer lookup — resolve newer first, older late — newer wins", async () => {
+    let resolveOld!: (v: Response) => void;
+    const pOld = new Promise<Response>((r) => {
+      resolveOld = r;
+    });
+    let resolveNew!: (v: Response) => void;
+    const pNew = new Promise<Response>((r) => {
+      resolveNew = r;
+    });
+
+    mockServerFetch
+      .mockImplementationOnce(() => pOld)
+      .mockImplementationOnce(() => pNew);
+
+    const { wrapper } = createQueryWrapper();
+    const { result, rerender } = renderHook<
+      ReturnType<typeof useNutritionLookup>,
+      { ocrText: string | null }
+    >(({ ocrText }) => useNutritionLookup({ barcode: "SAMECODE", ocrText }), {
+      wrapper,
+      initialProps: { ocrText: null },
+    });
+
+    await waitFor(() => expect(mockServerFetch).toHaveBeenCalledTimes(1));
+
+    // Same barcode, a fresh (still-unreadable) OCR retake — the effect
+    // re-fires because `ocrText` changed, not `barcode`.
+    rerender({ ocrText: "blurry retake text" });
+    await waitFor(() => expect(mockServerFetch).toHaveBeenCalledTimes(2));
+
+    resolveNew(
+      serverOkResponse("Newer Product", "SAMECODE") as unknown as Response,
+    );
+    await waitFor(() =>
+      expect(result.current.nutrition?.productName).toBe("Newer Product"),
+    );
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // The OLDER response resolves late — it must be discarded.
+    await act(async () => {
+      resolveOld(
+        serverOkResponse("Older Product", "SAMECODE") as unknown as Response,
+      );
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(result.current.nutrition?.productName).toBe("Newer Product");
+    expect(result.current.isLoading).toBe(false);
   });
 });
