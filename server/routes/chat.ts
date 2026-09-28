@@ -351,6 +351,16 @@ export function register(app: Express): void {
           return sendError(res, 401, "Unauthorized", ErrorCode.UNAUTHORIZED);
 
         const sanitizedContent = sanitizeUserInput(parsed.data.content);
+        // "   " passes min(1) but sanitizes to "" — a finder flow built on it
+        // stores a request its own schema rejects, leaving a dead list.
+        if (!sanitizedContent) {
+          return sendError(
+            res,
+            400,
+            "Message can't be empty",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
         const finderEnabled = isRecipeFinderEnabled();
         const finderAction = parsed.data.finderAction;
         if (

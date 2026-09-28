@@ -1185,6 +1185,14 @@ describe("Chat Routes", () => {
         vi.unstubAllEnvs();
       });
 
+      it("a whitespace-only request is a 400 before any row is written (no dead list)", async () => {
+        const res = await send({ content: "   \n\t " });
+        expect(res.status).toBe(400);
+        expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+        expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+        expect(findCommunity).not.toHaveBeenCalled();
+      });
+
       it("control: flag off keeps today's path (generation quota, no finder)", async () => {
         vi.stubEnv("RECIPE_FINDER_ENABLED", "");
         const res = await send({ content: "Mediterranean" });
