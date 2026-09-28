@@ -1152,9 +1152,11 @@ describe("lookupNutrition", () => {
     });
 
     it("falls through past USDA when every Branded candidate fails coverage", async () => {
-      // None of these descriptions contain "wat" as a whole word (only
-      // "wafers"/"water", which don't fuzzy-match it), so every candidate is
-      // rejected at the plain-coverage stage before the head check even runs.
+      // Neither description covers BOTH query words: the wafer row has "doro"
+      // but not "wat" ("wafers" doesn't match it), and the WAT-AAH row has
+      // "wat" (`matchWords` splits on the hyphen) but not "doro". So every
+      // candidate is rejected at the plain-coverage stage before the head
+      // check even runs.
       setupFetchMock({
         "food/?lang=en": emptyCNFEN,
         "food/?lang=fr": emptyCNFFR,
@@ -1256,6 +1258,28 @@ describe("lookupNutrition", () => {
         const result = await apiNinjasReturns({
           name: "kombucha",
           calories: "Only available for premium subscribers.",
+          serving_size_g: 100.0,
+          protein_g: "Only available for premium subscribers.",
+          fat_total_g: 0.2,
+          carbohydrates_total_g: 7,
+          fiber_g: 0,
+          sugar_g: 3,
+          sodium_mg: 2,
+        });
+        expect(result).toBeNull();
+      } finally {
+        if (originalKey === undefined) delete process.env.API_NINJAS_KEY;
+        else process.env.API_NINJAS_KEY = originalKey;
+      }
+    });
+
+    it("returns null when only protein is premium-gated, instead of a fabricated 0 g protein", async () => {
+      const originalKey = process.env.API_NINJAS_KEY;
+      process.env.API_NINJAS_KEY = "test-key";
+      try {
+        const result = await apiNinjasReturns({
+          name: "kombucha",
+          calories: 29,
           serving_size_g: 100.0,
           protein_g: "Only available for premium subscribers.",
           fat_total_g: 0.2,

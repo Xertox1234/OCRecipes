@@ -80,6 +80,12 @@ describe("normalizeDifficulty", () => {
     expect(normalizeDifficulty(null)).toBeNull();
     expect(normalizeDifficulty(undefined)).toBeNull();
   });
+  // Same shape as normalizeUnit's prototype-member test: `MAP[key] ?? null`
+  // would return the inherited Object function / Object.prototype here.
+  it("returns null for prototype member names, not a map hit", () => {
+    expect(normalizeDifficulty("constructor")).toBeNull();
+    expect(normalizeDifficulty("__proto__")).toBeNull();
+  });
 });
 
 describe("normalizeInstructions", () => {
