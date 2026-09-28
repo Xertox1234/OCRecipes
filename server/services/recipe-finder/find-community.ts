@@ -18,11 +18,14 @@ const log = createServiceLogger("recipe-finder-community");
 /**
  * Keep hits scoring at least this fraction of the best hit. Relative because
  * MiniSearch scores are unnormalized and an absolute cut drifts as the
- * catalog grows (spec §4). MEASURED in Task 10 — see the gold set.
+ * catalog grows (spec §4). Measured 2026-09-28 on the 25-recipe production
+ * public catalog: 22/30 gold requests correct at (0.7, 8) vs 20/30 at the
+ * provisional (0.5, 5) — see __tests__/fixtures/finder-gold-set.json.
+ * Re-measure as the catalog grows.
  */
-export const CLOSE_MATCH_RELATIVE = 0.5;
-/** Absolute floor so a lone weak hit is not shown. MEASURED in Task 10. */
-export const CLOSE_MATCH_FLOOR = 5;
+export const CLOSE_MATCH_RELATIVE = 0.7;
+/** Absolute floor so a lone weak hit is not shown. Measured with the above. */
+export const CLOSE_MATCH_FLOOR = 8;
 
 export interface ScoredHit {
   recipe: SearchableRecipe;
