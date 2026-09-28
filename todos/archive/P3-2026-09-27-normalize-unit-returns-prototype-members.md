@@ -1,6 +1,6 @@
 ---
 title: 'normalizeUnit returns an Object prototype member for "constructor" or "__proto__"'
-status: in-progress
+status: done
 priority: low
 created: 2026-09-27
 updated: 2026-09-27
@@ -36,9 +36,9 @@ to 50 characters), so the input is user-reachable, but only by typing those exac
 
 ## Acceptance Criteria
 
-- [ ] `normalizeUnit` returns a string for every input: read the map with an own-key check
+- [x] `normalizeUnit` returns a string for every input: read the map with an own-key check
       (`Object.hasOwn`) or make it a `Map`.
-- [ ] A test covers `"constructor"` and `"__proto__"` (each returns itself, lowercased) beside
+- [x] A test covers `"constructor"` and `"__proto__"` (each returns itself, lowercased) beside
       a positive control (`"cups"` → `"cup"`).
 
 ## Implementation Notes
@@ -58,3 +58,14 @@ to 50 characters), so the input is user-reachable, but only by typing those exac
 ### 2026-09-27
 
 - Filed from the cooking-session per-100 g PR (Low; auto-filed per the Medium/Low policy).
+
+### 2026-09-28
+
+- Implemented: both `normalizeUnit` (`server/lib/recipe-normalization.ts`) and its sibling in
+  `server/services/canonical-enrichment.ts` now guard the map lookup with `Object.hasOwn`.
+  Review (code-reviewer + security-auditor) found no blocking issues; both independently flagged
+  `normalizeDifficulty` (same file, `DIFFICULTY_MAP`) as carrying the identical defect — out of
+  this todo's Acceptance Criteria and low/bounded impact (self-corrupts only the requester's own
+  `difficulty` field via `POST /api/meal-plan/recipes`; no cross-user effect, no crash). Not
+  fixed here and not auto-filed as a todo (executor policy: WARNINGs are surfaced, never
+  auto-filed) — reported to the orchestrator/user to decide.
