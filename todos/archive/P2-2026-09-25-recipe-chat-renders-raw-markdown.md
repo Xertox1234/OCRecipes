@@ -1,9 +1,9 @@
 ---
 title: "Recipe chat shows and speaks raw markdown: assistant replies bypass MarkdownText"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-25
-updated: 2026-09-25
+updated: 2026-09-28
 assignee:
 labels: [deferred, react-native, accessibility, ai-prompting]
 github_issue:
@@ -21,9 +21,9 @@ Found by the mobile review of #1087 (2026-09-25), which fixed the same defect fo
 
 ## Acceptance Criteria
 
-- [ ] Recipe-chat assistant text (streaming footer and persisted messages) renders through `MarkdownText`, and its `accessibilityLabel` uses `spokenMarkdown()`, so no raw `![`, `](`, URL, `**` or list marker is shown or spoken.
-- [ ] Decide with the product owner whether `recipe-chat.ts`'s system prompt should also forbid markdown images/links (as `nutrition-coach.ts` now does); record the decision.
-- [ ] Tests first: a recipe-chat reply containing an image, a link, bold and a list renders and speaks cleanly.
+- [x] Recipe-chat assistant text (streaming footer and persisted messages) renders through `MarkdownText`, and its `accessibilityLabel` uses `spokenMarkdown()`, so no raw `![`, `](`, URL, `**` or list marker is shown or spoken.
+- [x] Decide with the product owner whether `recipe-chat.ts`'s system prompt should also forbid markdown images/links (as `nutrition-coach.ts` now does); record the decision.
+- [x] Tests first: a recipe-chat reply containing an image, a link, bold and a list renders and speaks cleanly.
 
 ## Implementation Notes
 
@@ -52,3 +52,9 @@ Found by the mobile review of #1087 (2026-09-25), which fixed the same defect fo
 ### 2026-09-25
 
 - Filed by the /todo orchestrator from #1087's mobile review.
+
+### 2026-09-28
+
+- **Decision (AC2, product owner):** add the "never write markdown images or links" line to recipe chat's system prompt. Applied to BOTH `buildSystemPrompt` and `buildRemixSystemPrompt`, since both feed the same screen. The rationale clause was reworded from coach's "show up as broken raw text" to "images are dropped and links lose their URL", which is what the renderer now does.
+- `RecipeChatScreen` assistant prose (streaming footer + persisted/pending messages) renders via `MarkdownText` and speaks via `spokenMarkdown()`; user and error bubbles stay raw `ThemedText`. Tests RED on the old code, GREEN now; bullet lists render as bullets (Risks line checked).
+- Note: `nutrition-coach.ts`'s copy of the sentence has carried the same stale "broken raw text" clause since #1087. Left untouched (outside this todo's scope).
