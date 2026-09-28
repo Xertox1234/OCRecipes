@@ -179,9 +179,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
         screens: {
           CoachTab: {
             screens: {
+              // initialMessage is auto-sent by ChatScreen: a link must not
+              // post text to the AI as the user's own message. Drop it.
               Chat: {
                 path: "chat/:conversationId",
-                parse: { conversationId: parseIntOrZero },
+                parse: {
+                  conversationId: parseIntOrZero,
+                  initialMessage: () => undefined,
+                },
               },
             },
           },
@@ -195,9 +200,16 @@ export const linking: LinkingOptions<RootStackParamList> = {
             value === "mealPlan" ? "mealPlan" : "community",
         },
       },
+      // Same for RecipeChatScreen's auto-sent initialMessage. The remix params
+      // are in-app only (a recipe's Remix button), so links drop them too.
       RecipeChat: {
         path: "recipe-chat/:conversationId?",
-        parse: { conversationId: parseIntOrZero },
+        parse: {
+          conversationId: parseIntOrZero,
+          initialMessage: () => undefined,
+          remixSourceRecipeId: () => undefined,
+          remixSourceRecipeTitle: () => undefined,
+        },
       },
       NotebookEntry: {
         path: "notebook-entry/:entryId",

@@ -129,16 +129,24 @@ export default function CoachProScreen() {
     [pinnedConversations, unpinnedConversations],
   );
 
+  // Set by the New chip: the user asked for an empty draft, so the first-load
+  // auto-select below must not put a thread back (it re-runs whenever the id
+  // returns to null, and the thread list can also arrive after New is tapped).
+  // Cleared when a thread is picked or the draft's first message creates one.
+  const [isNewDraft, setIsNewDraft] = useState(false);
+
   useEffect(() => {
-    if (conversationId || threadBarConversations.length === 0) return;
+    if (conversationId || isNewDraft || threadBarConversations.length === 0)
+      return;
     setConversationId(threadBarConversations[0].id);
-  }, [conversationId, threadBarConversations]);
+  }, [conversationId, isNewDraft, threadBarConversations]);
 
   // Apply a conversation selected from AllConversationsScreen (navigation param pattern
   // replaces the non-serializable onSelect callback that was previously passed as a route param).
   useEffect(() => {
     const selectedId = route.params?.selectedConversationId;
     if (selectedId !== undefined) {
+      setIsNewDraft(false);
       setConversationId(selectedId);
       navigation.setParams({ selectedConversationId: undefined });
     }
@@ -171,6 +179,7 @@ export default function CoachProScreen() {
   const handleCreateConversation = useCallback(async () => {
     const result = await createConversation({ type: "coach" });
     setConversationId(result.id);
+    setIsNewDraft(false);
     return result.id;
   }, [createConversation]);
 
@@ -256,7 +265,10 @@ export default function CoachProScreen() {
       )}
       <View style={[styles.threadBar, { borderBottomColor: theme.border }]}>
         <Pressable
-          onPress={() => setConversationId(null)}
+          onPress={() => {
+            setIsNewDraft(true);
+            setConversationId(null);
+          }}
           style={({ pressed }) => [
             styles.newThreadButton,
             {
@@ -304,7 +316,10 @@ export default function CoachProScreen() {
             return (
               <Pressable
                 key={conversation.id}
-                onPress={() => setConversationId(conversation.id)}
+                onPress={() => {
+                  setIsNewDraft(false);
+                  setConversationId(conversation.id);
+                }}
                 style={[
                   styles.threadChip,
                   {

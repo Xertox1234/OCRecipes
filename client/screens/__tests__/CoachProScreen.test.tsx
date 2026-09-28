@@ -13,6 +13,9 @@ const {
   mockRefetchConversations,
   focusEffectCb,
   premiumContextState,
+  conversationsState,
+  mockCreateConversation,
+  routeState,
 } = vi.hoisted(() => ({
   mockAcknowledge: vi.fn(),
   mockUsePremiumFeature: vi.fn(),
@@ -25,11 +28,18 @@ const {
   // useFocusEffect, so tests can simulate a refocus by invoking it directly.
   focusEffectCb: { current: null as (() => void) | null },
   premiumContextState: { isLoading: false },
+  // Mutable conversation list for useChatConversations — defaults to empty
+  // (the original harness); the New-thread tests seed an existing thread.
+  conversationsState: {
+    data: [] as { id: number; title: string; isPinned: boolean }[],
+  },
+  mockCreateConversation: vi.fn(),
+  routeState: { params: {} as { selectedConversationId?: number } },
 }));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn(), setParams: vi.fn() }),
-  useRoute: () => ({ params: {} }),
+  useRoute: () => ({ params: routeState.params }),
   useFocusEffect: (cb: () => void) => {
     focusEffectCb.current = cb;
   },
@@ -52,9 +62,9 @@ vi.mock("@/hooks/useCoachContext", () => ({
 }));
 
 vi.mock("@/hooks/useChat", () => ({
-  useCreateConversation: () => ({ mutateAsync: vi.fn() }),
+  useCreateConversation: () => ({ mutateAsync: mockCreateConversation }),
   useChatConversations: () => ({
-    data: [],
+    data: conversationsState.data,
     isError: false,
     refetch: mockRefetchConversations,
   }),
@@ -87,13 +97,19 @@ vi.mock("@/components/coach/CoachChat", () => ({
   default: ({
     onMessageSent,
     isCoachPro,
+    conversationId,
+    onCreateConversation,
   }: {
     onMessageSent?: () => void;
     isCoachPro?: boolean;
+    conversationId?: number | null;
+    onCreateConversation?: () => Promise<number>;
   }) => (
     <>
       <button onClick={() => onMessageSent?.()}>mock-send</button>
+      <button onClick={() => void onCreateConversation?.()}>mock-create</button>
       <div>{`coach-pro:${String(isCoachPro)}`}</div>
+      <div>{`conversation:${String(conversationId)}`}</div>
     </>
   ),
 }));
@@ -104,6 +120,8 @@ beforeEach(() => {
   mockAcknowledge.mockResolvedValue(undefined);
   // Defaults preserve the original harness: Coach Pro user, premium resolved.
   premiumContextState.isLoading = false;
+  conversationsState.data = [];
+  routeState.params = {};
   mockUsePremiumFeature.mockReturnValue(true);
   mockUseCoachContext.mockReturnValue({
     data: undefined,
@@ -134,6 +152,80 @@ describe("CoachProScreen — reminder acknowledgment", () => {
     fireEvent.click(sendButton);
 
     expect(mockAcknowledge).toHaveBeenCalledOnce();
+  });
+});
+
+describe("CoachProScreen — New thread", () => {
+  const existingThread = { id: 7, title: "What should I eat", isPinned: false };
+
+  it("opens the most recent thread on first load", () => {
+    conversationsState.data = [existingThread];
+    renderComponent(<CoachProScreen />);
+
+    expect(screen.getByText("conversation:7")).toBeDefined();
+  });
+
+  it("tapping New leaves the previous thread and shows an empty draft", () => {
+    conversationsState.data = [existingThread];
+    renderComponent(<CoachProScreen />);
+    expect(screen.getByText("conversation:7")).toBeDefined();
+
+    fireEvent.click(screen.getByLabelText("Start a new coach conversation"));
+
+    expect(screen.getByText("conversation:null")).toBeDefined();
+    expect(
+      screen
+        .getByLabelText("Open coach conversation What should I eat")
+        .getAttribute("aria-selected"),
+    ).not.toBe("true");
+  });
+
+  it("tapping New before the thread list loads does not re-select a thread when it arrives", () => {
+    const { rerender } = renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByLabelText("Start a new coach conversation"));
+
+    conversationsState.data = [existingThread];
+    rerender(<CoachProScreen />);
+
+    expect(screen.getByText("conversation:null")).toBeDefined();
+  });
+
+  it("the draft becomes the new conversation once its first message creates it", async () => {
+    conversationsState.data = [existingThread];
+    mockCreateConversation.mockResolvedValue({ id: 42 });
+    renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByLabelText("Start a new coach conversation"));
+
+    fireEvent.click(screen.getByText("mock-create"));
+
+    expect(await screen.findByText("conversation:42")).toBeDefined();
+  });
+
+  it("a thread picked from See all after New stays open, and New still empties it", () => {
+    conversationsState.data = [existingThread];
+    const { rerender } = renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByLabelText("Start a new coach conversation"));
+
+    routeState.params = { selectedConversationId: 7 };
+    rerender(<CoachProScreen />);
+    expect(screen.getByText("conversation:7")).toBeDefined();
+
+    routeState.params = {};
+    rerender(<CoachProScreen />);
+    fireEvent.click(screen.getByLabelText("Start a new coach conversation"));
+    expect(screen.getByText("conversation:null")).toBeDefined();
+  });
+
+  it("picking an existing thread after New opens that thread", () => {
+    conversationsState.data = [existingThread];
+    renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByLabelText("Start a new coach conversation"));
+
+    fireEvent.click(
+      screen.getByLabelText("Open coach conversation What should I eat"),
+    );
+
+    expect(screen.getByText("conversation:7")).toBeDefined();
   });
 });
 

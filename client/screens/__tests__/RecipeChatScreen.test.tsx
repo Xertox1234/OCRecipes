@@ -29,6 +29,7 @@ const {
     value: undefined as
       | {
           conversationId?: number;
+          initialMessage?: string;
           remixSourceRecipeId?: number;
           remixSourceRecipeTitle?: string;
         }
@@ -130,6 +131,53 @@ describe("RecipeChatScreen — safe back navigation", () => {
       index: 0,
       routes: [{ name: "Main" }],
     });
+  });
+});
+
+describe("RecipeChatScreen — initialMessage route param (Home's Generate Recipe drawer)", () => {
+  it("sends the prefilled request once, in a new recipe conversation", async () => {
+    mockCreateConversationMutateAsync.mockResolvedValue({ id: 11 });
+    mockRouteParams.value = {
+      initialMessage: "A Mediterranean dinner for two",
+    };
+
+    renderComponent(<RecipeChatScreen />);
+
+    await waitFor(() =>
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        "A Mediterranean dinner for two",
+        undefined,
+        11,
+      ),
+    );
+    expect(mockCreateConversationMutateAsync).toHaveBeenCalledWith({
+      title: "New Recipe Chat",
+      type: "recipe",
+    });
+  });
+
+  it("does not send it again on a re-render", async () => {
+    mockCreateConversationMutateAsync.mockResolvedValue({ id: 11 });
+    mockRouteParams.value = {
+      initialMessage: "A Mediterranean dinner for two",
+    };
+
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1));
+
+    rerender(<RecipeChatScreen />);
+    rerender(<RecipeChatScreen />);
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1));
+    expect(mockCreateConversationMutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends nothing on open when there is no initialMessage", async () => {
+    renderComponent(<RecipeChatScreen />);
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockCreateConversationMutateAsync).not.toHaveBeenCalled();
   });
 });
 

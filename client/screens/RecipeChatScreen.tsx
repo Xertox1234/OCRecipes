@@ -351,6 +351,18 @@ export default function RecipeChatScreen() {
     ],
   );
 
+  // Auto-send a prefilled request once (Home's Generate Recipe drawer, or a
+  // Coach navigate action) — same one-shot guard as ChatScreen's.
+  const initialMessage = route.params?.initialMessage;
+  const didSendInitialRef = useRef(false);
+  useEffect(() => {
+    if (initialMessage && !didSendInitialRef.current) {
+      didSendInitialRef.current = true;
+      void handleSend(initialMessage);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMessage]);
+
   const handleChipPress = useCallback(
     (prompt: string) => {
       void handleSend(prompt);
