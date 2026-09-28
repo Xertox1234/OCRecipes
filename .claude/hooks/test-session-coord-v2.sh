@@ -102,6 +102,8 @@ consult() { # $1 current agent ('' = main), $2 abs path
     | bash "$SCRIPT" consult --stdin-json 2>/dev/null
 }
 ctx()  { jq -r '.hookSpecificOutput.additionalContext // ""' <<<"$1" 2>/dev/null; }
+dec()    { jq -r '.hookSpecificOutput.permissionDecision // "none"' <<<"$1" 2>/dev/null; }
+reason() { jq -r '.hookSpecificOutput.permissionDecisionReason // ""' <<<"$1" 2>/dev/null; }
 
 snap "[$(ses "$OTHER" "[$(fil "$R1/src/x.ts" src/x.ts '' 60)]")]"
 assert_contains "cell other/same abs: warns" "$(ctx "$(consult agentB "$R1/src/x.ts")")" "same checkout"
@@ -128,11 +130,12 @@ assert_empty "Bash consult: non-writing → silent" "$(bcon 'ls src')"
 # Stale snapshot + a holder that appeared since → refreshed synchronously (spec §6.2 step 0)
 q "INSERT INTO harness.files_in_flight (session_id, agent_id, abs_path, rel_path) VALUES ('$OTHER', '', '$R1/src/late.ts', 'src/late.ts')" >/dev/null
 snap "[]"; age_file "$SNAPF" 600
-assert_contains "stale snapshot: new holder seen on the first consult" "$(ctx "$(consult '' "$R1/src/late.ts")")" "Session ${OTHER:0:8}"
+OUT=$(consult '' "$R1/src/late.ts")
+assert_contains "stale snapshot: new holder seen on the first consult" "$(ctx "$OUT")" "Session ${OTHER:0:8}"
+assert_eq "stale snapshot: refreshed holder is confirmed live → ask" "$(dec "$OUT")" "ask"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
 
 # --- collision ask (Task 9) ------------------------------------------------------------------
-dec()    { jq -r '.hookSpecificOutput.permissionDecision // "none"' <<<"$1" 2>/dev/null; }
-reason() { jq -r '.hookSpecificOutput.permissionDecisionReason // ""' <<<"$1" 2>/dev/null; }
 hold()   { # $1 sid, $2 agent, $3 abs, $4 rel, $5 seconds ago — DB row
   q "INSERT INTO harness.files_in_flight (session_id, agent_id, abs_path, rel_path, last_touch) VALUES ('$1', '$2', '$3', '$4', now() - make_interval(secs => $5)) ON CONFLICT (session_id, agent_id, abs_path) DO UPDATE SET last_touch = EXCLUDED.last_touch" >/dev/null
 }
@@ -165,7 +168,9 @@ assert_eq "ask: boundary 16 min → warn" "$(dec "$(consult '' "$R1/src/b16.ts")
 
 hold "$ME" agentA1 "$R1/src/sib.ts" src/sib.ts 60
 snap "[$(ses "$ME" "[$(fil "$R1/src/sib.ts" src/sib.ts agentA1 60)]")]"
-assert_eq "ask: sibling agent confirmed → ask" "$(dec "$(consult agentB "$R1/src/sib.ts")")" "ask"
+OUT=$(consult agentB "$R1/src/sib.ts")
+assert_eq "ask: sibling agent confirmed → warn only (siblings never ask)" "$(dec "$OUT")" "none"
+assert_contains "ask: sibling still gets the warn text" "$(ctx "$OUT")" "in this same session"
 rm -rf "/tmp/claude-session-coord-${ME}.asks"
 
 snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"
@@ -176,6 +181,10 @@ assert_eq "ask: pg down + fresh snapshot → ask" "$(dec "$(LAB_DATABASE_URL="po
 rm -rf "/tmp/claude-session-coord-${ME}.asks"
 snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"; age_file "$SNAPF" 70
 assert_eq "ask: pg down + 70 s snapshot → warn" "$(dec "$(LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" consult '' "$R1/src/k.ts")")" "none"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"
+assert_empty "consult: agent_id with a space is rejected" "$(consult 'agent B' "$R1/src/k.ts")"
 
 . "$HOOK_DIR/lib/mutants.sh"
 mutant "is_self ignores agent_id (all own rows = self)" "scripts/pg-lab/session-coord.sh" \
@@ -188,6 +197,8 @@ mutant "refresh excludes own session again" "scripts/pg-lab/session-coord.sh" \
   "s/^  WHERE r\\.expires_at > now\\(\\)\$/  WHERE r.session_id <> :'sid' AND r.expires_at > now()/"
 mutant "stale snapshot refreshed in background only" "scripts/pg-lab/session-coord.sh" \
   's/then refresh_bounded "\$sid";/then refresh_bounded "$sid" \&/'
+mutant "sibling collision also asks (own=0 gate dropped)" "scripts/pg-lab/session-coord.sh" \
+  's/ && \[ "\$own" = "0" \]; then/; then/'
 run_mutants "$PROJECT_ROOT" ".claude/hooks/test-session-coord-v2.sh" || FAIL=1
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

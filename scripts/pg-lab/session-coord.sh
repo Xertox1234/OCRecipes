@@ -147,6 +147,7 @@ do_record() {
   input=$(cat)
   sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
   agent=$(jq -r '.agent_id // ""' <<<"$input" 2>/dev/null)
+  case "$agent" in *[!A-Za-z0-9._-]*) exit 0 ;; esac
   while IFS= read -r f; do
     [ -n "$f" ] && record_one "$sid" "$agent" "$f"
   done <<<"$(target_paths "$input")"
@@ -287,8 +288,8 @@ decide_and_emit() { # $1 sid, $2 agent, $3 snapshot age (s), $4 target file, $5 
   mins=$(( ( $(date +%s) - ${otouch:-0} ) / 60 ))
   det="{\"file\":$(jq -Rn --arg v "$file" '$v'),\"agent\":$(jq -Rn --arg v "$oagent" '$v')}"
   if [ -n "$oagent" ]; then who="Agent ${oagent:0:8} in this same session"; else who="The main agent of this same session"; fi
-  if [ "$lvl" = "collision" ]; then
-    local reason="" ask_reason ctx ev wt
+  if [ "$lvl" = "collision" ] && [ "$own" = "0" ]; then
+    local reason="" ask_reason ctx wt
     if [ $(( $(date +%s) - ${otouch:-0} )) -gt "$WINDOW_SECS" ]; then reason="stale-touch"
     elif [ "${SKIP_COLLISION_ASK:-}" = "1" ]; then reason="bypass"
     elif ask_suppressed "$sid" "$2" "$file" "$osid:$oagent"; then reason="suppressed"
@@ -296,21 +297,15 @@ decide_and_emit() { # $1 sid, $2 agent, $3 snapshot age (s), $4 target file, $5 
       case "$(live_confirm "$osid" "$oagent" "$file")" in
         yes) ;;
         no)  reason="live-unconfirmed" ;;
-        *)   [ "$3" -lt 60 ] || reason="pg-down-stale-snapshot" ;;
+        *)   [ "${3:-999999}" -lt 60 ] || reason="pg-down-stale-snapshot" ;;
       esac
     fi
     if [ -z "$reason" ]; then
       wt=$(basename "${xroot:-?}")
-      if [ "$own" = "1" ]; then
-        ask_reason="${who} (worktree ${wt}) last touched ${rel:-$file} ${mins} min ago. Approve to edit anyway."
-        ev="ask-collision-sibling"
-      else
-        ask_reason="Session ${osid:0:8} (${okind}, branch ${obranch}, worktree ${wt}) last touched ${rel:-$file} ${mins} min ago. Approve to edit anyway."
-        ev="ask-collision"
-      fi
+      ask_reason="Session ${osid:0:8} (${okind}, branch ${obranch}, worktree ${wt}) last touched ${rel:-$file} ${mins} min ago. Approve to edit anyway."
       ctx="Collision: ${ask_reason} The user was asked to approve this edit; if it is denied, coordinate with that session instead of retrying."
       ask_mark_pending "$sid" "$2" "$file" "$osid:$oagent"
-      log_event "$ev" "$sid" "$osid" "$det" >/dev/null 2>&1 &
+      log_event "ask-collision" "$sid" "$osid" "$det" >/dev/null 2>&1 &
       emit_ask "$ask_reason" "$ctx"
       return 0
     fi
@@ -342,6 +337,7 @@ do_consult() {
   sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
   case "$sid" in ''|.|..|*[!A-Za-z0-9._-]*) exit 0 ;; esac
   agent=$(jq -r '.agent_id // ""' <<<"$input" 2>/dev/null)
+  case "$agent" in *[!A-Za-z0-9._-]*) exit 0 ;; esac
   files=$(target_paths "$input")
   [ -n "$files" ] || exit 0
   snap="/tmp/claude-session-coord-${sid}.json"
