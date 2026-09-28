@@ -2005,6 +2005,52 @@ describe("handleCoachChat — recipe finder (Coach Pro, flag on)", () => {
     );
   });
 
+  it("a round-1 fall-through Generate is never abandoned between its claim and its persist", async () => {
+    const questionsBlock = {
+      type: "recipe_questions" as const,
+      questions: [{ question: "Spicy?", options: ["yes", "no"] }],
+      flow: { ...listBlock.flow, stage: "clarifying" as const },
+    };
+    vi.mocked(findCommunity).mockResolvedValue([]);
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: { blocks: [questionsBlock] },
+      }),
+      createMockChatMessage({ id: 77, role: "user", content: "Spicy? yes" }),
+    ]);
+    const gen = handleCoachChat(
+      makeParams({
+        content: "Spicy? yes",
+        finder: {
+          ...finder,
+          action: {
+            type: "answers",
+            flowId: FLOW,
+            answers: [{ question: "Spicy?", answer: "yes" }],
+          },
+        },
+      }),
+    );
+    // The route stops iterating (generator.return()) at the first yield after
+    // the client leaves; model the worst case — it leaves right after the claim.
+    for (let r = await gen.next(); !r.done; r = await gen.next()) {
+      if (vi.mocked(storage.claimRecipeGeneration).mock.calls.length > 0) {
+        await gen.return(undefined);
+        break;
+      }
+    }
+    expect(storage.claimRecipeGeneration).toHaveBeenCalled();
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      "Here's a curry!",
+      expect.objectContaining({ recipe }),
+      undefined,
+    );
+  });
+
   it("a finder list step persists its block even after the client left", async () => {
     vi.mocked(storage.getChatMessages).mockResolvedValue([
       createMockChatMessage({

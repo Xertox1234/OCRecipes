@@ -419,6 +419,42 @@ describe("classifyIntent", () => {
       expect(classifyIntent(msg).intent).not.toBe("recipe_request");
     });
 
+    // #1151 review: an action on a recipe the user already has belongs to the
+    // coach's tools (meal plan, grocery list, substitutions, nutrition).
+    it.each([
+      "I want to add this recipe to my meal plan",
+      "I need a substitute for eggs in my recipe",
+      "give me the calories in that recipe",
+      "Can you add that recipe to my grocery list?",
+      "Put this recipe on my meal plan for Tuesday",
+      "I want to swap the butter in this chicken recipe",
+      "Give me the macros for my lasagna recipe",
+      "Show me the nutrition for this recipe",
+      "I need a grocery list for that recipe",
+      "Find a substitute for milk in my recipe",
+      "Get me the protein in these recipes",
+      "Replace the chicken with tofu in the recipe",
+      "Give me the calories in the recipe",
+      "Get me a shopping list for the recipe",
+      "Show me the ingredients for the recipe",
+      "I want to add a recipe to my meal plan",
+    ])("does NOT route an action on an existing recipe: %j", (msg) => {
+      expect(classifyIntent(msg).intent).not.toBe("recipe_request");
+    });
+
+    it.each([
+      "Find me a recipe for my dinner",
+      "Give me the recipe for lasagna",
+      "I want a high protein recipe",
+      "Find me a low calorie recipe",
+      "Give me a recipe with the ingredients in my fridge",
+      "Find me a recipe that uses tofu",
+      "Suggest a recipe to add to my meal plan",
+      "Send me your best chicken recipe",
+    ])("still routes a request for a new recipe: %j", (msg) => {
+      expect(classifyIntent(msg).intent).toBe("recipe_request");
+    });
+
     it("safety still wins over a recipe request", () => {
       expect(classifyIntent("Give me a recipe for my diabetes").intent).toBe(
         "safety_refusal",

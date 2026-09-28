@@ -16,11 +16,12 @@
       "fish tacos",
       "shrimp pasta",
       "egg breakfast",
-      "turkey meatballs"
+      "turkey meatballs",
+      "keto dinner",
+      "gluten free dinner"
     ],
     "wrong": [
       "chicken curry",
-      "vegan pasta",
       "high protein breakfast",
       "chicken soup",
       "quinoa salad",
@@ -34,9 +35,8 @@
       "a smoothie",
       "chocolate dessert",
       "cookies",
-      "keto dinner",
-      "gluten free dinner",
-      "lobster thermidor"
+      "lobster thermidor",
+      "vegan pasta"
     ]
   },
   "queries": [

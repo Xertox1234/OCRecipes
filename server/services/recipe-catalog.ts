@@ -210,10 +210,17 @@ function mapToMealPlanRecipe(
 
 // ── Exported API Functions ───────────────────────────────────────────
 
+/**
+ * `strict` (recipe finder only) throws where the default returns an empty
+ * list — a missing key or a reply that is not a search result — so a caller
+ * can tell "unavailable" from "no results".
+ */
 export async function searchCatalogRecipes(
   params: CatalogSearchParams,
+  opts: { strict?: boolean } = {},
 ): Promise<CatalogSearchResponse> {
   if (!SPOONACULAR_API_KEY) {
+    if (opts.strict) throw new Error("Spoonacular API key not configured");
     return { results: [], offset: 0, number: 0, totalResults: 0 };
   }
 
@@ -250,6 +257,7 @@ export async function searchCatalogRecipes(
       { zodErrors: parsed.error.flatten() },
       "Spoonacular search parse error",
     );
+    if (opts.strict) throw new Error("Spoonacular search parse error");
     return { results: [], offset: 0, number: 0, totalResults: 0 };
   }
 

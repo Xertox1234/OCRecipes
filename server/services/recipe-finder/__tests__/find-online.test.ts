@@ -47,15 +47,18 @@ describe("findOnline", () => {
       },
       allergies,
     );
-    expect(searchCatalogRecipes).toHaveBeenCalledWith({
-      query: "quinoa salad",
-      number: 5,
-      cuisine: "mediterranean",
-      diet: "vegan",
-      type: "main course",
-      maxReadyTime: 20,
-      intolerances: "peanut,dairy",
-    });
+    expect(searchCatalogRecipes).toHaveBeenCalledWith(
+      {
+        query: "quinoa salad",
+        number: 5,
+        cuisine: "mediterranean",
+        diet: "vegan",
+        type: "main course",
+        maxReadyTime: 20,
+        intolerances: "peanut,dairy",
+      },
+      { strict: true },
+    );
     expect(result).toEqual({
       status: "ok",
       items: [

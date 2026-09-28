@@ -142,7 +142,23 @@ describe("findCommunity", () => {
     expect(opts).toEqual({ includeScores: true });
   });
 
-  it("retries once with q only when the filtered search returns nothing", async () => {
+  it("maps the finder's diet vocabulary onto community tag spellings", async () => {
+    for (const [diet, tag] of [
+      ["ketogenic", "keto"],
+      ["gluten free", "gluten-free"],
+      ["Dairy Free", "dairy-free"],
+      ["vegan", "vegan"],
+    ]) {
+      vi.mocked(searchRecipes).mockReset();
+      searchReturns([[recipe(1, "Bowl"), 20]]);
+      await findCommunity({ q: "bowl", diet }, "u1", []);
+      expect(vi.mocked(searchRecipes).mock.calls[0][0]).toMatchObject({
+        diet: tag,
+      });
+    }
+  });
+
+  it("the retry drops mealType but keeps a stated diet", async () => {
     searchReturns([]);
     searchReturns([[recipe(5, "Vegan Chili"), 15]]);
     const items = await findCommunity(
@@ -152,14 +168,72 @@ describe("findCommunity", () => {
     );
     expect(vi.mocked(searchRecipes)).toHaveBeenCalledTimes(2);
     const retry = vi.mocked(searchRecipes).mock.calls[1][0];
-    expect(retry).not.toHaveProperty("diet");
-    expect(retry).not.toHaveProperty("mealType");
     expect(retry).toMatchObject({
       q: "chili",
+      diet: "vegan",
       safeForMe: true,
       source: "community",
     });
+    expect(retry).not.toHaveProperty("mealType");
     expect(items.map((i) => i.id)).toEqual([5]);
+  });
+
+  it("a diet with no diet-safe hit is no matches — never a retry without the diet", async () => {
+    searchReturns([]);
+    searchReturns([[recipe(6, "Creamy Tomato Pasta"), 30]]);
+    const items = await findCommunity({ q: "pasta", diet: "vegan" }, "u1", []);
+    expect(vi.mocked(searchRecipes)).toHaveBeenCalledTimes(1);
+    expect(items).toEqual([]);
+  });
+
+  it("with no diet, the retry is q-only", async () => {
+    searchReturns([]);
+    searchReturns([[recipe(7, "Omelette"), 15]]);
+    const items = await findCommunity(
+      { q: "omelette", mealType: "breakfast" },
+      "u1",
+      [],
+    );
+    const retry = vi.mocked(searchRecipes).mock.calls[1][0];
+    expect(retry).not.toHaveProperty("mealType");
+    expect(retry).not.toHaveProperty("diet");
+    expect(items.map((i) => i.id)).toEqual([7]);
+  });
+
+  it("a request that is only a diet and a meal type browses by the filters (no text, no score cut)", async () => {
+    // Filter-only hits score 0 — the close-match floor must not drop them.
+    searchReturns([
+      [recipe(3, "Keto Salmon"), 0],
+      [recipe(7, "Keto Steak"), 0],
+    ]);
+    const items = await findCommunity(
+      { q: "dinner", diet: "ketogenic", mealType: "dinner" },
+      "u1",
+      [],
+    );
+    const params = vi.mocked(searchRecipes).mock.calls[0][0];
+    expect(params).not.toHaveProperty("q");
+    expect(params).toMatchObject({ diet: "keto", mealType: "dinner" });
+    expect(items.map((i) => i.id)).toEqual([3, 7]);
+  });
+
+  it("browsing caps the list at FINDER_MAX_ITEMS", async () => {
+    searchReturns([1, 2, 3, 4, 5, 6, 7].map((id) => [recipe(id, `R${id}`), 0]));
+    const items = await findCommunity(
+      { q: "gluten free dinner", diet: "gluten free", mealType: "dinner" },
+      "u1",
+      [],
+    );
+    expect(vi.mocked(searchRecipes).mock.calls[0][0]).not.toHaveProperty("q");
+    expect(items).toHaveLength(5);
+  });
+
+  it("a bare meal type with no diet still searches the text (no browse)", async () => {
+    searchReturns([[recipe(21, "Sunday Dinner Roast"), 12]]);
+    await findCommunity({ q: "dinner", mealType: "dinner" }, "u1", []);
+    expect(vi.mocked(searchRecipes).mock.calls[0][0]).toMatchObject({
+      q: "dinner",
+    });
   });
 
   it("excludes already-shown ids", async () => {

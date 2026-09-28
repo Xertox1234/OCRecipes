@@ -41,15 +41,18 @@ export async function findOnline(
   if (!isOnlineCatalogConfigured()) return { status: "unavailable" };
   const intolerances = buildIntolerancesParam(allergies);
   try {
-    const res = await searchCatalogRecipes({
-      query: query.q,
-      number: FINDER_MAX_ITEMS,
-      ...(query.cuisine && { cuisine: query.cuisine }),
-      ...(query.diet && { diet: query.diet }),
-      ...(query.mealType && { type: SPOONACULAR_MEAL_TYPE[query.mealType] }),
-      ...(query.maxPrepTime && { maxReadyTime: query.maxPrepTime }),
-      ...(intolerances && { intolerances }),
-    });
+    const res = await searchCatalogRecipes(
+      {
+        query: query.q,
+        number: FINDER_MAX_ITEMS,
+        ...(query.cuisine && { cuisine: query.cuisine }),
+        ...(query.diet && { diet: query.diet }),
+        ...(query.mealType && { type: SPOONACULAR_MEAL_TYPE[query.mealType] }),
+        ...(query.maxPrepTime && { maxReadyTime: query.maxPrepTime }),
+        ...(intolerances && { intolerances }),
+      },
+      { strict: true },
+    );
     const items: FinderItem[] = res.results
       .filter((r) => Number.isInteger(r.id) && r.id > 0)
       .slice(0, FINDER_MAX_ITEMS)
