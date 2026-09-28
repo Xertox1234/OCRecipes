@@ -486,7 +486,7 @@ describe("generateRecipeChatResponse — prompt injection sanitization (M1)", ()
 
 describe("system prompts forbid markdown images/links", () => {
   const forbidsMarkdownImagesAndLinks =
-    "Never write markdown images (`![alt](url)`) or markdown links (`[text](url)`) in your reply — the chat renderer does not support them and they show up as broken raw text.";
+    "Never write markdown images (`![alt](url)`) or markdown links (`[text](url)`) in your reply — the chat renderer does not display them: images are dropped and links lose their URL.";
 
   it("buildSystemPrompt (chat flow) includes the forbid-markdown-images/links instruction", async () => {
     vi.mocked(openai.chat.completions.create).mockResolvedValueOnce(
