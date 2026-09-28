@@ -56,11 +56,8 @@ describe("classifyTurn", () => {
   it("uses a short timeout and JSON mode", async () => {
     returns({ class: "other" });
     await classifyTurn("thanks!", "Chicken Curry");
-    const [body, opts] = mockCreate.mock.calls[0] as [
-      { response_format: unknown },
-      { timeout: number },
-    ];
+    const [body, opts] = mockCreate.mock.calls[0];
     expect(body.response_format).toEqual({ type: "json_object" });
-    expect(opts.timeout).toBe(CLASSIFY_TURN_TIMEOUT_MS);
+    expect(opts?.timeout).toBe(CLASSIFY_TURN_TIMEOUT_MS);
   });
 });
