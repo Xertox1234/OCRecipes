@@ -1386,6 +1386,46 @@ describe("Chat Routes", () => {
         expect(res.status).toBe(409);
       });
 
+      it("Coach Pro: a finder action goes through the route to the Coach finder", async () => {
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation(),
+        );
+        vi.mocked(storage.getChatMessages).mockResolvedValue([
+          createMockChatMessage({
+            id: 2,
+            role: "assistant",
+            metadata: { blocks: [listBlock] },
+          }),
+        ]);
+        vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
+        vi.mocked(storage.getDailySummary).mockResolvedValue({
+          totalCalories: 0,
+          totalProtein: 0,
+          totalCarbs: 0,
+          totalFat: 0,
+          itemCount: 0,
+        });
+        const res = await send({
+          content: "Search Spoonacular",
+          finderAction: { type: "search_online", flowId: FLOW },
+        });
+        expect(res.status).toBe(200);
+        expect(storage.createFinderUserMessage).toHaveBeenCalledWith(
+          1,
+          "1",
+          "Search Spoonacular",
+          {
+            action: { flowId: FLOW, type: "search_online" },
+            coachDailyLimit: expect.any(Number),
+          },
+        );
+        expect(res.text).toContain('data: {"status":"Searching Spoonacular…"}');
+        expect(res.text).toContain(
+          '"blocks":[{"type":"recipe_results","source":"spoonacular"',
+        );
+        expect(generateCoachProResponse).not.toHaveBeenCalled();
+      });
+
       it("rejects a malformed finderAction (400)", async () => {
         const res = await send({
           content: "Generate",

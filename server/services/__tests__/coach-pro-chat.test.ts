@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { CoachChatEvent, CoachChatParams } from "../coach-pro-chat";
 import type { CoachNotebookEntry, UserProfile } from "@shared/schema";
 import {
@@ -33,6 +33,10 @@ import { civilDateToInstant } from "../../lib/civil-date";
 import express from "express";
 import request from "supertest";
 import { register as registerNotebookRoutes } from "../../routes/notebook";
+import { generateRecipeChatResponse } from "../recipe-chat";
+import { findCommunity } from "../recipe-finder/find-community";
+import { classifyTurn } from "../recipe-finder/classify-turn";
+import type { RecipeResultsBlock } from "@shared/schemas/recipe-finder";
 
 // ── Mocks ───────────────────────────────────────────────────
 
@@ -54,6 +58,10 @@ vi.mock("../../storage", () => ({
     createNotebookEntries: vi.fn(),
     createNotebookEntry: vi.fn(),
     archiveOldEntries: vi.fn(),
+    getChatMessageByTurnKey: vi.fn(),
+    deleteChatMessage: vi.fn(),
+    claimRecipeGeneration: vi.fn(),
+    claimSpoonacularSearch: vi.fn(),
   },
 }));
 
@@ -67,7 +75,21 @@ vi.mock("../nutrition-coach", () => ({
 vi.mock("../coach-blocks", () => ({
   parseBlocksFromContent: vi.fn().mockReturnValue({ text: "", blocks: [] }),
   BLOCKS_SYSTEM_PROMPT: "[BLOCKS_SYSTEM_PROMPT]",
+  getBlocksSystemPrompt: vi.fn().mockReturnValue("[BLOCKS_SYSTEM_PROMPT]"),
 }));
+
+vi.mock("../recipe-chat", async () => {
+  const actual =
+    await vi.importActual<typeof import("../recipe-chat")>("../recipe-chat");
+  return { ...actual, generateRecipeChatResponse: vi.fn() };
+});
+vi.mock("../recipe-finder/extract-query", () => ({
+  extractQuery: vi.fn(async (t: string) => ({ q: t })),
+}));
+vi.mock("../recipe-finder/find-community", () => ({ findCommunity: vi.fn() }));
+vi.mock("../recipe-finder/find-online", () => ({ findOnline: vi.fn() }));
+vi.mock("../recipe-finder/ask-clarifying", () => ({ askClarifying: vi.fn() }));
+vi.mock("../recipe-finder/classify-turn", () => ({ classifyTurn: vi.fn() }));
 
 vi.mock("../notebook-extraction", () => ({
   extractNotebookEntries: vi.fn().mockResolvedValue([]),
@@ -1758,5 +1780,276 @@ describe("getSystemPromptTemplateVersion (real implementation)", () => {
     const v2 = getSystemPromptTemplateVersion();
     expect(v1).toMatch(/^[0-9a-f]{16}$/);
     expect(v1).toBe(v2);
+  });
+});
+
+describe("handleCoachChat — recipe finder (Coach Pro, flag on)", () => {
+  const FLOW = "11111111-1111-4111-8111-111111111111";
+  const finder = {
+    userMessageId: 77,
+    features: {
+      catalogSave: true,
+      recipeGeneration: true,
+      dailyRecipeGenerations: 20,
+    },
+  };
+  const item = {
+    id: 12,
+    source: "community" as const,
+    title: "Chicken Tray Bake",
+    imageUrl: null,
+    readyInMinutes: null,
+    calories: 480,
+  };
+  const recipe = {
+    title: "Chicken Curry",
+    description: "d",
+    difficulty: "Easy" as const,
+    timeEstimate: "30 min",
+    servings: 2,
+    ingredients: [],
+    instructions: ["cook"],
+    dietTags: [],
+  };
+  const listBlock: RecipeResultsBlock = {
+    type: "recipe_results",
+    source: "community",
+    items: [item],
+    actions: ["search_online", "generate", "none_of_these"],
+    notice: null,
+    flow: {
+      flowId: FLOW,
+      stage: "results",
+      request: "chicken",
+      query: { q: "chicken" },
+      round: 0,
+      shownIds: ["community:12"],
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupDefaultStorage();
+    vi.stubEnv("SPOONACULAR_API_KEY", "k");
+    vi.mocked(findCommunity).mockResolvedValue([item]);
+    vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
+    vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(true);
+    vi.mocked(generateRecipeChatResponse).mockImplementation(
+      async function* () {
+        yield { content: "Here's a curry!\n```json\n{}\n```" };
+        yield { content: "", recipe, allergenWarning: null };
+        yield { content: "", imageUrl: "https://img/curry.png" };
+        yield { done: true };
+      },
+    );
+    vi.mocked(generateCoachProResponse).mockReturnValue(
+      fakeProStream(["coach reply"]),
+    );
+    vi.mocked(parseBlocksFromContent).mockReturnValue({
+      text: "coach reply",
+      blocks: [],
+    });
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("routes a recipe_request to the finder and persists a recipe_results block", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "user",
+        content: "Find me a chicken recipe",
+      }),
+    ]);
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Find me a chicken recipe",
+          finder,
+          turnKey: "11111111-2222-4333-8444-555555555555",
+        }),
+      ),
+    );
+    expect(events[0]).toEqual({
+      type: "status",
+      label: "Searching community recipes…",
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: "blocks",
+      blocks: [{ type: "recipe_results" }],
+    });
+    expect(events.some((e) => e.type === "content")).toBe(false);
+    expect(generateCoachProResponse).not.toHaveBeenCalled();
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      expect.stringMatching(/^Here are 1 community recipe:/),
+      { blocks: [expect.objectContaining({ type: "recipe_results" })] },
+      "11111111-2222-4333-8444-555555555555",
+    );
+  });
+
+  it("flag off (no finder param): a recipe_request keeps its legacy prompt intent", async () => {
+    await collectEvents(handleCoachChat(makeParams({ content: "meal ideas" })));
+    // 6th arg of generateCoachProResponse is the intent.
+    expect(vi.mocked(generateCoachProResponse).mock.calls[0][5]).toBe(
+      "vague_request",
+    );
+  });
+
+  it("free Coach never enters the finder (D7)", async () => {
+    vi.mocked(generateCoachResponse).mockReturnValue(
+      fakeStream(["free reply"]),
+    );
+    await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Find me a chicken recipe",
+          isCoachPro: false,
+          finder,
+        }),
+      ),
+    );
+    expect(findCommunity).not.toHaveBeenCalled();
+    expect(generateCoachResponse).toHaveBeenCalled();
+  });
+
+  it("safety_refusal never enters the finder, even mid-flow", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: { blocks: [listBlock] },
+      }),
+      createMockChatMessage({
+        role: "user",
+        content: "I have diabetes, what should I eat?",
+      }),
+    ]);
+    await collectEvents(
+      handleCoachChat(
+        makeParams({ content: "I have diabetes, what should I eat?", finder }),
+      ),
+    );
+    expect(findCommunity).not.toHaveBeenCalled();
+    expect(generateCoachProResponse).toHaveBeenCalled();
+  });
+
+  it("Generate action generates a card with TOP-LEVEL recipe metadata (save-recipe works — R5)", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: { blocks: [listBlock] },
+      }),
+      createMockChatMessage({ id: 77, role: "user", content: "Generate" }),
+    ]);
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Generate",
+          finder: { ...finder, action: { type: "generate", flowId: FLOW } },
+        }),
+      ),
+    );
+    expect(storage.claimRecipeGeneration).toHaveBeenCalledWith(
+      "user-42",
+      77,
+      20,
+    );
+    expect(vi.mocked(generateRecipeChatResponse).mock.calls[0][0]).toEqual([
+      { role: "user", content: "Create a recipe for: chicken" },
+    ]);
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      "Here's a curry!",
+      {
+        metadataVersion: 1,
+        recipe,
+        allergenWarning: null,
+        imageUrl: "https://img/curry.png",
+      },
+      undefined,
+    );
+    expect(events.at(-1)).toEqual({
+      type: "content",
+      content: "Here's a curry!",
+    });
+  });
+
+  it("the daily generation limit is enforced in Coach too", async () => {
+    vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(false);
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: { blocks: [listBlock] },
+      }),
+      createMockChatMessage({ id: 77, role: "user", content: "Generate" }),
+    ]);
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Generate",
+          finder: { ...finder, action: { type: "generate", flowId: FLOW } },
+        }),
+      ),
+    );
+    expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({
+      type: "blocks",
+      blocks: [{ notice: "generate_limit" }],
+    });
+  });
+
+  it("after a generated card, refine_current regenerates the card (and claims a generation)", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        content: "Here!",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+        },
+      }),
+      createMockChatMessage({
+        id: 77,
+        role: "user",
+        content: "make it spicier",
+      }),
+    ]);
+    vi.mocked(classifyTurn).mockResolvedValue("refine_current");
+    const events = await collectEvents(
+      handleCoachChat(makeParams({ content: "make it spicier", finder })),
+    );
+    expect(events[0]).toEqual({
+      type: "status",
+      label: "Updating your recipe…",
+    });
+    expect(storage.claimRecipeGeneration).toHaveBeenCalled();
+    expect(
+      vi.mocked(generateRecipeChatResponse).mock.calls[0][0].at(-1),
+    ).toEqual({ role: "user", content: "make it spicier" });
+  });
+
+  it("after a generated card, 'other' gets a normal coach reply", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+        },
+      }),
+      createMockChatMessage({ role: "user", content: "thanks!" }),
+    ]);
+    vi.mocked(classifyTurn).mockResolvedValue("other");
+    await collectEvents(
+      handleCoachChat(makeParams({ content: "thanks!", finder })),
+    );
+    expect(generateCoachProResponse).toHaveBeenCalled();
+    expect(generateRecipeChatResponse).not.toHaveBeenCalled();
   });
 });

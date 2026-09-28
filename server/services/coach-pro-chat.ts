@@ -47,6 +47,16 @@ import {
 import type { DailyLog, UserProfile } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import type { MeasurementUnit } from "@shared/lib/units";
+import type { FinderAction } from "@shared/schemas/recipe-finder";
+import {
+  classifyTurn,
+  decideCoachFinderEntry,
+  type FinderFeatures,
+} from "./recipe-finder";
+import {
+  runCoachFinderTurn,
+  type CoachFinderTurnEntry,
+} from "./recipe-finder/coach-turn";
 
 const log = createServiceLogger("coach-pro-chat");
 
@@ -214,6 +224,17 @@ export interface CoachChatParams {
   abortSignal?: AbortSignal;
   /** IANA timezone of the requesting user, e.g. "America/Los_Angeles". Defaults to UTC. */
   tz?: string;
+  /**
+   * Recipe finder (spec 2026-09-28). The route passes this ONLY when
+   * RECIPE_FINDER_ENABLED is on and the user is Coach Pro; absent → today's
+   * behavior exactly.
+   */
+  finder?: {
+    action?: FinderAction;
+    /** This turn's user row — Generate/Spoonacular claims mark it. */
+    userMessageId: number;
+    features: FinderFeatures;
+  };
 }
 
 /**
@@ -527,9 +548,53 @@ export async function* handleCoachChat(
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
-  // recipe_request is routed by the recipe finder (Task 20); until then this
-  // path keeps its legacy prompt intent.
-  const { intent } = classifyIntent(content, { recipeRequests: false });
+  const { intent: classifiedIntent } = classifyIntent(content);
+  // A recipe_request that does not enter the finder (flag off, free Coach, a
+  // turn routed elsewhere) keeps the prompt intent it had before this intent
+  // existed — flag-off Coach is unchanged (spec §8).
+  const intent: CoachIntent =
+    classifiedIntent === "recipe_request"
+      ? classifyIntent(content, { recipeRequests: false }).intent
+      : classifiedIntent;
+
+  // ── Recipe finder (Coach Pro, flag on) — early return (R2) ──
+  if (params.finder && isCoachPro) {
+    const recent = await storage.getChatMessages(conversationId, 20, userId);
+    const entry = decideCoachFinderEntry(
+      recent,
+      content,
+      classifiedIntent,
+      params.finder.action,
+    );
+    let finderEntry: CoachFinderTurnEntry | null = null;
+    if (entry.kind === "finder") {
+      finderEntry = { kind: "finder", input: entry.input };
+    } else if (entry.kind === "classify") {
+      const turn = await classifyTurn(content, entry.recipeTitle);
+      if (turn === "new_request") {
+        finderEntry = {
+          kind: "finder",
+          input: { kind: "start", text: content },
+        };
+      } else if (turn === "refine_current") {
+        finderEntry = { kind: "refine" };
+      }
+    }
+    if (finderEntry) {
+      yield* runCoachFinderTurn({
+        conversationId,
+        userId,
+        content,
+        turnKey,
+        history: recent,
+        userMessageId: params.finder.userMessageId,
+        entry: finderEntry,
+        features: params.finder.features,
+        isAborted,
+      });
+      return;
+    }
+  }
 
   const today = new Date();
 

@@ -759,6 +759,18 @@ export function register(app: Express): void {
               tz: parseTimezone(req.headers["x-timezone"]),
               isAborted: () => aborted,
               abortSignal: abortController.signal,
+              finder:
+                finderEnabled && features.coachPro
+                  ? {
+                      action: finderAction,
+                      userMessageId: userMessage.id,
+                      features: {
+                        catalogSave: features.catalogSave,
+                        recipeGeneration: features.recipeGeneration,
+                        dailyRecipeGenerations: features.dailyRecipeGenerations,
+                      },
+                    }
+                  : undefined,
             })) {
               if (aborted) break;
               const eventJson = JSON.stringify(
