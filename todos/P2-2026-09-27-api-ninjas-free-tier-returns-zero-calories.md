@@ -1,6 +1,6 @@
 ---
 title: "API Ninjas' free tier hides calories and protein, so a lookup that falls through to it returns 0 kcal"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-27
 updated: 2026-09-27

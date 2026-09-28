@@ -1119,6 +1119,75 @@ describe("lookupNutrition", () => {
     }
   });
 
+  describe("API Ninjas premium-gated fields", () => {
+    /** Set up CNF/USDA as empty and API Ninjas to return a single `item`. */
+    function apiNinjasReturns(item: Record<string, unknown>) {
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () =>
+          Promise.resolve({ ok: true, json: async () => ({ foods: [] }) }),
+        "api-ninjas.com": () =>
+          Promise.resolve({ ok: true, json: async () => [item] }),
+      });
+      return lookupNutrition("kombucha");
+    }
+
+    it("returns null when calories are premium-gated, instead of a fabricated 0 kcal food", async () => {
+      const originalKey = process.env.API_NINJAS_KEY;
+      process.env.API_NINJAS_KEY = "test-key";
+      try {
+        // Measured 2026-09-27, GET /v1/nutrition?query=kombucha on our key
+        // (todo P2-2026-09-27). `serving_size_g` is a real, ungated 100 —
+        // the bug this guards against is exactly this shape: a valid
+        // serving basis riding alongside gated calories/protein, which lets
+        // the gated result scale and look like a real 0-kcal food.
+        const result = await apiNinjasReturns({
+          name: "kombucha",
+          calories: "Only available for premium subscribers.",
+          serving_size_g: 100.0,
+          protein_g: "Only available for premium subscribers.",
+          fat_total_g: 0.2,
+          carbohydrates_total_g: 7,
+          fiber_g: 0,
+          sugar_g: 3,
+          sodium_mg: 2,
+        });
+        expect(result).toBeNull();
+      } finally {
+        if (originalKey === undefined) delete process.env.API_NINJAS_KEY;
+        else process.env.API_NINJAS_KEY = originalKey;
+      }
+    });
+
+    it("still returns a real 0-kcal food when calories are a genuine numeric 0 (e.g. water)", async () => {
+      // Positive control for the test above: a genuine numeric 0 must not be
+      // treated as gated — water, black coffee and diet soda are real
+      // 0-kcal foods, and must still come back as such.
+      const originalKey = process.env.API_NINJAS_KEY;
+      process.env.API_NINJAS_KEY = "test-key";
+      try {
+        const result = await apiNinjasReturns({
+          name: "water",
+          calories: 0,
+          protein_g: 0,
+          carbohydrates_total_g: 0,
+          fat_total_g: 0,
+          fiber_g: 0,
+          sugar_g: 0,
+          sodium_mg: 0,
+          serving_size_g: 100,
+        });
+        expect(result).not.toBeNull();
+        expect(result!.source).toBe("api-ninjas");
+        expect(result!.calories).toBe(0);
+      } finally {
+        if (originalKey === undefined) delete process.env.API_NINJAS_KEY;
+        else process.env.API_NINJAS_KEY = originalKey;
+      }
+    });
+  });
+
   it("returns null when no source has data", async () => {
     setupFetchMock({
       "food/?lang=en": emptyCNFEN,

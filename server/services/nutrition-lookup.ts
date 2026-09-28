@@ -35,16 +35,36 @@ const CACHE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 10_000;
 
 // Zod schema for API Ninjas nutrition response validation.
-// Free tier returns some fields as "Only available for premium subscribers."
-// so we coerce strings to 0 for those fields.
+//
+// Free tier gates calories and protein behind a non-numeric string
+// ("Only available for premium subscribers.") instead of a real value.
+// `coerceNumber` intentionally maps that string (and any other non-numeric
+// value) to `0` for fields where `0` is the module's "incomplete" sentinel —
+// `fetchNutritionFromSources`/`lookupNutrition`/`batchNutritionLookup` all
+// gate on `calories > 0`, so this is a documented interface, not a leak
+// (docs/solutions/conventions/sentinel-with-readers-is-a-contract-not-a-fabricated-default-2026-08-10.md).
+// Never reject the parse over a gated string — that would fail every
+// free-tier API Ninjas response outright (the retraction that doc records).
+//
+// That sentinel can't tell a gated `calories`/`protein_g` apart from a
+// genuine numeric 0 (a real 0-kcal food — water, black coffee, diet soda —
+// reaching API Ninjas as a last resort): both parse to `0` and look
+// identical in the returned NutritionData. `numericOrGated` keeps the gated
+// string as `null` instead, so `lookupAPINinjas` can refuse the whole
+// result rather than return a food that looks like a real 0-kcal match
+// (todo P2-2026-09-27).
 const coerceNumber = z
   .union([z.number(), z.string()])
   .transform((v) => (typeof v === "number" ? v : 0));
 
+const numericOrGated = z
+  .union([z.number(), z.string()])
+  .transform((v) => (typeof v === "number" ? v : null));
+
 const apiNinjasItemSchema = z.object({
   name: z.string(),
-  calories: coerceNumber,
-  protein_g: coerceNumber,
+  calories: numericOrGated,
+  protein_g: numericOrGated,
   carbohydrates_total_g: coerceNumber,
   fat_total_g: coerceNumber,
   fiber_g: coerceNumber.optional().default(0),
@@ -238,8 +258,13 @@ async function writeNutritionCache(
 
 /**
  * Lookup nutrition data from API Ninjas (last-resort fallback).
- * Note: free tier does NOT include calories or protein — those fields
- * will be 0. Only useful as a fallback for carbs/fat/fiber/sugar/sodium.
+ *
+ * The free tier gates calories and protein behind a non-numeric string —
+ * `numericOrGated` parses that as `null`, distinct from a genuine numeric 0.
+ * A gated calorie count can't be trusted as the food's actual energy, so a
+ * gated result is refused entirely (see the `null` check below) rather than
+ * returned as a food that looks like a real 0-kcal match; the caller treats
+ * it the same as "not found" (todo P2-2026-09-27).
  */
 async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
   const apiKey = process.env.API_NINJAS_KEY;
@@ -271,12 +296,23 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
     }
 
     const item = parsed.data[0];
-    // If calories came back as 0 (premium-gated), this result is incomplete
-    // but still useful for macro breakdown
+    if (item.calories === null) {
+      log.info(
+        { query },
+        "API Ninjas: calories premium-gated — refusing result",
+      );
+      return null;
+    }
+
     return {
       name: item.name,
       calories: item.calories,
-      protein: item.protein_g,
+      // Protein is gated on the same free-tier restriction as calories (see
+      // the docblock above); every observed gated response gates both
+      // together, so a real `calories` has meant a real `protein_g` too.
+      // Fall back to 0 — the module's existing "incomplete" sentinel — in
+      // case that ever splits, rather than propagate a `null`.
+      protein: item.protein_g ?? 0,
       carbs: item.carbohydrates_total_g,
       fat: item.fat_total_g,
       fiber: item.fiber_g,
@@ -905,8 +941,10 @@ export async function lookupUSDAByUPC(code: string): Promise<{
  * and a redundant cache write (batch writes once after this returns).
  *
  * CNF 0-calorie results fall through to USDA, matching the original guard at
- * the write site. USDA and API Ninjas results are returned as-is; callers
- * apply the `calories > 0` write guard themselves.
+ * the write site. USDA results are returned as-is; API Ninjas returns `null`
+ * when its calories are premium-gated (see `lookupAPINinjas`), otherwise
+ * as-is. Callers apply the `calories > 0` write guard themselves for
+ * whatever non-null result comes back.
  *
  * The query is looked up as typed first. A cultural food's standardized name
  * ("injera" → "fermented flatbread") is tried only when CNF and USDA both find

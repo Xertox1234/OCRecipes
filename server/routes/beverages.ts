@@ -44,9 +44,11 @@ const logBeverageSchema = z
 
 /**
  * Nutrition for the whole drink: the drink scaled to its size (ml ≈ g) plus a
- * fixed amount of each modifier. Null when a lookup finds nothing, or when a
- * result can't be scaled — its basis is "1 serving", missing, or zero (a gated
- * API Ninjas field), so nothing says what amount its values describe.
+ * fixed amount of each modifier. Null when a lookup finds nothing — including
+ * an API Ninjas result whose calories were premium-gated, refused upstream in
+ * `lookupAPINinjas` rather than returned as a fabricated 0-kcal match — or
+ * when a result can't be scaled because its basis is "1 serving" or missing,
+ * so nothing says what amount its values describe.
  */
 async function lookupDrinkNutrition(
   lookupName: string,
