@@ -1018,7 +1018,10 @@ describe("lookupNutrition", () => {
           Promise.resolve({
             ok: true,
             json: async () => ({
-              foods: [{ description: "Quinoa, cooked", foodNutrients }],
+              // "salad" (a query word) must appear in the description too —
+              // lookupUSDA's candidate filter (todo P2-2026-09-27) rejects a
+              // hit missing a query word.
+              foods: [{ description: "Quinoa salad, cooked", foodNutrients }],
             }),
           }),
       });
@@ -1304,11 +1307,15 @@ describe("lookupNutrition — cultural food names are a fallback, not a rewrite"
 
   it("falls back to the cultural name only after the original query finds nothing", async () => {
     // Positive control for the two tests above: the fallback is still reachable.
-    mockSources({ "spicy stew": { description: "Stew, chicken", kcal: 84 } });
+    // "spicy" (a query word) must appear in the description too — lookupUSDA's
+    // candidate filter (todo P2-2026-09-27) rejects a hit missing a query word.
+    mockSources({
+      "spicy stew": { description: "Stew, chicken, spicy", kcal: 84 },
+    });
 
     const result = await lookupNutrition("doro wat");
 
-    expect(result!.name).toBe("Stew, chicken");
+    expect(result!.name).toBe("Stew, chicken, spicy");
     expect(usdaQueries()).toEqual(["doro wat", "spicy stew"]);
   });
 

@@ -81,6 +81,12 @@ const usdaFoodSchema = z.object({
   // Tolerate a missing/null description: the array is parsed as a whole but a
   // bad sibling food must not fail the page; readers fall back to "Unknown".
   description: z.string().nullish(),
+  // "Foundation" | "SR Legacy" | "Survey (FNDDS)" | "Branded" — read by
+  // lookupUSDA's candidate filter (todo P2-2026-09-27) to decide whether a
+  // stricter head-match check applies. Absent/malformed degrades to
+  // undefined rather than failing the sibling food, matching this schema's
+  // existing tolerance for optional fields.
+  dataType: z.string().nullish(),
   foodNutrients: z.array(
     z.object({
       nutrientName: z.string(),
@@ -896,13 +902,56 @@ function mapUsdaFoodToNutrition(food: {
 }
 
 /**
- * Lookup nutrition data from USDA FoodData Central (fallback)
+ * Whether every word of the query (whole word, singular/plural tolerant)
+ * appears somewhere in a USDA candidate's description. A partial match — the
+ * description missing even one query word — is rejected, the same rule
+ * `scoreCNFMatch` applies to CNF (`server/services/nutrition-lookup.ts`).
+ */
+function usdaCoversQuery(description: string, qWords: string[]): boolean {
+  const dWords = new Set(matchWords(description));
+  return qWords.every((w) => wordMatch(dWords, w) > 0);
+}
+
+/**
+ * Whether a description's head — its first comma-separated part, or the
+ * whole description when it has no comma — is word-for-word the query: every
+ * query word is in the head and every head word is in the query (plural
+ * tolerant). Neither side may carry a content word the other lacks.
+ */
+function usdaHeadMatchesQuery(description: string, qWords: string[]): boolean {
+  const headWords = matchWords(description.split(",")[0]);
+  const headSet = new Set(headWords);
+  const qSet = new Set(qWords);
+  return (
+    qWords.every((w) => wordMatch(headSet, w) > 0) &&
+    headWords.every((w) => wordMatch(qSet, w) > 0)
+  );
+}
+
+/**
+ * Lookup nutrition data from USDA FoodData Central (fallback).
+ *
+ * Takes the first of up to 5 candidates (USDA's own relevance order) whose
+ * description covers every query word. A `Branded` candidate additionally
+ * must have the query as its exact head: a branded product's description is
+ * a specific product name, and some products rank #1 for a query merely
+ * because they share one of its words — "BAMBI, YO DORO WAFERS WITH
+ * HAZELNUTS" for "doro wat", "GYOZA DIPPING SAUCE, GYOZA" for "gyoza" (a
+ * trailing keyword-echo comma-part that satisfies plain word coverage even
+ * though the product itself is unrelated). A generic (government reference:
+ * Foundation/SR Legacy/Survey (FNDDS)) description is taxonomic and
+ * legitimately carries extra qualifier words after the head — "Injera,
+ * Ethiopian bread", "Biryani with vegetables", "Soup, pho, with meat" — so
+ * the head-exact check is not applied there; it would wrongly reject them.
+ * Measured live against the todo's full query set (todo P2-2026-09-27):
+ * zero regressions among 15 previously-USDA-sourced queries, and both
+ * "doro wat" and "gyoza" no longer resolve to the wrong branded row.
  */
 async function lookupUSDA(query: string): Promise<NutritionData | null> {
   try {
     const response = await cachedFetch(
       "usda",
-      `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=1&api_key=${USDA_API_KEY}`,
+      `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=5&api_key=${USDA_API_KEY}`,
       { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
 
@@ -917,7 +966,21 @@ async function lookupUSDA(query: string): Promise<NutritionData | null> {
       return null;
     }
 
-    return mapUsdaFoodToNutrition(parsed.data.foods[0]);
+    const qWords = withoutLeadingQuantity(matchWords(query));
+    // A degenerate query with no real words (rare — e.g. a bare quantity)
+    // can't be word-matched; fall back to USDA's own top hit as before.
+    if (qWords.length === 0) {
+      return mapUsdaFoodToNutrition(parsed.data.foods[0]);
+    }
+
+    const match = parsed.data.foods.find(
+      (food) =>
+        usdaCoversQuery(food.description ?? "", qWords) &&
+        (food.dataType !== "Branded" ||
+          usdaHeadMatchesQuery(food.description ?? "", qWords)),
+    );
+
+    return match ? mapUsdaFoodToNutrition(match) : null;
   } catch (error) {
     log.error({ err: toError(error) }, "USDA lookup error");
     return null;

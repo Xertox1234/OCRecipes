@@ -1,6 +1,6 @@
 ---
 title: 'USDA search takes the top hit even when it is an unrelated branded product: "doro wat" → hazelnut wafers'
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-27
 updated: 2026-09-27
