@@ -3,6 +3,8 @@ import {
   parseNutritionData,
 } from "@/components/recipe-detail/recipe-detail-utils";
 import type { IngredientItem } from "@/components/recipe-detail";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 export type FeaturedRecipeType = "community" | "mealPlan" | "catalog";
 
@@ -69,4 +71,39 @@ export function normalizeCatalogDetail(detail: CatalogDetailResponse) {
     imageUrl: r.imageUrl ?? null,
     nutrition: parseNutritionData(r),
   };
+}
+
+/**
+ * Copy for a failed catalog Save (POST /api/meal-plan/catalog/:id/save). Only
+ * a transient failure asks the user to try again: a 404 (gone from the
+ * catalog) and a 422 (the server's no-ingredients-no-steps quality gate) fail
+ * the same way every time. PREMIUM_REQUIRED is handled by the caller (it opens
+ * the upgrade modal instead of showing copy).
+ */
+export function catalogSaveErrorMessage(err: unknown): {
+  message: string;
+  retryable: boolean;
+} {
+  if (err instanceof ApiError) {
+    if (err.code === ErrorCode.CATALOG_QUOTA_EXCEEDED) {
+      return {
+        message: "Spoonacular isn't available right now. Try again later.",
+        retryable: false,
+      };
+    }
+    if (err.code === ErrorCode.NOT_FOUND) {
+      return {
+        message: "This recipe is no longer available.",
+        retryable: false,
+      };
+    }
+    if (err.code === ErrorCode.VALIDATION_ERROR) {
+      return {
+        message:
+          "This recipe has no ingredients or steps, so it can't be saved.",
+        retryable: false,
+      };
+    }
+  }
+  return { message: "Couldn't save this recipe. Try again.", retryable: true };
 }

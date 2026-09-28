@@ -6,6 +6,7 @@ module: client
 tags: [client-state, tanstack-query, react-native, error-handling]
 applies_to: [client/screens/**/*.tsx, client/hooks/use*.ts]
 created: '2026-09-25'
+last_updated: '2026-09-28'
 ---
 
 # Gate an error EmptyState on no-cached-data (isLoadingError), never bare isError
@@ -50,6 +51,13 @@ in-repo instances now follow this shape:
   detail), not as a failure. See
   `docs/solutions/logic-errors/network-failure-rendered-as-wrong-credentials-2026-08-08.md`
   for the sibling "don't assert a false cause" rule this pairs with.
+- A code-specific wall added BESIDE a guarded generic branch — e.g.
+  `isPremiumDenied = error.code === PREMIUM_REQUIRED` next to
+  `showsGenericError = … && !normalized`. The new sibling inherits none of the
+  guard: #1149's catalog preview swapped a cached recipe for a 402/403 wall on
+  a stale-on-mount refetch while its Save bar (gated on data, not on the wall)
+  stayed live on top. Every branch that renders INSTEAD of the data needs the
+  no-data qualifier, not just the generic one (fixed in the #1149 follow-up).
 
 ## Why
 

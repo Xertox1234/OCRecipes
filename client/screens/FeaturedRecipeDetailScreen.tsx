@@ -21,6 +21,7 @@ import type { RouteProp } from "@react-navigation/native";
 import { EmptyState } from "@/components/EmptyState";
 import { RecipeDetailContent } from "@/components/RecipeDetailContent";
 import { RecipeDetailSkeleton } from "@/components/recipe-detail";
+import { InlineError } from "@/components/InlineError";
 import { ThemedText } from "@/components/ThemedText";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import type { IngredientItem } from "@/components/recipe-detail";
@@ -35,8 +36,10 @@ import {
 } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import { useTheme } from "@/hooks/useTheme";
+import { useToast } from "@/context/ToastContext";
 import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
 import {
+  catalogSaveErrorMessage,
   normalizeCatalogDetail,
   resolveFeaturedRecipeType,
   type CatalogDetailResponse,
@@ -96,6 +99,7 @@ export default function FeaturedRecipeDetailScreen() {
   const navigation = useNavigation<FeaturedRecipeDetailScreenNavigationProp>();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const toast = useToast();
 
   // --- Community recipe fetch ---
   const {
@@ -251,11 +255,16 @@ export default function FeaturedRecipeDetailScreen() {
   // client/screens/LabelAnalysisScreen.tsx.
   const isNotFoundError =
     error instanceof ApiError && error.code === ErrorCode.NOT_FOUND;
+  // Like showsGenericError, a failed REFETCH over cached data keeps showing
+  // the recipe (and its Save bar) rather than swapping in a wall under it.
   const isPremiumDenied =
-    error instanceof ApiError && error.code === ErrorCode.PREMIUM_REQUIRED;
+    error instanceof ApiError &&
+    error.code === ErrorCode.PREMIUM_REQUIRED &&
+    !normalized;
   const isCatalogUnavailable =
     error instanceof ApiError &&
-    error.code === ErrorCode.CATALOG_QUOTA_EXCEEDED;
+    error.code === ErrorCode.CATALOG_QUOTA_EXCEEDED &&
+    !normalized;
   const showsGenericError =
     Boolean(error) &&
     !isNotFoundError &&
@@ -305,6 +314,17 @@ export default function FeaturedRecipeDetailScreen() {
     [normalized?.imageUrl],
   );
 
+  // The save mutation is silentError (no global toast), so a failure that
+  // lands after the user closed the preview would otherwise vanish.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const catalogTitle = normalized?.title;
   const handleSaveCatalog = useCallback(async () => {
     setSaveError(null);
     try {
@@ -316,13 +336,24 @@ export default function FeaturedRecipeDetailScreen() {
         setShowUpgrade(true);
         return;
       }
-      setSaveError(
-        err instanceof ApiError && err.code === ErrorCode.CATALOG_QUOTA_EXCEEDED
-          ? "Spoonacular isn't available right now. Try again later."
-          : "Couldn't save this recipe. Try again.",
-      );
+      const { message, retryable } = catalogSaveErrorMessage(err);
+      if (!isMountedRef.current) {
+        toast.error(
+          `Couldn't save ${catalogTitle ?? "the recipe"}. ${
+            retryable ? "Try again." : message
+          }`,
+        );
+        return;
+      }
+      setSaveError(message);
     }
-  }, [saveCatalogRecipe, recipeId]);
+  }, [saveCatalogRecipe, recipeId, toast, catalogTitle]);
+
+  // After a purchase from the Premium wall, the 403'd preview must refetch —
+  // the subscription refresh does not touch this query, and 4xx never retries.
+  const handleUpgraded = useCallback(() => {
+    if (resolvedRecipeType === "catalog") void refetchCatalogDetail();
+  }, [resolvedRecipeType, refetchCatalogDetail]);
 
   const handleOpenSaved = useCallback(() => {
     if (savedRecipeId === null) return;
@@ -461,14 +492,7 @@ export default function FeaturedRecipeDetailScreen() {
             },
           ]}
         >
-          {saveError ? (
-            <ThemedText
-              style={{ color: theme.error }}
-              accessibilityLiveRegion="polite"
-            >
-              {saveError}
-            </ThemedText>
-          ) : null}
+          <InlineError message={saveError} />
           <Pressable
             onPress={
               savedRecipeId !== null ? handleOpenSaved : handleSaveCatalog
@@ -499,6 +523,7 @@ export default function FeaturedRecipeDetailScreen() {
       <UpgradeModal
         visible={showUpgrade}
         onClose={() => setShowUpgrade(false)}
+        onUpgrade={handleUpgraded}
       />
     </View>
   );

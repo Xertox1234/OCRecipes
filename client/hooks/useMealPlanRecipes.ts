@@ -161,8 +161,9 @@ export function useSaveCatalogRecipe() {
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
-    // Its one call site (CoachChat.handleConfirmPlanSlot) already
-    // toast.error()s on failure via its own try/catch.
+    // Both call sites surface failures themselves: CoachChat's
+    // handleConfirmPlanSlot toast.error()s, and FeaturedRecipeDetailScreen's
+    // catalog Save shows an InlineError (or a toast once it has unmounted).
     meta: { silentError: true },
   });
 }
