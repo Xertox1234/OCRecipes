@@ -8,6 +8,7 @@ tags: [git, hooks, test-isolation, git-dir, hermetic-tests, tooling, worktree]
 symptoms: ['A shell/git hook self-test silently mutates the REAL repo: bogus user.email/user.name in .git/config, a phantom staged file, or uncommitted tracked-file edits reverted (HEAD detached/switched)', 'Corruption reproduces only locally (under VS Code''s integrated terminal or a git worktree), never in CI', The test passes its own assertions while clobbering the caller's working tree]
 applies_to: [.claude/hooks/test-*.sh, scripts/run-hook-tests.sh, scripts/preflight.sh]
 created: '2026-06-26'
+last_updated: '2026-09-28'
 ---
 
 # Inherited absolute GIT_DIR overrides `git -C`, corrupting the real repo from a hook self-test
@@ -91,8 +92,26 @@ Any git call inside a test-owned helper function that targets a DIFFERENT repo t
 those vars currently point at needs its OWN `env -u GIT_DIR -u GIT_WORK_TREE` prefix, every
 time, including calls that already use `-C` (which does nothing to protect against this).
 
+## Recurrence (2026-09-27): a NEW suite shipped without the unset, and the hijack prints into a captured path
+
+`.claude/hooks/test-checkpoint.sh` (#1134) was written fresh, runs `git checkout -- .` and
+`git clean -fd` on purpose, and still omitted the `unset`. `run-hook-tests.sh` strips the env,
+so CI and preflight were safe; a **direct** run was not. The #1134 review ran it with
+`GIT_DIR=<victim>/.git GIT_WORK_TREE=<victim>` exported, and the victim repo gained a commit
+(`t <t@t> init`). The commit swept the victim's uncommitted and untracked files into history,
+and its config now read `user.email = t@t`. Fixed in #1136 with the standard line after `FAIL=0`.
+
+A **new symptom** appeared while re-running that control. A fixture helper that *returns a
+path on stdout* (`R=$(mkrepo name)`) captured git's own output. Under the hijack,
+`git commit -q` had nothing to commit in the victim, and `-q` does **not** silence
+`On branch main / nothing to commit`. So `$R` became that multi-line text, and the test's next
+`mkdir -p "$R/tests"` created a directory literally named `On branch main…` in the caller's cwd.
+If an unexpected directory like that appears, suspect a leaked `GIT_DIR` first. Also redirect
+git's stdout inside any helper whose stdout is its return value.
+
 ## Related Files
 
+- `.claude/hooks/test-checkpoint.sh` — the 2026-09-27 recurrence (unset added in #1136).
 - `.claude/hooks/test-branch-preflight.sh` — the fixed self-test (unset + caller-untouched guard); its `advance_remote` helper now prefixes every git call with `env -u GIT_DIR -u GIT_WORK_TREE`.
 - `.claude/hooks/test-pr-preflight-guard.sh` — `advance_origin`, the same helper pattern for a second hook's hermetic fixture.
 - `.claude/hooks/test-core-bare-guard.sh` — sibling test written hermetic from the start.
