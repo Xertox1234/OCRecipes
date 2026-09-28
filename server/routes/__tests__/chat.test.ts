@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
@@ -14,6 +14,10 @@ import {
 import { generateRecipeChatResponse } from "../../services/recipe-chat";
 import { STANDARD_SAFETY_MESSAGE } from "../../services/coach-pro-chat";
 import { register } from "../chat";
+import { findCommunity } from "../../services/recipe-finder/find-community";
+import { findOnline } from "../../services/recipe-finder/find-online";
+import { classifyTurn } from "../../services/recipe-finder/classify-turn";
+import type { RecipeResultsBlock } from "@shared/schemas/recipe-finder";
 import {
   createMockChatConversation,
   createMockChatMessage,
@@ -50,6 +54,9 @@ vi.mock("../../storage", () => ({
     createNotebookEntries: vi.fn().mockResolvedValue([]),
     archiveOldEntries: vi.fn().mockResolvedValue(0),
     pinChatConversation: vi.fn(),
+    createFinderUserMessage: vi.fn(),
+    claimRecipeGeneration: vi.fn(),
+    claimSpoonacularSearch: vi.fn(),
   },
 }));
 
@@ -100,6 +107,27 @@ vi.mock("../../services/recipe-chat", async () => {
     generateRecipeChatResponse: vi.fn(),
   };
 });
+
+// Recipe finder: stub only the AI/Spoonacular/search boundaries — the entry
+// rules, transition, fallback text and orchestration stay real.
+vi.mock("../../services/recipe-finder/extract-query", () => ({
+  extractQuery: vi.fn(async (text: string) => ({ q: text.slice(0, 200) })),
+  rawQuery: vi.fn((text: string) => ({ q: text.slice(0, 200) })),
+}));
+vi.mock("../../services/recipe-finder/find-community", () => ({
+  findCommunity: vi.fn(),
+}));
+vi.mock("../../services/recipe-finder/find-online", () => ({
+  findOnline: vi.fn(),
+}));
+vi.mock("../../services/recipe-finder/ask-clarifying", () => ({
+  askClarifying: vi.fn(),
+  FALLBACK_QUESTIONS: [],
+}));
+vi.mock("../../services/recipe-finder/classify-turn", () => ({
+  classifyTurn: vi.fn(),
+  CLASSIFY_TURN_TIMEOUT_MS: 6000,
+}));
 
 vi.mock("../../lib/openai", () => ({
   isAiConfigured: true,
@@ -1029,6 +1057,341 @@ describe("Chat Routes", () => {
           expect(storage.deleteChatMessage).not.toHaveBeenCalled();
           expect(storage.getChatMessageByTurnKey).not.toHaveBeenCalled();
         });
+      });
+    });
+
+    describe("recipe finder — RecipeChef (flag on)", () => {
+      const FLOW = "11111111-1111-4111-8111-111111111111";
+      const OTHER_FLOW = "22222222-2222-4222-8222-222222222222";
+      const listBlock: RecipeResultsBlock = {
+        type: "recipe_results",
+        source: "community",
+        items: [
+          {
+            id: 12,
+            source: "community",
+            title: "Mediterranean Quinoa Salad",
+            imageUrl: null,
+            readyInMinutes: null,
+            calories: 350,
+          },
+        ],
+        actions: ["search_online", "generate", "none_of_these"],
+        notice: null,
+        flow: {
+          flowId: FLOW,
+          stage: "results",
+          request: "Mediterranean",
+          query: { q: "mediterranean" },
+          round: 0,
+          shownIds: ["community:12"],
+        },
+      };
+      const recipe = {
+        title: "Chicken Curry",
+        description: "d",
+        difficulty: "Easy" as const,
+        timeEstimate: "30 min",
+        servings: 2,
+        ingredients: [],
+        instructions: ["cook"],
+        dietTags: [],
+      };
+      const flowHistory = () => [
+        createMockChatMessage({
+          id: 1,
+          role: "user",
+          content: "Mediterranean",
+        }),
+        createMockChatMessage({
+          id: 2,
+          role: "assistant",
+          content: "Here are 1 community recipe:…",
+          metadata: { metadataVersion: 1, finder: listBlock },
+        }),
+      ];
+      const cardHistory = () => [
+        createMockChatMessage({ id: 1, role: "user", content: "curry" }),
+        createMockChatMessage({
+          id: 2,
+          role: "assistant",
+          content: "Here!",
+          metadata: {
+            metadataVersion: 1,
+            recipe,
+            allergenWarning: null,
+            imageUrl: null,
+          },
+        }),
+      ];
+      const userRow = createMockChatMessage({
+        id: 50,
+        role: "user",
+        content: "x",
+      });
+      const send = (body: object) =>
+        request(app)
+          .post("/api/chat/conversations/1/messages")
+          .set("Authorization", "Bearer token")
+          .send(body);
+
+      beforeEach(() => {
+        vi.stubEnv("RECIPE_FINDER_ENABLED", "true");
+        vi.stubEnv("SPOONACULAR_API_KEY", "k");
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation({ type: "recipe" }),
+        );
+        vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+          tier: "premium",
+          expiresAt: null,
+        });
+        vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+        vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
+        vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+        vi.mocked(storage.getChatMessages).mockResolvedValue([]);
+        vi.mocked(storage.createChatMessage).mockResolvedValue(
+          createMockChatMessage(),
+        );
+        vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+          createMockChatMessage(),
+        );
+        // fireAndForget calls .catch on this — a bare vi.fn() returns undefined and throws.
+        vi.mocked(storage.updateChatConversationTitle).mockResolvedValue(
+          createMockChatConversation(),
+        );
+        vi.mocked(storage.deleteChatMessage).mockResolvedValue(true);
+        vi.mocked(storage.createFinderUserMessage).mockResolvedValue({
+          status: "created",
+          message: userRow,
+        });
+        vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(true);
+        vi.mocked(storage.claimSpoonacularSearch).mockResolvedValue(true);
+        vi.mocked(findCommunity).mockResolvedValue(listBlock.items);
+        vi.mocked(findOnline).mockResolvedValue({ status: "ok", items: [] });
+        vi.mocked(classifyTurn).mockResolvedValue("new_request");
+        vi.mocked(generateRecipeChatResponse).mockImplementation(
+          async function* () {
+            yield { content: "Here you go!" };
+            yield { content: "", recipe, allergenWarning: null };
+            yield { done: true };
+          },
+        );
+      });
+
+      afterEach(() => {
+        vi.unstubAllEnvs();
+      });
+
+      it("control: flag off keeps today's path (generation quota, no finder)", async () => {
+        vi.stubEnv("RECIPE_FINDER_ENABLED", "");
+        const res = await send({ content: "Mediterranean" });
+        expect(res.status).toBe(200);
+        expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalledWith(
+          1,
+          "1",
+          "Mediterranean",
+          20,
+          "recipe",
+        );
+        expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+        expect(res.text).not.toContain('"finder"');
+      });
+
+      it("first message runs the finder and never touches the generation quota (R2)", async () => {
+        const res = await send({ content: "Mediterranean" });
+        expect(res.status).toBe(200);
+        expect(res.text).toContain(
+          'data: {"status":"Searching community recipes…"}',
+        );
+        expect(res.text).toContain('"finder":{"type":"recipe_results"');
+        expect(res.text).toContain('"done":true');
+        expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+        expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+        expect(storage.createFinderUserMessage).toHaveBeenCalledWith(
+          1,
+          "1",
+          "Mediterranean",
+        );
+        expect(storage.createChatMessage).toHaveBeenCalledWith(
+          1,
+          "1",
+          "assistant",
+          expect.stringMatching(
+            /^Here are 1 community recipe:\n1\. Mediterranean Quinoa Salad \(350 cal\)/,
+          ),
+          {
+            metadataVersion: 1,
+            finder: expect.objectContaining({ type: "recipe_results" }),
+          },
+        );
+      });
+
+      it("ignores an action whose flowId is not the latest finder message", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: OTHER_FLOW },
+        });
+        expect(res.status).toBe(200);
+        expect(res.text).toBe('data: {"done":true}\n\n');
+        expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+      });
+
+      it("a duplicate action (double tap) is a quiet no-op", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        vi.mocked(storage.createFinderUserMessage).mockResolvedValue({
+          status: "duplicate",
+        });
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: FLOW },
+        });
+        expect(res.text).toBe('data: {"done":true}\n\n');
+        expect(storage.createChatMessage).not.toHaveBeenCalled();
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+      });
+
+      it("Generate claims a generation and streams through the existing recipe path", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: FLOW },
+        });
+        expect(res.status).toBe(200);
+        expect(storage.createFinderUserMessage).toHaveBeenCalledWith(
+          1,
+          "1",
+          "Generate",
+          { action: { flowId: FLOW, type: "generate" } },
+        );
+        expect(storage.claimRecipeGeneration).toHaveBeenCalledWith("1", 50, 20);
+        expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+        expect(vi.mocked(generateRecipeChatResponse).mock.calls[0][0]).toEqual([
+          { role: "user", content: "Create a recipe for: Mediterranean" },
+        ]);
+        expect(res.text).toContain('"status":"Creating your recipe…"');
+        expect(storage.createChatMessage).toHaveBeenCalledWith(
+          1,
+          "1",
+          "assistant",
+          "Here you go!",
+          { metadataVersion: 1, recipe, allergenWarning: null, imageUrl: null },
+        );
+      });
+
+      it("Generate at the daily limit explains the limit and does not generate", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(false);
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: FLOW },
+        });
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+        expect(res.text).toContain('"notice":"generate_limit"');
+      });
+
+      it('treats typed "generate" in the results stage as the Generate action', async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        await send({ content: "Generate!" });
+        expect(storage.claimRecipeGeneration).toHaveBeenCalled();
+        expect(generateRecipeChatResponse).toHaveBeenCalled();
+        expect(findCommunity).not.toHaveBeenCalled();
+      });
+
+      it("typed text in the results stage refines the search (no generation)", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        await send({ content: "with chickpeas" });
+        expect(findCommunity).toHaveBeenCalled();
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+      });
+
+      it("search_online at the per-user cap reports unavailable and never calls Spoonacular", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        vi.mocked(storage.claimSpoonacularSearch).mockResolvedValue(false);
+        const res = await send({
+          content: "Search Spoonacular",
+          finderAction: { type: "search_online", flowId: FLOW },
+        });
+        expect(findOnline).not.toHaveBeenCalled();
+        expect(res.text).toContain('"notice":"unavailable"');
+      });
+
+      it("routes a refine_current follow-up to the legacy recipe path", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(cardHistory());
+        vi.mocked(classifyTurn).mockResolvedValue("refine_current");
+        await send({ content: "make it spicier" });
+        expect(classifyTurn).toHaveBeenCalledWith(
+          "make it spicier",
+          "Chicken Curry",
+        );
+        expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalledWith(
+          1,
+          "1",
+          "make it spicier",
+          20,
+          "recipe",
+        );
+        expect(generateRecipeChatResponse).toHaveBeenCalled();
+        expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+      });
+
+      it("starts a new list for a new_request after a card (D10)", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(cardHistory());
+        vi.mocked(classifyTurn).mockResolvedValue("new_request");
+        const res = await send({ content: "now a dessert" });
+        expect(res.text).toContain('"finder":{"type":"recipe_results"');
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+      });
+
+      it("remix never enters the flow", async () => {
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation({ type: "remix" }),
+        );
+        await send({ content: "make it vegan" });
+        expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+        expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalledWith(
+          1,
+          "1",
+          "make it vegan",
+          20,
+          "remix",
+        );
+      });
+
+      it("rejects finderAction when the flag is off (409)", async () => {
+        vi.stubEnv("RECIPE_FINDER_ENABLED", "");
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: FLOW },
+        });
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe("CONFLICT");
+      });
+
+      it("rejects finderAction from free Coach (409 — D7)", async () => {
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation(),
+        );
+        vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+        vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+          tier: "free",
+          expiresAt: null,
+        });
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: FLOW },
+        });
+        expect(res.status).toBe(409);
+      });
+
+      it("rejects a malformed finderAction (400)", async () => {
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "answers", flowId: FLOW },
+        });
+        expect(res.status).toBe(400);
       });
     });
   });
