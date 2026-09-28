@@ -414,9 +414,10 @@ describe("RecipeChatScreen — assistant markdown rendering", () => {
 
     // Spoken label matches what's on screen. Disable RTL's default
     // whitespace-collapsing normalizer — this label is genuinely multi-line
-    // (spokenMarkdown joins with "\n"), and the default normalizer would
-    // flatten those newlines to spaces before comparing, hiding a real
-    // mismatch in the exact label text.
+    // (spokenMarkdown joins with "\n"). The default collapses the node's
+    // label to single spaces but leaves a string matcher untouched, so a
+    // multi-line expected string could never match (measured: both label
+    // tests fail without this).
     expect(
       screen.getByLabelText(`RecipeChef: ${REPLY_SPOKEN_CLEAN}`, {
         normalizer: (text) => text,
