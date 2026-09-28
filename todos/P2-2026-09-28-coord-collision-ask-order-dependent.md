@@ -8,6 +8,7 @@ assignee:
 labels: [deferred, harness]
 github_issue:
 human_led: true
+blocked_reason: "user asked to review the fix approach personally before any implementation (2026-09-28)"
 ---
 
 # Session coordination: whether a collision ask fires depends on snapshot row order

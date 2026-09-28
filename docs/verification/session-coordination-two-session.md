@@ -13,11 +13,16 @@ Nothing is pushed and no PRs are opened. Spec:
 `docs/superpowers/specs/2026-09-27-session-coordination-v2-design.md` §9.5 (local-only). Shipped in
 #1132, #1134, #1136, #1137.
 
-Two things differ from the spec:
+Three things differ from the spec:
 
 - **Siblings warn, never ask** (user decision 2026-09-28). A sibling subagent of the _same_ session
   gets the warning text, never an ask, because nothing signals that a subagent has finished.
   Scenario 4 below expects a warning.
+- **Spec §9.5's scenario 4 is replaced.** The spec's version had a subagent edit the other
+  session's file, to show that an ask raised inside a subagent's hook reaches the phone. That
+  delivery path was already verified by the §9.0.1 probe (cell e: a subagent's ask while on Remote
+  Control). This runbook's scenario 4 instead exercises the same-session sibling branch, which
+  otherwise has no live check.
 - **Known order-dependence**:
   [`todos/P2-2026-09-28-coord-collision-ask-order-dependent.md`](../../todos/P2-2026-09-28-coord-collision-ask-order-dependent.md).
   When a file has more than one holder, the first in the (unordered) snapshot decides. If a stale
@@ -34,7 +39,8 @@ git worktree add .claude/worktrees/probe-coord-b -b probe/coord-b origin/main
 for w in a b; do mkdir -p .claude/worktrees/probe-coord-$w/scratch/coord-probe
   printf 'one\n' > .claude/worktrees/probe-coord-$w/scratch/coord-probe/one.ts
   printf 'two\n' > .claude/worktrees/probe-coord-$w/scratch/coord-probe/two.ts
-  printf 'three\n' > .claude/worktrees/probe-coord-$w/scratch/coord-probe/three.ts; done
+  printf 'three\n' > .claude/worktrees/probe-coord-$w/scratch/coord-probe/three.ts
+  printf 'four\n' > .claude/worktrees/probe-coord-$w/scratch/coord-probe/four.ts; done
 START=$(date -u +%Y-%m-%dT%H:%M:%SZ); echo "START=$START"
 ```
 
@@ -46,15 +52,15 @@ Keep your phone on Remote Control.
 
 Let `A=<absolute path of probe-coord-a>`, `B=<absolute path of probe-coord-b>`.
 
-| #   | Send to               | Prompt                                                                                                                                                                        | Expected                                                                                                                                                                        |
-| --- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | A                     | `Append the line "a1" to $A/scratch/coord-probe/one.ts.`                                                                                                                      | runs normally                                                                                                                                                                   |
-| 1   | B (wait ≥ 60 s first) | `Append the line "b1" to $A/scratch/coord-probe/one.ts.`                                                                                                                      | **ask** naming A's session, on the terminal and the phone                                                                                                                       |
-| 2   | B                     | `Append the line "b2" to $B/scratch/coord-probe/one.ts.`                                                                                                                      | warning: same file in another worktree                                                                                                                                          |
-| 3   | B                     | `Run: rm $A/scratch/coord-probe/one.ts`                                                                                                                                       | **ask** naming A (deny it)                                                                                                                                                      |
-| 4   | A                     | `Dispatch a background general-purpose subagent to append "s1" to $A/scratch/coord-probe/two.ts; then dispatch a second background subagent to append "s2" to the same file.` | the second subagent gets a **warning** naming the first subagent ("…in this same session…"), **no ask**                                                                         |
-| 5   | A                     | `Append "c1" to $A/scratch/coord-probe/three.ts, dispatch a general-purpose subagent to read that file, then run: git checkout -- scratch/coord-probe/three.ts`               | afterwards `bash scripts/checkpoint.sh list` shows a checkpoint whose tree has "c1", and `git restore --source=<ref> --worktree -- scratch/coord-probe/three.ts` brings it back |
-| 6   | A and B               | A: `Append "n" to $A/scratch/coord-probe/three.ts.` B: `Append "n" to $B/scratch/coord-probe/two.ts.`                                                                         | **negative control:** no ask, no warning                                                                                                                                        |
+| #   | Send to               | Prompt                                                                                                                                                                        | Expected                                                                                                                                                                                 |
+| --- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | A                     | `Append the line "a1" to $A/scratch/coord-probe/one.ts.`                                                                                                                      | runs normally                                                                                                                                                                            |
+| 1   | B (wait ≥ 60 s first) | `Append the line "b1" to $A/scratch/coord-probe/one.ts.`                                                                                                                      | **ask** naming A's session, on the terminal and the phone. **Deny it.** Approving would suppress scenario 3's ask on the same file for 15 min (ask-once, working as designed).           |
+| 2   | B                     | `Append the line "b2" to $B/scratch/coord-probe/one.ts.`                                                                                                                      | warning: same file in another worktree                                                                                                                                                   |
+| 3   | B                     | `Run: rm $A/scratch/coord-probe/one.ts`                                                                                                                                       | **ask** naming A (deny it)                                                                                                                                                               |
+| 4   | A                     | `Dispatch a background general-purpose subagent to append "s1" to $A/scratch/coord-probe/two.ts; then dispatch a second background subagent to append "s2" to the same file.` | the second subagent gets a **warning** naming the first subagent ("…in this same session…"), **no ask**                                                                                  |
+| 5   | A                     | `Append "c1" to $A/scratch/coord-probe/three.ts, dispatch a general-purpose subagent to read that file, then run: git checkout -- scratch/coord-probe/three.ts`               | afterwards `bash scripts/checkpoint.sh list` shows a checkpoint whose tree has "c1", and `git restore --source=<ref> --worktree -- scratch/coord-probe/three.ts` brings it back          |
+| 6   | A and B               | A: `Append "n" to $A/scratch/coord-probe/three.ts.` B: `Append "n" to $B/scratch/coord-probe/four.ts.`                                                                        | **negative control:** no ask, no warning. B uses `four.ts`, which nothing earlier touched. `two.ts` would correctly warn, because scenario 4 left a fresh same-path row in A's worktree. |
 
 Scenario 5 must use a literal `git`. `/usr/bin/git checkout …` takes no checkpoint; this is a
 documented residual in `docs/harness-residuals.md`. The Agent-dispatch checkpoint still covers it.
