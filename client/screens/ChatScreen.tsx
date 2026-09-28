@@ -269,10 +269,14 @@ export default function ChatScreen() {
     route.params && "conversationId" in route.params
       ? route.params.conversationId
       : null;
-  const initialMessage =
+  // Only a string is ever auto-sent: linking.ts strips this param from links,
+  // but a repeated query key would arrive as an array.
+  const routeInitialMessage: unknown =
     route.params && "initialMessage" in route.params
       ? route.params.initialMessage
       : undefined;
+  const initialMessage =
+    typeof routeInitialMessage === "string" ? routeInitialMessage : undefined;
 
   // `conversationId` is omitted (null) for the in-app "start a new chat"
   // flow; a deep link always provides a value, and a malformed one coerces to

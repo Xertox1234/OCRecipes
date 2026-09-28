@@ -176,6 +176,18 @@ describe("ChatScreen — malformed conversationId (deep link)", () => {
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
+  it("never auto-sends a non-string initialMessage (a repeated link query key arrives as an array)", async () => {
+    mockRouteParams.value = {
+      conversationId: 42,
+      initialMessage: ["a", "b"] as unknown as string,
+    };
+
+    renderComponent(<ChatScreen />);
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
   // A chat/:id deep link builds a Coach stack holding only Chat, so there is
   // no header back button. canGoBack() is NOT a usable signal here: it bubbles
   // to the tab navigator (backBehavior "firstRoute") and returns true, and
