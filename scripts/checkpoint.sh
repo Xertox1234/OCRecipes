@@ -39,9 +39,10 @@ TMPD=""
 trap '[ -n "$TMPD" ] && rm -rf "$TMPD"' EXIT
 
 wt_key() { # $1 worktree -> gitdir name for a linked worktree, "main" for the main checkout
-  local gd
+  local gd common
   gd=$("$G" -C "$1" rev-parse --absolute-git-dir) || return 1
-  case "$gd" in */worktrees/*) basename "$gd" ;; *) echo main ;; esac
+  common=$("$G" -C "$1" rev-parse --path-format=absolute --git-common-dir) || return 1
+  if [ "$gd" = "$common" ]; then echo main; else basename "$gd"; fi
 }
 
 capture_one() { # $1 worktree path

@@ -36,5 +36,5 @@ Binding for the repo's own tooling — `.claude/hooks/**`, `.claude/skills/**`, 
 
 ## Checkpoints (session coordination v2)
 
-- Before every Agent dispatch and every `git checkout/restore/reset/stash/clean/switch`, `.claude/hooks/checkpoint.sh` snapshots each dirty worktree to `refs/checkpoints/<sid8>/<worktree>` (local only, 14-day retention). It never touches HEAD, the index, or files.
+- Before every Agent dispatch and every command-position `git checkout/restore/reset/stash/clean/switch` (not `/usr/bin/git …` — see `docs/harness-residuals.md`), `.claude/hooks/checkpoint.sh` snapshots each dirty worktree to `refs/checkpoints/<sid8>/<worktree>` (local only, 14-day retention). It never touches HEAD, the index, or files.
 - Recover lost uncommitted work: `bash scripts/checkpoint.sh list`, then `git restore --source=<ref> --worktree -- <path>`.

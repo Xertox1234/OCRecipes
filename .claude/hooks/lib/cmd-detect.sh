@@ -1725,8 +1725,8 @@ cmd_is_git_head_mover() {
 
 # Print the verb of the first positional `git [globals] <work-discarding verb>` invocation;
 # rc 1 and no output when there is none. The verb is read from the END of the matched span,
-# so a verb-looking word inside a -C/--git-dir value (`git -C /tmp/checkout-x status`) is
-# never reported — only the verb in verb position can end the span.
+# so a value that merely CONTAINS a verb (`git -C /tmp/checkout-x status`) is not reported.
+# A value that IS a bare verb (`git -C checkout status`) is — harmlessly: one extra snapshot.
 cmd_git_work_discarder_verb() {
   local words span
   words=$(cmd_words_deep "$1")
