@@ -39,9 +39,9 @@ emit_write_targets() {
       }
       if (substr(w, 1, 1) == "/") { paths[++np] = w; if (rel && has_sed && sedpend && !iscmd) sedpend = 0; lastrel = 0 }
       else if (rel && cmdseen && !iscmd) {
-        if (skipnext) skipnext = 0
+        if (w == "") { }
+        else if (skipnext) skipnext = 0
         else if (substr(w, 1, 1) == "-") { if (has_sed && (w == "-e" || w == "-f" || w == "--expression" || w == "--file")) { skipnext = 1; sedpend = 0 } }
-        else if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { }
         else if (has_sed && sedpend) sedpend = 0
         else { rpaths[++nrp] = w; lastrel = 1 }
       }
@@ -50,7 +50,7 @@ emit_write_targets() {
     function segend(   k){
       endword()
       if (has_rm || has_tee || (has_sed && has_sedi)) { for (k = 1; k <= np; k++) print paths[k]; if (rel) for (k = 1; k <= nrp; k++) relout[++nro] = rpaths[k] }
-      else if (has_cp || has_mv) { if (np > 0) print paths[np]; if (rel && lastrel && nrp > 0) relout[++nro] = rpaths[nrp] }
+      else if (has_cp || has_mv) { if (np > 0 && !(rel && lastrel)) print paths[np]; if (rel && lastrel && nrp > 0) relout[++nro] = rpaths[nrp] }
       redir = 0; skipword = 0; seg_reset()
     }
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; seg_reset() }
@@ -65,7 +65,7 @@ emit_write_targets() {
           else if (c == "$" && i < n && substr(buf, i + 1, 1) == SQ) { i++; st = 3; wstart = 1 }
           else if (c == SQ) { st = 1; wstart = 1 }
           else if (c == DQ) { st = 2; wstart = 1 }
-          else if (c == ">") { endword(); if (i < n) { nx = substr(buf, i + 1, 1); if (nx == ">" || nx == "|") i++ } redir = 1 }
+          else if (c == ">") { if (rel && wstart && !wtaint && word ~ /^[0-9]+$/) { word = ""; wstart = 0 } else endword(); if (i < n) { nx = substr(buf, i + 1, 1); if (nx == ">" || nx == "|") i++ } redir = 1 }
           else if (c == "<") { endword(); skipword = 1 }
           else if (c == "|" || c == ";" || c == "&" || c == "(" || c == ")" || c == "\n") { segend() }
           else if (c == " " || c == "\t") { endword() }

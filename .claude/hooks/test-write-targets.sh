@@ -27,7 +27,7 @@ assert_eq "rel: sed -i -e skips the script" "$(rel "sed -i -e 's/a/b/' f.ts")" "
 assert_eq "rel: after cd → none"         "$(rel 'cd sub && rm foo.ts')" ""
 assert_eq "rel: pushd → none"            "$(rel 'pushd sub; rm foo.ts')" ""
 assert_eq "rel: absolute kept after cd"  "$(rel 'cd sub && rm /abs/x.ts')" "/abs/x.ts "
-assert_eq "rel: env prefix not a target" "$(rel 'FOO=1 rm x.ts')" "x.ts "
+assert_eq "rel: env prefix before the verb is not a target" "$(rel 'FOO=1 rm x.ts')" "x.ts "
 assert_eq "rel: quoted write word"       "$(rel 'git commit -m "rm foo.ts"')" ""
 assert_eq "rel: non-writing command"     "$(rel 'ls -la src')" ""
 assert_eq "rel: mixed abs + rel"         "$(rel 'rm /abs/a.ts b.ts')" "/abs/a.ts b.ts "
@@ -38,6 +38,19 @@ assert_eq "rel: quoted path with a space intact" "$SP" "my file.ts"
 assert_eq "resolve: joined to cwd, ./ stripped" "$(res 'rm ./foo.ts' /repo)" "/repo/foo.ts "
 assert_eq "resolve: absolute kept"              "$(res 'rm /x/y.ts' /repo)" "/x/y.ts "
 assert_eq "resolve: no cwd → relative dropped"  "$(res 'rm foo.ts' '')" ""
+
+# Fix round 1 (review): a glued fd number before a redirect is not a relative target; macOS
+# `sed -i ''` doesn't make the script a target; a real fd-named file is still a target; the
+# cmdseen gate fires for a write verb anywhere in the segment; cp/mv only ever reports the
+# LAST arg, whether abs or rel.
+assert_eq "rel: fd number glued to a redirect is not a target" "$(rel 'mv a.ts b.ts 2>/dev/null')" "/dev/null b.ts "
+assert_eq "rel: fd-dup 2>&1 is not a target"                    "$(rel 'rm x 2>&1')" "x "
+assert_eq "rel: macOS sed -i '' skips the script"               "$(rel "sed -i '' 's/a/b/' f.ts")" "f.ts "
+assert_eq "rel: rm with an empty-quoted arg yields no target"   "$(rel 'rm ""')" ""
+assert_eq "rel: a real file named 2 is still a target"          "$(rel 'echo x > 2')" "2 "
+assert_eq "rel: cmdseen fires for a write verb after sudo"       "$(rel 'sudo rm x')" "x "
+assert_eq "rel: cp with a relative source, abs destination"     "$(rel 'cp a.ts /abs/b.ts')" "/abs/b.ts "
+assert_eq "rel: cp with an abs source, relative destination"    "$(rel 'cp /abs/src.ts dst.ts')" "dst.ts "
 
 # git-safety fails CLOSED when the lib is missing and a contract is active; the same
 # command with the lib intact is ALLOWED (target outside the main checkout) — the pair is

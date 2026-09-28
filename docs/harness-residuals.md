@@ -101,3 +101,12 @@ matches a literal `git` in command position. `/usr/bin/git checkout -- .` (the s
 use inside worktrees to bypass RTK) takes **no** checkpoint. The Agent/Task trigger still fires
 before any subagent dispatch, which covers the #956 reviewer case. Reopen if a work loss is
 traced to an absolute-path git discard.
+
+`.claude/hooks/lib/write-targets.sh --relative`, found 2026-09-27 (no todo filed): known
+fail-open / spurious shapes. `cp -t DIR`/`--target-directory` reports the wrong destination,
+same as default mode. `rm -- -weird` is missed (no `--` end-of-options handling). `sed -i
+--expression=… f.ts` consumes `f.ts` as the script (target missed; only the two-token
+`-e`/`--expression VALUE` form is skipped). `xargs rm` is missed (targets come on stdin, not
+argv). An unquoted `cd`/`pushd` word anywhere suppresses ALL relative output; a quoted `"cd"`
+does not. `npm rm pkg` is a spurious match. `~` and `$VAR` are never expanded — joined to `cwd`
+exactly as spelled.
