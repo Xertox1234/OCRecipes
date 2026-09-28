@@ -21,7 +21,8 @@ const log = createServiceLogger("recipe-finder-community");
  * catalog grows (spec §4). Measured 2026-09-28 on the 25-recipe production
  * public catalog: 22/30 gold requests correct at (0.7, 8) vs 20/30 at the
  * provisional (0.5, 5) — see __tests__/fixtures/finder-gold-set.json.
- * Re-measure as the catalog grows.
+ * Re-measured after community diet tags + filter-only browsing: 25/30, still
+ * the best row (tied with 0.8). Re-measure as the catalog grows.
  */
 export const CLOSE_MATCH_RELATIVE = 0.7;
 /** Absolute floor so a lone weak hit is not shown. Measured with the above. */
@@ -47,6 +48,60 @@ export function selectCloseMatches(
     .filter((h) => h.score >= cutoff)
     .sort((a, b) => b.score - a.score)
     .slice(0, opts.max);
+}
+
+/** extractQuery speaks Spoonacular's diet words; community tags differ. */
+const COMMUNITY_DIET_ALIASES: Record<string, string> = {
+  ketogenic: "keto",
+  pescetarian: "pescatarian",
+};
+
+/** "gluten free" → "gluten-free", "ketogenic" → "keto" (community side only). */
+export function communityDietTag(diet: string): string {
+  const tag = diet.trim().toLowerCase().replace(/\s+/g, "-");
+  return COMMUNITY_DIET_ALIASES[tag] ?? tag;
+}
+
+const BROWSE_FILLER = new Set([
+  "breakfast",
+  "brunch",
+  "lunch",
+  "dinner",
+  "supper",
+  "snack",
+  "snacks",
+  "meal",
+  "meals",
+  "recipe",
+  "recipes",
+  "food",
+  "dish",
+  "dishes",
+  "something",
+  "idea",
+  "ideas",
+  "option",
+  "options",
+]);
+
+/**
+ * "keto dinner" → q "dinner": the text says nothing the diet and meal-type
+ * filters don't, and matches almost no recipe text. Such a request browses
+ * the filters instead (measured on the gold set, 2026-09-28).
+ */
+export function isFilterOnlyRequest(query: RecipeQuery): boolean {
+  if (!query.diet) return false;
+  const dietWords = new Set(
+    [query.diet, communityDietTag(query.diet)]
+      .join(" ")
+      .toLowerCase()
+      .split(/[\s-]+/),
+  );
+  return communityQueryText(query)
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean)
+    .every((w) => BROWSE_FILLER.has(w) || dietWords.has(w));
 }
 
 /** R3: community rows always have cuisine null, so cuisine goes into q. */
@@ -87,6 +142,7 @@ export async function findCommunity(
     fireAndForget("recipe-finder-index-init", initSearchIndex());
     return [];
   }
+  const browse = isFilterOnlyRequest(query);
   const q = communityQueryText(query);
   const exclude = new Set(excludeIds);
 
@@ -98,7 +154,7 @@ export async function findCommunity(
     const res = await searchRecipes(
       {
         ...filters,
-        q,
+        ...(!browse && { q }),
         source: "community",
         safeForMe: true,
         sort: "relevance",
@@ -113,15 +169,21 @@ export async function findCommunity(
   };
 
   try {
-    const filters: Pick<RecipeSearchParams, "diet" | "mealType"> = {};
-    if (query.diet) filters.diet = query.diet;
-    if (query.mealType) filters.mealType = query.mealType;
-    let hits = await run(filters);
-    // A small catalog + a structured filter often zeroes out: retry q-only.
-    if (hits.length === 0 && Object.keys(filters).length > 0) {
-      hits = await run({});
+    const diet = query.diet ? communityDietTag(query.diet) : undefined;
+    let hits = await run({
+      ...(diet && { diet }),
+      ...(query.mealType && { mealType: query.mealType }),
+    });
+    // A small catalog + a meal-type filter often zeroes out: retry without
+    // it. A stated diet is never dropped — no diet-safe hit is no matches.
+    if (hits.length === 0 && query.mealType) {
+      hits = await run(diet ? { diet } : {});
     }
-    return selectCloseMatches(hits, { ...thresholds, max: FINDER_MAX_ITEMS })
+    // Browse hits carry no text score (all 0): every filter hit is a match.
+    const selected = browse
+      ? hits.slice(0, FINDER_MAX_ITEMS)
+      : selectCloseMatches(hits, { ...thresholds, max: FINDER_MAX_ITEMS });
+    return selected
       .map((h) => toFinderItem(h.recipe))
       .filter((i): i is FinderItem => i !== null);
   } catch (error) {
