@@ -7,6 +7,7 @@ PROJECT_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
 CKPT="$PROJECT_ROOT/scripts/checkpoint.sh"
 HOOK="$HOOK_DIR/checkpoint.sh"
 FAIL=0
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
 assert_eq()       { if [ "$2" = "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 — expected [$3], got [$2]"; FAIL=1; fi; }
 assert_ne()       { if [ "$2" != "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 — both [$2]"; FAIL=1; fi; }
 assert_empty()    { if [ -z "$2" ]; then echo "ok: $1"; else echo "FAIL: $1 — expected empty, got [$2]"; FAIL=1; fi; }
@@ -24,6 +25,7 @@ assert_eq "detector: -C global then verb"  "$(verb 'git -C /tmp/somewhere checko
 assert_eq "detector: after &&"             "$(verb 'npm test && git stash')" "stash"
 assert_empty "detector: status"            "$(verb 'git status')"
 assert_empty "detector: -C path holds verb" "$(verb 'git -C /tmp/checkout-dir status')"
+assert_eq "detector: -C value that IS a bare verb reports it (documented, harmless)" "$(verb 'git -C checkout status')" "checkout"
 assert_empty "detector: quoted mention"    "$(verb 'echo "git checkout -- x"')"
 assert_empty "detector: echo then git"     "$(verb 'echo git checkout -- x')"
 assert_eq "detector: multiple invocations, first wins" "$(verb 'git stash && git checkout main')" "stash"
@@ -91,6 +93,11 @@ git -C "$R" worktree add -q "$TMPROOT/rmw-a" -b wa; git -C "$R" worktree add -q 
 printf 'x\n' >> "$R/tracked.txt"; printf 'y\n' >> "$TMPROOT/rmw-a/tracked.txt"
 cap "$R"
 assert_eq "multi: only dirty worktrees, keyed main / gitdir name" "$(refs_of "$R" | sort | tr '\n' ' ')" "refs/checkpoints/sess0001/main refs/checkpoints/sess0001/rmw-a "
+
+# A MAIN checkout whose path has an ancestor named `worktrees` is still keyed `main`.
+mkdir -p "$TMPROOT/worktrees"
+R=$(mkrepo worktrees/rnested); printf 'x\n' >> "$R/tracked.txt"; cap "$R"
+assert_eq "multi: main checkout under a dir named worktrees keyed main" "$(refs_of "$R")" "refs/checkpoints/sess0001/main"
 
 # CAS: a racing writer between the prev read and the update wins; we never overwrite it.
 R=$(mkrepo rcas); printf 'x\n' >> "$R/tracked.txt"
@@ -232,6 +239,8 @@ mutant "first CAS write unconditional (empty old-value dropped)" "scripts/checkp
   's/update-ref "\$ref" "\$commit" ""$/update-ref "$ref" "$commit"/'
 mutant "restore missing from the work-discarder verbs" ".claude/hooks/lib/cmd-detect.sh" \
   "s/_WORK_DISCARDER='.checkout.restore./_WORK_DISCARDER='(checkout|/"
+mutant "wt_key: main checkout keyed as linked" "scripts/checkpoint.sh" \
+  's/if \[ "\$gd" = "\$common" \]; then echo main/if false; then echo main/'
 run_mutants "$PROJECT_ROOT" ".claude/hooks/test-checkpoint.sh" || FAIL=1
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

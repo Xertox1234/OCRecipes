@@ -15,11 +15,14 @@
 set -uo pipefail
 export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-2}"
 LAB_DATABASE_URL="${LAB_DATABASE_URL:-postgresql://localhost/ocrecipes_lab}"
-TTL='10 minutes'
+TTL='15 minutes'
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/ps-walk.sh
 . "$SELF_DIR/lib/ps-walk.sh" 2>/dev/null || exit 0
+# Shared write-target parser (spec 2026-09-27 §5.2). Missing lib = no Bash coverage, never an error.
+. "$SELF_DIR/../../.claude/hooks/lib/write-targets.sh" 2>/dev/null || true
+WINDOW_SECS=900   # 15-min touch/liveness window (spec §6.1). Single line: mutated by text in tests.
 
 # Hard safety rail — mirrors log-injection.sh:43-50 exactly, incl. query-string strip.
 LAB_DB_PATH="${LAB_DATABASE_URL%%\?*}"; LAB_DB_PATH="${LAB_DB_PATH%%\#*}"
@@ -48,6 +51,20 @@ SQL
 }
 
 git_root_of() { git -C "$1" rev-parse --show-toplevel 2>/dev/null; }
+
+target_paths() { # $1 hook JSON -> absolute target paths, one per line
+  local tool cmd cwd
+  tool=$(jq -r '.tool_name // ""' <<<"$1" 2>/dev/null)
+  case "$tool" in
+    Bash)
+      cmd=$(jq -r '.tool_input.command // ""' <<<"$1" 2>/dev/null)
+      grep -qE '>|(^|[^[:alnum:]_])(tee|rm|cp|mv)([^[:alnum:]_]|$)|sed[^|;]*-i' <<<"$cmd" || return 0
+      declare -F resolve_write_targets >/dev/null || return 0
+      cwd=$(jq -r '.cwd // ""' <<<"$1" 2>/dev/null)
+      printf '%s' "$cmd" | resolve_write_targets "$cwd" | sort -u ;;
+    *) jq -r '.tool_input.file_path // empty' <<<"$1" 2>/dev/null ;;
+  esac
+}
 
 upsert_registry() { # $1 sid, $2 root, $3 kind-or-empty (empty = don't clobber kind)
   local branch head
@@ -108,25 +125,31 @@ bridge_read_via_seam() {
   cat "$f"
 }
 
-do_record() {
-  local input sid file dir root rel
-  input=$(cat)
-  sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
-  file=$(jq -re '.tool_input.file_path // empty' <<<"$input" 2>/dev/null) || exit 0
-  [ -n "$file" ] || exit 0
+record_one() { # $1 sid, $2 agent ('' = main), $3 absolute file
+  local sid="$1" agent="$2" file="$3" dir root rel
   # rel_path from the FILE's containing worktree root — never the session cwd
   # (feedback_subagent_worktree_cwd). Walk up until an existing dir (Write may create).
   dir=$(dirname "$file")
   while [ ! -d "$dir" ] && [ "$dir" != "/" ]; do dir=$(dirname "$dir"); done
-  root=$(git_root_of "$dir") || exit 0
-  [ -n "$root" ] || exit 0
+  root=$(git_root_of "$dir") || return 0
+  [ -n "$root" ] || return 0
   rel="${file#"$root"/}"
   upsert_registry "$sid" "$root" ""
-  run_sql -v sid="$sid" -v abs="$file" -v rel="$rel" <<'SQL'
-INSERT INTO harness.files_in_flight (session_id, abs_path, rel_path)
-VALUES (:'sid', :'abs', :'rel')
-ON CONFLICT (session_id, abs_path) DO UPDATE SET last_touch = now();
+  run_sql -v sid="$sid" -v agent="$agent" -v abs="$file" -v rel="$rel" <<'SQL'
+INSERT INTO harness.files_in_flight (session_id, agent_id, abs_path, rel_path)
+VALUES (:'sid', :'agent', :'abs', :'rel')
+ON CONFLICT (session_id, agent_id, abs_path) DO UPDATE SET last_touch = now();
 SQL
+}
+
+do_record() {
+  local input sid agent f
+  input=$(cat)
+  sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
+  agent=$(jq -r '.agent_id // ""' <<<"$input" 2>/dev/null)
+  while IFS= read -r f; do
+    [ -n "$f" ] && record_one "$sid" "$agent" "$f"
+  done <<<"$(target_paths "$input")"
 }
 
 do_reap() {
@@ -164,14 +187,17 @@ do_refresh_snapshot() {
     mkdir "$lockdir" 2>/dev/null || exit 0
   }
   trap 'rmdir "$lockdir" 2>/dev/null' EXIT
+  trap 'exit 0' TERM
   do_reap
   json=$(psql -X -qtA -d "$LAB_DATABASE_URL" -v sid="$sid" 2>/dev/null <<'SQL'
 SELECT COALESCE(json_agg(s), '[]'::json) FROM (
   SELECT r.session_id, r.session_kind, r.branch, r.repo_root, r.last_seen_at,
-         COALESCE((SELECT json_agg(json_build_object('abs_path', f.abs_path, 'rel_path', f.rel_path))
+         COALESCE((SELECT json_agg(json_build_object('abs_path', f.abs_path, 'rel_path', f.rel_path,
+                                                     'agent_id', f.agent_id,
+                                                     'last_touch', extract(epoch FROM f.last_touch)::bigint))
                    FROM harness.files_in_flight f WHERE f.session_id = r.session_id), '[]'::json) AS files
   FROM harness.session_registry r
-  WHERE r.session_id <> :'sid' AND r.expires_at > now()
+  WHERE r.expires_at > now()
 ) s;
 SQL
   ) || exit 0
@@ -191,48 +217,86 @@ emit_context() { # $1 message -> PreToolUse additionalContext JSON (drift-detect
   jq -n --arg m "$1" '{ "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": $m } }'
 }
 
-do_consult() {
-  local input sid file snap age dir root rel match msg
-  input=$(cat)
-  sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
-  file=$(jq -re '.tool_input.file_path // empty' <<<"$input" 2>/dev/null) || exit 0
-  [ -n "$file" ] || exit 0
-  snap="/tmp/claude-session-coord-${sid}.json"
-  age=$(snapshot_age_secs "$snap")
-  # Stale-while-revalidate (spec §5.1): use whatever we have NOW; refresh in background.
-  if [ "$age" -gt 25 ]; then
-    bash "$SELF_DIR/session-coord.sh" refresh-snapshot --session "$sid" >/dev/null 2>&1 &
-  fi
-  [ -f "$snap" ] || exit 0
-  # rel_path of the target, from the FILE's containing worktree (same walk as record).
+refresh_bounded() { # $1 sid — synchronous refresh capped at ~1 s (spec §6.2 step 0)
+  bash "$SELF_DIR/session-coord.sh" refresh-snapshot --session "$1" >/dev/null 2>&1 &
+  local rpid=$! i=0
+  while [ "$i" -lt 10 ] && kill -0 "$rpid" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+  return 0
+}
+
+consult_match() { # $1 abs file, $2 sid, $3 agent, $4 snapshot -> one ␟-joined record or nothing
+  local file="$1" dir root rel
   dir=$(dirname "$file")
   while [ ! -d "$dir" ] && [ "$dir" != "/" ]; do dir=$(dirname "$dir"); done
   root=$(git_root_of "$dir") || root=""
   rel=""; [ -n "$root" ] && rel="${file#"$root"/}"
-  # One jq pass: level|sid|kind|branch|last_seen_at for the first match, self excluded.
-  match=$(jq -r --arg f "$file" --arg rel "$rel" --arg root "$root" --arg me "$sid" '
-    [ .sessions[]? | select(.session_id != $me) | . as $s | .files[]?
-      | if .abs_path == $f then {lvl:"collision",s:$s}
-        elif ($rel != "" and .rel_path == $rel and $s.repo_root != $root) then {lvl:"worktree",s:$s}
-        else empty end
-    ] | .[0] // empty
-    | "\(.lvl)\u001f\(.s.session_id)\u001f\(.s.session_kind)\u001f\(.s.branch // "?")\u001f\(.s.last_seen_at)"
-  ' "$snap" 2>/dev/null) || exit 0
-  [ -n "$match" ] || exit 0
-  local lvl osid okind obranch oseen
-  IFS=$'\x1f' read -r lvl osid okind obranch oseen <<<"$match"
-  case "$lvl" in
-    collision)
-      msg="Session ${osid:0:8} (${okind}, branch ${obranch}, last seen ${oseen}) is mid-edit on this same file in this same checkout. Coordinate before editing — parallel same-file edits here produced tangled commits before. (Warn-only.)"
-      log_event "warn-collision" "$sid" "$osid" "{\"file\":$(jq -Rn --arg v "$file" '$v')}" >/dev/null 2>&1 &
-      ;;
-    worktree)
-      msg="Session ${osid:0:8} (${okind}, branch ${obranch}) is editing the same file in another worktree — expect a merge conflict when both land. (Warn-only.)"
-      log_event "warn-worktree" "$sid" "$osid" "{\"file\":$(jq -Rn --arg v "$file" '$v')}" >/dev/null 2>&1 &
-      ;;
-    *) exit 0 ;;
-  esac
+  jq -r --arg f "$file" --arg rel "$rel" --arg root "$root" --arg me "$2" --arg ag "$3" \
+        --argjson now "$(date +%s)" --argjson win "$WINDOW_SECS" '
+    def fresh($x): ($now - ($x.last_touch // 0)) <= $win;
+    def is_self($s; $x): ($s.session_id == $me) and (($x.agent_id // "") == $ag);
+    def own_gate($s; $x): ($s.session_id != $me) or fresh($x);
+    [ .sessions[]? as $s | $s.files[]? as $x
+      | select(is_self($s; $x) | not)
+      | select(own_gate($s; $x))
+      | ($x.abs_path | if (($x.rel_path // "") != "") and endswith("/" + $x.rel_path)
+                       then .[0:(length - ($x.rel_path | length) - 1)] else "" end) as $xroot
+      | if $x.abs_path == $f then {lvl: "collision", s: $s, x: $x, xroot: $xroot}
+        elif ($rel != "" and ($x.rel_path // "") == $rel and $xroot != $root) then {lvl: "worktree", s: $s, x: $x, xroot: $xroot}
+        else empty end ]
+    | (map(select(.lvl == "collision")) + map(select(.lvl == "worktree"))) | .[0] // empty
+    | [ .lvl, (if .s.session_id == $me then "1" else "0" end), .s.session_id, (.s.session_kind // "unknown"),
+        (.s.branch // "?"), (.s.last_seen_at | tostring), (.x.agent_id // ""),
+        ((.x.last_touch // 0) | tostring), $rel, .xroot ] | join("\u001f")
+  ' "$4" 2>/dev/null
+}
+
+decide_and_emit() { # $1 sid, $2 agent, $3 snapshot age (s), $4 target file, $5 consult_match record
+  local sid="$1" file="$4" lvl own osid okind obranch oseen oagent otouch rel xroot mins who msg det
+  IFS=$'\x1f' read -r lvl own osid okind obranch oseen oagent otouch rel xroot <<<"$5"
+  mins=$(( ( $(date +%s) - ${otouch:-0} ) / 60 ))
+  det="{\"file\":$(jq -Rn --arg v "$file" '$v'),\"agent\":$(jq -Rn --arg v "$oagent" '$v')}"
+  if [ -n "$oagent" ]; then who="Agent ${oagent:0:8} in this same session"; else who="The main agent of this same session"; fi
+  if [ "$own" = "1" ]; then
+    case "$lvl" in
+      collision) msg="${who} touched this same file ${mins} min ago. Coordinate before editing. (Warn-only.)"
+                 log_event "warn-collision-sibling" "$sid" "$osid" "$det" >/dev/null 2>&1 & ;;
+      worktree)  msg="${who} is editing the same file in another worktree (${mins} min ago) — expect a merge conflict when both land. (Warn-only.)"
+                 log_event "warn-worktree-sibling" "$sid" "$osid" "$det" >/dev/null 2>&1 & ;;
+      *) return 0 ;;
+    esac
+  else
+    case "$lvl" in
+      collision) msg="Session ${osid:0:8} (${okind}, branch ${obranch}, last seen ${oseen}) is mid-edit on this same file in this same checkout. Coordinate before editing — parallel same-file edits here produced tangled commits before. (Warn-only.)"
+                 log_event "warn-collision" "$sid" "$osid" "$det" >/dev/null 2>&1 & ;;
+      worktree)  msg="Session ${osid:0:8} (${okind}, branch ${obranch}) is editing the same file in another worktree — expect a merge conflict when both land. (Warn-only.)"
+                 log_event "warn-worktree" "$sid" "$osid" "$det" >/dev/null 2>&1 & ;;
+      *) return 0 ;;
+    esac
+  fi
   emit_context "$msg"
+}
+
+do_consult() {
+  local input sid agent files snap age f match best="" bestfile=""
+  input=$(cat)
+  sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
+  case "$sid" in ''|.|..|*[!A-Za-z0-9._-]*) exit 0 ;; esac
+  agent=$(jq -r '.agent_id // ""' <<<"$input" 2>/dev/null)
+  files=$(target_paths "$input")
+  [ -n "$files" ] || exit 0
+  snap="/tmp/claude-session-coord-${sid}.json"
+  age=$(snapshot_age_secs "$snap")
+  if [ "$age" -gt 25 ]; then refresh_bounded "$sid"; age=$(snapshot_age_secs "$snap"); fi
+  [ -f "$snap" ] || exit 0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    match=$(consult_match "$f" "$sid" "$agent" "$snap")
+    [ -n "$match" ] || continue
+    if [ "${match%%$'\x1f'*}" = "collision" ]; then best="$match"; bestfile="$f"; break; fi
+    [ -n "$best" ] || { best="$match"; bestfile="$f"; }
+  done <<<"$files"
+  [ -n "$best" ] || exit 0
+  decide_and_emit "$sid" "$agent" "$age" "$bestfile" "$best"
 }
 do_attribute_drift() {
   local sid="${1:-}" root="${2:-}" row
