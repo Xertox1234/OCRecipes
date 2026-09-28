@@ -38,7 +38,6 @@ export interface CoachFinderTurnParams {
   userMessageId: number;
   entry: CoachFinderTurnEntry;
   features: FinderFeatures;
-  isAborted: () => boolean;
 }
 
 const LIMIT_TEXT =
@@ -76,6 +75,14 @@ function maybeAutoTitle(p: CoachFinderTurnParams): void {
   );
 }
 
+/**
+ * Deliberately never checks for a client disconnect: every step here spends a
+ * paid claim (Spoonacular point or a generation) or AI tokens, so — like
+ * RecipeChef's finish-and-save policy — it always finishes and persists with
+ * the turnKey. The route's H6 settle then finds the reply and keeps the user
+ * row; if the route stops iterating first, its guarded refund still refuses
+ * to delete a claimed row (#1151 review).
+ */
 export async function* runCoachFinderTurn(
   p: CoachFinderTurnParams,
 ): AsyncGenerator<CoachChatEvent> {
@@ -111,7 +118,6 @@ export async function* runCoachFinderTurn(
       profile,
       features: p.features,
     });
-    if (p.isAborted()) return;
     if (turn.kind === "ignored") {
       await storage.deleteChatMessage(p.userMessageId, p.userId);
       return;
@@ -134,7 +140,6 @@ export async function* runCoachFinderTurn(
   let allergenWarning: string | null = null;
   let imageUrl: string | null = null;
   for await (const event of generateRecipeChatResponse(generation, profile)) {
-    if (p.isAborted()) return;
     if ("recipe" in event && event.recipe) {
       recipe = event.recipe;
       allergenWarning = event.allergenWarning;

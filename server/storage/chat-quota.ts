@@ -261,3 +261,34 @@ export async function claimSpoonacularSearch(
     return markUserRow(tx, userId, messageId, "spoonacularSearch");
   });
 }
+
+/**
+ * The disconnect refund (H6): delete this user's own row ONLY if it holds no
+ * paid claim. A row marked recipeGeneration / spoonacularSearch recorded a
+ * paid step that already ran — deleting it would hand the slot back and let a
+ * tap-and-disconnect loop run paid work past the 20/day limit and the per-user
+ * Spoonacular cap (#1151 review). Unmarked rows refund exactly as before.
+ */
+export async function deleteUnclaimedChatMessage(
+  messageId: number,
+  userId: string,
+): Promise<boolean> {
+  const result = await db
+    .delete(chatMessages)
+    .where(
+      and(
+        eq(chatMessages.id, messageId),
+        inArray(
+          chatMessages.conversationId,
+          db
+            .select({ id: chatConversations.id })
+            .from(chatConversations)
+            .where(eq(chatConversations.userId, userId)),
+        ),
+        sql`coalesce(${chatMessages.metadata}->>'recipeGeneration', 'false') <> 'true'`,
+        sql`coalesce(${chatMessages.metadata}->>'spoonacularSearch', 'false') <> 'true'`,
+      ),
+    )
+    .returning({ id: chatMessages.id });
+  return result.length > 0;
+}

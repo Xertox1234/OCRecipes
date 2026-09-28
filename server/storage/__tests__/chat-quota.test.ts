@@ -32,6 +32,7 @@ const {
   createFinderUserMessage,
   claimRecipeGeneration,
   claimSpoonacularSearch,
+  deleteUnclaimedChatMessage,
 } = await import("../chat-quota");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -242,6 +243,69 @@ describe("chat quota — recipe finder generation quota and Spoonacular cap", ()
     expect(await claimRecipeGeneration(testUser.id, o.message.id, 20)).toBe(
       false,
     );
+  });
+
+  it("a disconnect refund never deletes a row that holds a paid claim (#1151 review)", async () => {
+    const conv = await createChatConversation(testUser.id, "Coach", "coach");
+    const r = await createFinderUserMessage(
+      conv.id,
+      testUser.id,
+      "Search Spoonacular",
+      { action: { flowId: FLOW_A, type: "search_online" } },
+    );
+    if (r.status !== "created") throw new Error("expected created");
+    expect(await claimSpoonacularSearch(testUser.id, r.message.id, 1)).toBe(
+      true,
+    );
+    // The refund refuses the claimed row …
+    expect(await deleteUnclaimedChatMessage(r.message.id, testUser.id)).toBe(
+      false,
+    );
+    // … so the cap still holds for the next tap.
+    const next = await createFinderUserMessage(
+      conv.id,
+      testUser.id,
+      "Search Spoonacular",
+      { action: { flowId: FLOW_B, type: "search_online" } },
+    );
+    if (next.status !== "created") throw new Error("expected created");
+    expect(await claimSpoonacularSearch(testUser.id, next.message.id, 1)).toBe(
+      false,
+    );
+  });
+
+  it("a claimed Generate row also survives the refund", async () => {
+    const coach = await createChatConversation(testUser.id, "Coach", "coach");
+    const row = await createChatMessage(
+      coach.id,
+      testUser.id,
+      "user",
+      "Generate",
+    );
+    expect(await claimRecipeGeneration(testUser.id, row.id, 1)).toBe(true);
+    expect(await deleteUnclaimedChatMessage(row.id, testUser.id)).toBe(false);
+    const recipeConv = await createChatConversation(
+      testUser.id,
+      "Recipe",
+      "recipe",
+    );
+    expect(
+      await createChatMessageWithLimitCheck(
+        recipeConv.id,
+        testUser.id,
+        "Make pasta",
+        1,
+        "recipe",
+      ),
+    ).toBeNull();
+  });
+
+  it("control: an unclaimed row is refunded, and never another user's", async () => {
+    const coach = await createChatConversation(testUser.id, "Coach", "coach");
+    const row = await createChatMessage(coach.id, testUser.id, "user", "Hi");
+    const other = await createTestUser(tx);
+    expect(await deleteUnclaimedChatMessage(row.id, other.id)).toBe(false);
+    expect(await deleteUnclaimedChatMessage(row.id, testUser.id)).toBe(true);
   });
 
   it("rejects a conversation the user does not own", async () => {

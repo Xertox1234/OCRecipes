@@ -591,7 +591,6 @@ export async function* handleCoachChat(
         userMessageId: params.finder.userMessageId,
         entry: finderEntry,
         features: params.finder.features,
-        isAborted,
       });
       return;
     }

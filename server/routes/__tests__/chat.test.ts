@@ -57,6 +57,7 @@ vi.mock("../../storage", () => ({
     createFinderUserMessage: vi.fn(),
     claimRecipeGeneration: vi.fn(),
     claimSpoonacularSearch: vi.fn(),
+    deleteUnclaimedChatMessage: vi.fn(),
   },
 }));
 
@@ -789,7 +790,7 @@ describe("Chat Routes", () => {
           createMockChatMessage({ id: USER_MSG_ID, role: "user" }),
         );
         vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
-        vi.mocked(storage.deleteChatMessage).mockResolvedValue(true);
+        vi.mocked(storage.deleteUnclaimedChatMessage).mockResolvedValue(true);
       }
 
       const assistantWrites = () =>
@@ -810,7 +811,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect(() => true);
 
-        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+        expect(storage.deleteUnclaimedChatMessage).toHaveBeenCalledWith(
           USER_MSG_ID,
           "1",
         );
@@ -832,7 +833,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect(() => true);
 
-        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+        expect(storage.deleteUnclaimedChatMessage).toHaveBeenCalledWith(
           USER_MSG_ID,
           "1",
         );
@@ -854,7 +855,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect((body) => body.includes("protein."));
 
-        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(storage.deleteUnclaimedChatMessage).not.toHaveBeenCalled();
         expect(assistantWrites()).toHaveLength(1);
         expect(assistantWrites()[0][3]).toBe("Eat more protein.");
         // A partial must never be served to other users as a cached answer.
@@ -893,7 +894,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect((body) => body.includes("coach_blocks"));
 
-        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+        expect(storage.deleteUnclaimedChatMessage).toHaveBeenCalledWith(
           USER_MSG_ID,
           "1",
         );
@@ -919,7 +920,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect((body) => body.includes("diabetes"));
 
-        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(storage.deleteUnclaimedChatMessage).not.toHaveBeenCalled();
         expect(assistantWrites()).toHaveLength(1);
         expect(assistantWrites()[0][3]).not.toContain("diabetes");
         expect(assistantWrites()[0][3]).toBe(STANDARD_SAFETY_MESSAGE);
@@ -956,7 +957,7 @@ describe("Chat Routes", () => {
         await postAndDisconnect((body) => body.includes("Full answer."));
 
         expect(assistantWrites()).toHaveLength(1);
-        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(storage.deleteUnclaimedChatMessage).not.toHaveBeenCalled();
       });
 
       it("control: a completed stream neither refunds nor adds a second write", async () => {
@@ -969,7 +970,7 @@ describe("Chat Routes", () => {
 
         await postAndDisconnect((body) => body.includes('"done":true'));
 
-        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(storage.deleteUnclaimedChatMessage).not.toHaveBeenCalled();
         expect(assistantWrites()).toHaveLength(1);
         expect(assistantWrites()[0][3]).toBe("All done.");
       });
@@ -1056,6 +1057,7 @@ describe("Chat Routes", () => {
           // Coach-only settle path — recipe/remix never refunds or looks up a
           // turn key.
           expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+          expect(storage.deleteUnclaimedChatMessage).not.toHaveBeenCalled();
           expect(storage.getChatMessageByTurnKey).not.toHaveBeenCalled();
         });
       });

@@ -169,6 +169,7 @@ export const storage = {
   createFinderUserMessage: chatQuota.createFinderUserMessage,
   claimRecipeGeneration: chatQuota.claimRecipeGeneration,
   claimSpoonacularSearch: chatQuota.claimSpoonacularSearch,
+  deleteUnclaimedChatMessage: chatQuota.deleteUnclaimedChatMessage,
   saveRecipeFromChat: recipeFromChat.saveRecipeFromChat,
   getCoachCachedResponse: chat.getCoachCachedResponse,
   setCoachCachedResponse: chat.setCoachCachedResponse,

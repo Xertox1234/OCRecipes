@@ -1976,6 +1976,62 @@ describe("handleCoachChat — recipe finder (Coach Pro, flag on)", () => {
     });
   });
 
+  it("a claimed Generate finishes and persists even after the client left (#1151 — no paid work lost, no refund)", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: { blocks: [listBlock] },
+      }),
+      createMockChatMessage({ id: 77, role: "user", content: "Generate" }),
+    ]);
+    await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Generate",
+          turnKey: "11111111-2222-4333-8444-555555555555",
+          isAborted: () => true,
+          finder: { ...finder, action: { type: "generate", flowId: FLOW } },
+        }),
+      ),
+    );
+    expect(storage.claimRecipeGeneration).toHaveBeenCalled();
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      "Here's a curry!",
+      expect.objectContaining({ recipe }),
+      "11111111-2222-4333-8444-555555555555",
+    );
+  });
+
+  it("a finder list step persists its block even after the client left", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "user",
+        content: "Find me a chicken recipe",
+      }),
+    ]);
+    await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Find me a chicken recipe",
+          turnKey: "11111111-2222-4333-8444-555555555555",
+          isAborted: () => true,
+          finder,
+        }),
+      ),
+    );
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      expect.stringMatching(/^Here are 1 community recipe:/),
+      { blocks: [expect.objectContaining({ type: "recipe_results" })] },
+      "11111111-2222-4333-8444-555555555555",
+    );
+  });
+
   it("the daily generation limit is enforced in Coach too", async () => {
     vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(false);
     vi.mocked(storage.getChatMessages).mockResolvedValue([
