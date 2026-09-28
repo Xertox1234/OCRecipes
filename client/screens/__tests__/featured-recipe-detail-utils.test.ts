@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   resolveFeaturedRecipeType,
   normalizeCatalogDetail,
+  catalogSaveErrorMessage,
 } from "../featured-recipe-detail-utils";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 describe("resolveFeaturedRecipeType", () => {
   it.each([
@@ -59,5 +62,44 @@ describe("normalizeCatalogDetail", () => {
     });
     expect(n.nutrition).toBeNull();
     expect(n.instructions).toEqual([]);
+  });
+});
+
+describe("catalogSaveErrorMessage", () => {
+  it.each([
+    [
+      "network failure",
+      new TypeError("Network request failed"),
+      { message: "Couldn't save this recipe. Try again.", retryable: true },
+    ],
+    [
+      "500",
+      new ApiError("500", ErrorCode.INTERNAL_ERROR, 500),
+      { message: "Couldn't save this recipe. Try again.", retryable: true },
+    ],
+    [
+      "402 quota",
+      new ApiError("402", ErrorCode.CATALOG_QUOTA_EXCEEDED, 402),
+      {
+        message: "Spoonacular isn't available right now. Try again later.",
+        retryable: false,
+      },
+    ],
+    [
+      "404 gone",
+      new ApiError("404", ErrorCode.NOT_FOUND, 404),
+      { message: "This recipe is no longer available.", retryable: false },
+    ],
+    [
+      "422 quality gate",
+      new ApiError("422", ErrorCode.VALIDATION_ERROR, 422),
+      {
+        message:
+          "This recipe has no ingredients or steps, so it can't be saved.",
+        retryable: false,
+      },
+    ],
+  ])("%s", (_label, err, expected) => {
+    expect(catalogSaveErrorMessage(err)).toEqual(expected);
   });
 });

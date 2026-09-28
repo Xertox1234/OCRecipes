@@ -7,8 +7,8 @@
 // "not found" for a transient error asserts a false cause (see
 // docs/solutions/logic-errors/network-failure-rendered-as-wrong-credentials-2026-08-08.md).
 //
-// Exercises the screen through its `recipeType: "mealPlan"` branch only,
-// which has an explicit `apiRequest`-backed queryFn that's easy to mock and
+// The error-branching suites exercise the `recipeType: "mealPlan"` branch
+// (the catalog preview has its own describe blocks at the end), which has an explicit `apiRequest`-backed queryFn that's easy to mock and
 // reject with a real `ApiError`. The `community` branch uses the QueryClient's
 // default queryFn (`getQueryFn`), which `renderComponent`'s bare test
 // QueryClient does not register — the error-branching logic under test
@@ -37,6 +37,7 @@ const {
   mockReset,
   mockReplace,
   mockDetailProps,
+  mockToastError,
 } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
   mockRouteParams: {
@@ -52,6 +53,7 @@ const {
   mockReset: vi.fn(),
   mockReplace: vi.fn(),
   mockDetailProps: { current: null as Record<string, unknown> | null },
+  mockToastError: vi.fn(),
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -84,8 +86,27 @@ vi.mock("@/components/RecipeDetailContent", () => ({
 }));
 
 vi.mock("@/components/UpgradeModal", () => ({
-  UpgradeModal: ({ visible }: { visible: boolean }) =>
-    visible ? <div data-testid="upgrade-modal" /> : null,
+  UpgradeModal: ({
+    visible,
+    onUpgrade,
+  }: {
+    visible: boolean;
+    onUpgrade?: () => void;
+  }) =>
+    visible ? (
+      <div data-testid="upgrade-modal">
+        <button onClick={() => onUpgrade?.()}>Complete purchase</button>
+      </div>
+    ) : null,
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({
+    success: vi.fn(),
+    error: mockToastError,
+    info: vi.fn(),
+    dismiss: vi.fn(),
+  }),
 }));
 
 vi.mock("@/components/recipe-detail", () => ({
@@ -434,5 +455,182 @@ describe("FeaturedRecipeDetailScreen — catalog (Spoonacular) preview", () => {
     expect(
       await screen.findByText("Spoonacular isn't available right now"),
     ).toBeDefined();
+  });
+});
+
+describe("FeaturedRecipeDetailScreen — catalog preview follow-ups (#1149 review)", () => {
+  const catalogDetail = {
+    recipe: {
+      title: "Spoonacular Chili",
+      instructions: ["Cook"],
+      caloriesPerServing: "420",
+    },
+    ingredients: [{ name: "beans", quantity: "1", unit: "can" }],
+  };
+  let announceSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    mockRouteParams.current = { recipeId: 715538, recipeType: "catalog" };
+    mockToastError.mockReset();
+    announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+  });
+
+  afterEach(() => {
+    announceSpy.mockRestore();
+  });
+
+  function mockSaveRejects(err: Error) {
+    mockApiRequest.mockImplementation(async (method: string) =>
+      method === "GET"
+        ? { json: async () => catalogDetail }
+        : Promise.reject(err),
+    );
+  }
+
+  async function pressSave() {
+    fireEvent.click(
+      await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
+    );
+  }
+
+  it("announces a failed Save for VoiceOver, not only through an Android live region", async () => {
+    mockSaveRejects(new TypeError("Network request failed"));
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    await pressSave();
+    await screen.findByText("Couldn't save this recipe. Try again.");
+    expect(
+      announceSpy.mock.calls.filter(
+        ([m]: unknown[]) => m === "Couldn't save this recipe. Try again.",
+      ),
+    ).toHaveLength(1);
+    // Still mounted: the inline error is the one surface, no toast.
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
+
+  it("opens the upgrade modal when Save is premium-denied, with no inline error", async () => {
+    mockSaveRejects(
+      new ApiError("403: premium", ErrorCode.PREMIUM_REQUIRED, 403),
+    );
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    await pressSave();
+    expect(await screen.findByTestId("upgrade-modal")).toBeDefined();
+    expect(
+      screen.queryByText("Couldn't save this recipe. Try again."),
+    ).toBeNull();
+  });
+
+  it("shows the quota copy when Save hits the Spoonacular quota", async () => {
+    mockSaveRejects(
+      new ApiError("402: quota", ErrorCode.CATALOG_QUOTA_EXCEEDED, 402),
+    );
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    await pressSave();
+    expect(
+      await screen.findByText(
+        "Spoonacular isn't available right now. Try again later.",
+      ),
+    ).toBeDefined();
+  });
+
+  it.each([
+    [
+      "a 404 (gone from the catalog)",
+      new ApiError("404: gone", ErrorCode.NOT_FOUND, 404),
+      "This recipe is no longer available.",
+    ],
+    [
+      "a 422 (fails the quality gate)",
+      new ApiError("422: empty", ErrorCode.VALIDATION_ERROR, 422),
+      "This recipe has no ingredients or steps, so it can't be saved.",
+    ],
+  ])(
+    "does not ask the user to retry a permanent Save failure: %s",
+    async (_label, err, copy) => {
+      mockSaveRejects(err);
+      renderComponent(<FeaturedRecipeDetailScreen />);
+      await pressSave();
+      expect(await screen.findByText(copy)).toBeDefined();
+      expect(
+        screen.queryByText("Couldn't save this recipe. Try again."),
+      ).toBeNull();
+    },
+  );
+
+  it("refetches the preview after the user upgrades from the Premium wall", async () => {
+    mockApiRequest
+      .mockRejectedValueOnce(
+        new ApiError("403: premium", ErrorCode.PREMIUM_REQUIRED, 403),
+      )
+      .mockResolvedValue({ json: async () => catalogDetail });
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    fireEvent.click(await screen.findByText("See Premium"));
+    fireEvent.click(screen.getByText("Complete purchase"));
+    expect(await screen.findByText("Spoonacular Chili")).toBeDefined();
+    expect(
+      screen.queryByText("Online recipes are a Premium feature"),
+    ).toBeNull();
+  });
+
+  it.each([
+    [
+      "402 quota",
+      new ApiError("402: quota", ErrorCode.CATALOG_QUOTA_EXCEEDED, 402),
+      "Spoonacular isn't available right now",
+    ],
+    [
+      "403 premium",
+      new ApiError("403: premium", ErrorCode.PREMIUM_REQUIRED, 403),
+      "Online recipes are a Premium feature",
+    ],
+  ])(
+    "keeps the cached preview (and its Save bar) when a refetch fails with %s",
+    async (_label, err, wallTitle) => {
+      const key = ["/api/meal-plan/catalog", 715538];
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      queryClient.setQueryData(key, catalogDetail);
+      mockApiRequest.mockRejectedValue(err);
+      render(
+        <QueryClientProvider client={queryClient}>
+          <FeaturedRecipeDetailScreen />
+        </QueryClientProvider>,
+      );
+      // Stale-on-mount refetch fails; the cached data survives in the cache.
+      await waitFor(() =>
+        expect(queryClient.getQueryState(key)?.status).toBe("error"),
+      );
+      expect(screen.getByText("Spoonacular Chili")).toBeDefined();
+      expect(screen.queryByText(wallTitle)).toBeNull();
+      expect(
+        screen.getByLabelText("Save Spoonacular Chili to your recipes"),
+      ).toBeDefined();
+    },
+  );
+
+  it("toasts a Save failure that lands after the user closed the preview", async () => {
+    let rejectSave: (e: Error) => void = () => {};
+    mockApiRequest.mockImplementation(async (method: string) =>
+      method === "GET"
+        ? { json: async () => catalogDetail }
+        : new Promise((_resolve, reject) => {
+            rejectSave = reject;
+          }),
+    );
+    const { unmount } = renderComponent(<FeaturedRecipeDetailScreen />);
+    await pressSave();
+    await waitFor(() =>
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/meal-plan/catalog/715538/save",
+      ),
+    );
+    unmount();
+    rejectSave(new TypeError("Network request failed"));
+    await waitFor(() =>
+      expect(mockToastError).toHaveBeenCalledWith(
+        "Couldn't save Spoonacular Chili. Try again.",
+      ),
+    );
   });
 });
