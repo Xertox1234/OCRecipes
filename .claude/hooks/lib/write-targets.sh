@@ -16,29 +16,41 @@
 # wrappers still expose the command word; `$(…)`/`${…}`/here-docs unmodeled (over-split =
 # false-POSITIVE, not a bypass). Bypass remains SKIP_WORKTREE_CONTRACT=1.
 emit_write_targets() {
-  awk '
+  local rel=0
+  [ "${1:-}" = "--relative" ] && rel=1
+  awk -v rel="$rel" '
     function addc(ch){ word = word ch; wstart = 1 }
     function addcq(ch){ word = word ch; wstart = 1; wtaint = 1 }
-    function seg_reset(){ np = 0; has_rm = 0; has_tee = 0; has_cp = 0; has_mv = 0; has_sed = 0; has_sedi = 0 }
-    function endword(   w, tnt){
+    function seg_reset(){ np = 0; has_rm = 0; has_tee = 0; has_cp = 0; has_mv = 0; has_sed = 0; has_sedi = 0; nrp = 0; cmdseen = 0; sedpend = 0; skipnext = 0; lastrel = 0 }
+    function endword(   w, tnt, iscmd){
       if (!wstart) return
       w = word; tnt = wtaint; word = ""; wstart = 0; wtaint = 0
       if (skipword) { skipword = 0; return }
-      if (redir)    { redir = 0; if (substr(w, 1, 1) == "/") print w; return }
+      if (redir)    { redir = 0; if (substr(w, 1, 1) == "/") print w; else if (rel && w != "") relout[++nro] = w; return }
+      iscmd = 0
       if (!tnt) {
-        if (w == "rm") has_rm = 1
-        else if (w == "tee") has_tee = 1
-        else if (w == "cp") has_cp = 1
-        else if (w == "mv") has_mv = 1
-        else if (w == "sed") has_sed = 1
+        if (w == "rm") { has_rm = 1; iscmd = 1 }
+        else if (w == "tee") { has_tee = 1; iscmd = 1 }
+        else if (w == "cp") { has_cp = 1; iscmd = 1 }
+        else if (w == "mv") { has_mv = 1; iscmd = 1 }
+        else if (w == "sed") { has_sed = 1; iscmd = 1; sedpend = 1 }
         else if (substr(w, 1, 2) == "-i" || substr(w, 1, 10) == "--in-place") has_sedi = 1
+        if (w == "cd" || w == "pushd") saw_cd = 1
       }
-      if (substr(w, 1, 1) == "/") paths[++np] = w
+      if (substr(w, 1, 1) == "/") { paths[++np] = w; if (rel && has_sed && sedpend && !iscmd) sedpend = 0; lastrel = 0 }
+      else if (rel && cmdseen && !iscmd) {
+        if (skipnext) skipnext = 0
+        else if (substr(w, 1, 1) == "-") { if (has_sed && (w == "-e" || w == "-f" || w == "--expression" || w == "--file")) { skipnext = 1; sedpend = 0 } }
+        else if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { }
+        else if (has_sed && sedpend) sedpend = 0
+        else { rpaths[++nrp] = w; lastrel = 1 }
+      }
+      if (iscmd) cmdseen = 1
     }
     function segend(   k){
       endword()
-      if (has_rm || has_tee || (has_sed && has_sedi)) { for (k = 1; k <= np; k++) print paths[k] }
-      else if (has_cp || has_mv) { if (np > 0) print paths[np] }
+      if (has_rm || has_tee || (has_sed && has_sedi)) { for (k = 1; k <= np; k++) print paths[k]; if (rel) for (k = 1; k <= nrp; k++) relout[++nro] = rpaths[k] }
+      else if (has_cp || has_mv) { if (np > 0) print paths[np]; if (rel && lastrel && nrp > 0) relout[++nro] = rpaths[nrp] }
       redir = 0; skipword = 0; seg_reset()
     }
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; seg_reset() }
@@ -72,6 +84,21 @@ emit_write_targets() {
         }
       }
       segend()
+      if (rel && !saw_cd) for (k = 1; k <= nro; k++) print relout[k]
     }
   '
+}
+
+# resolve_write_targets <cwd>: stdin command → ABSOLUTE write targets, one per line. Relative
+# targets (only reported when the command has no cd/pushd) are joined to cwd, a leading ./
+# stripped; with no cwd they are dropped. No other normalization — `..` segments are
+# compared as spelled.
+resolve_write_targets() {
+  local cwd="${1:-}" t
+  emit_write_targets --relative | while IFS= read -r t; do
+    case "$t" in
+      /*) printf '%s\n' "$t" ;;
+      *)  [ -n "$cwd" ] || continue; t="${t#./}"; printf '%s/%s\n' "${cwd%/}" "$t" ;;
+    esac
+  done
 }

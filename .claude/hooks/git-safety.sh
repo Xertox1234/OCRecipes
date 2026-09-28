@@ -828,7 +828,7 @@ Run it inside the assigned worktree (or with git -C <worktree>). ${ESCAPES}"
   COMMON=$(git -C "${CWD:-/nonexistent}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "")
   [ -n "$COMMON" ] && MAIN_ROOT=$(dirname "$COMMON")
   if [ -n "$MAIN_ROOT" ]; then
-    # Quote-AWARE target extraction (emit_write_targets, defined above). The prior
+    # Quote-AWARE target extraction (emit_write_targets, sourced from lib/write-targets.sh). The prior
     # `tr -d '\042\047'` strip DELETED quote chars but kept their CONTENT, so a commit
     # message like `git commit -m "writes > /main/out"` was mined as a real redirect →
     # false-DENY (2026-07-18 audit follow-up). A write is real only when its OPERATOR or

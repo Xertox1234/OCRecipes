@@ -14,6 +14,31 @@ assert_eq "default: absolute rm target" "$(abs 'rm /abs/x.ts')" "/abs/x.ts "
 assert_eq "default: relative ignored"    "$(abs 'rm foo.ts /abs/x')" "/abs/x "
 assert_eq "default: quoted message"      "$(abs 'git commit -m "writes > /main/out"')" ""
 
+rel() { printf '%s' "$1" | emit_write_targets --relative | tr '\n' ' '; }
+res() { printf '%s' "$1" | resolve_write_targets "$2" | tr '\n' ' '; }
+assert_eq "rel: rm file"                 "$(rel 'rm foo.ts')" "foo.ts "
+assert_eq "rel: rm -rf skips options"    "$(rel 'rm -rf dir/a')" "dir/a "
+assert_eq "rel: redirect"                "$(rel 'echo x > out.txt')" "out.txt "
+assert_eq "rel: append redirect"         "$(rel 'echo x >> log/out.txt')" "log/out.txt "
+assert_eq "rel: cp destination only"     "$(rel 'cp a.ts b.ts')" "b.ts "
+assert_eq "rel: tee after a pipe"        "$(rel 'echo x | tee t1.txt t2.txt')" "t1.txt t2.txt "
+assert_eq "rel: sed -i skips the script" "$(rel "sed -i 's/a/b/' f.ts")" "f.ts "
+assert_eq "rel: sed -i -e skips the script" "$(rel "sed -i -e 's/a/b/' f.ts")" "f.ts "
+assert_eq "rel: after cd → none"         "$(rel 'cd sub && rm foo.ts')" ""
+assert_eq "rel: pushd → none"            "$(rel 'pushd sub; rm foo.ts')" ""
+assert_eq "rel: absolute kept after cd"  "$(rel 'cd sub && rm /abs/x.ts')" "/abs/x.ts "
+assert_eq "rel: env prefix not a target" "$(rel 'FOO=1 rm x.ts')" "x.ts "
+assert_eq "rel: quoted write word"       "$(rel 'git commit -m "rm foo.ts"')" ""
+assert_eq "rel: non-writing command"     "$(rel 'ls -la src')" ""
+assert_eq "rel: mixed abs + rel"         "$(rel 'rm /abs/a.ts b.ts')" "/abs/a.ts b.ts "
+# Review Focus 1: a quoted path with a space is ONE target.
+SP=$(printf '%s' 'rm "my file.ts"' | emit_write_targets --relative)
+assert_eq "rel: quoted path with a space is one line" "$(printf '%s\n' "$SP" | wc -l | tr -d ' ')" "1"
+assert_eq "rel: quoted path with a space intact" "$SP" "my file.ts"
+assert_eq "resolve: joined to cwd, ./ stripped" "$(res 'rm ./foo.ts' /repo)" "/repo/foo.ts "
+assert_eq "resolve: absolute kept"              "$(res 'rm /x/y.ts' /repo)" "/x/y.ts "
+assert_eq "resolve: no cwd → relative dropped"  "$(res 'rm foo.ts' '')" ""
+
 # git-safety fails CLOSED when the lib is missing and a contract is active; the same
 # command with the lib intact is ALLOWED (target outside the main checkout) — the pair is
 # what shows the deny comes from the missing lib, not from the ordinary contract check.
@@ -30,5 +55,16 @@ DEC_OK=$(printf '%s' "$IN" | bash "$FX/intact/git-safety.sh" 2>/dev/null | jq -r
 DEC_BAD=$(printf '%s' "$IN" | bash "$FX/broken/git-safety.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // "none"' 2>/dev/null)
 assert_eq "git-safety: lib intact → write outside main allowed" "${DEC_OK:-none}" "none"
 assert_eq "git-safety: lib missing → fails CLOSED" "$DEC_BAD" "deny"
+REASON=$(printf '%s' "$IN" | bash "$FX/broken/git-safety.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null)
+assert_contains "git-safety: fail-closed reason names the missing lib" "$REASON" "lib/write-targets.sh did not load"
+
+. "$HOOK_DIR/lib/mutants.sh"
+mutant "cd/pushd guard dropped" ".claude/hooks/lib/write-targets.sh" \
+  's/if \(rel && !saw_cd\) for/if (rel) for/'
+mutant "sed script not skipped" ".claude/hooks/lib/write-targets.sh" \
+  's/else if \(has_sed && sedpend\) sedpend = 0/else if (0) sedpend = 0/'
+mutant "git-safety fail-closed check removed" ".claude/hooks/git-safety.sh" \
+  's/declare -F emit_write_targets >\/dev\/null [|][|] deny/true || deny/'
+run_mutants "$PROJECT_ROOT" ".claude/hooks/test-write-targets.sh" || FAIL=1
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
