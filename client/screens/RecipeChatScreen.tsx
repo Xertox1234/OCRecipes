@@ -170,8 +170,12 @@ export default function RecipeChatScreen() {
   const flatListRef = useRef<FlatList>(null);
 
   // Remix mode detection
-  const isRemixMode = !!route.params?.remixSourceRecipeId;
-  const remixSourceRecipeId = route.params?.remixSourceRecipeId;
+  // In-app navigation passes a number; anything else (e.g. a link's string or
+  // array, which linking.ts strips anyway) is not remix mode.
+  const routeRemixId: unknown = route.params?.remixSourceRecipeId;
+  const remixSourceRecipeId =
+    typeof routeRemixId === "number" ? routeRemixId : undefined;
+  const isRemixMode = !!remixSourceRecipeId;
   const remixSourceRecipeTitle = route.params?.remixSourceRecipeTitle;
 
   const [conversationId, setConversationId] = useState<number | null>(
@@ -353,7 +357,11 @@ export default function RecipeChatScreen() {
 
   // Auto-send a prefilled request once (Home's Generate Recipe drawer, or a
   // Coach navigate action) — same one-shot guard as ChatScreen's.
-  const initialMessage = route.params?.initialMessage;
+  // Only a string is ever sent. linking.ts strips this param from links, but
+  // a repeated query key would arrive as an array; never hand that to send.
+  const routeInitialMessage: unknown = route.params?.initialMessage;
+  const initialMessage =
+    typeof routeInitialMessage === "string" ? routeInitialMessage : undefined;
   const didSendInitialRef = useRef(false);
   useEffect(() => {
     if (initialMessage && !didSendInitialRef.current) {

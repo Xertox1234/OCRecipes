@@ -106,8 +106,11 @@ describe("linking config", () => {
   // A screen that auto-sends route.params.initialMessage (RecipeChatScreen,
   // ChatScreen) must never receive it from a link: a tapped URL would post
   // link-chosen text to the AI as the user's own message, with no tap.
-  // In-app navigate() calls never go through `parse`, so the Generate Recipe
-  // drawer and Coach's navigate actions still pass it.
+  // These go through linking.getStateFromPath (the wrapper every URL source
+  // uses), not the bare parser: a repeated key arrives as an array, which
+  // `parse` skips, so the wrapper is what strips it. In-app navigate() calls
+  // never parse a path, so the Generate Recipe drawer and Coach's navigate
+  // actions still pass initialMessage.
   const leafRoute = (
     state: ReturnType<typeof getStateFromPath>,
   ): { name: string; params?: object } | undefined => {
@@ -119,36 +122,44 @@ describe("linking config", () => {
     }
     return route;
   };
+  const parseLink = (path: string) =>
+    leafRoute(linking.getStateFromPath!(path, linking.config));
 
-  it("drops a link-supplied initialMessage and remix params from recipe-chat", () => {
-    const withId = leafRoute(
-      getStateFromPath(
-        "recipe-chat/5?initialMessage=hello%20there&remixSourceRecipeId=9&remixSourceRecipeTitle=Pasta",
-        linking.config,
-      ),
-    );
+  it.each([
+    ["single key", "initialMessage=hello%20there"],
+    ["duplicated key", "initialMessage=a&initialMessage=b"],
+    ["duplicated identical key", "initialMessage=a&initialMessage=a"],
+    ["remix params", "remixSourceRecipeId=9&remixSourceRecipeTitle=Pasta"],
+    [
+      "duplicated remix params",
+      "remixSourceRecipeId=9&remixSourceRecipeId=10&remixSourceRecipeTitle=A&remixSourceRecipeTitle=B",
+    ],
+  ])("recipe-chat drops link-supplied chat params (%s)", (_label, query) => {
+    const withId = parseLink(`recipe-chat/5?${query}`);
     expect(withId?.name).toBe("RecipeChat");
     expect(withId?.params).toEqual({ conversationId: 5 });
 
-    const withoutId = leafRoute(
-      getStateFromPath(
-        "recipe-chat?initialMessage=hello%20there",
-        linking.config,
-      ),
-    );
+    const withoutId = parseLink(`recipe-chat?${query}`);
     expect(withoutId?.name).toBe("RecipeChat");
-    expect(
-      (withoutId?.params as Record<string, unknown> | undefined)
-        ?.initialMessage,
-    ).toBeUndefined();
+    expect(withoutId?.params ?? {}).toEqual({});
   });
 
-  it("drops a link-supplied initialMessage from a coach chat link", () => {
-    const route = leafRoute(
-      getStateFromPath("chat/5?initialMessage=hello%20there", linking.config),
-    );
-    expect(route?.name).toBe("Chat");
-    expect(route?.params).toEqual({ conversationId: 5 });
+  it.each([
+    ["single key", "initialMessage=hello%20there"],
+    ["duplicated key", "initialMessage=a&initialMessage=b"],
+  ])(
+    "coach chat drops a link-supplied initialMessage (%s)",
+    (_label, query) => {
+      const route = parseLink(`chat/5?${query}`);
+      expect(route?.name).toBe("Chat");
+      expect(route?.params).toEqual({ conversationId: 5 });
+    },
+  );
+
+  it("keeps unrelated query params on other screens (strip is scoped to the chat routes)", () => {
+    const route = parseLink("scan?mode=label&initialMessage=x");
+    expect(route?.name).toBe("Scan");
+    expect(route?.params).toMatchObject({ mode: "label" });
   });
 
   // Query values are decoded by query-string → decode-uri-component. Its

@@ -105,6 +105,37 @@ export function flushPendingNotificationUrl(): void {
   }
 }
 
+// Route params a link must never supply, by screen. RecipeChatScreen and
+// ChatScreen auto-send initialMessage as the user's own message; the remix
+// params are in-app only (a recipe's Remix button). The `() => undefined`
+// parse entries below drop a single occurrence, but a repeated query key
+// (`?initialMessage=a&initialMessage=b`) arrives as an array, and the default
+// parser only runs `parse` on string values. So strip by key here, on the
+// parsed state, whatever the value's type.
+const LINK_STRIPPED_PARAMS: Record<string, readonly string[]> = {
+  Chat: ["initialMessage"],
+  RecipeChat: [
+    "initialMessage",
+    "remixSourceRecipeId",
+    "remixSourceRecipeTitle",
+  ],
+};
+
+type ParsedLinkState = ReturnType<typeof getStateFromPathDefault>;
+
+function stripLinkOnlyParams(state: ParsedLinkState): ParsedLinkState {
+  for (const route of state?.routes ?? []) {
+    const stripped = LINK_STRIPPED_PARAMS[route.name];
+    if (stripped && route.params) {
+      const params = { ...(route.params as Record<string, unknown>) };
+      for (const key of stripped) delete params[key];
+      (route as { params?: object }).params = params;
+    }
+    if (route.state) stripLinkOnlyParams(route.state as ParsedLinkState);
+  }
+  return state;
+}
+
 export const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ["ocrecipes://", "https://ocrecipes.app"],
   // Every URL source — a real Linking event, a notification's data.url or
@@ -126,7 +157,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
     // an uncaught URIError on a single tap. Ignore such a link, like an
     // over-cap one. Only URIError: a real config bug should still surface.
     try {
-      return getStateFromPathDefault(path, options);
+      return stripLinkOnlyParams(getStateFromPathDefault(path, options));
     } catch (error) {
       if (error instanceof URIError) return undefined;
       throw error;
@@ -180,7 +211,8 @@ export const linking: LinkingOptions<RootStackParamList> = {
           CoachTab: {
             screens: {
               // initialMessage is auto-sent by ChatScreen: a link must not
-              // post text to the AI as the user's own message. Drop it.
+              // post text to the AI as the user's own message. This drops a
+              // single occurrence; stripLinkOnlyParams drops a repeated one.
               Chat: {
                 path: "chat/:conversationId",
                 parse: {
@@ -202,6 +234,8 @@ export const linking: LinkingOptions<RootStackParamList> = {
       },
       // Same for RecipeChatScreen's auto-sent initialMessage. The remix params
       // are in-app only (a recipe's Remix button), so links drop them too.
+      // Single occurrences are dropped here; stripLinkOnlyParams drops
+      // repeated ones.
       RecipeChat: {
         path: "recipe-chat/:conversationId?",
         parse: {

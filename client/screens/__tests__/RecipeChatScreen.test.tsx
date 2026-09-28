@@ -172,6 +172,19 @@ describe("RecipeChatScreen — initialMessage route param (Home's Generate Recip
     expect(mockCreateConversationMutateAsync).toHaveBeenCalledTimes(1);
   });
 
+  it("ignores a non-string initialMessage (e.g. a repeated link query key)", async () => {
+    mockCreateConversationMutateAsync.mockResolvedValue({ id: 11 });
+    mockRouteParams.value = {
+      initialMessage: ["a", "b"] as unknown as string,
+    };
+
+    renderComponent(<RecipeChatScreen />);
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(mockCreateConversationMutateAsync).not.toHaveBeenCalled();
+  });
+
   it("sends nothing on open when there is no initialMessage", async () => {
     renderComponent(<RecipeChatScreen />);
 
