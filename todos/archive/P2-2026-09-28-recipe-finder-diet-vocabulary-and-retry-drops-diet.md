@@ -1,6 +1,6 @@
 ---
 title: "Recipe finder: diet words never match community tags ('ketogenic' vs 'keto', 'gluten free' vs 'gluten-free'), and the q-only retry drops the diet constraint"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-28
 updated: 2026-09-28
@@ -24,9 +24,9 @@ Both are recoverable (the list still offers Search Spoonacular / Generate / None
 
 ## Acceptance Criteria
 
-- [ ] Community search maps the finder's diet vocabulary onto community tag spellings (or normalizes both sides), so "keto dinner" and "gluten free dinner" find their catalog matches.
-- [ ] The q-only retry keeps a stated diet (drop mealType only, or post-filter by diet), so "vegan pasta" never shows a non-vegan recipe; with no diet-safe hit, the result is "no matches".
-- [ ] Re-run `MEASURE_FINDER_THRESHOLD=1 npx vitest run server/services/recipe-finder/__tests__/close-match-gold-set.test.ts -t sweep` and re-pin `measured` (report both the old and new rows).
+- [x] Community search maps the finder's diet vocabulary onto community tag spellings (or normalizes both sides), so "keto dinner" and "gluten free dinner" find their catalog matches.
+- [x] The q-only retry keeps a stated diet (drop mealType only, or post-filter by diet), so "vegan pasta" never shows a non-vegan recipe; with no diet-safe hit, the result is "no matches".
+- [x] Re-run `MEASURE_FINDER_THRESHOLD=1 npx vitest run server/services/recipe-finder/__tests__/close-match-gold-set.test.ts -t sweep` and re-pin `measured` (report both the old and new rows).
 
 ## Implementation Notes
 
@@ -42,3 +42,4 @@ Both are recoverable (the list still offers Search Spoonacular / Generate / None
 ### 2026-09-28
 
 - Auto-filed (Medium) from the Task 10 gold-set measurement.
+- Fixed on `fix/recipe-finder-pre-flip-followups`: community diet tags (`communityDietTag`), retry keeps the diet, and filter-only requests ("keto dinner") browse the filters. Gold set at (0.7, 8): 22/30 → 25/30.
