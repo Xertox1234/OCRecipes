@@ -1,6 +1,6 @@
 ---
 title: "API Ninjas' free tier hides calories and protein, so a lookup that falls through to it returns 0 kcal"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-27
 updated: 2026-09-27
@@ -40,15 +40,34 @@ Found during the PR #1124 review (beverage logging). Measured 2026-09-27 with ou
   would make it `"0g"`. The beverage route already returns 422 for that; `toPortion` in
   `food-nlp.ts` would keep the values under a "0g" label.
 
+## Decision
+
+**2026-09-27, user ruling (binding):** when API Ninjas' calories are premium-gated,
+`lookupAPINinjas` returns `null` — the first Acceptance Criteria arm below. The macro-based
+(4/4/9) calorie estimate (the second arm) is explicitly **rejected**, not merely unused; do
+not re-propose it without a new angle. Gated fields parse as `null` (missing), distinct from
+a real numeric 0, via a new `numericOrGated` Zod transform applied to `calories`/`protein_g`
+in `apiNinjasItemSchema` — the schema still `safeParse`s a gated string successfully (never
+rejects the parse; see `docs/solutions/conventions/sentinel-with-readers-is-a-contract-not-a-fabricated-default-2026-08-10.md`
+for why an earlier attempt to reject it was retracted). Water, black coffee and diet soda
+still come back as genuine 0 kcal foods (covered by a discriminating test pair).
+
+Every caller (beverage route, `food-nlp.ts`'s `toPortion`/Quick Log, `batchNutritionLookup`'s
+photo/cooking consumers) already treats a `null` lookup result as "not found" — no caller
+code changes were needed. The `toPortion` "0g" concern in Implementation Notes below is
+already handled: `scaleToGrams`/`normalizeToPerHundredGrams` both reject a falsy/zero basis,
+so a hypothetical future gating of `serving_size_g` (not observed on our key today) would
+still resolve to "no data," not a mislabeled scaled result.
+
 ## Acceptance Criteria
 
-- [ ] A result whose calories were gated is not returned as a 0 kcal food. Either:
-  - it becomes null, so the caller shows "not found" or manual entry; or
-  - it is completed another way, e.g. calories estimated from the macros, only if every
-    macro used is ungated.
-- [ ] Gated values are told apart from real zeros. Water, black coffee and diet soda are
+- [x] A result whose calories were gated is not returned as a 0 kcal food. Either:
+  - [x] it becomes null, so the caller shows "not found" or manual entry; or
+  - [x] (rejected by user ruling above — do not implement) ~~it is completed another way,
+        e.g. calories estimated from the macros, only if every macro used is ungated~~.
+- [x] Gated values are told apart from real zeros. Water, black coffee and diet soda are
       real 0 kcal foods.
-- [ ] A test with the premium-gated response shape above covers `lookupNutrition`.
+- [x] A test with the premium-gated response shape above covers `lookupNutrition`.
 
 ## Implementation Notes
 
