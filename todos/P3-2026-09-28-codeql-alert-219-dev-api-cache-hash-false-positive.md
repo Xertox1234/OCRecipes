@@ -7,6 +7,8 @@ updated: 2026-09-28
 assignee:
 labels: [deferred, security, ci]
 github_issue:
+human_led: true
+blocked_reason: "Needs the user's choice: dismiss the alert (an outward GitHub action the user runs) or change computeRequestHash's param selection. Closing also needs a later PR's CodeQL result to confirm."
 ---
 
 # CodeQL alert #219 on `dev-api-cache.ts` is a false positive that re-fails the CodeQL check on nutrition PRs
