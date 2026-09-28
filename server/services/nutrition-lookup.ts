@@ -587,11 +587,14 @@ const DEHYDRATED_WORDS = new Set([
  *   had before the dehydrated-form penalty was added; it is not a scored
  *   preference for "dried" and would change if CNF ever reordered its list.
  */
-function isUnaskedDehydratedForm(parts: string[], qWords: string[]): boolean {
+function isUnaskedDehydratedForm(
+  parts: string[],
+  partWordsList: string[][],
+  qWords: string[],
+): boolean {
   const exemptHead =
     parts[0] === "nuts" || parts[0] === "seeds" || parts[0] === "spices";
-  return parts.some((part) => {
-    const words = matchWords(part);
+  return partWordsList.some((words) => {
     const soleWord = words.length === 1;
     return words.some(
       (w) =>
@@ -713,7 +716,7 @@ function scoreCNFMatch(query: string, description: string): number {
 
   // A dehydrated form shares its head with the fresh food, and its shorter
   // name would win the length tie-break ("milk" → "Milk, dry whole").
-  if (isUnaskedDehydratedForm(parts, qWords)) score -= 1;
+  if (isUnaskedDehydratedForm(parts, partWordsList, qWords)) score -= 1;
 
   // Penalty for very long descriptions (less specific/relevant)
   score -= d.length / 100;

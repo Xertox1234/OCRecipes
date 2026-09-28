@@ -144,9 +144,12 @@ cnf-gold-set.json` — the original 51 queries (from the archived
     parts ("Grains, rice, white, long-grain, …, cooked"); there is no 2–3 part canonical
     row. The only lever tried was removing the head-part edge entirely: this did NOT flip
     "rice" (the parts-count and length penalties alone still favour "Rice, Spanish rice")
-    and regressed 5 other correct bare-name matches (egg → "Bagel, egg", apple → "Strudel,
-    apple", potato → "Bread, potato", corn → "Tamale, corn", milk → "Cracker, milk"; full
-    gold set 43/4/4 → 38/9/4). No safe tie-break found; recorded per the AC's own escape
+    and regressed 5 other correct matches — apple → "Strudel, apple", potato → "Bread,
+    potato", corn → "Tamale, corn", milk → "Cracker, milk", and the database-style
+    "chicken, breast, roasted" → "Deli-meat, chicken breast, oven-roasted, sliced" (full
+    gold set 43/4/4 → 38/9/4; bare "egg" is already one of the 4 baseline-wrong queries —
+    it moves to a _different_ wrong answer, "Bagel, egg", not a regression from correct,
+    so it is not one of the 5). No safe tie-break found; recorded per the AC's own escape
     hatch. Unchanged from #1120/#1122's baseline.
   - **Dead regex branch (item 4):** removed `isNumberWord`'s `(?:[.,]\d+)?` group; comment
     now says why (matchWords already splits on "." and ",", so a word never contains one).
@@ -154,8 +157,11 @@ cnf-gold-set.json` — the original 51 queries (from the archived
     lowercased description string, warmed eagerly right after `ensureCNFFoods` parses a
     fresh CNF list (satisfies "precomputed once per CNF list load" literally) with a
     cache-miss fallback so ad-hoc test food lists (not loaded through `ensureCNFFoods`)
-    still score correctly. Gold set counts identical before/after (52/11/4; base-51 alone
-    43/4/4). Cache is cleared in `_resetCNFCacheForTesting`.
+    still score correctly. `isUnaskedDehydratedForm` now takes the precomputed
+    `partWordsList` too, instead of re-running `matchWords` per comma-part per query (review
+    round 1 caught this half of item 5's own re-tokenization complaint as still-live).
+    Gold set counts identical before/after (52/11/4; base-51 alone 43/4/4). Cache is
+    cleared in `_resetCNFCacheForTesting`.
   - **OFF docstring (item 6):** added to `scoreCNFMatch`'s docstring.
   - **Taco (item 7) — attempted, not fixed.** One measured probe: removing the parts-count
     penalty (`>3` → multiplier 0) entirely does not flip "taco" (still "Snacks, tortilla
@@ -181,7 +187,15 @@ cnf-gold-set.json` — the original 51 queries (from the archived
     for dill weed/rosemary/thyme (so bare queries land on "dried") and "fresh" before
     "dried" for spearmint (so bare "spearmint" still resolves to fresh, untouched — not a
     gold-set item). If CNF ever reorders its list this tie flips; the docstring/comment say
-    so. "Cocoa", "currant"/"currants" and "cherries" were NOT fixed: for cocoa and currant
+    so. **Structural sweep (review round 1 asked for this):** every one of the 10 real CNF
+    Spices rows whose last comma-part is a sole dried/powder/dehydrated word (basil,
+    chervil, coriander leaf, dill weed, marjoram, parsley, rosemary, tarragon, thyme,
+    spearmint) was queried bare, before/after the Spices exemption. Exactly 3 changed
+    winner — dill weed, rosemary, thyme, the intended fixes — and 0 unintended flips: basil
+    and parsley resolve to a _different_, non-Spices "X, fresh" row in both versions (so the
+    exemption never applies to them); chervil, coriander leaf, marjoram and tarragon have no
+    CNF "fresh" sibling at all (nothing to tie against); spearmint is unchanged (fresh, by
+    list order, as above). "Cocoa", "currant"/"currants" and "cherries" were NOT fixed: for cocoa and currant
     the dehydrated-form penalty pushes the WRONG direction (their common form is the
     processed/dried one, unlike milk/beans/tomato), and even fully removing the penalty
     only just barely re-flips the winner (measured: cocoa's powder row would edge the hot-
