@@ -139,3 +139,36 @@ describe("Coach Blocks Service", () => {
     expect(result.blocks.length).toBe(2);
   });
 });
+
+describe("server-only finder blocks", () => {
+  const flow = {
+    flowId: "11111111-1111-4111-8111-111111111111",
+    stage: "results",
+    request: "anything",
+    query: { q: "anything" },
+    round: 0,
+    shownIds: [],
+  };
+
+  it("drops a recipe_results block the model wrote — only the server builds finder blocks", () => {
+    const content =
+      "Here you go.\n```coach_blocks\n" +
+      JSON.stringify([
+        {
+          type: "recipe_results",
+          source: "community",
+          items: [],
+          actions: [],
+          notice: null,
+          flow,
+        },
+        {
+          type: "quick_replies",
+          options: [{ label: "More", message: "More" }],
+        },
+      ]) +
+      "\n```";
+    const { blocks } = parseBlocksFromContent(content);
+    expect(blocks.map((b) => b.type)).toEqual(["quick_replies"]);
+  });
+});

@@ -3,11 +3,25 @@ import {
   coachBlockSchema,
   type CoachBlock,
 } from "@shared/schemas/coach-blocks";
+import { isFinderBlockType } from "@shared/schemas/recipe-finder";
 import { logger } from "../lib/logger";
 
 export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
   const valid: CoachBlock[] = [];
   for (const block of rawBlocks) {
+    // Finder blocks carry flow state the server derives the next step from;
+    // a model-authored one would let model output steer the flow.
+    if (
+      typeof block === "object" &&
+      block !== null &&
+      isFinderBlockType((block as { type?: unknown }).type)
+    ) {
+      logger.debug(
+        { type: (block as { type?: unknown }).type },
+        "Dropped server-only finder block from model output",
+      );
+      continue;
+    }
     const result = coachBlockSchema.safeParse(block);
     if (result.success) {
       valid.push(result.data);
