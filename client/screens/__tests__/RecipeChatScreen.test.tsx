@@ -351,3 +351,140 @@ describe("RecipeChatScreen — pending assistant bubble (stream-end bridge)", ()
     expect(screen.queryByText(/may be incomplete/i)).toBeNull();
   });
 });
+
+// P2-2026-09-25: assistant text (streaming footer + persisted messages) must
+// render through MarkdownText, with the accessibilityLabel built from
+// spokenMarkdown(), so no raw `![`, `](`, URL, `**` or list marker is ever
+// shown or spoken. User and error bubbles are app-authored/user-typed text,
+// not model output, and stay raw (ChatBubble parity, #1087).
+describe("RecipeChatScreen — assistant markdown rendering", () => {
+  const REPLY_WITH_MARKDOWN =
+    "Here's your recipe!\n" +
+    "![Recipe photo](https://example.com/photo.jpg)\n" +
+    "Check the [full recipe](https://example.com/link) online.\n" +
+    "This dish is **amazing**.\n" +
+    "- Preheat the oven\n" +
+    "- Mix the ingredients";
+
+  // What spokenMarkdown() produces for the reply above: image line dropped
+  // entirely, link collapsed to its text, bold markers stripped, bullet
+  // markers stripped — hard-coded here (not computed by calling
+  // spokenMarkdown in the test) so the test pins actual behavior.
+  const REPLY_SPOKEN_CLEAN =
+    "Here's your recipe!\n" +
+    "Check the full recipe online.\n" +
+    "This dish is amazing.\n" +
+    "Preheat the oven\n" +
+    "Mix the ingredients";
+
+  beforeEach(() => {
+    mockRouteParams.value = { conversationId: 1 };
+  });
+
+  it("renders a persisted assistant reply through MarkdownText — no raw image/link/bold/list syntax shown, and the spoken label matches", () => {
+    mockChatMessagesData.value = [
+      {
+        id: 1,
+        conversationId: 1,
+        role: "assistant",
+        content: REPLY_WITH_MARKDOWN,
+        metadata: null,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    const { container } = renderComponent(<RecipeChatScreen />);
+
+    // Clean visible pieces render.
+    expect(screen.getByText("Here's your recipe!")).toBeDefined();
+    expect(screen.getByText("Check the full recipe online.")).toBeDefined();
+    // Bold text renders as its own segment (a full-string match would fail
+    // once ** splits "This dish is amazing." into nested Text nodes).
+    expect(screen.getByText("amazing")).toBeDefined();
+    expect(screen.getByText("Preheat the oven")).toBeDefined();
+    expect(screen.getByText("Mix the ingredients")).toBeDefined();
+
+    // No raw markdown syntax anywhere in the rendered output.
+    expect(container.textContent).not.toContain("![");
+    expect(container.textContent).not.toContain("](");
+    expect(container.textContent).not.toContain("http");
+    expect(container.textContent).not.toContain("**");
+    expect(container.textContent).not.toContain("- Preheat");
+    expect(container.textContent).not.toContain("- Mix");
+
+    // Spoken label matches what's on screen. Disable RTL's default
+    // whitespace-collapsing normalizer — this label is genuinely multi-line
+    // (spokenMarkdown joins with "\n"). The default collapses the node's
+    // label to single spaces but leaves a string matcher untouched, so a
+    // multi-line expected string could never match (measured: both label
+    // tests fail without this).
+    expect(
+      screen.getByLabelText(`RecipeChef: ${REPLY_SPOKEN_CLEAN}`, {
+        normalizer: (text) => text,
+      }),
+    ).toBeDefined();
+  });
+
+  it("renders the streaming footer's assistant reply through MarkdownText with a matching spoken label", () => {
+    const { rerender, container } = renderComponent(<RecipeChatScreen />);
+
+    mockSendMessageState.value = {
+      streamingContent: REPLY_WITH_MARKDOWN,
+      streamingRecipe: null,
+      isStreaming: true,
+      streamError: false,
+      requestError: null,
+    };
+    rerender(<RecipeChatScreen />);
+
+    expect(screen.getByText("Here's your recipe!")).toBeDefined();
+    expect(screen.getByText("amazing")).toBeDefined();
+    expect(container.textContent).not.toContain("![");
+    expect(container.textContent).not.toContain("**");
+    expect(
+      screen.getByLabelText(`RecipeChef: ${REPLY_SPOKEN_CLEAN}`, {
+        normalizer: (text) => text,
+      }),
+    ).toBeDefined();
+  });
+
+  it("keeps a user message's markdown raw — not run through MarkdownText", () => {
+    mockChatMessagesData.value = [
+      {
+        id: 1,
+        conversationId: 1,
+        role: "user",
+        content: "Try **x** ingredient instead",
+        metadata: null,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    renderComponent(<RecipeChatScreen />);
+
+    expect(screen.getByText("Try **x** ingredient instead")).toBeDefined();
+    expect(
+      screen.getByLabelText("You: Try **x** ingredient instead"),
+    ).toBeDefined();
+  });
+
+  it("keeps an error bubble's text raw — not run through MarkdownText", () => {
+    const { rerender } = renderComponent(<RecipeChatScreen />);
+
+    mockSendMessageState.value = {
+      streamingContent: "",
+      streamingRecipe: null,
+      isStreaming: false,
+      streamError: false,
+      requestError: "**Premium** required for this recipe",
+    };
+    rerender(<RecipeChatScreen />);
+
+    expect(
+      screen.getByText("**Premium** required for this recipe"),
+    ).toBeDefined();
+    expect(
+      screen.getByLabelText("Error: **Premium** required for this recipe"),
+    ).toBeDefined();
+  });
+});

@@ -27,8 +27,15 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
-import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
+import {
+  withOpacity,
+  Spacing,
+  BorderRadius,
+  Typography,
+} from "@/constants/theme";
 import { ThemedText } from "@/components/ThemedText";
+import { MarkdownText } from "@/components/MarkdownText";
+import { spokenMarkdown } from "@/components/markdown-text-utils";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { RecipeChatScreenNavigationProp } from "@/types/navigation";
@@ -114,9 +121,11 @@ const RecipeStreamingFooter = React.memo(function RecipeStreamingFooter({
           ]}
           accessible
           accessibilityRole="text"
-          accessibilityLabel={`RecipeChef: ${content}`}
+          accessibilityLabel={`RecipeChef: ${spokenMarkdown(content)}`}
         >
-          <ThemedText>{content}</ThemedText>
+          <MarkdownText style={{ ...Typography.body, color: theme.text }}>
+            {content}
+          </MarkdownText>
         </View>
       ) : (
         <View
@@ -434,6 +443,10 @@ export default function RecipeChatScreen() {
       const isError = !!metadata?.isError;
       const isPendingAssistant = item.id === -5;
       const isAlreadySaved = savedMessageIdsRef.current.has(item.id);
+      // Only assistant prose (not the user's own typed text, not an
+      // app-authored error message) is model output that needs markdown
+      // stripped for both what's shown and what's spoken.
+      const isAssistantProse = !isUser && !isError;
 
       return (
         <View>
@@ -462,16 +475,24 @@ export default function RecipeChatScreen() {
               ]}
               accessible
               accessibilityRole="text"
-              accessibilityLabel={`${isUser ? "You" : isError ? "Error" : "RecipeChef"}: ${item.content}`}
+              accessibilityLabel={`${isUser ? "You" : isError ? "Error" : "RecipeChef"}: ${
+                isAssistantProse ? spokenMarkdown(item.content) : item.content
+              }`}
             >
-              <ThemedText
-                style={[
-                  isUser ? { color: theme.buttonText } : undefined,
-                  isError ? { color: theme.error } : undefined,
-                ]}
-              >
-                {item.content}
-              </ThemedText>
+              {isAssistantProse ? (
+                <MarkdownText style={{ ...Typography.body, color: theme.text }}>
+                  {item.content}
+                </MarkdownText>
+              ) : (
+                <ThemedText
+                  style={[
+                    isUser ? { color: theme.buttonText } : undefined,
+                    isError ? { color: theme.error } : undefined,
+                  ]}
+                >
+                  {item.content}
+                </ThemedText>
+              )}
             </View>
           ) : null}
 
