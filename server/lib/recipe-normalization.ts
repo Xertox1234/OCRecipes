@@ -120,7 +120,7 @@ const UNIT_MAP: Record<string, string> = {
 export function normalizeUnit(unit: string | null | undefined): string {
   if (!unit) return "";
   const lower = unit.toLowerCase().trim();
-  return UNIT_MAP[lower] ?? lower;
+  return Object.hasOwn(UNIT_MAP, lower) ? UNIT_MAP[lower] : lower;
 }
 
 // ── Ingredients ─────────────────────────────────────────────────────────────
