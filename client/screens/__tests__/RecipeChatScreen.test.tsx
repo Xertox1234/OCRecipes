@@ -134,12 +134,6 @@ describe("RecipeChatScreen — safe back navigation", () => {
   });
 });
 
-// P2-2026-09-24: recipe/remix generation keeps running server-side after a
-// disconnect (finish-and-save policy) — the client's job is to stop
-// listening on its own dead XHR and mark the conversation stale so the next
-// view refetches the finished reply. useSendMessage owns the invalidation
-// (see useChat.test.ts); this screen's only responsibility is calling
-// abortStream() on unmount.
 describe("RecipeChatScreen — initialMessage route param (Home's Generate Recipe drawer)", () => {
   it("sends the prefilled request once, in a new recipe conversation", async () => {
     mockCreateConversationMutateAsync.mockResolvedValue({ id: 11 });
@@ -187,6 +181,12 @@ describe("RecipeChatScreen — initialMessage route param (Home's Generate Recip
   });
 });
 
+// P2-2026-09-24: recipe/remix generation keeps running server-side after a
+// disconnect (finish-and-save policy) — the client's job is to stop
+// listening on its own dead XHR and mark the conversation stale so the next
+// view refetches the finished reply. useSendMessage owns the invalidation
+// (see useChat.test.ts); this screen's only responsibility is calling
+// abortStream() on unmount.
 describe("RecipeChatScreen — aborts the stream on unmount", () => {
   it("calls abortStream when the screen unmounts", () => {
     const { unmount } = renderComponent(<RecipeChatScreen />);

@@ -15,6 +15,7 @@ const {
   premiumContextState,
   conversationsState,
   mockCreateConversation,
+  routeState,
 } = vi.hoisted(() => ({
   mockAcknowledge: vi.fn(),
   mockUsePremiumFeature: vi.fn(),
@@ -33,11 +34,12 @@ const {
     data: [] as { id: number; title: string; isPinned: boolean }[],
   },
   mockCreateConversation: vi.fn(),
+  routeState: { params: {} as { selectedConversationId?: number } },
 }));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn(), setParams: vi.fn() }),
-  useRoute: () => ({ params: {} }),
+  useRoute: () => ({ params: routeState.params }),
   useFocusEffect: (cb: () => void) => {
     focusEffectCb.current = cb;
   },
@@ -119,6 +121,7 @@ beforeEach(() => {
   // Defaults preserve the original harness: Coach Pro user, premium resolved.
   premiumContextState.isLoading = false;
   conversationsState.data = [];
+  routeState.params = {};
   mockUsePremiumFeature.mockReturnValue(true);
   mockUseCoachContext.mockReturnValue({
     data: undefined,
@@ -196,6 +199,21 @@ describe("CoachProScreen — New thread", () => {
     fireEvent.click(screen.getByText("mock-create"));
 
     expect(await screen.findByText("conversation:42")).toBeDefined();
+  });
+
+  it("a thread picked from See all after New stays open, and New still empties it", () => {
+    conversationsState.data = [existingThread];
+    const { rerender } = renderComponent(<CoachProScreen />);
+    fireEvent.click(screen.getByLabelText("Start a new coach conversation"));
+
+    routeState.params = { selectedConversationId: 7 };
+    rerender(<CoachProScreen />);
+    expect(screen.getByText("conversation:7")).toBeDefined();
+
+    routeState.params = {};
+    rerender(<CoachProScreen />);
+    fireEvent.click(screen.getByLabelText("Start a new coach conversation"));
+    expect(screen.getByText("conversation:null")).toBeDefined();
   });
 
   it("picking an existing thread after New opens that thread", () => {

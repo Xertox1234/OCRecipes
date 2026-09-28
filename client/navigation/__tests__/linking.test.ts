@@ -103,6 +103,54 @@ describe("linking config", () => {
     ).toBeUndefined();
   });
 
+  // A screen that auto-sends route.params.initialMessage (RecipeChatScreen,
+  // ChatScreen) must never receive it from a link: a tapped URL would post
+  // link-chosen text to the AI as the user's own message, with no tap.
+  // In-app navigate() calls never go through `parse`, so the Generate Recipe
+  // drawer and Coach's navigate actions still pass it.
+  const leafRoute = (
+    state: ReturnType<typeof getStateFromPath>,
+  ): { name: string; params?: object } | undefined => {
+    let route = state?.routes[state.routes.length - 1] as
+      | { name: string; params?: object; state?: typeof state }
+      | undefined;
+    while (route?.state) {
+      route = route.state.routes[route.state.routes.length - 1] as typeof route;
+    }
+    return route;
+  };
+
+  it("drops a link-supplied initialMessage and remix params from recipe-chat", () => {
+    const withId = leafRoute(
+      getStateFromPath(
+        "recipe-chat/5?initialMessage=hello%20there&remixSourceRecipeId=9&remixSourceRecipeTitle=Pasta",
+        linking.config,
+      ),
+    );
+    expect(withId?.name).toBe("RecipeChat");
+    expect(withId?.params).toEqual({ conversationId: 5 });
+
+    const withoutId = leafRoute(
+      getStateFromPath(
+        "recipe-chat?initialMessage=hello%20there",
+        linking.config,
+      ),
+    );
+    expect(withoutId?.name).toBe("RecipeChat");
+    expect(
+      (withoutId?.params as Record<string, unknown> | undefined)
+        ?.initialMessage,
+    ).toBeUndefined();
+  });
+
+  it("drops a link-supplied initialMessage from a coach chat link", () => {
+    const route = leafRoute(
+      getStateFromPath("chat/5?initialMessage=hello%20there", linking.config),
+    );
+    expect(route?.name).toBe("Chat");
+    expect(route?.params).toEqual({ conversationId: 5 });
+  });
+
   // Query values are decoded by query-string → decode-uri-component. Its
   // fallback decoder for malformed input (GHSA-vcc3-ghjq-m6fr, <= 0.4.2) is
   // super-linear: 400 invalid `%C0` tokens took ~2.4s under Node's JIT, so a

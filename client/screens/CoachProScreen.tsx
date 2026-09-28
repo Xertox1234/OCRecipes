@@ -146,6 +146,7 @@ export default function CoachProScreen() {
   useEffect(() => {
     const selectedId = route.params?.selectedConversationId;
     if (selectedId !== undefined) {
+      setIsNewDraft(false);
       setConversationId(selectedId);
       navigation.setParams({ selectedConversationId: undefined });
     }
