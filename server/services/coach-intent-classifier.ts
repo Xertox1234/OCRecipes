@@ -150,9 +150,21 @@ const RECIPE_REQUEST_PATTERNS: { pattern: RegExp; name: string }[] = [
   },
 ];
 
-/** Logging/saving/tracking a meal or recipe is a coach action, not a search. */
-const RECIPE_REQUEST_EXCLUSION_RE =
-  /\b(?:log|logged|logging|save|saved|delete|track)\b[^.?!]{0,30}\b(?:recipe|meal|dinner|lunch|breakfast|brunch)s?\b/i;
+/**
+ * Acting on a meal or a recipe the user already has is a coach action (log,
+ * meal plan, grocery list, substitutions, nutrition), not a search — the
+ * coach's tools answer it (#1151 review). A request for A recipe still routes.
+ */
+const RECIPE_REQUEST_EXCLUSIONS: RegExp[] = [
+  // Logging/saving/tracking.
+  /\b(?:log|logged|logging|save|saved|delete|track)\b[^.?!]{0,30}\b(?:recipe|meal|dinner|lunch|breakfast|brunch)s?\b/i,
+  // A recipe they already have: "this recipe", "my lasagna recipe".
+  /\b(?:this|that|these|those|my)\s+(?:[\w-]+\s+){0,2}recipes?\b/i,
+  // Asking about one: "the calories in the recipe", "a shopping list for it".
+  /\b(?:calories|macros|nutrition|nutrients|protein|carbs|fat|ingredients|grocery list|shopping list|substitutes?|substitutions?)\s+(?:in|of|for|from)\s+(?:the|this|that|these|those|my)\s+(?:[\w-]+\s+){0,2}recipes?\b/i,
+  // Filing one: "add a recipe to my meal plan".
+  /\b(?:add|put)\s+(?:(?:a|an|the)\s+)?(?:[\w-]+\s+){0,2}recipes?\s+(?:to|on|in|into)\b/i,
+];
 
 // ── Classifier ────────────────────────────────────────────────────────────────
 
@@ -194,7 +206,7 @@ export function classifyIntent(
   // ── Rule 2: recipe_request (after safety, before vague/general_fact) ──────
   if (
     opts.recipeRequests !== false &&
-    !RECIPE_REQUEST_EXCLUSION_RE.test(trimmed)
+    !RECIPE_REQUEST_EXCLUSIONS.some((re) => re.test(trimmed))
   ) {
     for (const { pattern, name } of RECIPE_REQUEST_PATTERNS) {
       if (pattern.test(trimmed)) {
