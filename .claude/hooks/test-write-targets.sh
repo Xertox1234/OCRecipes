@@ -58,18 +58,33 @@ assert_eq "rel: cp with an abs source, relative destination"    "$(rel 'cp /abs/
 FX=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/wt-failclosed-XXXXXX")" && pwd -P)
 SID="wtfc-$$"; REG="/tmp/claude-worktree-contracts-$SID"
 trap 'rm -rf "$FX" "$REG"' EXIT
-mkdir -p "$FX/intact" "$FX/broken" "$FX/main" "$REG"
+mkdir -p "$FX/intact" "$FX/broken" "$FX/stubexit" "$FX/stubunset" "$FX/main" "$REG"
 cp -R "$HOOK_DIR/." "$FX/intact/"; cp -R "$HOOK_DIR/." "$FX/broken/"; rm -f "$FX/broken/lib/write-targets.sh"
+# Two more broken flavors: the lib FILE is present (so a naive `[ -f ... ] || deny` guard
+# would miss both), but its BODY breaks the hook's own shell when sourced directly — a brace
+# group is not a subshell. stubexit exits the whole script early; stubunset trips this file's
+# `set -uo pipefail` on an unset-variable expansion. Both must fail CLOSED exactly like the
+# missing-lib case above, not fail open with zero targets.
+cp -R "$HOOK_DIR/." "$FX/stubexit/";   printf 'exit 0\n' > "$FX/stubexit/lib/write-targets.sh"
+cp -R "$HOOK_DIR/." "$FX/stubunset/"; printf 'BAD="${DEFINITELY_NOT_SET}"\n' > "$FX/stubunset/lib/write-targets.sh"
 git -C "$FX/main" init -q
 printf '%s' "$FX/some-worktree" > "$REG/wt1"
 IN=$(jq -n --arg c "rm $FX/elsewhere/x.ts" --arg cwd "$FX/main" --arg sid "$SID" \
   '{tool_name:"Bash", session_id:$sid, cwd:$cwd, tool_input:{command:$c}}')
 DEC_OK=$(printf '%s' "$IN" | bash "$FX/intact/git-safety.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // "none"' 2>/dev/null)
 DEC_BAD=$(printf '%s' "$IN" | bash "$FX/broken/git-safety.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // "none"' 2>/dev/null)
+DEC_STUBEXIT=$(printf '%s' "$IN" | bash "$FX/stubexit/git-safety.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // "none"' 2>/dev/null)
+DEC_STUBUNSET=$(printf '%s' "$IN" | bash "$FX/stubunset/git-safety.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecision // "none"' 2>/dev/null)
 assert_eq "git-safety: lib intact → write outside main allowed" "${DEC_OK:-none}" "none"
 assert_eq "git-safety: lib missing → fails CLOSED" "$DEC_BAD" "deny"
+assert_eq "git-safety: lib present but exit-0 body → fails CLOSED" "${DEC_STUBEXIT:-none}" "deny"
+assert_eq "git-safety: lib present but unset-var body → fails CLOSED" "${DEC_STUBUNSET:-none}" "deny"
 REASON=$(printf '%s' "$IN" | bash "$FX/broken/git-safety.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null)
 assert_contains "git-safety: fail-closed reason names the missing lib" "$REASON" "lib/write-targets.sh did not load"
+REASON_STUBEXIT=$(printf '%s' "$IN" | bash "$FX/stubexit/git-safety.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null)
+assert_contains "git-safety: fail-closed reason names the lib for the exit-0 stub" "$REASON_STUBEXIT" "lib/write-targets.sh did not load"
+REASON_STUBUNSET=$(printf '%s' "$IN" | bash "$FX/stubunset/git-safety.sh" 2>/dev/null | jq -r '.hookSpecificOutput.permissionDecisionReason // ""' 2>/dev/null)
+assert_contains "git-safety: fail-closed reason names the lib for the unset-var stub" "$REASON_STUBUNSET" "lib/write-targets.sh did not load"
 
 . "$HOOK_DIR/lib/mutants.sh"
 mutant "cd/pushd guard dropped" ".claude/hooks/lib/write-targets.sh" \
@@ -78,6 +93,8 @@ mutant "sed script not skipped" ".claude/hooks/lib/write-targets.sh" \
   's/else if \(has_sed && sedpend\) sedpend = 0/else if (0) sedpend = 0/'
 mutant "git-safety fail-closed check removed" ".claude/hooks/git-safety.sh" \
   's/declare -F emit_write_targets >\/dev\/null [|][|] deny/true || deny/'
+mutant "git-safety lib probe forced ok" ".claude/hooks/git-safety.sh" \
+  's/^_WT_OK=\$\(.*\)$/_WT_OK=ok/'
 run_mutants "$PROJECT_ROOT" ".claude/hooks/test-write-targets.sh" || FAIL=1
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

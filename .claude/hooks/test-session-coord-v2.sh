@@ -102,6 +102,8 @@ consult() { # $1 current agent ('' = main), $2 abs path
     | bash "$SCRIPT" consult --stdin-json 2>/dev/null
 }
 ctx()  { jq -r '.hookSpecificOutput.additionalContext // ""' <<<"$1" 2>/dev/null; }
+dec()    { jq -r '.hookSpecificOutput.permissionDecision // "none"' <<<"$1" 2>/dev/null; }
+reason() { jq -r '.hookSpecificOutput.permissionDecisionReason // ""' <<<"$1" 2>/dev/null; }
 
 snap "[$(ses "$OTHER" "[$(fil "$R1/src/x.ts" src/x.ts '' 60)]")]"
 assert_contains "cell other/same abs: warns" "$(ctx "$(consult agentB "$R1/src/x.ts")")" "same checkout"
@@ -128,7 +130,113 @@ assert_empty "Bash consult: non-writing → silent" "$(bcon 'ls src')"
 # Stale snapshot + a holder that appeared since → refreshed synchronously (spec §6.2 step 0)
 q "INSERT INTO harness.files_in_flight (session_id, agent_id, abs_path, rel_path) VALUES ('$OTHER', '', '$R1/src/late.ts', 'src/late.ts')" >/dev/null
 snap "[]"; age_file "$SNAPF" 600
-assert_contains "stale snapshot: new holder seen on the first consult" "$(ctx "$(consult '' "$R1/src/late.ts")")" "Session ${OTHER:0:8}"
+OUT=$(consult '' "$R1/src/late.ts")
+assert_contains "stale snapshot: new holder seen on the first consult" "$(ctx "$OUT")" "Session ${OTHER:0:8}"
+assert_eq "stale snapshot: refreshed holder is confirmed live → ask" "$(dec "$OUT")" "ask"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+
+# --- collision ask (Task 9) ------------------------------------------------------------------
+hold()   { # $1 sid, $2 agent, $3 abs, $4 rel, $5 seconds ago — DB row
+  q "INSERT INTO harness.files_in_flight (session_id, agent_id, abs_path, rel_path, last_touch) VALUES ('$1', '$2', '$3', '$4', now() - make_interval(secs => $5)) ON CONFLICT (session_id, agent_id, abs_path) DO UPDATE SET last_touch = EXCLUDED.last_touch" >/dev/null
+}
+q "INSERT INTO harness.session_registry (session_id, repo_root) VALUES ('$ME', '$R1') ON CONFLICT (session_id) DO UPDATE SET expires_at = now() + interval '15 minutes'" >/dev/null
+q "UPDATE harness.session_registry SET expires_at = now() + interval '15 minutes'" >/dev/null
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+
+hold "$OTHER" '' "$R1/src/k.ts" src/k.ts 60
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"
+LOG_BEFORE=$(q "SELECT count(*) FROM harness.coordination_log WHERE event='ask-collision' AND session_id='$ME'")
+OUT=$(consult '' "$R1/src/k.ts")
+assert_eq "ask: confirmed live other-session hold" "$(dec "$OUT")" "ask"
+assert_contains "ask: reason names the holder" "$(reason "$OUT")" "Session ${OTHER:0:8}"
+assert_contains "ask: reason says approve" "$(reason "$OUT")" "Approve to edit anyway."
+assert_contains "ask: model context present" "$(ctx "$OUT")" "Collision:"
+sleep 1   # log_event is backgrounded
+LOG_AFTER=$(q "SELECT count(*) FROM harness.coordination_log WHERE event='ask-collision' AND session_id='$ME'")
+assert_eq "ask: exactly one telemetry row for this ask" "$((LOG_AFTER - LOG_BEFORE))" "1"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/ghost.ts" src/ghost.ts '' 60)]")]"
+assert_eq "ask: snapshot hit not confirmed live → warn" "$(dec "$(consult '' "$R1/src/ghost.ts")")" "none"
+
+hold "$OTHER" '' "$R1/src/b14.ts" src/b14.ts 840
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/b14.ts" src/b14.ts '' 840)]")]"
+assert_eq "ask: boundary 14 min → ask" "$(dec "$(consult '' "$R1/src/b14.ts")")" "ask"
+hold "$OTHER" '' "$R1/src/b16.ts" src/b16.ts 960
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/b16.ts" src/b16.ts '' 960)]")]"
+assert_eq "ask: boundary 16 min → warn" "$(dec "$(consult '' "$R1/src/b16.ts")")" "none"
+
+hold "$ME" agentA1 "$R1/src/sib.ts" src/sib.ts 60
+snap "[$(ses "$ME" "[$(fil "$R1/src/sib.ts" src/sib.ts agentA1 60)]")]"
+OUT=$(consult agentB "$R1/src/sib.ts")
+assert_eq "ask: sibling agent confirmed → warn only (siblings never ask)" "$(dec "$OUT")" "none"
+assert_contains "ask: sibling still gets the warn text" "$(ctx "$OUT")" "in this same session"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"
+assert_eq "ask: SKIP_COLLISION_ASK=1 → warn" "$(dec "$(SKIP_COLLISION_ASK=1 consult '' "$R1/src/k.ts")")" "none"
+
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"
+assert_eq "ask: pg down + fresh snapshot → ask" "$(dec "$(LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" consult '' "$R1/src/k.ts")")" "ask"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"; age_file "$SNAPF" 70
+assert_eq "ask: pg down + 70 s snapshot → warn" "$(dec "$(LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" consult '' "$R1/src/k.ts")")" "none"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"
+assert_empty "consult: agent_id with a space is rejected" "$(consult 'agent B' "$R1/src/k.ts")"
+
+# --- ask-once suppression (Task 10) ------------------------------------------------------------
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+hold "$OTHER" '' "$R1/src/once.ts" src/once.ts 60
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/once.ts" src/once.ts '' 60)]")]"
+assert_eq "once: first edit asks" "$(dec "$(consult agentB "$R1/src/once.ts")")" "ask"
+POST=$(jq -n --arg s "$ME" --arg f "$R1/src/once.ts" '{session_id:$s, agent_id:"agentB", tool_name:"Edit", tool_input:{file_path:$f}}')
+printf '%s' "$POST" | bash "$SHIM" record
+M="/tmp/claude-session-coord-${ME}.asks/$(printf '%s\037%s' "$R1/src/once.ts" agentB | shasum | cut -c1-40)"
+assert_eq "once: shim promotes synchronously (no wait)" "$(cut -d' ' -f1 "$M" 2>/dev/null)" "approved"
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/once.ts" src/once.ts '' 60)]")]"
+assert_eq "once: approved holder → warn next time" "$(dec "$(consult agentB "$R1/src/once.ts")")" "none"
+assert_eq "once: another agent is asked separately" "$(dec "$(consult agentC "$R1/src/once.ts")")" "ask"
+printf 'approved %s:%s %s\n' "$OTHER" "" "$(( $(date +%s) - 960 ))" > "$M"
+assert_eq "once: approval older than 15 min → ask again" "$(dec "$(consult agentB "$R1/src/once.ts")")" "ask"
+printf 'approved %s:%s %s\n' "someone-else" "" "$(date +%s)" > "$M"
+assert_eq "once: approval for a different holder → ask" "$(dec "$(consult agentB "$R1/src/once.ts")")" "ask"
+# SESSION_COORD_CLAUDE_PID seams do_deregister's claude_pid() walk so it never touches the
+# REAL live session's bridge file (/tmp/claude-session-coord-pid-<realpid>.sid) — every
+# other register/deregister call in both suites sets this seam; this one didn't (fix round 1).
+SC_STUB_PID=$((50000000 + $$))
+jq -n --arg s "$ME" '{session_id:$s}' | SESSION_COORD_CLAUDE_PID="$SC_STUB_PID" bash "$SHIM" deregister
+[ ! -d "/tmp/claude-session-coord-${ME}.asks" ] && echo "ok: deregister removes the asks dir" || { echo "FAIL: asks dir survived deregister"; FAIL=1; }
+
+# --- deny then downgrade must never promote a stale pending marker (fix round 1, item 1) ------
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+hold "$OTHER" '' "$R1/src/deny.ts" src/deny.ts 60
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/deny.ts" src/deny.ts '' 60)]")]"
+assert_eq "deny: first edit asks" "$(dec "$(consult agentB "$R1/src/deny.ts")")" "ask"
+MD="/tmp/claude-session-coord-${ME}.asks/$(printf '%s\037%s' "$R1/src/deny.ts" agentB | shasum | cut -c1-40)"
+assert_eq "deny: marker is pending" "$(cut -d' ' -f1 "$MD" 2>/dev/null)" "pending"
+# No record here — the tool never ran, simulating a deny.
+assert_eq "deny: later downgraded consult (SKIP_COLLISION_ASK) → warn" "$(dec "$(SKIP_COLLISION_ASK=1 consult agentB "$R1/src/deny.ts")")" "none"
+POSTD=$(jq -n --arg s "$ME" --arg f "$R1/src/deny.ts" '{session_id:$s, agent_id:"agentB", tool_name:"Edit", tool_input:{file_path:$f}}')
+printf '%s' "$POSTD" | bash "$SHIM" record
+assert_eq "deny: stale pending marker is never silently approved" "$([ -f "$MD" ] && cut -d' ' -f1 "$MD" || echo absent)" "absent"
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/deny.ts" src/deny.ts '' 60)]")]"
+assert_eq "deny: a real collision still asks after the downgrade" "$(dec "$(consult agentB "$R1/src/deny.ts")")" "ask"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+
+# --- Bash-write promote path (fix round 1, item 4) ---------------------------------------------
+bjson() { jq -n --arg s "$ME" --arg a "$1" --arg c "$2" --arg cwd "$R1" \
+  '{session_id:$s, agent_id:$a, tool_name:"Bash", cwd:$cwd, tool_input:{command:$c}}'; }
+hold "$OTHER" '' "$R1/src/bpromo.ts" src/bpromo.ts 60
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/bpromo.ts" src/bpromo.ts '' 60)]")]"
+assert_eq "bash-promote: consult on a Bash write asks" "$(dec "$(bjson agentB 'rm ./src/bpromo.ts' | bash "$SCRIPT" consult --stdin-json 2>/dev/null)")" "ask"
+bjson agentB 'rm ./src/bpromo.ts' | bash "$SHIM" record
+MB="/tmp/claude-session-coord-${ME}.asks/$(printf '%s\037%s' "$R1/src/bpromo.ts" agentB | shasum | cut -c1-40)"
+assert_eq "bash-promote: marker approved via the Bash PostToolUse record" "$(cut -d' ' -f1 "$MB" 2>/dev/null)" "approved"
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/bpromo.ts" src/bpromo.ts '' 60)]")]"
+assert_eq "bash-promote: next Bash consult is warn-only" "$(dec "$(bjson agentB 'rm ./src/bpromo.ts' | bash "$SCRIPT" consult --stdin-json 2>/dev/null)")" "none"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
 
 . "$HOOK_DIR/lib/mutants.sh"
 mutant "is_self ignores agent_id (all own rows = self)" "scripts/pg-lab/session-coord.sh" \
@@ -141,6 +249,18 @@ mutant "refresh excludes own session again" "scripts/pg-lab/session-coord.sh" \
   "s/^  WHERE r\\.expires_at > now\\(\\)\$/  WHERE r.session_id <> :'sid' AND r.expires_at > now()/"
 mutant "stale snapshot refreshed in background only" "scripts/pg-lab/session-coord.sh" \
   's/then refresh_bounded "\$sid";/then refresh_bounded "$sid" \&/'
+mutant "sibling collision also asks (own=0 gate dropped)" "scripts/pg-lab/session-coord.sh" \
+  's/ && \[ "\$own" = "0" \]; then/; then/'
+mutant "ask becomes allow" "scripts/pg-lab/session-coord.sh" \
+  's/permissionDecision:"ask"/permissionDecision:"allow"/'
+mutant "live confirm skipped (snapshot trusted)" "scripts/pg-lab/session-coord.sh" \
+  's/case "\$\(live_confirm "\$osid" "\$oagent" "\$file"\)" in/case "yes" in/'
+mutant "touch window 15 min → 150 min" "scripts/pg-lab/session-coord.sh" \
+  's/^WINDOW_SECS=900 /WINDOW_SECS=9000 /'
+mutant "approved markers ignored" "scripts/pg-lab/session-coord.sh" \
+  's/elif ask_suppressed /elif false \&\& ask_suppressed /'
+mutant "consult purge of stale pending ask markers disabled" "scripts/pg-lab/session-coord.sh" \
+  's/&& rm -f "\$pm"$/\&\& false \&\& rm -f "\$pm"/'
 run_mutants "$PROJECT_ROOT" ".claude/hooks/test-session-coord-v2.sh" || FAIL=1
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

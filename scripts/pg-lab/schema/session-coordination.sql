@@ -3,7 +3,7 @@
 -- Schema for cross-terminal session coordination (PG Lab Phase D) — spec:
 -- docs/superpowers/specs/2026-07-10-pg-session-coordination-design.md (local-only).
 --
--- session_registry and files_in_flight are EPHEMERAL lease tables (TTL 10 min,
+-- session_registry and files_in_flight are EPHEMERAL lease tables (TTL 15 min,
 -- reap-on-read): drop them mid-session and they repopulate within one heartbeat.
 -- Nothing durable may ever read them. coordination_log is the ONLY durable table —
 -- an APPEND-ONLY event ledger feeding the ~60-day value probe (spec §10).
@@ -44,9 +44,11 @@ CREATE INDEX IF NOT EXISTS files_in_flight_rel_idx ON harness.files_in_flight (r
 CREATE TABLE IF NOT EXISTS harness.coordination_log (
     id            BIGSERIAL PRIMARY KEY,
     ts            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    event         TEXT NOT NULL, -- warn-collision | warn-worktree | drift-attributed |
-                                 -- drift-unattributed | lock-acquired | lock-waited |
-                                 -- lock-timeout | lock-released | lock-orphan-released
+    event         TEXT NOT NULL, -- warn-collision | warn-collision-sibling | warn-worktree |
+                                 -- warn-worktree-sibling | drift-attributed | drift-unattributed |
+                                 -- ask-collision | ask-downgraded |
+                                 -- lock-acquired | lock-waited | lock-timeout | lock-released |
+                                 -- lock-orphan-released
     session_id    TEXT,
     other_session TEXT,
     detail        JSONB
