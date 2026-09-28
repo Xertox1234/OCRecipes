@@ -382,6 +382,25 @@ SQL
   fi
 }
 
+do_promote() { # PostToolUse JSON on stdin: pending -> approved for each target (the tool RAN, so the user approved)
+  local input sid agent d f m st h ts
+  input=$(cat)
+  sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
+  case "$sid" in ''|.|..|*[!A-Za-z0-9._-]*) exit 0 ;; esac
+  d=$(ask_dir "$sid"); [ -d "$d" ] || exit 0
+  agent=$(jq -r '.agent_id // ""' <<<"$input" 2>/dev/null)
+  case "$agent" in *[!A-Za-z0-9._-]*) exit 0 ;; esac
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    m="$d/$(ask_key "$f" "$agent")"
+    [ -f "$m" ] || continue
+    read -r st h ts < "$m" || continue
+    [ "$st" = pending ] || continue
+    printf 'approved %s %s\n' "$h" "$(date +%s)" > "$m"
+    log_event "ask-approved" "$sid" "${h%%:*}" "{\"file\":$(jq -Rn --arg v "$f" '$v')}" >/dev/null 2>&1 &
+  done <<<"$(target_paths "$input")"
+}
+
 SUB="${1:-}"; [ $# -gt 0 ] && shift
 case "$SUB" in
   register)         do_register "$@" ;;
@@ -390,6 +409,7 @@ case "$SUB" in
   deregister)       do_deregister ;;
   refresh-snapshot) do_refresh_snapshot "$@" ;;
   consult)          do_consult "$@" ;;
+  promote)          do_promote ;;
   attribute-drift)  do_attribute_drift "$@" ;;
 esac
 exit 0

@@ -21,6 +21,7 @@ if [ "$SUB" = "deregister" ] && command -v jq >/dev/null 2>&1; then
   # through.
   case "$SESSION_ID" in ''|.|..|*[!A-Za-z0-9._-]*) SESSION_ID="" ;; esac
   [ -n "$SESSION_ID" ] && rm -rf "/tmp/claude-worktree-contracts-${SESSION_ID}"
+  [ -n "$SESSION_ID" ] && rm -rf "/tmp/claude-session-coord-${SESSION_ID}.asks"
   # Context ledger (docs/superpowers/specs/2026-09-12-context-ledger-design.md §4.4).
   # Same guarded SESSION_ID, same SessionEnd wiring — a second cleanup hook would be a
   # second thing to forget.
@@ -58,6 +59,10 @@ case "$SUB" in
     printf '%s' "$INPUT" | bash "$SCRIPT" consult --stdin-json
     ;;
   register|record|deregister)
+    # Ask-once promotion is a LOCAL file write done synchronously BEFORE record is
+    # backgrounded — otherwise the model's next edit can reach consult before the marker
+    # flips, and the user gets a second prompt (spec 2026-09-27 §6.4).
+    [ "$SUB" = "record" ] && printf '%s' "$INPUT" | bash "$SCRIPT" promote --stdin-json >/dev/null 2>&1
     # --stdin-json is only meaningful to register's CLI/hook-mode branch; record and
     # deregister always read stdin unconditionally and ignore the flag entirely.
     printf '%s' "$INPUT" | bash "$SCRIPT" "$SUB" --stdin-json >/dev/null 2>&1 &

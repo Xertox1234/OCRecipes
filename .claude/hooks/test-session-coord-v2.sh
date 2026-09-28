@@ -186,6 +186,25 @@ rm -rf "/tmp/claude-session-coord-${ME}.asks"
 snap "[$(ses "$OTHER" "[$(fil "$R1/src/k.ts" src/k.ts '' 60)]")]"
 assert_empty "consult: agent_id with a space is rejected" "$(consult 'agent B' "$R1/src/k.ts")"
 
+# --- ask-once suppression (Task 10) ------------------------------------------------------------
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+hold "$OTHER" '' "$R1/src/once.ts" src/once.ts 60
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/once.ts" src/once.ts '' 60)]")]"
+assert_eq "once: first edit asks" "$(dec "$(consult agentB "$R1/src/once.ts")")" "ask"
+POST=$(jq -n --arg s "$ME" --arg f "$R1/src/once.ts" '{session_id:$s, agent_id:"agentB", tool_name:"Edit", tool_input:{file_path:$f}}')
+printf '%s' "$POST" | bash "$SHIM" record
+M="/tmp/claude-session-coord-${ME}.asks/$(printf '%s\037%s' "$R1/src/once.ts" agentB | shasum | cut -c1-40)"
+assert_eq "once: shim promotes synchronously (no wait)" "$(cut -d' ' -f1 "$M" 2>/dev/null)" "approved"
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/once.ts" src/once.ts '' 60)]")]"
+assert_eq "once: approved holder → warn next time" "$(dec "$(consult agentB "$R1/src/once.ts")")" "none"
+assert_eq "once: another agent is asked separately" "$(dec "$(consult agentC "$R1/src/once.ts")")" "ask"
+printf 'approved %s:%s %s\n' "$OTHER" "" "$(( $(date +%s) - 960 ))" > "$M"
+assert_eq "once: approval older than 15 min → ask again" "$(dec "$(consult agentB "$R1/src/once.ts")")" "ask"
+printf 'approved %s:%s %s\n' "someone-else" "" "$(date +%s)" > "$M"
+assert_eq "once: approval for a different holder → ask" "$(dec "$(consult agentB "$R1/src/once.ts")")" "ask"
+jq -n --arg s "$ME" '{session_id:$s}' | bash "$SHIM" deregister
+[ ! -d "/tmp/claude-session-coord-${ME}.asks" ] && echo "ok: deregister removes the asks dir" || { echo "FAIL: asks dir survived deregister"; FAIL=1; }
+
 . "$HOOK_DIR/lib/mutants.sh"
 mutant "is_self ignores agent_id (all own rows = self)" "scripts/pg-lab/session-coord.sh" \
   's/^( *def is_self\(\$s; \$x\): \(\$s\.session_id == \$me\)) and .*;$/\1;/'
@@ -199,6 +218,14 @@ mutant "stale snapshot refreshed in background only" "scripts/pg-lab/session-coo
   's/then refresh_bounded "\$sid";/then refresh_bounded "$sid" \&/'
 mutant "sibling collision also asks (own=0 gate dropped)" "scripts/pg-lab/session-coord.sh" \
   's/ && \[ "\$own" = "0" \]; then/; then/'
+mutant "ask becomes allow" "scripts/pg-lab/session-coord.sh" \
+  's/permissionDecision:"ask"/permissionDecision:"allow"/'
+mutant "live confirm skipped (snapshot trusted)" "scripts/pg-lab/session-coord.sh" \
+  's/case "\$\(live_confirm "\$osid" "\$oagent" "\$file"\)" in/case "yes" in/'
+mutant "touch window 15 min → 150 min" "scripts/pg-lab/session-coord.sh" \
+  's/^WINDOW_SECS=900 /WINDOW_SECS=9000 /'
+mutant "approved markers ignored" "scripts/pg-lab/session-coord.sh" \
+  's/elif ask_suppressed /elif false \&\& ask_suppressed /'
 run_mutants "$PROJECT_ROOT" ".claude/hooks/test-session-coord-v2.sh" || FAIL=1
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
