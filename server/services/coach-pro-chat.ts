@@ -25,7 +25,7 @@ import {
   type CoachContext,
 } from "./nutrition-coach";
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
-import { parseBlocksFromContent, BLOCKS_SYSTEM_PROMPT } from "./coach-blocks";
+import { parseBlocksFromContent, getBlocksSystemPrompt } from "./coach-blocks";
 import { extractNotebookEntries } from "./notebook-extraction";
 import {
   sanitizeContextField,
@@ -47,6 +47,17 @@ import {
 import type { DailyLog, UserProfile } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import type { MeasurementUnit } from "@shared/lib/units";
+import type { FinderAction } from "@shared/schemas/recipe-finder";
+import {
+  classifyTurn,
+  decideCoachFinderEntry,
+  isRecipeFinderEnabled,
+  type FinderFeatures,
+} from "./recipe-finder";
+import {
+  runCoachFinderTurn,
+  type CoachFinderTurnEntry,
+} from "./recipe-finder/coach-turn";
 
 const log = createServiceLogger("coach-pro-chat");
 
@@ -214,6 +225,17 @@ export interface CoachChatParams {
   abortSignal?: AbortSignal;
   /** IANA timezone of the requesting user, e.g. "America/Los_Angeles". Defaults to UTC. */
   tz?: string;
+  /**
+   * Recipe finder (spec 2026-09-28). The route passes this ONLY when
+   * RECIPE_FINDER_ENABLED is on and the user is Coach Pro; absent → today's
+   * behavior exactly.
+   */
+  finder?: {
+    action?: FinderAction;
+    /** This turn's user row — Generate/Spoonacular claims mark it. */
+    userMessageId: number;
+    features: FinderFeatures;
+  };
 }
 
 /**
@@ -527,7 +549,52 @@ export async function* handleCoachChat(
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
-  const { intent } = classifyIntent(content);
+  const { intent: classifiedIntent } = classifyIntent(content);
+  // A recipe_request that does not enter the finder (flag off, free Coach, a
+  // turn routed elsewhere) keeps the prompt intent it had before this intent
+  // existed — flag-off Coach is unchanged (spec §8).
+  const intent: CoachIntent =
+    classifiedIntent === "recipe_request"
+      ? classifyIntent(content, { recipeRequests: false }).intent
+      : classifiedIntent;
+
+  // ── Recipe finder (Coach Pro, flag on) — early return (R2) ──
+  if (params.finder && isCoachPro) {
+    const recent = await storage.getChatMessages(conversationId, 20, userId);
+    const entry = decideCoachFinderEntry(
+      recent,
+      content,
+      classifiedIntent,
+      params.finder.action,
+    );
+    let finderEntry: CoachFinderTurnEntry | null = null;
+    if (entry.kind === "finder") {
+      finderEntry = { kind: "finder", input: entry.input };
+    } else if (entry.kind === "classify") {
+      const turn = await classifyTurn(content, entry.recipeTitle);
+      if (turn === "new_request") {
+        finderEntry = {
+          kind: "finder",
+          input: { kind: "start", text: content },
+        };
+      } else if (turn === "refine_current") {
+        finderEntry = { kind: "refine" };
+      }
+    }
+    if (finderEntry) {
+      yield* runCoachFinderTurn({
+        conversationId,
+        userId,
+        content,
+        turnKey,
+        history: recent,
+        userMessageId: params.finder.userMessageId,
+        entry: finderEntry,
+        features: params.finder.features,
+      });
+      return;
+    }
+  }
 
   const today = new Date();
 
@@ -652,7 +719,7 @@ export async function* handleCoachChat(
   // ── Coach Pro: inject notebook context ──────────────
   if (tierConfig.fetchNotebook) {
     // Always provide blocks formatting instructions for Pro responses
-    context.blocksPrompt = BLOCKS_SYSTEM_PROMPT;
+    context.blocksPrompt = getBlocksSystemPrompt(isRecipeFinderEnabled());
 
     // notebookEntries fetched in parallel above (audit 2026-05-10, H4)
     if (notebookEntries.length > 0) {

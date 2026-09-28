@@ -10,6 +10,10 @@ import {
 } from "@shared/types/recipe-catalog";
 import { createServiceLogger, toError } from "../lib/logger";
 import { cachedFetch } from "./dev-api-cache";
+import {
+  parseUserAllergies,
+  type AllergenId,
+} from "@shared/constants/allergens";
 
 const log = createServiceLogger("recipe-catalog");
 
@@ -345,3 +349,32 @@ export async function getSpoonacularSubstitutes(
 
 // Re-export for testing
 export { findNutrient, mapToMealPlanRecipe, recipeDetailSchema };
+
+/**
+ * Maps OCRecipes allergen IDs to Spoonacular intolerance parameter values.
+ * See: https://spoonacular.com/food-api/docs#Intolerances
+ * (Moved from server/routes/recipe-catalog.ts so the recipe finder shares it.)
+ */
+const SPOONACULAR_INTOLERANCE_MAP: Partial<Record<AllergenId, string>> = {
+  peanuts: "peanut",
+  tree_nuts: "tree nut",
+  milk: "dairy",
+  eggs: "egg",
+  wheat: "wheat",
+  soy: "soy",
+  fish: "seafood",
+  shellfish: "shellfish",
+  sesame: "sesame",
+};
+
+export function buildIntolerancesParam(allergies: unknown): string | undefined {
+  const parsed = parseUserAllergies(allergies);
+  if (parsed.length === 0) return undefined;
+  const values: string[] = [];
+  for (const allergy of parsed) {
+    const spoonacularValue =
+      SPOONACULAR_INTOLERANCE_MAP[allergy.name as AllergenId];
+    if (spoonacularValue) values.push(spoonacularValue);
+  }
+  return values.length > 0 ? values.join(",") : undefined;
+}

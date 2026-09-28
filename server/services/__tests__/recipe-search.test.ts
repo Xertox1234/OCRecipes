@@ -343,6 +343,23 @@ describe("searchRecipes — text search", () => {
     expect(result.total).toBe(0);
   });
 
+  it("returns per-result relevance scores only when includeScores is set", async () => {
+    await initSearchIndex();
+    const withScores = await searchRecipes({ q: "chicken" }, "user1", {
+      includeScores: true,
+    });
+    expect(withScores.scores).toBeDefined();
+    const ids = withScores.results.map((r) => r.id);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(Object.keys(withScores.scores!).sort()).toEqual([...ids].sort());
+    const ordered = ids.map((id) => withScores.scores![id]);
+    expect(ordered).toEqual([...ordered].sort((a, b) => b - a));
+    expect(ordered.every((s) => s > 0)).toBe(true);
+
+    const plain = await searchRecipes({ q: "chicken" }, "user1");
+    expect(plain.scores).toBeUndefined();
+  });
+
   it("concurrent initSearchIndex calls share a single in-flight load", async () => {
     // resetSearchIndex() is already called in beforeEach; no need to repeat it here.
     // Both callers start before initialized = true; without the init-promise

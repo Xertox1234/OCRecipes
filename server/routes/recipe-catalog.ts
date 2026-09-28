@@ -4,15 +4,12 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { isUniqueViolation } from "../lib/db-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import {
-  parseUserAllergies,
-  type AllergenId,
-} from "@shared/constants/allergens";
 import { inferMealTypes } from "../services/meal-type-inference";
 import {
   searchCatalogRecipes,
   getCatalogRecipeDetail,
   CatalogQuotaError,
+  buildIntolerancesParam,
 } from "../services/recipe-catalog";
 import { mealPlanRateLimit } from "./_rate-limiters";
 import {
@@ -22,34 +19,6 @@ import {
   parsePositiveIntParam,
 } from "./_helpers";
 import { catalogSearchSchema } from "@shared/schemas/recipe";
-
-/**
- * Maps OCRecipes allergen IDs to Spoonacular intolerance parameter values.
- * See: https://spoonacular.com/food-api/docs#Intolerances
- */
-const SPOONACULAR_INTOLERANCE_MAP: Partial<Record<AllergenId, string>> = {
-  peanuts: "peanut",
-  tree_nuts: "tree nut",
-  milk: "dairy",
-  eggs: "egg",
-  wheat: "wheat",
-  soy: "soy",
-  fish: "seafood",
-  shellfish: "shellfish",
-  sesame: "sesame",
-};
-
-function buildIntolerancesParam(allergies: unknown): string | undefined {
-  const parsed = parseUserAllergies(allergies);
-  if (parsed.length === 0) return undefined;
-  const values: string[] = [];
-  for (const allergy of parsed) {
-    const spoonacularValue =
-      SPOONACULAR_INTOLERANCE_MAP[allergy.name as AllergenId];
-    if (spoonacularValue) values.push(spoonacularValue);
-  }
-  return values.length > 0 ? values.join(",") : undefined;
-}
 
 export function register(app: Express): void {
   // GET /api/meal-plan/catalog/search — Spoonacular search (premium)

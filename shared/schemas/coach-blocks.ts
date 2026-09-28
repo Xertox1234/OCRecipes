@@ -1,6 +1,10 @@
 // shared/schemas/coach-blocks.ts
 import { z } from "zod";
 import { mealPlanDaySchema, type MealPlanDay } from "./meal-plan";
+import {
+  recipeResultsBlockSchema,
+  recipeQuestionsBlockSchema,
+} from "./recipe-finder";
 
 // ── Action types for cards ──────────────────────────────────────────
 
@@ -286,6 +290,9 @@ export const mealPlanCardSchema = z.object({
 
 // ── Discriminated union of all blocks ───────────────────────────────
 
+// recipe_results / recipe_questions are SERVER-BUILT (recipe finder, R6):
+// registered here so filterValidBlocks keeps them, but the model may never
+// author one — server/services/coach-blocks.ts drops them from model output.
 export const coachBlockSchema = z.discriminatedUnion("type", [
   actionCardSchema,
   suggestionListSchema,
@@ -294,6 +301,8 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   quickRepliesSchema,
   recipeCardSchema,
   mealPlanCardSchema,
+  recipeResultsBlockSchema,
+  recipeQuestionsBlockSchema,
 ]);
 
 export type CoachBlock = z.infer<typeof coachBlockSchema>;
@@ -304,6 +313,7 @@ export type CommitmentCard = z.infer<typeof commitmentCardSchema>;
 export type QuickReplies = z.infer<typeof quickRepliesSchema>;
 export type RecipeCard = z.infer<typeof recipeCardSchema>;
 export type MealPlanCard = z.infer<typeof mealPlanCardSchema>;
+export type { RecipeResultsBlock, RecipeQuestionsBlock } from "./recipe-finder";
 /**
  * Re-exported from `@shared/schemas/meal-plan` for backward compatibility.
  * New code should import `MealPlanDay` directly from `@shared/types/meal-plan`
