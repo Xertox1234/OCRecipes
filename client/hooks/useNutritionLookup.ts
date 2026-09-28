@@ -1,4 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useNavigation } from "@react-navigation/native";
 import {
   useMutation,
@@ -11,18 +18,13 @@ import * as Haptics from "expo-haptics";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useAuthContext } from "@/context/AuthContext";
-import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { apiRequest } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { logger } from "@/lib/logger";
 import { QUERY_KEYS } from "@/lib/query-keys";
-import { tokenStorage } from "@/lib/token-storage";
 import type { MicronutrientData } from "@/components/MicronutrientSection";
-import type { VerificationLevel } from "@shared/types/verification";
-import { barcodeLookupResponseSchema } from "@shared/types/barcode-lookup";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
 import {
-  validateAndNormalizeNutrition,
   scaleNutrition,
   getServingSizeOptions,
   type ValidatedNutrition,
@@ -31,36 +33,17 @@ import {
 } from "@/lib/serving-size-utils";
 import { enqueue } from "@/lib/offline-queue";
 import type { ScannedItemResponse } from "@/types/api";
-import {
-  createAllergenUnavailableFlag,
-  type ScanFlag,
-} from "@shared/types/scan-flags";
-import {
-  parseNutritionFromOCR,
-  isLabelReady,
-  toLabelNutritionPayload,
-} from "@/lib/nutrition-ocr-parser";
 import { deriveLogGate } from "@/screens/nutrition-detail-utils";
+import {
+  lookupBarcode,
+  lookupStateFromOutcome,
+  beginLookup,
+  INITIAL_LOOKUP_STATE,
+  type LookupState,
+  type NutritionData,
+} from "./nutrition-lookup-outcome";
 
-export interface NutritionData {
-  id?: number;
-  productName: string;
-  brandName?: string;
-  servingSize?: string;
-  calories?: number;
-  protein?: number;
-  carbs?: number;
-  fat?: number;
-  fiber?: number;
-  sugar?: number;
-  sodium?: number;
-  saturatedFat?: number;
-  transFat?: number;
-  cholesterol?: number;
-  caffeine?: number;
-  imageUrl?: string;
-  barcode?: string;
-}
+export type { NutritionData } from "./nutrition-lookup-outcome";
 
 export function useNutritionLookup(params: {
   barcode?: string;
@@ -80,114 +63,263 @@ export function useNutritionLookup(params: {
   const toast = useToast();
   const { user } = useAuthContext();
 
-  const [nutrition, setNutrition] = useState<NutritionData | null>(null);
-  const [flags, setFlags] = useState<ScanFlag[]>([]);
-  const [verificationLevel, setVerificationLevel] =
-    useState<VerificationLevel>("unverified");
-  /**
-   * Null means "no signal" — an older server, a USDA-only match, or an OFF
-   * product with no `categories_tags` all omit the key entirely rather than
-   * sending `false`, since the server has no basis to claim certainty either
-   * way. `resolveBasis` treats null as unknown rather than defaulting to the
-   * food scale, which would halve the strictness applied to a real drink.
-   */
-  const [isBeverage, setIsBeverage] = useState<boolean | null>(null);
-  const [hasFrontLabelData, setHasFrontLabelData] = useState(false);
+  // Every lookup-owned result field lives in ONE object, set atomically from
+  // a `LookupOutcome` (see `nutrition-lookup-outcome.ts`). `beginLookup` and
+  // `lookupStateFromOutcome` are pure and total, so no exit path can forget
+  // to reset a field or leak a prior product's value into a failing lookup —
+  // a lookup's result is always committed as one whole-object swap. (The
+  // field-level `setLookup` updates below are user-driven edits — serving
+  // changes, source toggles, manual search — not lookup exits.)
+  const [lookup, setLookup] = useState<LookupState>(INITIAL_LOOKUP_STATE);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isPer100g, setIsPer100g] = useState(false);
   const [servingQuantity, setServingQuantity] = useState(1);
-  /**
-   * Null until a barcode lookup resolves a real gram weight. The initialiser
-   * is the honest "no basis known" value, and `effectivePer100g`'s guard below
-   * returns null rather than fabricating one from it.
-   *
-   * Do not "fix" a null here by parsing a serving string into it. The FSA
-   * basis and the portion weight are resolved from the ONE string through the
-   * ONE parser, in `client/components/nutrition/nutrition-band-source.ts`,
-   * precisely so those two can never describe different portions. Populating
-   * this as a second, independent answer to the same question reintroduces
-   * exactly that drift.
-   *
-   * Per-consumer parsing is the standing pattern here. Decision recorded
-   * 2026-08-15 (human-led) in
-   * `todos/archive/P3-2026-08-15-should-saved-item-path-populate-servingsizegrams.md`.
-   * That record reasons about a saved-item path this hook no longer has (the
-   * `itemId` branch was removed 2026-09-17 — see
-   * `RootStackParamList["NutritionDetail"]`), but its conclusion holds on the
-   * paths that remain, for the same one-parser reason.
-   */
-  const [servingSizeGrams, setServingSizeGrams] = useState<number | null>(null);
   const [customGramsInput, setCustomGramsInput] = useState("");
   const [showCustomInput, setShowCustomInput] = useState(false);
-  const [validatedData, setValidatedData] = useState<ValidatedNutrition | null>(
-    null,
-  );
-  const [correctionNotice, setCorrectionNotice] = useState<string | null>(null);
-  /**
-   * Set when the user photographed a nutrition label that could not be used, so
-   * the values on screen came from the product database instead.
-   *
-   * Deliberately silent when no label was captured at all — a barcode-only scan
-   * never promised to use a label, so warning there would train the user to
-   * dismiss the message on the happy path.
-   */
-  const [labelReadNotice, setLabelReadNotice] = useState<string | null>(null);
-  /**
-   * True when a photographed label was parsed, accepted by the readiness gate,
-   * AND the server reports it actually compared the label against the record
-   * (`labelCompared`) — i.e. the values on screen have been checked against the
-   * package, either because the label overrode the record or because the two
-   * agreed.
-   *
-   * A 200 is NOT sufficient on its own: the server declines to compare on an
-   * unparseable or implausible serving, or when the record has no counterpart for
-   * any field the label read, and those return the same body shape as agreement.
-   * The client's own readiness gate cannot detect that — it only checks that a
-   * serving string is non-empty, not that it parses to grams — so the server has
-   * to say so, and this hook must not re-derive that policy.
-   *
-   * False on every path that falls back to database values the label never
-   * touched (server unreachable, non-`notInDatabase` 404, direct-OFF fallback,
-   * total outage). Assigned once, at the end of the successful server leg; the
-   * per-lookup reset below keeps every other path honest. Drives `logGate`.
-   */
-  const [labelUsed, setLabelUsed] = useState(false);
-  const [showManualSearch, setShowManualSearch] = useState(false);
   const [manualSearchQuery, setManualSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
-  const [conflict, setConflict] = useState<{
-    fields: string[];
-    labelNutrition: NutritionData;
-    labelFlags: ScanFlag[];
-    // The label result's serving-control state, so a toggle to the label also
-    // rescales serving edits from the LABEL per-100g (not the DB's).
-    labelValidated: ValidatedNutrition;
-    labelGrams: number;
-    labelIsPer100g: boolean;
-  } | null>(null);
-  const [dbSnapshot, setDbSnapshot] = useState<{
-    nutrition: NutritionData;
-    flags: ScanFlag[];
-    validated: ValidatedNutrition;
-    servingGrams: number;
-    isPer100g: boolean;
-  } | null>(null);
-  const [activeSource, setActiveSource] = useState<"database" | "label">(
-    "database",
+
+  // `Dispatch<SetStateAction<T>>`-shaped wrappers so external callers (and
+  // the exported `setNutrition`/`setServingSizeGrams`, kept for shape
+  // stability) can pass either a value or an updater function, exactly like
+  // the `useState` setters they replace.
+  const setNutrition = useCallback<
+    Dispatch<SetStateAction<NutritionData | null>>
+  >((value) => {
+    setLookup((prev) => ({
+      ...prev,
+      nutrition:
+        typeof value === "function"
+          ? (value as (prev: NutritionData | null) => NutritionData | null)(
+              prev.nutrition,
+            )
+          : value,
+    }));
+  }, []);
+
+  const setServingSizeGrams = useCallback<
+    Dispatch<SetStateAction<number | null>>
+  >((value) => {
+    setLookup((prev) => ({
+      ...prev,
+      servingSizeGrams:
+        typeof value === "function"
+          ? (value as (prev: number | null) => number | null)(
+              prev.servingSizeGrams,
+            )
+          : value,
+    }));
+  }, []);
+
+  // Derive per-100g values: prefer validatedData when available,
+  // otherwise back-calculate from whatever nutrition state we have
+  // (e.g. when the USDA/API Ninjas fallback was used).
+  //
+  // Deliberately omits saturatedFat/transFat/cholesterol/caffeine: the
+  // back-calculation path runs when `validatedData` is null, and the fallback
+  // payloads that leave it null (USDA / API Ninjas, and formerly the
+  // `scanned_items` Drizzle row in shared/schema.ts) carry no values for these
+  // 4 nutrients at all, so there is nothing to carry through here. Verified
+  // won't-fix (Smart Scan v1 refinements follow-up); revisit only if a
+  // fallback payload ever gains those fields.
+  const effectivePer100g = useMemo((): NutritionPer100g | null => {
+    if (lookup.validatedData) return lookup.validatedData.per100g;
+    if (!lookup.nutrition || lookup.nutrition.calories === undefined)
+      return null;
+    // NOT `|| 100`. Without a gram weight there is no per-100g basis to
+    // back-calculate, and a fabricated one is worse than none: `|| 100` made
+    // `factor` exactly 1, so the PER-SERVING values in `nutrition` were
+    // returned labelled per-100 g. `isPer100g` stays false on that path too,
+    // so not even the "Values shown per 100g" banner disclosed it.
+    //
+    // The state is reached whenever a lookup populates `nutrition` without
+    // resolving a gram weight — the USDA / API Ninjas fallback, and the
+    // direct-OFF fallback described below. Amy's chili — 680 mg of sodium in a
+    // 236 g can — would then read as 680 mg/100 g instead of 288: an FSA HIGH
+    // band where the truth is MEDIUM. Returning null is what prevents that.
+    //
+    // This guard is deliberately not narrowed to the paths that reach the
+    // state today: it returns null from the value itself, not from a caller's
+    // gating, so a future path cannot arm it silently.
+    //
+    // The state is still LIVE in transit, which is why this guard is not
+    // merely defensive: `beginLookup` (nutrition-lookup-outcome.ts) carries
+    // `nutrition` and `servingSizeGrams` across into the next lookup while
+    // resetting `validatedData` to null, so a re-fetch on a mounted instance
+    // (the effect re-fires on a new `barcode`) holds the PRIOR product's
+    // values with no validated basis behind them for the whole duration of
+    // the new lookup. If that prior lookup left `servingSizeGrams` null — an
+    // OFF record whose serving_size is "1 bottle" — this guard is the thing
+    // returning null. Do not thin it on the strength of the steady-state
+    // enumeration above.
+    //
+    // `> 0`, not `!= null`, for the same reason as `recalculateNutrition`'s
+    // guard below: `0 || 100` is 100, so a zero basis fabricated identically
+    // rather than dividing by zero. A zero is not a measurement.
+    //
+    // Placement matters: this sits BELOW the `validatedData` branch. The
+    // direct-OFF fallback legitimately pairs a null `servingSizeGrams` with a
+    // real `validatedData.per100g` (an OFF record whose serving_size is "1
+    // bottle"), and hoisting this guard above that branch would blank the
+    // serving controls on a path that works. Pinned by a test.
+    const grams = lookup.servingSizeGrams;
+    if (!(grams != null && grams > 0)) return null;
+    const factor = 100 / grams;
+    const nutrition = lookup.nutrition;
+    return {
+      calories:
+        nutrition.calories !== undefined
+          ? nutrition.calories * factor
+          : undefined,
+      protein:
+        nutrition.protein !== undefined
+          ? nutrition.protein * factor
+          : undefined,
+      carbs:
+        nutrition.carbs !== undefined ? nutrition.carbs * factor : undefined,
+      fat: nutrition.fat !== undefined ? nutrition.fat * factor : undefined,
+      fiber:
+        nutrition.fiber !== undefined ? nutrition.fiber * factor : undefined,
+      sugar:
+        nutrition.sugar !== undefined ? nutrition.sugar * factor : undefined,
+      sodium:
+        nutrition.sodium !== undefined ? nutrition.sodium * factor : undefined,
+    };
+  }, [lookup.validatedData, lookup.nutrition, lookup.servingSizeGrams]);
+
+  // Build serving size options — works with or without validatedData
+  const servingOptions = useMemo(() => {
+    const info: ServingSizeInfo = lookup.validatedData?.servingInfo ?? {
+      displayLabel: lookup.nutrition?.servingSize || "100g",
+      grams: lookup.servingSizeGrams || 100,
+      wasCorrected: false,
+    };
+    return getServingSizeOptions(info, lookup.nutrition?.productName || "");
+  }, [
+    lookup.validatedData,
+    lookup.nutrition?.productName,
+    lookup.nutrition?.servingSize,
+    lookup.servingSizeGrams,
+  ]);
+
+  // Recalculate displayed nutrition from per-100g whenever serving
+  // size or quantity changes.
+  //
+  // An absent gram basis is a real state, not a missing value: an Open Food
+  // Facts record can publish trustworthy per-serving energy against a
+  // serving_size that carries no metric quantity ("1 bottle"), so the serving
+  // is known but its weight is not. There is no gram basis to scale from, so
+  // multiply the per-serving baseline by the quantity instead. Falling through
+  // to the per-100g path with a fabricated denominator is what this fix
+  // removes.
+  //
+  // The guard is `!(grams > 0)`, not `grams === null`, and it is load-bearing
+  // rather than defensive: both a null and a zero produce a factor of exactly
+  // zero in the per-100g path below, blanking every macro on the card and
+  // logging a 0-calorie entry. The callers are already normalized (see the
+  // `> 0` filter where `servingSizeGrams` is assigned), so this is the second
+  // of two layers — a future call site cannot reintroduce the zeroing.
+  const recalculateNutrition = useCallback(
+    (grams: number | null, quantity: number) => {
+      if (!(grams != null && grams > 0)) {
+        const baseline = lookup.validatedData?.perServing;
+        if (!baseline) return;
+        const scaled = scaleNutrition(baseline, quantity);
+        setLookup((prev) =>
+          prev.nutrition
+            ? {
+                ...prev,
+                nutrition: {
+                  ...prev.nutrition,
+                  calories: scaled.calories,
+                  protein: scaled.protein,
+                  carbs: scaled.carbs,
+                  fat: scaled.fat,
+                  fiber: scaled.fiber,
+                  sugar: scaled.sugar,
+                  sodium: scaled.sodium,
+                  saturatedFat: scaled.saturatedFat,
+                  transFat: scaled.transFat,
+                  cholesterol: scaled.cholesterol,
+                  caffeine: scaled.caffeine,
+                  // Deliberately NOT overwritten with a gram string — the
+                  // product's own wording ("1 bottle") is the only honest
+                  // label we have.
+                  servingSize: prev.nutrition.servingSize,
+                },
+              }
+            : prev,
+        );
+        return;
+      }
+      if (!effectivePer100g) return;
+      const factor = (grams / 100) * quantity;
+      const scaled = scaleNutrition(effectivePer100g, factor);
+      setLookup((prev) =>
+        prev.nutrition
+          ? {
+              ...prev,
+              nutrition: {
+                ...prev.nutrition,
+                calories: scaled.calories,
+                protein: scaled.protein,
+                carbs: scaled.carbs,
+                fat: scaled.fat,
+                fiber: scaled.fiber,
+                sugar: scaled.sugar,
+                sodium: scaled.sodium,
+                saturatedFat: scaled.saturatedFat,
+                transFat: scaled.transFat,
+                cholesterol: scaled.cholesterol,
+                caffeine: scaled.caffeine,
+                servingSize: `${grams}g`,
+              },
+            }
+          : prev,
+      );
+    },
+    [effectivePer100g, lookup.validatedData],
   );
 
+  const { data: micronutrientData, isLoading: micronutrientsLoading } =
+    useQuery<{ foodName: string; micronutrients: MicronutrientData[] }>({
+      queryKey: ["/api/micronutrients/lookup", lookup.nutrition?.productName],
+      queryFn: async () => {
+        const res = await apiRequest(
+          "GET",
+          `/api/micronutrients/lookup?name=${encodeURIComponent(lookup.nutrition!.productName)}`,
+        );
+        return res.json();
+      },
+      enabled:
+        !!lookup.nutrition?.productName &&
+        lookup.nutrition.productName !== "Unknown Product" &&
+        lookup.nutrition.productName !== "Product Not Found" &&
+        lookup.nutrition.productName !== "Manual Entry" &&
+        !isLoading,
+    });
+
+  // Dispatch priority: barcode > imageUri > "no scan data".
+  // `RootStackParamList["NutritionDetail"]`'s discriminated union means a
+  // caller reaching this hook THROUGH the route boundary can never supply both
+  // `barcode` and `imageUri` — that combination is a compile error there, not
+  // merely a convention this effect has to police at runtime. The fallthrough
+  // order is still the correct defense for a non-route caller, which reaches
+  // this hook's own parameter object (independent optionals) rather than the
+  // union.
+  //
   // The notices are announced by `NoticeStack`, NOT here. This hook used to
   // carry an iOS-gated announcer for them, on the reasoning that React flushes
   // child effects before parent ones, so the hook's utterance would land later
-  // and silence the component's. That premise only holds within ONE commit,
-  // and these two are never in the same commit: `setLabelReadNotice` runs
-  // BEFORE `await fetch(...)` below, while `isLoading` is still true and the
-  // screen is rendering its skeleton — `NoticeStack` is not even mounted.
-  // `setIsLoading(false)` lands in the `finally`, after the barcode POST and
-  // the verification round trip. Two posts separated by a network round trip
-  // do not collide, so nothing was silenced: VoiceOver users heard the
-  // label-not-used warning twice.
+  // and silence the component's. That premise only holds within ONE commit.
+  // `labelReadNotice` is decided early — inside `lookupBarcode`
+  // (nutrition-lookup-outcome.ts), right after the token read, before any
+  // network round trip — but it is no longer its own mid-flight `setState`:
+  // it lands atomically with the rest of the outcome, in the one `setLookup`
+  // commit below that also flips `isLoading` false. On a first load
+  // `NoticeStack` is unmounted for every commit before that one (the screen's
+  // `isLoading` branch renders the skeleton instead), so it mounts already
+  // carrying the notice; on a retake re-fetch (`isLoading` is not re-armed)
+  // the notice arrives in that one commit — either way, one utterance.
   //
   // Removing this one rather than gating the other is deliberate on two
   // counts. It announced content that was not on screen yet — the user heard
@@ -214,672 +346,73 @@ export function useNutritionLookup(params: {
   // the hook-silence test in `__tests__/useNutritionLookup.labelRead.test.tsx`
   // and the InlineError exactly-once assertion in
   // `client/screens/__tests__/NutritionDetailScreen.test.tsx`.
-
-  // Derive per-100g values: prefer validatedData when available,
-  // otherwise back-calculate from whatever nutrition state we have
-  // (e.g. when the USDA/API Ninjas fallback was used).
-  //
-  // Deliberately omits saturatedFat/transFat/cholesterol/caffeine: the
-  // back-calculation path runs when `validatedData` is null, and the fallback
-  // payloads that leave it null (USDA / API Ninjas, and formerly the
-  // `scanned_items` Drizzle row in shared/schema.ts) carry no values for these
-  // 4 nutrients at all, so there is nothing to carry through here. Verified
-  // won't-fix (Smart Scan v1 refinements follow-up); revisit only if a
-  // fallback payload ever gains those fields.
-  const effectivePer100g = useMemo((): NutritionPer100g | null => {
-    if (validatedData) return validatedData.per100g;
-    if (!nutrition || nutrition.calories === undefined) return null;
-    // NOT `|| 100`. Without a gram weight there is no per-100g basis to
-    // back-calculate, and a fabricated one is worse than none: `|| 100` made
-    // `factor` exactly 1, so the PER-SERVING values in `nutrition` were
-    // returned labelled per-100 g. `isPer100g` stays false on that path too,
-    // so not even the "Values shown per 100g" banner disclosed it.
-    //
-    // The state is reached whenever a lookup populates `nutrition` without
-    // resolving a gram weight — the USDA / API Ninjas fallback, and the
-    // direct-OFF fallback described below. Amy's chili — 680 mg of sodium in a
-    // 236 g can — would then read as 680 mg/100 g instead of 288: an FSA HIGH
-    // band where the truth is MEDIUM. Returning null is what prevents that.
-    //
-    // This guard is deliberately not narrowed to the paths that reach the
-    // state today: it returns null from the value itself, not from a caller's
-    // gating, so a future path cannot arm it silently.
-    //
-    // Removing the saved-item branch (2026-09-17) removed the last STEADY
-    // producer of `validatedData === null` alongside a defined
-    // `nutrition.calories`: every `setNutrition` that settles with calories now
-    // pairs with a `setValidatedData` on the same path, and the ones that do
-    // not carry no calories.
-    //
-    // The state is still LIVE in transit, which is why this guard is not
-    // merely defensive: the per-lookup reset above calls `setValidatedData(null)`
-    // and resets neither `nutrition` nor `servingSizeGrams`, so a re-fetch on a
-    // mounted instance (the effect re-fires on a new `barcode`) holds the PRIOR
-    // product's values with no validated basis behind them for the whole
-    // duration of the new lookup. If that prior lookup left `servingSizeGrams`
-    // null — an OFF record whose serving_size is "1 bottle" — this guard is the
-    // thing returning null. Do not thin it on the strength of the steady-state
-    // enumeration above.
-    //
-    // `> 0`, not `!= null`, for the same reason as `recalculateNutrition`'s
-    // guard below: `0 || 100` is 100, so a zero basis fabricated identically
-    // rather than dividing by zero. A zero is not a measurement.
-    //
-    // Placement matters: this sits BELOW the `validatedData` branch. The
-    // direct-OFF fallback legitimately pairs a null `servingSizeGrams` with a
-    // real `validatedData.per100g` (an OFF record whose serving_size is "1
-    // bottle"), and hoisting this guard above that branch would blank the
-    // serving controls on a path that works. Pinned by a test.
-    const grams = servingSizeGrams;
-    if (!(grams != null && grams > 0)) return null;
-    const factor = 100 / grams;
-    return {
-      calories:
-        nutrition.calories !== undefined
-          ? nutrition.calories * factor
-          : undefined,
-      protein:
-        nutrition.protein !== undefined
-          ? nutrition.protein * factor
-          : undefined,
-      carbs:
-        nutrition.carbs !== undefined ? nutrition.carbs * factor : undefined,
-      fat: nutrition.fat !== undefined ? nutrition.fat * factor : undefined,
-      fiber:
-        nutrition.fiber !== undefined ? nutrition.fiber * factor : undefined,
-      sugar:
-        nutrition.sugar !== undefined ? nutrition.sugar * factor : undefined,
-      sodium:
-        nutrition.sodium !== undefined ? nutrition.sodium * factor : undefined,
-    };
-  }, [validatedData, nutrition, servingSizeGrams]);
-
-  // Build serving size options — works with or without validatedData
-  const servingOptions = useMemo(() => {
-    const info: ServingSizeInfo = validatedData?.servingInfo ?? {
-      displayLabel: nutrition?.servingSize || "100g",
-      grams: servingSizeGrams || 100,
-      wasCorrected: false,
-    };
-    return getServingSizeOptions(info, nutrition?.productName || "");
-  }, [
-    validatedData,
-    nutrition?.productName,
-    nutrition?.servingSize,
-    servingSizeGrams,
-  ]);
-
-  // Recalculate displayed nutrition from per-100g whenever serving
-  // size or quantity changes.
-  //
-  // An absent gram basis is a real state, not a missing value: an Open Food
-  // Facts record can publish trustworthy per-serving energy against a
-  // serving_size that carries no metric quantity ("1 bottle"), so the serving
-  // is known but its weight is not. There is no gram basis to scale from, so
-  // multiply the per-serving baseline by the quantity instead. Falling through
-  // to the per-100g path with a fabricated denominator is what this fix
-  // removes.
-  //
-  // The guard is `!(grams > 0)`, not `grams === null`, and it is load-bearing
-  // rather than defensive: both a null and a zero produce a factor of exactly
-  // zero in the per-100g path below, blanking every macro on the card and
-  // logging a 0-calorie entry. The callers are already normalized (see the
-  // `> 0` filter where `servingSizeGrams` is assigned), so this is the second
-  // of two layers — a future call site cannot reintroduce the zeroing.
-  const recalculateNutrition = useCallback(
-    (grams: number | null, quantity: number) => {
-      if (!(grams != null && grams > 0)) {
-        const baseline = validatedData?.perServing;
-        if (!baseline) return;
-        const scaled = scaleNutrition(baseline, quantity);
-        setNutrition((prev) =>
-          prev
-            ? {
-                ...prev,
-                calories: scaled.calories,
-                protein: scaled.protein,
-                carbs: scaled.carbs,
-                fat: scaled.fat,
-                fiber: scaled.fiber,
-                sugar: scaled.sugar,
-                sodium: scaled.sodium,
-                saturatedFat: scaled.saturatedFat,
-                transFat: scaled.transFat,
-                cholesterol: scaled.cholesterol,
-                caffeine: scaled.caffeine,
-                // Deliberately NOT overwritten with a gram string — the product's
-                // own wording ("1 bottle") is the only honest label we have.
-                servingSize: prev.servingSize,
-              }
-            : prev,
+  useEffect(() => {
+    if (barcode) {
+      const controller = new AbortController();
+      setLookup(beginLookup);
+      void (async () => {
+        const outcome = await lookupBarcode(
+          barcode,
+          ocrText,
+          controller.signal,
         );
-        return;
-      }
-      if (!effectivePer100g) return;
-      const factor = (grams / 100) * quantity;
-      const scaled = scaleNutrition(effectivePer100g, factor);
-      setNutrition((prev) =>
-        prev
-          ? {
-              ...prev,
-              calories: scaled.calories,
-              protein: scaled.protein,
-              carbs: scaled.carbs,
-              fat: scaled.fat,
-              fiber: scaled.fiber,
-              sugar: scaled.sugar,
-              sodium: scaled.sodium,
-              saturatedFat: scaled.saturatedFat,
-              transFat: scaled.transFat,
-              cholesterol: scaled.cholesterol,
-              caffeine: scaled.caffeine,
-              servingSize: `${grams}g`,
-            }
-          : prev,
-      );
-    },
-    [effectivePer100g, validatedData],
-  );
-
-  const { data: micronutrientData, isLoading: micronutrientsLoading } =
-    useQuery<{ foodName: string; micronutrients: MicronutrientData[] }>({
-      queryKey: ["/api/micronutrients/lookup", nutrition?.productName],
-      queryFn: async () => {
-        const res = await apiRequest(
-          "GET",
-          `/api/micronutrients/lookup?name=${encodeURIComponent(nutrition!.productName)}`,
-        );
-        return res.json();
-      },
-      enabled:
-        !!nutrition?.productName &&
-        nutrition.productName !== "Unknown Product" &&
-        nutrition.productName !== "Product Not Found" &&
-        nutrition.productName !== "Manual Entry" &&
-        !isLoading,
-    });
-
-  const fetchBarcodeData = useCallback(
-    async (code: string) => {
-      // Defense-in-depth: clear any prior product's allergen flags AND
-      // label/DB conflict state before this fetch resolves, so a future
-      // in-screen re-fetch (new barcode on a reused screen instance) can
-      // never render a stale danger flag or a stale conflict card left over
-      // from the PRIOR product when this fetch's 404/OFF-fallback/outer-catch
-      // path never repopulates conflict state itself (only the server-ok
-      // branch below does).
-      setFlags([]);
-      setConflict(null);
-      setLabelReadNotice(null);
-      // `labelUsed` outlives a lookup, and it is assigned only at the end of the
-      // successful server leg below — so this reset is what every failing path
-      // relies on. Without it, a lookup that bails early inherits the PREVIOUS
-      // product's `true` and `logGate` reports `open` for database numbers.
-      // Fail-safe by construction: any future early exit is correct by default.
-      setLabelUsed(false);
-      setDbSnapshot(null);
-      setActiveSource("database");
-      // Same fail-safe-by-construction rationale as `labelUsed` above:
-      // `isBeverage` is written only in the `serverRes.ok` branch below, so
-      // every other exit (404 notInDatabase, OFF fallback, total outage)
-      // must inherit "no signal" rather than the PRIOR product's
-      // classification. A stale `false` surviving onto a real beverage would
-      // apply lenient food-scale thresholds to a drink.
-      setIsBeverage(null);
-      // Reset for the same fail-safe reason, and newly load-bearing: slice 2c
-      // promoted `validatedData` from "backs the serving controls" to "is a
-      // band source" (`selectBandSource`). It is written only in the
-      // `serverRes.ok` branch, so the 404 `notInDatabase` branch, the OFF
-      // fallback and the outer catch all leave the PRIOR product's `per100g`
-      // in place — and `hasValue` passes on it, because a stale source with
-      // real numbers looks exactly like a fresh one. The traffic lights, the
-      // pills and the standout copy would then be computed from a different
-      // product's data, which is a wrong health claim rather than a missing
-      // one. Every state `selectBandSource` reads belongs in this block.
-      setValidatedData(null);
-      // Same fail-safe reason as `isBeverage`/`validatedData` above:
-      // `correctionNotice` is written only in a successful branch
-      // (`servingInfo.wasCorrected`), so every other exit must not keep the
-      // PRIOR product's notice. Without this, a label RETAKE could carry a
-      // stale correction into a lookup that errors, and `NoticeStack` would
-      // announce it alongside `InlineError` in the same commit.
-      setCorrectionNotice(null);
-      // Same reason: `isPer100g` is written only in a successful branch
-      // (`!isServingDataTrusted && !wasCorrected`), and `false` is its
-      // declared initial value — the same "no signal yet" default every
-      // other exit falls back to.
-      setIsPer100g(false);
-      // The inverse direction: these four are written only on a failing or
-      // conditional exit, so without a reset a later lookup that takes a
-      // different exit inherits the PRIOR product's value — a stale `error`
-      // beside valid nutrition (and it blanks the fresh `labelReadNotice`),
-      // the manual-search card under a found product, or the previous
-      // product's verification tier and front-label CTA. Each resets to its
-      // declared initial value.
-      setError(null);
-      setShowManualSearch(false);
-      setVerificationLevel("unverified");
-      setHasFrontLabelData(false);
-      // Distinguishes "the server responded but its 200 body failed schema
-      // validation" from a genuine network/connectivity failure, so the
-      // OFF-fallback and total-outage branches below can pick copy that
-      // doesn't falsely claim we couldn't reach the service.
-      let serverResponseInvalid = false;
-      try {
-        // ── Primary: server-side lookup (cross-validates OFF with USDA) ──
-        // Use raw fetch (not apiRequest) so we can inspect 404 responses
-        // without them being thrown as errors.
-        try {
-          const baseUrl = getApiUrl();
-          const url = new URL(`/api/nutrition/barcode/${code}`, baseUrl);
-          const token = await tokenStorage.get();
-          const headers: Record<string, string> = {};
-          if (token) headers["Authorization"] = `Bearer ${token}`;
-
-          const parsedLabel = ocrText ? parseNutritionFromOCR(ocrText) : null;
-          // The label is the source of truth when present — see `isLabelReady`
-          // for the rule and why it does NOT also require sugars or fat.
-          const labelReady = isLabelReady(parsedLabel);
-
-          // A label the user photographed but we could not use must not vanish
-          // silently: the whole point of the label step is products whose
-          // database record is wrong, which is exactly when a quiet fallback
-          // does the most damage. `undefined` means no label step ran at all
-          // (barcode-only) — that path stays silent.
-          if (ocrText !== undefined && !labelReady) {
-            setLabelReadNotice(
-              ocrText === null
-                ? "We couldn't read that nutrition label, so these values come from the product database. Retake the label photo to use the package instead."
-                : "We couldn't find nutrition values on that photo, so these come from the product database. Retake the nutrition panel to use the package instead.",
-            );
-          }
-
-          const serverRes = labelReady
-            ? await fetch(url, {
-                method: "POST",
-                headers: { ...headers, "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  // One definition of this mapping, in the parser module beside
-                  // the data it maps — see `toLabelNutritionPayload`. It also
-                  // carries `directReads`, the provenance the server needs to
-                  // avoid comparing an INFERRED saturatedFat against the record
-                  // at a tolerance sized for printed rounding.
-                  labelNutrition: toLabelNutritionPayload(parsedLabel!),
-                }),
-              })
-            : await fetch(url, { headers });
-
-          if (serverRes.ok) {
-            // `.catch(() => undefined)`: an unparseable body on a 200 (bad
-            // JSON) is also a malformed response, and must fail
-            // `safeParse(undefined)` below rather than throwing here and
-            // landing in the network-failure catch with no distinguishing
-            // signal.
-            const rawData: unknown = await serverRes
-              .json()
-              .catch(() => undefined);
-            const parsedResponse =
-              barcodeLookupResponseSchema.safeParse(rawData);
-            if (!parsedResponse.success) {
-              logger.error(
-                "Malformed barcode lookup response from server (schema validation failed)",
-                parsedResponse.error,
-              );
-              serverResponseInvalid = true;
-              throw new Error("barcode-lookup-response-validation-failed");
-            }
-            const data = parsedResponse.data;
-
-            // Map server response into ValidatedNutrition for serving controls
-            const validated: ValidatedNutrition = {
-              perServing: data.perServing,
-              per100g: data.per100g,
-              servingInfo: data.servingInfo,
-              isServingDataTrusted: data.isServingDataTrusted,
-            };
-
-            const dbIsPer100g =
-              !data.isServingDataTrusted && !data.servingInfo.wasCorrected;
-            setValidatedData(validated);
-            setServingSizeGrams(data.servingInfo.grams);
-            setIsPer100g(dbIsPer100g);
-
-            if (
-              data.servingInfo.wasCorrected &&
-              data.servingInfo.correctionReason
-            ) {
-              setCorrectionNotice(data.servingInfo.correctionReason);
-            }
-
-            const dbNutrition: NutritionData = {
-              productName: data.productName,
-              brandName: data.brandName,
-              servingSize: data.servingInfo.displayLabel,
-              calories: data.perServing.calories,
-              protein: data.perServing.protein,
-              carbs: data.perServing.carbs,
-              fat: data.perServing.fat,
-              fiber: data.perServing.fiber,
-              sugar: data.perServing.sugar,
-              sodium: data.perServing.sodium,
-              saturatedFat: data.perServing.saturatedFat,
-              transFat: data.perServing.transFat,
-              cholesterol: data.perServing.cholesterol,
-              caffeine: data.perServing.caffeine,
-              imageUrl: data.imageUrl,
-              barcode: code,
-            };
-            const dbFlags: ScanFlag[] = Array.isArray(data.flags)
-              ? (data.flags as ScanFlag[])
-              : [];
-
-            setNutrition(dbNutrition);
-            setFlags(dbFlags);
-            setActiveSource("database");
-            setConflict(null);
-            // Capture the DB result so a later toggle can restore it —
-            // including the serving-control state so a serving edit under the
-            // "Database" choice rescales from the DB per-100g.
-            setDbSnapshot({
-              nutrition: dbNutrition,
-              flags: dbFlags,
-              validated,
-              servingGrams: data.servingInfo.grams,
-              isPer100g: dbIsPer100g,
-            });
-
-            if (data.conflict?.label) {
-              const lbl = data.conflict.label;
-              const labelNutrition: NutritionData = {
-                productName: lbl.productName,
-                brandName: lbl.brandName,
-                servingSize: lbl.servingInfo.displayLabel,
-                calories: lbl.perServing.calories,
-                protein: lbl.perServing.protein,
-                carbs: lbl.perServing.carbs,
-                fat: lbl.perServing.fat,
-                fiber: lbl.perServing.fiber,
-                sugar: lbl.perServing.sugar,
-                sodium: lbl.perServing.sodium,
-                saturatedFat: lbl.perServing.saturatedFat,
-                transFat: lbl.perServing.transFat,
-                cholesterol: lbl.perServing.cholesterol,
-                caffeine: lbl.perServing.caffeine,
-                imageUrl: lbl.imageUrl,
-                barcode: code,
-              };
-              const labelFlags: ScanFlag[] = Array.isArray(lbl.flags)
-                ? (lbl.flags as ScanFlag[])
-                : [];
-              const labelValidated: ValidatedNutrition = {
-                perServing: lbl.perServing,
-                per100g: lbl.per100g,
-                servingInfo: lbl.servingInfo,
-                isServingDataTrusted: lbl.isServingDataTrusted,
-              };
-              const labelIsPer100g =
-                !lbl.isServingDataTrusted && !lbl.servingInfo.wasCorrected;
-              setConflict({
-                fields: data.conflict.fields ?? [],
-                labelNutrition,
-                labelFlags,
-                labelValidated,
-                labelGrams: lbl.servingInfo.grams,
-                labelIsPer100g,
-              });
-              // Health-facing default: trust the label — swap the serving-control
-              // state too, so a serving edit rescales from the LABEL per-100g,
-              // not the DB's (which is the wrong data we're correcting).
-              setActiveSource("label");
-              setNutrition(labelNutrition);
-              setFlags(labelFlags);
-              setValidatedData(labelValidated);
-              setServingSizeGrams(lbl.servingInfo.grams);
-              setIsPer100g(labelIsPer100g);
-            }
-
-            // Deliberately here — at the END of the successful server leg, not
-            // beside the `labelReady` computation above. `labelUsed` claims the
-            // values ON SCREEN were checked against the package, and only this
-            // branch makes that true: the server cross-validated the label we
-            // POSTed, so it either surfaced a conflict (label values shown) or
-            // agreed with the record (DB values corroborated by the package).
-            //
-            // Every other exit from this function lands on the direct-OFF
-            // fallback (or an error), which never sees the label at all — so they
-            // must keep the `false` from the per-lookup reset. Setting it earlier
-            // would claim cross-validation that never happened, and a
-            // server-unreachable scan would open the gate on the rawest,
-            // least-validated record in the hook.
-            // `=== true`, deliberately not truthiness. A missing field (older
-            // server, or a shape change to something like "declined") must GATE,
-            // and only an explicit boolean true opens. The safe direction is
-            // asymmetric: a wrongly-closed gate costs the user one extra tap, a
-            // wrongly-open one logs a ~3.8x-wrong calorie count.
-            //
-            // `labelReady &&` still matters — it is the client's own precondition
-            // for having POSTed a label at all, so a stray field on a GET-shaped
-            // response can never open the gate by itself.
-            setLabelUsed(labelReady && data.labelCompared === true);
-
-            // Set verification level from barcode lookup response.
-            // No `as VerificationLevel` cast needed — `data` is already the
-            // Zod-validated, typed result.
-            if (data.verificationLevel) {
-              setVerificationLevel(data.verificationLevel);
-            }
-
-            // Narrowed explicitly: `isBeverage` is intentionally left as
-            // `z.unknown()` in `@shared/types/barcode-lookup.ts` (see the
-            // comment there) rather than `z.boolean()`, so a wire field can
-            // still arrive as anything.
-            // Anything that is not a real boolean becomes null — "no signal"
-            // — which resolveBasis treats as unknown rather than silently
-            // defaulting to the food scale (which would halve the strictness
-            // applied to every drink).
-            setIsBeverage(
-              typeof data.isBeverage === "boolean" ? data.isBeverage : null,
-            );
-
-            // Fetch front-label status from verification endpoint
-            try {
-              const verRes = await apiRequest(
-                "GET",
-                `/api/verification/${code}`,
-              );
-              if (verRes.ok) {
-                const verData = await verRes.json();
-                setHasFrontLabelData(verData.hasFrontLabelData ?? false);
-              }
-            } catch {
-              // Non-critical — front-label CTA just won't show
-            }
-            return;
-          }
-
-          // Server returned an error — check if it's a definitive "not in database"
-          if (serverRes.status === 404) {
-            try {
-              const errData = await serverRes.json();
-              if (errData.notInDatabase) {
-                // Product barcode not found in any database — show manual search
-                setShowManualSearch(true);
-                setNutrition({
-                  productName: "Product Not Found",
-                  barcode: code,
-                });
-                return;
-              }
-            } catch {
-              // Couldn't parse error body — fall through to OFF
-            }
-          }
-        } catch (err) {
-          // A malformed-response failure already logged via `logger.error`
-          // above (and set `serverResponseInvalid`) — it is not a
-          // connectivity failure, so it must not also emit the
-          // network-outage warn, which would blur the two causes in logs.
-          if (!serverResponseInvalid) {
-            logger.warn(
-              "Server barcode lookup unavailable, falling back to OFF:",
-              err,
-            );
-          }
-        }
-
-        // ── Fallback: direct Open Food Facts (when server is unreachable) ──
-        const response = await fetch(
-          `https://world.openfoodfacts.org/api/v0/product/${code}.json`,
-        );
-        const data = await response.json();
-
-        if (data.status === 1 && data.product) {
-          const product = data.product;
-          const validated = validateAndNormalizeNutrition(product, code);
-
-          setValidatedData(validated);
-          // NOT `?? 100`. `isServingDataTrusted` means the per-serving VALUES
-          // are trustworthy — it does not promise we know what the serving
-          // weighs, and `validateAndNormalizeNutrition`'s trusted branch passes
-          // `servingGrams` straight through, null and all (an OFF record whose
-          // serving_size is "1 bottle"). Coercing that to 100 captioned the
-          // bottle's calories "1 × 100g" and lit the 100 g chip as the active
-          // selection, then silently reinterpreted the values against a per-100g
-          // basis on the first serving edit. `getServingContextLabel` and
-          // `ServingControls` both already model null as "unknown weight"; let
-          // them. `isPer100g` stays false either way — these ARE per-serving
-          // values, so the "Values shown per 100g" banner would be a second lie.
-          //
-          // `> 0`, because that same trusted branch also emits a ZERO gram
-          // basis: `parseServingGrams("0 ml")` returns the number 0, `??` keeps
-          // it, and the plausibility check only rejects servings that are too
-          // LARGE. A zero is not a measurement, it is the same absence of data
-          // as a null — and left as 0 it captions "1 × 0 g" and scales every
-          // macro to zero.
-          //
-          // The server CLASSIFIES a zero the same way — `barcode-lookup.ts`
-          // computes `hasServingData` as `servingGrams !== null && servingGrams
-          // > 0`, and documents its own fallback as a guard for "a pathological
-          // '0 ml' parse" — but it DIVERGES on the remedy, and deliberately so.
-          // It falls back to 100 g with `isServingDataTrusted: false`, which
-          // makes `scale` exactly 1, so the values it returns genuinely ARE
-          // per-100g and `isPer100g` lights the "Values shown per 100g" banner
-          // that says so. That remedy is coherent there and wrong here: this
-          // branch's values are per-SERVING, so re-basing them on 100 g would
-          // mislabel real data rather than disclose an absence of it.
-          const trustedGrams = validated.servingInfo.grams;
-          setServingSizeGrams(
-            trustedGrams != null && trustedGrams > 0 ? trustedGrams : null,
-          );
-          setIsPer100g(
-            !validated.isServingDataTrusted &&
-              !validated.servingInfo.wasCorrected,
-          );
-
-          if (
-            validated.servingInfo.wasCorrected &&
-            validated.servingInfo.correctionReason
-          ) {
-            setCorrectionNotice(validated.servingInfo.correctionReason);
-          }
-
-          const perServing = validated.perServing;
-          setNutrition({
-            productName: product.product_name || "Unknown Product",
-            brandName: product.brands,
-            servingSize: validated.servingInfo.displayLabel,
-            calories: perServing.calories,
-            protein: perServing.protein,
-            carbs: perServing.carbs,
-            fat: perServing.fat,
-            fiber: perServing.fiber,
-            sugar: perServing.sugar,
-            sodium: perServing.sodium,
-            imageUrl: product.image_url || product.image_front_url,
-            barcode: code,
-          });
-
-          // Runs whenever the primary server request didn't yield a usable
-          // result — a network error, a 5xx, a malformed 200 (failed
-          // `barcodeLookupResponseSchema` validation), an unparseable/
-          // non-notInDatabase 404, or any other case where the inner server
-          // `try` above didn't already return — so the server-side allergen check
-          // (buildScanResponseFlags) never ran for this product. `flags` would
-          // otherwise stay `[]` and the screen would look allergen-clean when
-          // we simply couldn't check. Surface a "couldn't verify" warn flag
-          // instead (fail-safe, not fail-open).
-          //
-          // Gating: ideally this would show only for users with ≥1 declared
-          // allergy, but the server is down in this branch, so we can't add a
-          // network call to fetch the profile. `useAuthContext().user` (the
-          // `User` type in shared/types/auth.ts) does NOT carry allergies —
-          // that data lives only on the separate user-profile record, which is
-          // fetched server-side via `storage.getUserProfile`. With no cheap
-          // offline source for the user's allergies, show this flag
-          // unconditionally on the fallback: it's honest ("we couldn't check")
-          // and fail-safe rather than silently omitting the warning for the
-          // allergy-having users who need it most. This does NOT compute
-          // client-side allergen matching — that stays server-only (Phase 1).
-          setFlags([
-            createAllergenUnavailableFlag({
-              detail: serverResponseInvalid
-                ? "Our service sent back information we couldn't understand, so these values come from a backup source — check the package label."
-                : "We couldn't reach our service to check this against your allergies — check the package label.",
-            }),
-          ]);
-        } else {
-          setError("Product not found in database");
-          setNutrition({ productName: "Unknown Product", barcode: code });
-        }
-      } catch {
-        setError("Failed to fetch product data");
-        setNutrition({ productName: "Unknown Product", barcode: code });
-        // Total outage: server AND the direct-OFF fallback both failed, so we
-        // genuinely couldn't check this against the user's allergies. Same
-        // fail-safe flag as the direct-OFF fallback branch above — see its
-        // comment for the full rationale. `serverResponseInvalid` still
-        // applies here: a malformed 200 followed by a failed OFF fallback is
-        // still not a connectivity failure, and no backup source was reached
-        // either.
-        setFlags([
-          createAllergenUnavailableFlag({
-            detail: serverResponseInvalid
-              ? "Our service sent back information we couldn't understand, and we couldn't reach a backup source either — check the package label."
-              : "We couldn't reach our service to check this against your allergies — check the package label.",
-          }),
-        ]);
-      } finally {
+        // A later effect run (a new barcode, or the same barcode with fresh
+        // OCR text) aborts this run's controller in its cleanup below. That
+        // is the ONLY discard check this hook needs — `lookupBarcode` never
+        // rejects, so there is no error path to also guard.
+        if (controller.signal.aborted) return;
+        setLookup(lookupStateFromOutcome(outcome));
         setIsLoading(false);
-      }
-    },
-    [ocrText],
-  );
+      })();
+      return () => controller.abort();
+    } else if (imageUri) {
+      setLookup((prev) => ({
+        ...prev,
+        nutrition: { productName: "Manual Entry", servingSize: "1 serving" },
+      }));
+      setIsLoading(false);
+    } else {
+      setLookup((prev) => ({ ...prev, error: "No scan data provided" }));
+      setIsLoading(false);
+    }
+  }, [barcode, imageUri, ocrText]);
 
   const chooseSource = useCallback(
     (s: "database" | "label") => {
-      setActiveSource(s);
       // Both snapshots (conflict.label* / dbSnapshot) are qty-1 baselines —
       // reset the stepper alongside them so it can never desync from the
       // hero values it's supposed to describe (e.g. bump to 2 servings,
       // toggle source, and the stepper would otherwise still read "2" while
       // the hero shows the freshly-restored qty-1 numbers).
-      if (s === "label" && conflict) {
-        setNutrition(conflict.labelNutrition);
-        setFlags(conflict.labelFlags);
-        setValidatedData(conflict.labelValidated);
-        setServingSizeGrams(conflict.labelGrams);
-        setIsPer100g(conflict.labelIsPer100g);
+      if (s === "label" && lookup.conflict) {
+        const c = lookup.conflict;
+        setLookup((prev) => ({
+          ...prev,
+          activeSource: "label",
+          nutrition: c.labelNutrition,
+          flags: c.labelFlags,
+          validatedData: c.labelValidated,
+          servingSizeGrams: c.labelGrams,
+          isPer100g: c.labelIsPer100g,
+        }));
         setServingQuantity(1);
-      } else if (s === "database" && dbSnapshot) {
-        setNutrition(dbSnapshot.nutrition);
-        setFlags(dbSnapshot.flags);
-        setValidatedData(dbSnapshot.validated);
-        setServingSizeGrams(dbSnapshot.servingGrams);
-        setIsPer100g(dbSnapshot.isPer100g);
+      } else if (s === "database" && lookup.dbSnapshot) {
+        const snap = lookup.dbSnapshot;
+        setLookup((prev) => ({
+          ...prev,
+          activeSource: "database",
+          nutrition: snap.nutrition,
+          flags: snap.flags,
+          validatedData: snap.validated,
+          servingSizeGrams: snap.servingGrams,
+          isPer100g: snap.isPer100g,
+        }));
         setServingQuantity(1);
+      } else {
+        setLookup((prev) => ({ ...prev, activeSource: s }));
       }
     },
-    [conflict, dbSnapshot],
+    [lookup.conflict, lookup.dbSnapshot],
   );
 
   // Manual product name search — when barcode isn't in any database,
@@ -889,7 +422,7 @@ export function useNutritionLookup(params: {
       if (!query.trim()) return;
 
       setIsSearching(true);
-      setError(null);
+      setLookup((prev) => ({ ...prev, error: null }));
 
       try {
         const res = await apiRequest(
@@ -898,11 +431,7 @@ export function useNutritionLookup(params: {
         );
         if (res.ok) {
           const data = await res.json();
-          setShowManualSearch(false);
-          setServingSizeGrams(100);
-          setIsPer100g(true);
-
-          setNutrition({
+          const manualNutrition: NutritionData = {
             productName: data.name || query.trim(),
             servingSize: data.servingSize || "100g",
             calories: data.calories,
@@ -913,7 +442,7 @@ export function useNutritionLookup(params: {
             sugar: data.sugar,
             sodium: data.sodium,
             barcode: barcode || undefined,
-          });
+          };
 
           // Set up per100g validated data for serving controls
           const per100g: NutritionPer100g = {
@@ -925,7 +454,7 @@ export function useNutritionLookup(params: {
             sugar: data.sugar,
             sodium: data.sodium,
           };
-          setValidatedData({
+          const manualValidated: ValidatedNutrition = {
             per100g,
             perServing: per100g,
             servingInfo: {
@@ -934,41 +463,33 @@ export function useNutritionLookup(params: {
               wasCorrected: false,
             },
             isServingDataTrusted: false,
-          });
+          };
+
+          setLookup((prev) => ({
+            ...prev,
+            showManualSearch: false,
+            servingSizeGrams: 100,
+            isPer100g: true,
+            nutrition: manualNutrition,
+            validatedData: manualValidated,
+          }));
         } else {
-          setError(`No results found for "${query.trim()}"`);
+          setLookup((prev) => ({
+            ...prev,
+            error: `No results found for "${query.trim()}"`,
+          }));
         }
       } catch {
-        setError("Search failed. Please try again.");
+        setLookup((prev) => ({
+          ...prev,
+          error: "Search failed. Please try again.",
+        }));
       } finally {
         setIsSearching(false);
       }
     },
     [barcode],
   );
-
-  // Dispatch priority: barcode > imageUri > "no scan data".
-  // `RootStackParamList["NutritionDetail"]`'s discriminated union means a
-  // caller reaching this hook THROUGH the route boundary can never supply both
-  // `barcode` and `imageUri` — that combination is a compile error there, not
-  // merely a convention this effect has to police at runtime. The fallthrough
-  // order is still the correct defense for a non-route caller, which reaches
-  // this hook's own parameter object (independent optionals) rather than the
-  // union.
-  useEffect(() => {
-    if (barcode) {
-      void fetchBarcodeData(barcode);
-    } else if (imageUri) {
-      setNutrition({
-        productName: "Manual Entry",
-        servingSize: "1 serving",
-      });
-      setIsLoading(false);
-    } else {
-      setError("No scan data provided");
-      setIsLoading(false);
-    }
-  }, [barcode, imageUri, fetchBarcodeData]);
 
   const addToLogMutation = useMutation<ScannedItemResponse | undefined, Error>({
     // "always" so mutationFn RUNS while offline and the branch below can enqueue
@@ -977,14 +498,14 @@ export function useNutritionLookup(params: {
     // force-quit — defeating the durable offline queue this hook integrates.
     networkMode: "always",
     mutationFn: async () => {
-      if (!nutrition) return undefined;
+      if (!lookup.nutrition) return undefined;
 
       if (!onlineManager.isOnline()) {
         await enqueue({
           endpoint: "/api/scanned-items",
           method: "POST",
           body: {
-            ...nutrition,
+            ...lookup.nutrition,
             servings: servingQuantity,
             userId: user?.id,
           },
@@ -993,7 +514,7 @@ export function useNutritionLookup(params: {
       }
 
       const response = await apiRequest("POST", "/api/scanned-items", {
-        ...nutrition,
+        ...lookup.nutrition,
         servings: servingQuantity,
         userId: user?.id,
       });
@@ -1053,31 +574,31 @@ export function useNutritionLookup(params: {
     addToLogMutation.mutate();
   };
 
-  const logGate = deriveLogGate({ ocrText, labelUsed });
+  const logGate = deriveLogGate({ ocrText, labelUsed: lookup.labelUsed });
 
   return {
     logGate,
-    nutrition,
+    nutrition: lookup.nutrition,
     setNutrition,
-    flags,
-    verificationLevel,
-    isBeverage,
-    hasFrontLabelData,
+    flags: lookup.flags,
+    verificationLevel: lookup.verificationLevel,
+    isBeverage: lookup.isBeverage,
+    hasFrontLabelData: lookup.hasFrontLabelData,
     isLoading,
-    error,
-    isPer100g,
+    error: lookup.error,
+    isPer100g: lookup.isPer100g,
     servingQuantity,
     setServingQuantity,
-    servingSizeGrams,
+    servingSizeGrams: lookup.servingSizeGrams,
     setServingSizeGrams,
     customGramsInput,
     setCustomGramsInput,
     showCustomInput,
     setShowCustomInput,
-    validatedData,
-    correctionNotice,
-    labelReadNotice,
-    showManualSearch,
+    validatedData: lookup.validatedData,
+    correctionNotice: lookup.correctionNotice,
+    labelReadNotice: lookup.labelReadNotice,
+    showManualSearch: lookup.showManualSearch,
     manualSearchQuery,
     setManualSearchQuery,
     isSearching,
@@ -1088,9 +609,9 @@ export function useNutritionLookup(params: {
     handleManualSearch,
     addToLogMutation,
     handleAddToLog,
-    conflict,
-    activeSource,
+    conflict: lookup.conflict,
+    activeSource: lookup.activeSource,
     chooseSource,
-    dbNutrition: dbSnapshot?.nutrition ?? null,
+    dbNutrition: lookup.dbSnapshot?.nutrition ?? null,
   };
 }
