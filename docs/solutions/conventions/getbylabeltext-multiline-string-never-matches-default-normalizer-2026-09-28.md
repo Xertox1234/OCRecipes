@@ -37,7 +37,7 @@ Measured in `client/screens/__tests__/RecipeChatScreen.test.tsx` (recipe-chat ra
 
 ## Exceptions
 
-- Single-line labels don't need it, because the default normalizer is a no-op on them apart from trimming.
+- A label needs no override only when the default normalizer leaves it unchanged: no newline, tab, repeated space, or leading/trailing whitespace. Measured with `getDefaultNormalizer()`: `"a b"` is unchanged, while `"a  b"`, `"a\tb"`, `"a\nb"` and `" a b "` all become `"a b"`. So a single-line label with a double space fails an exact string match just like a multi-line one.
 - A RegExp or function matcher receives the already-normalized node text, so write the pattern against collapsed whitespace, or use the identity normalizer there too.
 
 ## Related Files
