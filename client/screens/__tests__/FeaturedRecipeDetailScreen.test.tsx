@@ -500,7 +500,7 @@ describe("FeaturedRecipeDetailScreen — catalog preview follow-ups (#1149 revie
     await screen.findByText("Couldn't save this recipe. Try again.");
     expect(
       announceSpy.mock.calls.filter(
-        ([m]) => m === "Couldn't save this recipe. Try again.",
+        ([m]: unknown[]) => m === "Couldn't save this recipe. Try again.",
       ),
     ).toHaveLength(1);
     // Still mounted: the inline error is the one surface, no toast.
