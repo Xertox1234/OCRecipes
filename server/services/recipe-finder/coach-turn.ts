@@ -78,10 +78,12 @@ function maybeAutoTitle(p: CoachFinderTurnParams): void {
 /**
  * Deliberately never checks for a client disconnect: every step here spends a
  * paid claim (Spoonacular point or a generation) or AI tokens, so — like
- * RecipeChef's finish-and-save policy — it always finishes and persists with
- * the turnKey. The route's H6 settle then finds the reply and keeps the user
- * row; if the route stops iterating first, its guarded refund still refuses
- * to delete a claimed row (#1151 review).
+ * RecipeChef's finish-and-save policy — it finishes and persists with the
+ * turnKey. The route stops iterating at a yield once the client leaves, so
+ * there is NO yield between a claim (inside executeFinderStep /
+ * gateRecipeGeneration) and its persist: every post-claim yield comes after
+ * persistAssistant. The route's H6 settle then finds the reply and keeps the
+ * user row; its guarded refund refuses to delete a claimed row (#1151 review).
  */
 export async function* runCoachFinderTurn(
   p: CoachFinderTurnParams,
@@ -128,11 +130,11 @@ export async function* runCoachFinderTurn(
       yield { type: "blocks", blocks: [turn.block] };
       return;
     }
+    // A round-1 search that found nothing has fallen through to Generate and
+    // already claimed it — no status yield here: the route returns the
+    // generator at a yield once the client leaves, which would drop the
+    // claimed recipe unpersisted.
     generation = turn.messages;
-    // A round-1 search that found nothing falls through to Generate.
-    if (step.kind !== "generate") {
-      yield { type: "status", label: "Creating your recipe…" };
-    }
   }
 
   let text = "";
