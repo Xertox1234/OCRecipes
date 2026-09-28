@@ -94,7 +94,8 @@ then take an exit on lookup 2 that does not write it.
 
 ## Related Files
 
-- `client/hooks/useNutritionLookup.ts` — `fetchBarcodeData`'s reset block now also calls `setCorrectionNotice(null)`, `setIsPer100g(false)`, `setError(null)`, `setShowManualSearch(false)`, `setVerificationLevel("unverified")` and `setHasFrontLabelData(false)` (closed 2026-09-25, `P2-2026-09-23-correction-notice-not-reset-per-lookup`)
+- `client/hooks/nutrition-lookup-outcome.ts` — since 2026-09-28 (`P1-2026-09-23-usenutritionlookup-atomic-lookup-state`) the invariant holds BY CONSTRUCTION: `fetchBarcodeData` and its reset block are gone; every lookup commits a whole `LookupState` via `lookupStateFromOutcome`, and `beginLookup` is the one start-of-lookup reset (it carries only `nutrition`/`servingSizeGrams`). The bullet below is the history it replaced.
+- `client/hooks/useNutritionLookup.ts` (historical) — `fetchBarcodeData`'s reset block then also called `setCorrectionNotice(null)`, `setIsPer100g(false)`, `setError(null)`, `setShowManualSearch(false)`, `setVerificationLevel("unverified")` and `setHasFrontLabelData(false)` (closed 2026-09-25, `P2-2026-09-23-correction-notice-not-reset-per-lookup`)
 - `client/hooks/__tests__/useNutritionLookup.test.ts` — the two reset-per-lookup tests that pin the fix ("resets correctionNotice to null…" / "resets isPer100g to false…")
 - `client/screens/__tests__/NutritionDetailScreen.test.tsx` — the characterization assertion pinning the two-announce collision; now marked defense-in-depth (the screen still has no gate of its own on the combination), not a reachable production path
 - `client/screens/NutritionDetailScreen.tsx` — the `NoticeStack` comment documenting the same closure

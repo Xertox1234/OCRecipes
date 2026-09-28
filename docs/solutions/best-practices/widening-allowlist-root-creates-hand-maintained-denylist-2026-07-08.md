@@ -6,6 +6,7 @@ module: shared
 tags: [process, security, allowlist, denylist, fail-open, drift-detection, ci, automerge]
 applies_to: ['scripts/*.sh', 'scripts/__tests__/*.test.ts']
 created: '2026-07-08'
+last_updated: '2026-09-28'
 ---
 
 # Widening an allowlist root turns it into a hand-maintained denylist that fails open — protect it with a narrow drift-detection test, not more enumeration
@@ -37,6 +38,8 @@ The signature has to be **narrow enough that a match is always a genuine new cho
 - **Health-PII field references** (`allergies`/`healthConditions` appearing anywhere in a file): far too broad for an app where dietary data is core product logic. The grep matched 10+ legitimate downstream consumers of already-captured profile data (a recipe-personalization screen, an AI coach's context builder, a carousel-recommendation service) — files doing normal feature work, not new security boundaries. Automating this signature would have meant ordinary product code failing a "security" test. Rejected; those specific capture/storage-site files were named individually instead, the same way a one-off finding (a PII-redaction allowlist, an anti-abuse rate limiter) gets named rather than generalized into a signature.
 
 The dividing line: automate a signature when the *operation* it detects is inherently sensitive regardless of context (attaching an auth token, constructing a JWT, redacting a secret). Don't automate a signature built on a *domain noun* that legitimately appears throughout the app's real feature set (a health field, a user-facing "session," a "subscription" that might just be an RN `addEventListener` unsubscribe).
+
+**The growth vector is a refactor, not only new code (2026-09-28).** `SENSITIVE_OVERRIDE` is keyed on file *names*, so extracting a chokepoint's code into a new module silently drops the protection even though no new behaviour was written: the atomic-lookup-state refactor moved `useNutritionLookup`'s Bearer-header construction into `client/hooks/nutrition-lookup-outcome.ts`, and the listed name no longer covered the code. The drift test failed on the new file in the full suite; the scoped `preflight:fast` run did not select it, because the test greps files rather than importing them, so `vitest related` never links it to a changed client file. When a diff extracts code OUT of a file the override names, add the new file in the same PR (widening only) and to the test's explicit HOLD list.
 
 ## Exceptions
 
