@@ -20,7 +20,7 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
    git worktree prune
    ```
 
-2. **Delete stale remote branches.** Every `/todo` run pushes a `todo/<slug>` branch for its PR; nothing deletes it after the PR merges, so they pile up on `origin`. Delete every remote `todo/*` branch whose PRs are **all `MERGED`** (other branches are out of scope; GitHub auto-deletes a PR's head branch on merge) — but never one with an open PR, never one whose PR was closed WITHOUT merging (that is a rejection signal, not cleanup — see below), and never `main` or the current branch:
+2. **Delete stale remote branches.** Every `/todo` run pushes a `todo/<slug>` branch for its PR. The repo auto-deletes a PR's head branch on merge (`delete_branch_on_merge`), but a branch left from before that setting, or re-pushed after its PR merged, stays on `origin`. Delete every remote `todo/*` branch whose PRs are **all `MERGED`** (other branches are out of scope) — but never one with an open PR, never one whose PR was closed WITHOUT merging (that is a rejection signal, not cleanup — see below), and never `main` or the current branch:
 
    ```bash
    git fetch --prune --quiet
