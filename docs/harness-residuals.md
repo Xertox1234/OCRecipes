@@ -94,3 +94,10 @@ Review-stamp writer, recorded from the #1019 review (no todo filed):
   currently matches ANY extension on the basename, so nothing is broken today — but the self-test
   gives no regression coverage if that matcher were ever narrowed to `.ts`-only. Frozen harness →
   residual only, no fix.
+
+`.claude/hooks/checkpoint.sh`, found 2026-09-27 (no todo filed): the Bash trigger uses
+`cmd_git_work_discarder_verb`, which inherits the shared `_CMD_POS_PREFIX` grammar and so only
+matches a literal `git` in command position. `/usr/bin/git checkout -- .` (the spelling agents
+use inside worktrees to bypass RTK) takes **no** checkpoint. The Agent/Task trigger still fires
+before any subagent dispatch, which covers the #956 reviewer case. Reopen if a work loss is
+traced to an absolute-path git discard.

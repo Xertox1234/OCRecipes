@@ -33,3 +33,8 @@ Binding for the repo's own tooling — `.claude/hooks/**`, `.claude/skills/**`, 
 - `tags` and `applies_to` are a two-part precondition: retrieval selects by `tags` matching the file's routed domain FIRST, then partitions by `applies_to`. A glob whose paths never route to one of the solution's own tags is inert however precise it is. Check with `npx tsx scripts/lib/path-domains.ts <path>`.
 - `applies_to` is matched with bash `[[ ]]`, which has no globstar; the hook also tries the `**/`-elided form, so `dir/**/*.ext` matches both `dir/file.ext` and `dir/sub/file.ext`.
 - Edits to `.claude/agents/*.md` and `.claude/skills/**` take effect on session reload, not on save — never claim a behavior change works without verifying it in a fresh session.
+
+## Checkpoints (session coordination v2)
+
+- Before every Agent dispatch and every `git checkout/restore/reset/stash/clean/switch`, `.claude/hooks/checkpoint.sh` snapshots each dirty worktree to `refs/checkpoints/<sid8>/<worktree>` (local only, 14-day retention). It never touches HEAD, the index, or files.
+- Recover lost uncommitted work: `bash scripts/checkpoint.sh list`, then `git restore --source=<ref> --worktree -- <path>`.

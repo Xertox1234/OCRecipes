@@ -63,6 +63,15 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/checkpoint.sh\" reap --cwd \"$CLAUDE_PROJECT_DIR\"",
+            "timeout": 15
+          }
+        ]
       }
     ],
     "PreCompact": [
@@ -278,6 +287,26 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/merge-review-guard.sh\"",
             "timeout": 20
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/checkpoint.sh\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/checkpoint.sh\"",
+            "timeout": 15
           }
         ]
       }

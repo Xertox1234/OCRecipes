@@ -163,4 +163,75 @@ if [ -z "${MUTANTS_INNER:-}" ]; then
   if [ "$E" -le 5 ]; then echo "ok: budget smoke ${E}s on 2000 tracked files"; else echo "FAIL: budget smoke ${E}s > 5s"; FAIL=1; fi
 fi
 
+# --- .claude/hooks/checkpoint.sh ----------------------------------------------------------
+hook_in() { jq -n --arg t "$1" --arg c "$2" --arg cwd "$3" --arg sid "$4" \
+  '{tool_name:$t, session_id:$sid, cwd:$cwd, tool_input:{command:$c}}'; }
+fires() { # $1 label, $2 tool, $3 command, $4 expected yes|no, $5 unique repo suffix
+  local R out got
+  R=$(mkrepo "rt$5"); printf 'x\n' >> "$R/tracked.txt"
+  out=$(hook_in "$2" "$3" "$R" "sesshook-0001" | bash "$HOOK")
+  assert_empty "$1: hook stdout empty" "$out"
+  if [ -n "$(refs_of "$R")" ]; then got=yes; else got=no; fi
+  assert_eq "$1" "$got" "$4"
+}
+fires "trigger: Agent"                  Agent "" yes 1
+fires "trigger: Task (legacy name)"     Task  "" yes 2
+fires "trigger: git checkout -- ."      Bash "git checkout -- ." yes 3
+fires "trigger: git restore"            Bash "git restore tracked.txt" yes 4
+fires "trigger: git reset --hard"       Bash "git reset --hard" yes 5
+fires "trigger: git stash"              Bash "git stash" yes 6
+fires "trigger: git clean -fd"          Bash "git clean -fd" yes 7
+fires "trigger: git switch -f"          Bash "git switch -f b" yes 8
+fires "no trigger: git status"          Bash "git status" no 9
+fires "no trigger: git log"             Bash "git log -1" no 10
+fires "no trigger: git diff"            Bash "git diff" no 11
+fires "no trigger: echo git checkout"   Bash "echo git checkout -- x" no 12
+fires "no trigger: -C path holds verb"  Bash "git -C /tmp/checkout-dir status" no 13
+fires "no trigger: Edit tool"           Edit "" no 14
+
+R=$(mkrepo rh956)
+printf 'repair\n' >> "$R/tracked.txt"; mkdir -p "$R/tests"; printf 'new test\n' > "$R/tests/new.test.ts"
+hook_in Agent "" "$R" "sess956-hook" | bash "$HOOK"
+git -C "$R" checkout -q -- . && git -C "$R" clean -qfd
+git -C "$R" restore --source=refs/checkpoints/sess956-/main --worktree -- tracked.txt tests/new.test.ts
+assert_eq "hook 956: tracked repair recovered" "$(cat "$R/tracked.txt")" "$(printf 'base\nrepair')"
+assert_eq "hook 956: untracked test recovered" "$(cat "$R/tests/new.test.ts")" "new test"
+assert_contains "hook 956: trigger token recorded" "$(git -C "$R" log -1 --format=%s refs/checkpoints/sess956-/main)" "checkpoint: agent "
+
+R=$(mkrepo rhbash); printf 'x\n' >> "$R/tracked.txt"
+hook_in Bash "git checkout -- ." "$R" "sessbash" | bash "$HOOK"
+assert_contains "hook: git trigger token" "$(git -C "$R" log -1 --format=%s refs/checkpoints/sessbash/main)" "checkpoint: git-checkout "
+
+R=$(mkrepo rhguard); printf 'x\n' >> "$R/tracked.txt"
+for bad in '..' 'a/b' ''; do hook_in Agent "" "$R" "$bad" | bash "$HOOK"; done
+assert_empty "hook charset guard: no refs" "$(refs_of "$R")"
+
+R=$(mkrepo rhbudget); printf 'x\n' >> "$R/tracked.txt"
+S=$(date +%s)
+OUT=$(hook_in Agent "" "$R" "sessbudget" | CHECKPOINT_BUDGET_SECS=1 CHECKPOINT_TEST_SLEEP=10 bash "$HOOK"); RC=$?
+E=$(( $(date +%s) - S ))
+assert_eq "budget: exit 0" "$RC" "0"; assert_empty "budget: silent" "$OUT"
+if [ "$E" -le 3 ]; then echo "ok: budget: hook returned in ${E}s"; else echo "FAIL: budget: hook took ${E}s"; FAIL=1; fi
+
+OUT=$(printf 'not json' | bash "$HOOK"); RC=$?
+assert_eq "hook: malformed input exit 0" "$RC" "0"; assert_empty "hook: malformed input silent" "$OUT"
+
+# --- mutation checks (spec §7.4) -----------------------------------------------------------
+. "$HOOK_DIR/lib/mutants.sh"
+mutant "capture writes the REAL index (GIT_INDEX_FILE dropped)" "scripts/checkpoint.sh" \
+  's/GIT_INDEX_FILE="\$idx" ("\$G" -C "\$wt" add -A)/\1/'
+mutant "previous-checkpoint parent dropped" "scripts/checkpoint.sh" \
+  's/ -p "\$prev" -p "\$head"/ -p "$head"/'
+mutant "unchanged-tree skip removed" "scripts/checkpoint.sh" \
+  's/\[ "\$prevtree" = "\$tree" \] && return 0/:/'
+mutant "clean worktrees not skipped" "scripts/checkpoint.sh" \
+  's/\[ -n "\$st" \] [|][|] return 0/:/'
+mutant "status without --no-optional-locks" "scripts/checkpoint.sh" \
+  's/ --no-optional-locks//'
+mutant "first CAS write unconditional (empty old-value dropped)" "scripts/checkpoint.sh" \
+  's/update-ref "\$ref" "\$commit" ""$/update-ref "$ref" "$commit"/'
+mutant "restore missing from the work-discarder verbs" ".claude/hooks/lib/cmd-detect.sh" \
+  "s/_WORK_DISCARDER='.checkout.restore./_WORK_DISCARDER='(checkout|/"
+run_mutants "$PROJECT_ROOT" ".claude/hooks/test-checkpoint.sh" || FAIL=1
+
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
