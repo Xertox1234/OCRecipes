@@ -1,6 +1,6 @@
 ---
 title: "CNF matcher follow-ups: missing serving units, a committed gold set, and cheaper scoring"
-status: in-progress
+status: done
 priority: low
 created: 2026-09-27
 updated: 2026-09-27
