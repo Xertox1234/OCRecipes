@@ -1082,6 +1082,112 @@ describe("lookupNutrition", () => {
     });
   });
 
+  describe("USDA branded candidate filter (todo P2-2026-09-27)", () => {
+    it("skips a Branded candidate whose head names a different product, picks the next", async () => {
+      // "GYOZA DIPPING SAUCE, GYOZA" passes plain word coverage (it contains
+      // "gyoza") but its head is "gyoza dipping sauce", not "gyoza" — the
+      // Branded-only head-match gate must reject it and fall through to the
+      // next candidate.
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => ({
+              foods: [
+                {
+                  description: "GYOZA DIPPING SAUCE, GYOZA",
+                  dataType: "Branded",
+                  foodNutrients: [
+                    { nutrientName: "Energy", value: 133, unitName: "KCAL" },
+                  ],
+                },
+                {
+                  description: "Gyoza, steamed",
+                  dataType: "SR Legacy",
+                  foodNutrients: [
+                    { nutrientName: "Energy", value: 224, unitName: "KCAL" },
+                  ],
+                },
+              ],
+            }),
+          }),
+      });
+
+      const result = await lookupNutrition("gyoza");
+
+      expect(result!.name).toBe("Gyoza, steamed");
+      expect(result!.calories).toBe(224);
+      expect(result!.source).toBe("usda");
+    });
+
+    it("control: the same head-mismatched description is accepted when dataType is not Branded", async () => {
+      // Isolates the Branded-only gate from plain coverage: identical
+      // description to the test above, but with dataType omitted (a
+      // generic/government row keeps its legitimate qualifier words).
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => ({
+              foods: [
+                {
+                  description: "GYOZA DIPPING SAUCE, GYOZA",
+                  foodNutrients: [
+                    { nutrientName: "Energy", value: 133, unitName: "KCAL" },
+                  ],
+                },
+              ],
+            }),
+          }),
+      });
+
+      const result = await lookupNutrition("gyoza");
+
+      expect(result!.name).toBe("GYOZA DIPPING SAUCE, GYOZA");
+      expect(result!.calories).toBe(133);
+    });
+
+    it("falls through past USDA when every Branded candidate fails coverage", async () => {
+      // None of these descriptions contain "wat" as a whole word (only
+      // "wafers"/"water", which don't fuzzy-match it), so every candidate is
+      // rejected at the plain-coverage stage before the head check even runs.
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => ({
+              foods: [
+                {
+                  description: "BAMBI, YO DORO WAFERS WITH HAZELNUTS",
+                  dataType: "Branded",
+                  foodNutrients: [
+                    { nutrientName: "Energy", value: 522, unitName: "KCAL" },
+                  ],
+                },
+                {
+                  description: "WAT-AAH BODY, PURE SPRING WATER",
+                  dataType: "Branded",
+                  foodNutrients: [
+                    { nutrientName: "Energy", value: 0, unitName: "KCAL" },
+                  ],
+                },
+              ],
+            }),
+          }),
+      });
+
+      const result = await lookupNutrition("doro wat");
+
+      expect(result).toBeNull();
+    });
+  });
+
   it("falls back to API Ninjas as last resort", async () => {
     const originalKey = process.env.API_NINJAS_KEY;
     process.env.API_NINJAS_KEY = "test-key";
