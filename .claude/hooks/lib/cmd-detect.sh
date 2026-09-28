@@ -343,6 +343,9 @@ _CMD_GH_PR_SEP='(([[:space:]]*'"$_CMD_REDIR"')*[[:space:]]+)'
 _CMD_GIT_VERBS_COMMIT='commit'
 _CMD_GIT_VERBS_COMMIT_PUSH='(commit|push)'
 _CMD_GIT_VERBS_HEAD_MOVER='(commit|push|rebase|reset|pull|merge|cherry-pick)'
+# Verbs that can DISCARD uncommitted work (checkpoint triggers — spec 2026-09-27 §4.2).
+# Keep this a single line: .claude/hooks/test-checkpoint.sh mutates it by text.
+_CMD_GIT_VERBS_WORK_DISCARDER='(checkout|restore|reset|stash|clean|switch)'
 _CMD_GIT_VERBS_BRANCH='(checkout|switch)'
 
 # Repo-redirecting tokens, in TWO classes, because they differ in what the gate did BEFORE
@@ -1718,6 +1721,19 @@ cmd_is_git_head_mover() {
   local words
   words=$(cmd_words_deep "$1")
   grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_HEAD_MOVER}${_CMD_POS_SUFFIX}" <<< "$words"
+}
+
+# Print the verb of the first positional `git [globals] <work-discarding verb>` invocation;
+# rc 1 and no output when there is none. The verb is read from the END of the matched span,
+# so a verb-looking word inside a -C/--git-dir value (`git -C /tmp/checkout-x status`) is
+# never reported — only the verb in verb position can end the span.
+cmd_git_work_discarder_verb() {
+  local words span
+  words=$(cmd_words_deep "$1")
+  span=$(grep -oE "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_WORK_DISCARDER}${_CMD_POS_SUFFIX}" <<< "$words" | head -1)
+  [ -n "$span" ] || return 1
+  span=$(printf '%s' "$span" | sed -E 's/[^A-Za-z]+$//')
+  printf '%s\n' "${span##*[[:space:]]}"
 }
 
 # cmd_git_repo_dir <command> <verb-ere>  → echo WHICH REPOSITORY the matching git
