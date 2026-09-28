@@ -202,8 +202,41 @@ printf 'approved %s:%s %s\n' "$OTHER" "" "$(( $(date +%s) - 960 ))" > "$M"
 assert_eq "once: approval older than 15 min → ask again" "$(dec "$(consult agentB "$R1/src/once.ts")")" "ask"
 printf 'approved %s:%s %s\n' "someone-else" "" "$(date +%s)" > "$M"
 assert_eq "once: approval for a different holder → ask" "$(dec "$(consult agentB "$R1/src/once.ts")")" "ask"
-jq -n --arg s "$ME" '{session_id:$s}' | bash "$SHIM" deregister
+# SESSION_COORD_CLAUDE_PID seams do_deregister's claude_pid() walk so it never touches the
+# REAL live session's bridge file (/tmp/claude-session-coord-pid-<realpid>.sid) — every
+# other register/deregister call in both suites sets this seam; this one didn't (fix round 1).
+SC_STUB_PID=$((50000000 + $$))
+jq -n --arg s "$ME" '{session_id:$s}' | SESSION_COORD_CLAUDE_PID="$SC_STUB_PID" bash "$SHIM" deregister
 [ ! -d "/tmp/claude-session-coord-${ME}.asks" ] && echo "ok: deregister removes the asks dir" || { echo "FAIL: asks dir survived deregister"; FAIL=1; }
+
+# --- deny then downgrade must never promote a stale pending marker (fix round 1, item 1) ------
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+hold "$OTHER" '' "$R1/src/deny.ts" src/deny.ts 60
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/deny.ts" src/deny.ts '' 60)]")]"
+assert_eq "deny: first edit asks" "$(dec "$(consult agentB "$R1/src/deny.ts")")" "ask"
+MD="/tmp/claude-session-coord-${ME}.asks/$(printf '%s\037%s' "$R1/src/deny.ts" agentB | shasum | cut -c1-40)"
+assert_eq "deny: marker is pending" "$(cut -d' ' -f1 "$MD" 2>/dev/null)" "pending"
+# No record here — the tool never ran, simulating a deny.
+assert_eq "deny: later downgraded consult (SKIP_COLLISION_ASK) → warn" "$(dec "$(SKIP_COLLISION_ASK=1 consult agentB "$R1/src/deny.ts")")" "none"
+POSTD=$(jq -n --arg s "$ME" --arg f "$R1/src/deny.ts" '{session_id:$s, agent_id:"agentB", tool_name:"Edit", tool_input:{file_path:$f}}')
+printf '%s' "$POSTD" | bash "$SHIM" record
+assert_eq "deny: stale pending marker is never silently approved" "$([ -f "$MD" ] && cut -d' ' -f1 "$MD" || echo absent)" "absent"
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/deny.ts" src/deny.ts '' 60)]")]"
+assert_eq "deny: a real collision still asks after the downgrade" "$(dec "$(consult agentB "$R1/src/deny.ts")")" "ask"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
+
+# --- Bash-write promote path (fix round 1, item 4) ---------------------------------------------
+bjson() { jq -n --arg s "$ME" --arg a "$1" --arg c "$2" --arg cwd "$R1" \
+  '{session_id:$s, agent_id:$a, tool_name:"Bash", cwd:$cwd, tool_input:{command:$c}}'; }
+hold "$OTHER" '' "$R1/src/bpromo.ts" src/bpromo.ts 60
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/bpromo.ts" src/bpromo.ts '' 60)]")]"
+assert_eq "bash-promote: consult on a Bash write asks" "$(dec "$(bjson agentB 'rm ./src/bpromo.ts' | bash "$SCRIPT" consult --stdin-json 2>/dev/null)")" "ask"
+bjson agentB 'rm ./src/bpromo.ts' | bash "$SHIM" record
+MB="/tmp/claude-session-coord-${ME}.asks/$(printf '%s\037%s' "$R1/src/bpromo.ts" agentB | shasum | cut -c1-40)"
+assert_eq "bash-promote: marker approved via the Bash PostToolUse record" "$(cut -d' ' -f1 "$MB" 2>/dev/null)" "approved"
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/bpromo.ts" src/bpromo.ts '' 60)]")]"
+assert_eq "bash-promote: next Bash consult is warn-only" "$(dec "$(bjson agentB 'rm ./src/bpromo.ts' | bash "$SCRIPT" consult --stdin-json 2>/dev/null)")" "none"
+rm -rf "/tmp/claude-session-coord-${ME}.asks"
 
 . "$HOOK_DIR/lib/mutants.sh"
 mutant "is_self ignores agent_id (all own rows = self)" "scripts/pg-lab/session-coord.sh" \
@@ -226,6 +259,8 @@ mutant "touch window 15 min → 150 min" "scripts/pg-lab/session-coord.sh" \
   's/^WINDOW_SECS=900 /WINDOW_SECS=9000 /'
 mutant "approved markers ignored" "scripts/pg-lab/session-coord.sh" \
   's/elif ask_suppressed /elif false \&\& ask_suppressed /'
+mutant "consult purge of stale pending ask markers disabled" "scripts/pg-lab/session-coord.sh" \
+  's/&& rm -f "\$pm"$/\&\& false \&\& rm -f "\$pm"/'
 run_mutants "$PROJECT_ROOT" ".claude/hooks/test-session-coord-v2.sh" || FAIL=1
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

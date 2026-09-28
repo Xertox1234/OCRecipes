@@ -332,7 +332,7 @@ decide_and_emit() { # $1 sid, $2 agent, $3 snapshot age (s), $4 target file, $5 
 }
 
 do_consult() {
-  local input sid agent files snap age f match best="" bestfile=""
+  local input sid agent files snap age f match best="" bestfile="" ask_d pm st
   input=$(cat)
   sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
   case "$sid" in ''|.|..|*[!A-Za-z0-9._-]*) exit 0 ;; esac
@@ -340,6 +340,21 @@ do_consult() {
   case "$agent" in *[!A-Za-z0-9._-]*) exit 0 ;; esac
   files=$(target_paths "$input")
   [ -n "$files" ] || exit 0
+  # A PENDING marker that survives to the NEXT consult for this (file, agent) can only
+  # mean the prior ask was denied or abandoned — a genuine approval would already have
+  # been promoted at the intervening PostToolUse. Purge it so a later downgraded consult
+  # (stale-touch, SKIP_COLLISION_ASK, pg-down) can't have its `record` promote a stale
+  # pending marker into a silent approval of a collision the user never approved.
+  ask_d=$(ask_dir "$sid")
+  if [ -d "$ask_d" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      pm="$ask_d/$(ask_key "$f" "$agent")"
+      [ -f "$pm" ] || continue
+      read -r st _ _ < "$pm" 2>/dev/null || continue
+      [ "$st" = pending ] && rm -f "$pm"
+    done <<<"$files"
+  fi
   snap="/tmp/claude-session-coord-${sid}.json"
   age=$(snapshot_age_secs "$snap")
   if [ "$age" -gt 25 ]; then refresh_bounded "$sid"; age=$(snapshot_age_secs "$snap"); fi

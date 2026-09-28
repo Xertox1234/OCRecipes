@@ -41,5 +41,5 @@ Binding for the repo's own tooling — `.claude/hooks/**`, `.claude/skills/**`, 
 
 ## Collision ask (session coordination v2)
 
-- Editing a file another live session touched in the last 15 min asks the user, naming the holder; approving once suppresses further asks for that file/holder for 15 min. A sibling subagent of the same session still only gets the warning, never an ask.
+- Editing a file another live session touched in the last 15 min asks the user, naming the holder; approving once suppresses further asks for that file/holder/agent for 15 min. A sibling subagent of the same session still only gets the warning, never an ask.
 - `SKIP_COLLISION_ASK=1` turns the ask into a warning (`claude -p` / `dontAsk` runs, where an ask resolves to deny).
