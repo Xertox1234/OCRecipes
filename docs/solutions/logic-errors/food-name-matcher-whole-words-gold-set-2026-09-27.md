@@ -51,6 +51,10 @@ Substring containment is not word matching, and a ranking rule was written from 
    Run the grid against the pre-fix commit as a control: a clean zero only counts if the same grid shows the flips before the fix.
 6. Report both versions' numbers and the residuals. One tuning pass, then stop.
 
+7. **Widening a category-scoped scoring exemption to a new category is safe only after a structural sweep of every row in that category matching the exemption's trigger pattern, run before/after.** The dehydrated-form exemption (`isUnaskedDehydratedForm`) was originally scoped to Nuts/Seeds categories, where a sole "dried" comma-part always means the plain shelled nut (not a processed product). When the forgiveness pattern was widened to Spices-headed rows, the same structural sweep discipline from bullet 5 was applied: all 10 real CNF Spices rows whose last part is a sole "dried" or "powder" word were tested before/after. This fixed bare "thyme"/"rosemary"/"dill weed" (they now resolve to their dried CNF rows, restoring pre-#1126 behaviour) with zero regressions. Without the sweep, one cannot distinguish between a safe category-scope expansion and one that introduces new wrong answers.
+
+8. **Exempting a penalty to fix an underscored case can restore an order-dependent tie rather than a genuine scored preference.** When two rows score identically, the implementation's `first-max-wins` semantics silently pick whichever the CNF list happens to list first. The dehydrated-form exemption on Spices rows depends on this: dill weed, rosemary, and thyme resolve to their "dried" row because CNF lists it first in each pair. Spearmint (also in CNF as both fresh and dried) still resolves to "fresh" because CNF lists that one first — same code path, opposite outcome, driven entirely by list order. **This must be stated explicitly in the code comment or docstring**, not buried in this design doc, because the fix's correctness depends on an external data provider's row order and would silently flip if CNF ever reordered its list.
+
 ### Near ties go to the shortest description, which is often the processed form
 
 Rows that share the head word ("Milk, …", "Egg, chicken, …") score the same on structure, and
@@ -60,8 +64,7 @@ point off a description with dry/dried/powder/dehydrated/flour the query did not
 exempts three CNF spellings that are not processed products: a comma part that is only
 "dry" (a grain's raw state: "Grains, quinoa, dry"), "dry roasted" (a method), and a sole
 "dried" part on a Nuts/Seeds row (the plain shelled nut). The last two exemptions came from
-review, not from the gold set. Measured residuals (cocoa, currant, dried herbs, bare "egg")
-are an acceptance criterion in the P3 matcher todo.
+review, not from the gold set. The dehydrated-form exemption was later widened from Nuts/Seeds to also exempt a sole "dried" comma-part on a Spices-headed row, which fixed bare "thyme"/"rosemary"/"dill weed" (they now resolve to their dried CNF rows, restoring pre-#1126 behaviour) with zero regressions verified by a structural sweep of all 10 real CNF Spices rows whose last part is a sole dried/powder word. "cocoa", "currant"/"currants" and "cherries" remain unfixed residuals: their common/retail form is the processed one, so the dehydrated-form penalty pushes the wrong direction for them; cherries' issue is actually the unrelated 0.8 plural-word-match discount. These are recorded in the archived P3 todo, not re-derived here.
 
 In tests, pair every absence assertion (`toBeUndefined()`, "does not rewrite") with a positive control in the same block, and build fixtures from **real** rows with each old-scorer trap beside its correct sibling.
 
@@ -70,6 +73,7 @@ In tests, pair every absence assertion (`toBeUndefined()`, "does not rewrite") w
 - `server/services/nutrition-lookup.ts`: `scoreCNFMatch`, `isUnaskedDehydratedForm` (#1126), `matchWords`, `withoutLeadingQuantity`, `fuzzyMatchCNF`
 - `server/services/cultural-food-map.ts`: `ALIAS_PATTERNS`, `lookupCulturalFood`
 - `server/services/barcode-lookup.ts`: OFF-vs-CNF cross-validation uses the same scorer (50 OFF category terms: 41 → 46 matched)
+- `server/services/__tests__/fixtures/cnf-gold-set.json`: committed gold set of 67 queries (the original 51 plus 16 new ones for taco/dehydrated-form/beverage items), read back by a `describe('fuzzyMatchCNF — committed gold set')` block in `nutrition-lookup.test.ts` that asserts the exact right/wrong/no-match SETS, not just counts
 
 ## See Also
 
