@@ -179,3 +179,20 @@ describe("RecipeCard — favourite heart", () => {
     expect(onFavourite).not.toHaveBeenCalled();
   });
 });
+
+// docs/rules/accessibility.md: never `accessible` on a card wrapper with an
+// interactive child — iOS collapses the subtree into one node and VoiceOver
+// (and Maestro) can't reach Save, the heart or the section toggles. jsdom
+// can't see that collapse (React drops the boolean `accessible` attribute),
+// so the reachability half was measured on the iOS simulator; this pins
+// where the card's summary moved to.
+describe("RecipeCard — accessibility tree", () => {
+  it("the title is a header that carries the recipe summary", () => {
+    renderComponent(<RecipeCard recipe={recipe} />);
+    expect(
+      screen.getByRole("header", {
+        name: "Recipe: Lemon Herb Chicken. Easy, 30 min, 4 servings",
+      }),
+    ).toBeDefined();
+  });
+});

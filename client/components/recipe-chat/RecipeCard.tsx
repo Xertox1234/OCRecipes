@@ -117,10 +117,6 @@ function RecipeCardInner({
           borderColor: withOpacity(theme.text, 0.1),
         },
       ]}
-      accessible
-      accessibilityRole="none"
-      accessibilityLabel={`Recipe: ${recipe.title}. ${recipe.difficulty}, ${recipe.timeEstimate}, ${recipe.servings} servings`}
-      accessibilityLiveRegion="polite"
     >
       {/* Image — a missing image once loading is over (null: generation
           failed or timed out) is final, so FallbackImage shows its
@@ -146,7 +142,18 @@ function RecipeCardInner({
       {/* Header */}
       <View style={styles.headerRow}>
         <View style={styles.headerText}>
-          <ThemedText type="h4">{recipe.title}</ThemedText>
+          {/* The summary lives on the title, never on the card: an
+              `accessible` card collapses Save, the heart and the section
+              toggles into one node that VoiceOver can't enter. The live
+              region is Android's arrival announce (iOS announces above). */}
+          <ThemedText
+            type="h4"
+            accessibilityRole="header"
+            accessibilityLabel={`Recipe: ${recipe.title}. ${recipe.difficulty}, ${recipe.timeEstimate}, ${recipe.servings} servings`}
+            accessibilityLiveRegion="polite"
+          >
+            {recipe.title}
+          </ThemedText>
           <ThemedText
             type="caption"
             style={{ color: theme.textSecondary, marginTop: 2 }}
