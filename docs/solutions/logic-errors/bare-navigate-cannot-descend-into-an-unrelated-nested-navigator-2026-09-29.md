@@ -100,11 +100,16 @@ screen: "CoachTab" } }] })` fallback.
   (which `<Stack.Navigator>`/`<Tab.Navigator>` directly renders this screen, and its own parent
   chain up to the root) and confirm the target name appears in that chain's own registered
   screens — not merely "somewhere in the app."
-- A `CompositeNavigationProp` (see
+- **Type the navigation prop by where the screen is actually registered.** A
+  `CompositeNavigationProp` (see
   [composite-navigation-prop-cross-stack](../design-patterns/composite-navigation-prop-cross-stack-2026-05-13.md))
-  only widens the **TypeScript** surface of allowed screen names — it does not change, and can
-  silently paper over, this runtime resolution rule. A call can type-check and still no-op.
-- This is not caught by `tsc`, ESLint, or a `vi.mock("@react-navigation/native", ...)` unit test
+  is only honest when the screen really is nested that deep. `AllConversationsNavigationProp`
+  claimed RootStack → MainTab → ChatStack for a screen registered on the root stack, which is
+  exactly what let the bare `navigate("CoachPro")` type-check. With the plain
+  `NativeStackNavigationProp<RootStackParamList, "AllConversations">` (the fix), `tsc` rejects the
+  bare call (measured: TS2345) and still accepts the nested form through `NavigatorScreenParams`.
+  So `tsc` DOES catch this class of bug, but only when the prop type isn't lying.
+- It is not caught by ESLint, or by a `vi.mock("@react-navigation/native", ...)` unit test
   (which replaces `useNavigation()`'s `navigate` with a plain spy, so it never exercises real
   resolution). Verifying reachability requires either reading the navigator tree by hand or an
   integration test against the real (unmocked) `@react-navigation/*` packages — attempted for this
@@ -117,7 +122,8 @@ screen: "CoachTab" } }] })` fallback.
 
 ## Related Files
 
-- `client/screens/AllConversationsScreen.tsx` — the unfixed call site (line ~127, `navigate("CoachPro", ...)`), left as-is; this doc records the finding, not a fix (see the deferred-warning discussion in `todos/archive/P3-2026-09-26-all-conversations-screen-no-refetch-when-mounted.md`)
+- `client/screens/AllConversationsScreen.tsx` — the coach-row call site, fixed to the nested form (found as a deferred warning in `todos/archive/P3-2026-09-26-all-conversations-screen-no-refetch-when-mounted.md`)
+- `client/types/navigation.ts` — `AllConversationsNavigationProp`, narrowed from a false 3-level composite to the root-stack prop so `tsc` rejects the bare call
 - `client/screens/HomeScreen.tsx` — the correct nested-form pattern for an equivalent cross-tab jump
 - `client/navigation/RootStackNavigator.tsx` — `AllConversations`'s registration (root-level) vs. `Main`'s
 - `client/navigation/MainTabNavigator.tsx` — `CoachTab`'s registration (lazy by default)

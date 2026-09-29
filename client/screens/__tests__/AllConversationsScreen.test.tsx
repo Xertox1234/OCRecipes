@@ -119,9 +119,18 @@ describe("AllConversationsScreen — Coach and Recipes tabs", () => {
     renderComponent(<AllConversationsScreen />);
     fireEvent.click(screen.getByLabelText("Open conversation: Protein ideas"));
 
-    expect(mockNavigate).toHaveBeenCalledWith("CoachPro", {
-      selectedConversationId: 7,
+    // AllConversations is a ROOT-stack screen and CoachPro lives only in the
+    // Coach tab's nested ChatStack, so a bare navigate("CoachPro") is never
+    // handled (navigationInChildEnabled is off) and the tap did nothing. It
+    // must name the path: Main → CoachTab → CoachPro.
+    expect(mockNavigate).toHaveBeenCalledWith("Main", {
+      screen: "CoachTab",
+      params: { screen: "CoachPro", params: { selectedConversationId: 7 } },
     });
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "CoachPro",
+      expect.anything(),
+    );
   });
 
   it("the Recipes tab lists recipe chats, and a row reopens that recipe chat", () => {
