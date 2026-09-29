@@ -379,4 +379,21 @@ describe("HomeScreen — Quick Log lock", () => {
     renderComponent(<HomeScreen />);
     expect(typeof quickLogProps().onResultsShown).toBe("function");
   });
+
+  // The subscription check can resolve AFTER a free/lapsed user has already
+  // opened the row (isPremiumResolved arrives late). Without this, the
+  // header repaints locked but the body stays open with a live input, and
+  // the next tap closes the drawer instead of showing the upgrade flow.
+  it("closes the drawer when the lock resolves to true while it is open", () => {
+    premiumHolder.isPremiumResolved = false;
+    const { rerender } = renderComponent(<HomeScreen />);
+    expect(quickLogProps().isLocked).toBe(false);
+    act(() => quickLogProps().onToggle());
+    expect(quickLogProps().isOpen).toBe(true);
+
+    premiumHolder.isPremiumResolved = true;
+    rerender(<HomeScreen />);
+    expect(quickLogProps().isLocked).toBe(true);
+    expect(quickLogProps().isOpen).toBe(false);
+  });
 });

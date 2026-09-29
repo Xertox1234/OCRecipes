@@ -8,6 +8,7 @@ tags: [accessibility, talkback, react-native, announce-for-accessibility, access
 symptoms: [An accessibility cue that TalkBack used to speak on Android stops being spoken after a refactor that removed an accessibilityLiveRegion, A screen-reader announce fires on the container appearing / changing state but NOT when an async-loaded value (name/price/count) fills in afterward, iOS and Android both go silent on an in-place content update that previously only Android announced (via the dropped live region)]
 applies_to: [client/**/*.tsx]
 created: '2026-06-24'
+last_updated: '2026-09-29'
 ---
 
 # Replacing a shared-container live region with discriminator-keyed announces silently drops same-discriminator content updates
@@ -102,6 +103,46 @@ motivated dropping the live region.
   phase, then re-render with the value attached) to both the on-device sweep and
   the unit test.
 
+## Second manifestation: a presence flag is a discriminator too (2026-09-29)
+
+The discriminator doesn't have to be a `variant`/`type` string — a plain boolean
+presence flag (`hasParsedItems = items.length > 0`) is the same shape of trap.
+`QuickLogDrawer.tsx` and `QuickLogScreen.tsx` (todo:
+`P3-2026-09-26-quick-log-review-followups`) each added a success-parse announce
+edge-guarded on `hasParsedItems`'s false→true transition — correct for the
+first parse, but a **second** parse that replaces the item set without the
+list passing back through empty (edit the input, parse again while the prior
+unlogged result is still shown) keeps the discriminator `true` throughout, so
+the announce never re-fires. A `code-reviewer` dispatch caught this with a
+constructed probe: mount with 1 parsed item (announce fires once), rerender
+with a *different* 2-item set with no intervening empty state, and the mock
+is still called exactly once.
+
+**Why this one was left unfixed, unlike the `ProductChip` fix above:** the
+content-keyed fix pattern this solution recommends needs a value that is
+monotonic *for the case that should re-announce* and stable *for the case
+that shouldn't*. `ProductChip`'s `productName` is genuinely monotonic — it
+appears once and never reverts — so keying a second effect on it is safe.
+Here, the only per-parse signal these components can read is
+`session.parsedItems` itself, and the same operation that legitimately
+should NOT re-announce — the user removing one item from an already-shown
+result via `removeItem` — changes that array exactly the same way a new
+parse does: the length (or a content signature) changes while the discriminator
+stays `true`. Naively keying a second effect on item count or a stringified
+item list would swap this "misses a replace" gap for an "over-announces every
+removal" gap, which is worse (removals become frequent). A correct fix needs
+a signal the component doesn't have from the outside — e.g. a `parseResultId`
+or `lastParsedAt` that `useQuickLogSession` bumps only on a genuine new parse,
+never on `removeItem` — and that hook was outside the todo's Scope Contract.
+
+**Prevention addendum:** before reaching for "key a second effect on the
+content," confirm the content value is monotonic for the transition you want
+and stable for the transitions you don't. When the same host object changes
+shape for both a "new result" and a "user edited the existing result," the
+fix belongs at the source (a generation counter / result id), not in the
+consuming component — flag it as a deferred follow-up rather than
+approximating with a content key that trades one silent gap for a noisier one.
+
 ## Related Files
 
 - `client/camera/components/ProductChip.tsx` — the `productName`-keyed effect and
@@ -113,6 +154,11 @@ motivated dropping the live region.
   `{ ...state, product }`, keeping the same phase `type`
 - `docs/rules/accessibility.md` — the `accessibilityLiveRegion` exception clause
   (drop shared container live region → announce imperatively, keyed on content)
+- `client/components/home/QuickLogDrawer.tsx`,
+  `client/screens/QuickLogScreen.tsx` — the second manifestation: a
+  `hasParsedItems`-keyed announce that misses a replace-without-empty
+  re-parse; deliberately left unfixed pending a per-parse signal from
+  `client/hooks/useQuickLogSession.ts`
 
 ## See Also
 
