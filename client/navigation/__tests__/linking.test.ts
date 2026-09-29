@@ -159,7 +159,10 @@ describe("linking config", () => {
   it("keeps unrelated query params on other screens (strip is scoped to the chat routes)", () => {
     const route = parseLink("scan?mode=label&initialMessage=x");
     expect(route?.name).toBe("Scan");
-    expect(route?.params).toMatchObject({ mode: "label" });
+    // Pin the whole params object (not toMatchObject) so a stripLinkOnlyParams
+    // mutant that strips initialMessage from every route, not just the
+    // chat routes, turns this test red instead of passing on a subset match.
+    expect(route?.params).toEqual({ mode: "label", initialMessage: "x" });
   });
 
   // Query values are decoded by query-string → decode-uri-component. Its
