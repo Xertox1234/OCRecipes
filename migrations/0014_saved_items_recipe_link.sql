@@ -22,8 +22,9 @@
 -- re-link on the already-saved path). A bulk backfill would push free users
 -- past their saved-items cap.
 --
--- Names match what `db:push` creates from shared/schema.ts (savedItems), so a
--- later push sees no diff. Idempotent (IF NOT EXISTS / DO block). Adding
+-- Column, index and constraint names match what `drizzle-kit generate` emits
+-- for shared/schema.ts (savedItems). Idempotent (IF NOT EXISTS / DO block):
+-- re-running it skips every step. Adding
 -- nullable columns with no default is a metadata-only change; the unique
 -- index is partial (recipe_id IS NOT NULL) and covers zero rows at apply time.
 --
