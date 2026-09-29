@@ -15,7 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -39,6 +39,11 @@ import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/context/ToastContext";
 import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
 import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
+import {
+  useAddFavouriteRecipe,
+  useIsRecipeFavourited,
+  useToggleFavouriteRecipe,
+} from "@/hooks/useFavouriteRecipes";
 import {
   catalogSaveErrorMessage,
   normalizeCatalogDetail,
@@ -153,6 +158,11 @@ export default function FeaturedRecipeDetailScreen() {
   const { mutateAsync: saveCatalogRecipe, isPending: isSavingCatalog } =
     useSaveCatalogRecipe({ addToSavedItems: true });
   const [savedRecipeId, setSavedRecipeId] = useState<number | null>(null);
+  // The preview's heart favourites the SAVED copy (a mealPlan recipe); an
+  // unsaved preview has no row to favourite yet (ruling 2026-09-29).
+  const isFavourited = useIsRecipeFavourited(savedRecipeId ?? 0, "mealPlan");
+  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
+  const addFavourite = useAddFavouriteRecipe();
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
 
@@ -326,19 +336,23 @@ export default function FeaturedRecipeDetailScreen() {
   }, []);
 
   const catalogTitle = normalized?.title;
-  const handleSaveCatalog = useCallback(async () => {
+  /** Saves the preview; resolves the saved copy's id, or null on failure. */
+  const saveCatalog = useCallback(async (): Promise<number | null> => {
     setSaveError(null);
     try {
       const saved = await saveCatalogRecipe(recipeId);
       setSavedRecipeId(saved.id);
-      AccessibilityInfo.announceForAccessibility("Recipe saved");
       if (saved.savedItemStatus === "limit_reached") {
+        // The toast announces itself; one message, not two.
         toast.info(SAVED_ITEMS_FULL_MESSAGE);
+      } else {
+        AccessibilityInfo.announceForAccessibility("Recipe saved");
       }
+      return saved.id;
     } catch (err) {
       if (err instanceof ApiError && err.code === ErrorCode.PREMIUM_REQUIRED) {
         setShowUpgrade(true);
-        return;
+        return null;
       }
       const { message, retryable } = catalogSaveErrorMessage(err);
       if (!isMountedRef.current) {
@@ -347,11 +361,31 @@ export default function FeaturedRecipeDetailScreen() {
             retryable ? "Try again." : message
           }`,
         );
-        return;
+        return null;
       }
       setSaveError(message);
+      return null;
     }
   }, [saveCatalogRecipe, recipeId, toast, catalogTitle]);
+
+  const handleSaveCatalog = useCallback(async () => {
+    await saveCatalog();
+  }, [saveCatalog]);
+
+  const handleFavouriteCatalog = useCallback(async () => {
+    if (savedRecipeId !== null) {
+      toggleFavourite({ recipeId: savedRecipeId, recipeType: "mealPlan" });
+      return;
+    }
+    const id = await saveCatalog();
+    if (id === null) return;
+    try {
+      await addFavourite({ recipeId: id, recipeType: "mealPlan" });
+    } catch {
+      // useToggleFavouriteRecipe surfaces its own failures (limit alert,
+      // global net); the recipe itself is saved either way.
+    }
+  }, [savedRecipeId, toggleFavourite, saveCatalog, addFavourite]);
 
   // After a purchase from the Premium wall, the 403'd preview must refetch —
   // the subscription refresh does not touch this query, and 4xx never retries.
@@ -497,31 +531,63 @@ export default function FeaturedRecipeDetailScreen() {
           ]}
         >
           <InlineError message={saveError} />
-          <Pressable
-            onPress={
-              savedRecipeId !== null ? handleOpenSaved : handleSaveCatalog
-            }
-            disabled={isSavingCatalog}
-            accessibilityRole="button"
-            accessibilityLabel={
-              savedRecipeId !== null
-                ? `Saved. Open ${normalized.title} in your recipes`
-                : `Save ${normalized.title} to your recipes`
-            }
-            accessibilityState={{
-              disabled: isSavingCatalog,
-              busy: isSavingCatalog,
-            }}
-            style={[styles.saveButton, { backgroundColor: theme.accentSolid }]}
-          >
-            <ThemedText style={{ color: theme.buttonText, fontWeight: "600" }}>
-              {isSavingCatalog
-                ? "Saving…"
-                : savedRecipeId !== null
-                  ? "Saved · View recipe"
-                  : "Save to My Recipes"}
-            </ThemedText>
-          </Pressable>
+          <View style={styles.saveRow}>
+            <Pressable
+              onPress={() => void handleFavouriteCatalog()}
+              disabled={isSavingCatalog}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isFavourited
+                  ? `Remove ${normalized.title} from favourites`
+                  : `Add ${normalized.title} to favourites`
+              }
+              accessibilityState={{
+                selected: isFavourited,
+                disabled: isSavingCatalog,
+              }}
+              style={[
+                styles.heartButton,
+                { backgroundColor: withOpacity(theme.text, 0.06) },
+              ]}
+            >
+              <Ionicons
+                name={isFavourited ? "heart" : "heart-outline"}
+                size={22}
+                color={isFavourited ? theme.error : theme.text}
+                accessible={false}
+              />
+            </Pressable>
+            <Pressable
+              onPress={
+                savedRecipeId !== null ? handleOpenSaved : handleSaveCatalog
+              }
+              disabled={isSavingCatalog}
+              accessibilityRole="button"
+              accessibilityLabel={
+                savedRecipeId !== null
+                  ? `Saved. Open ${normalized.title} in your recipes`
+                  : `Save ${normalized.title} to your recipes`
+              }
+              accessibilityState={{
+                disabled: isSavingCatalog,
+                busy: isSavingCatalog,
+              }}
+              style={[
+                styles.saveButton,
+                { backgroundColor: theme.accentSolid },
+              ]}
+            >
+              <ThemedText
+                style={{ color: theme.buttonText, fontWeight: "600" }}
+              >
+                {isSavingCatalog
+                  ? "Saving…"
+                  : savedRecipeId !== null
+                    ? "Saved · View recipe"
+                    : "Save to My Recipes"}
+              </ThemedText>
+            </Pressable>
+          </View>
         </View>
       ) : null}
       <UpgradeModal
@@ -573,7 +639,19 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.sm,
     gap: Spacing.xs,
   },
+  saveRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  heartButton: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   saveButton: {
+    flex: 1,
     minHeight: 48,
     borderRadius: BorderRadius.sm,
     alignItems: "center",

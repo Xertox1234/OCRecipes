@@ -27,13 +27,15 @@ export function useFavouriteRecipes(limit?: number) {
   });
 }
 
+async function fetchFavouriteIds(): Promise<{ ids: FavouriteId[] }> {
+  const res = await apiRequest("GET", "/api/favourite-recipes/ids");
+  return res.json();
+}
+
 export function useFavouriteRecipeIds() {
   return useQuery<{ ids: FavouriteId[] }>({
     queryKey: FAVOURITES_IDS_KEY,
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/favourite-recipes/ids");
-      return res.json();
-    },
+    queryFn: fetchFavouriteIds,
     staleTime: 30_000,
     refetchOnMount: "always",
   });
@@ -122,6 +124,35 @@ export function useToggleFavouriteRecipe(meta?: MutationErrorMeta) {
     },
     meta,
   });
+}
+
+/**
+ * Make a recipe a favourite without ever un-favouriting it. The server only
+ * offers a toggle, so this reads the favourites list (cached, else fetched)
+ * and toggles only when the recipe isn't on it. For a heart that saves a
+ * recipe and favourites it in one tap (catalog preview, chat recipe cards).
+ */
+export function useAddFavouriteRecipe() {
+  const queryClient = useQueryClient();
+  const { mutateAsync: toggleFavourite } = useToggleFavouriteRecipe();
+
+  return useCallback(
+    async (recipe: {
+      recipeId: number;
+      recipeType: "mealPlan" | "community";
+    }) => {
+      const { ids } = await queryClient.ensureQueryData({
+        queryKey: FAVOURITES_IDS_KEY,
+        queryFn: fetchFavouriteIds,
+      });
+      const already = ids.some(
+        (f) =>
+          f.recipeId === recipe.recipeId && f.recipeType === recipe.recipeType,
+      );
+      if (!already) await toggleFavourite(recipe);
+    },
+    [queryClient, toggleFavourite],
+  );
 }
 
 export function useShareRecipe() {
