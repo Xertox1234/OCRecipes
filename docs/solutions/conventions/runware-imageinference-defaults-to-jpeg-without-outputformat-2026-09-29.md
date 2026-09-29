@@ -74,10 +74,11 @@ A caller that overwrites an EXISTING stored key in place (`server/scripts/backfi
 `refreshInPlace()`) cannot just add `outputFormat: "PNG"` unconditionally — it must preserve
 whatever extension the key already has, so the requested format has to be derived from that
 extension, not hardcoded. See `resolveRefreshOutputFormat()` in
-`server/scripts/backfill-recipe-images-utils.ts`: a `.png` key requests `outputFormat: "PNG"`; a
-`.jpg`/`.jpeg` key (or an unrecognized extension) keeps Runware's un-set default (JPEG) rather than
-risk mislabeling a post-fix `.jpg` key with PNG bytes — the same defect this rule exists to prevent,
-just inverted.
+`server/scripts/backfill-recipe-images-utils.ts`: a `.jpg`/`.jpeg`/`.webp` key keeps Runware's
+un-set default (JPEG) — hardcoding `outputFormat: "PNG"` there would mislabel a post-fix `.jpg`
+key with PNG bytes, the same defect this rule exists to prevent, just inverted. Anything else — a
+`.png` key, or an unrecognized extension — requests `outputFormat: "PNG"`, mirroring
+`refreshInPlace`'s own save-ext fallback to `"png"`.
 
 ## Related Files
 
