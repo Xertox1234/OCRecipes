@@ -1,6 +1,6 @@
 ---
 title: "Server-driven Coach reminder push payload has no url field — the client entryId fallback is permanently load-bearing"
-status: in-progress
+status: done
 priority: low
 created: 2026-09-25
 updated: 2026-09-25
@@ -25,9 +25,9 @@ Found during code review of `todo/P2-2026-09-23-notification-tap-lost-on-cold-la
 
 ## Acceptance Criteria
 
-- [ ] `notification-scheduler.ts`'s commitment-reminder push payload includes a `url` field with the same `ocrecipes://notebook-entry/<id>` shape the client scheduler uses
-- [ ] Existing tests for `notification-scheduler.ts` updated/extended to assert the new field
-- [ ] No change to the `entryId` field (kept for back-compat with the client-side `extractNotificationUrl` fallback, which should NOT be removed by this todo — other, older payload shapes may still exist)
+- [x] `notification-scheduler.ts`'s commitment-reminder push payload includes a `url` field with the same `ocrecipes://notebook-entry/<id>` shape the client scheduler uses
+- [x] Existing tests for `notification-scheduler.ts` updated/extended to assert the new field
+- [x] No change to the `entryId` field (kept for back-compat with the client-side `extractNotificationUrl` fallback, which should NOT be removed by this todo — other, older payload shapes may still exist)
 
 ## Implementation Notes
 
@@ -54,3 +54,9 @@ Keep this a small, additive change to the `data` object passed to `notify(...)`.
 ### 2026-09-25
 
 - Filed from a code-review finding on `todo/P2-2026-09-23-notification-tap-lost-on-cold-launch` (commit `bb36b484`, WARNING addressed by rewording comments in `2c6e30d0`; this todo is the actual server-side fix the reworded comments point at).
+
+### 2026-09-29
+
+- Implemented: `server/services/notification-scheduler.ts`'s commitment-reminder `notify()` call now sends `data: { entryId: entry.id, url: ocrecipes://notebook-entry/${entry.id} }`, matching the client scheduler's shape byte-for-byte. `entryId` unchanged. Test updated to assert the exact `data` shape (not `objectContaining`) so the new field is genuinely pinned.
+- Reviewed clean by `code-reviewer` (no findings) and `server-reviewer` (no blocking findings, one WARNING deferred — see below). Full suite (test/types/lint) green.
+- Deferred (out of this todo's Scope Contract, not fixed here): the reworded comments this todo was filed to un-stale are themselves now stale in the other direction — `client/navigation/linking.ts:44-53` and `client/hooks/useNotebookNotifications.ts:47-56` both still say the server-driven push path sends `entryId`-only payloads "indefinitely" / "is out of this change's scope," which is no longer true now that this todo has shipped. A follow-up should reword both to state the fallback's real remaining rationale: defense-in-depth for payload shapes scheduled before this fix, not a permanent gap.
