@@ -146,9 +146,22 @@ export default function AllConversationsScreen() {
           if (activeSegment === "recipe") {
             navigation.navigate("RecipeChat", { conversationId: conv.id });
           } else {
-            navigation.navigate("CoachPro", {
-              selectedConversationId: conv.id,
-            });
+            // This is a root-stack screen; CoachPro lives only in the Coach
+            // tab's nested ChatStack. A bare navigate("CoachPro") is never
+            // handled (navigationInChildEnabled is off), so name the path.
+            // `pop: true` returns to the EXISTING Main route below this modal;
+            // without it the root StackRouter pushes a second Main on top.
+            navigation.navigate(
+              "Main",
+              {
+                screen: "CoachTab",
+                params: {
+                  screen: "CoachPro",
+                  params: { selectedConversationId: conv.id },
+                },
+              },
+              { pop: true },
+            );
           }
         }}
         accessibilityRole="button"
