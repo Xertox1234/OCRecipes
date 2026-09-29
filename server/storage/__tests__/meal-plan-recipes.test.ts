@@ -25,6 +25,7 @@ import {
   cookbooks,
   cookbookRecipes,
   favouriteRecipes,
+  savedItems,
 } from "@shared/schema";
 
 type InsertMealPlanRecipe = schema.InsertMealPlanRecipe;
@@ -690,6 +691,35 @@ describe("meal-plan-recipes storage", () => {
           ),
         );
       expect(favLeft).toEqual([]);
+    });
+
+    it("removes the Saved Items row linked to the deleted recipe", async () => {
+      const recipe = await seedRecipe(testUser.id);
+      await tx.insert(savedItems).values([
+        {
+          userId: testUser.id,
+          type: "recipe",
+          title: recipe.title,
+          recipeId: recipe.id,
+          recipeType: "mealPlan",
+        },
+        // Same id, other recipe type: a different recipe — must survive.
+        {
+          userId: testUser.id,
+          type: "recipe",
+          title: "Community twin",
+          recipeId: recipe.id,
+          recipeType: "community",
+        },
+      ]);
+
+      await deleteMealPlanRecipe(recipe.id, testUser.id);
+
+      const left = await tx
+        .select({ recipeType: savedItems.recipeType })
+        .from(savedItems)
+        .where(eq(savedItems.recipeId, recipe.id));
+      expect(left).toEqual([{ recipeType: "community" }]);
     });
 
     it("returns false and skips index removal for a nonexistent recipe", async () => {

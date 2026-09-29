@@ -131,7 +131,22 @@ export function register(app: Express): void {
             ErrorCode.NOT_FOUND,
           );
 
-        res.status(201).json(recipe);
+        // Every recipe Save also lands in Profile > Saved Items (user ruling
+        // 2026-09-29). Runs on the already-saved path too, so a recipe saved
+        // before this shipped gets its row on the next tap.
+        const savedItemStatus = await storage.saveRecipeToSavedItems(
+          req.userId,
+          {
+            recipeId: recipe.id,
+            recipeType: "community",
+            title: recipe.title,
+            description: recipe.description,
+            difficulty: recipe.difficulty,
+            timeEstimate: recipe.timeEstimate,
+          },
+        );
+
+        res.status(201).json({ ...recipe, savedItemStatus });
       } catch (error) {
         handleRouteError(res, error, "save recipe from chat");
       }

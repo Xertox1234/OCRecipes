@@ -17,6 +17,7 @@ vi.mock("../../storage", () => ({
     getChatConversation: vi.fn(),
     getChatMessageById: vi.fn().mockResolvedValue(undefined),
     saveRecipeFromChat: vi.fn(),
+    saveRecipeToSavedItems: vi.fn().mockResolvedValue("linked"),
     getSubscriptionStatus: vi.fn(),
     getEffectiveTierForUser: vi.fn(),
     createChatMessage: vi.fn(),
@@ -188,6 +189,57 @@ describe("Recipe Chat Routes", () => {
         undefined, // lineage — undefined for non-remix conversations
         undefined, // mealTypes — undefined when message has no parseable metadata
       );
+    });
+
+    it("also puts the saved recipe into Saved Items", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation({ id: 5, type: "coach" }),
+      );
+      const saved = createMockCommunityRecipe({
+        id: 100,
+        title: "Soup",
+        description: "Warm",
+        difficulty: "easy",
+        timeEstimate: "30 min",
+      });
+      vi.mocked(storage.saveRecipeFromChat).mockResolvedValue(saved);
+
+      const res = await request(app)
+        .post("/api/chat/conversations/5/save-recipe")
+        .set("Authorization", "Bearer token")
+        .send({ messageId: 10 });
+
+      expect(res.status).toBe(201);
+      expect(storage.saveRecipeToSavedItems).toHaveBeenCalledWith("1", {
+        recipeId: 100,
+        recipeType: "community",
+        title: "Soup",
+        description: "Warm",
+        difficulty: "easy",
+        timeEstimate: "30 min",
+      });
+      expect(res.body.savedItemStatus).toBe("linked");
+    });
+
+    it("still saves the recipe when Saved Items is full, and says so", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation({ id: 5, type: "coach" }),
+      );
+      vi.mocked(storage.saveRecipeFromChat).mockResolvedValue(
+        createMockCommunityRecipe({ id: 100, title: "Soup" }),
+      );
+      vi.mocked(storage.saveRecipeToSavedItems).mockResolvedValueOnce(
+        "limit_reached",
+      );
+
+      const res = await request(app)
+        .post("/api/chat/conversations/5/save-recipe")
+        .set("Authorization", "Bearer token")
+        .send({ messageId: 10 });
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBe(100);
+      expect(res.body.savedItemStatus).toBe("limit_reached");
     });
 
     it("includes lineage in saved recipe for remix conversations", async () => {

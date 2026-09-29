@@ -9,7 +9,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { useNavigation } from "@react-navigation/native";
+import {
+  useNavigation,
+  type CompositeNavigationProp,
+} from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -32,6 +35,7 @@ import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { SavedItem } from "@shared/schema";
 
 const ITEM_SEPARATOR_HEIGHT = Spacing.md;
@@ -113,7 +117,10 @@ export default function SavedItemsScreen() {
     useConfirmationModal();
   const navigation =
     useNavigation<
-      NativeStackNavigationProp<ProfileStackParamList, "SavedItems">
+      CompositeNavigationProp<
+        NativeStackNavigationProp<ProfileStackParamList, "SavedItems">,
+        NativeStackNavigationProp<RootStackParamList>
+      >
     >();
   const { mutate: deleteItem } = useDeleteSavedItem();
 
@@ -154,29 +161,43 @@ export default function SavedItemsScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item, index }: { item: SavedItem; index: number }) => (
-      <Animated.View
-        entering={
-          reducedMotion
-            ? undefined
-            : FadeInDown.delay(
-                Math.min(index, MAX_ANIMATED_INDEX) * 50,
-              ).duration(300)
-        }
-      >
-        <SwipeableRow
-          rightAction={{
-            icon: "trash-2",
-            label: "Delete",
-            backgroundColor: theme.error,
-            onAction: () => handleSwipeDelete(item),
-          }}
+    ({ item, index }: { item: SavedItem; index: number }) => {
+      // A row linked to a real recipe (catalog or chat Save) opens it; a
+      // snapshot item (suggestion) has nothing to open.
+      const recipeId = item.recipeId;
+      const openRecipe =
+        recipeId != null
+          ? () =>
+              navigation.navigate("FeaturedRecipeDetail", {
+                recipeId,
+                recipeType:
+                  item.recipeType === "mealPlan" ? "mealPlan" : "community",
+              })
+          : undefined;
+      return (
+        <Animated.View
+          entering={
+            reducedMotion
+              ? undefined
+              : FadeInDown.delay(
+                  Math.min(index, MAX_ANIMATED_INDEX) * 50,
+                ).duration(300)
+          }
         >
-          <SavedItemCard item={item} />
-        </SwipeableRow>
-      </Animated.View>
-    ),
-    [reducedMotion, theme, handleSwipeDelete],
+          <SwipeableRow
+            rightAction={{
+              icon: "trash-2",
+              label: "Delete",
+              backgroundColor: theme.error,
+              onAction: () => handleSwipeDelete(item),
+            }}
+          >
+            <SavedItemCard item={item} onPress={openRecipe} />
+          </SwipeableRow>
+        </Animated.View>
+      );
+    },
+    [reducedMotion, theme, handleSwipeDelete, navigation],
   );
 
   const renderSeparator = useCallback(
