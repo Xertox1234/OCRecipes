@@ -1,8 +1,9 @@
 /**
  * Pure helpers for `cleanup-junk-mealplan-recipes.ts` — the DB-free leaf
  * (policy: docs/solutions/design-patterns/db-free-policy-leaf-module-for-
- * operator-tooling-2026-07-24.md). The script runs `main()` at module load and
- * cannot be imported in a test; the deletion predicate lives here so the suite
+ * operator-tooling-2026-07-24.md). `cleanup-junk-mealplan-recipes.ts` exports
+ * `main()` (guarded by an `isMain` check) so a test can invoke it directly
+ * with a mocked db; the deletion predicate still lives here so the suite
  * asserts on the exact SQL the script executes.
  */
 import { sql } from "drizzle-orm";

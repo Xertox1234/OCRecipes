@@ -1,6 +1,6 @@
 ---
 title: "Recipe cleanup scripts leave linked Saved Items rows behind"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-29
 updated: 2026-09-29
