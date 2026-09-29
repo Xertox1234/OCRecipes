@@ -1,6 +1,6 @@
 ---
 title: "Deep-link strip tests: the scope test doesn't assert scope, and ChatScreen's non-string test has no positive control"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-28
 updated: 2026-09-28
