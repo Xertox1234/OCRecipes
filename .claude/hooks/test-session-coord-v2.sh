@@ -76,6 +76,13 @@ jq -n --arg s "$ME" --arg c "echo hi > /dev/null && rm src/e.ts" --arg cwd "$R1"
 assert_eq "record: Bash writes past /dev/null still records the real target" "$(q "SELECT rel_path FROM harness.files_in_flight WHERE abs_path='$R1/src/e.ts'")" "src/e.ts"
 assert_eq "record: nothing under /dev is ever recorded" "$(q "SELECT count(*) FROM harness.files_in_flight WHERE abs_path LIKE '/dev/%'")" "0"
 
+# PIN (todo P3-2026-09-27): a target reached through a symlinked ancestor still records
+# under the PHYSICAL spelling — rel_path must never equal the raw (symlinked) abs_path.
+R1LINK="$TMPB/r1-symlink"; ln -s "$R1" "$R1LINK"
+jq -n --arg s "$ME" --arg f "$R1LINK/src/sym.ts" '{session_id:$s, tool_name:"Write", tool_input:{file_path:$f}}' | rec
+assert_eq "record: symlinked ancestor normalizes to the physical abs_path" "$(q "SELECT rel_path FROM harness.files_in_flight WHERE abs_path='$R1/src/sym.ts'")" "src/sym.ts"
+assert_eq "record: nothing is left keyed on the symlinked spelling" "$(q "SELECT count(*) FROM harness.files_in_flight WHERE abs_path='$R1LINK/src/sym.ts'")" "0"
+
 assert_eq "record: TTL is 15 minutes" "$(q "SELECT extract(epoch FROM expires_at - last_seen_at)::int FROM harness.session_registry WHERE session_id='$ME'")" "900"
 
 # --- snapshot (Task 8) ---------------------------------------------------------------------
@@ -120,6 +127,13 @@ snap "[$(ses "$ME" "[$(fil "$R2/src/x.ts" src/x.ts agentA1 60)]")]"
 assert_contains "cell own/different agent/other worktree fresh: warns" "$(ctx "$(consult agentB "$R1/src/x.ts")")" "another worktree"
 snap "[$(ses "$ME" "[$(fil "$R2/src/x.ts" src/x.ts agentA1 960)]")]"
 assert_empty "cell own/different agent/other worktree 16 min old: silent" "$(consult agentB "$R1/src/x.ts")"
+
+# Symlinked path spelling (todo P3-2026-09-27): a consult via the OTHER spelling must still
+# match a record filed under the physical one, and the real spelling alone must keep matching.
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/symq.ts" src/symq.ts '' 60)]")]"
+assert_contains "cell symlinked query/physical record: warns" "$(ctx "$(consult agentB "$R1LINK/src/symq.ts")")" "same checkout"
+snap "[$(ses "$OTHER" "[$(fil "$R1/src/symctrl.ts" src/symctrl.ts '' 60)]")]"
+assert_contains "cell real spelling control (no symlink either side): warns" "$(ctx "$(consult agentB "$R1/src/symctrl.ts")")" "same checkout"
 
 # Bash consult (Review Focus 2: ./ spelling matches the recorded path)
 snap "[$(ses "$OTHER" "[$(fil "$R1/src/x.ts" src/x.ts '' 60)]")]"
@@ -312,6 +326,8 @@ mutant "candidates not sorted (most recent editor lost)" "scripts/pg-lab/session
   's/sort -s -t[^|]*-k2,2n/cat/'
 mutant "told marker keeps only the last holder (ping-pong)" "scripts/pg-lab/session-coord.sh" \
   's/^( *printf .told %s %s.*) >> /\1 > /'
+mutant "physical_path skips normalization on the success path (symlinked spelling survives)" "scripts/pg-lab/session-coord.sh" \
+  's/if \[ -n "\$pdir" \]; then file=/if [ -z "$pdir" ]; then file=/'
 run_mutants "$PROJECT_ROOT" ".claude/hooks/test-session-coord-v2.sh" || FAIL=1
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

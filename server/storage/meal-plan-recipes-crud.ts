@@ -9,6 +9,7 @@ import {
   mealPlanItems,
   cookbookRecipes,
   favouriteRecipes,
+  savedItems,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -388,6 +389,14 @@ export async function deleteMealPlanRecipe(
           and(
             eq(favouriteRecipes.recipeId, id),
             eq(favouriteRecipes.recipeType, "mealPlan"),
+          ),
+        ),
+      tx
+        .delete(savedItems)
+        .where(
+          and(
+            eq(savedItems.recipeId, id),
+            eq(savedItems.recipeType, "mealPlan"),
           ),
         ),
     ]);

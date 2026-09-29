@@ -15,3 +15,6 @@ export const createSavedItemSchema = z.object({
 });
 
 export type CreateSavedItemInput = z.infer<typeof createSavedItemSchema>;
+
+/** What a recipe Save did to Saved Items (catalog + chat save responses). */
+export type SavedRecipeLinkStatus = "linked" | "exists" | "limit_reached";

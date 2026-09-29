@@ -188,6 +188,26 @@ describe("ChatScreen — malformed conversationId (deep link)", () => {
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 
+  // Positive control for the test above: without this, a passing
+  // not.toHaveBeenCalled() there can't distinguish "the non-string guard
+  // filtered the array" from "auto-send never fires for an existing
+  // conversationId at all". A valid conversationId is non-null, so
+  // handleSend takes its single-argument branch (ChatScreen.tsx's else
+  // branch) — not the 3-arg create-flow signature used elsewhere in this
+  // file for a null conversationId.
+  it("auto-sends a string initialMessage for an existing conversation", async () => {
+    mockRouteParams.value = {
+      conversationId: 42,
+      initialMessage: "hello there",
+    };
+
+    renderComponent(<ChatScreen />);
+
+    await waitFor(() =>
+      expect(mockSendMessage).toHaveBeenCalledWith("hello there"),
+    );
+  });
+
   // A chat/:id deep link builds a Coach stack holding only Chat, so there is
   // no header back button. canGoBack() is NOT a usable signal here: it bubbles
   // to the tab navigator (backBehavior "firstRoute") and returns true, and

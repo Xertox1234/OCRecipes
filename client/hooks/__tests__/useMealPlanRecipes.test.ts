@@ -256,6 +256,42 @@ describe("useMealPlanRecipes", () => {
     });
   });
 
+  describe("useSaveCatalogRecipe({ addToSavedItems: true }) — the preview's Save", () => {
+    it("asks the server for a Saved Items row and refreshes Saved Items", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      mockApiRequest.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({ id: 5, title: "Saved", savedItemStatus: "linked" }),
+      });
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderHook(
+        () => useSaveCatalogRecipe({ addToSavedItems: true }),
+        { wrapper },
+      );
+
+      await act(async () => {
+        result.current.mutate(12345);
+      });
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/meal-plan/catalog/12345/save",
+        { addToSavedItems: true },
+      );
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/saved-items"],
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/saved-items/count"],
+      });
+      expect(result.current.data?.savedItemStatus).toBe("linked");
+    });
+  });
+
   describe("useImportRecipeFromUrl", () => {
     it("calls import endpoint with URL", async () => {
       const { wrapper } = createQueryWrapper();

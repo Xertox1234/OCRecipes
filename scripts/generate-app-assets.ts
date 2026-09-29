@@ -61,6 +61,10 @@ async function main(): Promise<void> {
       negativePrompt: opts.negativePrompt,
       width: opts.width,
       height: opts.height,
+      // Every asset this script writes goes to a `.png` path — request real
+      // PNG bytes rather than let Runware's un-set default (JPEG) mismatch
+      // the extension (this is what the PNG_MAGIC check below now enforces).
+      outputFormat: "PNG",
     });
     if (!buf)
       throw new Error(

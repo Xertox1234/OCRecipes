@@ -1,6 +1,6 @@
 ---
 title: "Runware-generated images are JPEG bytes stored as .png / image/png — recipe images, cookbook covers, favicon and splash icon"
-status: backlog
+status: done
 priority: low
 created: 2026-09-29
 updated: 2026-09-29
@@ -21,12 +21,12 @@ This came out of #1166 (app-icon JPEG→PNG). Measured 2026-09-29: the 40 newest
 
 ## Acceptance Criteria
 
-- [ ] New AI recipe images from the Runware path are stored with a label that matches their bytes. Keep JPEG, since it's smaller for phones, and save with `ext: "jpg"`, which gives a `.jpg` filename and `image/jpeg` ContentType. Don't switch recipe images to PNG. A test proves `saveImageBuffer` passes the matching ext, RED first.
-- [ ] Cookbook covers from the Runware path (`server/services/cookbook-cover.ts:308`) get the same treatment: saved with `ext: "jpg"`, test RED first in `server/services/__tests__/cookbook-cover.test.ts`.
-- [ ] The DALL-E fallback paths (`server/services/recipe-generation.ts`, `server/services/canonical-enrichment.ts`, `server/services/cookbook-cover.ts:347`) stay correctly labelled. Check what format each fallback actually returns before choosing an ext, and add no guesses.
-- [ ] `assets/images/favicon.png` and `assets/images/splash-icon.png` are converted in place to genuine PNGs at the same dimensions (`sips -s format png`), with appearance unchanged. Verify with `file`.
-- [ ] `scripts/generate-app-assets.ts` requests `outputFormat: "PNG"` for the assets it writes to `.png` paths. Add it as an option on `generateImage()`, not as a global default.
-- [ ] Existing stored images are NOT migrated or rewritten (out of scope). Record that as a note.
+- [x] New AI recipe images from the Runware path are stored with a label that matches their bytes. Keep JPEG, since it's smaller for phones, and save with `ext: "jpg"`, which gives a `.jpg` filename and `image/jpeg` ContentType. Don't switch recipe images to PNG. A test proves `saveImageBuffer` passes the matching ext, RED first.
+- [x] Cookbook covers from the Runware path (`server/services/cookbook-cover.ts:308`) get the same treatment: saved with `ext: "jpg"`, test RED first in `server/services/__tests__/cookbook-cover.test.ts`.
+- [x] The DALL-E fallback paths (`server/services/recipe-generation.ts`, `server/services/canonical-enrichment.ts`, `server/services/cookbook-cover.ts:347`) stay correctly labelled. Check what format each fallback actually returns before choosing an ext, and add no guesses.
+- [x] `assets/images/favicon.png` and `assets/images/splash-icon.png` are converted in place to genuine PNGs at the same dimensions (`sips -s format png`), with appearance unchanged. Verify with `file`.
+- [x] `scripts/generate-app-assets.ts` requests `outputFormat: "PNG"` for the assets it writes to `.png` paths. Add it as an option on `generateImage()`, not as a global default.
+- [x] Existing stored images are NOT migrated or rewritten (out of scope). Record that as a note.
 
 ## Implementation Notes
 
@@ -49,3 +49,7 @@ This came out of #1166 (app-icon JPEG→PNG). Measured 2026-09-29: the 40 newest
 ### 2026-09-29
 
 - Auto-filed (Low) from #1166's executor report; the recipe-image mislabel was confirmed by the orchestrator (40/40 JPEG in dev).
+- **Implemented.** Short-circuited research onto `docs/solutions/conventions/runware-imageinference-defaults-to-jpeg-without-outputformat-2026-09-29.md` (tight match). Runware-path call sites in `recipe-generation.ts`, `canonical-enrichment.ts`, `cookbook-cover.ts` now pass `ext: "jpg"`; DALL-E fallback call sites verified (community-corroborated: DALL-E-3's `images.generate` has no `output_format` parameter and returns PNG) and left unchanged. `favicon.png`/`splash-icon.png` converted in place with `sips -s format png`, dimensions/alpha unchanged, verified with `file`. `scripts/generate-app-assets.ts` now requests `outputFormat: "PNG"` per-call. `recipe-image-keys.ts` confirmed extension-agnostic already; added `.jpg` regression tests, no source change.
+- **Out of contract (disclosed in the PR):** per the orchestrator's dispatch-prompt ruling (from PR #1167's confirmation review), `server/scripts/backfill-recipe-images.ts`'s `refreshInPlace()` also needed a fix — it overwrites an existing R2 key in place, and once this todo starts writing `.jpg` keys, a literal `outputFormat: "PNG"` there would mislabel a future `.jpg` refresh. Added `resolveRefreshOutputFormat()` (`server/scripts/backfill-recipe-images-utils.ts`, with its own test — the main script self-executes `main()` on import and can't be imported in a test) to derive the request from the preserved key's own extension instead.
+- Review: `code-reviewer` + `ai-reviewer` dispatched; `ai-reviewer` clean, `code-reviewer` found one real WARNING (a comment/doc wording bug — the unrecognized-extension case was mis-described as keeping the JPEG default when the code correctly does the opposite), verified directly and fixed inline in both places it was duplicated.
+- Existing stored images were not migrated or rewritten — no backfill run, no R2 objects touched.

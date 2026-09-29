@@ -48,6 +48,7 @@ const {
   getSavedItems,
   getSavedItemCount,
   createSavedItem,
+  saveRecipeToSavedItems,
   deleteSavedItem,
   createScannedItemWithLog,
 } = await import("../nutrition");
@@ -857,6 +858,89 @@ describe("nutrition storage", () => {
       });
       expect(item).not.toBeNull();
       expect(item!.title).toBe("Sixth Item");
+    });
+  });
+
+  describe("saveRecipeToSavedItems", () => {
+    const link = {
+      recipeId: 9001,
+      recipeType: "mealPlan" as const,
+      title: "Lemon Pasta",
+      description: "Bright and quick",
+      difficulty: "easy",
+      timeEstimate: "20 min",
+    };
+
+    const linkedRows = () =>
+      getTestTx()
+        .select()
+        .from(savedItems)
+        .where(eq(savedItems.userId, testUser.id));
+
+    it("adds a Saved Items row that points at the saved recipe", async () => {
+      const status = await saveRecipeToSavedItems(testUser.id, link);
+
+      expect(status).toBe("linked");
+      const rows = await linkedRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        type: "recipe",
+        title: "Lemon Pasta",
+        description: "Bright and quick",
+        difficulty: "easy",
+        timeEstimate: "20 min",
+        recipeId: 9001,
+        recipeType: "mealPlan",
+      });
+    });
+
+    it("saving the same recipe twice keeps one row", async () => {
+      await saveRecipeToSavedItems(testUser.id, link);
+      const second = await saveRecipeToSavedItems(testUser.id, link);
+
+      expect(second).toBe("exists");
+      expect(await linkedRows()).toHaveLength(1);
+    });
+
+    it("the same id under the other recipe type is a different recipe", async () => {
+      await saveRecipeToSavedItems(testUser.id, link);
+      const status = await saveRecipeToSavedItems(testUser.id, {
+        ...link,
+        recipeType: "community",
+      });
+
+      expect(status).toBe("linked");
+      expect(await linkedRows()).toHaveLength(2);
+    });
+
+    it("at the free-tier cap, reports the limit and adds nothing", async () => {
+      const t = getTestTx();
+      for (let i = 0; i < 6; i++) {
+        await t.insert(savedItems).values({
+          userId: testUser.id,
+          type: "recipe",
+          title: `Existing ${i}`,
+        });
+      }
+
+      const status = await saveRecipeToSavedItems(testUser.id, link);
+
+      expect(status).toBe("limit_reached");
+      expect(await linkedRows()).toHaveLength(6);
+    });
+
+    it("an already-linked recipe at the cap still reads as saved", async () => {
+      await saveRecipeToSavedItems(testUser.id, link);
+      const t = getTestTx();
+      for (let i = 0; i < 5; i++) {
+        await t.insert(savedItems).values({
+          userId: testUser.id,
+          type: "recipe",
+          title: `Existing ${i}`,
+        });
+      }
+
+      expect(await saveRecipeToSavedItems(testUser.id, link)).toBe("exists");
     });
   });
 

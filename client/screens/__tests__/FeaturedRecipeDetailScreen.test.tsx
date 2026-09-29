@@ -29,6 +29,7 @@ import { renderComponent } from "../../../test/utils/render-component";
 import FeaturedRecipeDetailScreen from "../FeaturedRecipeDetailScreen";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 
 const {
   mockApiRequest,
@@ -38,7 +39,9 @@ const {
   mockReplace,
   mockDetailProps,
   mockToastError,
+  mockToastInfo,
 } = vi.hoisted(() => ({
+  mockToastInfo: vi.fn(),
   mockApiRequest: vi.fn(),
   mockRouteParams: {
     current: {
@@ -71,7 +74,12 @@ vi.mock("@/lib/query-client", async (importOriginal) => ({
   shouldSurfaceQueryError: (
     await importOriginal<typeof import("@/lib/query-client")>()
   ).shouldSurfaceQueryError,
-  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+  // The favourites list (read by the catalog heart) always answers with an
+  // empty list, so each test's mock stays about the recipe endpoints.
+  apiRequest: (...args: unknown[]) =>
+    args[1] === "/api/favourite-recipes/ids"
+      ? Promise.resolve({ json: async () => ({ ids: [] }) })
+      : mockApiRequest(...args),
   resolveImageUrl: (uri: string | null | undefined) => uri ?? null,
 }));
 
@@ -104,7 +112,7 @@ vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({
     success: vi.fn(),
     error: mockToastError,
-    info: vi.fn(),
+    info: mockToastInfo,
     dismiss: vi.fn(),
   }),
 }));
@@ -116,6 +124,7 @@ vi.mock("@/components/recipe-detail", () => ({
 beforeEach(() => {
   mockRouteParams.current = { recipeId: 42, recipeType: "mealPlan" };
   mockApiRequest.mockReset();
+  mockToastInfo.mockReset();
 });
 
 afterEach(() => {
@@ -349,14 +358,76 @@ describe("FeaturedRecipeDetailScreen — catalog (Spoonacular) preview", () => {
   });
 
   function mockCatalogApi(saveResult: unknown = { id: 901 }) {
-    mockApiRequest.mockImplementation(async (method: string) =>
+    mockApiRequest.mockImplementation(async (method: string, url: string) =>
       method === "GET"
         ? { json: async () => catalogDetail }
-        : saveResult instanceof Error
-          ? Promise.reject(saveResult)
-          : { json: async () => saveResult },
+        : url === FAVOURITE_TOGGLE_URL
+          ? { json: async () => ({ favourited: true }) }
+          : saveResult instanceof Error
+            ? Promise.reject(saveResult)
+            : { json: async () => saveResult },
     );
   }
+
+  const FAVOURITE_TOGGLE_URL = "/api/favourite-recipes/toggle";
+  const SAVE_URL = "/api/meal-plan/catalog/715538/save";
+  const callsTo = (url: string) =>
+    mockApiRequest.mock.calls.filter(([, u]) => u === url);
+
+  it("the heart on an unsaved preview saves the recipe, then favourites the saved copy", async () => {
+    mockCatalogApi({ id: 901 });
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    fireEvent.click(
+      await screen.findByLabelText("Add Spoonacular Chili to favourites"),
+    );
+
+    expect(await screen.findByText("Saved · View recipe")).toBeDefined();
+    await waitFor(() =>
+      expect(callsTo(FAVOURITE_TOGGLE_URL)).toEqual([
+        [
+          "POST",
+          FAVOURITE_TOGGLE_URL,
+          { recipeId: 901, recipeType: "mealPlan" },
+        ],
+      ]),
+    );
+    expect(callsTo(SAVE_URL)).toEqual([
+      ["POST", SAVE_URL, { addToSavedItems: true }],
+    ]);
+  });
+
+  it("once saved, the heart toggles the saved copy without saving again", async () => {
+    mockCatalogApi({ id: 901 });
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    fireEvent.click(
+      await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
+    );
+    await screen.findByText("Saved · View recipe");
+
+    fireEvent.click(
+      screen.getByLabelText("Add Spoonacular Chili to favourites"),
+    );
+
+    await waitFor(() => expect(callsTo(FAVOURITE_TOGGLE_URL)).toHaveLength(1));
+    expect(callsTo(FAVOURITE_TOGGLE_URL)[0][2]).toEqual({
+      recipeId: 901,
+      recipeType: "mealPlan",
+    });
+    expect(callsTo(SAVE_URL)).toHaveLength(1);
+  });
+
+  it("a premium-denied save from the heart opens the upgrade sheet and favourites nothing", async () => {
+    mockCatalogApi(
+      new ApiError("403: Premium", ErrorCode.PREMIUM_REQUIRED, 403),
+    );
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    fireEvent.click(
+      await screen.findByLabelText("Add Spoonacular Chili to favourites"),
+    );
+
+    expect(await screen.findByTestId("upgrade-modal")).toBeDefined();
+    expect(callsTo(FAVOURITE_TOGGLE_URL)).toEqual([]);
+  });
 
   it("fetches the preview from the catalog endpoint, not /api/recipes", async () => {
     mockCatalogApi();
@@ -383,10 +454,13 @@ describe("FeaturedRecipeDetailScreen — catalog (Spoonacular) preview", () => {
       await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
     );
     expect(await screen.findByText("Saved · View recipe")).toBeDefined();
+    // The preview's Save also lands in Profile > Saved Items (ruling 2026-09-29).
     expect(mockApiRequest).toHaveBeenCalledWith(
       "POST",
       "/api/meal-plan/catalog/715538/save",
+      { addToSavedItems: true },
     );
+    expect(mockToastInfo).not.toHaveBeenCalled();
     fireEvent.click(
       screen.getByLabelText("Saved. Open Spoonacular Chili in your recipes"),
     );
@@ -394,6 +468,16 @@ describe("FeaturedRecipeDetailScreen — catalog (Spoonacular) preview", () => {
       recipeId: 901,
       recipeType: "mealPlan",
     });
+  });
+
+  it("saves the recipe even when Saved Items is full, and says it isn't listed there", async () => {
+    mockCatalogApi({ id: 901, savedItemStatus: "limit_reached" });
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    fireEvent.click(
+      await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
+    );
+    expect(await screen.findByText("Saved · View recipe")).toBeDefined();
+    expect(mockToastInfo).toHaveBeenCalledWith(SAVED_ITEMS_FULL_MESSAGE);
   });
 
   it("shows an inline error when Save fails", async () => {
@@ -480,12 +564,29 @@ describe("FeaturedRecipeDetailScreen — catalog preview follow-ups (#1149 revie
   });
 
   function mockSaveRejects(err: Error) {
-    mockApiRequest.mockImplementation(async (method: string) =>
+    mockApiRequest.mockImplementation(async (method: string, url: string) =>
       method === "GET"
         ? { json: async () => catalogDetail }
         : Promise.reject(err),
     );
   }
+
+  it("a Save that finds Saved Items full makes one announcement, not two", async () => {
+    mockApiRequest.mockImplementation(async (method: string, url: string) =>
+      method === "GET"
+        ? { json: async () => catalogDetail }
+        : { json: async () => ({ id: 901, savedItemStatus: "limit_reached" }) },
+    );
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    await pressSave();
+
+    await waitFor(() =>
+      expect(mockToastInfo).toHaveBeenCalledWith(SAVED_ITEMS_FULL_MESSAGE),
+    );
+    // The toast announces itself; a second imperative announce in the same
+    // commit can be dropped on iOS and is heard twice on TalkBack.
+    expect(announceSpy).not.toHaveBeenCalledWith("Recipe saved");
+  });
 
   async function pressSave() {
     fireEvent.click(
@@ -623,6 +724,7 @@ describe("FeaturedRecipeDetailScreen — catalog preview follow-ups (#1149 revie
       expect(mockApiRequest).toHaveBeenCalledWith(
         "POST",
         "/api/meal-plan/catalog/715538/save",
+        { addToSavedItems: true },
       ),
     );
     unmount();
@@ -649,6 +751,7 @@ describe("FeaturedRecipeDetailScreen — catalog preview follow-ups (#1149 revie
       expect(mockApiRequest).toHaveBeenCalledWith(
         "POST",
         "/api/meal-plan/catalog/715538/save",
+        { addToSavedItems: true },
       ),
     );
     unmount();

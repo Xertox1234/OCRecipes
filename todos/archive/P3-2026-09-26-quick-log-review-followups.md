@@ -1,6 +1,6 @@
 ---
 title: "Quick Log follow-ups from #1116's review: lock resolving while open, success announce, locked screen's idle query"
-status: backlog
+status: done
 priority: low
 created: 2026-09-26
 updated: 2026-09-26
@@ -32,12 +32,12 @@ None blocks use; each is a cheap polish.
 
 ## Acceptance Criteria
 
-- [ ] When the Quick Log lock becomes true while its drawer is open, Home closes the drawer
+- [x] When the Quick Log lock becomes true while its drawer is open, Home closes the drawer
       (test: open as unresolved, then resolve to locked; `isOpen` becomes false).
-- [ ] A successful parse announces the item count (e.g. "Found 2 items. Log All to save.")
+- [x] A successful parse announces the item count (e.g. "Found 2 items. Log All to save.")
       once per result: iOS imperative announce, Android via a live region, never both on
       one platform (`docs/rules/accessibility.md` → Announcements).
-- [ ] `QuickLogScreen` passes `isOpen: !isLocked`, so a locked screen makes no
+- [x] `QuickLogScreen` passes `isOpen: !isLocked`, so a locked screen makes no
       frequent-items request (test: locked render does not enable the query).
 
 ## Implementation Notes
@@ -69,3 +69,21 @@ None blocks use; each is a cheap polish.
 ### 2026-09-26
 
 - Filed from the mobile and code reviews of PR #1116 (all non-blocking suggestions).
+
+### 2026-09-29
+
+- Implemented all three acceptance criteria. `code-reviewer` + `mobile-reviewer` returned
+  no blocking findings; one WARNING and two SUGGESTIONs surfaced:
+  - **Deferred (WARNING, code-reviewer):** the success-announce edge-guard (keyed on
+    `hasParsedItems` false→true, per this todo's own Implementation Notes) does not
+    re-fire when a second parse replaces the item set without the list passing back
+    through empty — reproduced with a constructed probe. A clean fix needs a per-parse
+    signal (e.g. a generation id) from `useQuickLogSession.ts`, which is outside this
+    todo's Scope Contract. Codified as a second manifestation in
+    `docs/solutions/logic-errors/imperative-announce-must-be-content-keyed-not-variant-keyed-2026-06-24.md`.
+  - **Fixed inline (SUGGESTION, mobile-reviewer):** added a missing Android
+    live-region assertion to `QuickLogScreen.test.tsx` (trivial, in-scope).
+  - **Deferred (SUGGESTION, mobile-reviewer):** closing the Quick Log drawer never
+    calls `Keyboard.dismiss()`, so the keyboard can stay up over a collapsed/locked
+    row — a pre-existing gap shared by every other close path, not a regression from
+    this diff, and outside this todo's Scope Contract.

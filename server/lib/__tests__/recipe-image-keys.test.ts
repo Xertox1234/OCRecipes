@@ -36,6 +36,14 @@ describe("classifyRecipeImageUrl", () => {
       classifyRecipeImageUrl(`${BASE}/recipe-images/recipe-abc.png?v=7`, BASE),
     ).toBe("ours");
   });
+  it("classifies a .jpg recipe image as 'ours' — classification is by path prefix, not extension", () => {
+    expect(
+      classifyRecipeImageUrl(`${BASE}/recipe-images/recipe-abc.jpg`, BASE),
+    ).toBe("ours");
+    expect(
+      classifyRecipeImageUrl("/api/recipe-images/recipe-abc.jpg", BASE),
+    ).toBe("ours");
+  });
 });
 
 describe("deriveRecipeImageFilename", () => {
@@ -58,6 +66,11 @@ describe("deriveRecipeImageFilename", () => {
     expect(
       deriveRecipeImageFilename(`${BASE}/recipe-images/recipe-abc.png?v=7`),
     ).toBe("recipe-abc.png");
+  });
+  it("extracts a .jpg filename — the character class has no extension assumption", () => {
+    expect(
+      deriveRecipeImageFilename(`${BASE}/recipe-images/recipe-abc.jpg`),
+    ).toBe("recipe-abc.jpg");
   });
 });
 

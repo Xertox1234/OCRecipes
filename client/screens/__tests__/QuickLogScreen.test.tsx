@@ -9,19 +9,43 @@ import { screen } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import QuickLogScreen from "../QuickLogScreen";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import * as useQuickLogSessionModule from "@/hooks/useQuickLogSession";
+import type { ParsedFoodItem } from "@/hooks/useFoodParse";
 
-const { premiumHolder, sessionHolder, mockGoBack, mockToastInfo } = vi.hoisted(
-  () => ({
-    premiumHolder: {
-      isPremium: false,
-      textFoodParsing: false,
-      isPremiumResolved: true,
+const {
+  premiumHolder,
+  sessionHolder,
+  mockGoBack,
+  mockToastInfo,
+  mockAnnounce,
+} = vi.hoisted(() => ({
+  premiumHolder: {
+    isPremium: false,
+    textFoodParsing: false,
+    isPremiumResolved: true,
+  },
+  sessionHolder: {
+    parseEmpty: false,
+    parsedItems: [] as ParsedFoodItem[],
+  },
+  mockGoBack: vi.fn(),
+  mockToastInfo: vi.fn(),
+  mockAnnounce: vi.fn(),
+}));
+
+// AccessibilityInfo is spied on for the iOS parse-success announcement.
+// Other members (isScreenReaderEnabled, addEventListener) are preserved —
+// useAccessibility (a real collaborator in this tree) calls them too.
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    AccessibilityInfo: {
+      ...(actual.AccessibilityInfo as object),
+      announceForAccessibility: mockAnnounce,
     },
-    sessionHolder: { parseEmpty: false },
-    mockGoBack: vi.fn(),
-    mockToastInfo: vi.fn(),
-  }),
-);
+  };
+});
 
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({
@@ -33,13 +57,13 @@ vi.mock("@/context/PremiumContext", () => ({
 
 vi.mock("@/hooks/useQuickLogSession", () => ({
   EMPTY_PARSE_MESSAGE: "Couldn't find any food in that.",
-  useQuickLogSession: () => ({
+  useQuickLogSession: vi.fn(() => ({
     inputText: "",
     setInputText: vi.fn(),
     isListening: false,
     volume: -2,
     isParsing: false,
-    parsedItems: [],
+    parsedItems: sessionHolder.parsedItems,
     parseError: null,
     parseEmpty: sessionHolder.parseEmpty,
     submitError: null,
@@ -53,7 +77,7 @@ vi.mock("@/hooks/useQuickLogSession", () => ({
     submitLog: vi.fn(),
     reset: vi.fn(),
     frequentItems: [],
-  }),
+  })),
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -93,6 +117,7 @@ describe("QuickLogScreen — premium guard", () => {
     premiumHolder.textFoodParsing = false;
     premiumHolder.isPremiumResolved = true;
     sessionHolder.parseEmpty = false;
+    sessionHolder.parsedItems = [];
   });
 
   it("shows the upgrade flow, not the input, for a free account", () => {
@@ -139,6 +164,7 @@ describe("QuickLogScreen — submit", () => {
     premiumHolder.textFoodParsing = true;
     premiumHolder.isPremiumResolved = true;
     sessionHolder.parseEmpty = false;
+    sessionHolder.parsedItems = [];
   });
 
   // The input is multiline, and RN defaults a multiline input to
@@ -157,5 +183,81 @@ describe("QuickLogScreen — submit", () => {
     expect(mockToastInfo).toHaveBeenCalledWith(
       "Couldn't find any food in that.",
     );
+  });
+
+  // A successful parse fired no announce at all before this — VoiceOver
+  // users heard nothing (only the toast covers the empty-result outcome).
+  it("announces the item count once when a parse succeeds", () => {
+    const { rerender } = renderComponent(<QuickLogScreen />);
+    expect(mockAnnounce).not.toHaveBeenCalled();
+
+    sessionHolder.parsedItems = [
+      {
+        name: "egg",
+        quantity: 1,
+        unit: "large",
+        calories: 72,
+        protein: 6,
+        carbs: 0,
+        fat: 5,
+        servingSize: null,
+      },
+    ];
+    rerender(<QuickLogScreen />);
+    rerender(<QuickLogScreen />);
+    expect(mockAnnounce).toHaveBeenCalledTimes(1);
+    expect(mockAnnounce).toHaveBeenCalledWith("Found 1 item. Log All to save.");
+  });
+
+  // Android has no imperative announce — the note itself must carry the
+  // live region (mirrors QuickLogDrawer's equivalent assertion).
+  it("shows the item count as a live-region note", () => {
+    sessionHolder.parsedItems = [
+      {
+        name: "egg",
+        quantity: 1,
+        unit: "large",
+        calories: 72,
+        protein: 6,
+        carbs: 0,
+        fat: 5,
+        servingSize: null,
+      },
+    ];
+    renderComponent(<QuickLogScreen />);
+    const note = screen.getByText("Found 1 item. Log All to save.");
+    expect(note.closest('[aria-live="polite"]')).not.toBeNull();
+  });
+});
+
+describe("QuickLogScreen — idle query gating", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionHolder.parseEmpty = false;
+    sessionHolder.parsedItems = [];
+  });
+
+  // The hook call happens before the isLocked early return, so a locked
+  // render must not enable the frequent-items query it gates on `isOpen`.
+  it("does not enable the frequent-items query on a locked render", () => {
+    premiumHolder.isPremium = false;
+    premiumHolder.textFoodParsing = false;
+    premiumHolder.isPremiumResolved = true; // locked
+    renderComponent(<QuickLogScreen />);
+    const lastCall = vi
+      .mocked(useQuickLogSessionModule.useQuickLogSession)
+      .mock.calls.at(-1)![0];
+    expect(lastCall!.isOpen).toBe(false);
+  });
+
+  it("enables the frequent-items query on an unlocked render (control)", () => {
+    premiumHolder.isPremium = true;
+    premiumHolder.textFoodParsing = true;
+    premiumHolder.isPremiumResolved = true;
+    renderComponent(<QuickLogScreen />);
+    const lastCall = vi
+      .mocked(useQuickLogSessionModule.useQuickLogSession)
+      .mock.calls.at(-1)![0];
+    expect(lastCall!.isOpen).toBe(true);
   });
 });

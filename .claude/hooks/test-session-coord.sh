@@ -195,20 +195,26 @@ rmdir "/tmp/claude-session-coord-${MYSID}.refresh-lock"
 # --- consult -----------------------------------------------------------------------
 SNAPME="/tmp/claude-session-coord-consult-me.json"
 mk_consult_input() { printf '{"session_id":"consult-me","tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$1"; }
+
+# Level 1: same abs_path -> collision warning naming the other session. A physically-resolved
+# directory (not a literal /tmp/checkout-a) dodges the macOS /tmp -> /private/tmp symlink
+# mismatch that target_paths' own normalization (todo P3-2026-09-27) now applies to every
+# consult input -- same reasoning as Level 2's CKB below, one level up.
+CKA=$(d=$(mktemp -d); cd "$d" && pwd -P)
 cat > "$SNAPME" <<JSON
-{"sessions":[{"session_id":"other-sess","session_kind":"interactive","branch":"main","repo_root":"/tmp/checkout-a","last_seen_at":"2026-07-10T00:00:00Z","files":[
-  {"abs_path":"/tmp/checkout-a/server/index.ts","rel_path":"server/index.ts"},
-  {"abs_path":"/tmp/checkout-a/shared/schema.ts","rel_path":"shared/schema.ts"}]}]}
+{"sessions":[{"session_id":"other-sess","session_kind":"interactive","branch":"main","repo_root":"$CKA","last_seen_at":"2026-07-10T00:00:00Z","files":[
+  {"abs_path":"$CKA/server/index.ts","rel_path":"server/index.ts"},
+  {"abs_path":"$CKA/shared/schema.ts","rel_path":"shared/schema.ts"}]}]}
 JSON
 touch "$SNAPME"  # fresh mtime -> no refresh spawn during these assertions
 
-# Level 1: same abs_path -> collision warning naming the other session.
 # Note: msg uses ${osid:0:8} (short-ID abbreviation, matches real UUID session ids) --
 # "other-sess" is 10 chars, so the message shows the 8-char prefix "other-se".
-OUT=$(mk_consult_input "/tmp/checkout-a/server/index.ts" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
+OUT=$(mk_consult_input "$CKA/server/index.ts" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
 assert_contains "consult L1 emits additionalContext" "$OUT" '"hookEventName": "PreToolUse"'
 assert_contains "consult L1 names other session" "$OUT" "other-se"
 assert_contains "consult L1 says same checkout" "$OUT" "same checkout"
+rm -rf "$CKA"
 
 # Level 2: same rel_path, DIFFERENT repo_root (file lives in another worktree). do_consult
 # resolves its own root via `git -C <dir> rev-parse --show-toplevel`, which requires a REAL
@@ -224,13 +230,20 @@ rm -rf "$CKB"
 OUT=$(mk_consult_input "/tmp/checkout-b/client/App.tsx" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
 assert_empty "consult no-match silent" "$OUT"
 
-# Self-suppression: a snapshot row with OUR session_id must never warn.
+# Self-suppression: a snapshot row with OUR session_id must never warn. Same CKA-style
+# physically-resolved directory as Level 1 (a literal /tmp/x.ts on both sides would now be
+# excluded by target_paths' own normalization regardless of is_self, silently defeating this
+# pin), plus a FRESH last_touch so own_gate's staleness default can't independently exclude
+# the row either -- both gates must actually let it through to is_self for this assertion to
+# mean anything.
+CKS=$(d=$(mktemp -d); cd "$d" && pwd -P)
 cat > "$SNAPME" <<JSON
-{"sessions":[{"session_id":"consult-me","session_kind":"interactive","branch":"main","repo_root":"/tmp/checkout-a","last_seen_at":"2026-07-10T00:00:00Z","files":[{"abs_path":"/tmp/x.ts","rel_path":"x.ts"}]}]}
+{"sessions":[{"session_id":"consult-me","session_kind":"interactive","branch":"main","repo_root":"$CKS","last_seen_at":"2026-07-10T00:00:00Z","files":[{"abs_path":"$CKS/x.ts","rel_path":"x.ts","last_touch":$(date +%s)}]}]}
 JSON
 touch "$SNAPME"
-OUT=$(mk_consult_input "/tmp/x.ts" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
+OUT=$(mk_consult_input "$CKS/x.ts" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
 assert_empty "consult self-suppressed" "$OUT"
+rm -rf "$CKS"
 
 # Corrupt snapshot -> silent, exit 0.
 printf 'not json' > "$SNAPME"; touch "$SNAPME"

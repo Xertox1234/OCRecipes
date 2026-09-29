@@ -259,6 +259,9 @@ describe("enrichRecipe", () => {
     expect(dallePromptArg).toContain(
       "No text, no watermarks, no logos, no labels, no letters.",
     );
+    // DALL-E-3 returns PNG bytes — the fallback path must keep
+    // saveImageBuffer's "png" default, not the Runware path's "jpg".
+    expect(runware.saveImageBuffer).toHaveBeenCalledWith(expect.any(Buffer));
   });
 
   it("uses the Runware HQ path when configured", async () => {
@@ -290,6 +293,12 @@ describe("enrichRecipe", () => {
     };
     expect(firstCall.prompt).toMatch(/editorial food photography/i);
     expect(firstCall.prompt).not.toMatch(/no text|watermark/i);
+    // Runware bytes are JPEG (no outputFormat requested) — every saved shot
+    // must be labelled to match, not left at saveImageBuffer's "png" default.
+    expect(runware.saveImageBuffer).toHaveBeenCalledWith(
+      expect.any(Buffer),
+      "jpg",
+    );
   });
 
   it("skips images that fail on both Runware and DALL-E", async () => {

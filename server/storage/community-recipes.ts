@@ -6,6 +6,7 @@ import {
   recipeGenerationLog,
   cookbookRecipes,
   favouriteRecipes,
+  savedItems,
   recipeDismissals,
 } from "@shared/schema";
 import { db } from "../db";
@@ -393,6 +394,14 @@ export async function deleteCommunityRecipe(
           and(
             eq(favouriteRecipes.recipeId, recipeId),
             eq(favouriteRecipes.recipeType, "community"),
+          ),
+        ),
+      tx
+        .delete(savedItems)
+        .where(
+          and(
+            eq(savedItems.recipeId, recipeId),
+            eq(savedItems.recipeType, "community"),
           ),
         ),
       tx

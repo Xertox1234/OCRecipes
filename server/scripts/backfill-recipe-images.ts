@@ -36,6 +36,7 @@ import {
 import {
   parseBackfillFlags,
   evaluateBackfillGuard,
+  resolveRefreshOutputFormat,
 } from "./backfill-recipe-images-utils";
 
 // Flag parsing lives in backfill-recipe-images-utils so it is unit-testable
@@ -78,7 +79,12 @@ async function refreshInPlace(
   const filename = deriveRecipeImageFilename(existingUrl);
   if (!filename) return false;
   const prompt = await buildImagePrompt(ctx, variant);
-  const buffer = await generateImage({ prompt });
+  // The overwrite preserves `filename`'s existing extension below — request
+  // whatever format matches it (see resolveRefreshOutputFormat).
+  const buffer = await generateImage({
+    prompt,
+    outputFormat: resolveRefreshOutputFormat(filename),
+  });
   if (!buffer) return false;
   const ext = (filename.split(".").pop() ?? "png").toLowerCase();
   await saveRecipeImage(

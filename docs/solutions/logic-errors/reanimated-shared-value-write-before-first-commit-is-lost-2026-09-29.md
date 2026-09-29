@@ -132,4 +132,4 @@ measurably works.
 ## See Also
 
 - [Child-before-parent effect ordering is a SINGLE-COMMIT guarantee](child-before-parent-effect-order-is-a-single-commit-guarantee-2026-08-05.md) — the React-side analog: reasoning about "which fires first" must name the commit, but that solution is about React's effect-ordering guarantee, not Reanimated's native attachment timing
-- [Measure-then-animate collapsible height with -1 sentinel for auto](../design-patterns/measure-then-animate-collapsible-height-2026-05-13.md) — the general pattern this bug affects; note its `MealSlotSection` code example no longer exists in the current codebase (the screen was since rewritten without a height-measurement mechanism) — treat that example as illustrative only, not a live reference
+- [Measure-then-animate collapsible height — always an explicit height, never "auto"](../design-patterns/measure-then-animate-collapsible-height-2026-05-13.md) — the general pattern this bug affects (`useCollapsibleHeight`)

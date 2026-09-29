@@ -9,7 +9,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { useTheme } from "@/hooks/useTheme";
@@ -46,6 +46,10 @@ interface RecipeCardProps {
   isSaved?: boolean;
   onSave?: () => void;
   isSaving?: boolean;
+  /** The saved copy is a favourite. */
+  isFavourited?: boolean;
+  /** Heart: the parent saves first when needed, then favourites (2026-09-29). */
+  onFavourite?: () => void;
 }
 
 const IMAGE_HEIGHT = 180;
@@ -57,6 +61,8 @@ function RecipeCardInner({
   isSaved,
   onSave,
   isSaving,
+  isFavourited,
+  onFavourite,
 }: RecipeCardProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
@@ -95,6 +101,12 @@ function RecipeCardInner({
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     onSave();
   }, [isSaved, isSaving, onSave, haptics]);
+
+  const handleFavourite = useCallback(() => {
+    if (isSaving || !onFavourite) return;
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    onFavourite();
+  }, [isSaving, onFavourite, haptics]);
 
   return (
     <View
@@ -277,47 +289,80 @@ function RecipeCardInner({
         </View>
       ) : null}
 
-      {/* Save Button */}
-      {onSave && (
-        <Pressable
-          onPress={handleSave}
-          disabled={isSaved || isSaving}
-          style={[
-            styles.saveButton,
-            isSaved
-              ? { backgroundColor: theme.accentSolid }
-              : {
-                  borderColor: theme.link,
-                  borderWidth: 1.5,
-                  backgroundColor: "transparent",
-                },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={
-            isSaved ? `${recipe.title} saved` : `Save ${recipe.title} recipe`
-          }
-          accessibilityState={{ disabled: isSaved || isSaving }}
-        >
-          {isSaving ? (
-            <ActivityIndicator size="small" color={theme.link} />
-          ) : (
-            <Feather
-              name={isSaved ? "check" : "bookmark"}
-              size={16}
-              color={isSaved ? theme.buttonText : theme.link}
-            />
+      {/* Save + favourite */}
+      {(onSave || onFavourite) && (
+        <View style={styles.actionsRow}>
+          {onSave && (
+            <Pressable
+              onPress={handleSave}
+              disabled={isSaved || isSaving}
+              style={[
+                styles.saveButton,
+                isSaved
+                  ? { backgroundColor: theme.accentSolid }
+                  : {
+                      borderColor: theme.link,
+                      borderWidth: 1.5,
+                      backgroundColor: "transparent",
+                    },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isSaved
+                  ? `${recipe.title} saved`
+                  : `Save ${recipe.title} recipe`
+              }
+              accessibilityState={{ disabled: isSaved || isSaving }}
+            >
+              {isSaving ? (
+                <ActivityIndicator size="small" color={theme.link} />
+              ) : (
+                <Feather
+                  name={isSaved ? "check" : "bookmark"}
+                  size={16}
+                  color={isSaved ? theme.buttonText : theme.link}
+                />
+              )}
+              <ThemedText
+                type="body"
+                style={{
+                  color: isSaved ? theme.buttonText : theme.link,
+                  marginLeft: Spacing.xs,
+                  fontWeight: "600",
+                }}
+              >
+                {isSaving ? "Saving..." : isSaved ? "Saved" : "Save Recipe"}
+              </ThemedText>
+            </Pressable>
           )}
-          <ThemedText
-            type="body"
-            style={{
-              color: isSaved ? theme.buttonText : theme.link,
-              marginLeft: Spacing.xs,
-              fontWeight: "600",
-            }}
-          >
-            {isSaving ? "Saving..." : isSaved ? "Saved" : "Save Recipe"}
-          </ThemedText>
-        </Pressable>
+          {onFavourite && (
+            <Pressable
+              onPress={handleFavourite}
+              disabled={isSaving}
+              style={[
+                styles.heartButton,
+                { backgroundColor: withOpacity(theme.text, 0.06) },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isFavourited
+                  ? `Remove ${recipe.title} from favourites`
+                  : `Add ${recipe.title} to favourites`
+              }
+              accessibilityState={{
+                selected: !!isFavourited,
+                disabled: !!isSaving,
+              }}
+            >
+              <Ionicons
+                name={isFavourited ? "heart" : "heart-outline"}
+                size={20}
+                color={isFavourited ? theme.error : theme.text}
+                accessible={false}
+              />
+            </Pressable>
+          )}
+        </View>
       )}
     </View>
   );
@@ -401,12 +446,24 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
     borderRadius: BorderRadius.sm,
   },
+  actionsRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  heartButton: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.button,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   saveButton: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginHorizontal: Spacing.md,
-    marginBottom: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.button,
     minHeight: 44,

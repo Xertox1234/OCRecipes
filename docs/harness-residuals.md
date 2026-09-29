@@ -110,3 +110,11 @@ same as default mode. `rm -- -weird` is missed (no `--` end-of-options handling)
 argv). An unquoted `cd`/`pushd` word anywhere suppresses ALL relative output; a quoted `"cd"`
 does not. `npm rm pkg` is a spurious match. `~` and `$VAR` are never expanded — joined to `cwd`
 exactly as spelled.
+
+lint-staged stash vs. the shared stash stack, found 2026-09-29 (#1172, no todo filed): an
+executor's archive commit recorded its todo at `status: in-progress` although the working tree
+held `status: done` at commit time; the code files in the same commit were byte-identical to the
+tree. Not root-caused. Suspected mechanism: lint-staged's own stash/restore runs against the git
+stash stack that every worktree shares, while other sessions had live entries on it (one was
+`wip-quicklogdrawer-red-check-…`). The next commit on that branch corrected the file. Reopen if a
+commit is again seen recording content different from the staged tree.

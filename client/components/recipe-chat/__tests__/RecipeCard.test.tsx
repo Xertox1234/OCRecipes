@@ -119,3 +119,63 @@ describe("RecipeCard", () => {
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("RecipeCard — favourite heart", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("shows a heart beside Save that calls onFavourite", () => {
+    const onFavourite = vi.fn();
+    renderComponent(
+      <RecipeCard recipe={recipe} onSave={vi.fn()} onFavourite={onFavourite} />,
+    );
+
+    const heart = screen.getByLabelText("Add Lemon Herb Chicken to favourites");
+    expect(heart.getAttribute("aria-selected")).toBe("false");
+    fireEvent.click(heart);
+    expect(onFavourite).toHaveBeenCalledTimes(1);
+    expect(mockImpact).toHaveBeenCalled();
+  });
+
+  it("a favourited recipe reads as selected and offers removal", () => {
+    renderComponent(
+      <RecipeCard
+        recipe={recipe}
+        onSave={vi.fn()}
+        isSaved
+        isFavourited
+        onFavourite={vi.fn()}
+      />,
+    );
+
+    const heart = screen.getByLabelText(
+      "Remove Lemon Herb Chicken from favourites",
+    );
+    expect(heart.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("no heart without onFavourite (e.g. a streaming card)", () => {
+    renderComponent(<RecipeCard recipe={recipe} onSave={vi.fn()} />);
+    expect(
+      screen.queryByLabelText("Add Lemon Herb Chicken to favourites"),
+    ).toBeNull();
+  });
+
+  it("the heart waits while the recipe is saving", () => {
+    const onFavourite = vi.fn();
+    renderComponent(
+      <RecipeCard
+        recipe={recipe}
+        onSave={vi.fn()}
+        isSaving
+        onFavourite={onFavourite}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByLabelText("Add Lemon Herb Chicken to favourites"),
+    );
+    expect(onFavourite).not.toHaveBeenCalled();
+  });
+});

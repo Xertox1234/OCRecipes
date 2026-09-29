@@ -34,6 +34,11 @@ import {
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 import type { HomeAction } from "./action-config";
 
+/** Shown/announced when parsed items first appear (see the success-announce effect). */
+function foundItemsMessage(count: number) {
+  return `Found ${count} item${count === 1 ? "" : "s"}. Log All to save.`;
+}
+
 interface FrequentChipProps {
   productName: string;
   onPress: (productName: string) => void;
@@ -227,11 +232,22 @@ export function QuickLogDrawer({
     wasParseEmptyRef.current = session.parseEmpty;
   }, [session.parseEmpty]);
 
+  // A successful parse fired only a haptic + list before this — VoiceOver
+  // users heard nothing. iOS gets the imperative announce, once per result;
+  // the live-region note rendered below carries Android, so the iOS
+  // announce is gated to avoid double-announcing.
   const hadParsedItemsRef = useRef(false);
   useEffect(() => {
-    if (hasParsedItems && !hadParsedItemsRef.current) onResultsShown?.();
+    if (hasParsedItems && !hadParsedItemsRef.current) {
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(
+          foundItemsMessage(session.parsedItems.length),
+        );
+      }
+      onResultsShown?.();
+    }
     hadParsedItemsRef.current = hasParsedItems;
-  }, [hasParsedItems, onResultsShown]);
+  }, [hasParsedItems, onResultsShown, session.parsedItems.length]);
 
   return (
     <HomeInlineDrawer
@@ -348,6 +364,13 @@ export function QuickLogDrawer({
       {/* Parsed items */}
       {hasParsedItems && (
         <View style={styles.parsedSection}>
+          <ThemedText
+            type="small"
+            style={{ color: theme.textSecondary }}
+            accessibilityLiveRegion="polite"
+          >
+            {foundItemsMessage(session.parsedItems.length)}
+          </ThemedText>
           {session.parsedItems.map((item, index) => (
             <ParsedItemRow
               key={`${item.name}-${index}`}

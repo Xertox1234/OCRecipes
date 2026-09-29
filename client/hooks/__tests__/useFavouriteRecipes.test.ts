@@ -8,6 +8,7 @@ import {
   useIsRecipeFavourited,
   useToggleFavouriteRecipe,
   useShareRecipe,
+  useAddFavouriteRecipe,
 } from "../useFavouriteRecipes";
 import { ApiError } from "@/lib/api-error";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
@@ -426,5 +427,77 @@ describe("useFavouriteRecipes", () => {
         "Could not share this recipe.",
       );
     });
+  });
+});
+
+// A heart on a recipe that is saved in the same tap: the server only offers a
+// toggle, so "add" must not toggle a recipe that is already a favourite off.
+describe("useAddFavouriteRecipe", () => {
+  const toggleCalls = () =>
+    mockApiRequest.mock.calls.filter(
+      ([method, url]) =>
+        method === "POST" && url === "/api/favourite-recipes/toggle",
+    );
+
+  beforeEach(() => {
+    mockApiRequest.mockReset();
+  });
+
+  it("favourites a recipe that isn't a favourite yet", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    queryClient.setQueryData(["/api/favourite-recipes/ids"], { ids: [] });
+    mockApiRequest.mockResolvedValue({
+      json: () => Promise.resolve({ favourited: true }),
+    });
+    const { result } = renderHook(() => useAddFavouriteRecipe(), { wrapper });
+
+    await act(async () => {
+      await result.current({ recipeId: 7, recipeType: "mealPlan" });
+    });
+
+    expect(toggleCalls()).toEqual([
+      [
+        "POST",
+        "/api/favourite-recipes/toggle",
+        { recipeId: 7, recipeType: "mealPlan" },
+      ],
+    ]);
+  });
+
+  it("leaves an existing favourite favourited (no toggle)", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    queryClient.setQueryData(["/api/favourite-recipes/ids"], {
+      ids: [{ recipeId: 7, recipeType: "mealPlan" }],
+    });
+    const { result } = renderHook(() => useAddFavouriteRecipe(), { wrapper });
+
+    await act(async () => {
+      await result.current({ recipeId: 7, recipeType: "mealPlan" });
+    });
+
+    expect(toggleCalls()).toEqual([]);
+  });
+
+  it("with no cached list, reads the list first rather than guessing", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockImplementation(async (method: string) => ({
+      json: () =>
+        Promise.resolve(
+          method === "GET"
+            ? { ids: [{ recipeId: 7, recipeType: "mealPlan" }] }
+            : { favourited: false },
+        ),
+    }));
+    const { result } = renderHook(() => useAddFavouriteRecipe(), { wrapper });
+
+    await act(async () => {
+      await result.current({ recipeId: 7, recipeType: "mealPlan" });
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/api/favourite-recipes/ids",
+    );
+    expect(toggleCalls()).toEqual([]);
   });
 });

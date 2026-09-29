@@ -57,6 +57,13 @@ import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem, useMealPlanItems } from "@/hooks/useMealPlan";
 import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
+import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
+import {
+  useAddFavouriteRecipe,
+  useFavouriteRecipeIds,
+  useToggleFavouriteRecipe,
+} from "@/hooks/useFavouriteRecipes";
+import { savedRecipeIdFromMetadata } from "@/components/recipe-chat/saved-recipe-utils";
 import type { MealType } from "@/screens/meal-plan/meal-plan-utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { Spacing } from "@/constants/theme";
@@ -132,7 +139,11 @@ export default function CoachChat({
     [canSaveCatalog, canGenerateRecipes],
   );
   const { mutateAsync: saveRecipeFromChat } = useSaveRecipeFromChat();
-  const savedRecipeIdsRef = useRef<Set<number>>(new Set());
+  // messageId → the community recipe id it was saved as (this session).
+  const savedRecipeIdsRef = useRef<Map<number, number>>(new Map());
+  const { data: favouriteIds } = useFavouriteRecipeIds();
+  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
+  const addFavourite = useAddFavouriteRecipe();
   const [savingRecipeMessageId, setSavingRecipeMessageId] = useState<
     number | null
   >(null);
@@ -799,31 +810,54 @@ export default function CoachChat({
 
   const openUpgrade = useCallback(() => setShowUpgrade(true), []);
 
+  /** Resolves the saved community recipe id, or null if nothing was saved. */
   const handleSaveGeneratedRecipe = useCallback(
-    async (messageId: number) => {
-      if (
-        !conversationId ||
-        savedRecipeIdsRef.current.has(messageId) ||
-        savingRecipeMessageId !== null
-      )
-        return;
+    async (messageId: number): Promise<number | null> => {
+      const known = savedRecipeIdsRef.current.get(messageId);
+      if (known !== undefined) return known;
+      if (!conversationId || savingRecipeMessageId !== null) return null;
       setSavingRecipeMessageId(messageId);
       try {
-        await saveRecipeFromChat({ conversationId, messageId });
-        savedRecipeIdsRef.current = new Set([
+        const saved = await saveRecipeFromChat({ conversationId, messageId });
+        savedRecipeIdsRef.current = new Map([
           ...savedRecipeIdsRef.current,
-          messageId,
+          [messageId, saved.id],
         ]);
         haptics.notification(Haptics.NotificationFeedbackType.Success);
-        toast.success("Recipe saved");
+        if (saved.savedItemStatus === "limit_reached") {
+          toast.info(SAVED_ITEMS_FULL_MESSAGE);
+        } else {
+          toast.success("Recipe saved");
+        }
+        return saved.id;
       } catch {
         // useSaveRecipeFromChat has no silentError: the global net toasts it.
         haptics.notification(Haptics.NotificationFeedbackType.Error);
+        return null;
       } finally {
         setSavingRecipeMessageId(null);
       }
     },
     [conversationId, savingRecipeMessageId, saveRecipeFromChat, haptics, toast],
+  );
+
+  // The card's heart (ruling 2026-09-29): toggles the saved copy; on an
+  // unsaved recipe it saves first, then favourites without ever toggling off.
+  const handleFavouriteGeneratedRecipe = useCallback(
+    async (messageId: number, savedRecipeId: number | null) => {
+      if (savedRecipeId !== null) {
+        toggleFavourite({ recipeId: savedRecipeId, recipeType: "community" });
+        return;
+      }
+      const id = await handleSaveGeneratedRecipe(messageId);
+      if (id === null) return;
+      try {
+        await addFavourite({ recipeId: id, recipeType: "community" });
+      } catch {
+        // useToggleFavouriteRecipe surfaces its own failures; the save stands.
+      }
+    },
+    [toggleFavourite, handleSaveGeneratedRecipe, addFavourite],
   );
 
   const renderItem = useCallback(
@@ -840,6 +874,9 @@ export default function CoachChat({
         const hasFinderBlock =
           blocksForMsg?.some((b) => isFinderBlockType(b.type)) ?? false;
         const generated = generatedRecipes.get(msg.id);
+        const savedRecipeId =
+          savedRecipeIdsRef.current.get(msg.id) ??
+          savedRecipeIdFromMetadata(msg.metadata);
         return (
           <View>
             {!hasFinderBlock && (
@@ -885,9 +922,20 @@ export default function CoachChat({
               <GeneratedRecipeCard
                 recipe={generated.recipe}
                 allergenWarning={generated.allergenWarning}
-                isSaved={savedRecipeIdsRef.current.has(msg.id)}
+                isSaved={savedRecipeId !== null}
                 isSaving={savingRecipeMessageId === msg.id}
                 onSave={() => void handleSaveGeneratedRecipe(msg.id)}
+                isFavourited={
+                  savedRecipeId !== null &&
+                  !!favouriteIds?.ids.some(
+                    (f) =>
+                      f.recipeId === savedRecipeId &&
+                      f.recipeType === "community",
+                  )
+                }
+                onFavourite={() =>
+                  void handleFavouriteGeneratedRecipe(msg.id, savedRecipeId)
+                }
               />
             ) : null}
             {isRetryTarget && (
@@ -933,6 +981,8 @@ export default function CoachChat({
       generatedRecipes,
       savingRecipeMessageId,
       handleSaveGeneratedRecipe,
+      handleFavouriteGeneratedRecipe,
+      favouriteIds,
     ],
   );
 

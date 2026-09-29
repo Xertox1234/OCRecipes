@@ -9,6 +9,7 @@ import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { useCallback, useState, useRef } from "react";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
+import type { SavedRecipeLinkStatus } from "@shared/schemas/saved-items";
 import {
   finderBlockSchema,
   type FinderAction,
@@ -494,11 +495,19 @@ export function useSaveRecipeFromChat() {
         `/api/chat/conversations/${conversationId}/save-recipe`,
         { messageId },
       );
-      return res.json();
+      return res.json() as Promise<{
+        id: number;
+        savedItemStatus?: SavedRecipeLinkStatus;
+      }>;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ["/api/chat/conversations"],
+      });
+      // The server also puts the recipe into Saved Items.
+      void queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/saved-items/count"],
       });
     },
   });
