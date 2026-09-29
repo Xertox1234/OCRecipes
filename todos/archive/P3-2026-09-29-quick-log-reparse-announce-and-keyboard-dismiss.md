@@ -1,6 +1,6 @@
 ---
 title: "Quick Log: a second parse that replaces the items is not announced, and closing the drawer leaves the keyboard up"
-status: backlog
+status: done
 priority: low
 created: 2026-09-29
 updated: 2026-09-29
@@ -25,9 +25,9 @@ Two gaps left out of scope by #1175:
 
 ## Acceptance Criteria
 
-- [ ] `useQuickLogSession` exposes a per-parse generation counter, bumped on every successful parse that sets items. Both `client/components/home/QuickLogDrawer.tsx` and `client/screens/QuickLogScreen.tsx` key their success announce on it, so every replace-parse is announced on both platforms: VoiceOver always, and TalkBack including a same-count replace. Don't double-announce a count-changing replace on Android, where the live region already covers it (`docs/rules/accessibility.md`). Tests drive parse → parse with no empty state in between, for both the same-count and changed-count cases, and assert the expected announces per platform. RED first.
-- [ ] The existing announce guards stay silent on mount and on reset (keep the prev-value ref guard).
-- [ ] Closing or resetting the Quick Log session dismisses the keyboard (`Keyboard.dismiss()` in `reset()` or at the drawer's close path, whichever covers every close path listed above). A test asserts it. RED first.
+- [x] `useQuickLogSession` exposes a per-parse generation counter, bumped on every successful parse that sets items. Both `client/components/home/QuickLogDrawer.tsx` and `client/screens/QuickLogScreen.tsx` key their success announce on it, so every replace-parse is announced on both platforms: VoiceOver always, and TalkBack including a same-count replace. Don't double-announce a count-changing replace on Android, where the live region already covers it (`docs/rules/accessibility.md`). Tests drive parse → parse with no empty state in between, for both the same-count and changed-count cases, and assert the expected announces per platform. RED first.
+- [x] The existing announce guards stay silent on mount and on reset (keep the prev-value ref guard).
+- [x] Closing or resetting the Quick Log session dismisses the keyboard (`Keyboard.dismiss()` in `reset()` or at the drawer's close path, whichever covers every close path listed above). A test asserts it. RED first.
 
 ## Implementation Notes
 
@@ -48,3 +48,23 @@ Two gaps left out of scope by #1175:
 ### 2026-09-29
 
 - Auto-filed (Low) from #1175's review (code-reviewer WARNING and mobile-reviewer SUGGESTION).
+
+### 2026-09-29 (implementation)
+
+- Implemented all three acceptance criteria. `useQuickLogSession` now exposes
+  `parseGeneration`, bumped inside both successful-parse `onSuccess` handlers
+  (never on `removeItem` or `reset()`); `QuickLogDrawer.tsx` and
+  `QuickLogScreen.tsx` key their success announce on it instead of the old
+  `hasParsedItems` discriminator. `reset()` also calls `Keyboard.dismiss()`.
+  `code-reviewer` + `mobile-reviewer` returned no blocking findings.
+  `code-reviewer` surfaced one WARNING with a constructed probe: the "was
+  this covered by the live region?" count comparison went stale whenever
+  `parsedItems.length` changed without a generation bump (`removeItem`, or
+  `reset()` on a drawer that stays mounted across close/reopen), producing
+  both a false silent gap and a false double-announce. Fixed inline (small,
+  same files, in scope) — the ref tracking the last-rendered count is now
+  written on every effect run, not only on a generation change — with new
+  RED-first tests locking in the fix; no second reviewer dispatch per the
+  "one review pass" ruling, since the finding was WARNING not CRITICAL.
+  Codified as a "Third manifestation" addendum to
+  `docs/solutions/logic-errors/imperative-announce-must-be-content-keyed-not-variant-keyed-2026-06-24.md`.
