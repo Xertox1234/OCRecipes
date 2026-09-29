@@ -1,6 +1,6 @@
 ---
 title: "AllConversationsScreen stays mounted and never refetches — same staleness shape #1096 fixed for ChatListScreen"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-26
 updated: 2026-09-26

@@ -20,6 +20,10 @@ import {
   usePinConversation,
   type ChatConversation,
 } from "@/hooks/useChat";
+import {
+  REFRESH_ON_FOCUS_SETTLE_MS,
+  useRefreshOnFocus,
+} from "@/hooks/useRefreshOnFocus";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { AllConversationsNavigationProp } from "@/types/navigation";
 import { safeGoBack } from "@/navigation/safeGoBack";
@@ -52,12 +56,30 @@ export default function AllConversationsScreen() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const { data: conversations = [], isLoading } = useChatConversations(
-    activeSegment,
-    {
-      search: debouncedSearch || undefined,
-    },
-  );
+  const {
+    data: conversations = [],
+    isLoading,
+    refetch,
+  } = useChatConversations(activeSegment, {
+    search: debouncedSearch || undefined,
+  });
+  // This screen can stay mounted under a pushed chat screen (Chat, RecipeChat).
+  // A reply that finishes after the user left marks the conversation list
+  // stale with `refetchType: "none"` (#1060/#1065) — that only refetches once
+  // a query observer mounts, so pick it up on refocus instead of waiting for
+  // a manual pull-to-refresh. `refetch` is stable across `activeSegment`
+  // switches (react-query keeps the same observer instance for this
+  // component's lifetime — see ChatListScreen.tsx), so whichever tab is
+  // active when the screen refocuses is the one that gets refreshed.
+  const refetchOnFocus = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+  // settleMs: the refocus usually lands in the same transition as the abort
+  // that invalidated the coach list with `refetchType: "none"` — re-read once
+  // the server's post-disconnect write has settled (see the constant's
+  // comment). Sized for the coach path only; the recipe-tab generation path
+  // is a known, pre-existing residual (documented on the constant).
+  useRefreshOnFocus(refetchOnFocus, { settleMs: REFRESH_ON_FOCUS_SETTLE_MS });
   const pinConversation = usePinConversation();
   const deleteConversation = useDeleteConversation();
 
