@@ -19,6 +19,7 @@ const {
   mockAbortStream,
   mockCreateConversationMutateAsync,
   mockSaveRecipeMutateAsync,
+  mockMarkPendingRecipeTurn,
   mockChatMessagesData,
   mockSendMessageState,
 } = vi.hoisted(() => ({
@@ -42,6 +43,7 @@ const {
   mockAbortStream: vi.fn(),
   mockCreateConversationMutateAsync: vi.fn(),
   mockSaveRecipeMutateAsync: vi.fn(),
+  mockMarkPendingRecipeTurn: vi.fn(),
   mockChatMessagesData: { value: [] as ChatMessage[] },
   // A mutable ref so tests can simulate useSendMessage's streaming/recipe/
   // error state changing across a rerender (e.g. a stream starting then
@@ -102,6 +104,7 @@ vi.mock("@/hooks/useChat", () => ({
     mutateAsync: mockSaveRecipeMutateAsync,
     isPending: false,
   }),
+  useMarkPendingRecipeTurn: () => mockMarkPendingRecipeTurn,
 }));
 
 vi.mock("@/hooks/usePremiumFeatures", () => ({
@@ -231,6 +234,35 @@ describe("RecipeChatScreen — aborts the stream on unmount", () => {
     unmount();
 
     expect(mockAbortStream).toHaveBeenCalledOnce();
+  });
+
+  // P3-2026-09-26: recipe/remix generation the user aborts mid-stream keeps
+  // running server-side, so ChatListScreen (and a later reopen of this same
+  // conversation) need to know to poll for the finished reply — this marks
+  // that conversation pending, but only when a turn was actually in flight.
+  describe("marks the conversation's recipe turn pending, only when a stream was in flight", () => {
+    it("marks pending when unmounting mid-stream", () => {
+      mockRouteParams.value = { conversationId: 42 };
+      mockSendMessageState.value = {
+        ...mockSendMessageState.value,
+        isStreaming: true,
+      };
+      const { unmount } = renderComponent(<RecipeChatScreen />);
+
+      expect(mockMarkPendingRecipeTurn).not.toHaveBeenCalled();
+      unmount();
+
+      expect(mockMarkPendingRecipeTurn).toHaveBeenCalledExactlyOnceWith(42);
+    });
+
+    it("does not mark pending when unmounting idle (no stream in flight)", () => {
+      mockRouteParams.value = { conversationId: 42 };
+      const { unmount } = renderComponent(<RecipeChatScreen />);
+
+      unmount();
+
+      expect(mockMarkPendingRecipeTurn).not.toHaveBeenCalled();
+    });
   });
 });
 

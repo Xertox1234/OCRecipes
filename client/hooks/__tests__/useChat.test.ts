@@ -5,6 +5,11 @@ import {
   useSendMessage,
   useCreateNotebookEntry,
   useUpdateNotebookEntry,
+  useChatConversations,
+  useChatMessages,
+  useMarkPendingRecipeTurn,
+  RECIPE_TURN_POLL_INTERVAL_MS,
+  RECIPE_TURN_POLL_CAP_MS,
 } from "../useChat";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
@@ -543,6 +548,268 @@ describe("useSendMessage", () => {
         await p;
       });
     });
+  });
+});
+
+// P3-2026-09-26: the recipe/remix finish-and-save policy keeps generating
+// after an intentional abort, so a fixed settle margin (useRefreshOnFocus)
+// isn't enough — these consumers poll (bounded by a cap) until the pending
+// turn resolves. See the "Recipe/remix post-abort poll" block in useChat.ts.
+describe("recipe/remix post-abort poll", () => {
+  const PENDING_KEY = ["__pendingRecipeTurns"];
+  // Advancing fake timers by EXACTLY the scheduled interval fires the timer
+  // but leaves the resulting fetch's promise chain (queryFn -> React Query's
+  // internal state update -> React's commit) one tick behind under fake
+  // timers; a small buffer past the boundary lets it fully settle before the
+  // next assertion reads `result.current`.
+  const FLUSH_MS = 50;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const conversation = (overrides: Partial<Record<string, unknown>> = {}) => ({
+    id: 7,
+    userId: "u1",
+    title: "Recipe chat",
+    type: "recipe",
+    isPinned: false,
+    pinnedAt: null,
+    createdAt: "2020-01-01T00:00:00.000Z",
+    updatedAt: "2020-01-01T00:00:00.000Z",
+    ...overrides,
+  });
+
+  it("useMarkPendingRecipeTurn writes the conversation id into the query cache with a fresh timestamp", () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const { result } = renderHook(() => useMarkPendingRecipeTurn(), {
+      wrapper,
+    });
+
+    const before = Date.now();
+    act(() => {
+      result.current(7);
+    });
+    const after = Date.now();
+
+    const pending =
+      queryClient.getQueryData<Record<number, number>>(PENDING_KEY);
+    expect(pending?.[7]).toBeGreaterThanOrEqual(before);
+    expect(pending?.[7]).toBeLessThanOrEqual(after);
+  });
+
+  it("polls the recipe conversation list while a turn is pending, and stops once the conversation's updatedAt moves past the abort mark", async () => {
+    vi.useFakeTimers();
+    const { wrapper, queryClient } = createQueryWrapper();
+
+    const { result: markResult } = renderHook(
+      () => useMarkPendingRecipeTurn(),
+      {
+        wrapper,
+      },
+    );
+    act(() => {
+      markResult.current(7);
+    });
+    const abortedAt =
+      queryClient.getQueryData<Record<number, number>>(PENDING_KEY)![7];
+
+    const preSettle = [conversation()];
+    // Past the abort mark, so `isResolved` (updatedAt > abortedAt) fires —
+    // mirrors the server bumping `chatConversations.updatedAt` on save.
+    const settled = [
+      conversation({ updatedAt: new Date(abortedAt + 1000).toISOString() }),
+    ];
+    mockApiRequest
+      .mockResolvedValueOnce({ json: async () => preSettle })
+      .mockResolvedValueOnce({ json: async () => preSettle })
+      .mockResolvedValueOnce({ json: async () => settled });
+
+    const { result } = renderHook(
+      () => useChatConversations("recipe", { pollPendingRecipeTurns: true }),
+      { wrapper },
+    );
+
+    // Initial fetch (mount).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.data).toEqual(preSettle);
+
+    // First poll tick — still pre-settle, keeps polling.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(
+        RECIPE_TURN_POLL_INTERVAL_MS + FLUSH_MS,
+      );
+    });
+    expect(result.current.data).toEqual(preSettle);
+    expect(queryClient.getQueryData(PENDING_KEY)).toEqual({
+      7: expect.any(Number),
+    });
+
+    // Second poll tick — the server's save landed; resolves and stops.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(
+        RECIPE_TURN_POLL_INTERVAL_MS + FLUSH_MS,
+      );
+    });
+    expect(result.current.data).toEqual(settled);
+    expect(queryClient.getQueryData(PENDING_KEY)).toEqual({});
+
+    const callsAtResolution = mockApiRequest.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECIPE_TURN_POLL_INTERVAL_MS * 3);
+    });
+    expect(mockApiRequest.mock.calls.length).toBe(callsAtResolution);
+  });
+
+  it("stops polling and purges the mark once the cap elapses without resolving", async () => {
+    vi.useFakeTimers();
+    const { wrapper, queryClient } = createQueryWrapper();
+
+    const neverSettles = [conversation()];
+    mockApiRequest.mockResolvedValue({ json: async () => neverSettles });
+
+    const { result: markResult } = renderHook(
+      () => useMarkPendingRecipeTurn(),
+      {
+        wrapper,
+      },
+    );
+    act(() => {
+      markResult.current(7);
+    });
+
+    renderHook(
+      () => useChatConversations("recipe", { pollPendingRecipeTurns: true }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(
+        RECIPE_TURN_POLL_CAP_MS + RECIPE_TURN_POLL_INTERVAL_MS * 2 + FLUSH_MS,
+      );
+    });
+
+    expect(queryClient.getQueryData(PENDING_KEY)).toEqual({});
+    const callsAtCap = mockApiRequest.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECIPE_TURN_POLL_INTERVAL_MS * 3);
+    });
+    expect(mockApiRequest.mock.calls.length).toBe(callsAtCap);
+  });
+
+  it("cancels the poll on unmount — no further fetches after the observer is gone", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValue({ json: async () => [conversation()] });
+
+    const { result: markResult } = renderHook(
+      () => useMarkPendingRecipeTurn(),
+      {
+        wrapper,
+      },
+    );
+    act(() => {
+      markResult.current(7);
+    });
+
+    const { unmount } = renderHook(
+      () => useChatConversations("recipe", { pollPendingRecipeTurns: true }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const callsBeforeUnmount = mockApiRequest.mock.calls.length;
+
+    unmount();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RECIPE_TURN_POLL_CAP_MS);
+    });
+    expect(mockApiRequest.mock.calls.length).toBe(callsBeforeUnmount);
+  });
+
+  it("polls a conversation's messages while its turn is pending, and stops once a new assistant message appears", async () => {
+    vi.useFakeTimers();
+    const { wrapper, queryClient } = createQueryWrapper();
+    // useChatMessages has no explicit queryFn (production relies on the
+    // shared queryClient's default queryFn) — give this local client one
+    // wired to the same mocked apiRequest, mirroring that default.
+    queryClient.setQueryDefaults(["/api/chat/conversations/7/messages"], {
+      queryFn: async () => {
+        const res = await mockApiRequest(
+          "GET",
+          "/api/chat/conversations/7/messages",
+        );
+        return res.json();
+      },
+    });
+
+    const userMsg = {
+      id: 1,
+      conversationId: 7,
+      role: "user",
+      content: "hi",
+      metadata: null,
+      createdAt: "2020-01-01T00:00:00.000Z",
+    };
+
+    const { result: markResult } = renderHook(
+      () => useMarkPendingRecipeTurn(),
+      {
+        wrapper,
+      },
+    );
+    act(() => {
+      markResult.current(7);
+    });
+    const abortedAt =
+      queryClient.getQueryData<Record<number, number>>(PENDING_KEY)![7];
+    // Past the abort mark, so `isResolved` (an assistant message newer than
+    // the abort) fires — mirrors the server's finish-and-save reply landing.
+    const assistantMsg = {
+      id: 2,
+      conversationId: 7,
+      role: "assistant",
+      content: "the finished reply",
+      metadata: null,
+      createdAt: new Date(abortedAt + 1000).toISOString(),
+    };
+    mockApiRequest
+      .mockResolvedValueOnce({ json: async () => [userMsg] })
+      .mockResolvedValueOnce({ json: async () => [userMsg] })
+      .mockResolvedValueOnce({ json: async () => [userMsg, assistantMsg] });
+
+    const { result } = renderHook(
+      () => useChatMessages(7, undefined, { pollPendingRecipeTurn: true }),
+      { wrapper },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.data).toEqual([userMsg]);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(
+        RECIPE_TURN_POLL_INTERVAL_MS + FLUSH_MS,
+      );
+    });
+    expect(result.current.data).toEqual([userMsg]);
+    expect(queryClient.getQueryData(PENDING_KEY)).toEqual({
+      7: expect.any(Number),
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(
+        RECIPE_TURN_POLL_INTERVAL_MS + FLUSH_MS,
+      );
+    });
+    expect(result.current.data).toEqual([userMsg, assistantMsg]);
+    expect(queryClient.getQueryData(PENDING_KEY)).toEqual({});
   });
 });
 

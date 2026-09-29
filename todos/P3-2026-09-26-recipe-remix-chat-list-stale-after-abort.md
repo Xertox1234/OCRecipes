@@ -1,6 +1,6 @@
 ---
 title: "Recipe and remix chat lists still show stale data after an aborted stream"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-26
 updated: 2026-09-26

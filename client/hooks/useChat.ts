@@ -1,4 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import {
   apiRequest,
   getApiUrl,
@@ -55,10 +60,125 @@ export interface StreamingRecipe {
   imageUrl?: string | null;
 }
 
+// ---- Recipe/remix post-abort poll ----
+//
+// The recipe/remix finish-and-save policy (server/routes/chat.ts) keeps
+// generating — and saves the full reply — after the client disconnects. An
+// intentional abort (RecipeChatScreen unmounting mid-stream) marks the
+// conversation's queries stale with `refetchType: "none"` below, but that
+// only refetches once a query OBSERVER mounts; a screen that stays mounted
+// (ChatListScreen) or is reopened before generation finishes never gets a
+// second look. #1096's fixed 2s settle margin (useRefreshOnFocus) covers the
+// coach path (a couple of DB writes) but not this one, where generation can
+// run for tens of seconds. This polls instead, bounded by a cap.
+//
+// Poll interval and cap: SSE_TIMEOUT_MS is the server's own ceiling on every
+// chat SSE connection (coach, recipe, remix), so no post-disconnect save can
+// land later than that measured from the ORIGINAL request — comfortably
+// less measured from the abort, which happens partway through. The +30s
+// margin covers the final DB write plus network latency, mirroring
+// CHAT_XHR_TIMEOUT_MS's own margin over the same constant.
+export const RECIPE_TURN_POLL_INTERVAL_MS = 5_000;
+export const RECIPE_TURN_POLL_CAP_MS = SSE_TIMEOUT_MS + 30_000;
+
+// Marks live only for the session: stored in the TanStack Query cache
+// (never a bare module-level singleton — see
+// docs/solutions/design-patterns/global-mutable-client-singleton-lifecycle-2026-06-19.md)
+// so `queryClient.clear()` — already called on every local auth teardown
+// path (logout/expireSession/deleteAccount, docs/rules/client-state.md) —
+// wipes it automatically. No new teardown wiring needed, and a poll's own
+// `refetchInterval` timer is owned by its query observer, so it is cleared
+// by React Query itself the moment that observer unmounts.
+const PENDING_RECIPE_TURNS_KEY = ["__pendingRecipeTurns"] as const;
+type PendingRecipeTurns = Record<number, number>; // conversationId -> abortedAt (ms)
+
+/**
+ * Marks a recipe/remix conversation as having an outstanding server-side
+ * turn after an intentional client abort. Call from the aborting screen's
+ * unmount cleanup — `useChatConversations`/`useChatMessages` consumers that
+ * opt into `pollPendingRecipe*` below poll until it resolves or expires.
+ */
+export function useMarkPendingRecipeTurn() {
+  const queryClient = useQueryClient();
+  return useCallback(
+    (conversationId: number) => {
+      queryClient.setQueryData<PendingRecipeTurns>(
+        PENDING_RECIPE_TURNS_KEY,
+        (prev) => ({ ...(prev ?? {}), [conversationId]: Date.now() }),
+      );
+    },
+    [queryClient],
+  );
+}
+
+/**
+ * Shared `refetchInterval` decision for a query that should keep polling
+ * while a pending recipe turn relevant to it hasn't resolved yet. Every
+ * pending id past `RECIPE_TURN_POLL_CAP_MS` is dropped unconditionally
+ * (safety net). `relevant` scopes which ids matter to THIS query — `"all"`
+ * for the conversation list (any pending id might settle there), or a
+ * specific `conversationId` for a messages query (only its own turn does) —
+ * so an unrelated pending id can't keep an uninvolved query polling.
+ * `isResolved` inspects the freshly-fetched data to decide whether a given
+ * pending id has settled; once true (or expired) that id's mark clears.
+ */
+function pollRecipeTurn<TData>(
+  queryClient: QueryClient,
+  relevant: "all" | number,
+  data: TData | undefined,
+  isResolved: (
+    data: TData,
+    conversationId: number,
+    abortedAt: number,
+  ) => boolean,
+): number | false {
+  const pending = queryClient.getQueryData<PendingRecipeTurns>(
+    PENDING_RECIPE_TURNS_KEY,
+  );
+  if (!pending || Object.keys(pending).length === 0) return false;
+
+  const now = Date.now();
+  const next: PendingRecipeTurns = {};
+  let changed = false;
+  for (const [idStr, abortedAt] of Object.entries(pending)) {
+    const conversationId = Number(idStr);
+    const expired = now - abortedAt > RECIPE_TURN_POLL_CAP_MS;
+    const resolved =
+      !expired &&
+      data !== undefined &&
+      isResolved(data, conversationId, abortedAt);
+    if (expired || resolved) {
+      changed = true;
+      continue;
+    }
+    next[conversationId] = abortedAt;
+  }
+  if (changed) {
+    // `setQueryData` treats a resulting value of `undefined` as a no-op (it
+    // leaves the previous data in place) — write `{}` instead so an
+    // emptied-out map actually clears the stale entries.
+    queryClient.setQueryData<PendingRecipeTurns>(
+      PENDING_RECIPE_TURNS_KEY,
+      next,
+    );
+  }
+
+  const stillRelevant = Object.keys(next)
+    .map(Number)
+    .some((id) => relevant === "all" || relevant === id);
+  return stillRelevant ? RECIPE_TURN_POLL_INTERVAL_MS : false;
+}
+
 export function useChatConversations(
   type?: "coach" | "recipe",
-  opts?: { search?: string; page?: number },
+  opts?: {
+    search?: string;
+    page?: number;
+    /** Poll while any recipe/remix turn is pending a post-abort save (see above). */
+    pollPendingRecipeTurns?: boolean;
+  },
 ) {
+  const queryClient = useQueryClient();
   const queryKey = type
     ? ["/api/chat/conversations", { type, ...opts }]
     : ["/api/chat/conversations", opts];
@@ -75,17 +195,50 @@ export function useChatConversations(
       const res = await apiRequest("GET", url);
       return res.json();
     },
+    ...(opts?.pollPendingRecipeTurns && {
+      refetchInterval: (query) =>
+        pollRecipeTurn(
+          queryClient,
+          "all",
+          query.state.data,
+          (conversations, conversationId, abortedAt) => {
+            const convo = conversations.find((c) => c.id === conversationId);
+            return !!convo && new Date(convo.updatedAt).getTime() > abortedAt;
+          },
+        ),
+    }),
   });
 }
 
 export function useChatMessages(
   conversationId: number | null,
   meta?: QueryErrorMeta,
+  opts?: {
+    /** Poll while THIS conversation's recipe/remix turn is pending a post-abort save (see above). */
+    pollPendingRecipeTurn?: boolean;
+  },
 ) {
+  const queryClient = useQueryClient();
   return useQuery<ChatMessage[]>({
     queryKey: [`/api/chat/conversations/${conversationId}/messages`],
     enabled: !!conversationId,
     meta,
+    ...(opts?.pollPendingRecipeTurn &&
+      conversationId !== null && {
+        refetchInterval: (query) =>
+          pollRecipeTurn(
+            queryClient,
+            conversationId,
+            query.state.data,
+            (messages, id, abortedAt) =>
+              id === conversationId &&
+              messages.some(
+                (m) =>
+                  m.role === "assistant" &&
+                  new Date(m.createdAt).getTime() > abortedAt,
+              ),
+          ),
+      }),
   });
 }
 

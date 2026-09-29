@@ -91,11 +91,15 @@ export default function ChatListScreen() {
   const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const isRecipeMode = activeSegment === "recipe";
 
+  // pollPendingRecipeTurns: while a recipe/remix turn is pending a post-abort
+  // save (marked by RecipeChatScreen's unmount cleanup), keep polling this
+  // list until it resolves or expires — the fixed settle margin below
+  // doesn't cover generation that keeps running for tens of seconds.
   const {
     data: conversations,
     isLoading,
     refetch,
-  } = useChatConversations(activeSegment);
+  } = useChatConversations(activeSegment, { pollPendingRecipeTurns: true });
   // A conversation whose reply finished after the user left is marked stale
   // with `refetchType: "none"` (#1060/#1065) — that only refetches once a
   // query observer mounts, and this screen stays mounted across a stack
