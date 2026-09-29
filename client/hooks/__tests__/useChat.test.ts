@@ -364,6 +364,224 @@ describe("useSendMessage", () => {
     expect(() => result.current.abortStream()).not.toThrow();
   });
 
+  // P3-2026-09-26: sendMessage's token read (`await tokenStorage.get()`) is
+  // async, same shape as useCoachStream's startStream. An abort/unmount
+  // that lands while it is still pending must stop its continuation from
+  // sending an orphaned request later — see useCoachStream's own
+  // "overlapping starts" describe block for the precedent this mirrors.
+  describe("token-read epoch guard", () => {
+    function deferToken() {
+      let resolve!: (token: string | null) => void;
+      mockTokenStorage.get.mockImplementationOnce(
+        () => new Promise<string | null>((r) => (resolve = r)),
+      );
+      return (token: string | null = "test-token") => resolve(token);
+    }
+
+    it("does not send a request when aborted before the token read resolves", async () => {
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(() => useSendMessage(1), { wrapper });
+      const resolveToken = deferToken();
+
+      act(() => {
+        void result.current.sendMessage("first");
+      });
+      act(() => {
+        result.current.abortStream();
+      });
+      await act(async () => {
+        resolveToken();
+        await Promise.resolve();
+      });
+
+      expect(xhrConstructorCalls).toBe(0);
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    it("sends only the new stream's request after an abort-then-restart during the token read", async () => {
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(() => useSendMessage(1), { wrapper });
+      const resolveFirst = deferToken();
+      const resolveSecond = deferToken();
+
+      act(() => {
+        void result.current.sendMessage("first");
+      });
+      act(() => {
+        result.current.abortStream();
+      });
+      act(() => {
+        void result.current.sendMessage("second");
+      });
+      await act(async () => {
+        resolveFirst();
+        resolveSecond();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(xhrConstructorCalls).toBe(1);
+      expect(xhrInstance.send).toHaveBeenCalledWith(
+        JSON.stringify({ content: "second" }),
+      );
+    });
+
+    it("ignores a stale token-read failure from an aborted send while a new one runs", async () => {
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(() => useSendMessage(1), { wrapper });
+      let rejectFirst!: (err: Error) => void;
+      mockTokenStorage.get.mockImplementationOnce(
+        () => new Promise<string | null>((_, reject) => (rejectFirst = reject)),
+      );
+      const resolveSecond = deferToken(); // the second send's read stays pending
+
+      act(() => {
+        void result.current.sendMessage("first");
+      });
+      act(() => {
+        result.current.abortStream();
+      });
+      act(() => {
+        void result.current.sendMessage("second");
+      });
+      await act(async () => {
+        rejectFirst(new Error("keychain locked"));
+        await Promise.resolve();
+      });
+
+      expect(result.current.requestError).toBeNull();
+      expect(result.current.isStreaming).toBe(true);
+
+      // Let the second (current) send finish cleanly.
+      await act(async () => {
+        resolveSecond();
+        await Promise.resolve();
+        await Promise.resolve();
+        xhrInstance.simulateChunks(['data: {"done":true}\n']);
+      });
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    it("does not send a request when unmounted before the token read resolves", async () => {
+      const { wrapper } = createQueryWrapper();
+      const { result, unmount } = renderHook(() => useSendMessage(1), {
+        wrapper,
+      });
+      const resolveToken = deferToken();
+
+      act(() => {
+        void result.current.sendMessage("first");
+      });
+      unmount();
+      await act(async () => {
+        resolveToken();
+        await Promise.resolve();
+      });
+
+      expect(xhrConstructorCalls).toBe(0);
+    });
+
+    // User ruling 2026-09-29: leaving a chat mid-reply keeps the reply
+    // running, so the full answer is there on return (ChatScreen never aborts
+    // on unmount; the screens that do call abortStream in their own cleanup).
+    // Unmount only stops a send that has not been sent yet (the case above).
+    it("keeps an already-sent reply running when unmounted, and refreshes the conversation when it finishes", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      mockTokenStorage.get.mockResolvedValue("token");
+      const { result, unmount } = renderHook(() => useSendMessage(5), {
+        wrapper,
+      });
+
+      let p!: Promise<void>;
+      await act(async () => {
+        p = result.current.sendMessage("hello");
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const xhr = xhrInstance;
+      expect(xhrConstructorCalls).toBe(1);
+
+      unmount();
+      expect(xhr.abort).not.toHaveBeenCalled();
+
+      await act(async () => {
+        xhr.simulateChunks([
+          'data: {"content":"Hi"}\n',
+          'data: {"done":true}\n',
+        ]);
+        await p;
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/chat/conversations/5/messages"],
+      });
+    });
+
+    // AC2: the harder case — abortStream() on an ALREADY in-flight XHR
+    // (token read already resolved, xhr created and sent), then an
+    // immediate same-tick restart. This is what the finally block's
+    // "ownership-scoped" epoch gate exists for: without it, the first
+    // call's finally (which runs asynchronously once its aborted XHR
+    // settles) would unconditionally tear down the second call's
+    // just-started state.
+    it("restarts cleanly after aborting an already-in-flight XHR in the same tick", async () => {
+      const { wrapper } = createQueryWrapper();
+      mockTokenStorage.get.mockResolvedValue("token");
+
+      const { result } = renderHook(() => useSendMessage(1), { wrapper });
+
+      let p1!: Promise<void>;
+      await act(async () => {
+        p1 = result.current.sendMessage("first");
+        // Flush the tokenStorage.get() microtask so the first XHR is created.
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const firstXhr = xhrInstance;
+      expect(xhrConstructorCalls).toBe(1);
+
+      let p2!: Promise<void>;
+      act(() => {
+        // Synchronously resets isStreamingRef, so the restart below (same
+        // tick) is accepted rather than refused by the overlap guard.
+        result.current.abortStream();
+      });
+      act(() => {
+        p2 = result.current.sendMessage("second");
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(firstXhr.abort).toHaveBeenCalledOnce();
+      expect(xhrConstructorCalls).toBe(2);
+      const secondXhr = xhrInstance;
+      expect(secondXhr).not.toBe(firstXhr);
+      expect(secondXhr.send).toHaveBeenCalledWith(
+        JSON.stringify({ content: "second" }),
+      );
+
+      // The aborted first call has settled (its XHR fired onabort) while the
+      // second is still in flight. Its `finally` must not tear down the
+      // second call's state: this is what pins the ownership-scoped epoch
+      // gate in useSendMessage's finally (an unconditional reset there turns
+      // isStreaming false here).
+      await act(async () => {
+        await p1;
+      });
+      expect(result.current.isStreaming).toBe(true);
+
+      await act(async () => {
+        secondXhr.simulateChunks(['data: {"done":true}\n']);
+        await p2;
+      });
+
+      expect(result.current.isStreaming).toBe(false);
+    });
+  });
+
   // P3-2026-09-24: xhrRef/isStreamingRef are single-slot state on this hook
   // instance. Before the fix, a second overlapping sendMessage call
   // overwrote xhrRef with the newer XHR, orphaning the first — abortStream
