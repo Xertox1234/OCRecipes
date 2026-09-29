@@ -480,6 +480,60 @@ describe("useSendMessage", () => {
 
       expect(xhrConstructorCalls).toBe(0);
     });
+
+    // AC2: the harder case — abortStream() on an ALREADY in-flight XHR
+    // (token read already resolved, xhr created and sent), then an
+    // immediate same-tick restart. This is what the finally block's
+    // "ownership-scoped" epoch gate exists for: without it, the first
+    // call's finally (which runs asynchronously once its aborted XHR
+    // settles) would unconditionally tear down the second call's
+    // just-started state.
+    it("restarts cleanly after aborting an already-in-flight XHR in the same tick", async () => {
+      const { wrapper } = createQueryWrapper();
+      mockTokenStorage.get.mockResolvedValue("token");
+
+      const { result } = renderHook(() => useSendMessage(1), { wrapper });
+
+      let p1!: Promise<void>;
+      await act(async () => {
+        p1 = result.current.sendMessage("first");
+        // Flush the tokenStorage.get() microtask so the first XHR is created.
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const firstXhr = xhrInstance;
+      expect(xhrConstructorCalls).toBe(1);
+
+      let p2!: Promise<void>;
+      act(() => {
+        // Synchronously resets isStreamingRef, so the restart below (same
+        // tick) is accepted rather than refused by the overlap guard.
+        result.current.abortStream();
+      });
+      act(() => {
+        p2 = result.current.sendMessage("second");
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(firstXhr.abort).toHaveBeenCalledOnce();
+      expect(xhrConstructorCalls).toBe(2);
+      const secondXhr = xhrInstance;
+      expect(secondXhr).not.toBe(firstXhr);
+      expect(secondXhr.send).toHaveBeenCalledWith(
+        JSON.stringify({ content: "second" }),
+      );
+
+      await act(async () => {
+        secondXhr.simulateChunks(['data: {"done":true}\n']);
+        await p1;
+        await p2;
+      });
+
+      expect(result.current.isStreaming).toBe(false);
+    });
   });
 
   // P3-2026-09-24: xhrRef/isStreamingRef are single-slot state on this hook
