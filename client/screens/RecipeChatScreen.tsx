@@ -30,6 +30,12 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 import {
+  useAddFavouriteRecipe,
+  useFavouriteRecipeIds,
+  useToggleFavouriteRecipe,
+} from "@/hooks/useFavouriteRecipes";
+import { savedRecipeIdFromMetadata } from "@/components/recipe-chat/saved-recipe-utils";
+import {
   withOpacity,
   Spacing,
   BorderRadius,
@@ -271,7 +277,11 @@ export default function RecipeChatScreen() {
     requestError,
   } = useSendMessage(conversationId);
   const saveRecipeMutation = useSaveRecipeFromChat();
-  const savedMessageIdsRef = useRef(new Set<number>());
+  // messageId → the community recipe id it was saved as (this session).
+  const savedMessageIdsRef = useRef(new Map<number, number>());
+  const { data: favouriteIds } = useFavouriteRecipeIds();
+  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
+  const addFavourite = useAddFavouriteRecipe();
   const [, forceRender] = useState(0);
 
   const assistantMessageCount = messages.filter(
@@ -335,15 +345,18 @@ export default function RecipeChatScreen() {
     });
   }, [isStreaming]);
 
+  /** Resolves the saved community recipe id, or null if the save failed. */
   const handleSaveRecipe = useCallback(
-    async (messageId: number) => {
-      if (!conversationId || savedMessageIdsRef.current.has(messageId)) return;
+    async (messageId: number): Promise<number | null> => {
+      if (!conversationId) return null;
+      const known = savedMessageIdsRef.current.get(messageId);
+      if (known !== undefined) return known;
       try {
         const saved = await saveRecipeMutation.mutateAsync({
           conversationId,
           messageId,
         });
-        savedMessageIdsRef.current.add(messageId);
+        savedMessageIdsRef.current.set(messageId, saved.id);
         forceRender((n) => n + 1);
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         if (saved.savedItemStatus === "limit_reached") {
@@ -352,12 +365,33 @@ export default function RecipeChatScreen() {
         } else {
           AccessibilityInfo.announceForAccessibility("Recipe saved");
         }
+        return saved.id;
       } catch {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         AccessibilityInfo.announceForAccessibility("Couldn't save recipe");
+        return null;
       }
     },
     [conversationId, saveRecipeMutation, haptics, toast],
+  );
+
+  // The card's heart (ruling 2026-09-29): toggles the saved copy; on an
+  // unsaved recipe it saves first, then favourites without ever toggling off.
+  const handleFavouriteRecipe = useCallback(
+    async (messageId: number, savedRecipeId: number | null) => {
+      if (savedRecipeId !== null) {
+        toggleFavourite({ recipeId: savedRecipeId, recipeType: "community" });
+        return;
+      }
+      const id = await handleSaveRecipe(messageId);
+      if (id === null) return;
+      try {
+        await addFavourite({ recipeId: id, recipeType: "community" });
+      } catch {
+        // useToggleFavouriteRecipe surfaces its own failures; the save stands.
+      }
+    },
+    [toggleFavourite, handleSaveRecipe, addFavourite],
   );
 
   const handleSend = useCallback(
@@ -569,7 +603,15 @@ export default function RecipeChatScreen() {
       // A finder message's text is the old-client fallback; the block replaces it.
       const finder = finderBlockFromMessageMetadata(metadata);
       const isPendingAssistant = item.id === -5;
-      const isAlreadySaved = savedMessageIdsRef.current.has(item.id);
+      const savedRecipeId =
+        savedMessageIdsRef.current.get(item.id) ??
+        savedRecipeIdFromMetadata(metadata);
+      const isAlreadySaved = savedRecipeId !== null;
+      const isFavourited =
+        savedRecipeId !== null &&
+        !!favouriteIds?.ids.some(
+          (f) => f.recipeId === savedRecipeId && f.recipeType === "community",
+        );
       // Only assistant prose (not the user's own typed text, not an
       // app-authored error message) is model output that needs markdown
       // stripped for both what's shown and what's spoken.
@@ -640,6 +682,12 @@ export default function RecipeChatScreen() {
               onSave={
                 isPendingAssistant ? undefined : () => handleSaveRecipe(item.id)
               }
+              isFavourited={isFavourited}
+              onFavourite={
+                isPendingAssistant
+                  ? undefined
+                  : () => void handleFavouriteRecipe(item.id, savedRecipeId)
+              }
             />
           )}
 
@@ -660,6 +708,8 @@ export default function RecipeChatScreen() {
       theme,
       saveRecipeMutation.isPending,
       handleSaveRecipe,
+      handleFavouriteRecipe,
+      favouriteIds,
       isStreaming,
       activeFinderMessageId,
       finderLocks,

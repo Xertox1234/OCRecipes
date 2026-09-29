@@ -84,6 +84,9 @@ const state = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastInfo: vi.fn(),
   hapticsNotification: vi.fn(),
+  favouriteIds: [] as { recipeId: number; recipeType: string }[],
+  toggleFavourite: vi.fn(),
+  addFavourite: vi.fn(),
 }));
 
 /** Adjust a single premium feature flag for the next render. */
@@ -324,15 +327,32 @@ vi.mock("@/components/recipe-chat/RecipeCard", () => ({
     recipe,
     onSave,
     isSaved,
+    isFavourited,
+    onFavourite,
   }: {
     recipe: { title: string };
     onSave?: () => void;
     isSaved?: boolean;
+    isFavourited?: boolean;
+    onFavourite?: () => void;
   }) => (
-    <button data-testid="generated-card" onClick={onSave}>
-      {`${recipe.title}${isSaved ? " saved" : ""}`}
-    </button>
+    <>
+      <button data-testid="generated-card" onClick={onSave}>
+        {`${recipe.title}${isSaved ? " saved" : ""}`}
+      </button>
+      {onFavourite ? (
+        <button data-testid="generated-heart" onClick={onFavourite}>
+          {isFavourited ? "favourited" : "not favourited"}
+        </button>
+      ) : null}
+    </>
   ),
+}));
+
+vi.mock("@/hooks/useFavouriteRecipes", () => ({
+  useFavouriteRecipeIds: () => ({ data: { ids: state.favouriteIds } }),
+  useToggleFavouriteRecipe: () => ({ mutate: state.toggleFavourite }),
+  useAddFavouriteRecipe: () => state.addFavourite,
 }));
 
 vi.mock("@/components/coach/CoachMicButton", () => ({
@@ -407,6 +427,9 @@ function resetState() {
   state.toastSuccess = vi.fn();
   state.toastError = vi.fn();
   state.toastInfo = vi.fn();
+  state.favouriteIds = [];
+  state.toggleFavourite = vi.fn();
+  state.addFavourite = vi.fn();
   state.hapticsNotification = vi.fn();
   warmUpHook.sendWarmUp.mockClear();
   warmUpHook.sendTextWarmUp.mockClear();
@@ -1663,6 +1686,71 @@ describe("CoachChat — recipe finder", () => {
         "Chicken Curry saved",
       ),
     );
+  });
+
+  it("the heart on an unsaved generated recipe saves it, then favourites the saved copy", async () => {
+    state.saveRecipe = vi
+      .fn()
+      .mockResolvedValue({ id: 5, savedItemStatus: "linked" });
+    state.messages = [
+      makeMessage({
+        id: 9,
+        role: "assistant",
+        content: "Here's a curry!",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+        },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    fireEvent.click(screen.getByTestId("generated-heart"));
+
+    await waitFor(() =>
+      expect(state.addFavourite).toHaveBeenCalledWith({
+        recipeId: 5,
+        recipeType: "community",
+      }),
+    );
+    expect(state.saveRecipe).toHaveBeenCalledWith({
+      conversationId: 1,
+      messageId: 9,
+    });
+    expect(state.toggleFavourite).not.toHaveBeenCalled();
+  });
+
+  it("a generated recipe saved earlier reads as saved, and its heart toggles that copy", () => {
+    state.favouriteIds = [{ recipeId: 77, recipeType: "community" }];
+    state.messages = [
+      makeMessage({
+        id: 9,
+        role: "assistant",
+        content: "Here's a curry!",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+          savedRecipeId: 77,
+        },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+
+    expect(screen.getByTestId("generated-card").textContent).toBe(
+      "Chicken Curry saved",
+    );
+    expect(screen.getByTestId("generated-heart").textContent).toBe(
+      "favourited",
+    );
+    fireEvent.click(screen.getByTestId("generated-heart"));
+    expect(state.toggleFavourite).toHaveBeenCalledWith({
+      recipeId: 77,
+      recipeType: "community",
+    });
+    expect(state.saveRecipe).not.toHaveBeenCalled();
   });
 
   it("a save that finds Saved Items full says the recipe isn't listed there", async () => {

@@ -21,6 +21,9 @@ const {
   mockCreateConversationMutateAsync,
   mockSaveRecipeMutateAsync,
   mockToastInfo,
+  mockToggleFavourite,
+  mockAddFavourite,
+  mockFavouriteIds,
   mockChatMessagesData,
   mockSendMessageState,
 } = vi.hoisted(() => ({
@@ -45,6 +48,11 @@ const {
   mockCreateConversationMutateAsync: vi.fn(),
   mockSaveRecipeMutateAsync: vi.fn(),
   mockToastInfo: vi.fn(),
+  mockToggleFavourite: vi.fn(),
+  mockAddFavourite: vi.fn(),
+  mockFavouriteIds: {
+    value: [] as { recipeId: number; recipeType: string }[],
+  },
   mockChatMessagesData: { value: [] as ChatMessage[] },
   // A mutable ref so tests can simulate useSendMessage's streaming/recipe/
   // error state changing across a rerender (e.g. a stream starting then
@@ -79,6 +87,12 @@ vi.mock("@react-navigation/native", () => ({
     reset: mockReset,
   }),
   useRoute: () => ({ params: mockRouteParams.value }),
+}));
+
+vi.mock("@/hooks/useFavouriteRecipes", () => ({
+  useFavouriteRecipeIds: () => ({ data: { ids: mockFavouriteIds.value } }),
+  useToggleFavouriteRecipe: () => ({ mutate: mockToggleFavourite }),
+  useAddFavouriteRecipe: () => mockAddFavourite,
 }));
 
 vi.mock("@/context/ToastContext", () => ({
@@ -269,6 +283,78 @@ describe("RecipeChatScreen — haptics route through useHaptics()", () => {
     },
     createdAt: new Date().toISOString(),
   };
+
+  describe("favourite heart on the recipe card", () => {
+    beforeEach(() => {
+      mockFavouriteIds.value = [];
+    });
+
+    it("on an unsaved recipe, saves it and then favourites the saved copy", async () => {
+      mockRouteParams.value = { conversationId: 1 };
+      mockChatMessagesData.value = [recipeMessage];
+      mockSaveRecipeMutateAsync.mockResolvedValue({
+        id: 100,
+        savedItemStatus: "linked",
+      });
+
+      renderComponent(<RecipeChatScreen />);
+      fireEvent.click(screen.getByLabelText("Add Test Recipe to favourites"));
+
+      await waitFor(() =>
+        expect(mockAddFavourite).toHaveBeenCalledWith({
+          recipeId: 100,
+          recipeType: "community",
+        }),
+      );
+      expect(mockSaveRecipeMutateAsync).toHaveBeenCalledWith({
+        conversationId: 1,
+        messageId: 10,
+      });
+      expect(mockToggleFavourite).not.toHaveBeenCalled();
+    });
+
+    it("on a recipe saved earlier (reopened chat), shows Saved and toggles that copy", async () => {
+      mockRouteParams.value = { conversationId: 1 };
+      mockChatMessagesData.value = [
+        {
+          ...recipeMessage,
+          metadata: {
+            ...(recipeMessage.metadata as Record<string, unknown>),
+            savedRecipeId: 88,
+          },
+        },
+      ];
+
+      renderComponent(<RecipeChatScreen />);
+      expect(screen.getByLabelText("Test Recipe saved")).toBeDefined();
+      fireEvent.click(screen.getByLabelText("Add Test Recipe to favourites"));
+
+      expect(mockToggleFavourite).toHaveBeenCalledWith({
+        recipeId: 88,
+        recipeType: "community",
+      });
+      expect(mockSaveRecipeMutateAsync).not.toHaveBeenCalled();
+    });
+
+    it("a favourited saved recipe offers removal", () => {
+      mockRouteParams.value = { conversationId: 1 };
+      mockFavouriteIds.value = [{ recipeId: 88, recipeType: "community" }];
+      mockChatMessagesData.value = [
+        {
+          ...recipeMessage,
+          metadata: {
+            ...(recipeMessage.metadata as Record<string, unknown>),
+            savedRecipeId: 88,
+          },
+        },
+      ];
+
+      renderComponent(<RecipeChatScreen />);
+      expect(
+        screen.getByLabelText("Remove Test Recipe from favourites"),
+      ).toBeDefined();
+    });
+  });
 
   it("fires impact feedback via useHaptics (not raw expo-haptics) when sending a message", async () => {
     mockCreateConversationMutateAsync.mockResolvedValue({ id: 1 });
