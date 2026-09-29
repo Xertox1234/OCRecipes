@@ -1,6 +1,6 @@
 ---
 title: "Quick Log follow-ups from #1116's review: lock resolving while open, success announce, locked screen's idle query"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-26
 updated: 2026-09-26

@@ -410,6 +410,56 @@ describe("QuickLogDrawer", () => {
     });
   });
 
+  // A successful parse fired only a haptic + list before this — VoiceOver
+  // users heard nothing. iOS gets the imperative announce (once per result,
+  // not on unrelated re-renders); Android gets a small live-region note next
+  // to the list (never both ungated on the same platform).
+  describe("success announce", () => {
+    const props = {
+      action: testAction,
+      isOpen: true,
+      onToggle: vi.fn(),
+      onClose: vi.fn(),
+    };
+
+    it("announces the item count once, singular and plural, on the false→true edge", () => {
+      const session = vi.mocked(useQuickLogSessionModule.useQuickLogSession);
+      const { rerender } = renderComponent(<QuickLogDrawer {...props} />);
+      expect(mockAnnounce).not.toHaveBeenCalled();
+
+      session.mockReturnValue({ ...mockSession, parsedItems: [eggItem] });
+      rerender(<QuickLogDrawer {...props} />);
+      rerender(<QuickLogDrawer {...props} />);
+      expect(mockAnnounce).toHaveBeenCalledTimes(1);
+      expect(mockAnnounce).toHaveBeenCalledWith(
+        "Found 1 item. Log All to save.",
+      );
+
+      session.mockReturnValue(mockSession); // cleared — next submit re-fires
+      rerender(<QuickLogDrawer {...props} />);
+      session.mockReturnValue({
+        ...mockSession,
+        parsedItems: [eggItem, eggItem],
+      });
+      rerender(<QuickLogDrawer {...props} />);
+      expect(mockAnnounce).toHaveBeenCalledTimes(2);
+      expect(mockAnnounce).toHaveBeenLastCalledWith(
+        "Found 2 items. Log All to save.",
+      );
+    });
+
+    it("shows the count as a live-region note, not an alert", () => {
+      vi.mocked(useQuickLogSessionModule.useQuickLogSession).mockReturnValue({
+        ...mockSession,
+        parsedItems: [eggItem, eggItem],
+      });
+      renderComponent(<QuickLogDrawer {...props} />);
+      expect(screen.queryByRole("alert")).toBeNull();
+      const note = screen.getByText("Found 2 items. Log All to save.");
+      expect(note.closest('[aria-live="polite"]')).not.toBeNull();
+    });
+  });
+
   it("closes through the parent after a successful log", () => {
     const onClose = vi.fn();
     renderComponent(
