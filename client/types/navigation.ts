@@ -288,8 +288,9 @@ export type MenuScanResultScreenNavigationProp = NativeStackNavigationProp<
  * so this is a plain root-stack prop. It used to be a RootStack → MainTab →
  * ChatStack composite, which let a bare `navigate("CoachPro")` type-check even
  * though React Navigation never delivers it (navigationInChildEnabled is off).
- * Reach CoachPro through the nested form:
- * `navigate("Main", { screen: "CoachTab", params: { screen: "CoachPro", params } })`.
+ * Reach CoachPro through the nested form, popping back to the existing Main:
+ * `navigate("Main", { screen: "CoachTab", params: { screen: "CoachPro", params } }, { pop: true })`.
+ * Without `pop: true` the root stack pushes a second Main above this modal.
  */
 export type AllConversationsNavigationProp = NativeStackNavigationProp<
   RootStackParamList,

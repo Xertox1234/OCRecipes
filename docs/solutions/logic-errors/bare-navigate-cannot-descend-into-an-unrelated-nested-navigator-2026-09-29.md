@@ -76,19 +76,33 @@ Use the documented nested form to descend past the navigator that *is* reachable
 // Broken — "CoachPro" isn't reachable outward from a root-level screen.
 navigation.navigate("CoachPro", { selectedConversationId: conv.id });
 
-// Correct — "Main" is reachable (it's a RootStack screen); the nested {screen, params}
-// payload is what descends the rest of the way, handled by each level's own router.
-navigation.navigate("Main", {
-  screen: "CoachTab",
-  params: { screen: "CoachPro", params: { selectedConversationId: conv.id } },
-});
+// Still wrong from a MODAL above Main — pushes a SECOND "Main" route on top.
+navigation.navigate("Main", { screen: "CoachTab", params: { /* … */ } });
+
+// Correct — "Main" is reachable (it's a RootStack screen), the nested {screen, params}
+// payload descends the rest of the way, and `pop: true` returns to the EXISTING Main
+// instead of pushing a new one.
+navigation.navigate(
+  "Main",
+  { screen: "CoachTab", params: { screen: "CoachPro", params: { selectedConversationId: conv.id } } },
+  { pop: true },
+);
 ```
 
-This exact pattern is already correct elsewhere in this codebase — `HomeScreen.tsx`'s
-`handleImportUrlNavigate`/`handleImportPhotoNavigate`/`handleImportTextNavigate`
-(`navigation.navigate("MealPlanTab", { screen: "RecipeImport", params: {...} })`), and
-`AllConversationsScreen.tsx`'s own `navigation.reset({ routes: [{ name: "Main", params: {
-screen: "CoachTab" } }] })` fallback.
+**Returning to an ancestor stack's existing route needs `pop: true` (or `popTo`, or `reset`).**
+`StackRouter`'s NAVIGATE only reuses an existing route when a `getId` matches, the target is the
+CURRENT route, or `pop` is set. Otherwise it pushes. Measured against `@react-navigation/routers`
+7.5.2 with root state `[Main, AllConversations]` (index 1): the plain nested navigate gives
+`[Main, AllConversations, Main]` (a second MainTabNavigator instance, and the original Main never
+gets the params); `pop: true` gives `[Main]`, with the nested params delivered to the existing Main;
+the control, navigating to the current route, reuses it with no push.
+
+Don't borrow a precedent from a different router. `HomeScreen.tsx`'s
+`navigation.navigate("MealPlanTab", { screen: "RecipeImport", … })` is a lateral tab switch from
+inside the focused Main navigator. `TabRouter` finds the tab by name and never pushes a
+duplicate, so it isn't evidence for the stack case. `AllConversationsScreen.tsx`'s close button
+`navigation.reset({ routes: [{ name: "Main", params: { screen: "CoachTab" } }] })` is safe for
+the stack case because `reset` replaces the stack wholesale.
 
 ## Prevention
 
@@ -109,6 +123,11 @@ screen: "CoachTab" } }] })` fallback.
   `NativeStackNavigationProp<RootStackParamList, "AllConversations">` (the fix), `tsc` rejects the
   bare call (measured: TS2345) and still accepts the nested form through `NavigatorScreenParams`.
   So `tsc` DOES catch this class of bug, but only when the prop type isn't lying.
+- A mocked-navigation unit test cannot tell push-a-duplicate from return-to-existing either:
+  both are one `navigate` call. Assert the exact arguments (including `{ pop: true }`), and prove
+  the router behaviour once with a direct `StackRouter(...).getStateForAction(...)` call against
+  the real `@react-navigation/routers`: that pure reducer loads fine under Node, unlike rendering
+  the real navigators in jsdom.
 - It is not caught by ESLint, or by a `vi.mock("@react-navigation/native", ...)` unit test
   (which replaces `useNavigation()`'s `navigate` with a plain spy, so it never exercises real
   resolution). Verifying reachability requires either reading the navigator tree by hand or an

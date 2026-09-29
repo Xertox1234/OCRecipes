@@ -149,13 +149,19 @@ export default function AllConversationsScreen() {
             // This is a root-stack screen; CoachPro lives only in the Coach
             // tab's nested ChatStack. A bare navigate("CoachPro") is never
             // handled (navigationInChildEnabled is off), so name the path.
-            navigation.navigate("Main", {
-              screen: "CoachTab",
-              params: {
-                screen: "CoachPro",
-                params: { selectedConversationId: conv.id },
+            // `pop: true` returns to the EXISTING Main route below this modal;
+            // without it the root StackRouter pushes a second Main on top.
+            navigation.navigate(
+              "Main",
+              {
+                screen: "CoachTab",
+                params: {
+                  screen: "CoachPro",
+                  params: { selectedConversationId: conv.id },
+                },
               },
-            });
+              { pop: true },
+            );
           }
         }}
         accessibilityRole="button"
