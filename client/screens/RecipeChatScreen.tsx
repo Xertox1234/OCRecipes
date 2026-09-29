@@ -49,6 +49,19 @@ import {
 import { usePendingAssistantBridge } from "@/hooks/usePendingAssistantBridge";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { RecipeCard } from "@/components/recipe-chat/RecipeCard";
+import { UpgradeModal } from "@/components/UpgradeModal";
+import { RecipeFinderMessage } from "@/components/recipe-finder/RecipeFinderMessage";
+import {
+  finderBlockFromMessageMetadata,
+  finderItemNavParams,
+  lockedFinderButtons,
+} from "@/components/recipe-finder/recipe-finder-utils";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import type {
+  FinderAction,
+  FinderBlock,
+  FinderItem,
+} from "@shared/schemas/recipe-finder";
 import { generateRemixChips, type RemixChip } from "@/lib/remix-chips";
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
@@ -104,11 +117,22 @@ const stripStreamingRecipeJson = (content: string) =>
 const RecipeStreamingFooter = React.memo(function RecipeStreamingFooter({
   content,
   recipe,
+  status,
 }: {
   content: string;
   recipe: StreamingRecipe | null;
+  /** Recipe finder progress ("Searching community recipes…"). */
+  status: string | null;
 }) {
   const { theme } = useTheme();
+
+  // The thinking bubble's polite live region carries a status change on
+  // Android only; iOS needs the imperative announce.
+  useEffect(() => {
+    if (status && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(status);
+    }
+  }, [status]);
 
   return (
     <View>
@@ -132,13 +156,20 @@ const RecipeStreamingFooter = React.memo(function RecipeStreamingFooter({
           style={[
             styles.messageBubble,
             styles.assistantBubble,
+            styles.thinkingRow,
             { backgroundColor: withOpacity(theme.text, 0.06) },
           ]}
           accessible
           accessibilityRole="text"
-          accessibilityLabel="RecipeChef is thinking"
+          accessibilityLabel={status ?? "RecipeChef is thinking"}
+          accessibilityLiveRegion="polite"
         >
           <ActivityIndicator size="small" color={theme.textSecondary} />
+          {status ? (
+            <ThemedText style={{ color: theme.textSecondary }}>
+              {status}
+            </ThemedText>
+          ) : null}
         </View>
       )}
       {recipe && (
@@ -157,8 +188,9 @@ const RecipeStreamingFooter = React.memo(function RecipeStreamingFooter({
 function hasPendingRecipeReply(value: {
   content: string;
   recipe: StreamingRecipe | null;
+  finder: FinderBlock | null;
 }): boolean {
-  return !!value.content || !!value.recipe;
+  return !!value.content || !!value.recipe || !!value.finder;
 }
 
 export default function RecipeChatScreen() {
@@ -229,6 +261,8 @@ export default function RecipeChatScreen() {
     abortStream,
     streamingContent,
     streamingRecipe,
+    streamingFinder,
+    streamingStatus,
     isStreaming,
     streamError,
     requestError,
@@ -250,19 +284,25 @@ export default function RecipeChatScreen() {
   // re-renders (e.g. typing in the input) instead of a fresh object every
   // render — see docs/solutions/conventions/per-render-object-into-effect-deps-dry-trap-2026-07-17.md.
   const pendingStreamingValue = useMemo(
-    () => ({ content: strippedStreamingContent, recipe: streamingRecipe }),
-    [strippedStreamingContent, streamingRecipe],
+    () => ({
+      content: strippedStreamingContent,
+      recipe: streamingRecipe,
+      finder: streamingFinder,
+    }),
+    [strippedStreamingContent, streamingRecipe, streamingFinder],
   );
   const pendingAssistantMessage = usePendingAssistantBridge<{
     content: string;
     recipe: StreamingRecipe | null;
+    finder: FinderBlock | null;
   }>({
     isStreaming,
     streamingValue: pendingStreamingValue,
     // Gate on the RAW content (as before the extraction): stripping a stream
     // that is only an opening ```json fence yields "", and a stripped-basis
     // gate would skip that tick and keep an earlier fragment.
-    hasStreamingValue: !!streamingContent || !!streamingRecipe,
+    hasStreamingValue:
+      !!streamingContent || !!streamingRecipe || !!streamingFinder,
     isPresent: hasPendingRecipeReply,
     hasError: !!streamError || !!requestError,
     assistantMessageCount,
@@ -355,6 +395,36 @@ export default function RecipeChatScreen() {
     ],
   );
 
+  const canSearchOnline = usePremiumFeature("catalogSave");
+  const canGenerate = usePremiumFeature("recipeGeneration");
+  const finderLocks = useMemo(
+    () => lockedFinderButtons({ canSearchOnline, canGenerate }),
+    [canSearchOnline, canGenerate],
+  );
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  // A finder tap sends its visible label as the message, with the action.
+  const handleFinderAction = useCallback(
+    (action: FinderAction, label: string) => {
+      if (!conversationId || isStreaming) return;
+      setPendingUserMessage(label);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      void sendMessage(label, undefined, conversationId, {
+        finderAction: action,
+      });
+    },
+    [conversationId, isStreaming, sendMessage, haptics],
+  );
+
+  const handleOpenFinderItem = useCallback(
+    (item: FinderItem) => {
+      navigation.navigate("FeaturedRecipeDetail", finderItemNavParams(item));
+    },
+    [navigation],
+  );
+
+  const openUpgrade = useCallback(() => setShowUpgrade(true), []);
+
   // Auto-send a prefilled request once (Home's Generate Recipe drawer, or a
   // Coach navigate action) — same one-shot guard as ChatScreen's.
   // Only a string is ever sent. linking.ts strips this param from links, but
@@ -410,7 +480,9 @@ export default function RecipeChatScreen() {
         content: pendingAssistantMessage.content,
         metadata: pendingAssistantMessage.recipe
           ? { recipe: pendingAssistantMessage.recipe }
-          : null,
+          : pendingAssistantMessage.finder
+            ? { metadataVersion: 1, finder: pendingAssistantMessage.finder }
+            : null,
         createdAt: new Date().toISOString(),
       });
     }
@@ -454,6 +526,17 @@ export default function RecipeChatScreen() {
     pendingAssistantMessage,
   ]);
 
+  // Only the newest assistant reply's finder buttons are live (spec §4);
+  // error bubbles (-2, -4) never count as the newest reply.
+  const activeFinderMessageId = useMemo(() => {
+    for (let i = displayMessages.length - 1; i >= 0; i--) {
+      const m = displayMessages[i];
+      const meta = m.metadata as Record<string, unknown> | null;
+      if (m.role === "assistant" && !meta?.isError) return m.id;
+    }
+    return null;
+  }, [displayMessages]);
+
   const renderMessage = useCallback(
     ({ item }: { item: (typeof displayMessages)[0] }) => {
       const isUser = item.role === "user";
@@ -472,6 +555,8 @@ export default function RecipeChatScreen() {
           : storedRecipe;
       const allergenWarning = metadata?.allergenWarning as string | undefined;
       const isError = !!metadata?.isError;
+      // A finder message's text is the old-client fallback; the block replaces it.
+      const finder = finderBlockFromMessageMetadata(metadata);
       const isPendingAssistant = item.id === -5;
       const isAlreadySaved = savedMessageIdsRef.current.has(item.id);
       // Only assistant prose (not the user's own typed text, not an
@@ -482,7 +567,7 @@ export default function RecipeChatScreen() {
       return (
         <View>
           {/* Text bubble — or typing indicator while waiting for first token */}
-          {item.content ? (
+          {item.content && !finder ? (
             <View
               style={[
                 styles.messageBubble,
@@ -546,16 +631,38 @@ export default function RecipeChatScreen() {
               }
             />
           )}
+
+          {finder ? (
+            <RecipeFinderMessage
+              block={finder}
+              isActive={!isStreaming && item.id === activeFinderMessageId}
+              lockedButtons={finderLocks}
+              onAction={handleFinderAction}
+              onLockedButton={openUpgrade}
+              onOpenItem={handleOpenFinderItem}
+            />
+          ) : null}
         </View>
       );
     },
-    [theme, saveRecipeMutation.isPending, handleSaveRecipe],
+    [
+      theme,
+      saveRecipeMutation.isPending,
+      handleSaveRecipe,
+      isStreaming,
+      activeFinderMessageId,
+      finderLocks,
+      handleFinderAction,
+      openUpgrade,
+      handleOpenFinderItem,
+    ],
   );
 
   const streamingFooter = isStreaming ? (
     <RecipeStreamingFooter
       content={strippedStreamingContent}
       recipe={streamingRecipe}
+      status={streamingStatus}
     />
   ) : null;
 
@@ -796,6 +903,10 @@ export default function RecipeChatScreen() {
           )}
         </Pressable>
       </View>
+      <UpgradeModal
+        visible={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -864,6 +975,11 @@ const styles = StyleSheet.create({
   messageList: {
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.md,
+  },
+  thinkingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
   },
   messageBubble: {
     maxWidth: "80%",
