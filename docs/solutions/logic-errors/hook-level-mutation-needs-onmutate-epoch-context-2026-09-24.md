@@ -79,6 +79,14 @@ cleanup, and both the `.then` and the `.catch` return early unless the epoch
 they captured is still current. Guard every settle path of the pre-step, not
 just the success path.
 
+Keep two things apart on unmount. Bumping the epoch only stops a request that
+has not been sent yet. Aborting the in-flight request as well is a product
+decision, because it changes what the user finds when they come back.
+`useChat`'s `useSendMessage` unmount effect bumps the epoch only: by user
+ruling (2026-09-29), a reply that is already streaming keeps running and its
+done handler refreshes the conversation. Screens that want to stop the reply
+on leave call `abortStream` in their own cleanup.
+
 The epoch check on the async continuation (the token-read `then` and its error/catch path) is necessary but not sufficient on its own once the pre-step's own caller also holds other shared, single-slot state (busy/streaming flags, in-flight XHR/request refs, UI-visible streaming content) that a `finally`-style teardown resets. That `finally` block is itself a settle path that must be gated the same way: it can run after a newer call has already started (because the stale call's own async work — e.g. its aborted request's promise — only settles later, asynchronously), so an un-gated `finally` unconditionally tears down whichever call is current now, not the one that scheduled it. Gate every place that resets shared state — not just the initial async continuation — on "is my epoch still the current one", including the `finally`/cleanup block.
 
 If the pre-step's abort function is expected to support a same-tick "abort this call; immediately start a new one" restart, abort must synchronously reset the overlap guard (the busy/isStreaming ref) itself, not rely on the stale call's own async continuation or `finally` to do it later — that reset happens on the next microtask/tick at the earliest, which silently refuses a same-tick restart via the overlap guard. `useCoachStream.abortStream` already does this (a full synchronous reset of every shared field, not just calling `xhr.abort()`); `useChat`'s `useSendMessage.abortStream` needed the identical expansion — mirror `abortStream`'s full synchronous reset, not just the epoch bump, whenever the hook's overlap guard must survive a same-tick abort-then-restart.

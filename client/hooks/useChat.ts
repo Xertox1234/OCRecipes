@@ -348,15 +348,17 @@ export function useSendMessage(conversationId: number | null) {
     setStreamingStatus(null);
   }, []);
 
-  // Abort a pending or in-flight request on unmount. sendMessage's token
-  // read is async, so a plain "abort the xhr" isn't enough if nothing has
-  // been created yet — bumping the epoch stops the continuation from
-  // sending an orphaned request once the token resolves after unmount. No
-  // setState here: the component is gone.
+  // On unmount, stop a send that has NOT gone out yet: bumping the epoch
+  // makes sendMessage's token-read continuation return instead of sending
+  // an orphaned request once the token resolves. A reply that is already
+  // streaming is deliberately left running (user ruling 2026-09-29): its
+  // done handler still refreshes the conversation, so the full answer is
+  // there on return. Screens that want to stop the reply on leave call
+  // abortStream in their own cleanup. No setState here: the component is
+  // gone.
   useEffect(() => {
     return () => {
       sendEpochRef.current += 1;
-      xhrRef.current?.abort();
     };
   }, []);
 

@@ -481,6 +481,43 @@ describe("useSendMessage", () => {
       expect(xhrConstructorCalls).toBe(0);
     });
 
+    // User ruling 2026-09-29: leaving a chat mid-reply keeps the reply
+    // running, so the full answer is there on return (ChatScreen never aborts
+    // on unmount; the screens that do call abortStream in their own cleanup).
+    // Unmount only stops a send that has not been sent yet (the case above).
+    it("keeps an already-sent reply running when unmounted, and refreshes the conversation when it finishes", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      mockTokenStorage.get.mockResolvedValue("token");
+      const { result, unmount } = renderHook(() => useSendMessage(5), {
+        wrapper,
+      });
+
+      let p!: Promise<void>;
+      await act(async () => {
+        p = result.current.sendMessage("hello");
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const xhr = xhrInstance;
+      expect(xhrConstructorCalls).toBe(1);
+
+      unmount();
+      expect(xhr.abort).not.toHaveBeenCalled();
+
+      await act(async () => {
+        xhr.simulateChunks([
+          'data: {"content":"Hi"}\n',
+          'data: {"done":true}\n',
+        ]);
+        await p;
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/chat/conversations/5/messages"],
+      });
+    });
+
     // AC2: the harder case — abortStream() on an ALREADY in-flight XHR
     // (token read already resolved, xhr created and sent), then an
     // immediate same-tick restart. This is what the finally block's
