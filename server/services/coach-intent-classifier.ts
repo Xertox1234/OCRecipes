@@ -151,10 +151,12 @@ const RECIPE_REQUEST_PATTERNS: { pattern: RegExp; name: string }[] = [
 ];
 
 // "a recipe", "some quick vegan recipes" (not "a recipe on/in/into …", which
-// files one). {0,3} matches recipe_leading's modifier bound.
-const INDEFINITE_RECIPE = String.raw`\b(?:a|an|another|new|different|some)\s+(?:[\w-]+\s+){0,3}recipes?\b(?!\s+(?:on|in|into)\b)`;
+// files one). {0,3} matches recipe_leading's modifier bound. A modifier is
+// never a referent determiner, so "a name for my recipe" is not one.
+const REFERENT_DETERMINER = String.raw`(?:this|that|these|those|my)`;
+const INDEFINITE_RECIPE = String.raw`\b(?:a|an|another|new|different|some)\s+(?:(?!${REFERENT_DETERMINER}\b)[\w-]+\s+){0,3}recipes?\b(?!\s+(?:on|in|into)\b)`;
 // "this recipe", "my lasagna recipe".
-const REFERENT_RECIPE = String.raw`\b(?:this|that|these|those|my)\s+(?:[\w-]+\s+){0,2}recipes?\b`;
+const REFERENT_RECIPE = String.raw`\b${REFERENT_DETERMINER}\s+(?:[\w-]+\s+){0,2}recipes?\b`;
 
 /**
  * Acting on a meal or a recipe the user already has is a coach action (log,

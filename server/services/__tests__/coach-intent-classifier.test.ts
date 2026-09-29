@@ -492,6 +492,26 @@ describe("classifyIntent", () => {
       },
     );
 
+    // #1156 review: the indefinite phrase's modifier words must not swallow
+    // the referent ("a name for my recipe" is not a request for a recipe).
+    it("does NOT route 'a <noun> for my recipe' (generated corpus)", () => {
+      const routed: string[] = [];
+      for (const head of ["I want", "I need", "Give me", "Show me", "Find me"])
+        for (const det of ["a", "an", "some", "new", "different", "a new"])
+          for (const noun of ["name", "sauce", "twist", "fix", "tip"])
+            for (const prep of ["for", "with", "on", "to"])
+              for (const ref of [
+                "my recipe",
+                "this recipe",
+                "my chili recipe",
+              ]) {
+                const msg = `${head} ${det} ${noun} ${prep} ${ref}`;
+                if (classifyIntent(msg).intent === "recipe_request")
+                  routed.push(msg);
+              }
+      expect(routed).toEqual([]);
+    });
+
     it("safety still wins over a recipe request", () => {
       expect(classifyIntent("Give me a recipe for my diabetes").intent).toBe(
         "safety_refusal",
