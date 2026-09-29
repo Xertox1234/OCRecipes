@@ -126,20 +126,34 @@ export default function QuickLogScreen() {
     if (session.capWarning) toast.info(session.capWarning);
   }, [session.capWarning, toast]);
 
-  // A successful parse fired no announce at all before this (only a haptic
-  // and the list itself) — VoiceOver users heard nothing. iOS gets the
-  // imperative announce, once per result; Android's note below carries a
-  // live region, so the iOS announce is gated to avoid double-announcing.
-  const hadParsedItemsRef = React.useRef(false);
+  // A successful parse announces its item count — every parse, not just the
+  // first: a later parse can replace the results without `parsedItems`
+  // passing back through empty, and a discriminator keyed on
+  // `parsedItems.length > 0` alone misses that case
+  // (docs/solutions/logic-errors/imperative-announce-must-be-content-keyed-
+  // not-variant-keyed-2026-06-24.md, "Second manifestation"). iOS has no
+  // live region here, so it always gets the imperative announce. Android's
+  // note below (accessibilityLiveRegion="polite") re-reads automatically
+  // whenever the count changes the rendered text; only a same-count replace
+  // leaves that text identical, so it needs the explicit announce too —
+  // never both, on either platform (docs/rules/accessibility.md →
+  // Announcements).
+  const announcedGenerationRef = React.useRef(0);
+  const announcedCountRef = React.useRef(0);
   React.useEffect(() => {
-    const hasParsedItems = session.parsedItems.length > 0;
-    if (hasParsedItems && !hadParsedItemsRef.current && Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(
-        foundItemsMessage(session.parsedItems.length),
-      );
+    const generation = session.parseGeneration;
+    if (generation === 0 || generation === announcedGenerationRef.current) {
+      return;
     }
-    hadParsedItemsRef.current = hasParsedItems;
-  }, [session.parsedItems.length]);
+    const count = session.parsedItems.length;
+    const prevCount = announcedCountRef.current;
+    announcedGenerationRef.current = generation;
+    announcedCountRef.current = count;
+    if (count === 0) return;
+    if (Platform.OS === "ios" || count === prevCount) {
+      AccessibilityInfo.announceForAccessibility(foundItemsMessage(count));
+    }
+  }, [session.parseGeneration, session.parsedItems.length]);
 
   const handleCameraPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);

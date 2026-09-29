@@ -232,22 +232,46 @@ export function QuickLogDrawer({
     wasParseEmptyRef.current = session.parseEmpty;
   }, [session.parseEmpty]);
 
-  // A successful parse fired only a haptic + list before this — VoiceOver
-  // users heard nothing. iOS gets the imperative announce, once per result;
-  // the live-region note rendered below carries Android, so the iOS
-  // announce is gated to avoid double-announcing.
+  // Fires once per drawer session, when parsed items first appear, so Home
+  // can glide the row up and keep the results and Log All on screen. The
+  // success announce below is keyed on the parse generation instead: a
+  // later parse can replace the results without `hasParsedItems` passing
+  // back through false, so it can't share this false→true guard.
   const hadParsedItemsRef = useRef(false);
   useEffect(() => {
     if (hasParsedItems && !hadParsedItemsRef.current) {
-      if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility(
-          foundItemsMessage(session.parsedItems.length),
-        );
-      }
       onResultsShown?.();
     }
     hadParsedItemsRef.current = hasParsedItems;
-  }, [hasParsedItems, onResultsShown, session.parsedItems.length]);
+  }, [hasParsedItems, onResultsShown]);
+
+  // A successful parse announces its item count — every parse, not just the
+  // first: a later parse can replace the results without `hasParsedItems`
+  // passing back through false, and the previous discriminator-keyed guard
+  // (above) missed that case (docs/solutions/logic-errors/imperative-
+  // announce-must-be-content-keyed-not-variant-keyed-2026-06-24.md, "Second
+  // manifestation"). iOS has no live region here, so it always gets the
+  // imperative announce. Android's <ThemedText accessibilityLiveRegion=
+  // "polite"> below re-reads automatically whenever the count changes the
+  // rendered text; only a same-count replace leaves that text identical, so
+  // it needs the explicit announce too — never both, on either platform
+  // (docs/rules/accessibility.md → Announcements).
+  const announcedGenerationRef = useRef(0);
+  const announcedCountRef = useRef(0);
+  useEffect(() => {
+    const generation = session.parseGeneration;
+    if (generation === 0 || generation === announcedGenerationRef.current) {
+      return;
+    }
+    const count = session.parsedItems.length;
+    const prevCount = announcedCountRef.current;
+    announcedGenerationRef.current = generation;
+    announcedCountRef.current = count;
+    if (count === 0) return;
+    if (Platform.OS === "ios" || count === prevCount) {
+      AccessibilityInfo.announceForAccessibility(foundItemsMessage(count));
+    }
+  }, [session.parseGeneration, session.parsedItems.length]);
 
   return (
     <HomeInlineDrawer

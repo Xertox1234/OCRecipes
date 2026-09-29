@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { Keyboard } from "react-native";
 import {
   useMutation,
   useQuery,
@@ -64,6 +65,15 @@ export function useQuickLogSession({
 
   const [inputText, setInputText] = useState("");
   const [parsedItems, setParsedItems] = useState<ParsedFoodItem[]>([]);
+  // Bumped alongside every successful parse that sets `parsedItems` (both
+  // the auto-voice-parse and handleTextSubmit onSuccess paths below) — a
+  // per-parse signal consumers can key an announce effect on. Never reset by
+  // reset(): `parsedItems.length > 0` alone can't distinguish "the first
+  // parse" from "a later parse that replaced the list without passing back
+  // through empty", so a discriminator-keyed guard silently misses the
+  // replace. See docs/solutions/logic-errors/imperative-announce-must-be-
+  // content-keyed-not-variant-keyed-2026-06-24.md, "Second manifestation".
+  const [parseGeneration, setParseGeneration] = useState(0);
   const [parseError, setParseError] = useState<string | null>(null);
   // A successful parse that found no food. Kept apart from parseError: the
   // request worked, so "try again" would be wrong, and without a signal the
@@ -137,6 +147,7 @@ export function useQuickLogSession({
             data.items.map((item) => ({ ...item, sourceType: "voice" })),
           );
           setParseEmpty(data.items.length === 0);
+          setParseGeneration((g) => g + 1);
           haptics.notification(Haptics.NotificationFeedbackType.Success);
         },
         onError: (err) => {
@@ -163,6 +174,7 @@ export function useQuickLogSession({
           data.items.map((item) => ({ ...item, sourceType: source })),
         );
         setParseEmpty(data.items.length === 0);
+        setParseGeneration((g) => g + 1);
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       },
       onError: (err) => {
@@ -398,6 +410,10 @@ export function useQuickLogSession({
 
   const reset = useCallback(() => {
     if (isListening) stopListening();
+    // Every close path (switching drawers, leaving the tab, a successful
+    // log) funnels through this one reset() — dismiss here so none of them
+    // leave the keyboard up over the collapsed/locked row.
+    Keyboard.dismiss();
     sessionEpochRef.current += 1;
     setInputText("");
     setParsedItems([]);
@@ -414,6 +430,7 @@ export function useQuickLogSession({
     volume,
     isParsing,
     parsedItems,
+    parseGeneration,
     parseError,
     parseEmpty,
     submitError,
