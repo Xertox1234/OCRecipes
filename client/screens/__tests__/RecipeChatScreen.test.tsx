@@ -49,12 +49,21 @@ const {
   mockSendMessageState: {
     value: {
       streamingContent: "",
-      streamingRecipe: null as { title: string } | null,
-      streamingFinder: null as unknown,
-      streamingStatus: null as string | null,
+      streamingRecipe: null,
+      streamingFinder: null,
+      streamingStatus: null,
       isStreaming: false,
       streamError: false,
-      requestError: null as string | null,
+      requestError: null,
+    } as {
+      streamingContent: string;
+      streamingRecipe: { title: string } | null;
+      // Optional: the pre-finder tests set the state without them.
+      streamingFinder?: unknown;
+      streamingStatus?: string | null;
+      isStreaming: boolean;
+      streamError: boolean;
+      requestError: string | null;
     },
   },
 }));
