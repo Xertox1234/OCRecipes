@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ChatMessage } from "@shared/schema";
-import type { FinderFlow } from "@shared/schemas/recipe-finder";
+import {
+  finderBlockSchema,
+  type FinderFlow,
+} from "@shared/schemas/recipe-finder";
+import { expectResponseToMatch } from "../../../../test/utils/expect-response-schema";
 import {
   executeFinderStep,
   prepareFinderTurn,
@@ -78,6 +82,9 @@ describe("executeFinderStep", () => {
     if (out.kind !== "message") return;
     expect(out.block.type).toBe("recipe_results");
     expect(out.block.flow.flowId).toBe(NEXT);
+    // Provider side of the client's finderBlockSchema parse: this block is
+    // what the route streams as {finder} (RecipeChef) and {blocks} (Coach).
+    expectResponseToMatch(out.block, finderBlockSchema);
     expect(out.content).toMatch(/^Here are 1 community recipe:/);
     expect(findCommunity).toHaveBeenCalledWith(
       { q: "mediterranean" },
@@ -131,6 +138,8 @@ describe("executeFinderStep", () => {
       ctx(),
     );
     expect(out.kind === "message" && out.block.type).toBe("recipe_questions");
+    if (out.kind === "message")
+      expectResponseToMatch(out.block, finderBlockSchema);
   });
 
   it("generate allowed → fresh generation messages; the claim is on this turn's user row", async () => {
