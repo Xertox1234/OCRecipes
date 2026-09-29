@@ -143,6 +143,48 @@ fix belongs at the source (a generation counter / result id), not in the
 consuming component — flag it as a deferred follow-up rather than
 approximating with a content key that trades one silent gap for a noisier one.
 
+## Third manifestation: a "was this already covered elsewhere?" ref must be written on every render it tracks, not only on its trigger (2026-09-29)
+
+The follow-up todo (`P3-2026-09-29-quick-log-reparse-announce-and-keyboard-dismiss`)
+implemented the deferred fix from the second manifestation above:
+`useQuickLogSession` now exposes `parseGeneration`, bumped only inside the two
+successful-parse `onSuccess` handlers, and `QuickLogDrawer.tsx` /
+`QuickLogScreen.tsx` key their success announce on it instead of
+`hasParsedItems`. That closes the second manifestation's gap — but the first
+implementation introduced a related, narrower version of the same class of
+bug, in the mechanism added to satisfy this todo's OWN "don't double-announce
+a count-changing replace on Android" requirement.
+
+Android relies on its `accessibilityLiveRegion="polite"` note to self-announce
+whenever the rendered item-count TEXT changes; the new effect must skip its
+own explicit announce in that case, or it double-announces. It decided that by
+comparing the new parse's count against "the count I announced last time"
+(`announcedCountRef`, written only inside the generation-changed branch,
+i.e. only on an actual new parse). But the value that ACTUALLY governs
+whether the live region self-announces is "what's currently rendered", and
+`removeItem` (or `reset()`, on a component like `QuickLogDrawer` that stays
+mounted across a session close/reopen) changes what's rendered — and so the
+live region's own text — without bumping `parseGeneration`. A ref written
+only on the trigger branch (the generation change) then compares the new
+parse against a STALE prior count, producing both directions of the bug:
+a same-count replace after a `removeItem` stayed silent (the stale ref
+disagreed that the count matched), and a fresh parse whose count happened to
+coincide with the stale ref fired an explicit announce the live region had
+already independently made (double-announce). `code-reviewer`'s review
+caught this with a constructed probe — see `Prevention` below.
+
+**Prevention:** when a ref exists to answer "does this value match what a
+SEPARATE, uncontrolled mechanism (a native live region, a browser default, an
+OS callback) already reacted to?", write that ref on **every** run of the
+effect that reads the tracked value — before any early return — not only
+inside the branch that triggers your own action. Gating the write behind the
+trigger conflates two different questions ("did MY trigger fire?" vs "what is
+the CURRENT value of the thing I'm comparing against?") into one branch, and
+the ref silently goes stale the moment the tracked value changes via any path
+that isn't your trigger. The fix in this case: read the current value and
+snapshot-then-overwrite the ref unconditionally at the top of the effect,
+before the generation-gated `if` that decides whether to announce.
+
 ## Related Files
 
 - `client/camera/components/ProductChip.tsx` — the `productName`-keyed effect and
@@ -155,10 +197,20 @@ approximating with a content key that trades one silent gap for a noisier one.
 - `docs/rules/accessibility.md` — the `accessibilityLiveRegion` exception clause
   (drop shared container live region → announce imperatively, keyed on content)
 - `client/components/home/QuickLogDrawer.tsx`,
-  `client/screens/QuickLogScreen.tsx` — the second manifestation: a
-  `hasParsedItems`-keyed announce that misses a replace-without-empty
-  re-parse; deliberately left unfixed pending a per-parse signal from
-  `client/hooks/useQuickLogSession.ts`
+  `client/screens/QuickLogScreen.tsx` — the second manifestation (now fixed)
+  and the third: `parseGeneration` from `useQuickLogSession.ts` keys the
+  announce, and `lastRenderedCountRef` (renamed from `announcedCountRef`) is
+  written on every effect run, before the generation-gated early return
+- `client/hooks/useQuickLogSession.ts` — `parseGeneration`, bumped only in
+  the two successful-parse `onSuccess` handlers, never by `removeItem` or
+  `reset()`
+- `client/components/home/__tests__/QuickLogDrawer.test.tsx` — the
+  "interleaved with a removeItem between two parses" and "a fresh session's
+  first parse" cases covering the third manifestation
+- `client/screens/__tests__/QuickLogScreen.test.tsx` — the same manifestation
+  under its own names: "still announces a same-count replace after a
+  removeItem changed what's rendered" and "does not double-announce when the
+  second parse's count matches the live region's OWN already-changed text"
 
 ## See Also
 
