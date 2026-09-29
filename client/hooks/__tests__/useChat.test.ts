@@ -364,6 +364,124 @@ describe("useSendMessage", () => {
     expect(() => result.current.abortStream()).not.toThrow();
   });
 
+  // P3-2026-09-26: sendMessage's token read (`await tokenStorage.get()`) is
+  // async, same shape as useCoachStream's startStream. An abort/unmount
+  // that lands while it is still pending must stop its continuation from
+  // sending an orphaned request later — see useCoachStream's own
+  // "overlapping starts" describe block for the precedent this mirrors.
+  describe("token-read epoch guard", () => {
+    function deferToken() {
+      let resolve!: (token: string | null) => void;
+      mockTokenStorage.get.mockImplementationOnce(
+        () => new Promise<string | null>((r) => (resolve = r)),
+      );
+      return (token: string | null = "test-token") => resolve(token);
+    }
+
+    it("does not send a request when aborted before the token read resolves", async () => {
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(() => useSendMessage(1), { wrapper });
+      const resolveToken = deferToken();
+
+      act(() => {
+        void result.current.sendMessage("first");
+      });
+      act(() => {
+        result.current.abortStream();
+      });
+      await act(async () => {
+        resolveToken();
+        await Promise.resolve();
+      });
+
+      expect(xhrConstructorCalls).toBe(0);
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    it("sends only the new stream's request after an abort-then-restart during the token read", async () => {
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(() => useSendMessage(1), { wrapper });
+      const resolveFirst = deferToken();
+      const resolveSecond = deferToken();
+
+      act(() => {
+        void result.current.sendMessage("first");
+      });
+      act(() => {
+        result.current.abortStream();
+      });
+      act(() => {
+        void result.current.sendMessage("second");
+      });
+      await act(async () => {
+        resolveFirst();
+        resolveSecond();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(xhrConstructorCalls).toBe(1);
+      expect(xhrInstance.send).toHaveBeenCalledWith(
+        JSON.stringify({ content: "second" }),
+      );
+    });
+
+    it("ignores a stale token-read failure from an aborted send while a new one runs", async () => {
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(() => useSendMessage(1), { wrapper });
+      let rejectFirst!: (err: Error) => void;
+      mockTokenStorage.get.mockImplementationOnce(
+        () => new Promise<string | null>((_, reject) => (rejectFirst = reject)),
+      );
+      const resolveSecond = deferToken(); // the second send's read stays pending
+
+      act(() => {
+        void result.current.sendMessage("first");
+      });
+      act(() => {
+        result.current.abortStream();
+      });
+      act(() => {
+        void result.current.sendMessage("second");
+      });
+      await act(async () => {
+        rejectFirst(new Error("keychain locked"));
+        await Promise.resolve();
+      });
+
+      expect(result.current.requestError).toBeNull();
+      expect(result.current.isStreaming).toBe(true);
+
+      // Let the second (current) send finish cleanly.
+      await act(async () => {
+        resolveSecond();
+        await Promise.resolve();
+        await Promise.resolve();
+        xhrInstance.simulateChunks(['data: {"done":true}\n']);
+      });
+      expect(result.current.isStreaming).toBe(false);
+    });
+
+    it("does not send a request when unmounted before the token read resolves", async () => {
+      const { wrapper } = createQueryWrapper();
+      const { result, unmount } = renderHook(() => useSendMessage(1), {
+        wrapper,
+      });
+      const resolveToken = deferToken();
+
+      act(() => {
+        void result.current.sendMessage("first");
+      });
+      unmount();
+      await act(async () => {
+        resolveToken();
+        await Promise.resolve();
+      });
+
+      expect(xhrConstructorCalls).toBe(0);
+    });
+  });
+
   // P3-2026-09-24: xhrRef/isStreamingRef are single-slot state on this hook
   // instance. Before the fix, a second overlapping sendMessage call
   // overwrote xhrRef with the newer XHR, orphaning the first — abortStream

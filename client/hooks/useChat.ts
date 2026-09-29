@@ -12,7 +12,7 @@ import {
 } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 import type { SavedRecipeLinkStatus } from "@shared/schemas/saved-items";
 import {
@@ -326,9 +326,38 @@ export function useSendMessage(conversationId: number | null) {
   // The in-flight XHR, exposed so a caller (e.g. a screen's unmount cleanup)
   // can abort it from outside sendMessage.
   const xhrRef = useRef<XMLHttpRequest | null>(null);
+  // Bumped by every sendMessage call, by abortStream, and on unmount.
+  // sendMessage's token read is async; its continuation — and its `finally`
+  // teardown — only touch this hook's shared, single-slot UI state when the
+  // epoch they captured is still current, so an abort (or a newer send)
+  // can't leave an orphaned request or clobber whichever request is current
+  // now. Same pattern as useCoachStream's streamEpochRef.
+  const sendEpochRef = useRef(0);
 
   const abortStream = useCallback(() => {
+    if (!isStreamingRef.current) return; // nothing in flight — no-op
+    sendEpochRef.current += 1;
     xhrRef.current?.abort();
+    xhrRef.current = null;
+    isStreamingRef.current = false;
+    setIsStreaming(false);
+    setStreamingContent("");
+    setStreamingRecipe(null);
+    setAllergenWarning(null);
+    setStreamingFinder(null);
+    setStreamingStatus(null);
+  }, []);
+
+  // Abort a pending or in-flight request on unmount. sendMessage's token
+  // read is async, so a plain "abort the xhr" isn't enough if nothing has
+  // been created yet — bumping the epoch stops the continuation from
+  // sending an orphaned request once the token resolves after unmount. No
+  // setState here: the component is gone.
+  useEffect(() => {
+    return () => {
+      sendEpochRef.current += 1;
+      xhrRef.current?.abort();
+    };
   }, []);
 
   const sendMessage = useCallback(
@@ -346,6 +375,7 @@ export function useSendMessage(conversationId: number | null) {
       // see todos/archive/P3-2026-09-24-chat-stream-hooks-xhrref-last-write-wins.md.
       if (isStreamingRef.current) return;
       isStreamingRef.current = true;
+      const epoch = ++sendEpochRef.current;
       streamingContentRef.current = "";
       setIsStreaming(true);
       setStreamingContent("");
@@ -370,6 +400,14 @@ export function useSendMessage(conversationId: number | null) {
           baseUrl,
         );
         const token = await tokenStorage.get();
+        if (epoch !== sendEpochRef.current) {
+          // Aborted (or superseded by a newer send) while awaiting the
+          // token — no XHR was ever created, so there's nothing to cancel.
+          // Whoever bumped the epoch (abortStream, unmount, or a newer
+          // sendMessage) already reset — or now owns — the shared UI
+          // state; this call must not touch it or send a request.
+          return;
+        }
         // X-Timezone is required, not decorative: a coach conversation's
         // notebook follow-up dates and "today" are anchored in this zone on
         // the server, which falls back to UTC without it.
@@ -552,26 +590,40 @@ export function useSendMessage(conversationId: number | null) {
           });
         }
       } catch (e) {
-        // Catch-all: network errors from xhr.onerror/ontimeout propagate here.
-        setRequestError(
-          e instanceof Error && e.message
-            ? e.message
-            : "Something went wrong. Please try again.",
-        );
+        // Catch-all: network errors from xhr.onerror/ontimeout propagate
+        // here, as does a rejected tokenStorage.get(). A stale call's
+        // failure (e.g. the token read rejected after this call was
+        // aborted or superseded) must not report an error for whichever
+        // request is current now.
+        if (epoch === sendEpochRef.current) {
+          setRequestError(
+            e instanceof Error && e.message
+              ? e.message
+              : "Something went wrong. Please try again.",
+          );
+        }
       } finally {
-        // Only clear the ref if it still points at this request's XHR — a
-        // guard against a future caller that bypasses the isStreamingRef
-        // check above and starts a second request; without this, the
-        // second request's cleanup could null out the first request's
-        // still-live reference (or vice versa).
-        if (xhrRef.current === ownXhr) xhrRef.current = null;
-        isStreamingRef.current = false;
-        setIsStreaming(false);
-        setStreamingContent("");
-        setStreamingRecipe(null);
-        setAllergenWarning(null);
-        setStreamingFinder(null);
-        setStreamingStatus(null);
+        // Ownership-scoped: only the call that still owns the current
+        // epoch may reset this hook's shared, single-slot UI state. A
+        // stale call's finally can run after a newer call has already
+        // started (abortStream and a fresh sendMessage both bump the
+        // epoch synchronously) — resetting unconditionally here would
+        // tear down whichever request is current now.
+        if (epoch === sendEpochRef.current) {
+          // Only clear the ref if it still points at this request's XHR —
+          // a guard against a future caller that bypasses the
+          // isStreamingRef check above and starts a second request;
+          // without this, the second request's cleanup could null out the
+          // first request's still-live reference (or vice versa).
+          if (xhrRef.current === ownXhr) xhrRef.current = null;
+          isStreamingRef.current = false;
+          setIsStreaming(false);
+          setStreamingContent("");
+          setStreamingRecipe(null);
+          setAllergenWarning(null);
+          setStreamingFinder(null);
+          setStreamingStatus(null);
+        }
         // requestError is intentionally NOT cleared here: clearing in the same
         // synchronous finally frame as setRequestError(errorMsg) batches to null
         // before the component re-renders (React 19 automatic batching). It is

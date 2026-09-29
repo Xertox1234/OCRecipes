@@ -495,6 +495,33 @@ describe("useCoachStream overlapping starts", () => {
   });
 });
 
+// P3-2026-09-26: fail() is defined per-startStream-call and reads `settled`
+// (a per-call flag) but, before this fix, never checked whether its OWN
+// epoch was still current. abortStream's synthetic onreadystatechange (from
+// its own xhr.abort()) clears responseText/status first, so it never called
+// fail — but a genuinely late native event landing on the same (not yet
+// reassigned) xhr handlers after abortStream would have, against whatever
+// stream is current now.
+describe("useCoachStream fail() epoch guard", () => {
+  it("ignores a very late native error event on an already-aborted stream", async () => {
+    const { result, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      result.current.abortStream();
+    });
+
+    // A late native failure on the (not yet reassigned) xhr handlers.
+    // `settled` was never set true by the abort itself, so without the
+    // epoch guard this would still call fail() and report an error.
+    act(() => {
+      mockXhr.fireNetworkError();
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+});
+
 describe("useCoachStream onDone", () => {
   it("calls onDone with full text after buffer drains", async () => {
     const { result, onDone } = await setupHook();

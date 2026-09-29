@@ -277,6 +277,11 @@ export function useCoachStream({
           let settled = false;
           const fail = (msg: string, code?: string) => {
             if (settled) return;
+            // A very late event on an already-superseded (aborted/unmounted)
+            // stream must not tear down or report an error against whatever
+            // stream is current now — same epoch guard as the token-read
+            // continuation above.
+            if (epoch !== streamEpochRef.current) return;
             settled = true;
             clearInactivity();
             stopDrain();

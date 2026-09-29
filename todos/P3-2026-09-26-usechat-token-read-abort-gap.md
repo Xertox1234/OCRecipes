@@ -1,6 +1,6 @@
 ---
 title: "useChat's sendMessage can still send after an abort during the token read — the gap #1098 closed in useCoachStream"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-26
 updated: 2026-09-26
