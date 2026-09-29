@@ -454,6 +454,96 @@ describe("useSendMessage", () => {
 
     expect(result.current.requestError).toBeNull();
   });
+
+  describe("recipe finder events", () => {
+    const block = {
+      type: "recipe_results",
+      source: "community",
+      items: [],
+      actions: ["generate"],
+      notice: "no_matches",
+      flow: {
+        flowId: "00000000-0000-4000-8000-000000000000",
+        stage: "results",
+        request: "x",
+        query: { q: "x" },
+        round: 0,
+        shownIds: [],
+      },
+    };
+
+    it("sends finderAction in the body", async () => {
+      const { wrapper } = createQueryWrapper();
+      mockTokenStorage.get.mockResolvedValue("t");
+      const { result } = renderHook(() => useSendMessage(42), { wrapper });
+      const finderAction = {
+        type: "generate" as const,
+        flowId: "00000000-0000-4000-8000-000000000000",
+      };
+      await act(async () => {
+        const p = result.current.sendMessage("Generate", undefined, undefined, {
+          finderAction,
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        xhrInstance.simulateChunks(['data: {"done":true}\n']);
+        await p;
+      });
+      expect(xhrInstance.send).toHaveBeenCalledWith(
+        JSON.stringify({ content: "Generate", finderAction }),
+      );
+    });
+
+    it("exposes progress text and the finder block while streaming, then clears them", async () => {
+      const { wrapper } = createQueryWrapper();
+      mockTokenStorage.get.mockResolvedValue("t");
+      const { result } = renderHook(() => useSendMessage(42), { wrapper });
+      let p!: Promise<void>;
+      await act(async () => {
+        p = result.current.sendMessage("Mediterranean");
+        await Promise.resolve();
+        await Promise.resolve();
+        xhrInstance.responseText =
+          'data: {"status":"Searching community recipes…"}\n';
+        xhrInstance.onprogress?.(new ProgressEvent("progress"));
+      });
+      expect(result.current.streamingStatus).toBe(
+        "Searching community recipes…",
+      );
+      await act(async () => {
+        xhrInstance.responseText += `data: ${JSON.stringify({ finder: block })}\n`;
+        xhrInstance.onprogress?.(new ProgressEvent("progress"));
+      });
+      expect(result.current.streamingFinder).toEqual(block);
+      await act(async () => {
+        xhrInstance.responseText += 'data: {"done":true}\n';
+        xhrInstance.onload?.(new ProgressEvent("load"));
+        await p;
+      });
+      expect(result.current.streamingFinder).toBeNull();
+      expect(result.current.streamingStatus).toBeNull();
+    });
+
+    it("ignores a malformed finder event", async () => {
+      const { wrapper } = createQueryWrapper();
+      mockTokenStorage.get.mockResolvedValue("t");
+      const { result } = renderHook(() => useSendMessage(42), { wrapper });
+      let p!: Promise<void>;
+      await act(async () => {
+        p = result.current.sendMessage("x");
+        await Promise.resolve();
+        await Promise.resolve();
+        xhrInstance.responseText =
+          'data: {"finder":{"type":"recipe_results"}}\n';
+        xhrInstance.onprogress?.(new ProgressEvent("progress"));
+      });
+      expect(result.current.streamingFinder).toBeNull();
+      await act(async () => {
+        xhrInstance.onload?.(new ProgressEvent("load"));
+        await p;
+      });
+    });
+  });
 });
 
 // The server anchors notebook follow-up dates (and the coach's "today") in

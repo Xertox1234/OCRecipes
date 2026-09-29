@@ -40,6 +40,14 @@ const capturedFlatListProps: { value: Record<string, unknown> | null } = {
 //     `deleteChatMessageMutateAsync` is hoisted here; the wrapper object
 //     itself is intentionally reconstructed fresh in the mock factory below.
 const stable = vi.hoisted(() => ({
+  // Stable like the real useMutation's mutateAsync, so the save handler (a
+  // renderItem dep) keeps its identity across keystrokes.
+  saveRecipeFromChatMutateAsync: vi.fn(),
+  // The real useToast (memoized context value) and useHaptics (useMemo) return
+  // the SAME object across re-renders; the finder's save handler depends on
+  // both and is a renderItem dep.
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  haptics: { impact: vi.fn(), notification: vi.fn(), selection: vi.fn() },
   startStream: vi.fn(),
   abortStream: vi.fn(),
   ttsSpeak: vi.fn(),
@@ -96,6 +104,9 @@ vi.mock("@/hooks/useChat", () => ({
   useDeleteChatMessageForRetry: () => ({
     mutateAsync: stable.deleteChatMessageMutateAsync,
   }),
+  useSaveRecipeFromChat: () => ({
+    mutateAsync: stable.saveRecipeFromChatMutateAsync,
+  }),
 }));
 
 vi.mock("@/hooks/useSpeechToText", () => ({
@@ -143,15 +154,11 @@ vi.mock("@/hooks/useMealPlan", () => ({
 }));
 
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => stable.toast,
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
-  useHaptics: () => ({
-    impact: vi.fn(),
-    notification: vi.fn(),
-    selection: vi.fn(),
-  }),
+  useHaptics: () => stable.haptics,
 }));
 
 const warmUpHook = {

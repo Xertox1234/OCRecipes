@@ -11,6 +11,7 @@ import {
 } from "@/components/coach/coach-chat-utils";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
+import type { FinderAction } from "@shared/schemas/recipe-finder";
 
 // Exported so tests can import and verify against them
 export const HOLD_GATE_MS = 700;
@@ -84,7 +85,11 @@ export interface UseCoachStreamReturn {
   startStream: (
     conversationId: number,
     userMessage: string,
-    extras?: { warmUpId?: string | null; screenContext?: string },
+    extras?: {
+      warmUpId?: string | null;
+      screenContext?: string;
+      finderAction?: FinderAction;
+    },
   ) => void;
   abortStream: () => void;
   streamingContent: string;
@@ -218,7 +223,11 @@ export function useCoachStream({
     (
       conversationId: number,
       userMessage: string,
-      extras?: { warmUpId?: string | null; screenContext?: string },
+      extras?: {
+        warmUpId?: string | null;
+        screenContext?: string;
+        finderAction?: FinderAction;
+      },
     ) => {
       // Refuse an overlapping stream: most internal state here (buffer,
       // accumulated text, xhrRef, timers) is a single shared slot, not
@@ -390,6 +399,7 @@ export function useCoachStream({
           };
           if (extras?.warmUpId) body.warmUpId = extras.warmUpId;
           if (extras?.screenContext) body.screenContext = extras.screenContext;
+          if (extras?.finderAction) body.finderAction = extras.finderAction;
           armInactivity();
           xhr.send(JSON.stringify(body));
         })

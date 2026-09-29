@@ -64,6 +64,7 @@ vi.mock("@/components/UpgradeModal", () => ({
 vi.mock("@/hooks/useChat", () => ({
   useChatMessages: () => ({ data: [] }),
   useDeleteChatMessageForRetry: () => ({ mutateAsync: vi.fn() }),
+  useSaveRecipeFromChat: () => ({ mutateAsync: vi.fn() }),
 }));
 
 vi.mock("@/hooks/useSpeechToText", () => ({

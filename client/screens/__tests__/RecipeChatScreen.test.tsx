@@ -2,6 +2,7 @@
 import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import RecipeChatScreen from "../RecipeChatScreen";
 import type { ChatMessage } from "@/hooks/useChat";
@@ -48,10 +49,21 @@ const {
   mockSendMessageState: {
     value: {
       streamingContent: "",
-      streamingRecipe: null as { title: string } | null,
+      streamingRecipe: null,
+      streamingFinder: null,
+      streamingStatus: null,
       isStreaming: false,
       streamError: false,
-      requestError: null as string | null,
+      requestError: null,
+    } as {
+      streamingContent: string;
+      streamingRecipe: { title: string } | null;
+      // Optional: the pre-finder tests set the state without them.
+      streamingFinder?: unknown;
+      streamingStatus?: string | null;
+      isStreaming: boolean;
+      streamError: boolean;
+      requestError: string | null;
     },
   },
 }));
@@ -92,6 +104,15 @@ vi.mock("@/hooks/useChat", () => ({
   }),
 }));
 
+vi.mock("@/hooks/usePremiumFeatures", () => ({
+  usePremiumFeature: () => true,
+}));
+
+vi.mock("@/components/UpgradeModal", () => ({
+  UpgradeModal: ({ visible }: { visible: boolean }) =>
+    visible ? <div data-testid="upgrade-modal" /> : null,
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockCanGoBack.mockReturnValue(true);
@@ -100,6 +121,8 @@ beforeEach(() => {
   mockSendMessageState.value = {
     streamingContent: "",
     streamingRecipe: null,
+    streamingFinder: null,
+    streamingStatus: null,
     isStreaming: false,
     streamError: false,
     requestError: null,
@@ -602,5 +625,144 @@ describe("RecipeChatScreen — persisted recipe image", () => {
     const { container } = renderComponent(<RecipeChatScreen />);
     expect(screen.getByText("image")).toBeTruthy();
     expect(container.querySelector("img")).toBeNull();
+  });
+});
+
+describe("RecipeChatScreen — recipe finder", () => {
+  const FLOW_OLD = "00000000-0000-4000-8000-000000000000";
+  const FLOW_NEW = "11111111-1111-4111-8111-111111111111";
+  const block = (flowId: string) => ({
+    type: "recipe_results",
+    source: "community",
+    items: [
+      {
+        id: 12,
+        source: "community",
+        title: "Mediterranean Quinoa Salad",
+        imageUrl: null,
+        readyInMinutes: null,
+        calories: 350,
+      },
+    ],
+    actions: ["search_online", "generate", "none_of_these"],
+    notice: null,
+    flow: {
+      flowId,
+      stage: "results",
+      request: "Mediterranean",
+      query: { q: "mediterranean" },
+      round: 0,
+      shownIds: [],
+    },
+  });
+  const finderMessage = (id: number, flowId: string): ChatMessage => ({
+    id,
+    conversationId: 11,
+    role: "assistant",
+    content:
+      "Here are 1 community recipe:\n1. Mediterranean Quinoa Salad (350 cal)",
+    metadata: { metadataVersion: 1, finder: block(flowId) },
+    createdAt: new Date().toISOString(),
+  });
+
+  beforeEach(() => {
+    mockRouteParams.value = { conversationId: 11 };
+  });
+
+  it("renders the shared finder component instead of the fallback text", () => {
+    mockChatMessagesData.value = [finderMessage(2, FLOW_NEW)];
+    renderComponent(<RecipeChatScreen />);
+    expect(screen.getByText("From the community")).toBeDefined();
+    expect(screen.queryByText(/Here are 1 community recipe/)).toBeNull();
+  });
+
+  it("a button tap sends its label with the finderAction", () => {
+    mockChatMessagesData.value = [finderMessage(2, FLOW_NEW)];
+    renderComponent(<RecipeChatScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    expect(mockSendMessage).toHaveBeenCalledWith("Generate", undefined, 11, {
+      finderAction: { type: "generate", flowId: FLOW_NEW },
+    });
+  });
+
+  it("only the latest finder message's buttons are active", () => {
+    mockChatMessagesData.value = [
+      finderMessage(2, FLOW_OLD),
+      finderMessage(4, FLOW_NEW),
+    ];
+    renderComponent(<RecipeChatScreen />);
+    const [older, newer] = screen.getAllByRole("button", { name: "Generate" });
+    expect(older.getAttribute("aria-disabled")).toBe("true");
+    expect(newer.getAttribute("aria-disabled")).toBe("false");
+  });
+
+  it("a row opens the recipe detail (viewing a result is not leaving the flow)", () => {
+    mockChatMessagesData.value = [finderMessage(2, FLOW_NEW)];
+    renderComponent(<RecipeChatScreen />);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Mediterranean Quinoa Salad, 350 calories. Opens recipe.",
+      }),
+    );
+    expect(mockNavigate).toHaveBeenCalledWith("FeaturedRecipeDetail", {
+      recipeId: 12,
+      recipeType: "community",
+    });
+  });
+
+  it("the thinking bubble shows the finder's progress text", () => {
+    mockChatMessagesData.value = [];
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      isStreaming: true,
+      streamingStatus: "Searching community recipes…",
+    };
+    renderComponent(<RecipeChatScreen />);
+    expect(screen.getByText("Searching community recipes…")).toBeDefined();
+  });
+
+  // The thinking bubble's live region covers Android; VoiceOver needs the
+  // imperative announce, and Android must not hear it twice.
+  it.each([
+    ["ios", 1],
+    ["android", 0],
+  ] as const)(
+    "announces the progress text imperatively on %s %i time(s)",
+    (os, times) => {
+      const originalOS = RN.Platform.OS;
+      RN.Platform.OS = os;
+      const spy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+      try {
+        mockChatMessagesData.value = [];
+        mockSendMessageState.value = {
+          ...mockSendMessageState.value,
+          isStreaming: true,
+          streamingStatus: "Searching community recipes…",
+        };
+        renderComponent(<RecipeChatScreen />);
+        expect(
+          spy.mock.calls.filter(
+            ([msg]) => msg === "Searching community recipes…",
+          ),
+        ).toHaveLength(times);
+      } finally {
+        spy.mockRestore();
+        RN.Platform.OS = originalOS;
+      }
+    },
+  );
+
+  it("buttons are inactive while a reply is streaming", () => {
+    mockChatMessagesData.value = [finderMessage(2, FLOW_NEW)];
+    mockSendMessageState.value = {
+      ...mockSendMessageState.value,
+      isStreaming: true,
+    };
+    renderComponent(<RecipeChatScreen />);
+    expect(
+      screen
+        .getByRole("button", { name: "Generate" })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
   });
 });
