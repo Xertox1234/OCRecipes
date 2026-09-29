@@ -11,6 +11,8 @@ const savedItemDefaults: SavedItem = {
   instructions: null,
   sourceItemId: null,
   sourceProductName: null,
+  recipeId: null,
+  recipeType: null,
   createdAt: new Date("2024-01-01"),
 };
 
