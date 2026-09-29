@@ -1,6 +1,6 @@
 ---
 title: "Catalog preview: a Save that fails with 403 after the preview closed is silent, and two comments claim every failure surfaces"
-status: in-progress
+status: done
 priority: low
 created: 2026-09-28
 updated: 2026-09-28
@@ -21,9 +21,9 @@ This was found in #1150's mobile review (advisory; under the one-review-pass rul
 
 ## Acceptance Criteria
 
-- [ ] A 403 `PREMIUM_REQUIRED` Save failure that lands after unmount shows a toast, e.g. `Couldn't save <title>. Online recipes need Premium.`
-- [ ] Add a test next to "toasts a Save failure that lands after the user closed the preview" in `client/screens/__tests__/FeaturedRecipeDetailScreen.test.tsx`, with the 403 case RED first.
-- [ ] Both comments match the code afterwards.
+- [x] A 403 `PREMIUM_REQUIRED` Save failure that lands after unmount shows a toast, e.g. `Couldn't save <title>. Online recipes need Premium.`
+- [x] Add a test next to "toasts a Save failure that lands after the user closed the preview" in `client/screens/__tests__/FeaturedRecipeDetailScreen.test.tsx`, with the 403 case RED first.
+- [x] Both comments match the code afterwards.
 
 ## Implementation Notes
 
@@ -39,3 +39,11 @@ This was found in #1150's mobile review (advisory; under the one-review-pass rul
 ### 2026-09-28
 
 - Auto-filed (Low) from #1150's mobile review.
+- Implemented: the `PREMIUM_REQUIRED` catch branch in `handleSaveCatalog` now checks
+  `isMountedRef.current` before deciding whether to open the upgrade modal (mounted) or toast
+  `Couldn't save <title>. Online recipes need Premium.` (unmounted), mirroring the guard already
+  used by the generic-error branch. Added a RED-first regression test beside the existing
+  "toasts a Save failure that lands after the user closed the preview" test. No change was needed
+  to `useMealPlanRecipes.ts:164` — its comment already describes the toast-on-unmount behavior;
+  the code just wasn't living up to it for the premium path. Reviewed clean by `code-reviewer` and
+  `mobile-reviewer` (no blocking findings).
