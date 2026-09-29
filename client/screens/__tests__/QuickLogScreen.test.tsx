@@ -403,6 +403,150 @@ describe("QuickLogScreen — submit", () => {
       rerender(<QuickLogScreen />);
       expect(mockAnnounce).not.toHaveBeenCalled();
     });
+
+    // code-reviewer (round 1): the "was this covered by the live region?"
+    // comparison must track the CURRENTLY RENDERED count, not the count at
+    // the last parse — removeItem changes what's rendered without bumping
+    // parseGeneration, so a stale reference goes wrong in both directions.
+    it("on Android, still announces a same-count replace after a removeItem changed what's rendered", () => {
+      Platform.OS = "android";
+      sessionHolder.parsedItems = [
+        {
+          name: "egg",
+          quantity: 1,
+          unit: "large",
+          calories: 72,
+          protein: 6,
+          carbs: 0,
+          fat: 5,
+          servingSize: null,
+        },
+        {
+          name: "bacon",
+          quantity: 2,
+          unit: "slice",
+          calories: 90,
+          protein: 6,
+          carbs: 0,
+          fat: 7,
+          servingSize: null,
+        },
+      ];
+      sessionHolder.parseGeneration = 1;
+      const { rerender } = renderComponent(<QuickLogScreen />);
+      expect(mockAnnounce).not.toHaveBeenCalled(); // first parse — live region covers the mount
+
+      // removeItem: 2 -> 1, no generation bump. The live region's own text
+      // now reads "Found 1 item" — it just re-announced on its own.
+      sessionHolder.parsedItems = [
+        {
+          name: "egg",
+          quantity: 1,
+          unit: "large",
+          calories: 72,
+          protein: 6,
+          carbs: 0,
+          fat: 5,
+          servingSize: null,
+        },
+      ];
+      rerender(<QuickLogScreen />);
+      expect(mockAnnounce).not.toHaveBeenCalled();
+
+      // A second parse replaces the remaining item, same count (1) as
+      // what's ACTUALLY showing post-removal — needs the explicit announce.
+      sessionHolder.parsedItems = [
+        {
+          name: "toast",
+          quantity: 1,
+          unit: "slice",
+          calories: 80,
+          protein: 3,
+          carbs: 14,
+          fat: 1,
+          servingSize: null,
+        },
+      ];
+      sessionHolder.parseGeneration = 2;
+      rerender(<QuickLogScreen />);
+      expect(mockAnnounce).toHaveBeenCalledTimes(1);
+      expect(mockAnnounce).toHaveBeenCalledWith(
+        "Found 1 item. Log All to save.",
+      );
+    });
+
+    it("on Android, does not double-announce when the second parse's count matches the live region's OWN already-changed text", () => {
+      Platform.OS = "android";
+      sessionHolder.parsedItems = [
+        {
+          name: "egg",
+          quantity: 1,
+          unit: "large",
+          calories: 72,
+          protein: 6,
+          carbs: 0,
+          fat: 5,
+          servingSize: null,
+        },
+        {
+          name: "bacon",
+          quantity: 2,
+          unit: "slice",
+          calories: 90,
+          protein: 6,
+          carbs: 0,
+          fat: 7,
+          servingSize: null,
+        },
+      ];
+      sessionHolder.parseGeneration = 1;
+      const { rerender } = renderComponent(<QuickLogScreen />);
+      expect(mockAnnounce).not.toHaveBeenCalled();
+
+      // removeItem: 2 -> 1 (live region now reads "Found 1 item").
+      sessionHolder.parsedItems = [
+        {
+          name: "egg",
+          quantity: 1,
+          unit: "large",
+          calories: 72,
+          protein: 6,
+          carbs: 0,
+          fat: 5,
+          servingSize: null,
+        },
+      ];
+      rerender(<QuickLogScreen />);
+
+      // A second parse yields 2 items again — different from what's showing
+      // (1) — the live region re-reads on its own; the explicit announce
+      // must stay silent or it double-announces.
+      sessionHolder.parsedItems = [
+        {
+          name: "egg",
+          quantity: 1,
+          unit: "large",
+          calories: 72,
+          protein: 6,
+          carbs: 0,
+          fat: 5,
+          servingSize: null,
+        },
+        {
+          name: "toast",
+          quantity: 1,
+          unit: "slice",
+          calories: 80,
+          protein: 3,
+          carbs: 14,
+          fat: 1,
+          servingSize: null,
+        },
+      ];
+      sessionHolder.parseGeneration = 2;
+      rerender(<QuickLogScreen />);
+      expect(mockAnnounce).not.toHaveBeenCalled();
+    });
   });
 
   // Android has no imperative announce — the note itself must carry the

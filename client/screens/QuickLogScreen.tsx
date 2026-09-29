@@ -138,19 +138,30 @@ export default function QuickLogScreen() {
   // leaves that text identical, so it needs the explicit announce too —
   // never both, on either platform (docs/rules/accessibility.md →
   // Announcements).
+  //
+  // `lastRenderedCountRef` must be written on EVERY run of this effect, not
+  // only when the generation changes: removeItem changes `parsedItems.length`
+  // — and so the live region's own rendered text — without bumping
+  // `parseGeneration`. A version gated behind the generation check went
+  // stale across exactly that change, producing a false negative (a
+  // same-count replace after a removeItem stayed silent) and a false
+  // positive (the next parse double-announced when its count happened to
+  // match the pre-removal count) — caught by review with a constructed
+  // probe.
   const announcedGenerationRef = React.useRef(0);
-  const announcedCountRef = React.useRef(0);
+  const lastRenderedCountRef = React.useRef(0);
   React.useEffect(() => {
+    const count = session.parsedItems.length;
+    const prevRenderedCount = lastRenderedCountRef.current;
+    lastRenderedCountRef.current = count;
+
     const generation = session.parseGeneration;
     if (generation === 0 || generation === announcedGenerationRef.current) {
       return;
     }
-    const count = session.parsedItems.length;
-    const prevCount = announcedCountRef.current;
     announcedGenerationRef.current = generation;
-    announcedCountRef.current = count;
     if (count === 0) return;
-    if (Platform.OS === "ios" || count === prevCount) {
+    if (Platform.OS === "ios" || count === prevRenderedCount) {
       AccessibilityInfo.announceForAccessibility(foundItemsMessage(count));
     }
   }, [session.parseGeneration, session.parsedItems.length]);

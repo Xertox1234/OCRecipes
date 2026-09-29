@@ -563,6 +563,117 @@ describe("QuickLogDrawer", () => {
       expect(mockAnnounce).not.toHaveBeenCalled();
     });
 
+    // code-reviewer (round 1): the "was this covered by the live region?"
+    // comparison must track the CURRENTLY RENDERED count, not the count at
+    // the last parse — removeItem changes what's rendered without bumping
+    // parseGeneration, so a stale reference goes wrong in both directions.
+    describe("interleaved with a removeItem between two parses (Android)", () => {
+      it("still announces a same-count replace (the removeItem-updated live region text matches the new parse)", () => {
+        Platform.OS = "android";
+        const session = vi.mocked(useQuickLogSessionModule.useQuickLogSession);
+        session.mockReturnValue({
+          ...mockSession,
+          parsedItems: [eggItem, eggItem],
+          parseGeneration: 1,
+        });
+        const { rerender } = renderComponent(<QuickLogDrawer {...props} />);
+        expect(mockAnnounce).not.toHaveBeenCalled(); // first parse — live region covers the mount
+
+        // removeItem: 2 -> 1, no generation bump. The live region's own text
+        // now reads "Found 1 item" — it just re-announced on its own.
+        session.mockReturnValue({
+          ...mockSession,
+          parsedItems: [eggItem],
+          parseGeneration: 1,
+        });
+        rerender(<QuickLogDrawer {...props} />);
+        expect(mockAnnounce).not.toHaveBeenCalled();
+
+        // A second parse replaces the remaining item, same count (1) as
+        // what's ACTUALLY showing post-removal — the live region text is
+        // unchanged, so this needs the explicit announce.
+        session.mockReturnValue({
+          ...mockSession,
+          parsedItems: [{ ...eggItem, name: "toast" }],
+          parseGeneration: 2,
+        });
+        rerender(<QuickLogDrawer {...props} />);
+        expect(mockAnnounce).toHaveBeenCalledTimes(1);
+        expect(mockAnnounce).toHaveBeenCalledWith(
+          "Found 1 item. Log All to save.",
+        );
+      });
+
+      it("does not double-announce when the second parse's count matches the live region's OWN already-changed text", () => {
+        Platform.OS = "android";
+        const session = vi.mocked(useQuickLogSessionModule.useQuickLogSession);
+        session.mockReturnValue({
+          ...mockSession,
+          parsedItems: [eggItem, eggItem],
+          parseGeneration: 1,
+        });
+        const { rerender } = renderComponent(<QuickLogDrawer {...props} />);
+        expect(mockAnnounce).not.toHaveBeenCalled();
+
+        // removeItem: 2 -> 1 (live region now reads "Found 1 item").
+        session.mockReturnValue({
+          ...mockSession,
+          parsedItems: [eggItem],
+          parseGeneration: 1,
+        });
+        rerender(<QuickLogDrawer {...props} />);
+
+        // A second parse yields 2 items again — different from what's
+        // showing (1) — the live region re-reads on its own; the explicit
+        // announce must stay silent or it double-announces.
+        session.mockReturnValue({
+          ...mockSession,
+          parsedItems: [eggItem, eggItem],
+          parseGeneration: 2,
+        });
+        rerender(<QuickLogDrawer {...props} />);
+        expect(mockAnnounce).not.toHaveBeenCalled();
+      });
+    });
+
+    // code-reviewer (round 1): reset() clears parsedItems (and unmounts the
+    // live-region note) without bumping parseGeneration — the drawer stays
+    // mounted across a close/reopen, so a stale "last announced count" can
+    // coincidentally match a fresh session's first parse.
+    it("does not double-announce a fresh session's first parse, even if its count matches a prior session's last count (Android)", () => {
+      Platform.OS = "android";
+      const session = vi.mocked(useQuickLogSessionModule.useQuickLogSession);
+      session.mockReturnValue({
+        ...mockSession,
+        parsedItems: [eggItem, eggItem],
+        parseGeneration: 1,
+      });
+      const { rerender } = renderComponent(<QuickLogDrawer {...props} />);
+      expect(mockAnnounce).not.toHaveBeenCalled();
+
+      // Log All (or drawer close) resets the session: parsedItems -> [],
+      // generation untouched.
+      session.mockReturnValue({
+        ...mockSession,
+        parsedItems: [],
+        parseGeneration: 1,
+      });
+      rerender(<QuickLogDrawer {...props} />);
+      expect(mockAnnounce).not.toHaveBeenCalled();
+
+      // A fresh parse in the reopened session, same count (2) as the PRIOR
+      // session's last parse — this is a fresh mount, not a same-count
+      // replace, so the live region covers it via the mount; no explicit
+      // announce.
+      session.mockReturnValue({
+        ...mockSession,
+        parsedItems: [eggItem, eggItem],
+        parseGeneration: 2,
+      });
+      rerender(<QuickLogDrawer {...props} />);
+      expect(mockAnnounce).not.toHaveBeenCalled();
+    });
+
     it("shows the count as a live-region note, not an alert", () => {
       vi.mocked(useQuickLogSessionModule.useQuickLogSession).mockReturnValue({
         ...mockSession,
