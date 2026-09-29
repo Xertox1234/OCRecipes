@@ -735,4 +735,31 @@ describe("FeaturedRecipeDetailScreen — catalog preview follow-ups (#1149 revie
       ),
     );
   });
+
+  it("toasts a premium-denied Save failure that lands after the user closed the preview", async () => {
+    let rejectSave: (e: Error) => void = () => {};
+    mockApiRequest.mockImplementation(async (method: string) =>
+      method === "GET"
+        ? { json: async () => catalogDetail }
+        : new Promise((_resolve, reject) => {
+            rejectSave = reject;
+          }),
+    );
+    const { unmount } = renderComponent(<FeaturedRecipeDetailScreen />);
+    await pressSave();
+    await waitFor(() =>
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/meal-plan/catalog/715538/save",
+        { addToSavedItems: true },
+      ),
+    );
+    unmount();
+    rejectSave(new ApiError("403: premium", ErrorCode.PREMIUM_REQUIRED, 403));
+    await waitFor(() =>
+      expect(mockToastError).toHaveBeenCalledWith(
+        "Couldn't save Spoonacular Chili. Online recipes need Premium.",
+      ),
+    );
+  });
 });

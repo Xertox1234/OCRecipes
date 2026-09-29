@@ -351,6 +351,12 @@ export default function FeaturedRecipeDetailScreen() {
       return saved.id;
     } catch (err) {
       if (err instanceof ApiError && err.code === ErrorCode.PREMIUM_REQUIRED) {
+        if (!isMountedRef.current) {
+          toast.error(
+            `Couldn't save ${catalogTitle ?? "the recipe"}. Online recipes need Premium.`,
+          );
+          return null;
+        }
         setShowUpgrade(true);
         return null;
       }
