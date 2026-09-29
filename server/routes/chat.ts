@@ -12,7 +12,7 @@ import {
   checkAiConfigured,
   parseTimezone,
 } from "./_helpers";
-import { chatRateLimit } from "./_rate-limiters";
+import { chatRateLimit, chatReadRateLimit } from "./_rate-limiters";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -58,7 +58,7 @@ export function register(app: Express): void {
   app.get(
     "/api/chat/conversations",
     requireAuth,
-    chatRateLimit,
+    chatReadRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const limit = parseQueryInt(req.query.limit, { default: 20, max: 50 });
@@ -95,7 +95,7 @@ export function register(app: Express): void {
   app.get(
     "/api/chat/conversations/:id",
     requireAuth,
-    chatRateLimit,
+    chatReadRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
@@ -243,7 +243,7 @@ export function register(app: Express): void {
   app.get(
     "/api/chat/conversations/:id/messages",
     requireAuth,
-    chatRateLimit,
+    chatReadRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
