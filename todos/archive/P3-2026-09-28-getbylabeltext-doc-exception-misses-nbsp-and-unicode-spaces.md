@@ -1,6 +1,6 @@
 ---
 title: "getByLabelText solution doc: the 'no override needed' exception lists four whitespace triggers but \\s also matches NBSP, CR, FF and Unicode spaces"
-status: in-progress
+status: done
 priority: low
 created: 2026-09-28
 updated: 2026-09-28
