@@ -873,12 +873,9 @@ export function register(app: Express): void {
                 : strippedText;
               const { blocks } = parsedPartial;
               if (!partialText && blocks.length === 0) {
-                // Guarded: a row holding a paid recipe-finder claim is kept,
-                // so a disconnect can never hand a paid slot back (#1151).
-                await storage.deleteUnclaimedChatMessage(
-                  userMessage.id,
-                  req.userId,
-                );
+                // Paid recipe-finder claims live in recipe_finder_claims, so
+                // this refund can never hand a paid slot back (#1151).
+                await storage.deleteChatMessage(userMessage.id, req.userId);
               } else {
                 // Never cached, titled, or notebook-extracted — a partial.
                 await storage.createChatMessage(
