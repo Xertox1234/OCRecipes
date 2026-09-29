@@ -38,6 +38,7 @@ import {
   cookbookRecipes,
   favouriteRecipes,
   recipeDismissals,
+  savedItems,
   users,
 } from "@shared/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
@@ -193,6 +194,17 @@ export async function main(argv: readonly string[] = process.argv.slice(2)) {
           ),
         )
     )[0]?.count,
+    savedItems: (
+      await db
+        .select({ count: sql<number>`count(*)` })
+        .from(savedItems)
+        .where(
+          and(
+            inArray(savedItems.recipeId, junkIds),
+            eq(savedItems.recipeType, "community"),
+          ),
+        )
+    )[0]?.count,
   };
 
   console.log("Cascaded rows that would be deleted:");
@@ -206,6 +218,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)) {
   console.log(
     `  recipe_dismissals:     ${cascadeCounts.recipeDismissals ?? 0}`,
   );
+  console.log(`  saved_items:           ${cascadeCounts.savedItems ?? 0}`);
   console.log("");
 
   if (!commit) {
@@ -260,6 +273,18 @@ export async function main(argv: readonly string[] = process.argv.slice(2)) {
           and(
             inArray(recipeDismissals.recipeIdentifier, dismissalIdentifiers),
             eq(recipeDismissals.source, "community"),
+          ),
+        );
+
+      // Clear saved_items links (PR #1165's polymorphic recipe_id/recipe_type
+      // link — no DB FK) before deleting the parent recipe. Mirrors
+      // deleteCommunityRecipe in server/storage/community-recipes.ts.
+      await tx
+        .delete(savedItems)
+        .where(
+          and(
+            inArray(savedItems.recipeId, batch),
+            eq(savedItems.recipeType, "community"),
           ),
         );
 

@@ -1,6 +1,6 @@
 ---
 title: "Recipe cleanup scripts leave linked Saved Items rows behind"
-status: backlog
+status: done
 priority: low
 created: 2026-09-29
 updated: 2026-09-29
@@ -26,9 +26,9 @@ dangling row would open a "not found" recipe when tapped.
 
 ## Acceptance Criteria
 
-- [ ] Each script below also deletes `saved_items` rows whose `(recipe_type, recipe_id)` match the
+- [x] Each script below also deletes `saved_items` rows whose `(recipe_type, recipe_id)` match the
       recipes it deletes, in the same transaction/batch.
-- [ ] A test (or a dry-run count) shows no `saved_items` row is left pointing at a deleted recipe.
+- [x] A test (or a dry-run count) shows no `saved_items` row is left pointing at a deleted recipe.
 
 ## Implementation Notes
 

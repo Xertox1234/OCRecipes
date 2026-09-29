@@ -4,8 +4,9 @@ track: knowledge
 category: design-patterns
 module: server
 tags: [database, drizzle, polymorphic-fk, junction-tables, transactions, cleanup]
-applies_to: [server/storage/**/*.ts]
+applies_to: [server/storage/**/*.ts, server/scripts/**/*.ts, scripts/**/*.ts]
 created: '2026-05-13'
+last_updated: '2026-09-29'
 ---
 
 # Proactive orphan cleanup in parent delete functions
@@ -13,6 +14,8 @@ created: '2026-05-13'
 ## When this applies
 
 When deleting a parent entity that is referenced by polymorphic junction tables (no DB-level FK), clean up **all** junction tables that reference it — not just the ones you remember. This is the "write-time" complement to the "read-time" lazy cleanup and "count-time" EXISTS subquery patterns.
+
+This applies equally to standalone maintenance/cleanup scripts (`server/scripts/`, `scripts/`) that delete recipes directly outside the storage-layer delete functions — a script is just another "parent delete" call site, and the same junction-table checklist applies to it. See `server/scripts/cleanup-seed-recipes.ts`, `scripts/cleanup-junk-recipes.ts`, and `scripts/cleanup-junk-mealplan-recipes.ts`.
 
 ## Examples
 
@@ -76,7 +79,7 @@ export async function deleteCommunityRecipe(recipeId: number, userId: string) {
 
 When adding a new polymorphic junction table: Find every `delete` function for every parent table type and add cleanup for the new junction table. Use `Promise.all` for independent cleanup queries within the same transaction.
 
-**Existing junction tables to check:** `cookbookRecipes`, `favouriteRecipes`. When adding a third (e.g., `sharedRecipes`), update delete functions for `mealPlanRecipes`, `communityRecipes`, and any other parent table.
+**Existing junction tables to check:** `cookbookRecipes`, `favouriteRecipes`, `savedItems` (added 2026-09-29 — `saved_items.recipe_id`/`recipe_type`, PR #1165). When adding a new one, update delete functions for `mealPlanRecipes`, `communityRecipes`, and any other parent table — AND every standalone cleanup script that deletes those parent tables directly.
 
 ## Why not rely solely on lazy cleanup?
 
@@ -84,8 +87,9 @@ Lazy cleanup (filtering orphans at read time) leaves orphaned rows in the databa
 
 ## Related Files
 
-- `server/storage/community.ts` — `deleteCommunityRecipe()` cleans up both `cookbookRecipes` and `favouriteRecipes`
-- `server/storage/meal-plans.ts` — `deleteMealPlanRecipe()` cleans up both junction tables
+- `server/storage/community-recipes.ts` — `deleteCommunityRecipe()` cleans up `cookbookRecipes`, `favouriteRecipes`, `savedItems`, and `recipeDismissals`
+- `server/storage/meal-plan-recipes-crud.ts` — `deleteMealPlanRecipe()` cleans up `cookbookRecipes`, `favouriteRecipes`, and `savedItems`
+- `server/scripts/cleanup-seed-recipes.ts`, `scripts/cleanup-junk-recipes.ts`, `scripts/cleanup-junk-mealplan-recipes.ts` — the standalone cleanup scripts, brought in line with the storage-layer functions above (2026-09-29)
 - Audit #9 M5, M6
 
 ## See Also
