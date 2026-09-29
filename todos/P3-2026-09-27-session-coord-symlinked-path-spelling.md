@@ -1,6 +1,6 @@
 ---
 title: "Session coordination: a symlinked path spelling records rel_path as the full absolute path"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-27
 updated: 2026-09-27

@@ -54,7 +54,30 @@ SQL
 
 git_root_of() { git -C "$1" rev-parse --show-toplevel 2>/dev/null; }
 
-target_paths() { # $1 hook JSON -> absolute target paths, one per line
+physical_path() { # $1 absolute path -> same referent, spelled through the PHYSICAL path of
+                   # its nearest existing ancestor (macOS symlinks /tmp -> /private/tmp; a
+                   # target reached through such a symlink would otherwise record/consult
+                   # rel_path == abs_path downstream, since git_root_of always resolves to
+                   # the physical spelling and the literal prefix strip against it never
+                   # matches an un-normalized $file). Walk-up mirrors record_one/consult_match's
+                   # own git-root lookup: the leaf may not exist yet (Write creates it). Fails
+                   # safe — echoes $1 unchanged on a relative path or any resolution failure;
+                   # never canonicalizes `..` beyond what `pwd -P` resolves for the ancestor.
+  local file="$1" dir pdir
+  case "$file" in /*) ;; *) printf '%s\n' "$file"; return 0 ;; esac
+  dir=$(dirname "$file")
+  while [ ! -d "$dir" ] && [ "$dir" != "/" ]; do dir=$(dirname "$dir"); done
+  pdir=$(cd "$dir" 2>/dev/null && pwd -P)
+  if [ -n "$pdir" ]; then file="${pdir}${file#"$dir"}"; fi
+  printf '%s\n' "$file"
+}
+
+target_paths() { # $1 hook JSON -> absolute target paths, one per line, physical spelling.
+                  # Normalized here — the single choke point upstream of both do_record and
+                  # do_consult (record_one/consult_match need no changes: rel_path is already
+                  # derived correctly once $file arrives pre-normalized). The Bash branch
+                  # normalizes BEFORE dedup, so two spellings of the same real file collapse
+                  # to one candidate instead of double-spending consult's live-check budget.
   local tool cmd cwd
   tool=$(jq -r '.tool_name // ""' <<<"$1" 2>/dev/null)
   case "$tool" in
@@ -63,8 +86,10 @@ target_paths() { # $1 hook JSON -> absolute target paths, one per line
       grep -qE '>|(^|[^[:alnum:]_])(tee|rm|cp|mv)([^[:alnum:]_]|$)|sed[^|;]*-i' <<<"$cmd" || return 0
       declare -F resolve_write_targets >/dev/null || return 0
       cwd=$(jq -r '.cwd // ""' <<<"$1" 2>/dev/null)
-      printf '%s' "$cmd" | resolve_write_targets "$cwd" | sort -u ;;
-    *) jq -r '.tool_input.file_path // empty' <<<"$1" 2>/dev/null ;;
+      printf '%s' "$cmd" | resolve_write_targets "$cwd" \
+        | while IFS= read -r f; do [ -n "$f" ] && physical_path "$f"; done | sort -u ;;
+    *) jq -r '.tool_input.file_path // empty' <<<"$1" 2>/dev/null \
+        | while IFS= read -r f; do [ -n "$f" ] && physical_path "$f"; done ;;
   esac
 }
 
