@@ -37,7 +37,7 @@ Measured in `client/screens/__tests__/RecipeChatScreen.test.tsx` (recipe-chat ra
 
 ## Exceptions
 
-- A label needs no override only when the default normalizer leaves it unchanged: no newline, tab, repeated space, or leading/trailing whitespace. Measured with `getDefaultNormalizer()`: `"a b"` is unchanged, while `"a  b"`, `"a\tb"`, `"a\nb"` and `" a b "` all become `"a b"`. So a single-line label with a double space fails an exact string match just like a multi-line one.
+- A label needs no override only when it is unchanged by `text.trim().replace(/\s+/g, " ")`: no leading/trailing whitespace, and no whitespace between tokens other than a single ASCII space. `\s` matches more than newline/tab/repeated-space — it also collapses NBSP (`\u00A0`, the realistic UI case: a label like `"250\u00A0kcal"` pasted or generated with a non-breaking space), CR, FF, VT, and Unicode space separators (em space `\u2003`, thin space, narrow NBSP, ideographic space, etc.), plus the BOM (`\uFEFF`). Measured with `getDefaultNormalizer()` from `@testing-library/dom`: `"a b"` (plain ASCII space) is unchanged, while `"a\u00A0b"` (NBSP), `"a\rb"`, `"a\fb"`, `"a\vb"`, `"a\tb"`, `"a\nb"`, `"a\u2003b"`, `"a  b"` and `" a b "` all become `"a b"` (`changed=true`). A zero-width space (`\u200B`) is *not* matched by `\s` and is left unchanged — it isn't whitespace, so it does not trigger this false RED.
 - A RegExp or function matcher receives the already-normalized node text, so write the pattern against collapsed whitespace, or use the identity normalizer there too.
 
 ## Related Files
