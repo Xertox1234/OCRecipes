@@ -1055,6 +1055,44 @@ export const chatMessages = pgTable(
   ],
 );
 
+/**
+ * Paid recipe-finder claims (spec 2026-09-28 §6, D9). Append-only and kept
+ * apart from chat rows: a user may delete a message or a whole conversation
+ * (which cascades its rows), and neither may hand a claimed slot back. No
+ * conversation FK for that reason; messageId only records which row the
+ * claim was taken on, and goes null when that row is deleted.
+ */
+export const recipeFinderClaims = pgTable(
+  "recipe_finder_claims",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    kind: text("kind").notNull(), // 'recipe_generation' | 'spoonacular_search'
+    messageId: integer("message_id").references(() => chatMessages.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    // The daily count: one user, one kind, today's UTC bounds.
+    index("recipe_finder_claims_user_kind_created_idx").on(
+      table.userId,
+      table.kind,
+      table.createdAt,
+    ),
+    // One claim per row and kind, so a repeated claim on a row counts once.
+    // NULLs are distinct, so claims whose row was deleted never collide.
+    uniqueIndex("recipe_finder_claims_message_kind_idx").on(
+      table.messageId,
+      table.kind,
+    ),
+  ],
+);
+
 export const chatConversationsRelations = relations(
   chatConversations,
   ({ one, many }) => ({

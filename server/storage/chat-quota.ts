@@ -6,9 +6,10 @@ import {
   type ChatMessage,
   chatConversations,
   chatMessages,
+  recipeFinderClaims,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, gte, lt, sql, inArray } from "drizzle-orm";
+import { eq, and, gte, lt, sql } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 
 export type ChatTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -25,11 +26,11 @@ export const lockUser = (tx: ChatTx, userId: string) =>
  * Today's recipe generations — the ONE count the legacy recipe/remix path and
  * the recipe finder's Generate step both enforce (spec §6):
  *   A: user rows in recipe conversations that are not finder-step rows
- *   B: user rows anywhere claimed as a finder Generate (recipe or coach)
+ *   B: finder Generate claims today (recipe or coach) — recipe_finder_claims,
+ *      so deleting the row or its conversation never hands the slot back
  *   C: distinct remix conversations with a user row, created today
- * Rows written before the finder existed carry neither marker, so for them
- * this equals the previous recipe+remix count exactly. Day bounds are UTC,
- * as the pre-finder count always was — the two paths must share one bucket.
+ * Legs A and C stay row-based, as the legacy limits always were. Day bounds
+ * are UTC, as the pre-finder count always was — the paths share one bucket.
  */
 export async function countRecipeGenerationsToday(
   tx: ChatTx,
@@ -42,51 +43,43 @@ export async function countRecipeGenerationsToday(
     gte(chatMessages.createdAt, startOfDay),
     lt(chatMessages.createdAt, endOfDay),
   );
-  const [legacyRecipeRows, claimedRows, remixConvCount] = await Promise.all([
-    tx
-      .select({ count: sql<number>`count(*)` })
-      .from(chatMessages)
-      .innerJoin(
-        chatConversations,
-        eq(chatMessages.conversationId, chatConversations.id),
-      )
-      .where(
-        and(
-          today,
-          eq(chatConversations.type, "recipe"),
-          sql`coalesce(${chatMessages.metadata}->>'finderInput', 'false') <> 'true'`,
+  const [legacyRecipeRows, claimedGenerations, remixConvCount] =
+    await Promise.all([
+      tx
+        .select({ count: sql<number>`count(*)` })
+        .from(chatMessages)
+        .innerJoin(
+          chatConversations,
+          eq(chatMessages.conversationId, chatConversations.id),
+        )
+        .where(
+          and(
+            today,
+            eq(chatConversations.type, "recipe"),
+            sql`coalesce(${chatMessages.metadata}->>'finderInput', 'false') <> 'true'`,
+          ),
         ),
-      ),
-    tx
-      .select({ count: sql<number>`count(*)` })
-      .from(chatMessages)
-      .innerJoin(
-        chatConversations,
-        eq(chatMessages.conversationId, chatConversations.id),
-      )
-      .where(
-        and(today, sql`${chatMessages.metadata}->>'recipeGeneration' = 'true'`),
-      ),
-    tx
-      .select({ count: sql<number>`count(DISTINCT ${chatConversations.id})` })
-      .from(chatConversations)
-      .innerJoin(
-        chatMessages,
-        eq(chatMessages.conversationId, chatConversations.id),
-      )
-      .where(
-        and(
-          eq(chatConversations.userId, userId),
-          eq(chatConversations.type, "remix"),
-          eq(chatMessages.role, "user"),
-          gte(chatConversations.createdAt, startOfDay),
-          lt(chatConversations.createdAt, endOfDay),
+      countClaimsToday(tx, userId, "recipe_generation"),
+      tx
+        .select({ count: sql<number>`count(DISTINCT ${chatConversations.id})` })
+        .from(chatConversations)
+        .innerJoin(
+          chatMessages,
+          eq(chatMessages.conversationId, chatConversations.id),
+        )
+        .where(
+          and(
+            eq(chatConversations.userId, userId),
+            eq(chatConversations.type, "remix"),
+            eq(chatMessages.role, "user"),
+            gte(chatConversations.createdAt, startOfDay),
+            lt(chatConversations.createdAt, endOfDay),
+          ),
         ),
-      ),
-  ]);
+    ]);
   return (
     Number(legacyRecipeRows[0]?.count ?? 0) +
-    Number(claimedRows[0]?.count ?? 0) +
+    claimedGenerations +
     Number(remixConvCount[0]?.count ?? 0)
   );
 }
@@ -184,38 +177,67 @@ export async function createFinderUserMessage(
   });
 }
 
-/** Sets a boolean marker on the user's own user row. Returns false if no row matched. */
-async function markUserRow(
+type ClaimKind = "recipe_generation" | "spoonacular_search";
+
+async function countClaimsToday(
+  tx: ChatTx,
+  userId: string,
+  kind: ClaimKind,
+): Promise<number> {
+  const { startOfDay, endOfDay } = getDayBounds(new Date());
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(recipeFinderClaims)
+    .where(
+      and(
+        eq(recipeFinderClaims.userId, userId),
+        eq(recipeFinderClaims.kind, kind),
+        gte(recipeFinderClaims.createdAt, startOfDay),
+        lt(recipeFinderClaims.createdAt, endOfDay),
+      ),
+    );
+  return Number(row?.count ?? 0);
+}
+
+/**
+ * Records a claim on the user's own user row, inside the caller's locked
+ * transaction. Returns false if no such row. A repeated claim on the same
+ * row and kind is recorded once, as the old metadata marker was.
+ */
+async function recordClaim(
   tx: ChatTx,
   userId: string,
   messageId: number,
-  marker: "recipeGeneration" | "spoonacularSearch",
+  kind: ClaimKind,
 ): Promise<boolean> {
-  const updated = await tx
-    .update(chatMessages)
-    .set({
-      metadata: sql`coalesce(${chatMessages.metadata}, '{}'::jsonb) || jsonb_build_object(${marker}::text, true)`,
-    })
+  const own = await tx
+    .select({ id: chatMessages.id })
+    .from(chatMessages)
+    .innerJoin(
+      chatConversations,
+      eq(chatMessages.conversationId, chatConversations.id),
+    )
     .where(
       and(
         eq(chatMessages.id, messageId),
         eq(chatMessages.role, "user"),
-        inArray(
-          chatMessages.conversationId,
-          tx
-            .select({ id: chatConversations.id })
-            .from(chatConversations)
-            .where(eq(chatConversations.userId, userId)),
-        ),
+        eq(chatConversations.userId, userId),
       ),
     )
-    .returning({ id: chatMessages.id });
-  return updated.length > 0;
+    .limit(1);
+  if (own.length === 0) return false;
+  await tx
+    .insert(recipeFinderClaims)
+    .values({ userId, kind, messageId })
+    .onConflictDoNothing({
+      target: [recipeFinderClaims.messageId, recipeFinderClaims.kind],
+    });
+  return true;
 }
 
 /**
  * Atomically check the 20/day recipe generation limit and record this
- * Generate against it (lock → count → mark, one transaction — the
+ * Generate against it (lock → count → record, one transaction — the
  * createChatMessageWithLimitCheck precedent). Both chats call this.
  */
 export async function claimRecipeGeneration(
@@ -228,7 +250,7 @@ export async function claimRecipeGeneration(
     if ((await countRecipeGenerationsToday(tx, userId)) >= dailyLimit) {
       return false;
     }
-    return markUserRow(tx, userId, messageId, "recipeGeneration");
+    return recordClaim(tx, userId, messageId, "recipe_generation");
   });
 }
 
@@ -240,55 +262,11 @@ export async function claimSpoonacularSearch(
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
     await lockUser(tx, userId);
-    const { startOfDay, endOfDay } = getDayBounds(new Date());
-    const [row] = await tx
-      .select({ count: sql<number>`count(*)` })
-      .from(chatMessages)
-      .innerJoin(
-        chatConversations,
-        eq(chatMessages.conversationId, chatConversations.id),
-      )
-      .where(
-        and(
-          eq(chatConversations.userId, userId),
-          eq(chatMessages.role, "user"),
-          gte(chatMessages.createdAt, startOfDay),
-          lt(chatMessages.createdAt, endOfDay),
-          sql`${chatMessages.metadata}->>'spoonacularSearch' = 'true'`,
-        ),
-      );
-    if (Number(row?.count ?? 0) >= dailyCap) return false;
-    return markUserRow(tx, userId, messageId, "spoonacularSearch");
+    if (
+      (await countClaimsToday(tx, userId, "spoonacular_search")) >= dailyCap
+    ) {
+      return false;
+    }
+    return recordClaim(tx, userId, messageId, "spoonacular_search");
   });
-}
-
-/**
- * The disconnect refund (H6): delete this user's own row ONLY if it holds no
- * paid claim. A row marked recipeGeneration / spoonacularSearch recorded a
- * paid step that already ran — deleting it would hand the slot back and let a
- * tap-and-disconnect loop run paid work past the 20/day limit and the per-user
- * Spoonacular cap (#1151 review). Unmarked rows refund exactly as before.
- */
-export async function deleteUnclaimedChatMessage(
-  messageId: number,
-  userId: string,
-): Promise<boolean> {
-  const result = await db
-    .delete(chatMessages)
-    .where(
-      and(
-        eq(chatMessages.id, messageId),
-        inArray(
-          chatMessages.conversationId,
-          db
-            .select({ id: chatConversations.id })
-            .from(chatConversations)
-            .where(eq(chatConversations.userId, userId)),
-        ),
-        sql`coalesce(${chatMessages.metadata}->>'recipeGeneration', 'false') <> 'true'`,
-        sql`coalesce(${chatMessages.metadata}->>'spoonacularSearch', 'false') <> 'true'`,
-      ),
-    )
-    .returning({ id: chatMessages.id });
-  return result.length > 0;
 }

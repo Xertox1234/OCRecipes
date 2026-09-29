@@ -83,7 +83,8 @@ function maybeAutoTitle(p: CoachFinderTurnParams): void {
  * there is NO yield between a claim (inside executeFinderStep /
  * gateRecipeGeneration) and its persist: every post-claim yield comes after
  * persistAssistant. The route's H6 settle then finds the reply and keeps the
- * user row; its guarded refund refuses to delete a claimed row (#1151 review).
+ * user row; claims live in recipe_finder_claims, so even its refund (a row
+ * delete) never hands a paid slot back (#1151 review).
  */
 export async function* runCoachFinderTurn(
   p: CoachFinderTurnParams,
