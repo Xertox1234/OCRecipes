@@ -20,11 +20,13 @@ import {
   usePinConversation,
   type ChatConversation,
 } from "@/hooks/useChat";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { AllConversationsNavigationProp } from "@/types/navigation";
 import { safeGoBack } from "@/navigation/safeGoBack";
 
 const MAX_PINNED = 3;
+
+type ChatSegment = "coach" | "recipe";
 
 function formatRelativeDate(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -41,6 +43,7 @@ export default function AllConversationsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<AllConversationsNavigationProp>();
 
+  const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -50,7 +53,7 @@ export default function AllConversationsScreen() {
   }, [search]);
 
   const { data: conversations = [], isLoading } = useChatConversations(
-    "coach",
+    activeSegment,
     {
       search: debouncedSearch || undefined,
     },
@@ -118,7 +121,13 @@ export default function AllConversationsScreen() {
         key={conv.id}
         style={[styles.row, { borderBottomColor: theme.border }]}
         onPress={() => {
-          navigation.navigate("CoachPro", { selectedConversationId: conv.id });
+          if (activeSegment === "recipe") {
+            navigation.navigate("RecipeChat", { conversationId: conv.id });
+          } else {
+            navigation.navigate("CoachPro", {
+              selectedConversationId: conv.id,
+            });
+          }
         }}
         accessibilityRole="button"
         accessibilityLabel={`Open conversation: ${conv.title}`}
@@ -128,7 +137,10 @@ export default function AllConversationsScreen() {
             numberOfLines={1}
             style={[styles.rowTitle, { color: theme.text }]}
           >
-            {conv.title || "Coach conversation"}
+            {conv.title ||
+              (activeSegment === "recipe"
+                ? "Recipe chat"
+                : "Coach conversation")}
           </Text>
           <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
             {formatRelativeDate(conv.updatedAt)}
@@ -167,7 +179,7 @@ export default function AllConversationsScreen() {
         </View>
       </Pressable>
     ),
-    [handleDelete, handleTogglePin, navigation, theme],
+    [activeSegment, handleDelete, handleTogglePin, navigation, theme],
   );
 
   return (
@@ -197,6 +209,48 @@ export default function AllConversationsScreen() {
         >
           <Feather name="x" size={24} color={theme.text} accessible={false} />
         </Pressable>
+      </View>
+
+      <View
+        style={[
+          styles.segmentContainer,
+          { backgroundColor: withOpacity(theme.text, 0.06) },
+        ]}
+        accessibilityRole="tablist"
+      >
+        {(["coach", "recipe"] as const).map((segment) => {
+          const isActive = activeSegment === segment;
+          return (
+            <Pressable
+              key={segment}
+              onPress={() => setActiveSegment(segment)}
+              style={[
+                styles.segmentTab,
+                isActive && [
+                  styles.segmentTabActive,
+                  { backgroundColor: theme.backgroundRoot },
+                ],
+              ]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={
+                segment === "coach" ? "Coach chats" : "Recipe chats"
+              }
+            >
+              <Text
+                style={[
+                  styles.segmentLabel,
+                  {
+                    color: isActive ? theme.text : theme.textSecondary,
+                    fontWeight: isActive ? "600" : "400",
+                  },
+                ]}
+              >
+                {segment === "coach" ? "Coach" : "Recipes"}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <View
@@ -272,6 +326,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerTitle: { fontSize: 17, fontWeight: "600" },
+  segmentContainer: {
+    flexDirection: "row",
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    padding: 3,
+  },
+  segmentTab: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.xs,
+  },
+  segmentTabActive: {
+    shadowColor: "#000", // hardcoded — iOS shadow requires literal black
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  segmentLabel: { fontSize: 13 },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
