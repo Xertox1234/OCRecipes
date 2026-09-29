@@ -458,7 +458,18 @@ export default function RecipeChatScreen() {
     ({ item }: { item: (typeof displayMessages)[0] }) => {
       const isUser = item.role === "user";
       const metadata = item.metadata as Record<string, unknown> | null;
-      const recipe = metadata?.recipe as StreamingRecipe | undefined;
+      const storedRecipe = metadata?.recipe as StreamingRecipe | undefined;
+      // A persisted recipe message keeps its image at the top level of
+      // metadata (recipeChatMetadataSchema), not in metadata.recipe — the
+      // recipe streams before its image. The pending bubble has no top-level
+      // key, so its streamed recipe.imageUrl stands.
+      const recipe =
+        storedRecipe && metadata && "imageUrl" in metadata
+          ? {
+              ...storedRecipe,
+              imageUrl: metadata.imageUrl as string | null,
+            }
+          : storedRecipe;
       const allergenWarning = metadata?.allergenWarning as string | undefined;
       const isError = !!metadata?.isError;
       const isPendingAssistant = item.id === -5;

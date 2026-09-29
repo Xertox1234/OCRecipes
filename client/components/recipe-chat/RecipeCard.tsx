@@ -110,9 +110,11 @@ function RecipeCardInner({
       accessibilityLabel={`Recipe: ${recipe.title}. ${recipe.difficulty}, ${recipe.timeEstimate}, ${recipe.servings} servings`}
       accessibilityLiveRegion="polite"
     >
-      {/* Image */}
+      {/* Image — a missing image once loading is over (null: generation
+          failed or timed out) is final, so FallbackImage shows its
+          no-image placeholder instead of a skeleton that never resolves. */}
       <View style={styles.imageContainer}>
-        {isImageLoading || !recipe.imageUrl ? (
+        {isImageLoading ? (
           <SkeletonBox
             width="100%"
             height={IMAGE_HEIGHT}
@@ -120,7 +122,7 @@ function RecipeCardInner({
           />
         ) : (
           <FallbackImage
-            source={{ uri: recipe.imageUrl }}
+            source={{ uri: recipe.imageUrl ?? undefined }}
             style={styles.image}
             fallbackIcon="image"
             fallbackIconSize={32}
