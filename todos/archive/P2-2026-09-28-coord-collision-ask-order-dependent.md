@@ -104,7 +104,7 @@ echo "agentB: sibling first, LIVE other second: decision=$(consultB)   (expected
 The "ask" became a block in #1155 before this was fixed; the order bug carried over unchanged. Fix approach reviewed by the user first; they chose to name the most recent editor.
 
 - `consult_match` returns every match with a sort key; `do_consult` sorts all matches of all target files (other-session collisions first, most recent touch first) and `decide_and_emit` judges each holder until one qualifies. The warning is the fallback only when none does.
-- Caps: 5 holders judged, 3 `live_confirm` queries per consult (new downgrade reason `confirm-cap`).
+- Caps: 5 holders judged, 3 `live_confirm` queries per consult (new downgrade reason `confirm-cap`), pinned by a test and a "live-check cap dropped" mutant.
 - The told marker keeps one line per holder, so two live holders give two blocks and then the edit goes through (a single-slot marker would bounce between them forever).
 - Snapshot `json_agg` now has `ORDER BY` (sessions by `last_seen_at DESC`, files by `last_touch DESC`) — for stable output, not the fix.
 - The `ask-approved` schema-comment suggestion is moot (#1155 removed the event).

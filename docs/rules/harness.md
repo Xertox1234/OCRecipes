@@ -41,5 +41,5 @@ Binding for the repo's own tooling — `.claude/hooks/**`, `.claude/skills/**`, 
 
 ## Collision block (session coordination v2)
 
-- Editing a file another live session touched in the last 15 min is blocked once. Every holder of the file is judged, not the first one listed. The block names the most recent live editor to the model, which must ask the user; the retry goes through (once per file/holder/agent per 15 min, so two live holders mean two blocks). A sibling subagent only gets a warning.
+- Editing a file another live session touched in the last 15 min is blocked once. Every holder of the file is judged (up to 5, at most 3 checked live per edit), not the first one listed. The block names the most recent live editor to the model, which must ask the user; the retry goes through (once per file/holder/agent per 15 min, so two live holders mean two blocks). A sibling subagent only gets a warning.
 - `SKIP_COLLISION_BLOCK=1` turns the block into a warning.

@@ -266,6 +266,15 @@ assert_eq "bash multi-file: a later file's live holder blocks" "$(dec "$OUT")" "
 assert_contains "bash multi-file: block names that file" "$(reason "$OUT")" "src/m2.ts"
 rm -rf "$BLOCKS"
 
+# The live-check cap (3 per edit): three fresher unconfirmed holders use it up before the live one.
+hold "$OTHER" '' "$R1/src/cap.ts" src/cap.ts 60
+snap "[$(ses "g1-$$" "[$(fil "$R1/src/cap.ts" src/cap.ts '' 10)]"),$(ses "g2-$$" "[$(fil "$R1/src/cap.ts" src/cap.ts '' 20)]"),$(ses "g3-$$" "[$(fil "$R1/src/cap.ts" src/cap.ts '' 30)]"),$(ses "$OTHER" "[$(fil "$R1/src/cap.ts" src/cap.ts '' 60)]")]"
+CAP_BEFORE=$(q "SELECT count(*) FROM harness.coordination_log WHERE event='block-downgraded' AND session_id='$ME' AND detail->>'reason'='confirm-cap'")
+assert_eq "cap: a 4th holder past 3 live checks → warn only" "$(dec "$(consult '' "$R1/src/cap.ts")")" "none"
+sleep 1   # log_event is backgrounded
+assert_eq "cap: downgrade logged as confirm-cap" "$(( $(q "SELECT count(*) FROM harness.coordination_log WHERE event='block-downgraded' AND session_id='$ME' AND detail->>'reason'='confirm-cap'") - CAP_BEFORE ))" "1"
+rm -rf "$BLOCKS"
+
 rm -f "$SNAPF"; bash "$SCRIPT" refresh-snapshot --session "$ME"
 assert_eq "snapshot: sessions ordered most recently seen first" \
   "$(jq -r '[.sessions[].last_seen_at] | . == (sort | reverse)' "$SNAPF")" "true"
@@ -297,6 +306,8 @@ mutant "any marker state counts as told" "scripts/pg-lab/session-coord.sh" \
   's/\[ "\$st" = told \] && //'
 mutant "first match decides (one candidate judged)" "scripts/pg-lab/session-coord.sh" \
   's/^MAX_CANDIDATES=5 /MAX_CANDIDATES=1 /'
+mutant "live-check cap dropped" "scripts/pg-lab/session-coord.sh" \
+  's/elif \[ "\$CONFIRMS" -ge "\$MAX_CONFIRMS" \]; then/elif false; then/'
 mutant "candidates not sorted (most recent editor lost)" "scripts/pg-lab/session-coord.sh" \
   's/sort -s -t[^|]*-k2,2n/cat/'
 mutant "told marker keeps only the last holder (ping-pong)" "scripts/pg-lab/session-coord.sh" \
