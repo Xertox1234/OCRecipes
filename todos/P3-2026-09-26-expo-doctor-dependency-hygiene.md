@@ -27,7 +27,7 @@ From #1106's triage (2026-09-26):
 ## Acceptance Criteria
 
 - [x] Item 1: confirm nothing imports `expo-modules-core` directly (including config plugins and native code), then remove it if safe, or record why it stays.
-- [x] Item 2: `npm dedupe` (or an equivalent lockfile change) removes the `expo-image-loader` duplicate. Record the `expo-constants` nesting as a known consequence of the SDK-55 exclusion.
+- [ ] PARTIAL — Item 2: `npm dedupe` (or an equivalent lockfile change) removes the `expo-image-loader` duplicate. Record the `expo-constants` nesting as a known consequence of the SDK-55 exclusion. **Not applied** — `npm dedupe` re-resolved 81 unrelated package versions instead of a pure hoist; reverted. The `expo-constants` nesting IS recorded as a known consequence (see Updates). See Updates below for the full reasoning.
 - [x] Item 3: for each skew, record "deliberate (why)" or align it. Any change that touches native modules must be flagged as needing a new build.
 - [ ] Item 4: the user decides between the CNG and bare workflow. Record the decision; this is not an executor call. **Split out** to `todos/P3-2026-09-29-expo-cng-vs-committed-native-folders-decision.md` (human-led; needs the user's ruling) — see Updates below.
 
