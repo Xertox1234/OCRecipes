@@ -1,9 +1,9 @@
 ---
 title: "App icon assets are JPEG bytes with a .png extension — expo-doctor's config-schema check fails"
-status: in-progress
+status: done
 priority: low
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-09-29
 assignee:
 labels: [deferred, react-native]
 github_issue:
