@@ -230,13 +230,20 @@ rm -rf "$CKB"
 OUT=$(mk_consult_input "/tmp/checkout-b/client/App.tsx" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
 assert_empty "consult no-match silent" "$OUT"
 
-# Self-suppression: a snapshot row with OUR session_id must never warn.
+# Self-suppression: a snapshot row with OUR session_id must never warn. Same CKA-style
+# physically-resolved directory as Level 1 (a literal /tmp/x.ts on both sides would now be
+# excluded by target_paths' own normalization regardless of is_self, silently defeating this
+# pin), plus a FRESH last_touch so own_gate's staleness default can't independently exclude
+# the row either -- both gates must actually let it through to is_self for this assertion to
+# mean anything.
+CKS=$(d=$(mktemp -d); cd "$d" && pwd -P)
 cat > "$SNAPME" <<JSON
-{"sessions":[{"session_id":"consult-me","session_kind":"interactive","branch":"main","repo_root":"/tmp/checkout-a","last_seen_at":"2026-07-10T00:00:00Z","files":[{"abs_path":"/tmp/x.ts","rel_path":"x.ts"}]}]}
+{"sessions":[{"session_id":"consult-me","session_kind":"interactive","branch":"main","repo_root":"$CKS","last_seen_at":"2026-07-10T00:00:00Z","files":[{"abs_path":"$CKS/x.ts","rel_path":"x.ts","last_touch":$(date +%s)}]}]}
 JSON
 touch "$SNAPME"
-OUT=$(mk_consult_input "/tmp/x.ts" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
+OUT=$(mk_consult_input "$CKS/x.ts" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
 assert_empty "consult self-suppressed" "$OUT"
+rm -rf "$CKS"
 
 # Corrupt snapshot -> silent, exit 0.
 printf 'not json' > "$SNAPME"; touch "$SNAPME"
