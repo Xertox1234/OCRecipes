@@ -455,6 +455,63 @@ describe("classifyIntent", () => {
       expect(classifyIntent(msg).intent).toBe("recipe_request");
     });
 
+    // A request for A recipe that also names one the user has: the referent
+    // comes after the request, so it is context, not the object of an action.
+    it.each([
+      "Find me a recipe, I don't like that recipe",
+      "Give me a recipe similar to my lasagna recipe",
+      "Send me a recipe better than my usual recipe",
+      "Find me a new recipe for my recipe box",
+      "Suggest a recipe to replace my chili recipe",
+      "Find me a quick easy chicken recipe like my usual recipe",
+      "Show me some recipes instead of my usual recipe",
+    ])(
+      "routes a new-recipe request that also mentions an existing one: %j",
+      (msg) => {
+        expect(classifyIntent(msg).intent).toBe("recipe_request");
+      },
+    );
+
+    // The referent comes first, so the indefinite recipe describes what to do
+    // to it. A gate that only asked "is there an indefinite recipe anywhere?"
+    // routed every one of these.
+    it.each([
+      "I want to turn my chili recipe into a slow-cooker recipe",
+      "I want to make my lasagna recipe into a low-carb recipe",
+      "I need to fix my curry recipe, it's a spicy recipe",
+      "I want this recipe to be a dairy-free recipe",
+      "I want to swap the butter in my recipe for a lighter recipe",
+      "Show me how to make this recipe a vegan recipe",
+      "I need my bread recipe to become a gluten-free recipe",
+      "Show me this recipe again, it was a good recipe",
+      "I want to put a recipe in my meal plan: my lasagna recipe",
+    ])(
+      "does NOT route an action on an existing recipe that names a new one: %j",
+      (msg) => {
+        expect(classifyIntent(msg).intent).not.toBe("recipe_request");
+      },
+    );
+
+    // #1156 review: the indefinite phrase's modifier words must not swallow
+    // the referent ("a name for my recipe" is not a request for a recipe).
+    it("does NOT route 'a <noun> for my recipe' (generated corpus)", () => {
+      const routed: string[] = [];
+      for (const head of ["I want", "I need", "Give me", "Show me", "Find me"])
+        for (const det of ["a", "an", "some", "new", "different", "a new"])
+          for (const noun of ["name", "sauce", "twist", "fix", "tip"])
+            for (const prep of ["for", "with", "on", "to"])
+              for (const ref of [
+                "my recipe",
+                "this recipe",
+                "my chili recipe",
+              ]) {
+                const msg = `${head} ${det} ${noun} ${prep} ${ref}`;
+                if (classifyIntent(msg).intent === "recipe_request")
+                  routed.push(msg);
+              }
+      expect(routed).toEqual([]);
+    });
+
     it("safety still wins over a recipe request", () => {
       expect(classifyIntent("Give me a recipe for my diabetes").intent).toBe(
         "safety_refusal",

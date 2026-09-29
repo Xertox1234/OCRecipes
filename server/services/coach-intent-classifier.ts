@@ -150,16 +150,32 @@ const RECIPE_REQUEST_PATTERNS: { pattern: RegExp; name: string }[] = [
   },
 ];
 
+// "a recipe", "some quick vegan recipes" (not "a recipe on/in/into …", which
+// files one). {0,3} matches recipe_leading's modifier bound. A modifier is
+// never a referent determiner, so "a name for my recipe" is not one.
+const REFERENT_DETERMINER = String.raw`(?:this|that|these|those|my)`;
+const INDEFINITE_RECIPE = String.raw`\b(?:a|an|another|new|different|some)\s+(?:(?!${REFERENT_DETERMINER}\b)[\w-]+\s+){0,3}recipes?\b(?!\s+(?:on|in|into)\b)`;
+// "this recipe", "my lasagna recipe".
+const REFERENT_RECIPE = String.raw`\b${REFERENT_DETERMINER}\s+(?:[\w-]+\s+){0,2}recipes?\b`;
+
 /**
  * Acting on a meal or a recipe the user already has is a coach action (log,
  * meal plan, grocery list, substitutions, nutrition), not a search — the
- * coach's tools answer it (#1151 review). A request for A recipe still routes.
+ * coach's tools answer it (#1151 review). A referent vetoes only when no
+ * indefinite recipe comes before it: "Find me a recipe like my lasagna
+ * recipe" routes, "Turn my chili recipe into a slow-cooker recipe" does not.
+ * Known miss: a referent-first message that then asks for a new one ("My
+ * chili recipe is boring. Find me a better one") stays with the coach.
  */
 const RECIPE_REQUEST_EXCLUSIONS: RegExp[] = [
   // Logging/saving/tracking.
   /\b(?:log|logged|logging|save|saved|delete|track)\b[^.?!]{0,30}\b(?:recipe|meal|dinner|lunch|breakfast|brunch)s?\b/i,
-  // A recipe they already have: "this recipe", "my lasagna recipe".
-  /\b(?:this|that|these|those|my)\s+(?:[\w-]+\s+){0,2}recipes?\b/i,
+  // A recipe they already have, named before any request for a new one. One
+  // left-to-right pass; each step's lookahead is bounded by the word counts.
+  new RegExp(
+    String.raw`^(?:(?!${INDEFINITE_RECIPE})[\s\S])*?${REFERENT_RECIPE}`,
+    "i",
+  ),
   // Asking about one: "the calories in the recipe", "a shopping list for it".
   /\b(?:calories|macros|nutrition|nutrients|protein|carbs|fat|ingredients|grocery list|shopping list|substitutes?|substitutions?)\s+(?:in|of|for|from)\s+(?:the|this|that|these|those|my)\s+(?:[\w-]+\s+){0,2}recipes?\b/i,
   // Filing one: "add a recipe to my meal plan".

@@ -1,6 +1,6 @@
 ---
 title: "Recipe finder: the 'this/that/my … recipe' exclusion vetoes a real request elsewhere in the same message"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-28
 updated: 2026-09-28
@@ -27,11 +27,11 @@ Impact after the flip is recoverable: a missed route falls through to the ordina
 
 ## Acceptance Criteria
 
-- [ ] Compound new-recipe requests route again: "Find me a recipe, I don't like that recipe", "Give me a recipe similar to my lasagna recipe", "Send me a recipe better than my usual recipe", "Find me a new recipe for my recipe box".
-- [ ] All 16 existing must-NOT-route action cases in `coach-intent-classifier.test.ts` still do not route; "I want to add a recipe to my meal plan" in particular must stay excluded.
-- [ ] All 8 existing must-route controls still route; the eval count stays 5/41 with the same ids.
-- [ ] Re-run a generated openers × tails corpus against `main` and the fix, and report the counts in the commit.
-- [ ] The docblock states what the code does.
+- [x] Compound new-recipe requests route again: "Find me a recipe, I don't like that recipe", "Give me a recipe similar to my lasagna recipe", "Send me a recipe better than my usual recipe", "Find me a new recipe for my recipe box".
+- [x] All 16 existing must-NOT-route action cases in `coach-intent-classifier.test.ts` still do not route; "I want to add a recipe to my meal plan" in particular must stay excluded.
+- [x] All 8 existing must-route controls still route; the eval count stays 5/41 with the same ids.
+- [x] Re-run a generated openers × tails corpus against `main` and the fix, and report the counts in the commit.
+- [x] The docblock states what the code does.
 
 ## Implementation Notes
 
@@ -50,3 +50,4 @@ Impact after the flip is recoverable: a missed route falls through to the ordina
 ### 2026-09-28
 
 - Auto-filed (Medium) from #1152's review; all three reviewers raised it as non-blocking.
+- Fixed: the referent vetoes only when no indefinite recipe precedes it (order rule; todo option 1's lookahead plus ordering). Measured on 587 labelled rows (harness in the PR body): base misses 271 compound new-recipe requests and 0 must-not-route rows; the fix misses 3 referent-first rows (base misses them too) and gets 0 must-not-route wrong, including 9 referent-first rows that option 1 routed. Option 3 (clause scoping) was rejected: splitting re-anchors `recipe_leading` on a fragment, so "…my recipe, a big recipe for 8" routes.
