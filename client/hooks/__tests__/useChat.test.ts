@@ -5,6 +5,7 @@ import {
   useSendMessage,
   useCreateNotebookEntry,
   useUpdateNotebookEntry,
+  useSaveRecipeFromChat,
 } from "../useChat";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
@@ -609,5 +610,28 @@ describe("X-Timezone header", () => {
       { followUpDate: "2026-09-05" },
       { headers: { "X-Timezone": "Asia/Tokyo" } },
     );
+  });
+});
+
+describe("useSaveRecipeFromChat", () => {
+  it("refreshes Saved Items, where the saved recipe now appears", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    mockApiRequest.mockResolvedValue({
+      json: () =>
+        Promise.resolve({ id: 100, title: "Soup", savedItemStatus: "linked" }),
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useSaveRecipeFromChat(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: 5, messageId: 10 });
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/saved-items"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/saved-items/count"],
+    });
   });
 });

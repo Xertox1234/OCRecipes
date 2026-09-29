@@ -54,6 +54,14 @@ vi.mock("@react-navigation/native", () => ({
   }),
   useRoute: () => ({ params: { conversationId: 11 } }),
 }));
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    dismiss: vi.fn(),
+  }),
+}));
 vi.mock("@/hooks/useHaptics", () => ({
   useHaptics: () => ({
     impact: vi.fn(),

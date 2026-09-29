@@ -11,7 +11,10 @@ import {
   mealPlanItems,
   mealPlanRecipes,
 } from "@shared/schema";
-import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
+import {
+  type CreateSavedItemInput,
+  type SavedRecipeLinkStatus,
+} from "@shared/schemas/saved-items";
 import { TIER_FEATURES } from "@shared/types/premium";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, lte, sql, isNull, inArray } from "drizzle-orm";
@@ -567,8 +570,6 @@ export async function createSavedItem(
     return item;
   });
 }
-
-export type SavedRecipeLinkStatus = "linked" | "exists" | "limit_reached";
 
 /**
  * Put a recipe the user just saved (catalog or chat Save) into Saved Items as
