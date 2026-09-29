@@ -667,6 +667,7 @@ describe("FeaturedRecipeDetailScreen — catalog preview follow-ups (#1149 revie
       expect(mockApiRequest).toHaveBeenCalledWith(
         "POST",
         "/api/meal-plan/catalog/715538/save",
+        { addToSavedItems: true },
       ),
     );
     unmount();
