@@ -12,9 +12,15 @@ created: 2026-09-29
 
 ## Rule
 
-Any call into Runware's `imageInference` task that writes its result to a `.png` path must set
-`outputFormat: "PNG"` on the request body. The API defaults to JPEG when the field is omitted —
-it does not infer the format from the destination filename or the caller's extension.
+Runware's `imageInference` task returns JPEG unless the request sets `outputFormat`. It does not
+infer the format from the destination filename or the caller's extension. So the format of the
+bytes and the label they are stored under (file extension, `ContentType`) must come from the same
+decision. Either request the format you store (`outputFormat: "PNG"` for a `.png` asset), or
+store under the format you actually got (`ext: "jpg"`). Never name the bytes by assumption.
+
+Pick per caller. App-icon assets need real PNGs, so request PNG. Recipe hero images are served to
+phones and a 1024² JPEG is several times smaller than the same PNG, so keep JPEG and label it
+`jpg`. Don't add `outputFormat: "PNG"` to `generateImage()` for every caller.
 
 ## Why
 
@@ -40,29 +46,20 @@ icon assets because they were generated and committed before the guard existed.
 ## Examples
 
 ```ts
-// server/lib/runware.ts — imageInference request body, add outputFormat when the
-// output must be PNG (e.g. any caller writing to a `.png` path):
-body: JSON.stringify([
-  {
-    taskType: "imageInference",
-    taskUUID: crypto.randomUUID(),
-    model: options.model ?? RUNWARE_MODEL_STANDARD,
-    positivePrompt: options.prompt,
-    negativePrompt: options.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT,
-    width: options.width ?? 1024,
-    height: options.height ?? 1024,
-    outputFormat: "PNG", // <- required; the API defaults to JPEG without it
-    outputType: "base64Data",
-    numberResults: 1,
-  },
-]),
+// A caller that must write a real PNG (app-icon assets) requests it explicitly:
+{ taskType: "imageInference", /* … */ outputFormat: "PNG", outputType: "base64Data" }
+
+// A caller that keeps Runware's JPEG default must store it AS JPEG:
+await saveRecipeImage(buffer, "jpg"); // not the "png" default
 ```
 
 ## Exceptions
 
-None known — every current writer of a `.png` asset in this codebase wants a real PNG. If a
-future caller genuinely wants JPEG bytes, it should name the destination file `.jpg`/`.jpeg`
-rather than relying on the API's silent default.
+None. The same rule covers the recipe-image path. `saveImageBuffer()` calls
+`saveRecipeImage(buffer)`, whose `ext` defaults to `"png"`. Measured 2026-09-29: the 40 newest
+`uploads/recipe-images/recipe-*.png` files in dev are all JPEG bytes (`file`), and R2 uploads get
+`ContentType: image/png`. Clients still render them because decoders sniff the bytes, but the
+label is wrong. The fix there is to label them `jpg`, not to request PNG.
 
 ## Related Files
 
@@ -70,6 +67,8 @@ rather than relying on the API's silent default.
   `removeBackground()` (sets it, line 138)
 - `scripts/generate-app-assets.ts` — writes `generateImage()`'s buffer to `assets/images/icon.png`
   and copies it to `assets/images/android-icon-foreground.png`
+- `server/lib/image-store.ts` — `saveRecipeImage(buffer, ext = "png")`; `ext` sets the filename
+  and the R2 `ContentType`
 
 ## See Also
 
