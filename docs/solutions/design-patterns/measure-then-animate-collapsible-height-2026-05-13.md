@@ -6,7 +6,7 @@ module: client
 tags: [react-native, animation, reanimated, collapse, layout]
 applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx, client/hooks/**/*.ts]
 created: '2026-05-13'
-updated: '2026-09-29'
+last_updated: '2026-09-29'
 ---
 
 # Measure-then-animate collapsible height — always an explicit height, never "auto"
