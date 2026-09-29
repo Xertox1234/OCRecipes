@@ -61,6 +61,33 @@ describe("RecipeCard", () => {
     expect(screen.getByText("Lemon Herb Chicken")).toBeTruthy();
   });
 
+  // A null image (generation failed or timed out) is final: the card shows
+  // the no-image placeholder, not a loading skeleton that never resolves.
+  it("shows the no-image placeholder when the recipe has no image and none is loading", () => {
+    const { container } = renderComponent(<RecipeCard recipe={recipe} />);
+    expect(screen.getByText("image")).toBeTruthy();
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("shows neither the image nor the placeholder while the image is loading", () => {
+    const { container } = renderComponent(
+      <RecipeCard recipe={{ ...recipe, imageUrl: undefined }} isImageLoading />,
+    );
+    expect(screen.queryByText("image")).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("shows the recipe image when it has one", () => {
+    const { container } = renderComponent(
+      <RecipeCard
+        recipe={{ ...recipe, imageUrl: "https://cdn.example.com/r.jpg" }}
+      />,
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      "https://cdn.example.com/r.jpg",
+    );
+  });
+
   it("triggers haptics via useHaptics (not raw expo-haptics) when expanding ingredients", () => {
     renderComponent(<RecipeCard recipe={recipe} />);
     fireEvent.click(

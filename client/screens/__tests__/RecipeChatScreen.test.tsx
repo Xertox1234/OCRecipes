@@ -549,3 +549,58 @@ describe("RecipeChatScreen — assistant markdown rendering", () => {
     ).toBeDefined();
   });
 });
+
+// The server persists the recipe image at the TOP level of the message
+// metadata (recipeChatMetadataSchema.imageUrl), not inside metadata.recipe —
+// the recipe object arrives on the stream before its image does. A card
+// rebuilt from the refetched message must read it from there, or the image
+// the user just watched arrive vanishes on refetch.
+describe("RecipeChatScreen — persisted recipe image", () => {
+  const persistedRecipe = {
+    title: "Test Recipe",
+    description: "A tasty test recipe",
+    difficulty: "easy",
+    timeEstimate: "20 min",
+    servings: 2,
+    ingredients: [{ name: "chicken", quantity: "1", unit: "lb" }],
+    instructions: ["Cook it"],
+    dietTags: [],
+  };
+
+  function persistedMessage(imageUrl: string | null): ChatMessage {
+    return {
+      id: 10,
+      conversationId: 1,
+      role: "assistant",
+      content: "Here's a recipe for you.",
+      metadata: {
+        metadataVersion: 1,
+        recipe: persistedRecipe,
+        allergenWarning: null,
+        imageUrl,
+      },
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  it("shows the image saved at metadata.imageUrl", () => {
+    mockRouteParams.value = { conversationId: 1 };
+    mockChatMessagesData.value = [
+      persistedMessage("https://cdn.example.com/r.jpg"),
+    ];
+
+    const { container } = renderComponent(<RecipeChatScreen />);
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      "https://cdn.example.com/r.jpg",
+    );
+  });
+
+  it("shows the no-image placeholder when the saved image is null", () => {
+    mockRouteParams.value = { conversationId: 1 };
+    mockChatMessagesData.value = [persistedMessage(null)];
+
+    const { container } = renderComponent(<RecipeChatScreen />);
+    expect(screen.getByText("image")).toBeTruthy();
+    expect(container.querySelector("img")).toBeNull();
+  });
+});
