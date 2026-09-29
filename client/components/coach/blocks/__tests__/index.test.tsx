@@ -32,6 +32,11 @@ vi.mock("../RecipeCard", () => ({
 vi.mock("../MealPlanCard", () => ({
   default: () => <div data-testid="r-mealplan" />,
 }));
+vi.mock("@/components/recipe-finder/RecipeFinderMessage", () => ({
+  RecipeFinderMessage: ({ isActive }: { isActive: boolean }) => (
+    <div data-testid="r-finder" data-active={String(isActive)} />
+  ),
+}));
 
 const blocks: Record<string, CoachBlock> = {
   action_card: {
@@ -83,6 +88,42 @@ describe("BlockRenderer", () => {
     renderComponent(<BlockRenderer block={blocks[type]} />);
     expect(screen.getByTestId(testId)).toBeTruthy();
   });
+
+  const finderFlow = {
+    flowId: "00000000-0000-4000-8000-000000000000",
+    stage: "results" as const,
+    request: "x",
+    query: { q: "x" },
+    round: 0 as const,
+    shownIds: [],
+  };
+  it.each([
+    [
+      {
+        type: "recipe_results",
+        source: "community",
+        items: [],
+        actions: [],
+        notice: null,
+        flow: finderFlow,
+      },
+    ],
+    [
+      {
+        type: "recipe_questions",
+        questions: [{ question: "Q?", options: ["a", "b"] }],
+        flow: { ...finderFlow, stage: "clarifying" },
+      },
+    ],
+  ] as [CoachBlock][])(
+    "renders a finder block with the shared component",
+    (block) => {
+      renderComponent(<BlockRenderer block={block} isActive />);
+      expect(screen.getByTestId("r-finder").getAttribute("data-active")).toBe(
+        "true",
+      );
+    },
+  );
 
   it("renders nothing for an unknown block type (default branch)", () => {
     const { container } = renderComponent(
