@@ -154,7 +154,7 @@ const RECIPE_REQUEST_PATTERNS: { pattern: RegExp; name: string }[] = [
 // files one). {0,3} matches recipe_leading's modifier bound. A modifier is
 // never a referent determiner, so "a name for my recipe" is not one.
 const REFERENT_DETERMINER = String.raw`(?:this|that|these|those|my)`;
-const INDEFINITE_RECIPE = String.raw`\b(?:a|an|another|new|different|some)\s+(?:(?!${REFERENT_DETERMINER}\b)[\w-]+\s+){0,3}recipes?\b(?!\s+(?:on|in|into)\b)`;
+const INDEFINITE_RECIPE = String.raw`\b(?:a|an|any|another|new|different|some)\s+(?:(?!${REFERENT_DETERMINER}\b)[\w-]+\s+){0,3}recipes?\b(?!\s+(?:on|in|into)\b)`;
 // "this recipe", "my lasagna recipe".
 const REFERENT_RECIPE = String.raw`\b${REFERENT_DETERMINER}\s+(?:[\w-]+\s+){0,2}recipes?\b`;
 
