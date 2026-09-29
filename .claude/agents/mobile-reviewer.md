@@ -78,6 +78,7 @@ Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-inj
 ### Effect ordering
 
 - [ ] When multiple `useEffect` hooks write the same state, declaration order = execution order on mount — put "reset" effects before "set" effects so the set value persists
+- [ ] **An "unmount-only" cleanup effect's deps must be values that can ONLY change at mount/unmount.** A dep that also changes during normal use (e.g. `conversationId` flipping from `null` to a real id, set synchronously right before an async send with no `await` between) reruns that cleanup MID-LIFE too — React has no "only tears down at unmount" mode — and can abort a resource that just started. Mirror such values into a ref (read inside the cleanup) instead of listing them as deps. (Ref: `docs/solutions/logic-errors/unmount-only-cleanup-effect-dep-reruns-mid-life-2026-09-29.md`, `client/screens/RecipeChatScreen.tsx`)
 
 ### Client state & data fetching
 
