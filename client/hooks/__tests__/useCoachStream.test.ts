@@ -816,3 +816,24 @@ describe("useCoachStream guaranteed termination", () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 });
+
+describe("useCoachStream recipe finder actions", () => {
+  it("sends finderAction in the request body", async () => {
+    const finderAction = {
+      type: "generate" as const,
+      flowId: "00000000-0000-4000-8000-000000000000",
+    };
+    const { result } = await setupHook();
+    await act(async () => {
+      result.current.startStream(7, "Generate", { finderAction });
+      // Flush the tokenStorage.get() microtask so the XHR is sent.
+      await Promise.resolve();
+    });
+    const body = JSON.parse(mockXhr.sentBody ?? "{}") as {
+      content?: string;
+      finderAction?: unknown;
+    };
+    expect(body.content).toBe("Generate");
+    expect(body.finderAction).toEqual(finderAction);
+  });
+});
