@@ -20,6 +20,7 @@ const {
   mockAbortStream,
   mockCreateConversationMutateAsync,
   mockSaveRecipeMutateAsync,
+  mockMarkPendingRecipeTurn,
   mockToastInfo,
   mockToggleFavourite,
   mockAddFavourite,
@@ -47,6 +48,7 @@ const {
   mockAbortStream: vi.fn(),
   mockCreateConversationMutateAsync: vi.fn(),
   mockSaveRecipeMutateAsync: vi.fn(),
+  mockMarkPendingRecipeTurn: vi.fn(),
   mockToastInfo: vi.fn(),
   mockToggleFavourite: vi.fn(),
   mockAddFavourite: vi.fn(),
@@ -128,6 +130,7 @@ vi.mock("@/hooks/useChat", () => ({
     mutateAsync: mockSaveRecipeMutateAsync,
     isPending: false,
   }),
+  useMarkPendingRecipeTurn: () => mockMarkPendingRecipeTurn,
 }));
 
 vi.mock("@/hooks/usePremiumFeatures", () => ({
@@ -241,6 +244,24 @@ describe("RecipeChatScreen — initialMessage route param (Home's Generate Recip
     expect(mockSendMessage).not.toHaveBeenCalled();
     expect(mockCreateConversationMutateAsync).not.toHaveBeenCalled();
   });
+
+  // P3-2026-09-26 review finding: conversationId flips from null to a real
+  // id (setConversationId) immediately before sendMessage() for a brand-new
+  // chat — no await between them. If the abort-on-unmount effect ever lists
+  // conversationId as a dep, that transition tears down and rebuilds the
+  // effect like any other dep change, running the OLD cleanup (abortStream)
+  // against the just-started send — not only at a real unmount.
+  it("does not abort the just-started send when conversationId transitions from null to a real id", async () => {
+    mockCreateConversationMutateAsync.mockResolvedValue({ id: 11 });
+    mockRouteParams.value = {
+      initialMessage: "A Mediterranean dinner for two",
+    };
+
+    renderComponent(<RecipeChatScreen />);
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1));
+    expect(mockAbortStream).not.toHaveBeenCalled();
+  });
 });
 
 // P2-2026-09-24: recipe/remix generation keeps running server-side after a
@@ -257,6 +278,35 @@ describe("RecipeChatScreen — aborts the stream on unmount", () => {
     unmount();
 
     expect(mockAbortStream).toHaveBeenCalledOnce();
+  });
+
+  // P3-2026-09-26: recipe/remix generation the user aborts mid-stream keeps
+  // running server-side, so ChatListScreen (and a later reopen of this same
+  // conversation) need to know to poll for the finished reply — this marks
+  // that conversation pending, but only when a turn was actually in flight.
+  describe("marks the conversation's recipe turn pending, only when a stream was in flight", () => {
+    it("marks pending when unmounting mid-stream", () => {
+      mockRouteParams.value = { conversationId: 42 };
+      mockSendMessageState.value = {
+        ...mockSendMessageState.value,
+        isStreaming: true,
+      };
+      const { unmount } = renderComponent(<RecipeChatScreen />);
+
+      expect(mockMarkPendingRecipeTurn).not.toHaveBeenCalled();
+      unmount();
+
+      expect(mockMarkPendingRecipeTurn).toHaveBeenCalledExactlyOnceWith(42);
+    });
+
+    it("does not mark pending when unmounting idle (no stream in flight)", () => {
+      mockRouteParams.value = { conversationId: 42 };
+      const { unmount } = renderComponent(<RecipeChatScreen />);
+
+      unmount();
+
+      expect(mockMarkPendingRecipeTurn).not.toHaveBeenCalled();
+    });
   });
 });
 

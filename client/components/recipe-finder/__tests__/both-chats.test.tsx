@@ -85,6 +85,7 @@ vi.mock("@/hooks/useChat", () => ({
     requestError: null,
   }),
   useSaveRecipeFromChat: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useMarkPendingRecipeTurn: () => vi.fn(),
 }));
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: () => true,

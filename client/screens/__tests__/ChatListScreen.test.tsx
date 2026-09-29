@@ -7,36 +7,46 @@
  * it needs its own focus-driven refetch to pick that reply up.
  */
 import React from "react";
-import { act, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import ChatListScreen from "../ChatListScreen";
 import { REFRESH_ON_FOCUS_SETTLE_MS } from "@/hooks/useRefreshOnFocus";
 
-const { mockRefetch, focusEffectCb, refreshControlProps, conversations } =
-  vi.hoisted(() => ({
-    // Lets a test's mocked refetch() change what useChatConversations returns
-    // (and re-render the screen), the way a real refetch writes new data into
-    // the query cache. `setData` is captured from the mock hook's own useState.
-    conversations: {
-      setData: null as null | ((data: unknown[]) => void),
+const {
+  mockRefetch,
+  focusEffectCb,
+  refreshControlProps,
+  conversations,
+  useChatConversationsOpts,
+} = vi.hoisted(() => ({
+  // Lets a test's mocked refetch() change what useChatConversations returns
+  // (and re-render the screen), the way a real refetch writes new data into
+  // the query cache. `setData` is captured from the mock hook's own useState.
+  conversations: {
+    setData: null as null | ((data: unknown[]) => void),
+  },
+  // Captures the `opts` ChatListScreen passes to useChatConversations, so a
+  // test can assert it opts into the recipe-turn poll (P3-2026-09-26).
+  useChatConversationsOpts: {
+    current: null as null | { pollPendingRecipeTurns?: boolean },
+  },
+  // Hoisted so it stays referentially stable across renders, matching the
+  // real useChatConversations().refetch (see the referential-equality-test-
+  // mocks-must-match-hook-stability-profile solution doc).
+  mockRefetch: vi.fn(),
+  // Captures the latest callback ChatListScreen's useRefreshOnFocus passes to
+  // useFocusEffect, so tests can simulate a refocus by invoking it directly.
+  focusEffectCb: { current: null as (() => void) | null },
+  // Captures the props ChatListScreen's <RefreshControl> was last rendered
+  // with, so a test can assert `refreshing` stays false for a background
+  // focus-triggered refetch and only flips true for a user-initiated pull.
+  refreshControlProps: {
+    current: null as null | {
+      refreshing?: boolean;
+      onRefresh?: () => void | Promise<void>;
     },
-    // Hoisted so it stays referentially stable across renders, matching the
-    // real useChatConversations().refetch (see the referential-equality-test-
-    // mocks-must-match-hook-stability-profile solution doc).
-    mockRefetch: vi.fn(),
-    // Captures the latest callback ChatListScreen's useRefreshOnFocus passes to
-    // useFocusEffect, so tests can simulate a refocus by invoking it directly.
-    focusEffectCb: { current: null as (() => void) | null },
-    // Captures the props ChatListScreen's <RefreshControl> was last rendered
-    // with, so a test can assert `refreshing` stays false for a background
-    // focus-triggered refetch and only flips true for a user-initiated pull.
-    refreshControlProps: {
-      current: null as null | {
-        refreshing?: boolean;
-        onRefresh?: () => void | Promise<void>;
-      },
-    },
-  }));
+  },
+}));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
@@ -87,7 +97,11 @@ vi.mock("@react-navigation/bottom-tabs", () => ({
 }));
 
 vi.mock("@/hooks/useChat", () => ({
-  useChatConversations: () => {
+  useChatConversations: (
+    _type?: string,
+    opts?: { pollPendingRecipeTurns?: boolean },
+  ) => {
+    useChatConversationsOpts.current = opts ?? null;
     const [data, setData] = React.useState<unknown[]>([]);
     conversations.setData = setData;
     return {
@@ -131,6 +145,36 @@ beforeEach(() => {
   focusEffectCb.current = null;
   refreshControlProps.current = null;
   conversations.setData = null;
+  useChatConversationsOpts.current = null;
+});
+
+// P3-2026-09-26: a fixed settle margin (below) doesn't cover recipe/remix
+// generation that keeps running for tens of seconds after an abort — the
+// list needs to keep polling until the pending turn resolves or expires
+// (useChat.test.ts covers the poll mechanism itself; this only checks the
+// screen opts into it).
+describe("ChatListScreen — opts into the recipe-turn poll, scoped to the recipe segment", () => {
+  // Only the recipe segment's own fetch can ever contain a pending recipe
+  // turn's id (the server filters strictly by type) — polling the coach
+  // segment for it would waste requests for the whole cap window with no
+  // way to ever resolve.
+  it("passes pollPendingRecipeTurns: false on the default coach segment", () => {
+    renderComponent(<ChatListScreen />);
+
+    expect(useChatConversationsOpts.current).toEqual({
+      pollPendingRecipeTurns: false,
+    });
+  });
+
+  it("passes pollPendingRecipeTurns: true after switching to the recipe segment", () => {
+    renderComponent(<ChatListScreen />);
+
+    fireEvent.click(screen.getByLabelText("Recipe chats"));
+
+    expect(useChatConversationsOpts.current).toEqual({
+      pollPendingRecipeTurns: true,
+    });
+  });
 });
 
 describe("ChatListScreen — refetch on refocus", () => {

@@ -52,6 +52,7 @@ import {
   useChatMessages,
   useSendMessage,
   useSaveRecipeFromChat,
+  useMarkPendingRecipeTurn,
   type StreamingRecipe,
 } from "@/hooks/useChat";
 import { usePendingAssistantBridge } from "@/hooks/usePendingAssistantBridge";
@@ -264,7 +265,12 @@ export default function RecipeChatScreen() {
     if (!isRemixMode || !sourceRecipe) return [];
     return generateRemixChips(sourceRecipe, userProfile);
   }, [isRemixMode, sourceRecipe, userProfile]);
-  const { data: messages = [] } = useChatMessages(conversationId);
+  // Poll while THIS conversation has an outstanding server-side turn from an
+  // earlier abort (see useMarkPendingRecipeTurn below) — the recipe/remix
+  // finish-and-save policy can still be generating when the user reopens.
+  const { data: messages = [] } = useChatMessages(conversationId, undefined, {
+    pollPendingRecipeTurn: true,
+  });
   const {
     sendMessage,
     abortStream,
@@ -276,6 +282,7 @@ export default function RecipeChatScreen() {
     streamError,
     requestError,
   } = useSendMessage(conversationId);
+  const markPendingRecipeTurn = useMarkPendingRecipeTurn();
   const saveRecipeMutation = useSaveRecipeFromChat();
   // messageId → the community recipe id it was saved as (this session).
   const savedMessageIdsRef = useRef(new Map<number, number>());
@@ -327,16 +334,40 @@ export default function RecipeChatScreen() {
     if (!isStreaming) setPendingUserMessage(null);
   }, [isStreaming]);
 
+  // isStreaming and conversationId mirrored to refs so the unmount cleanup
+  // below reads their freshest values without needing either in the effect's
+  // own deps (see docs/rules/hooks.md). conversationId specifically must NOT
+  // be a dep: handleSend calls setConversationId(convId) immediately before
+  // (no await between) `void sendMessage(...)` for a brand-new chat, so a
+  // conversationId dep would rerun this cleanup on that transition — not
+  // just at real unmount — aborting the just-started XHR before it can
+  // stream anything.
+  const isStreamingRef = useRef(isStreaming);
+  useEffect(() => {
+    isStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+  const conversationIdRef = useRef(conversationId);
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
   // Generation keeps running server-side after this screen goes away
   // (recipe/remix finish-and-save policy) — abort our own dead XHR so it
   // stops driving local state, and let useSendMessage mark the conversation
   // stale so returning to it refetches the finished reply instead of a
   // pre-settle cache (same pattern as CoachOverlayContent / CoachChat, #1060).
+  // When a generation was actually in flight, also mark this conversation
+  // pending so ChatListScreen (and a later reopen of this same screen) poll
+  // for the finished reply instead of waiting out the fixed settle margin,
+  // which recipe/remix generation can outlast by a wide margin.
   useEffect(() => {
     return () => {
       abortStream();
+      if (isStreamingRef.current && conversationIdRef.current) {
+        markPendingRecipeTurn(conversationIdRef.current);
+      }
     };
-  }, [abortStream]);
+  }, [abortStream, markPendingRecipeTurn]);
 
   useEffect(() => {
     if (!isStreaming) return;
