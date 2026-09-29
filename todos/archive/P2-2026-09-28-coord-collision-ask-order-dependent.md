@@ -1,6 +1,6 @@
 ---
 title: "Session coordination: whether a collision ask fires depends on snapshot row order"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-28
 updated: 2026-09-28
@@ -8,7 +8,6 @@ assignee:
 labels: [deferred, harness]
 github_issue:
 human_led: true
-blocked_reason: "user asked to review the fix approach personally before any implementation (2026-09-28)"
 ---
 
 # Session coordination: whether a collision ask fires depends on snapshot row order
@@ -99,3 +98,14 @@ echo "agentB: LIVE other first, sibling second: decision=$(consultB)   (must be 
 printf '{"sessions":[%s,%s]}\n' "$sib" "$(ses "$LIVE" 60)" > "$SNAPF"
 echo "agentB: sibling first, LIVE other second: decision=$(consultB)   (expected ask)"
 ```
+
+## Resolution (2026-09-28)
+
+The "ask" became a block in #1155 before this was fixed; the order bug carried over unchanged. Fix approach reviewed by the user first; they chose to name the most recent editor.
+
+- `consult_match` returns every match with a sort key; `do_consult` sorts all matches of all target files (other-session collisions first, most recent touch first) and `decide_and_emit` judges each holder until one qualifies. The warning is the fallback only when none does.
+- Caps: 5 holders judged, 3 `live_confirm` queries per consult (new downgrade reason `confirm-cap`).
+- The told marker keeps one line per holder, so two live holders give two blocks and then the edit goes through (a single-slot marker would bounce between them forever).
+- Snapshot `json_agg` now has `ORDER BY` (sessions by `last_seen_at DESC`, files by `last_touch DESC`) — for stable output, not the fix.
+- The `ask-approved` schema-comment suggestion is moot (#1155 removed the event).
+- Tests: the reproduction's orderings, an unconfirmed fresher holder, two live holders, a multi-file Bash case; mutants "first match decides", "candidates not sorted", "told marker keeps only the last holder" are killed.

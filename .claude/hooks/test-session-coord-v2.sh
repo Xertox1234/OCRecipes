@@ -219,6 +219,57 @@ assert_eq "bash: rm of a held file is blocked" "$(dec "$(bjson agentB 'rm ./src/
 assert_eq "bash: the retry is allowed" "$(dec "$(bjson agentB 'rm ./src/bblk.ts' | bash "$SCRIPT" consult --stdin-json 2>/dev/null)")" "none"
 rm -rf "$BLOCKS"
 
+# --- every holder is judged, not just the first one listed ----------------------------------------
+# Snapshot order is not a promise; a holder that doesn't count must not hide one that does.
+OTHER2="v2other2-$$"; STALE="v2stale-$$"; GHOST="v2ghost-$$"
+q "INSERT INTO harness.session_registry (session_id, repo_root) VALUES ('$ME', '$R1'), ('$OTHER2', '$R1'), ('$STALE', '$R1') ON CONFLICT (session_id) DO UPDATE SET expires_at = now() + interval '15 minutes'" >/dev/null
+hold "$OTHER" '' "$R1/src/ord.ts" src/ord.ts 60
+hold "$STALE" '' "$R1/src/ord.ts" src/ord.ts 1200
+LIVE_S=$(ses "$OTHER" "[$(fil "$R1/src/ord.ts" src/ord.ts '' 60)]")
+STALE_S=$(ses "$STALE" "[$(fil "$R1/src/ord.ts" src/ord.ts '' 1200)]")
+snap "[$LIVE_S,$STALE_S]"
+assert_eq "order: live first, stale second → block (control)" "$(dec "$(consult '' "$R1/src/ord.ts")")" "deny"; rm -rf "$BLOCKS"
+snap "[$STALE_S,$LIVE_S]"
+assert_eq "order: stale first, live second → block" "$(dec "$(consult '' "$R1/src/ord.ts")")" "deny"; rm -rf "$BLOCKS"
+hold "$ME" agentA1 "$R1/src/ord.ts" src/ord.ts 30
+SIB_S=$(ses "$ME" "[$(fil "$R1/src/ord.ts" src/ord.ts agentA1 30)]")
+snap "[$LIVE_S,$SIB_S]"
+assert_eq "order: live first, sibling second → block (control)" "$(dec "$(consult agentB "$R1/src/ord.ts")")" "deny"; rm -rf "$BLOCKS"
+snap "[$SIB_S,$LIVE_S]"
+assert_eq "order: sibling first, live second → block" "$(dec "$(consult agentB "$R1/src/ord.ts")")" "deny"; rm -rf "$BLOCKS"
+# A fresher holder that the DB can't confirm (snapshot-only ghost) must not hide the live one.
+GHOST_S=$(ses "$GHOST" "[$(fil "$R1/src/ord.ts" src/ord.ts '' 10)]")
+snap "[$GHOST_S,$LIVE_S]"
+OUT=$(consult '' "$R1/src/ord.ts")
+assert_eq "order: unconfirmed fresher holder first → still blocks" "$(dec "$OUT")" "deny"
+assert_contains "order: block names the confirmed holder" "$(reason "$OUT")" "Session ${OTHER:0:8}"
+rm -rf "$BLOCKS"
+
+# Two live holders: name the most recent editor, then the other, then let the edit through.
+hold "$OTHER2" '' "$R1/src/two.ts" src/two.ts 300
+hold "$OTHER" '' "$R1/src/two.ts" src/two.ts 60
+snap "[$(ses "$OTHER2" "[$(fil "$R1/src/two.ts" src/two.ts '' 300)]"),$(ses "$OTHER" "[$(fil "$R1/src/two.ts" src/two.ts '' 60)]")]"
+OUT=$(consult '' "$R1/src/two.ts")
+assert_contains "two holders: first block names the most recent editor" "$(reason "$OUT")" "Session ${OTHER:0:8}"
+OUT=$(consult '' "$R1/src/two.ts")
+assert_eq "two holders: retry blocks on the other live holder" "$(dec "$OUT")" "deny"
+assert_contains "two holders: second block names the other holder" "$(reason "$OUT")" "Session ${OTHER2:0:8}"
+assert_eq "two holders: third try goes through (no ping-pong)" "$(dec "$(consult '' "$R1/src/two.ts")")" "none"
+rm -rf "$BLOCKS"
+
+# Bash with several targets: the first file's holder doesn't count, the second's does.
+hold "$STALE" '' "$R1/src/m1.ts" src/m1.ts 1200
+hold "$OTHER" '' "$R1/src/m2.ts" src/m2.ts 60
+snap "[$(ses "$STALE" "[$(fil "$R1/src/m1.ts" src/m1.ts '' 1200)]"),$(ses "$OTHER" "[$(fil "$R1/src/m2.ts" src/m2.ts '' 60)]")]"
+OUT=$(bjson '' 'rm ./src/m1.ts ./src/m2.ts' | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
+assert_eq "bash multi-file: a later file's live holder blocks" "$(dec "$OUT")" "deny"
+assert_contains "bash multi-file: block names that file" "$(reason "$OUT")" "src/m2.ts"
+rm -rf "$BLOCKS"
+
+rm -f "$SNAPF"; bash "$SCRIPT" refresh-snapshot --session "$ME"
+assert_eq "snapshot: sessions ordered most recently seen first" \
+  "$(jq -r '[.sessions[].last_seen_at] | . == (sort | reverse)' "$SNAPF")" "true"
+
 . "$HOOK_DIR/lib/mutants.sh"
 mutant "is_self ignores agent_id (all own rows = self)" "scripts/pg-lab/session-coord.sh" \
   's/^( *def is_self\(\$s; \$x\): \(\$s\.session_id == \$me\)) and .*;$/\1;/'
@@ -244,6 +295,12 @@ mutant "block never recorded (retry blocked again)" "scripts/pg-lab/session-coor
   's/^( *)block_mark_told "\$sid"/\1: block_mark_told "$sid"/'
 mutant "any marker state counts as told" "scripts/pg-lab/session-coord.sh" \
   's/\[ "\$st" = told \] && //'
+mutant "first match decides (one candidate judged)" "scripts/pg-lab/session-coord.sh" \
+  's/^MAX_CANDIDATES=5 /MAX_CANDIDATES=1 /'
+mutant "candidates not sorted (most recent editor lost)" "scripts/pg-lab/session-coord.sh" \
+  's/sort -s -t[^|]*-k2,2n/cat/'
+mutant "told marker keeps only the last holder (ping-pong)" "scripts/pg-lab/session-coord.sh" \
+  's/^( *printf .told %s %s.*) >> /\1 > /'
 run_mutants "$PROJECT_ROOT" ".claude/hooks/test-session-coord-v2.sh" || FAIL=1
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
