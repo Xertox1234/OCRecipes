@@ -446,7 +446,9 @@ describe("Recipe Generation", () => {
           { skipLLM: true },
         );
 
-        expect(result).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
+        // Runware returns JPEG bytes (no outputFormat requested) — the stored
+        // label must match: .jpg / image/jpeg, not .png / image/png.
+        expect(result).toMatch(/^\/api\/recipe-images\/recipe-.+\.jpg$/);
         expect(mockRunwareGenerate).toHaveBeenCalled();
         expect(mockImageGenerate).not.toHaveBeenCalled();
         const promptArg = mockRunwareGenerate.mock.calls[0][0].prompt;
