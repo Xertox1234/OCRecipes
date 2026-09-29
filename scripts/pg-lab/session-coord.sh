@@ -218,8 +218,9 @@ emit_context() { # $1 message -> PreToolUse additionalContext JSON (drift-detect
   jq -n --arg m "$1" '{ "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": $m } }'
 }
 
-emit_ask() { # $1 reason (shown to the user), $2 context (delivered to the model — probe §9.0.1)
-  jq -n --arg r "$1" --arg c "$2" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"ask",permissionDecisionReason:$r,additionalContext:$c}}'
+emit_block() { # $1 reason — a deny's reason goes to the MODEL, which relays it to the user in chat.
+  # Not an "ask": its prompt never showed the reason to the user (live verification 2026-09-28).
+  jq -n --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
 }
 
 live_confirm() { # $1 holder session, $2 holder agent ('' = main), $3 abs path -> yes | no | error
@@ -234,19 +235,20 @@ SQL
   if [ "$out" = "1" ]; then echo yes; else echo no; fi
 }
 
-ask_dir() { printf '/tmp/claude-session-coord-%s.asks' "$1"; }
-ask_key() { printf '%s\037%s' "$1" "$2" | shasum | cut -c1-40; }   # $1 abs path, $2 CURRENT agent
-ask_mark_pending() { # $1 sid, $2 agent, $3 file, $4 holder "<sid>:<agent>"
-  local d; d=$(ask_dir "$1"); mkdir -p "$d" 2>/dev/null || return 0
-  printf 'pending %s %s\n' "$4" "$(date +%s)" > "$d/$(ask_key "$3" "$2")" 2>/dev/null
+# Block once per (file, current agent, holder): the retry after the model has told the user goes through.
+block_dir() { printf '/tmp/claude-session-coord-%s.blocked' "$1"; }
+block_key() { printf '%s\037%s' "$1" "$2" | shasum | cut -c1-40; }   # $1 abs path, $2 CURRENT agent
+block_mark_told() { # $1 sid, $2 agent, $3 file, $4 holder "<sid>:<agent>"
+  local d; d=$(block_dir "$1"); mkdir -p "$d" 2>/dev/null || return 0
+  printf 'told %s %s\n' "$4" "$(date +%s)" > "$d/$(block_key "$3" "$2")" 2>/dev/null
   return 0
 }
-ask_suppressed() { # rc 0 iff an APPROVED marker for this (file, current agent, holder) is within the window
+block_told() { # rc 0 iff this (file, current agent, holder) was already blocked within the window
   local m st h ts
-  m="$(ask_dir "$1")/$(ask_key "$3" "$2")"
+  m="$(block_dir "$1")/$(block_key "$3" "$2")"
   [ -f "$m" ] || return 1
   read -r st h ts < "$m" || return 1
-  [ "$st" = approved ] && [ "$h" = "$4" ] && [ $(( $(date +%s) - ${ts:-0} )) -le "$WINDOW_SECS" ]
+  [ "$st" = told ] && [ "$h" = "$4" ] && [ $(( $(date +%s) - ${ts:-0} )) -le "$WINDOW_SECS" ]
 }
 
 refresh_bounded() { # $1 sid — synchronous refresh capped at ~1 s (spec §6.2 step 0)
@@ -289,10 +291,10 @@ decide_and_emit() { # $1 sid, $2 agent, $3 snapshot age (s), $4 target file, $5 
   det="{\"file\":$(jq -Rn --arg v "$file" '$v'),\"agent\":$(jq -Rn --arg v "$oagent" '$v')}"
   if [ -n "$oagent" ]; then who="Agent ${oagent:0:8} in this same session"; else who="The main agent of this same session"; fi
   if [ "$lvl" = "collision" ] && [ "$own" = "0" ]; then
-    local reason="" ask_reason ctx wt
+    local reason="" wt
     if [ $(( $(date +%s) - ${otouch:-0} )) -gt "$WINDOW_SECS" ]; then reason="stale-touch"
-    elif [ "${SKIP_COLLISION_ASK:-}" = "1" ]; then reason="bypass"
-    elif ask_suppressed "$sid" "$2" "$file" "$osid:$oagent"; then reason="suppressed"
+    elif [ "${SKIP_COLLISION_BLOCK:-}" = "1" ]; then reason="bypass"
+    elif block_told "$sid" "$2" "$file" "$osid:$oagent"; then reason="already-told"
     else
       case "$(live_confirm "$osid" "$oagent" "$file")" in
         yes) ;;
@@ -302,14 +304,12 @@ decide_and_emit() { # $1 sid, $2 agent, $3 snapshot age (s), $4 target file, $5 
     fi
     if [ -z "$reason" ]; then
       wt=$(basename "${xroot:-?}")
-      ask_reason="Session ${osid:0:8} (${okind}, branch ${obranch}, worktree ${wt}) last touched ${rel:-$file} ${mins} min ago. Approve to edit anyway."
-      ctx="Collision: ${ask_reason} The user was asked to approve this edit; if it is denied, coordinate with that session instead of retrying."
-      ask_mark_pending "$sid" "$2" "$file" "$osid:$oagent"
-      log_event "ask-collision" "$sid" "$osid" "$det" >/dev/null 2>&1 &
-      emit_ask "$ask_reason" "$ctx"
+      block_mark_told "$sid" "$2" "$file" "$osid:$oagent"
+      log_event "block-collision" "$sid" "$osid" "$det" >/dev/null 2>&1 &
+      emit_block "Blocked once: another Claude session is working on this file. Session ${osid:0:8} (${okind}, branch ${obranch}, worktree ${wt}) edited ${rel:-$file} ${mins} min ago. Ask the user whether to go ahead, and tell them which session this is. Retry only if they say yes; the retry will go through. If they say no, leave the file alone."
       return 0
     fi
-    log_event "ask-downgraded" "$sid" "$osid" "{\"reason\":\"$reason\",\"file\":$(jq -Rn --arg v "$file" '$v')}" >/dev/null 2>&1 &
+    log_event "block-downgraded" "$sid" "$osid" "{\"reason\":\"$reason\",\"file\":$(jq -Rn --arg v "$file" '$v')}" >/dev/null 2>&1 &
   fi
   if [ "$own" = "1" ]; then
     case "$lvl" in
@@ -332,7 +332,7 @@ decide_and_emit() { # $1 sid, $2 agent, $3 snapshot age (s), $4 target file, $5 
 }
 
 do_consult() {
-  local input sid agent files snap age f match best="" bestfile="" ask_d pm st
+  local input sid agent files snap age f match best="" bestfile=""
   input=$(cat)
   sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
   case "$sid" in ''|.|..|*[!A-Za-z0-9._-]*) exit 0 ;; esac
@@ -340,21 +340,6 @@ do_consult() {
   case "$agent" in *[!A-Za-z0-9._-]*) exit 0 ;; esac
   files=$(target_paths "$input")
   [ -n "$files" ] || exit 0
-  # A PENDING marker that survives to the NEXT consult for this (file, agent) can only
-  # mean the prior ask was denied or abandoned — a genuine approval would already have
-  # been promoted at the intervening PostToolUse. Purge it so a later downgraded consult
-  # (stale-touch, SKIP_COLLISION_ASK, pg-down) can't have its `record` promote a stale
-  # pending marker into a silent approval of a collision the user never approved.
-  ask_d=$(ask_dir "$sid")
-  if [ -d "$ask_d" ]; then
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      pm="$ask_d/$(ask_key "$f" "$agent")"
-      [ -f "$pm" ] || continue
-      read -r st _ _ < "$pm" 2>/dev/null || continue
-      [ "$st" = pending ] && rm -f "$pm"
-    done <<<"$files"
-  fi
   snap="/tmp/claude-session-coord-${sid}.json"
   age=$(snapshot_age_secs "$snap")
   if [ "$age" -gt 25 ]; then refresh_bounded "$sid"; age=$(snapshot_age_secs "$snap"); fi
@@ -397,25 +382,6 @@ SQL
   fi
 }
 
-do_promote() { # PostToolUse JSON on stdin: pending -> approved for each target (the tool RAN, so the user approved)
-  local input sid agent d f m st h ts
-  input=$(cat)
-  sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
-  case "$sid" in ''|.|..|*[!A-Za-z0-9._-]*) exit 0 ;; esac
-  d=$(ask_dir "$sid"); [ -d "$d" ] || exit 0
-  agent=$(jq -r '.agent_id // ""' <<<"$input" 2>/dev/null)
-  case "$agent" in *[!A-Za-z0-9._-]*) exit 0 ;; esac
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    m="$d/$(ask_key "$f" "$agent")"
-    [ -f "$m" ] || continue
-    read -r st h ts < "$m" || continue
-    [ "$st" = pending ] || continue
-    printf 'approved %s %s\n' "$h" "$(date +%s)" > "$m"
-    log_event "ask-approved" "$sid" "${h%%:*}" "{\"file\":$(jq -Rn --arg v "$f" '$v')}" >/dev/null 2>&1 &
-  done <<<"$(target_paths "$input")"
-}
-
 SUB="${1:-}"; [ $# -gt 0 ] && shift
 case "$SUB" in
   register)         do_register "$@" ;;
@@ -424,7 +390,6 @@ case "$SUB" in
   deregister)       do_deregister ;;
   refresh-snapshot) do_refresh_snapshot "$@" ;;
   consult)          do_consult "$@" ;;
-  promote)          do_promote ;;
   attribute-drift)  do_attribute_drift "$@" ;;
 esac
 exit 0

@@ -12,6 +12,11 @@ created: '2026-09-28'
 
 # A two-phase approval marker turns a DENIED ask into a silent approval unless the next PreToolUse purges it
 
+> **Superseded in session coordination (2026-09-28).** The collision ask was replaced by a
+> block-once deny, because the ask prompt never showed its reason to the user. There is no
+> `pending`/`promote` step left in `session-coord.sh`. The lesson still holds for any consent
+> inferred from a later hook event.
+
 ## Problem
 
 Session coordination's ask-once (#1137) infers approval from the hook lifecycle:

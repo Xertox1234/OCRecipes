@@ -39,7 +39,7 @@ Binding for the repo's own tooling — `.claude/hooks/**`, `.claude/skills/**`, 
 - Before every Agent dispatch and every command-position `git checkout/restore/reset/stash/clean/switch` (not `/usr/bin/git …` — see `docs/harness-residuals.md`), `.claude/hooks/checkpoint.sh` snapshots each dirty worktree to `refs/checkpoints/<sid8>/<worktree>` (local only, 14-day retention). It never touches HEAD, the index, or files.
 - Recover lost uncommitted work: `bash scripts/checkpoint.sh list`, then `git restore --source=<ref> --worktree -- <path>`.
 
-## Collision ask (session coordination v2)
+## Collision block (session coordination v2)
 
-- Editing a file another live session touched in the last 15 min asks the user, naming the holder; approving once suppresses further asks for that file/holder/agent for 15 min. A sibling subagent of the same session still only gets the warning, never an ask.
-- `SKIP_COLLISION_ASK=1` turns the ask into a warning (`claude -p` / `dontAsk` runs, where an ask resolves to deny).
+- Editing a file another live session touched in the last 15 min is blocked once. The block names that session to the model, which must ask the user; the retry goes through (once per file/holder/agent per 15 min). A sibling subagent only gets a warning.
+- `SKIP_COLLISION_BLOCK=1` turns the block into a warning.
