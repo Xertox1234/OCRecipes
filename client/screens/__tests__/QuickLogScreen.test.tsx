@@ -208,6 +208,26 @@ describe("QuickLogScreen — submit", () => {
     expect(mockAnnounce).toHaveBeenCalledTimes(1);
     expect(mockAnnounce).toHaveBeenCalledWith("Found 1 item. Log All to save.");
   });
+
+  // Android has no imperative announce — the note itself must carry the
+  // live region (mirrors QuickLogDrawer's equivalent assertion).
+  it("shows the item count as a live-region note", () => {
+    sessionHolder.parsedItems = [
+      {
+        name: "egg",
+        quantity: 1,
+        unit: "large",
+        calories: 72,
+        protein: 6,
+        carbs: 0,
+        fat: 5,
+        servingSize: null,
+      },
+    ];
+    renderComponent(<QuickLogScreen />);
+    const note = screen.getByText("Found 1 item. Log All to save.");
+    expect(note.closest('[aria-live="polite"]')).not.toBeNull();
+  });
 });
 
 describe("QuickLogScreen — idle query gating", () => {
