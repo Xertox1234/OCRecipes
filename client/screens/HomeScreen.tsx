@@ -381,6 +381,14 @@ export default function HomeScreen() {
     }, []),
   );
 
+  // The subscription check can resolve AFTER a free/lapsed user has already
+  // opened the Quick Log row (isPremiumResolved arrives late). Without this,
+  // the header repaints locked but the body stays open with a live input,
+  // and the next tap closes the drawer instead of showing the upgrade flow.
+  useEffect(() => {
+    if (quickLogLocked && openDrawerId === "quick-log") setOpenDrawerId(null);
+  }, [quickLogLocked, openDrawerId]);
+
   useEffect(() => {
     const uid = user?.id != null ? String(user.id) : null;
     void initRecentSearchesCache(uid);

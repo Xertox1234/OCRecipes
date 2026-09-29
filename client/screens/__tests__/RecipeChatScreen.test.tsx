@@ -6,6 +6,7 @@ import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import RecipeChatScreen from "../RecipeChatScreen";
 import type { ChatMessage } from "@/hooks/useChat";
+import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 
 const {
   mockGoBack,
@@ -20,6 +21,7 @@ const {
   mockCreateConversationMutateAsync,
   mockSaveRecipeMutateAsync,
   mockMarkPendingRecipeTurn,
+  mockToastInfo,
   mockChatMessagesData,
   mockSendMessageState,
 } = vi.hoisted(() => ({
@@ -44,6 +46,7 @@ const {
   mockCreateConversationMutateAsync: vi.fn(),
   mockSaveRecipeMutateAsync: vi.fn(),
   mockMarkPendingRecipeTurn: vi.fn(),
+  mockToastInfo: vi.fn(),
   mockChatMessagesData: { value: [] as ChatMessage[] },
   // A mutable ref so tests can simulate useSendMessage's streaming/recipe/
   // error state changing across a rerender (e.g. a stream starting then
@@ -78,6 +81,15 @@ vi.mock("@react-navigation/native", () => ({
     reset: mockReset,
   }),
   useRoute: () => ({ params: mockRouteParams.value }),
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({
+    success: vi.fn(),
+    error: vi.fn(),
+    info: mockToastInfo,
+    dismiss: vi.fn(),
+  }),
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
@@ -339,6 +351,41 @@ describe("RecipeChatScreen — haptics route through useHaptics()", () => {
       ),
     );
     expect(Haptics.notificationAsync).not.toHaveBeenCalled();
+  });
+
+  it("a save that finds Saved Items full says the recipe isn't listed there", async () => {
+    mockRouteParams.value = { conversationId: 1 };
+    mockChatMessagesData.value = [recipeMessage];
+    mockSaveRecipeMutateAsync.mockResolvedValue({
+      id: 100,
+      savedItemStatus: "limit_reached",
+    });
+
+    renderComponent(<RecipeChatScreen />);
+    fireEvent.click(screen.getByLabelText("Save Test Recipe recipe"));
+
+    await waitFor(() =>
+      expect(mockToastInfo).toHaveBeenCalledWith(SAVED_ITEMS_FULL_MESSAGE),
+    );
+  });
+
+  it("a save that lands in Saved Items shows no extra message", async () => {
+    mockRouteParams.value = { conversationId: 1 };
+    mockChatMessagesData.value = [recipeMessage];
+    mockSaveRecipeMutateAsync.mockResolvedValue({
+      id: 100,
+      savedItemStatus: "linked",
+    });
+
+    renderComponent(<RecipeChatScreen />);
+    fireEvent.click(screen.getByLabelText("Save Test Recipe recipe"));
+
+    await waitFor(() =>
+      expect(mockNotification).toHaveBeenCalledWith(
+        Haptics.NotificationFeedbackType.Success,
+      ),
+    );
+    expect(mockToastInfo).not.toHaveBeenCalled();
   });
 
   it("fires error notification via useHaptics (not raw expo-haptics) when saving a recipe fails", async () => {

@@ -57,6 +57,7 @@ import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem, useMealPlanItems } from "@/hooks/useMealPlan";
 import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
+import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 import type { MealType } from "@/screens/meal-plan/meal-plan-utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { Spacing } from "@/constants/theme";
@@ -809,13 +810,17 @@ export default function CoachChat({
         return;
       setSavingRecipeMessageId(messageId);
       try {
-        await saveRecipeFromChat({ conversationId, messageId });
+        const saved = await saveRecipeFromChat({ conversationId, messageId });
         savedRecipeIdsRef.current = new Set([
           ...savedRecipeIdsRef.current,
           messageId,
         ]);
         haptics.notification(Haptics.NotificationFeedbackType.Success);
-        toast.success("Recipe saved");
+        if (saved.savedItemStatus === "limit_reached") {
+          toast.info(SAVED_ITEMS_FULL_MESSAGE);
+        } else {
+          toast.success("Recipe saved");
+        }
       } catch {
         // useSaveRecipeFromChat has no silentError: the global net toasts it.
         haptics.notification(Haptics.NotificationFeedbackType.Error);

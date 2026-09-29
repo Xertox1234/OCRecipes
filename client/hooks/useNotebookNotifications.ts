@@ -46,15 +46,13 @@ export function useNotebookNotifications() {
           title: "Coach reminder",
           body: content.slice(0, 100),
           // `url` is what client/navigation/linking.ts's getInitialURL/
-          // subscribe resolve a tap through. `entryId` stays alongside it —
-          // not only for a reminder scheduled before this field existed, but
-          // because the server-driven push path
+          // subscribe resolve a tap through. `entryId` stays alongside it,
+          // matching the server-driven push payload
           // (server/services/notification-scheduler.ts, the primary delivery
-          // path; this client-side scheduler is only a fallback) sends
-          // entryId-only payloads indefinitely and is out of this change's
-          // scope. linking.ts's fallback (constructing this same URL from a
-          // bare entryId) is permanently load-bearing for that path, not a
-          // migration bridge.
+          // path; this client-side scheduler is only a fallback), which sends
+          // the same `{ entryId, url }` shape. linking.ts's fallback
+          // (constructing this URL from a bare entryId) still serves
+          // notifications delivered before `url` existed.
           data: { entryId, url: `ocrecipes://notebook-entry/${entryId}` },
           ...(Platform.OS === "android"
             ? { channelId: "coach-reminders" }

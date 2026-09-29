@@ -30,6 +30,7 @@ import CoachChat from "../CoachChat";
 import type { ChatMessage } from "@/hooks/useChat";
 import * as Haptics from "expo-haptics";
 import { ApiError } from "@/lib/api-error";
+import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 
 // ── Mutable test state, hoisted above vi.mock factories ──────────────────────
 const state = vi.hoisted(() => ({
@@ -81,6 +82,7 @@ const state = vi.hoisted(() => ({
   // ToastContext / useHaptics
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  toastInfo: vi.fn(),
   hapticsNotification: vi.fn(),
 }));
 
@@ -175,7 +177,7 @@ vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({
     success: state.toastSuccess,
     error: state.toastError,
-    info: vi.fn(),
+    info: state.toastInfo,
     dismiss: vi.fn(),
   }),
 }));
@@ -404,6 +406,7 @@ function resetState() {
   state.useMealPlanItemsArgs = [];
   state.toastSuccess = vi.fn();
   state.toastError = vi.fn();
+  state.toastInfo = vi.fn();
   state.hapticsNotification = vi.fn();
   warmUpHook.sendWarmUp.mockClear();
   warmUpHook.sendTextWarmUp.mockClear();
@@ -1660,6 +1663,32 @@ describe("CoachChat — recipe finder", () => {
         "Chicken Curry saved",
       ),
     );
+  });
+
+  it("a save that finds Saved Items full says the recipe isn't listed there", async () => {
+    state.saveRecipe = vi
+      .fn()
+      .mockResolvedValue({ id: 5, savedItemStatus: "limit_reached" });
+    state.messages = [
+      makeMessage({
+        id: 9,
+        role: "assistant",
+        content: "Here's a curry!",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+        },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    fireEvent.click(screen.getByTestId("generated-card"));
+
+    await waitFor(() =>
+      expect(state.toastInfo).toHaveBeenCalledWith(SAVED_ITEMS_FULL_MESSAGE),
+    );
+    expect(state.toastSuccess).not.toHaveBeenCalled();
   });
 
   it("drops finder blocks from the live stream footer (the refetched message renders them)", () => {

@@ -53,6 +53,11 @@ function randomTip() {
   return QUICK_LOG_TIPS[Math.floor(Math.random() * QUICK_LOG_TIPS.length)];
 }
 
+/** Shown/announced when a parse finds food (see the success-announce effect). */
+function foundItemsMessage(count: number) {
+  return `Found ${count} item${count === 1 ? "" : "s"}. Log All to save.`;
+}
+
 const EXAMPLE_ITEMS = [
   "2 eggs and toast with butter",
   "chicken salad with ranch dressing",
@@ -85,10 +90,13 @@ export default function QuickLogScreen() {
   const [showCheckmark, setShowCheckmark] = useState(false);
 
   const session = useQuickLogSession({
-    // This full-screen surface is always "open" while mounted — without this
-    // the hook's frequent-items query stays disabled and "Previous Items"
-    // never renders here (it defaults isOpen to false for drawer consumers).
-    isOpen: true,
+    // This full-screen surface is "open" while mounted and unlocked —
+    // without this the hook's frequent-items query stays disabled and
+    // "Previous Items" never renders here (it defaults isOpen to false for
+    // drawer consumers). Suppressed while locked: the `isLocked` early
+    // return below never reaches the "Previous Items" UI, so a locked
+    // render has no use for the query and must not fire it.
+    isOpen: !isLocked,
     onLogSuccess: () => {
       AccessibilityInfo.announceForAccessibility("Food items logged");
       setShowCheckmark(true);
@@ -117,6 +125,21 @@ export default function QuickLogScreen() {
   React.useEffect(() => {
     if (session.capWarning) toast.info(session.capWarning);
   }, [session.capWarning, toast]);
+
+  // A successful parse fired no announce at all before this (only a haptic
+  // and the list itself) — VoiceOver users heard nothing. iOS gets the
+  // imperative announce, once per result; Android's note below carries a
+  // live region, so the iOS announce is gated to avoid double-announcing.
+  const hadParsedItemsRef = React.useRef(false);
+  React.useEffect(() => {
+    const hasParsedItems = session.parsedItems.length > 0;
+    if (hasParsedItems && !hadParsedItemsRef.current && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(
+        foundItemsMessage(session.parsedItems.length),
+      );
+    }
+    hadParsedItemsRef.current = hasParsedItems;
+  }, [session.parsedItems.length]);
 
   const handleCameraPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
@@ -255,6 +278,19 @@ export default function QuickLogScreen() {
           </View>
         </Card>
 
+        {session.parsedItems.length > 0 && (
+          <ThemedText
+            type="small"
+            style={{
+              color: theme.textSecondary,
+              textAlign: "center",
+              marginTop: Spacing.xs,
+            }}
+            accessibilityLiveRegion="polite"
+          >
+            {foundItemsMessage(session.parsedItems.length)}
+          </ThemedText>
+        )}
         <ParsedFoodPreview
           items={session.parsedItems}
           onRemoveItem={session.removeItem}

@@ -1,77 +1,79 @@
 ---
-title: Measure-then-animate collapsible height with -1 sentinel for auto
+title: Measure-then-animate collapsible height — always an explicit height, never "auto"
 track: knowledge
 category: design-patterns
 module: client
 tags: [react-native, animation, reanimated, collapse, layout]
-applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx]
+applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx, client/hooks/**/*.ts]
 created: '2026-05-13'
+last_updated: '2026-09-29'
 ---
 
-# Measure-then-animate collapsible height with -1 sentinel for auto
+# Measure-then-animate collapsible height — always an explicit height, never "auto"
 
 ## When this applies
 
-For collapsible sections where content height is dynamic, measure via `onLayout` and animate between 0 and the measured height. Use a sentinel value (`-1`) to switch to `"auto"` after expand completes, so content reflows naturally.
+A collapsible section whose content height is dynamic: measure it with `onLayout`, then animate
+between 0 and the measured height. Use the shared hook `client/hooks/useCollapsibleHeight.ts`
+instead of hand-rolling this.
+
+## Rule
+
+- The animated style always sets an explicit numeric `height`. Never switch to `"auto"`, and never
+  drop the `height` key from the animated style: Reanimated doesn't reliably recalculate native
+  layout when an animated property is removed. (This doc's 2026-05-13 version recommended a `-1`
+  → `"auto"` sentinel. The live hook replaced that approach, and the code example it cited no
+  longer exists.)
+- Measure the content wrapper with `onLayout`. Ignore zero-height measurements, and keep the
+  latest measurement in a shared value so a later toggle animates to the current size.
+- On the first non-zero measurement, snap (no animation) to `isExpanded ? measured : 0`. After
+  that, an expanded section follows content growth directly.
+- Toggle in a `useEffect` keyed on `isExpanded`/`reducedMotion`: `withTiming` to the measured
+  height or to 0, or set it instantly under reduced motion.
 
 ## Examples
 
-```tsx
-// client/screens/meal-plan/MealPlanHomeScreen.tsx — MealSlotSection
-const contentHeight = useRef(0);
-const animHeight = useSharedValue(isExpanded ? -1 : 0);
+```ts
+// client/hooks/useCollapsibleHeight.ts (abridged)
+const contentHeight = useSharedValue(0);
+const animatedHeight = useSharedValue(0);
+const hasMeasured = useRef(false);
 
-// Measure content
-const handleContentLayout = useCallback((e: LayoutChangeEvent) => {
-  contentHeight.current = e.nativeEvent.layout.height;
-}, []);
-
-// Toggle animation
-useEffect(() => {
-  if (reducedMotion) {
-    animHeight.value = isExpanded ? -1 : 0;
-    return;
+const onContentLayout = useCallback((e) => {
+  const raw = e.nativeEvent.layout.height;
+  if (raw === 0) return; // ignore zero-height measurements
+  const measured = clampDrawerHeight(raw, maxHeight);
+  contentHeight.value = measured;
+  if (!hasMeasured.current) {
+    hasMeasured.current = true;
+    animatedHeight.value = isExpanded ? measured : 0; // first measurement: snap
+  } else if (isExpanded) {
+    animatedHeight.value = measured; // content grew or shrank while open
   }
-  if (isExpanded) {
-    animHeight.value = withTiming(
-      contentHeight.current || 200,
-      expandTimingConfig,
-      () => {
-        animHeight.value = -1;
-      }, // Switch to auto after animation
-    );
-  } else {
-    if (animHeight.value === -1) {
-      animHeight.value = contentHeight.current || 200;
-    }
-    animHeight.value = withTiming(0, collapseTimingConfig);
-  }
-}, [isExpanded, reducedMotion]);
+}, [isExpanded, maxHeight]);
 
-const animStyle = useAnimatedStyle(() => ({
-  height: animHeight.value === -1 ? "auto" : animHeight.value,
-  overflow: animHeight.value === -1 ? "visible" : "hidden",
-}));
+const animatedStyle = useAnimatedStyle(() => ({ height: animatedHeight.value }));
 ```
+
+Consumers: `client/components/home/CollapsibleSection.tsx`,
+`client/components/home/HomeInlineDrawer.tsx`, `client/components/MicronutrientSection.tsx`.
 
 ## Why
 
-Fixed-height animations clip content when items are added/removed. The `-1` sentinel means "use auto height" so the container can grow naturally between user interactions.
-
-**Key elements:**
-
-- `onLayout` measures natural height into a `ref` (not state, to avoid re-renders)
-- Animate to measured height, then switch to `auto` via `-1` sentinel in `withTiming` callback
-- On collapse: snapshot current height before animating to 0
-- Respect `reducedMotion` by setting final value instantly
+A fixed height clips content when items are added or removed, so the height is re-measured. It
+stays an explicit number because removing the animated `height` property is exactly what
+Reanimated fails to re-lay out.
 
 ## Exceptions
 
-When to use: any collapsible section with dynamic-length content (lists, forms).
+A section that starts already expanded can still paint at height 0 on first load. The first
+measurement's write can land before the `Animated.View`'s first commit, and Reanimated drops it.
+`CollapsibleSection.tsx` re-sends that first measurement from a `useEffect`. See
+[reanimated-shared-value-write-before-first-commit-is-lost-2026-09-29.md](../logic-errors/reanimated-shared-value-write-before-first-commit-is-lost-2026-09-29.md).
 
 ## Related Files
 
-- `client/screens/meal-plan/MealPlanHomeScreen.tsx` — `MealSlotSection` collapsible
+- `client/hooks/useCollapsibleHeight.ts` — the shared implementation
 
 ## See Also
 

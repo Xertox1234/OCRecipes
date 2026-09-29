@@ -27,6 +27,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
+import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 import {
   withOpacity,
   Spacing,
@@ -200,6 +202,7 @@ export default function RecipeChatScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const flatListRef = useRef<FlatList>(null);
 
   // Remix mode detection
@@ -367,17 +370,25 @@ export default function RecipeChatScreen() {
     async (messageId: number) => {
       if (!conversationId || savedMessageIdsRef.current.has(messageId)) return;
       try {
-        await saveRecipeMutation.mutateAsync({ conversationId, messageId });
+        const saved = await saveRecipeMutation.mutateAsync({
+          conversationId,
+          messageId,
+        });
         savedMessageIdsRef.current.add(messageId);
         forceRender((n) => n + 1);
         haptics.notification(Haptics.NotificationFeedbackType.Success);
-        AccessibilityInfo.announceForAccessibility("Recipe saved");
+        if (saved.savedItemStatus === "limit_reached") {
+          // The toast announces itself; one message, not two.
+          toast.info(SAVED_ITEMS_FULL_MESSAGE);
+        } else {
+          AccessibilityInfo.announceForAccessibility("Recipe saved");
+        }
       } catch {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         AccessibilityInfo.announceForAccessibility("Couldn't save recipe");
       }
     },
-    [conversationId, saveRecipeMutation, haptics],
+    [conversationId, saveRecipeMutation, haptics, toast],
   );
 
   const handleSend = useCallback(

@@ -29,6 +29,7 @@ import { renderComponent } from "../../../test/utils/render-component";
 import FeaturedRecipeDetailScreen from "../FeaturedRecipeDetailScreen";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 
 const {
   mockApiRequest,
@@ -38,7 +39,9 @@ const {
   mockReplace,
   mockDetailProps,
   mockToastError,
+  mockToastInfo,
 } = vi.hoisted(() => ({
+  mockToastInfo: vi.fn(),
   mockApiRequest: vi.fn(),
   mockRouteParams: {
     current: {
@@ -104,7 +107,7 @@ vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({
     success: vi.fn(),
     error: mockToastError,
-    info: vi.fn(),
+    info: mockToastInfo,
     dismiss: vi.fn(),
   }),
 }));
@@ -116,6 +119,7 @@ vi.mock("@/components/recipe-detail", () => ({
 beforeEach(() => {
   mockRouteParams.current = { recipeId: 42, recipeType: "mealPlan" };
   mockApiRequest.mockReset();
+  mockToastInfo.mockReset();
 });
 
 afterEach(() => {
@@ -383,10 +387,13 @@ describe("FeaturedRecipeDetailScreen — catalog (Spoonacular) preview", () => {
       await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
     );
     expect(await screen.findByText("Saved · View recipe")).toBeDefined();
+    // The preview's Save also lands in Profile > Saved Items (ruling 2026-09-29).
     expect(mockApiRequest).toHaveBeenCalledWith(
       "POST",
       "/api/meal-plan/catalog/715538/save",
+      { addToSavedItems: true },
     );
+    expect(mockToastInfo).not.toHaveBeenCalled();
     fireEvent.click(
       screen.getByLabelText("Saved. Open Spoonacular Chili in your recipes"),
     );
@@ -394,6 +401,16 @@ describe("FeaturedRecipeDetailScreen — catalog (Spoonacular) preview", () => {
       recipeId: 901,
       recipeType: "mealPlan",
     });
+  });
+
+  it("saves the recipe even when Saved Items is full, and says it isn't listed there", async () => {
+    mockCatalogApi({ id: 901, savedItemStatus: "limit_reached" });
+    renderComponent(<FeaturedRecipeDetailScreen />);
+    fireEvent.click(
+      await screen.findByLabelText("Save Spoonacular Chili to your recipes"),
+    );
+    expect(await screen.findByText("Saved · View recipe")).toBeDefined();
+    expect(mockToastInfo).toHaveBeenCalledWith(SAVED_ITEMS_FULL_MESSAGE);
   });
 
   it("shows an inline error when Save fails", async () => {
@@ -623,6 +640,7 @@ describe("FeaturedRecipeDetailScreen — catalog preview follow-ups (#1149 revie
       expect(mockApiRequest).toHaveBeenCalledWith(
         "POST",
         "/api/meal-plan/catalog/715538/save",
+        { addToSavedItems: true },
       ),
     );
     unmount();
@@ -630,6 +648,32 @@ describe("FeaturedRecipeDetailScreen — catalog preview follow-ups (#1149 revie
     await waitFor(() =>
       expect(mockToastError).toHaveBeenCalledWith(
         "Couldn't save Spoonacular Chili. Try again.",
+      ),
+    );
+  });
+
+  it("toasts a premium-denied Save failure that lands after the user closed the preview", async () => {
+    let rejectSave: (e: Error) => void = () => {};
+    mockApiRequest.mockImplementation(async (method: string) =>
+      method === "GET"
+        ? { json: async () => catalogDetail }
+        : new Promise((_resolve, reject) => {
+            rejectSave = reject;
+          }),
+    );
+    const { unmount } = renderComponent(<FeaturedRecipeDetailScreen />);
+    await pressSave();
+    await waitFor(() =>
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/meal-plan/catalog/715538/save",
+      ),
+    );
+    unmount();
+    rejectSave(new ApiError("403: premium", ErrorCode.PREMIUM_REQUIRED, 403));
+    await waitFor(() =>
+      expect(mockToastError).toHaveBeenCalledWith(
+        "Couldn't save Spoonacular Chili. Online recipes need Premium.",
       ),
     );
   });

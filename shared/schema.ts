@@ -437,6 +437,12 @@ export const savedItems = pgTable(
     }),
     sourceProductName: text("source_product_name"),
 
+    // Link to a real recipe the user saved (catalog or chat Save). Server-set
+    // only; both null on a snapshot item. Polymorphic like favourite_recipes,
+    // so no FK: the recipe delete paths remove the linked row.
+    recipeId: integer("recipe_id"),
+    recipeType: text("recipe_type"), // "mealPlan" | "community"
+
     // Metadata
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
@@ -446,6 +452,13 @@ export const savedItems = pgTable(
     index("saved_items_user_id_created_at_idx").on(
       table.userId,
       table.createdAt,
+    ),
+    uniqueIndex("saved_items_user_recipe_unique")
+      .on(table.userId, table.recipeType, table.recipeId)
+      .where(sql`${table.recipeId} IS NOT NULL`),
+    check(
+      "saved_items_recipe_link_both_or_neither",
+      sql`(${table.recipeId} IS NULL) = (${table.recipeType} IS NULL)`,
     ),
   ],
 );

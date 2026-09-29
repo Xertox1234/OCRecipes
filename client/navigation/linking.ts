@@ -39,14 +39,12 @@ function parseIntOrZero(value: string): number {
 // bound (~5M character scans) should stay well under a second.
 export const MAX_DEEP_LINK_PATH_LENGTH = 8 * 1024;
 
-// The client's own scheduleCommitmentReminder (client/hooks/
-// useNotebookNotifications.ts) sends `data.url` going forward, but this
-// fallback is NOT a time-bounded migration bridge that can be deleted once
-// old on-device notifications age out: the server-driven push path
-// (server/services/notification-scheduler.ts, the primary delivery path —
-// the client scheduler is only a fallback for undelivered push) sends
-// `data: { entryId }` only and is out of this todo's scope, so it will keep
-// emitting entryId-only payloads indefinitely. Build the equivalent
+// Both delivery paths now send `data.url`: the client's own
+// scheduleCommitmentReminder (client/hooks/useNotebookNotifications.ts) and
+// the server-driven push (server/services/notification-scheduler.ts). This
+// entryId fallback remains for notifications already sitting on a device
+// from before either path sent `url` (entryId-only payloads), and as
+// defense-in-depth for any sender that omits it. Build the equivalent
 // full-prefix URL from that shape so those notifications keep opening the
 // right entry — `extractPathFromURL` (used internally by React Navigation to
 // match a URL against `prefixes`) returns undefined for a string matching

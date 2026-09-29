@@ -38,6 +38,7 @@ import { ApiError } from "@/lib/api-error";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/context/ToastContext";
 import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
+import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 import {
   catalogSaveErrorMessage,
   normalizeCatalogDetail,
@@ -150,7 +151,7 @@ export default function FeaturedRecipeDetailScreen() {
     meta: { silentError: true },
   });
   const { mutateAsync: saveCatalogRecipe, isPending: isSavingCatalog } =
-    useSaveCatalogRecipe();
+    useSaveCatalogRecipe({ addToSavedItems: true });
   const [savedRecipeId, setSavedRecipeId] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -331,8 +332,17 @@ export default function FeaturedRecipeDetailScreen() {
       const saved = await saveCatalogRecipe(recipeId);
       setSavedRecipeId(saved.id);
       AccessibilityInfo.announceForAccessibility("Recipe saved");
+      if (saved.savedItemStatus === "limit_reached") {
+        toast.info(SAVED_ITEMS_FULL_MESSAGE);
+      }
     } catch (err) {
       if (err instanceof ApiError && err.code === ErrorCode.PREMIUM_REQUIRED) {
+        if (!isMountedRef.current) {
+          toast.error(
+            `Couldn't save ${catalogTitle ?? "the recipe"}. Online recipes need Premium.`,
+          );
+          return;
+        }
         setShowUpgrade(true);
         return;
       }
