@@ -9,6 +9,11 @@ import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { useCallback, useState, useRef } from "react";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
+import {
+  finderBlockSchema,
+  type FinderAction,
+  type FinderBlock,
+} from "@shared/schemas/recipe-finder";
 
 // Must exceed the server's SSE_TIMEOUT_MS (same route, server/routes/chat.ts):
 // the server arms its timer only after auth and the daily-limit write, so an
@@ -139,6 +144,11 @@ export function useSendMessage(conversationId: number | null) {
   const [streamingRecipe, setStreamingRecipe] =
     useState<StreamingRecipe | null>(null);
   const [allergenWarning, setAllergenWarning] = useState<string | null>(null);
+  const [streamingFinder, setStreamingFinder] = useState<FinderBlock | null>(
+    null,
+  );
+  // Recipe finder progress ("Searching community recipes…") for the thinking bubble.
+  const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -159,6 +169,7 @@ export function useSendMessage(conversationId: number | null) {
       content: string,
       screenContext?: string,
       conversationIdOverride?: number,
+      options?: { finderAction?: FinderAction },
     ) => {
       const effectiveId = conversationIdOverride ?? conversationId;
       if (!effectiveId) return;
@@ -173,6 +184,8 @@ export function useSendMessage(conversationId: number | null) {
       setStreamingContent("");
       setStreamingRecipe(null);
       setAllergenWarning(null);
+      setStreamingFinder(null);
+      setStreamingStatus(null);
       setStreamError(false);
       setRequestError(null);
 
@@ -202,6 +215,7 @@ export function useSendMessage(conversationId: number | null) {
         const requestBody = JSON.stringify({
           content,
           ...(screenContext && { screenContext }),
+          ...(options?.finderAction && { finderAction: options.finderAction }),
         });
 
         // XHR is used instead of fetch because React Native's fetch polyfill
@@ -217,6 +231,14 @@ export function useSendMessage(conversationId: number | null) {
           try {
             const data = JSON.parse(line.slice(6));
 
+            if (typeof data.status === "string") {
+              setStreamingStatus(data.status);
+            }
+            if (data.finder) {
+              // An old or malformed block is dropped, never rendered.
+              const parsed = finderBlockSchema.safeParse(data.finder);
+              if (parsed.success) setStreamingFinder(parsed.data);
+            }
             if (data.recipe) {
               setStreamingRecipe(data.recipe);
               if (data.allergenWarning) {
@@ -381,6 +403,8 @@ export function useSendMessage(conversationId: number | null) {
         setStreamingContent("");
         setStreamingRecipe(null);
         setAllergenWarning(null);
+        setStreamingFinder(null);
+        setStreamingStatus(null);
         // requestError is intentionally NOT cleared here: clearing in the same
         // synchronous finally frame as setRequestError(errorMsg) batches to null
         // before the component re-renders (React 19 automatic batching). It is
@@ -401,6 +425,8 @@ export function useSendMessage(conversationId: number | null) {
     streamingContent,
     streamingRecipe,
     allergenWarning,
+    streamingFinder,
+    streamingStatus,
     isStreaming,
     streamError,
     requestError,
