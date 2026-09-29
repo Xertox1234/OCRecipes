@@ -28,7 +28,8 @@ vi.mock("@react-navigation/native", () => ({
 }));
 
 vi.mock("@/hooks/useChat", () => ({
-  useChatConversations: () => mockUseChatConversations(),
+  useChatConversations: (...args: unknown[]) =>
+    mockUseChatConversations(...args),
   usePinConversation: () => ({ mutateAsync: vi.fn() }),
   useDeleteConversation: () => ({ mutate: vi.fn() }),
 }));
@@ -68,5 +69,73 @@ describe("AllConversationsScreen — safe back navigation", () => {
       index: 0,
       routes: [{ name: "Main", params: { screen: "CoachTab" } }],
     });
+  });
+});
+
+describe("AllConversationsScreen — Coach and Recipes tabs", () => {
+  const conv = (id: number, title: string) => ({
+    id,
+    title,
+    isPinned: false,
+    updatedAt: new Date().toISOString(),
+  });
+
+  it("shows a Coach / Recipes tab list with Coach selected", () => {
+    renderComponent(<AllConversationsScreen />);
+
+    const coachTab = screen.getByLabelText("Coach chats");
+    const recipeTab = screen.getByLabelText("Recipe chats");
+    expect(coachTab.getAttribute("aria-selected")).toBe("true");
+    expect(recipeTab.getAttribute("aria-selected")).toBe("false");
+    expect(mockUseChatConversations).toHaveBeenLastCalledWith("coach", {
+      search: undefined,
+    });
+  });
+
+  it("a coach row opens Coach Pro on that conversation", () => {
+    mockUseChatConversations.mockReturnValue({
+      data: [conv(7, "Protein ideas")],
+      isLoading: false,
+    });
+
+    renderComponent(<AllConversationsScreen />);
+    fireEvent.click(screen.getByLabelText("Open conversation: Protein ideas"));
+
+    expect(mockNavigate).toHaveBeenCalledWith("CoachPro", {
+      selectedConversationId: 7,
+    });
+  });
+
+  it("the Recipes tab lists recipe chats, and a row reopens that recipe chat", () => {
+    mockUseChatConversations.mockImplementation((type: string) => ({
+      data: type === "recipe" ? [conv(42, "Vegan tacos")] : [],
+      isLoading: false,
+    }));
+
+    renderComponent(<AllConversationsScreen />);
+    fireEvent.click(screen.getByLabelText("Recipe chats"));
+
+    expect(
+      screen.getByLabelText("Recipe chats").getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(mockUseChatConversations).toHaveBeenLastCalledWith("recipe", {
+      search: undefined,
+    });
+    fireEvent.click(screen.getByLabelText("Open conversation: Vegan tacos"));
+    expect(mockNavigate).toHaveBeenCalledWith("RecipeChat", {
+      conversationId: 42,
+    });
+  });
+
+  it("an untitled recipe chat reads as a recipe chat", () => {
+    mockUseChatConversations.mockImplementation((type: string) => ({
+      data: type === "recipe" ? [conv(43, "")] : [],
+      isLoading: false,
+    }));
+
+    renderComponent(<AllConversationsScreen />);
+    fireEvent.click(screen.getByLabelText("Recipe chats"));
+
+    expect(screen.getByText("Recipe chat")).toBeTruthy();
   });
 });
