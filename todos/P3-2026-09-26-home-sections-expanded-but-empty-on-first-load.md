@@ -3,7 +3,7 @@ title: "Home: sections can show an expanded chevron with no rows on first load"
 status: in-progress
 priority: low
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-09-29
 assignee:
 labels: [deferred, react-native, ux]
 github_issue:

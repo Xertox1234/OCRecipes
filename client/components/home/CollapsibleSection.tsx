@@ -46,9 +46,8 @@ export function CollapsibleSection({
   // that first layout lands — can render the expanded chevron with a clip
   // container still animating from height 0, so no rows appear until a later
   // re-measurement (often only after the user collapses and re-expands).
-  // Track whether we've had at least one real measurement locally; until
-  // then, while expanded, let content size itself naturally instead of
-  // relying on the hook's still-zero animated height.
+  // Track the first real measurement locally so the effect below can
+  // re-forward it once more, post-commit (see that effect's comment for why).
   const [hasMeasuredOnce, setHasMeasuredOnce] = React.useState(false);
   // RN's LayoutChangeEvent is pooled — by the time an effect runs, the
   // original event's `nativeEvent` has already been released/nulled. Stash

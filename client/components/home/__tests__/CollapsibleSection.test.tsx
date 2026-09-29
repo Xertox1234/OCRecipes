@@ -100,8 +100,9 @@ describe("CollapsibleSection", () => {
   });
 
   // Regression coverage for "Home: sections can show an expanded chevron with
-  // no rows on first load" (todos/archive/P3-2026-09-26-home-sections-expanded-
-  // but-empty-on-first-load.md). Cold-launch device testing showed that a
+  // no rows on first load" (todos/P3-2026-09-26-home-sections-expanded-but-
+  // empty-on-first-load.md, archived once this fix lands). Cold-launch device
+  // testing showed that a
   // shared-value write issued from useCollapsibleHeight's FIRST onLayout call
   // does not reliably reach the native view when a section is already
   // expanded on mount — the write can land before the React commit that
