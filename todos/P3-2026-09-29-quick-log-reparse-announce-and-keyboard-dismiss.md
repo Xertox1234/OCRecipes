@@ -15,7 +15,7 @@ github_issue:
 
 Two gaps left out of scope by #1175:
 
-1. The success announcement fires only on the `hasParsedItems` false→true edge. A second parse that replaces the item list without it passing back through empty is never announced to VoiceOver/TalkBack.
+1. The success announcement fires only on the `hasParsedItems` false→true edge. A second parse that replaces the item list without it passing back through empty is never announced on VoiceOver. On TalkBack, #1175's `accessibilityLiveRegion="polite"` count text re-reads it only when the item count changes ("Found 1 item" → "Found 2 items"), so a same-count replace is silent there too.
 2. Closing the Quick Log drawer never calls `Keyboard.dismiss()`, so the keyboard can stay up over the collapsed or locked row.
 
 ## Background
@@ -25,7 +25,7 @@ Two gaps left out of scope by #1175:
 
 ## Acceptance Criteria
 
-- [ ] `useQuickLogSession` exposes a per-parse generation counter, bumped on every successful parse that sets items. Both `client/components/home/QuickLogDrawer.tsx` and `client/screens/QuickLogScreen.tsx` key their success announce on it, so a replace-parse is announced. A test drives parse → parse, never empty in between, and asserts two announces. RED first.
+- [ ] `useQuickLogSession` exposes a per-parse generation counter, bumped on every successful parse that sets items. Both `client/components/home/QuickLogDrawer.tsx` and `client/screens/QuickLogScreen.tsx` key their success announce on it, so every replace-parse is announced on both platforms: VoiceOver always, and TalkBack including a same-count replace. Don't double-announce a count-changing replace on Android, where the live region already covers it (`docs/rules/accessibility.md`). Tests drive parse → parse with no empty state in between, for both the same-count and changed-count cases, and assert the expected announces per platform. RED first.
 - [ ] The existing announce guards stay silent on mount and on reset (keep the prev-value ref guard).
 - [ ] Closing or resetting the Quick Log session dismisses the keyboard (`Keyboard.dismiss()` in `reset()` or at the drawer's close path, whichever covers every close path listed above). A test asserts it. RED first.
 
