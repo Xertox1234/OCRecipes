@@ -726,6 +726,7 @@ export default function RecipeChatScreen() {
             <RecipeFinderMessage
               block={finder}
               isActive={!isStreaming && item.id === activeFinderMessageId}
+              announceArrival={!isPendingAssistant}
               lockedButtons={finderLocks}
               onAction={handleFinderAction}
               onLockedButton={openUpgrade}
