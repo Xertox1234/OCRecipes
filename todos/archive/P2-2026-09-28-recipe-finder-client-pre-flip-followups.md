@@ -1,9 +1,9 @@
 ---
 title: "Recipe finder client: fix before the flag flip (double list announce; Regenerate under a finder list)"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-28
-updated: 2026-09-28
+updated: 2026-09-29
 assignee:
 labels: [deferred, client, recipe-finder, accessibility]
 github_issue:
@@ -41,9 +41,9 @@ merging; its server-side consequence is **not yet measured**.
 
 ## Acceptance Criteria
 
-- [ ] RecipeChef announces a finder list's arrival exactly once per flow across the pending → persisted swap. Test: render pending then persisted and assert the list's `announceForAccessibility` call count is 1.
-- [ ] The list's announce doesn't collide with the bridge's "Recipe response received" on iOS: either one of them yields, or the bridge's message carries the count.
-- [ ] Item 2 measured first: what a Regenerate under a finder list sends and what the server does with it (route test through the typed-command guard). Then either hide Regenerate under a finder message, or make it re-run the finder action. Whichever is chosen, a test pins it.
+- [x] RecipeChef announces a finder list's arrival exactly once per flow across the pending → persisted swap. Test: render pending then persisted and assert the list's `announceForAccessibility` call count is 1.
+- [x] The list's announce doesn't collide with the bridge's "Recipe response received" on iOS: either one of them yields, or the bridge's message carries the count.
+- [x] Item 2 measured first: what a Regenerate under a finder list sends and what the server does with it (route test through the typed-command guard). Then either hide Regenerate under a finder message, or make it re-run the finder action. Whichever is chosen, a test pins it.
 
 ## Implementation Notes
 
@@ -57,3 +57,21 @@ merging; its server-side consequence is **not yet measured**.
   - `client/components/coach/CoachChat.tsx` (`isRetryTarget`, `handleRetry`)
   - `server/routes/chat.ts` and `server/services/recipe-finder/entry.ts` (typed-command guard; item 2's measurement)
 - Plan ledger: `.superpowers/sdd/2026-09-28-recipe-finder/progress.md`, "PR C" section.
+
+## Resolution (2026-09-29)
+
+1. The list inside RecipeChef's pending bubble no longer announces (`announceArrival={false}`).
+   The persisted row announces once, in a later commit than the bridge's "Recipe response
+   received". Measured before the fix: 1 "Found" announce at the pending stage, 2 in total; now 0
+   then 1. Tests: `RecipeChatScreen.test.tsx` (pending → persisted swap) and
+   `RecipeResultsList.test.tsx` (`announceArrival={false}` is silent).
+2. Measured with the server's own `decideCoachFinderEntry` + `planFinderStep` on the history a
+   Regenerate leaves (target assistant and user rows deleted, user text re-sent):
+   - under a Spoonacular list (user text "Search Spoonacular"): typed, no command →
+     `search_community` for "<request>. Search Spoonacular". Wrong source, garbled query.
+   - under a round-1 list (user text = the joined answers): round-1 community search with the
+     answers' labels but not their questions. Close, not identical.
+   - under a questions block (user text "None of these"): `ask_clarifying`. Identical.
+     Ruling: Coach hides Regenerate under any finder message (results or questions); its own
+     buttons are the next step. RecipeChef has no Regenerate. Test: `CoachChat.branches.test.tsx`
+     "shows no Regenerate under …".

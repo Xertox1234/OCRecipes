@@ -864,15 +864,20 @@ export default function CoachChat({
     ({ item }: { item: ChatListItem }) => {
       if (item.type === "message") {
         const msg = item.message;
-        const isRetryTarget =
-          !isStreaming &&
-          msg.role === "assistant" &&
-          msg.id === lastAssistantMessageId;
         const isAssistant = msg.role === "assistant";
         const blocksForMsg = messageBlocks.get(msg.id);
         // A finder message's text is the old-client fallback; the block replaces it.
         const hasFinderBlock =
           blocksForMsg?.some((b) => isFinderBlockType(b.type)) ?? false;
+        // No Regenerate under a finder message: handleRetry re-sends the
+        // last user text without its finderAction, so a "Search Spoonacular"
+        // tap would come back as a community search for that label. The
+        // finder message's own buttons are the next step.
+        const isRetryTarget =
+          !isStreaming &&
+          isAssistant &&
+          !hasFinderBlock &&
+          msg.id === lastAssistantMessageId;
         const generated = generatedRecipes.get(msg.id);
         const savedRecipeId =
           savedRecipeIdsRef.current.get(msg.id) ??
