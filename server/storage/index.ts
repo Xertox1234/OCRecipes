@@ -99,6 +99,7 @@ export const storage = {
   getSavedItems: nutrition.getSavedItems,
   getSavedItemCount: nutrition.getSavedItemCount,
   createSavedItem: nutrition.createSavedItem,
+  saveRecipeToSavedItems: nutrition.saveRecipeToSavedItems,
   deleteSavedItem: nutrition.deleteSavedItem,
 
   // Meal plans (recipes and items)
