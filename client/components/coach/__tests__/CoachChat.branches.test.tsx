@@ -1646,6 +1646,36 @@ describe("CoachChat — recipe finder", () => {
     expect(actives).toEqual(["false", "true"]);
   });
 
+  // Regenerate re-sends the last user text with no finderAction. After a
+  // "Search Spoonacular" tap that text is the button label, and the server
+  // reads it as a typed refinement: a community search for "<request>.
+  // Search Spoonacular". The finder message carries its own next steps.
+  it.each([
+    ["a results list", finderBlock],
+    [
+      "a clarifying-questions block",
+      {
+        type: "recipe_questions",
+        questions: [{ question: "How much time?", options: ["Quick", "Any"] }],
+        flow: { ...finderBlock.flow, stage: "clarifying" },
+      },
+    ],
+  ])("shows no Regenerate under %s", (_label, block) => {
+    state.messages = [
+      makeMessage({ id: 1, role: "user", content: "Search Spoonacular" }),
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "Here are 3 Spoonacular recipes: …",
+        metadata: { blocks: [block] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    expect(
+      screen.queryByRole("button", { name: /regenerate response/i }),
+    ).toBeNull();
+  });
+
   it("hides a finder message's plain-text fallback", () => {
     state.messages = [
       makeMessage({

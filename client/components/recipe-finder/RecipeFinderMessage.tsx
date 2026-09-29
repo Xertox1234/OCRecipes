@@ -15,6 +15,8 @@ import { FINDER_BUTTON_LABELS, answersLabel } from "./recipe-finder-utils";
 export interface RecipeFinderMessageProps {
   block: FinderBlock;
   isActive: boolean;
+  /** Passed to the results list; see RecipeResultsListProps. */
+  announceArrival?: boolean;
   lockedButtons?: FinderButton[];
   /** `label` is the visible user bubble and the request `content`. */
   onAction: (action: FinderAction, label: string) => void;
@@ -27,6 +29,7 @@ const NO_LOCKS: FinderButton[] = [];
 export function RecipeFinderMessage({
   block,
   isActive,
+  announceArrival,
   lockedButtons = NO_LOCKS,
   onAction,
   onLockedButton,
@@ -60,6 +63,7 @@ export function RecipeFinderMessage({
       <RecipeResultsList
         block={block}
         isActive={isActive}
+        announceArrival={announceArrival}
         lockedButtons={lockedButtons}
         onButton={handleButton}
         onOpenItem={onOpenItem}

@@ -182,4 +182,19 @@ describe("RecipeResultsList", () => {
     expect(spy).toHaveBeenCalledExactlyOnceWith("Found 2 community recipes");
     spy.mockRestore();
   });
+
+  it("stays silent when announceArrival is false (RecipeChef's pending bubble)", () => {
+    const spy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    renderComponent(
+      <RecipeResultsList
+        block={block}
+        isActive
+        announceArrival={false}
+        onButton={vi.fn()}
+        onOpenItem={vi.fn()}
+      />,
+    );
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
 });

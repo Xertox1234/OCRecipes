@@ -935,6 +935,56 @@ describe("RecipeChatScreen — recipe finder", () => {
     },
   );
 
+  // The streamed list first shows in the pending bubble, then remounts as the
+  // persisted row when the refetch lands. VoiceOver hears "Found N" once, and
+  // never in the same commit as the bridge's "Recipe response received" (two
+  // imperative announces in one commit can drop one on iOS).
+  it("announces a streamed finder list once across the pending → persisted swap", () => {
+    const spy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    const found = () =>
+      spy.mock.calls.filter(([msg]) => /^Found /.test(msg)).length;
+    try {
+      const userMessage: ChatMessage = {
+        id: 1,
+        conversationId: 11,
+        role: "user",
+        content: "Mediterranean",
+        metadata: null,
+        createdAt: new Date().toISOString(),
+      };
+      mockChatMessagesData.value = [userMessage];
+      const { rerender } = renderComponent(<RecipeChatScreen />);
+
+      mockSendMessageState.value = {
+        ...mockSendMessageState.value,
+        streamingContent: "Here are 1 community recipe:",
+        streamingFinder: block(FLOW_NEW),
+        isStreaming: true,
+      };
+      rerender(<RecipeChatScreen />);
+
+      // Stream ends: the bridge shows the pending bubble and announces.
+      mockSendMessageState.value = {
+        ...mockSendMessageState.value,
+        streamingContent: "",
+        streamingFinder: null,
+        isStreaming: false,
+      };
+      rerender(<RecipeChatScreen />);
+      expect(screen.getByText("From the community")).toBeDefined();
+      expect(spy).toHaveBeenCalledWith("Recipe response received");
+      expect(found()).toBe(0);
+
+      // The refetch lands: the persisted row replaces the pending bubble.
+      mockChatMessagesData.value = [userMessage, finderMessage(2, FLOW_NEW)];
+      rerender(<RecipeChatScreen />);
+      expect(screen.getAllByText("From the community")).toHaveLength(1);
+      expect(found()).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("buttons are inactive while a reply is streaming", () => {
     mockChatMessagesData.value = [finderMessage(2, FLOW_NEW)];
     mockSendMessageState.value = {

@@ -23,6 +23,12 @@ export interface RecipeResultsListProps {
   block: RecipeResultsBlock;
   /** Only the latest finder message's buttons are live (spec §4). */
   isActive: boolean;
+  /**
+   * False in RecipeChef's pending bubble: that list remounts as the persisted
+   * row when the refetch lands, which announces it then — once, and not in
+   * the same commit as the bridge's "Recipe response received".
+   */
+  announceArrival?: boolean;
   lockedButtons?: FinderButton[];
   onButton: (button: FinderButton) => void;
   onOpenItem: (item: FinderItem) => void;
@@ -34,6 +40,7 @@ const NO_LOCKS: FinderButton[] = [];
 export const RecipeResultsList = React.memo(function RecipeResultsList({
   block,
   isActive,
+  announceArrival = true,
   lockedButtons = NO_LOCKS,
   onButton,
   onOpenItem,
@@ -43,10 +50,15 @@ export const RecipeResultsList = React.memo(function RecipeResultsList({
   // once per flow, and only for the live (latest) list.
   const announcedFlowRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!isActive || announcedFlowRef.current === block.flow.flowId) return;
+    if (
+      !announceArrival ||
+      !isActive ||
+      announcedFlowRef.current === block.flow.flowId
+    )
+      return;
     announcedFlowRef.current = block.flow.flowId;
     AccessibilityInfo.announceForAccessibility(resultsAnnouncement(block));
-  }, [isActive, block]);
+  }, [announceArrival, isActive, block]);
 
   const header = resultsHeader(block.source);
   const notice = noticeText(block.notice, block.source);
