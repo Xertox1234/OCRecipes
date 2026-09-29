@@ -6,6 +6,7 @@ tags: [api, harness, typescript, runware, image-generation, assets]
 module: server
 applies_to: ["server/lib/runware.ts", "scripts/generate-*.ts"]
 created: 2026-09-29
+last_updated: 2026-09-29
 ---
 
 # Runware imageInference defaults to JPEG unless outputFormat is set explicitly
@@ -61,12 +62,35 @@ None. The same rule covers the recipe-image path. `saveImageBuffer()` calls
 `ContentType: image/png`. Clients still render them because decoders sniff the bytes, but the
 label is wrong. The fix there is to label them `jpg`, not to request PNG.
 
+Cookbook covers have the identical shape and the identical fix. `generateCookbookCover()`
+(`server/services/cookbook-cover.ts`) calls `runware`'s `generateImage()` with no `outputFormat`,
+then saves the JPEG bytes through `saveCookbookCover(buffer)`, whose `ext` also defaults to
+`"png"`. Fixed by passing `saveCookbookCover(buffer, "jpg")` on the Runware branch; the DALL-E
+fallback branch (`saveCookbookCover(Buffer.from(imageData, "base64"))`, no ext) is unchanged —
+DALL-E-3's `images.generate` returns PNG bytes, so the existing `"png"` default already matches
+there.
+
+A caller that overwrites an EXISTING stored key in place (`server/scripts/backfill-recipe-images.ts`'s
+`refreshInPlace()`) cannot just add `outputFormat: "PNG"` unconditionally — it must preserve
+whatever extension the key already has, so the requested format has to be derived from that
+extension, not hardcoded. See `resolveRefreshOutputFormat()` in
+`server/scripts/backfill-recipe-images-utils.ts`: a `.png` key requests `outputFormat: "PNG"`; a
+`.jpg`/`.jpeg` key (or an unrecognized extension) keeps Runware's un-set default (JPEG) rather than
+risk mislabeling a post-fix `.jpg` key with PNG bytes — the same defect this rule exists to prevent,
+just inverted.
+
 ## Related Files
 
-- `server/lib/runware.ts` — `generateImage()` (no `outputFormat`, ~lines 62-74) vs.
-  `removeBackground()` (sets it, line 138)
+- `server/lib/runware.ts` — `generateImage()` takes an optional `outputFormat?: "PNG"` (per-call,
+  not a global default) vs. `removeBackground()` (always sets it, line 138); `saveImageBuffer()`
+  takes and forwards an optional `ext`
 - `scripts/generate-app-assets.ts` — writes `generateImage()`'s buffer to `assets/images/icon.png`
-  and copies it to `assets/images/android-icon-foreground.png`
+  and copies it to `assets/images/android-icon-foreground.png`; now requests `outputFormat: "PNG"`
+- `server/services/cookbook-cover.ts` — `generateCookbookCover()`'s Runware branch passes
+  `saveCookbookCover(buffer, "jpg")`
+- `server/scripts/backfill-recipe-images.ts` — `refreshInPlace()` derives the request via
+  `resolveRefreshOutputFormat()` (in `server/scripts/backfill-recipe-images-utils.ts`) from the
+  preserved key's own extension
 - `server/lib/image-store.ts` — `saveRecipeImage(buffer, ext = "png")`; `ext` sets the filename
   and the R2 `ContentType`
 

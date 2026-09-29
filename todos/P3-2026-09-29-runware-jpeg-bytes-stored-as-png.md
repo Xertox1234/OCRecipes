@@ -1,6 +1,6 @@
 ---
 title: "Runware-generated images are JPEG bytes stored as .png / image/png — recipe images, cookbook covers, favicon and splash icon"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-29
 updated: 2026-09-29

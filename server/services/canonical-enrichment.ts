@@ -140,7 +140,8 @@ async function generateSingleImage(
     try {
       const buffer = await generateImage({ prompt, model: RUNWARE_MODEL_HQ });
       if (buffer) {
-        return await saveImageBuffer(buffer);
+        // Runware returns JPEG (no outputFormat requested) — label it to match.
+        return await saveImageBuffer(buffer, "jpg");
       }
       log.warn(
         { variant },
