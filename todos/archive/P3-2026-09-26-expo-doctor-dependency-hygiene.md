@@ -1,6 +1,6 @@
 ---
 title: "expo-doctor dependency hygiene — direct expo-modules-core, duplicate native modules, minor skews, and the non-CNG native folders decision"
-status: in-progress
+status: done
 priority: low
 created: 2026-09-26
 updated: 2026-09-29
