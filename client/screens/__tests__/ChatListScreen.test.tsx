@@ -7,7 +7,7 @@
  * it needs its own focus-driven refetch to pick that reply up.
  */
 import React from "react";
-import { act, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import ChatListScreen from "../ChatListScreen";
 import { REFRESH_ON_FOCUS_SETTLE_MS } from "@/hooks/useRefreshOnFocus";
@@ -153,9 +153,23 @@ beforeEach(() => {
 // list needs to keep polling until the pending turn resolves or expires
 // (useChat.test.ts covers the poll mechanism itself; this only checks the
 // screen opts into it).
-describe("ChatListScreen — opts into the recipe-turn poll", () => {
-  it("passes pollPendingRecipeTurns: true to useChatConversations", () => {
+describe("ChatListScreen — opts into the recipe-turn poll, scoped to the recipe segment", () => {
+  // Only the recipe segment's own fetch can ever contain a pending recipe
+  // turn's id (the server filters strictly by type) — polling the coach
+  // segment for it would waste requests for the whole cap window with no
+  // way to ever resolve.
+  it("passes pollPendingRecipeTurns: false on the default coach segment", () => {
     renderComponent(<ChatListScreen />);
+
+    expect(useChatConversationsOpts.current).toEqual({
+      pollPendingRecipeTurns: false,
+    });
+  });
+
+  it("passes pollPendingRecipeTurns: true after switching to the recipe segment", () => {
+    renderComponent(<ChatListScreen />);
+
+    fireEvent.click(screen.getByLabelText("Recipe chats"));
 
     expect(useChatConversationsOpts.current).toEqual({
       pollPendingRecipeTurns: true,

@@ -598,6 +598,59 @@ describe("recipe/remix post-abort poll", () => {
     expect(pending?.[7]).toBeLessThanOrEqual(after);
   });
 
+  // The pending-turns query entry never gets a `useQuery` observer (pollers
+  // only read/write it directly), so its gcTime timer is scheduled once, at
+  // first write, and never rescheduled — the default 5-minute gcTime would
+  // otherwise wipe the whole map on a timer shorter than RECIPE_TURN_POLL_CAP_MS
+  // can legitimately need, with nothing polling in between to keep it alive.
+  it("survives past the default query gcTime (5 min) with nothing polling in between", () => {
+    vi.useFakeTimers();
+    const { wrapper, queryClient } = createQueryWrapper();
+
+    const { result: markResult } = renderHook(
+      () => useMarkPendingRecipeTurn(),
+      {
+        wrapper,
+      },
+    );
+    act(() => {
+      markResult.current(7);
+    });
+
+    // No useChatConversations/useChatMessages observer mounted here — the
+    // default gcTime (5 min) would garbage-collect the query cache entry on
+    // its own if useMarkPendingRecipeTurn hadn't pinned gcTime: Infinity.
+    act(() => {
+      vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+    });
+
+    expect(
+      queryClient.getQueryData<Record<number, number>>(PENDING_KEY),
+    ).toEqual({ 7: expect.any(Number) });
+  });
+
+  // Opting a caller into the poll must not fragment a query key another
+  // caller already shares — pollPendingRecipeTurns configures polling
+  // BEHAVIOR only, not which server data is being fetched.
+  it("keeps the same query key with and without pollPendingRecipeTurns, so callers share one cache entry", () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    mockApiRequest.mockResolvedValue({ json: async () => [conversation()] });
+
+    renderHook(() => useChatConversations("coach"), { wrapper });
+    renderHook(
+      () => useChatConversations("coach", { pollPendingRecipeTurns: true }),
+      { wrapper },
+    );
+
+    // Both hook instances resolve to the SAME cache entry — one fetch, not
+    // two — which is only true if their query keys are identical.
+    const matching = queryClient
+      .getQueryCache()
+      .findAll({ queryKey: ["/api/chat/conversations", { type: "coach" }] });
+    expect(matching).toHaveLength(1);
+    expect(mockApiRequest).toHaveBeenCalledTimes(1);
+  });
+
   it("polls the recipe conversation list while a turn is pending, and stops once the conversation's updatedAt moves past the abort mark", async () => {
     vi.useFakeTimers();
     const { wrapper, queryClient } = createQueryWrapper();

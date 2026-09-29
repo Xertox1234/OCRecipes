@@ -218,6 +218,24 @@ describe("RecipeChatScreen — initialMessage route param (Home's Generate Recip
     expect(mockSendMessage).not.toHaveBeenCalled();
     expect(mockCreateConversationMutateAsync).not.toHaveBeenCalled();
   });
+
+  // P3-2026-09-26 review finding: conversationId flips from null to a real
+  // id (setConversationId) immediately before sendMessage() for a brand-new
+  // chat — no await between them. If the abort-on-unmount effect ever lists
+  // conversationId as a dep, that transition tears down and rebuilds the
+  // effect like any other dep change, running the OLD cleanup (abortStream)
+  // against the just-started send — not only at a real unmount.
+  it("does not abort the just-started send when conversationId transitions from null to a real id", async () => {
+    mockCreateConversationMutateAsync.mockResolvedValue({ id: 11 });
+    mockRouteParams.value = {
+      initialMessage: "A Mediterranean dinner for two",
+    };
+
+    renderComponent(<RecipeChatScreen />);
+
+    await waitFor(() => expect(mockSendMessage).toHaveBeenCalledTimes(1));
+    expect(mockAbortStream).not.toHaveBeenCalled();
+  });
 });
 
 // P2-2026-09-24: recipe/remix generation keeps running server-side after a

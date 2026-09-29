@@ -100,6 +100,14 @@ type PendingRecipeTurns = Record<number, number>; // conversationId -> abortedAt
  */
 export function useMarkPendingRecipeTurn() {
   const queryClient = useQueryClient();
+  // The pollers below never subscribe to this key via `useQuery` (they only
+  // read/write it directly), so its default gcTime (5 min) would otherwise
+  // garbage-collect the WHOLE map on a timer rooted at its first-ever write
+  // and never rescheduled by later writes — shorter than two marks can
+  // legitimately span in one session, and unrelated to how fresh any single
+  // mark still is. Pin it before the first write (below) ever happens; a
+  // per-render call is idempotent and cheap.
+  queryClient.setQueryDefaults(PENDING_RECIPE_TURNS_KEY, { gcTime: Infinity });
   return useCallback(
     (conversationId: number) => {
       queryClient.setQueryData<PendingRecipeTurns>(
@@ -179,9 +187,14 @@ export function useChatConversations(
   },
 ) {
   const queryClient = useQueryClient();
+  // pollPendingRecipeTurns configures polling BEHAVIOR only — excluded from
+  // the query key so opting a caller into it doesn't fragment a cache entry
+  // another caller already shares (e.g. CoachProScreen's identical "coach"
+  // fetch) into a second, separately-fetched entry.
+  const { pollPendingRecipeTurns, ...keyOpts } = opts ?? {};
   const queryKey = type
-    ? ["/api/chat/conversations", { type, ...opts }]
-    : ["/api/chat/conversations", opts];
+    ? ["/api/chat/conversations", { type, ...keyOpts }]
+    : ["/api/chat/conversations", opts ? keyOpts : undefined];
 
   return useQuery<ChatConversation[]>({
     queryKey,
@@ -195,7 +208,7 @@ export function useChatConversations(
       const res = await apiRequest("GET", url);
       return res.json();
     },
-    ...(opts?.pollPendingRecipeTurns && {
+    ...(pollPendingRecipeTurns && {
       refetchInterval: (query) =>
         pollRecipeTurn(
           queryClient,

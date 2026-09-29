@@ -321,14 +321,22 @@ export default function RecipeChatScreen() {
     if (!isStreaming) setPendingUserMessage(null);
   }, [isStreaming]);
 
-  // isStreaming mirrored to a ref so the unmount cleanup below reads its
-  // freshest value — the effect's own deps ([abortStream, conversationId])
-  // don't include isStreaming, so a plain closure over it would be stale
-  // (see docs/rules/hooks.md).
+  // isStreaming and conversationId mirrored to refs so the unmount cleanup
+  // below reads their freshest values without needing either in the effect's
+  // own deps (see docs/rules/hooks.md). conversationId specifically must NOT
+  // be a dep: handleSend calls setConversationId(convId) immediately before
+  // (no await between) `void sendMessage(...)` for a brand-new chat, so a
+  // conversationId dep would rerun this cleanup on that transition — not
+  // just at real unmount — aborting the just-started XHR before it can
+  // stream anything.
   const isStreamingRef = useRef(isStreaming);
   useEffect(() => {
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);
+  const conversationIdRef = useRef(conversationId);
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
 
   // Generation keeps running server-side after this screen goes away
   // (recipe/remix finish-and-save policy) — abort our own dead XHR so it
@@ -342,11 +350,11 @@ export default function RecipeChatScreen() {
   useEffect(() => {
     return () => {
       abortStream();
-      if (isStreamingRef.current && conversationId) {
-        markPendingRecipeTurn(conversationId);
+      if (isStreamingRef.current && conversationIdRef.current) {
+        markPendingRecipeTurn(conversationIdRef.current);
       }
     };
-  }, [abortStream, conversationId, markPendingRecipeTurn]);
+  }, [abortStream, markPendingRecipeTurn]);
 
   useEffect(() => {
     if (!isStreaming) return;
