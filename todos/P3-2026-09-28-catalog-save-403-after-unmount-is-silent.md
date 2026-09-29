@@ -1,6 +1,6 @@
 ---
 title: "Catalog preview: a Save that fails with 403 after the preview closed is silent, and two comments claim every failure surfaces"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-28
 updated: 2026-09-28
