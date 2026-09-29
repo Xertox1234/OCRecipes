@@ -87,7 +87,7 @@ describe("sendDueCommitmentReminders", () => {
       "commitment",
       expect.objectContaining({
         title: "Coach reminder",
-        data: { entryId: 1 },
+        data: { entryId: 1, url: "ocrecipes://notebook-entry/1" },
       }),
     );
     expect(storage.updateNotebookEntryStatus).toHaveBeenCalledWith(
