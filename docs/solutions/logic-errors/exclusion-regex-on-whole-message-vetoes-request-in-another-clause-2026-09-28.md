@@ -1,5 +1,5 @@
 ---
-title: "An exclusion regex tested against the whole message vetoes a real request in another clause — scope the veto to the clause or span the request matched"
+title: "An exclusion regex tested against the whole message vetoes a real request in another clause — key the veto on order, and never let the gate that lifts it consume the vetoed token"
 track: bug
 category: logic-errors
 tags: [ai-prompting, testing, intent-classification, regex]
@@ -7,6 +7,7 @@ module: server
 applies_to: ["server/services/coach-intent-classifier.ts", "server/services/**/*classif*.ts"]
 symptoms: ["\"Find me a recipe, I don't like that recipe\" stops routing to the recipe finder after an exclusion for actions on an existing recipe is added", "Every hand-written must-route and must-NOT-route test passes, yet a generated corpus shows many rows changed from routed to not-routed and none the other way", "A docblock says \"a request for A recipe still routes\" and is false for any message with two clauses"]
 created: 2026-09-28
+last_updated: 2026-09-28
 severity: medium
 ---
 
@@ -31,19 +32,32 @@ A veto and a match were computed over different extents. The request pattern mat
 
 ## Solution
 
-The fix is tracked in `todos/P2-2026-09-28-recipe-finder-referent-exclusion-vetoes-compound-requests.md`, which must land before `RECIPE_FINDER_ENABLED` is flipped. The reviewers proposed three shapes; measure them against each other:
+#1156 measured the three shapes the reviewers proposed on 587 labelled rows. The rows were the shipped test lists, 6 openers × 4 objects × 19 tails, hand-written compounds, and the 41 eval cases.
 
-1. Apply the exclusions only to the clause (split on `[,;—.?!]`) that contains the request-pattern hit, or only when the exclusion's `.index` overlaps or comes before the request match.
-2. Gate the referent exclusion on the absence of an indefinite request with a negative lookahead (`a|an|another|new|different|some … recipe` not followed by `to|on|in|into`). This measured `bad=0` on the shipped lists plus 4 compound rows.
-3. Skip the referent exclusion after a comparator (`like|similar to|than|based on|instead of`). This recovers 5 of the 7 lost tails.
+| shape | new-recipe requests missed | must-NOT-route rows routed |
+|---|---|---|
+| base (#1152) | 274 | 0 |
+| clause scoping | 197 | 2 |
+| indefinite-anywhere lookahead | 26 | 8 |
+| comparator skip | 126 | 0 |
+| **order: no indefinite recipe before the referent** | 3 | 0 |
 
-Whichever shape is chosen, "I want to add a recipe to my meal plan" must stay excluded. A bare indefinite-article override would let it back in.
+- **Clause scoping** fails because splitting re-anchors `^`-anchored `recipe_leading` on a fragment: "I need a grocery list for my recipe, a big recipe for 8" routed.
+- **The lookahead** fails on referent-first actions: "Turn my chili recipe into a slow-cooker recipe".
+- **Order is the signal.** Request first means the referent is a comparison or an aside ("a recipe like my lasagna recipe"). Referent first means the message acts on it.
+
+The shipped exclusion is `^(?:(?!INDEFINITE_RECIPE)[\s\S])*?REFERENT_RECIPE`. It is one left-to-right pass, ≤1 ms at 2–4× the 2000-char cap.
+
+**Second defect, found in review:** `INDEFINITE_RECIPE`'s `{0,3}` modifier window could swallow the referent. "I want a name for my recipe" matched as the indefinite phrase `a name for my recipe`, so the scan never reached "my recipe" and the veto lifted. That was 2240 of 3360 generated actions (5 heads × 7 determiners × 8 nouns × 4 prepositions × 3 referents). Main routed 0 of them. The fix: a modifier is never a referent determiner (`(?:(?!REFERENT_DETERMINER\b)[\w-]+\s+){0,3}`), so the phrase that lifts the veto cannot contain the token the veto keys on.
+
+Known residual: a referent-first message that then asks for a new recipe ("My chili recipe is boring. Find me a better one") stays with the Coach, as it did on the base.
 
 ## Prevention
 
 - When adding an exclusion to a classifier, test it on **compound** messages: a genuine request clause joined to a clause that triggers the exclusion. Generate them as openers × tails, never as a hand list.
 - Report each change as a pair of directions against the base (`routed→not`, `not→routed`). A one-sided swing across many rows means the new rule is wider than its intent.
 - A docblock sentence like "X still routes" is a claim over all messages, so test it on the compound shape.
+- When a pattern **lifts** a veto, check that it cannot match across the token the veto keys on. A generated corpus must vary every slot the pattern has, including the filler between determiner and noun. In the #1156 corpus every indefinite phrase ended at its own "recipe", so no row put a referent inside the modifier window, and the corpus could not see the swallow.
 
 ## Related Files
 

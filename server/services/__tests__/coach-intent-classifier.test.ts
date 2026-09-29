@@ -465,6 +465,8 @@ describe("classifyIntent", () => {
       "Suggest a recipe to replace my chili recipe",
       "Find me a quick easy chicken recipe like my usual recipe",
       "Show me some recipes instead of my usual recipe",
+      "Give me any recipe similar to my lasagna recipe",
+      "Find me any quick vegan recipes, I hate my chili recipe",
     ])(
       "routes a new-recipe request that also mentions an existing one: %j",
       (msg) => {
