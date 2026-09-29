@@ -2,6 +2,7 @@
 import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import * as Haptics from "expo-haptics";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import RecipeChatScreen from "../RecipeChatScreen";
 import type { ChatMessage } from "@/hooks/useChat";
@@ -710,6 +711,37 @@ describe("RecipeChatScreen — recipe finder", () => {
     renderComponent(<RecipeChatScreen />);
     expect(screen.getByText("Searching community recipes…")).toBeDefined();
   });
+
+  // The thinking bubble's live region covers Android; VoiceOver needs the
+  // imperative announce, and Android must not hear it twice.
+  it.each([
+    ["ios", 1],
+    ["android", 0],
+  ] as const)(
+    "announces the progress text imperatively on %s %i time(s)",
+    (os, times) => {
+      const originalOS = RN.Platform.OS;
+      RN.Platform.OS = os;
+      const spy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+      try {
+        mockChatMessagesData.value = [];
+        mockSendMessageState.value = {
+          ...mockSendMessageState.value,
+          isStreaming: true,
+          streamingStatus: "Searching community recipes…",
+        };
+        renderComponent(<RecipeChatScreen />);
+        expect(
+          spy.mock.calls.filter(
+            ([msg]) => msg === "Searching community recipes…",
+          ),
+        ).toHaveLength(times);
+      } finally {
+        spy.mockRestore();
+        RN.Platform.OS = originalOS;
+      }
+    },
+  );
 
   it("buttons are inactive while a reply is streaming", () => {
     mockChatMessagesData.value = [finderMessage(2, FLOW_NEW)];
