@@ -526,9 +526,18 @@ describe("useSendMessage", () => {
         JSON.stringify({ content: "second" }),
       );
 
+      // The aborted first call has settled (its XHR fired onabort) while the
+      // second is still in flight. Its `finally` must not tear down the
+      // second call's state: this is what pins the ownership-scoped epoch
+      // gate in useSendMessage's finally (an unconditional reset there turns
+      // isStreaming false here).
+      await act(async () => {
+        await p1;
+      });
+      expect(result.current.isStreaming).toBe(true);
+
       await act(async () => {
         secondXhr.simulateChunks(['data: {"done":true}\n']);
-        await p1;
         await p2;
       });
 
