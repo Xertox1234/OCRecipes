@@ -326,6 +326,18 @@ export const chatRateLimit = createRateLimiter({
   message: "Too many chat requests. Please wait.",
 });
 
+/**
+ * Chat READS (conversation list, one conversation, its messages) get their own
+ * budget. On chatRateLimit's shared 20/min, a burst of sends plus the refetch
+ * after each one could 429 the refetch that follows a finished reply — the
+ * reply was stored, but the chat kept showing its stale copy.
+ */
+export const chatReadRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: "Too many chat requests. Please wait.",
+});
+
 export const micronutrientRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 20,
