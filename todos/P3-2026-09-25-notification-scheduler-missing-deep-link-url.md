@@ -1,6 +1,6 @@
 ---
 title: "Server-driven Coach reminder push payload has no url field — the client entryId fallback is permanently load-bearing"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-25
 updated: 2026-09-25

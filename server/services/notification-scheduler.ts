@@ -108,7 +108,14 @@ export async function sendDueCommitmentReminders(): Promise<void> {
       const { pushDelivered } = await notify(entry.userId, "commitment", {
         title: "Coach reminder",
         body: entry.content.slice(0, 100),
-        data: { entryId: entry.id },
+        // `url` is what client/navigation/linking.ts's getInitialURL/subscribe
+        // resolve a notification tap through. `entryId` stays alongside it —
+        // the same shape client/hooks/useNotebookNotifications.ts already
+        // sends — for back-compat with the entryId-only fallback there.
+        data: {
+          entryId: entry.id,
+          url: `ocrecipes://notebook-entry/${entry.id}`,
+        },
         context: {
           notebookEntryId: entry.id,
           content: entry.content.slice(0, 200),
