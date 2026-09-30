@@ -13,7 +13,9 @@ const {
   mockUseChatConversations,
   mockRefetch,
   focusEffectCb,
+  premiumState,
 } = vi.hoisted(() => ({
+  premiumState: { coachPro: true, isLoading: false },
   mockGoBack: vi.fn(),
   mockCanGoBack: vi.fn(),
   mockNavigate: vi.fn(),
@@ -47,6 +49,14 @@ vi.mock("@/hooks/useChat", () => ({
   useDeleteConversation: () => ({ mutate: vi.fn() }),
 }));
 
+vi.mock("@/hooks/usePremiumFeatures", () => ({
+  usePremiumFeature: () => premiumState.coachPro,
+}));
+
+vi.mock("@/context/PremiumContext", () => ({
+  usePremiumContext: () => ({ isLoading: premiumState.isLoading }),
+}));
+
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
 }));
@@ -55,6 +65,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockCanGoBack.mockReturnValue(true);
   focusEffectCb.current = null;
+  premiumState.coachPro = true;
+  premiumState.isLoading = false;
   mockUseChatConversations.mockReturnValue({
     data: [],
     isLoading: false,
@@ -137,6 +149,50 @@ describe("AllConversationsScreen — Coach and Recipes tabs", () => {
     expect(mockNavigate).not.toHaveBeenCalledWith(
       "CoachPro",
       expect.anything(),
+    );
+  });
+
+  it("a free-tier user's coach row opens the plain Chat screen", () => {
+    premiumState.coachPro = false;
+    mockUseChatConversations.mockReturnValue({
+      data: [conv(9, "Free chat")],
+      isLoading: false,
+    });
+
+    renderComponent(<AllConversationsScreen />);
+    fireEvent.click(screen.getByLabelText("Open conversation: Free chat"));
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      "Main",
+      {
+        screen: "CoachTab",
+        params: { screen: "Chat", params: { conversationId: 9 } },
+      },
+      { pop: true },
+    );
+  });
+
+  it("while premium status is loading, a coach row still opens Coach Pro", () => {
+    premiumState.coachPro = false;
+    premiumState.isLoading = true;
+    mockUseChatConversations.mockReturnValue({
+      data: [conv(10, "Loading chat")],
+      isLoading: false,
+    });
+
+    renderComponent(<AllConversationsScreen />);
+    fireEvent.click(screen.getByLabelText("Open conversation: Loading chat"));
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      "Main",
+      {
+        screen: "CoachTab",
+        params: {
+          screen: "CoachPro",
+          params: { selectedConversationId: 10 },
+        },
+      },
+      { pop: true },
     );
   });
 

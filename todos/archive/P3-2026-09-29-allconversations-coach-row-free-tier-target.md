@@ -1,6 +1,6 @@
 ---
 title: "All Conversations: a free-tier user reaching it by deep link opens Coach Pro for every coach row"
-status: backlog
+status: done
 priority: low
 created: 2026-09-29
 updated: 2026-09-29
@@ -21,9 +21,9 @@ Found in #1184's mobile review (the coach-row navigation fix). Before #1184 the 
 
 ## Acceptance Criteria
 
-- [ ] When `usePremiumFeature("coachPro")` is false, a coach row opens `Chat` (`{ conversationId }`), the same screen `ChatListScreen`'s rows open. Coach Pro users still open `CoachPro`. While premium status is loading, keep opening `CoachPro` (CoachProScreen already treats loading as "assume access"), so a Coach Pro user is never routed to `Chat`.
-- [ ] Keep the `{ pop: true }` nested-navigate form from #1184 for whichever route is chosen.
-- [ ] A test covers the free-tier branch.
+- [x] When `usePremiumFeature("coachPro")` is false, a coach row opens `Chat` (`{ conversationId }`), the same screen `ChatListScreen`'s rows open. Coach Pro users still open `CoachPro`. While premium status is loading, keep opening `CoachPro` (CoachProScreen already treats loading as "assume access"), so a Coach Pro user is never routed to `Chat`.
+- [x] Keep the `{ pop: true }` nested-navigate form from #1184 for whichever route is chosen.
+- [x] A test covers the free-tier branch.
 
 ## Implementation Notes
 
