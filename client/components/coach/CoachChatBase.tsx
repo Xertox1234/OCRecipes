@@ -42,6 +42,9 @@ interface CoachChatBaseProps {
   inputAdornment?: ReactNode;
   /** Whether the TextInput should support multiple lines. Defaults to false. */
   multilineInput?: boolean;
+  /** Return sends even when the input is multiline. Defaults to sending only
+   *  when single-line (a multiline Return inserts a newline). */
+  submitOnReturn?: boolean;
   /** keyboardVerticalOffset for KeyboardAvoidingView. Defaults to 0. */
   keyboardVerticalOffset?: number;
   /** Vertical alignment of items inside the input bar. Use "flex-end" when
@@ -85,6 +88,7 @@ export function CoachChatBase({
   inputAccessibilityLabel = "Message your nutrition coach",
   inputAdornment,
   multilineInput = false,
+  submitOnReturn = !multilineInput,
   keyboardVerticalOffset = 0,
   inputBarAlign = "center",
   inputBarStyle,
@@ -141,7 +145,7 @@ export function CoachChatBase({
             onSubmitEditing={onSend}
             returnKeyType="send"
             multiline={multilineInput}
-            blurOnSubmit={!multilineInput}
+            blurOnSubmit={submitOnReturn}
             editable={!isStreaming}
             accessibilityLabel={inputAccessibilityLabel}
             maxLength={2000}

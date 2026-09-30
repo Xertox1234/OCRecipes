@@ -204,6 +204,8 @@ vi.mock("@/components/coach/CoachChatBase", () => ({
     streamingError,
     inlineBanner,
     inputAdornment,
+    multilineInput,
+    submitOnReturn,
   }: {
     children: React.ReactNode;
     inputText?: string;
@@ -212,8 +214,14 @@ vi.mock("@/components/coach/CoachChatBase", () => ({
     streamingError?: string | null;
     inlineBanner?: React.ReactNode;
     inputAdornment?: React.ReactNode;
+    multilineInput?: boolean;
+    submitOnReturn?: boolean;
   }) => (
-    <div data-testid="chat-base">
+    <div
+      data-testid="chat-base"
+      data-multiline-input={String(!!multilineInput)}
+      data-submit-on-return={String(!!submitOnReturn)}
+    >
       <button data-testid="send" onClick={() => onSend()}>
         send
       </button>
@@ -521,6 +529,19 @@ describe("CoachChat — handleSend", () => {
 });
 
 // ── handleChangeText warm-up branch ──────────────────────────────────────────
+// iOS offered no Paste in the Coach Pro input's long-press menu while
+// RecipeChef's multiline input did (user report on device, 2026-09-30). Coach
+// Pro now uses a multiline input like RecipeChef and the Coach overlay, and
+// Return still sends, as it did single-line.
+describe("CoachChat — input", () => {
+  it("is multiline and Return still sends", () => {
+    renderCoachChat({ conversationId: 7 });
+    const base = screen.getByTestId("chat-base");
+    expect(base.getAttribute("data-multiline-input")).toBe("true");
+    expect(base.getAttribute("data-submit-on-return")).toBe("true");
+  });
+});
+
 describe("CoachChat — handleChangeText", () => {
   it("sends a text warm-up only when isCoachPro", () => {
     renderCoachChat({ isCoachPro: true });
