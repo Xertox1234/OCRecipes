@@ -14,6 +14,8 @@ import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/context/ToastContext";
+import { usePremiumContext } from "@/context/PremiumContext";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import {
   useChatConversations,
   useDeleteConversation,
@@ -46,6 +48,10 @@ export default function AllConversationsScreen() {
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<AllConversationsNavigationProp>();
+
+  const { isLoading: isPremiumLoading } = usePremiumContext();
+  const isCoachPro = usePremiumFeature("coachPro");
+  const showCoachPro = isCoachPro || isPremiumLoading;
 
   const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const [search, setSearch] = useState("");
@@ -151,14 +157,20 @@ export default function AllConversationsScreen() {
             // handled (navigationInChildEnabled is off), so name the path.
             // `pop: true` returns to the EXISTING Main route below this modal;
             // without it the root StackRouter pushes a second Main on top.
+            // Free-tier rows open the plain Chat screen (as ChatListScreen
+            // does). While premium status loads, keep CoachPro so a Coach Pro
+            // user is never routed to Chat (CoachProScreen assumes access
+            // while loading too).
             navigation.navigate(
               "Main",
               {
                 screen: "CoachTab",
-                params: {
-                  screen: "CoachPro",
-                  params: { selectedConversationId: conv.id },
-                },
+                params: showCoachPro
+                  ? {
+                      screen: "CoachPro",
+                      params: { selectedConversationId: conv.id },
+                    }
+                  : { screen: "Chat", params: { conversationId: conv.id } },
               },
               { pop: true },
             );
@@ -214,7 +226,14 @@ export default function AllConversationsScreen() {
         </View>
       </Pressable>
     ),
-    [activeSegment, handleDelete, handleTogglePin, navigation, theme],
+    [
+      activeSegment,
+      handleDelete,
+      handleTogglePin,
+      navigation,
+      showCoachPro,
+      theme,
+    ],
   );
 
   return (
