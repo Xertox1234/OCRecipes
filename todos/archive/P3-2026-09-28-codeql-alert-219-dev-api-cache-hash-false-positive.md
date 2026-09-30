@@ -1,14 +1,12 @@
 ---
 title: "CodeQL alert #219 (js/insufficient-password-hash) on dev-api-cache.ts is a false positive that re-fails the CodeQL check on nutrition PRs"
-status: backlog
+status: done
 priority: low
 created: 2026-09-28
-updated: 2026-09-28
+updated: 2026-09-30
 assignee:
 labels: [deferred, security, ci]
 github_issue:
-human_led: true
-blocked_reason: "Needs the user's choice: dismiss the alert (an outward GitHub action the user runs) or change computeRequestHash's param selection. Closing also needs a later PR's CodeQL result to confirm."
 ---
 
 # CodeQL alert #219 on `dev-api-cache.ts` is a false positive that re-fails the CodeQL check on nutrition PRs
@@ -42,7 +40,7 @@ red High security result on unrelated PRs.
 
 ## Acceptance Criteria
 
-- [ ] Alert #219 is closed, in one of two ways:
+- [x] Alert #219 is closed, in one of two ways:
   - Dismissed as "false positive", with a comment citing `API_KEY_FIELD_RE` and `basePath`.
   - Or cleared by a code change that CodeQL recognises, for example building the hashed
     params from an allowlist rather than a denylist.
@@ -83,3 +81,19 @@ red High security result on unrelated PRs.
 ### 2026-09-28
 
 - Filed at the user's request after PR #1135's CodeQL check failed on this alert.
+
+### 2026-09-30
+
+- Dismissed as "false positive" (user chose dismissal over a code change; dismissed 2026-09-30T21:10Z,
+  verified by a fresh read of the alert: `state: dismissed`). No code change, so the fixture-hash
+  criterion does not apply.
+- Checked before dismissing: every key-carrying call site names the key `apiKey`
+  (`server/services/recipe-catalog.ts:228,279,333`) or `api_key`
+  (`server/services/nutrition-lookup.ts:950,1043`, `server/services/micronutrient-lookup.ts:70`), and
+  `API_KEY_FIELD_RE` excludes both; the existing test at
+  `server/services/__tests__/dev-api-cache.test.ts:178` pins "two keys, same hash".
+- A code change was not taken: CodeQL taints the whole URL string once a key is concatenated into
+  it, so any value hashed from that URL stays tainted. Only moving the keys out of the URLs (e.g.
+  into request headers) would clear it, which is outside this todo's scope.
+- The third criterion (a later USDA/Spoonacular URL-editing PR passes `CodeQL`) can only be observed
+  on such a PR. The Risks note stands: a dismissal returns if CodeQL changes the rule's fingerprint.
