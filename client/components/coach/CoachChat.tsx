@@ -1138,6 +1138,12 @@ export default function CoachChat({
       onSend={handleSend}
       isStreaming={isStreaming}
       inputAdornment={micAdornment}
+      // Multiline like RecipeChef and the Coach overlay: iOS offered no Paste
+      // in the single-line input's long-press menu (user report 2026-09-30).
+      // Return still sends.
+      multilineInput
+      submitOnReturn
+      inputBarAlign="flex-end"
       keyboardVerticalOffset={90}
       streamingError={streamingError}
       inlineBanner={limitBanner}
