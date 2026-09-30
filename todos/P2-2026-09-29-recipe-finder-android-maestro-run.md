@@ -3,11 +3,12 @@ title: "Recipe finder: run the manual Maestro flow on Android (parked)"
 status: backlog
 priority: medium
 created: 2026-09-29
-updated: 2026-09-29
+updated: 2026-09-30
 assignee:
 labels: [deferred, e2e, android, recipe-finder]
 github_issue:
 human_led: true
+blocked_reason: "No Android device; Android runs parked by user ruling 2026-09-29 — pick up only when the user asks"
 ---
 
 # Recipe finder: run the manual Maestro flow on Android (parked)
