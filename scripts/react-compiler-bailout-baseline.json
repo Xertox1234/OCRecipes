@@ -10,7 +10,6 @@
   "client/components/Card.tsx",
   "client/components/Chip.tsx",
   "client/components/CoachOverlayContent.tsx",
-  "client/components/ConfirmationModal.tsx",
   "client/components/MealSuggestionsModal.tsx",
   "client/components/MicronutrientSection.tsx",
   "client/components/RecipeGenerationModal.tsx",

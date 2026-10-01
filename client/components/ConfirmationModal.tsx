@@ -90,12 +90,18 @@ export function useConfirmationModal() {
   const sheetRef = useRef<BottomSheetModal>(null);
   const optionsRef = useRef<ConfirmOptions | null>(null);
   const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [, setRevision] = useState(0);
+  // ConfirmationModalInner registers its own state setter here. confirm()
+  // pushes the new options into Inner's state directly, because a host
+  // re-render does NOT reach Inner: a host compiled by React Compiler caches
+  // `<ConfirmationModal />` on its never-changing identity, so Inner reading
+  // optionsRef during render showed a blank sheet on every compiled host.
+  // See docs/solutions/logic-errors/hook-returned-stable-component-reading-ref-goes-blank-under-compiled-host-2026-10-01.md
+  const optionsSetterRef = useRef<((o: ConfirmOptions) => void) | null>(null);
   const [isOpen, setIsOpen] = useState(false);
 
   const confirm = useCallback((opts: ConfirmOptions) => {
     optionsRef.current = opts;
-    setRevision((r) => r + 1);
+    optionsSetterRef.current?.(opts);
     setIsOpen(true);
     sheetRef.current?.present();
     // Announce the sheet's purpose on open — same pattern and rationale as
@@ -130,7 +136,10 @@ export function useConfirmationModal() {
     setIsOpen(false);
   }, []);
 
-  // Stable component identity — never changes, so React re-renders (not remounts)
+  // Stable component identity — never changes, so the sheet is never
+  // remounted. Because of that, a compiled host never re-renders it either:
+  // everything Inner draws must come from Inner's own state (see
+  // optionsSetterRef above), never from a ref read during render.
   const ConfirmationModal = useMemo(
     () =>
       function StableConfirmationModal() {
@@ -139,6 +148,7 @@ export function useConfirmationModal() {
             sheetRef={sheetRef}
             optionsRef={optionsRef}
             announceTimerRef={announceTimerRef}
+            optionsSetterRef={optionsSetterRef}
             onClosed={handleClosed}
           />
         );
@@ -167,6 +177,7 @@ interface ConfirmationModalInnerProps {
   sheetRef: React.RefObject<BottomSheetModal | null>;
   optionsRef: React.RefObject<ConfirmOptions | null>;
   announceTimerRef: React.RefObject<ReturnType<typeof setTimeout> | null>;
+  optionsSetterRef: React.RefObject<((o: ConfirmOptions) => void) | null>;
   onClosed: () => void;
 }
 
@@ -176,9 +187,20 @@ function ConfirmationModalInner({
   sheetRef,
   optionsRef,
   announceTimerRef,
+  optionsSetterRef,
   onClosed,
 }: ConfirmationModalInnerProps) {
-  const options = optionsRef.current;
+  // What the sheet draws. Set by confirm() through optionsSetterRef; the
+  // catch-up read covers a confirm() that ran before this effect registered
+  // the setter. Callbacks below still read optionsRef at tap time.
+  const [options, setOptions] = useState<ConfirmOptions | null>(null);
+  useEffect(() => {
+    optionsSetterRef.current = setOptions;
+    if (optionsRef.current) setOptions(optionsRef.current);
+    return () => {
+      optionsSetterRef.current = null;
+    };
+  }, [optionsRef, optionsSetterRef]);
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
