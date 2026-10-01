@@ -280,4 +280,68 @@ describe("ConfirmationModal", () => {
       expect(screen.getByTestId("is-open").textContent).toBe("false");
     });
   });
+
+  // A host compiled by React Compiler caches `<ConfirmationModal />` keyed on
+  // the component's (stable) identity, so a host re-render never re-renders
+  // the sheet. Vitest doesn't run the compiler, so this harness does the same
+  // caching by hand. The uncached TestHarness tests above are the control:
+  // same mocks, same hook, only the caching differs.
+  describe("inside a host that caches the element (compiled host)", () => {
+    function CachedHostHarness({
+      first,
+      second,
+    }: {
+      first: ConfirmOptions;
+      second: ConfirmOptions;
+    }) {
+      const { confirm, ConfirmationModal } = useConfirmationModal();
+      const sheet = React.useMemo(
+        () => <ConfirmationModal />,
+        [ConfirmationModal],
+      );
+      return (
+        <>
+          <button onClick={() => confirm(first)} data-testid="trigger">
+            Open
+          </button>
+          <button onClick={() => confirm(second)} data-testid="trigger-2">
+            Open again
+          </button>
+          {sheet}
+        </>
+      );
+    }
+
+    const secondOptions: ConfirmOptions = {
+      title: "Sign Out",
+      message: "Are you sure you want to sign out?",
+      confirmLabel: "Yes, Sign Out",
+      onConfirm,
+    };
+
+    it("shows the title, message and destructive label after confirm()", () => {
+      renderComponent(
+        <CachedHostHarness first={defaultOptions} second={secondOptions} />,
+      );
+      triggerModal();
+      expect(screen.getByText("Delete Entry")).toBeDefined();
+      expect(screen.getByText("Remove this item?")).toBeDefined();
+      expect(screen.getByText("Delete")).toBeDefined();
+    });
+
+    it("shows the new text when confirm() is called again with other options", () => {
+      renderComponent(
+        <CachedHostHarness first={defaultOptions} second={secondOptions} />,
+      );
+      triggerModal();
+      fireEvent.click(screen.getByText("Cancel"));
+      fireEvent.click(screen.getByTestId("trigger-2"));
+      expect(screen.getByText("Sign Out")).toBeDefined();
+      expect(
+        screen.getByText("Are you sure you want to sign out?"),
+      ).toBeDefined();
+      expect(screen.getByText("Yes, Sign Out")).toBeDefined();
+      expect(screen.queryByText("Delete Entry")).toBeNull();
+    });
+  });
 });
