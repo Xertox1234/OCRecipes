@@ -501,25 +501,27 @@ describe("meal-suggestions", () => {
       expect(userMessage).not.toContain("AVOID SUGGESTING");
     });
 
-    it("injects IMPORTANT macro-gap line when protein is well short of target", async () => {
+    it("injects IMPORTANT macro-gap line when protein lags the day's calories", async () => {
       mockCreate.mockResolvedValue(
         createMockChatCompletion(JSON.stringify(validAIResponse)),
       );
 
-      // Protein 80% short (30g remaining of 150g target → gap ratio = 120/150 = 0.80)
-      // Carbs 0% short, Fat 0% short, Calories exactly 30% short (not triggered)
+      // remainingBudget is what is still LEFT. Calories 60% eaten (800 of 2000
+      // left); protein 10% eaten (135 of 150 g left) → lags by 0.50. Carbs and
+      // fat 60% eaten, on pace.
       const input: MealSuggestionInput = {
         ...baseInput,
         dailyTargets: { calories: 2000, protein: 150, carbs: 200, fat: 60 },
-        remainingBudget: { calories: 1400, protein: 30, carbs: 200, fat: 60 },
+        remainingBudget: { calories: 800, protein: 135, carbs: 80, fat: 24 },
       };
 
       await generateMealSuggestions(input);
 
       const callArgs = mockCreate.mock.calls[0][0];
       const userMessage = callArgs.messages[1].content as string;
-      expect(userMessage).toContain("IMPORTANT");
-      expect(userMessage).toContain("protein");
+      expect(userMessage).toContain(
+        "IMPORTANT: The user is 135g short on protein today",
+      );
     });
 
     it("omits macro-gap line when no macro exceeds the 30% gap threshold", async () => {
@@ -527,9 +529,8 @@ describe("meal-suggestions", () => {
         createMockChatCompletion(JSON.stringify(validAIResponse)),
       );
 
-      // Protein 20% short (120/150 remaining → consumed 30/150 = 0.20 < 0.30)
-      // Carbs 25% short (150/200 remaining), Fat ~17% short (50/60), Calories 10% short (1800/2000)
-      // None exceed the >30% threshold
+      // Calories 10% eaten (1800 of 2000 left); protein 20%, carbs 25%, fat
+      // ~17% eaten — every macro is AHEAD of calories, so none lags.
       const input: MealSuggestionInput = {
         ...baseInput,
         dailyTargets: { calories: 2000, protein: 150, carbs: 200, fat: 60 },
