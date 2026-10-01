@@ -166,8 +166,8 @@ function cacheKey(s: string): string {
 
 const FC_PARAMS = { seed: 20260914, numRuns: 100 } as const;
 
-function urlsFetched(): string[] {
-  return mockFetch.mock.calls.map((c) => String(c[0]));
+function hostsFetched(): string[] {
+  return mockFetch.mock.calls.map((c) => new URL(String(c[0])).hostname);
 }
 
 describe("nutrition-lookup metamorphic properties", () => {
@@ -215,9 +215,9 @@ describe("nutrition-lookup metamorphic properties", () => {
         _resetCNFCacheForTesting();
         const result = await lookupNutrition(item);
         seen.add(item);
-        const urls = urlsFetched();
-        const hitUsda = urls.some((u) => u.includes("api.nal.usda.gov"));
-        const hitNinjas = urls.some((u) => u.includes("api.api-ninjas.com"));
+        const hosts = hostsFetched();
+        const hitUsda = hosts.includes("api.nal.usda.gov");
+        const hitNinjas = hosts.includes("api.api-ninjas.com");
         if (item === "sugar") {
           expect(result?.calories).toBe(387);
           expect(hitUsda).toBe(false);
