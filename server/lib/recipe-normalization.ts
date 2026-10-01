@@ -21,6 +21,14 @@ const LOWERCASE_WORDS = new Set([
   "from",
 ]);
 
+// A character whose uppercase is longer ("ß" → "SS", "ﬁ" → "FI") stays as is:
+// the next pass would lowercase the extra letter and change the title again.
+function capitalizeFirst(word: string): string {
+  const first = word.charAt(0);
+  const upper = first.toUpperCase();
+  return (upper.length === 1 ? upper : first) + word.slice(1);
+}
+
 export function normalizeTitle(title: string): string {
   const trimmed = title.trim();
   if (!trimmed) return trimmed;
@@ -28,9 +36,7 @@ export function normalizeTitle(title: string): string {
     .toLowerCase()
     .split(/\s+/)
     .map((word, i) =>
-      i === 0 || !LOWERCASE_WORDS.has(word)
-        ? word.charAt(0).toUpperCase() + word.slice(1)
-        : word,
+      i === 0 || !LOWERCASE_WORDS.has(word) ? capitalizeFirst(word) : word,
     )
     .join(" ");
 }
@@ -76,12 +82,24 @@ export function normalizeDifficulty(
 
 const STEP_PREFIX_RE = /^\s*(?:\d+[.)]\s*|step\s+\d+[:.]\s*)/i;
 
+// Strip every leading prefix ("1. 2. Mix"), not just the first, so a second
+// pass finds none to remove.
+function stripStepPrefixes(step: string): string {
+  let rest = step;
+  let prev: string;
+  do {
+    prev = rest;
+    rest = rest.replace(STEP_PREFIX_RE, "");
+  } while (rest !== prev);
+  return rest;
+}
+
 export function normalizeInstructions(
   instructions: string[] | null | undefined,
 ): string[] {
   if (!instructions) return [];
   return instructions
-    .map((step) => step.replace(STEP_PREFIX_RE, "").trim())
+    .map((step) => stripStepPrefixes(step).trim())
     .filter((step) => step.length > 0)
     .map((step) => step.charAt(0).toUpperCase() + step.slice(1));
 }
@@ -138,9 +156,11 @@ export interface IngredientInput {
 export function normalizeIngredient(ing: IngredientInput): IngredientInput {
   let { name, quantity, unit } = ing;
 
-  // If quantity is empty, try to extract measurement from the name field
+  // If quantity is empty, try to extract measurement from the name field.
+  // Match the normalised name — the text a second pass sees — so leading
+  // whitespace or case folding cannot defer the extraction to that pass.
   if (!quantity.trim() && !unit.trim()) {
-    const match = name.match(MEASUREMENT_RE);
+    const match = normalizeTitle(name).match(MEASUREMENT_RE);
     if (match) {
       quantity = match[1];
       unit = match[2];
