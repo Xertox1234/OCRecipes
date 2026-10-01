@@ -173,7 +173,9 @@ describe("civilHourInTz", () => {
     }
   });
 
-  it("defaults to UTC", () => {});
+  it("defaults to UTC", () => {
+    expect(civilHourInTz(new Date("2026-07-10T15:00:00Z"))).toBe(15);
+  });
 
   it("throws RangeError on an invalid timezone rather than returning NaN", () => {
     // Documented in the JSDoc; callers taking a tz from a request must route it
