@@ -13,6 +13,7 @@ import {
   MUTATION_TARGETS,
 } from "../../stryker.targets.mjs";
 import {
+  MAX_FILES,
   renderSummary,
   rowFromRun,
   scoreFromReport,
@@ -23,12 +24,17 @@ import {
 const registered = new Set(
   Object.values(MUTATION_TARGETS).flatMap((t) => t.mutate),
 );
-const withTests = (tests: string[]) => (p: string) => tests.includes(p);
-const deps = (tests: string[], max?: number) => ({
+// Modules exist unless listed as deleted; a test exists only if listed.
+const deps = (
+  tests: string[],
+  { max, deleted = [] }: { max?: number; deleted?: string[] } = {},
+) => ({
   isHardExclusion,
   isApprovedExclusion,
   registeredMutatePaths: registered,
-  exists: withTests(tests),
+  exists: (p: string) =>
+    !deleted.includes(p) &&
+    (p.includes("/__tests__/") ? tests.includes(p) : true),
   max,
 });
 
@@ -49,22 +55,46 @@ describe("selectEligible", () => {
     expect(r.eligible).toEqual([]);
   });
 
-  it("ignores tests, .d.ts, .tsx, nested dirs, and files outside the eligible roots", () => {
+  it("ignores tests, .d.ts, .tsx, and files outside the eligible roots", () => {
     const r = selectEligible(
       [
         "server/lib/__tests__/foo.test.ts",
         "server/lib/foo.property.test.ts",
         "server/lib/types.d.ts",
-        "server/lib/nested/deep.ts",
         "client/components/Button.tsx",
         "server/routes/recipes.ts",
         "scripts/ci/visual-diff.ts",
       ],
-      deps([
-        "server/lib/__tests__/foo.test.ts",
-        "server/lib/nested/__tests__/deep.test.ts",
-      ]),
+      deps(["server/lib/__tests__/foo.test.ts"]),
     );
+    expect(r).toEqual({
+      eligible: [],
+      untested: [],
+      excluded: [],
+      skippedRegistered: [],
+      overflow: [],
+    });
+  });
+
+  it("includes modules in folders nested under an eligible root", () => {
+    const r = selectEligible(
+      ["server/services/recipe-finder/classify-turn.ts"],
+      deps(["server/services/recipe-finder/__tests__/classify-turn.test.ts"]),
+    );
+    expect(r.eligible).toEqual([
+      {
+        file: "server/services/recipe-finder/classify-turn.ts",
+        test: "server/services/recipe-finder/__tests__/classify-turn.test.ts",
+      },
+    ]);
+  });
+
+  it("drops a module the PR deleted, from every category", () => {
+    const r = selectEligible(["server/lib/gone.ts", "server/lib/gone2.ts"], {
+      ...deps(["server/lib/__tests__/gone.test.ts"], {
+        deleted: ["server/lib/gone.ts", "server/lib/gone2.ts"],
+      }),
+    });
     expect(r).toEqual({
       eligible: [],
       untested: [],
@@ -141,16 +171,24 @@ describe("selectEligible", () => {
     const tests = files.map((f) =>
       f.replace(/server\/lib\/(\w+)\.ts$/, "server/lib/__tests__/$1.test.ts"),
     );
-    const r = selectEligible(files, deps(tests, 6));
+    // No max passed: the default cap applies.
+    const r = selectEligible(files, deps(tests));
+    expect(MAX_FILES).toBe(6);
     expect(r.eligible.map((e) => e.file)).toEqual(files.slice(0, 6));
     expect(r.overflow).toEqual(["server/lib/g.ts", "server/lib/h.ts"]);
   });
 });
 
 describe("scoreFromReport", () => {
+  // Line 42 is "  return a >= b;", line 50 is '  const s = "x";' (1-based
+  // columns, end exclusive, as in Stryker's report).
+  const source = Array.from({ length: 60 }, (_, i) =>
+    i === 41 ? "  return a >= b;" : i === 49 ? '  const s = "x";' : "",
+  ).join("\n");
   const report = {
     files: {
       "server/lib/foo.ts": {
+        source,
         mutants: [
           {
             status: "Killed",
@@ -163,13 +201,19 @@ describe("scoreFromReport", () => {
             status: "Survived",
             mutatorName: "ConditionalExpression",
             replacement: "true",
-            location: { start: { line: 42 } },
+            location: {
+              start: { line: 42, column: 10 },
+              end: { line: 42, column: 16 },
+            },
           },
           {
             status: "NoCoverage",
             mutatorName: "StringLiteral",
             replacement: '""',
-            location: { start: { line: 50 } },
+            location: {
+              start: { line: 50, column: 13 },
+              end: { line: 50, column: 16 },
+            },
           },
           { status: "Ignored" },
           { status: "CompileError" },
@@ -192,21 +236,37 @@ describe("scoreFromReport", () => {
     expect(r.score).toBe(50);
   });
 
-  it("lists survivors and no-coverage mutants with line and mutator", () => {
+  it("lists survivors and no-coverage mutants with line, mutator and the original code", () => {
     expect(scoreFromReport(report).survivors).toEqual([
       {
         file: "server/lib/foo.ts",
         line: 42,
         mutator: "ConditionalExpression",
+        original: "a >= b",
         replacement: "true",
       },
       {
         file: "server/lib/foo.ts",
         line: 50,
         mutator: "StringLiteral",
+        original: '"x"',
         replacement: '""',
       },
     ]);
+  });
+
+  it("slices a multi-line original and marks it unknown without a source", () => {
+    const at = (line: number, column: number) => ({ line, column });
+    const mutant = {
+      status: "Survived",
+      location: { start: at(2, 3), end: at(3, 2) },
+    };
+    const withSource = scoreFromReport({
+      files: { m: { source: "a\n  {x;\n}; b", mutants: [mutant] } },
+    });
+    expect(withSource.survivors[0].original).toBe("{x;\n}");
+    const noSource = scoreFromReport({ files: { m: { mutants: [mutant] } } });
+    expect(noSource.survivors[0].original).toBe("?");
   });
 
   it("returns 0 when nothing is detectable", () => {
@@ -251,7 +311,9 @@ describe("renderSummary", () => {
     );
     expect(out).toContain("| server/lib/low.ts | 2 | 1 | 1 | 0 | 50.0% ⚠️ |");
     expect(out).toContain("| server/lib/edge.ts | 5 | 3 | 2 | 0 | 60.0% |");
-    expect(out).toContain("- line 7: BooleanLiteral → `false`");
+    expect(out).toContain(
+      "- line 7: `?` mutated to `false` (BooleanLiteral) — no test noticed",
+    );
   });
 
   it("counts only scored mutants and notes the ignored and errored ones", () => {
@@ -297,14 +359,49 @@ describe("renderSummary", () => {
       },
     });
     const out = renderSummary([{ file: "server/lib/s.ts", result: r }], noMeta);
-    const l3 = "- line 3: StringLiteral → ``` `` ``` — no test noticed";
-    const l5 = `- line 5: StringLiteral → \`${"x".repeat(79)}…\` — no test noticed`;
-    const l9 = "- line 9: StringLiteral → `a( b )` — no test noticed";
+    const said = (line: number, code: string) =>
+      `- line ${line}: \`?\` mutated to ${code} (StringLiteral) — no test noticed`;
+    const l3 = said(3, "``` `` ```");
+    const l5 = said(5, `\`${"x".repeat(79)}…\``);
+    const l9 = said(9, "`a( b )`");
     expect(out).toContain(l3);
     expect(out).toContain(l5);
     expect(out).toContain(l9);
     expect(out.indexOf(l3)).toBeLessThan(out.indexOf(l5));
     expect(out.indexOf(l5)).toBeLessThan(out.indexOf(l9));
+  });
+
+  it("says (empty) for an empty original or replacement", () => {
+    const r = scoreFromReport({
+      files: {
+        m: {
+          source: "f(x);",
+          mutants: [
+            {
+              status: "Survived",
+              mutatorName: "ArgumentRemoval",
+              replacement: "",
+              location: {
+                start: { line: 1, column: 3 },
+                end: { line: 1, column: 4 },
+              },
+            },
+          ],
+        },
+      },
+    });
+    const out = renderSummary([{ file: "server/lib/e.ts", result: r }], noMeta);
+    expect(out).toContain(
+      "- line 1: `x` mutated to (empty) (ArgumentRemoval) — no test noticed",
+    );
+  });
+
+  it("shows n/a, not a low-score flag, when no mutant was scored", () => {
+    const r = scoreFromReport({
+      files: { m: { mutants: [{ status: "Ignored" }] } },
+    });
+    const out = renderSummary([{ file: "server/lib/z.ts", result: r }], noMeta);
+    expect(out).toContain("| server/lib/z.ts | 0 | 0 | 0 | 0 | n/a |");
   });
 
   it("keeps a harness error with a pipe or newline inside its table cell", () => {

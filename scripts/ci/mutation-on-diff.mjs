@@ -31,7 +31,7 @@ import {
   isHardExclusion,
 } from "../../stryker.targets.mjs";
 
-export const ELIGIBLE_DIRS = [
+const ELIGIBLE_DIRS = [
   "server/lib/",
   "server/services/",
   "shared/lib/",
@@ -44,9 +44,7 @@ function isCandidate(file) {
   if (!file.endsWith(".ts")) return false;
   if (file.endsWith(".d.ts") || file.endsWith(".test.ts")) return false;
   if (file.split("/").includes("__tests__")) return false;
-  const inRoot = ELIGIBLE_DIRS.some(
-    (d) => file.startsWith(d) && !file.slice(d.length).includes("/"),
-  );
+  const inRoot = ELIGIBLE_DIRS.some((d) => file.startsWith(d));
   const isClientUtils =
     file.startsWith("client/") && file.endsWith("-utils.ts");
   return inRoot || isClientUtils;
@@ -79,7 +77,8 @@ export function selectEligible(changedFiles, deps) {
   /** @type {string[]} */ const overflow = [];
 
   for (const file of [...new Set(changedFiles)].sort()) {
-    if (!isCandidate(file)) continue;
+    // A module the PR deleted has nothing to mutate.
+    if (!isCandidate(file) || !deps.exists(file)) continue;
     if (deps.registeredMutatePaths.has(file)) {
       skippedRegistered.push(file);
       continue;
@@ -103,10 +102,35 @@ export function selectEligible(changedFiles, deps) {
 }
 
 /**
+ * A mutant's position in Stryker's report: 1-based lines and columns, end
+ * column exclusive.
+ * @typedef {{ start: { line: number, column?: number }, end?: { line: number, column?: number } }} Location
+ */
+
+/**
+ * The code a mutant replaced, sliced from the report's source; "?" when the
+ * report lacks the source or the columns.
+ *
+ * @param {string | undefined} source
+ * @param {Location | undefined} loc
+ */
+function originalCode(source, loc) {
+  const startCol = loc?.start.column;
+  const endCol = loc?.end?.column;
+  if (source === undefined || !loc?.end || !startCol || !endCol) return "?";
+  const lines = source.split("\n").slice(loc.start.line - 1, loc.end.line);
+  if (lines.length === 0) return "?";
+  const last = lines.length - 1;
+  lines[last] = lines[last].slice(0, endCol - 1);
+  lines[0] = lines[0].slice(startCol - 1);
+  return lines.join("\n");
+}
+
+/**
  * Stryker's score: detected (killed + timeout) over detected + undetected
  * (survived + noCoverage); 0 when nothing is detectable.
  *
- * @param {{ files: Record<string, { mutants: Array<{ status: string, mutatorName?: string, replacement?: string, location?: { start: { line: number } } }> }> }} report
+ * @param {{ files: Record<string, { source?: string, mutants: Array<{ status: string, mutatorName?: string, replacement?: string, location?: Location }> }> }} report
  */
 export function scoreFromReport(report) {
   let killed = 0,
@@ -116,7 +140,7 @@ export function scoreFromReport(report) {
     ignored = 0,
     errors = 0,
     total = 0;
-  /** @type {{ file: string, line: number, mutator: string, replacement: string }[]} */
+  /** @type {{ file: string, line: number, mutator: string, original: string, replacement: string }[]} */
   const survivors = [];
   for (const [file, entry] of Object.entries(report.files ?? {})) {
     for (const m of entry.mutants ?? []) {
@@ -145,6 +169,7 @@ export function scoreFromReport(report) {
           file,
           line: m.location?.start?.line ?? 0,
           mutator: m.mutatorName ?? "?",
+          original: originalCode(entry.source, m.location),
           replacement: m.replacement ?? "?",
         });
       }
@@ -182,6 +207,7 @@ function oneLine(text) {
  */
 function inlineCode(text) {
   const flat = oneLine(text);
+  if (flat === "") return "(empty)";
   const short = flat.length > 80 ? `${flat.slice(0, 79)}…` : flat;
   const longest = Math.max(
     0,
@@ -218,7 +244,6 @@ export function renderSummary(rows, meta) {
         );
         continue;
       }
-      const flag = r.result.score < 60 ? " ⚠️" : "";
       // Only scored mutants, so the row's counts sum; ignored and errored
       // mutants get a note below the table instead.
       const scored =
@@ -226,8 +251,13 @@ export function renderSummary(rows, meta) {
         r.result.timeout +
         r.result.survived +
         r.result.noCoverage;
+      // Nothing scored means no score at all, not a low one.
+      const score =
+        scored === 0
+          ? "n/a"
+          : `${r.result.score.toFixed(1)}%${r.result.score < 60 ? " ⚠️" : ""}`;
       lines.push(
-        `| ${r.file} | ${scored} | ${r.result.killed + r.result.timeout} | ${r.result.survived} | ${r.result.noCoverage} | ${r.result.score.toFixed(1)}%${flag} |`,
+        `| ${r.file} | ${scored} | ${r.result.killed + r.result.timeout} | ${r.result.survived} | ${r.result.noCoverage} | ${score} |`,
       );
     }
     lines.push("");
@@ -249,7 +279,7 @@ export function renderSummary(rows, meta) {
       const byLine = [...r.result.survivors].sort((a, b) => a.line - b.line);
       for (const s of byLine) {
         lines.push(
-          `- line ${s.line}: ${s.mutator} → ${inlineCode(s.replacement)} — no test noticed`,
+          `- line ${s.line}: ${inlineCode(s.original)} mutated to ${inlineCode(s.replacement)} (${s.mutator}) — no test noticed`,
         );
       }
       lines.push("", "</details>", "");
