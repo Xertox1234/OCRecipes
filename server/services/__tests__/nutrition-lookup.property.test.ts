@@ -6,12 +6,16 @@
  * unknowable in a unit test. What IS knowable is how results must RELATE:
  *
  * RELATIONS
- *   R1 batch ≡ map   batchNutritionLookup(items) equals a Map built from
- *                    lookupNutrition(item) for each item — for every list,
- *                    including empty lists, duplicates, and two spellings
- *                    that share one cache key ("sugar", " sugar"). (Both
- *                    paths call fetchNutritionFromSources for uncached items;
- *                    the batch path must not change any per-item answer.)
+ *   R1 batch ≡ map   with the nutrition cache cold (the db mock always
+ *                    misses), batchNutritionLookup(items) equals a Map built
+ *                    from lookupNutrition(item) for each item — for every
+ *                    list, including empty lists, duplicates, and two
+ *                    spellings of one cache key ("sugar", " sugar"), each
+ *                    answered under its own key. This pins the fresh path
+ *                    only: with a warm cache, getNutritionCacheBatch hands
+ *                    the hit to the first spelling alone, so the relation
+ *                    does not hold there today (todos/P2-2026-09-30-
+ *                    nutrition-cache-batch-shared-key-spellings.md).
  *   R2 fallback      when CNF resolves with calories > 0, neither USDA nor
  *                    API Ninjas is called; when CNF misses, USDA is called;
  *                    API Ninjas is called only after a USDA miss.
@@ -19,6 +23,10 @@
  *                    by exactly one, and re-setting a non-null field leaves it
  *                    unchanged — checked for every field on every draw, so a
  *                    field the count skips or counts twice is caught.
+ *   R4 label mapping mapLabelToNutritionData copies each provided numeric
+ *                    label field to its NutritionData field exactly
+ *                    (Object.is, so -0, NaN and Infinity included) and maps
+ *                    a null or absent one to 0.
  *
  * Providers are mocked by URL exactly as the example suite does; the item
  * alphabet is chosen so each item deterministically exercises one branch of
@@ -32,7 +40,9 @@
  * REGIME
  *   Under the pinned seed (measured): R1 draws 19 empty lists, 39 with a
  *   repeated item and 28 with two spellings of one cache key; R2 draws each
- *   item 30–36 times; R3 fills each field's null 12–21 times. After each
+ *   item 30–36 times; R3 fills each field's null 12–21 times; R4 checks
+ *   484 provided and 216 null or absent fields, the provided ones including
+ *   NaN once, -0 three times and ±Infinity three times. After each
  *   fc.assert, the relation asserts it saw its regime.
  *
  * Seed pinning per repo convention; not in any Stryker testInclude.
@@ -43,6 +53,7 @@ import {
   lookupNutrition,
   batchNutritionLookup,
   countNonNullNutritionFields,
+  mapLabelToNutritionData,
   _resetCNFCacheForTesting,
 } from "../nutrition-lookup";
 
@@ -267,5 +278,46 @@ describe("nutrition-lookup metamorphic properties", () => {
       FC_PARAMS,
     );
     expect(fieldNames.filter((f) => filled[f] === 0)).toEqual([]);
+  });
+  it("R4: mapLabelToNutritionData keeps each provided numeric field exactly", () => {
+    const LABEL_TO_DATA = [
+      ["calories", "calories"],
+      ["protein", "protein"],
+      ["totalCarbs", "carbs"],
+      ["totalFat", "fat"],
+      ["dietaryFiber", "fiber"],
+      ["totalSugars", "sugar"],
+      ["sodium", "sodium"],
+    ] as const;
+    type LabelKey = (typeof LABEL_TO_DATA)[number][0];
+    const arbLabel = fc.record(
+      Object.fromEntries(
+        LABEL_TO_DATA.map(([from]) => [
+          from,
+          fc.option(fc.double(), { nil: null }),
+        ]),
+      ) as Record<LabelKey, fc.Arbitrary<number | null>>,
+      { requiredKeys: [] },
+    );
+    let provided = 0;
+    let missing = 0;
+    fc.assert(
+      fc.property(arbLabel, (label) => {
+        const out = mapLabelToNutritionData(label);
+        for (const [from, to] of LABEL_TO_DATA) {
+          const value = label[from];
+          if (value == null) {
+            missing++;
+            expect(out[to]).toBe(0);
+          } else {
+            provided++;
+            expect(out[to]).toBe(value);
+          }
+        }
+      }),
+      FC_PARAMS,
+    );
+    expect(provided).toBeGreaterThan(0);
+    expect(missing).toBeGreaterThan(0);
   });
 });

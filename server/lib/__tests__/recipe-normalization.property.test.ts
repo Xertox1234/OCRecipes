@@ -18,7 +18,8 @@
  *   name. Each runs as fast-check `examples`, together with the four inputs
  *   that were not idempotent before the fix in the same branch ("ß" and "ﬁ"
  *   title starts, a doubled step prefix, a measurement name with leading
- *   whitespace). After each fc.assert, the relation asserts it saw its regime.
+ *   whitespace). After each of those four fc.assert calls, the relation
+ *   asserts it saw its regime.
  *
  * Seed pinning per repo convention; not in any Stryker testInclude.
  */

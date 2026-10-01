@@ -21,7 +21,7 @@
  * asserts afterwards that the run really saw 23-, 24- and 25-hour days, so
  * "DST days included" above is checked on every run rather than hoped for.
  *
- * Seed pinning: vitest.config.ts sets retry: 2; an unseeded counterexample
+ * Seed pinning: vitest.config.mts sets retry: 2; an unseeded counterexample
  * could pass on a fresh seed and mask a real defect. Pinned per the repo
  * convention:
  * docs/solutions/conventions/fast-check-property-tests-pin-seed-not-in-mutation-testinclude-2026-07-12.md
