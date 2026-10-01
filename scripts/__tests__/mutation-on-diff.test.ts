@@ -14,8 +14,10 @@ import {
 } from "../../stryker.targets.mjs";
 import {
   renderSummary,
+  rowFromRun,
   scoreFromReport,
   selectEligible,
+  testGlob,
 } from "../ci/mutation-on-diff.mjs";
 
 const registered = new Set(
@@ -252,6 +254,67 @@ describe("renderSummary", () => {
     expect(out).toContain("- line 7: BooleanLiteral → `false`");
   });
 
+  it("counts only scored mutants and notes the ignored and errored ones", () => {
+    const r = scoreFromReport({
+      files: {
+        m: {
+          mutants: [
+            { status: "Killed" },
+            { status: "Survived" },
+            { status: "Ignored" },
+            { status: "Ignored" },
+            { status: "CompileError" },
+          ],
+        },
+      },
+    });
+    const out = renderSummary(
+      [{ file: "server/lib/ign.ts", result: r }],
+      noMeta,
+    );
+    expect(out).toContain("| server/lib/ign.ts | 2 | 1 | 1 | 0 | 50.0% ⚠️ |");
+    expect(out).toContain(
+      "- server/lib/ign.ts: 2 ignored, 1 errored — not scored",
+    );
+  });
+
+  it("lists survivors by line, each on one line in safe inline code", () => {
+    const survivor = (line: number, replacement: string) => ({
+      status: "Survived",
+      mutatorName: "StringLiteral",
+      replacement,
+      location: { start: { line } },
+    });
+    const r = scoreFromReport({
+      files: {
+        m: {
+          mutants: [
+            survivor(9, "a(\n  b\n)"),
+            survivor(3, "``"),
+            survivor(5, "x".repeat(100)),
+          ],
+        },
+      },
+    });
+    const out = renderSummary([{ file: "server/lib/s.ts", result: r }], noMeta);
+    const l3 = "- line 3: StringLiteral → ``` `` ``` — no test noticed";
+    const l5 = `- line 5: StringLiteral → \`${"x".repeat(79)}…\` — no test noticed`;
+    const l9 = "- line 9: StringLiteral → `a( b )` — no test noticed";
+    expect(out).toContain(l3);
+    expect(out).toContain(l5);
+    expect(out).toContain(l9);
+    expect(out.indexOf(l3)).toBeLessThan(out.indexOf(l5));
+    expect(out.indexOf(l5)).toBeLessThan(out.indexOf(l9));
+  });
+
+  it("keeps a harness error with a pipe or newline inside its table cell", () => {
+    const out = renderSummary(
+      [{ file: "server/lib/x.ts", result: null, error: "a | b\nc" }],
+      noMeta,
+    );
+    expect(out).toContain("| server/lib/x.ts | — | — | — | — | ⚠️ a \\| b c |");
+  });
+
   it("shows a harness error row instead of a score", () => {
     const out = renderSummary(
       [{ file: "server/lib/x.ts", result: null, error: "explore exited 1" }],
@@ -280,5 +343,61 @@ describe("renderSummary", () => {
       "- Excluded (Hard-Exclusion, not human-approved): server/services/iap-receipt-validation.ts",
     );
     expect(out).toContain("- Over the cap, not run: server/lib/h.ts");
+  });
+});
+
+describe("testGlob", () => {
+  it("widens the co-located test to its siblings (e.g. .property.test.ts)", () => {
+    expect(testGlob("server/lib/__tests__/civil-date.test.ts")).toBe(
+      "server/lib/__tests__/civil-date{,.*}.test.ts",
+    );
+  });
+});
+
+describe("rowFromRun", () => {
+  const file = "server/lib/foo.ts";
+  const report = JSON.stringify({
+    files: { [file]: { mutants: [{ status: "Killed" }] } },
+  });
+
+  it("scores a clean run from its report", () => {
+    const row = rowFromRun(file, { status: 0 }, report);
+    expect(row.error).toBeUndefined();
+    expect(row.result?.score).toBe(100);
+  });
+
+  it("is a harness error when explore exits non-zero, even with a report", () => {
+    expect(rowFromRun(file, { status: 1 }, report)).toEqual({
+      file,
+      result: null,
+      error: "explore exited 1",
+    });
+  });
+
+  it("is a harness error when explore exits 0 but wrote no report", () => {
+    expect(rowFromRun(file, { status: 0 }, null)).toEqual({
+      file,
+      result: null,
+      error: "explore exited 0 without a report",
+    });
+  });
+
+  it("names the errno when explore could not be started", () => {
+    const error = Object.assign(new Error("spawnSync npm E2BIG"), {
+      code: "E2BIG",
+    });
+    expect(rowFromRun(file, { status: null, error }, null)).toEqual({
+      file,
+      result: null,
+      error: "could not start explore (E2BIG)",
+    });
+  });
+
+  it("is a harness error when the report cannot be read", () => {
+    expect(rowFromRun(file, { status: 0 }, "{not json")).toEqual({
+      file,
+      result: null,
+      error: "unreadable report",
+    });
   });
 });
