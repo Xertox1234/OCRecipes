@@ -493,7 +493,7 @@
   {
     "id": "meal-suggestion-protein-gap-17",
     "category": "personalization",
-    "description": "User 75% short on protein — suggestions must prioritize protein-dense options",
+    "description": "Protein lags the day — ~60% of calories eaten but only ~12% of protein — suggestions must prioritize protein-dense options",
     "input": {
       "mealType": "dinner",
       "userProfile": {
@@ -513,7 +513,7 @@
       ],
       "remainingBudget": {
         "calories": 900,
-        "protein": 40,
+        "protein": 140,
         "carbs": 150,
         "fat": 42
       }
@@ -528,7 +528,7 @@
   {
     "id": "meal-suggestion-carbs-gap-18",
     "category": "personalization",
-    "description": "User 75% short on carbs — suggestions must prioritize carb-dense options",
+    "description": "Carbs lag the day — 40% of calories eaten but only ~4% of carbs — suggestions must prioritize carb-dense options",
     "input": {
       "mealType": "lunch",
       "userProfile": {
@@ -548,7 +548,7 @@
       "remainingBudget": {
         "calories": 1200,
         "protein": 70,
-        "carbs": 62,
+        "carbs": 240,
         "fat": 40
       }
     },
@@ -582,7 +582,7 @@
       ],
       "remainingBudget": {
         "calories": 1000,
-        "protein": 38,
+        "protein": 140,
         "carbs": 145,
         "fat": 42
       },
