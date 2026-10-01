@@ -39,21 +39,22 @@ const serviceInput: MealSuggestionInput = {
 If the service already computes a value from inputs it already receives, adding a separate eval field for that computed value is YAGNI and actively misleads contributors into thinking the field needs forwarding. Calibrate the existing budget/target numbers to trigger the threshold instead.
 
 ```typescript
-// server/lib/macro-gap-context.ts — derives gap from dailyTargets and remainingBudget
-// Triggers if (target - remaining) / target > 0.30
+// server/lib/macro-gap-context.ts — derives the lag from dailyTargets and remainingBudget
+// (remainingBudget = what is still LEFT). Fires when a macro's eaten share trails the
+// calories' eaten share by more than 0.30.
 export function buildMacroGapEmphasis(targets, remaining): string { ... }
 
 // ❌ WRONG — redundant eval field; recomputable from the budget numbers
 "input": {
-  "remainingBudget": { "protein": 40 },
-  "dailyTargets": { "protein": 160 },
-  "macroGapSignal": { "macro": "protein", "shortAmount": 120 }  // ← 160-40=120, already implied
+  "remainingBudget": { "calories": 900, "protein": 140 },
+  "dailyTargets": { "calories": 2200, "protein": 160 },
+  "macroGapSignal": { "macro": "protein", "shortAmount": 140 }  // ← already implied
 }
 
 // ✅ CORRECT — budget numbers calibrated to cross the threshold; no redundant field
 "input": {
-  "remainingBudget": { "protein": 40 },   // (160-40)/160 = 0.75 > 0.30 — signal fires
-  "dailyTargets": { "protein": 160 }
+  "remainingBudget": { "calories": 900, "protein": 140 },   // calories 59% eaten,
+  "dailyTargets": { "calories": 2200, "protein": 160 }      // protein 12.5% → lag 0.47 > 0.30
 }
 ```
 
