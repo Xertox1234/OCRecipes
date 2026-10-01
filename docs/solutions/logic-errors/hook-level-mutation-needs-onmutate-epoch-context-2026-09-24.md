@@ -8,6 +8,7 @@ applies_to: [client/hooks/**/*.ts]
 symptoms: ["A useMutation whose onSuccess/onError are defined at the hook level (not passed to mutate()) writes stale UI state after the session was reset", "A late error from an abandoned submit repopulates an error banner in a session the user already dismissed", "Session already has a per-call epoch guard pattern for one mutation but a sibling mutation with hook-level callbacks has no equivalent guard"]
 severity: medium
 created: '2026-09-24'
+last_updated: '2026-09-29'
 ---
 
 ## Problem
@@ -66,16 +67,46 @@ const logAllMutation = useMutation<
 
 Any side effect that reflects a **real, already-persisted server write** (cache invalidation, partial-success invalidation) must stay unconditional and run *before* the epoch check — only the session's own **local UI state** (banners, parsed-item list, input text, success haptic/toast) should be gated on the epoch.
 
+### Variant: an async pre-step before a streaming request
+
+`useCoachStream.startStream` awaits `tokenStorage.get()` before it creates its
+XHR. `abortStream()` during that wait was a no-op, because `xhrRef` was still
+null. So the continuation later sent an orphaned request that raced the next
+`startStream`. A late *rejection* was worse: the `.catch` cleared `isStreaming`
+and fired `onError` on the NEW stream. The fix is the same generation counter:
+`streamEpochRef` is bumped by `startStream`, `abortStream` and the unmount
+cleanup, and both the `.then` and the `.catch` return early unless the epoch
+they captured is still current. Guard every settle path of the pre-step, not
+just the success path.
+
+Keep two things apart on unmount. Bumping the epoch only stops a request that
+has not been sent yet. Aborting the in-flight request as well is a product
+decision, because it changes what the user finds when they come back.
+`useChat`'s `useSendMessage` unmount effect bumps the epoch only: by user
+ruling (2026-09-29), a reply that is already streaming keeps running and its
+done handler refreshes the conversation. Screens that want to stop the reply
+on leave call `abortStream` in their own cleanup.
+
+The epoch check on the async continuation (the token-read `then` and its error/catch path) is necessary but not sufficient on its own once the pre-step's own caller also holds other shared, single-slot state (busy/streaming flags, in-flight XHR/request refs, UI-visible streaming content) that a `finally`-style teardown resets. That `finally` block is itself a settle path that must be gated the same way: it can run after a newer call has already started (because the stale call's own async work — e.g. its aborted request's promise — only settles later, asynchronously), so an un-gated `finally` unconditionally tears down whichever call is current now, not the one that scheduled it. Gate every place that resets shared state — not just the initial async continuation — on "is my epoch still the current one", including the `finally`/cleanup block.
+
+If the pre-step's abort function is expected to support a same-tick "abort this call; immediately start a new one" restart, abort must synchronously reset the overlap guard (the busy/isStreaming ref) itself, not rely on the stale call's own async continuation or `finally` to do it later — that reset happens on the next microtask/tick at the earliest, which silently refuses a same-tick restart via the overlap guard. `useCoachStream.abortStream` already does this (a full synchronous reset of every shared field, not just calling `xhr.abort()`); `useChat`'s `useSendMessage.abortStream` needed the identical expansion — mirror `abortStream`'s full synchronous reset, not just the epoch bump, whenever the hook's overlap guard must survive a same-tick abort-then-restart.
+
 ## Prevention
 
 When a `useMutation`'s `onSuccess`/`onError` are configured at the **hook level** rather than per `mutate()` call, and the hook already has (or needs) a generation/epoch ref to guard against a dismissed/reset session, use `onMutate: () => ({ epoch: currentEpochRef.current })` to carry the epoch through `context` — do not try to force a per-call closure pattern onto hook-level callbacks. Before assuming a codebase's existing epoch-guard pattern covers every mutation, check whether each mutation's callbacks are wired per-call or at the hook level; each shape needs a different capture mechanism.
 
 This is the same general bug class as the existing epoch/generation-counter solutions (a stale async completion writing into a value that has since moved on) but a different mechanical trap: those solutions are about *when* to bump the counter; this one is about *how* to capture it when the consuming callback has no per-call closure to capture it into.
 
+For the streaming-pre-step variant: gate every place that resets a hook's shared, single-slot state — the async continuation, its error/catch path, AND its `finally`/cleanup block — on the epoch, and make the abort function do a full synchronous reset (not just an epoch bump) whenever a same-tick abort-then-restart must be supported.
+
 ## Related Files
 
 - `client/hooks/useQuickLogSession.ts` — `logAllMutation`'s `onMutate`/`onSuccess`/`onError`, `sessionEpochRef`
 - `client/hooks/__tests__/useQuickLogSession.test.ts` — "reset during an in-flight submit, then a late error, does not repopulate the submitError banner"
+- `client/hooks/useCoachStream.ts` — `streamEpochRef`, `abortStream`'s full synchronous reset, `fail()`'s epoch check
+- `client/hooks/useChat.ts` — `useSendMessage`'s `sendEpochRef`, `abortStream`, unmount effect, and the epoch-gated token-read continuation/catch/finally
+- `client/hooks/__tests__/useCoachStream.test.ts` — "overlapping starts" and "fail() epoch guard" blocks
+- `client/hooks/__tests__/useChat.test.ts` — "token-read epoch guard" block
 
 ## See Also
 

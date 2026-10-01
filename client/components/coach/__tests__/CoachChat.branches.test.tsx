@@ -30,6 +30,7 @@ import CoachChat from "../CoachChat";
 import type { ChatMessage } from "@/hooks/useChat";
 import * as Haptics from "expo-haptics";
 import { ApiError } from "@/lib/api-error";
+import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
 
 // ── Mutable test state, hoisted above vi.mock factories ──────────────────────
 const state = vi.hoisted(() => ({
@@ -67,6 +68,9 @@ const state = vi.hoisted(() => ({
   // add_recipe_to_plan: captured from the mocked BlockRenderer's onAction prop
   // so tests can fire an arbitrary action without a canned block.action.
   onAction: null as ((action: Record<string, unknown>) => void) | null,
+  // Recipe finder: captured from the mocked BlockRenderer's onFinderAction.
+  onFinderAction: null as ((a: unknown, label: string) => void) | null,
+  saveRecipe: vi.fn().mockResolvedValue({ id: 5 }),
   // useMealPlanRecipes / useMealPlan
   saveCatalog: vi.fn().mockResolvedValue({ id: 99 }),
   addItem: vi.fn().mockResolvedValue({}),
@@ -78,7 +82,11 @@ const state = vi.hoisted(() => ({
   // ToastContext / useHaptics
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  toastInfo: vi.fn(),
   hapticsNotification: vi.fn(),
+  favouriteIds: [] as { recipeId: number; recipeType: string }[],
+  toggleFavourite: vi.fn(),
+  addFavourite: vi.fn(),
 }));
 
 /** Adjust a single premium feature flag for the next render. */
@@ -118,6 +126,10 @@ vi.mock("@/hooks/useChat", () => ({
     refetch: state.refetchMessages,
   }),
   useDeleteChatMessageForRetry: () => ({ mutateAsync: state.deleteMutate }),
+  useSaveRecipeFromChat: () => ({
+    mutateAsync: state.saveRecipe,
+    isPending: false,
+  }),
 }));
 
 vi.mock("@/hooks/useSpeechToText", () => ({
@@ -168,7 +180,7 @@ vi.mock("@/context/ToastContext", () => ({
   useToast: () => ({
     success: state.toastSuccess,
     error: state.toastError,
-    info: vi.fn(),
+    info: state.toastInfo,
     dismiss: vi.fn(),
   }),
 }));
@@ -186,20 +198,30 @@ vi.mock("@/hooks/useHaptics", () => ({
 vi.mock("@/components/coach/CoachChatBase", () => ({
   CoachChatBase: ({
     children,
+    inputText,
     onSend,
     onChangeText,
     streamingError,
     inlineBanner,
     inputAdornment,
+    multilineInput,
+    submitOnReturn,
   }: {
     children: React.ReactNode;
+    inputText?: string;
     onSend: () => void;
     onChangeText: (t: string) => void;
     streamingError?: string | null;
     inlineBanner?: React.ReactNode;
     inputAdornment?: React.ReactNode;
+    multilineInput?: boolean;
+    submitOnReturn?: boolean;
   }) => (
-    <div data-testid="chat-base">
+    <div
+      data-testid="chat-base"
+      data-multiline-input={String(!!multilineInput)}
+      data-submit-on-return={String(!!submitOnReturn)}
+    >
       <button data-testid="send" onClick={() => onSend()}>
         send
       </button>
@@ -207,6 +229,7 @@ vi.mock("@/components/coach/CoachChatBase", () => ({
         data-testid="text-input"
         onChange={(e) => onChangeText(e.target.value)}
       />
+      <div data-testid="input-text">{inputText}</div>
       {streamingError ? (
         <div data-testid="streaming-error">{streamingError}</div>
       ) : null}
@@ -225,8 +248,12 @@ vi.mock("@/components/coach/blocks", () => ({
     onAction,
     onQuickReply,
     onCommitmentAccept,
+    onFinderAction,
+    isActive,
   }: {
     block: { type: string; [k: string]: unknown };
+    onFinderAction?: (a: unknown, label: string) => void;
+    isActive?: boolean;
     onAction?: (action: Record<string, unknown>) => void;
     onQuickReply?: (message: string, blockKey?: string) => void;
     onCommitmentAccept?: (
@@ -238,8 +265,9 @@ vi.mock("@/components/coach/blocks", () => ({
     // Captured so tests can fire an arbitrary action (not just the one fixed
     // block.action a given render was mounted with) via `state.onAction?.(...)`.
     state.onAction = onAction ?? null;
+    state.onFinderAction = onFinderAction ?? null;
     return (
-      <div data-testid={`block-${block.type}`}>
+      <div data-testid={`block-${block.type}`} data-active={String(isActive)}>
         <button
           data-testid="block-action"
           onClick={() => onAction?.(block.action as Record<string, unknown>)}
@@ -274,11 +302,16 @@ vi.mock("@/components/coach/StreamingBubble", () => ({
   default: ({
     streamingContent,
     statusText,
+    streamBlocks,
   }: {
     streamingContent: string;
     statusText: string;
+    streamBlocks: unknown[];
   }) => (
-    <div data-testid="streaming-bubble">
+    <div
+      data-testid="streaming-bubble"
+      data-blocks={String(streamBlocks.length)}
+    >
       {streamingContent}
       {statusText}
     </div>
@@ -295,6 +328,39 @@ vi.mock("@/components/ChatBubble", () => ({
 vi.mock("@/components/UpgradeModal", () => ({
   UpgradeModal: ({ visible }: { visible: boolean }) =>
     visible ? <div data-testid="upgrade-modal" /> : null,
+}));
+
+vi.mock("@/components/recipe-chat/RecipeCard", () => ({
+  RecipeCard: ({
+    recipe,
+    onSave,
+    isSaved,
+    isFavourited,
+    onFavourite,
+  }: {
+    recipe: { title: string };
+    onSave?: () => void;
+    isSaved?: boolean;
+    isFavourited?: boolean;
+    onFavourite?: () => void;
+  }) => (
+    <>
+      <button data-testid="generated-card" onClick={onSave}>
+        {`${recipe.title}${isSaved ? " saved" : ""}`}
+      </button>
+      {onFavourite ? (
+        <button data-testid="generated-heart" onClick={onFavourite}>
+          {isFavourited ? "favourited" : "not favourited"}
+        </button>
+      ) : null}
+    </>
+  ),
+}));
+
+vi.mock("@/hooks/useFavouriteRecipes", () => ({
+  useFavouriteRecipeIds: () => ({ data: { ids: state.favouriteIds } }),
+  useToggleFavouriteRecipe: () => ({ mutate: state.toggleFavourite }),
+  useAddFavouriteRecipe: () => state.addFavourite,
 }));
 
 vi.mock("@/components/coach/CoachMicButton", () => ({
@@ -360,12 +426,18 @@ function resetState() {
   state.navigate = vi.fn();
   state.apiRequest = vi.fn().mockResolvedValue(undefined);
   state.onAction = null;
+  state.onFinderAction = null;
+  state.saveRecipe = vi.fn().mockResolvedValue({ id: 5 });
   state.saveCatalog = vi.fn().mockResolvedValue({ id: 99 });
   state.addItem = vi.fn().mockResolvedValue({});
   state.mealPlanItems = [];
   state.useMealPlanItemsArgs = [];
   state.toastSuccess = vi.fn();
   state.toastError = vi.fn();
+  state.toastInfo = vi.fn();
+  state.favouriteIds = [];
+  state.toggleFavourite = vi.fn();
+  state.addFavourite = vi.fn();
   state.hapticsNotification = vi.fn();
   warmUpHook.sendWarmUp.mockClear();
   warmUpHook.sendTextWarmUp.mockClear();
@@ -422,7 +494,7 @@ describe("CoachChat — handleSend", () => {
     });
   });
 
-  it("aborts the send when conversation creation fails", async () => {
+  it("aborts the send when conversation creation fails, restores the typed text, and shows a visible error", async () => {
     const onCreateConversation = vi.fn().mockRejectedValue(new Error("boom"));
     renderCoachChat({ conversationId: null, onCreateConversation });
     fireEvent.change(screen.getByTestId("text-input"), {
@@ -432,6 +504,14 @@ describe("CoachChat — handleSend", () => {
       fireEvent.click(screen.getByTestId("send"));
     });
     expect(state.startStream).not.toHaveBeenCalled();
+    // The optimistic bubble/input clear must not eat the user's message —
+    // the typed text comes back so they can retry without retyping it.
+    expect(screen.getByTestId("input-text").textContent).toBe("new convo");
+    // A bare catch that only clears the optimistic bubble leaves the user
+    // with no explanation at all — this must surface visibly.
+    expect(screen.getByTestId("streaming-error").textContent).toBe(
+      "Couldn't start the conversation. Please try again.",
+    );
   });
 
   it("uses the warm-up id and resets warm-up state when isCoachPro", () => {
@@ -449,6 +529,19 @@ describe("CoachChat — handleSend", () => {
 });
 
 // ── handleChangeText warm-up branch ──────────────────────────────────────────
+// iOS offered no Paste in the Coach Pro input's long-press menu while
+// RecipeChef's multiline input did (user report on device, 2026-09-30). Coach
+// Pro now uses a multiline input like RecipeChef and the Coach overlay, and
+// Return still sends, as it did single-line.
+describe("CoachChat — input", () => {
+  it("is multiline and Return still sends", () => {
+    renderCoachChat({ conversationId: 7 });
+    const base = screen.getByTestId("chat-base");
+    expect(base.getAttribute("data-multiline-input")).toBe("true");
+    expect(base.getAttribute("data-submit-on-return")).toBe("true");
+  });
+});
+
 describe("CoachChat — handleChangeText", () => {
   it("sends a text warm-up only when isCoachPro", () => {
     renderCoachChat({ isCoachPro: true });
@@ -1492,5 +1585,258 @@ describe("add_recipe_to_plan", () => {
     });
     expect(state.toastSuccess).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: /add to plan/i })).toBeNull();
+  });
+});
+
+describe("CoachChat — recipe finder", () => {
+  const FLOW = "11111111-1111-4111-8111-111111111111";
+  const finderBlock = {
+    type: "recipe_results",
+    source: "community",
+    items: [],
+    actions: ["generate"],
+    notice: "no_matches",
+    flow: {
+      flowId: FLOW,
+      stage: "results",
+      request: "x",
+      query: { q: "x" },
+      round: 0,
+      shownIds: [],
+    },
+  };
+  const recipe = {
+    title: "Chicken Curry",
+    description: "d",
+    difficulty: "Easy",
+    timeEstimate: "30 min",
+    servings: 2,
+    ingredients: [],
+    instructions: ["cook"],
+    dietTags: [],
+  };
+
+  it("a finder button sends a finder action with its label as the message", () => {
+    state.messages = [
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "No community recipes matched.",
+        metadata: { blocks: [finderBlock] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    act(() => {
+      state.onFinderAction?.({ type: "generate", flowId: FLOW }, "Generate");
+    });
+    expect(state.startStream).toHaveBeenCalledWith(1, "Generate", {
+      finderAction: { type: "generate", flowId: FLOW },
+    });
+  });
+
+  it("only the latest assistant message's finder block is active", () => {
+    state.messages = [
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "a",
+        metadata: { blocks: [finderBlock] },
+      }),
+      makeMessage({ id: 3, role: "user", content: "Generate" }),
+      makeMessage({
+        id: 4,
+        role: "assistant",
+        content: "b",
+        metadata: {
+          blocks: [
+            {
+              ...finderBlock,
+              flow: {
+                ...finderBlock.flow,
+                flowId: "22222222-2222-4222-8222-222222222222",
+              },
+            },
+          ],
+        },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    const actives = screen
+      .getAllByTestId("block-recipe_results")
+      .map((el) => el.getAttribute("data-active"));
+    expect(actives).toEqual(["false", "true"]);
+  });
+
+  // Regenerate re-sends the last user text with no finderAction. After a
+  // "Search Spoonacular" tap that text is the button label, and the server
+  // reads it as a typed refinement: a community search for "<request>.
+  // Search Spoonacular". The finder message carries its own next steps.
+  it.each([
+    ["a results list", finderBlock],
+    [
+      "a clarifying-questions block",
+      {
+        type: "recipe_questions",
+        questions: [{ question: "How much time?", options: ["Quick", "Any"] }],
+        flow: { ...finderBlock.flow, stage: "clarifying" },
+      },
+    ],
+  ])("shows no Regenerate under %s", (_label, block) => {
+    state.messages = [
+      makeMessage({ id: 1, role: "user", content: "Search Spoonacular" }),
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "Here are 3 Spoonacular recipes: …",
+        metadata: { blocks: [block] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    expect(
+      screen.queryByRole("button", { name: /regenerate response/i }),
+    ).toBeNull();
+  });
+
+  it("hides a finder message's plain-text fallback", () => {
+    state.messages = [
+      makeMessage({
+        id: 2,
+        role: "assistant",
+        content: "Here are 3 community recipes: …",
+        metadata: { blocks: [finderBlock] },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    expect(screen.queryByText("Here are 3 community recipes: …")).toBeNull();
+  });
+
+  it("renders a generated recipe from top-level metadata and saves it via save-recipe", async () => {
+    state.messages = [
+      makeMessage({
+        id: 9,
+        role: "assistant",
+        content: "Here's a curry!",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+        },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    fireEvent.click(screen.getByTestId("generated-card"));
+    await waitFor(() =>
+      expect(state.saveRecipe).toHaveBeenCalledWith({
+        conversationId: 1,
+        messageId: 9,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("generated-card").textContent).toBe(
+        "Chicken Curry saved",
+      ),
+    );
+  });
+
+  it("the heart on an unsaved generated recipe saves it, then favourites the saved copy", async () => {
+    state.saveRecipe = vi
+      .fn()
+      .mockResolvedValue({ id: 5, savedItemStatus: "linked" });
+    state.messages = [
+      makeMessage({
+        id: 9,
+        role: "assistant",
+        content: "Here's a curry!",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+        },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    fireEvent.click(screen.getByTestId("generated-heart"));
+
+    await waitFor(() =>
+      expect(state.addFavourite).toHaveBeenCalledWith({
+        recipeId: 5,
+        recipeType: "community",
+      }),
+    );
+    expect(state.saveRecipe).toHaveBeenCalledWith({
+      conversationId: 1,
+      messageId: 9,
+    });
+    expect(state.toggleFavourite).not.toHaveBeenCalled();
+  });
+
+  it("a generated recipe saved earlier reads as saved, and its heart toggles that copy", () => {
+    state.favouriteIds = [{ recipeId: 77, recipeType: "community" }];
+    state.messages = [
+      makeMessage({
+        id: 9,
+        role: "assistant",
+        content: "Here's a curry!",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+          savedRecipeId: 77,
+        },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+
+    expect(screen.getByTestId("generated-card").textContent).toBe(
+      "Chicken Curry saved",
+    );
+    expect(screen.getByTestId("generated-heart").textContent).toBe(
+      "favourited",
+    );
+    fireEvent.click(screen.getByTestId("generated-heart"));
+    expect(state.toggleFavourite).toHaveBeenCalledWith({
+      recipeId: 77,
+      recipeType: "community",
+    });
+    expect(state.saveRecipe).not.toHaveBeenCalled();
+  });
+
+  it("a save that finds Saved Items full says the recipe isn't listed there", async () => {
+    state.saveRecipe = vi
+      .fn()
+      .mockResolvedValue({ id: 5, savedItemStatus: "limit_reached" });
+    state.messages = [
+      makeMessage({
+        id: 9,
+        role: "assistant",
+        content: "Here's a curry!",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+        },
+      }),
+    ];
+    renderCoachChat({ conversationId: 1 });
+    fireEvent.click(screen.getByTestId("generated-card"));
+
+    await waitFor(() =>
+      expect(state.toastInfo).toHaveBeenCalledWith(SAVED_ITEMS_FULL_MESSAGE),
+    );
+    expect(state.toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("drops finder blocks from the live stream footer (the refetched message renders them)", () => {
+    renderCoachChat({ conversationId: 1 });
+    act(() => {
+      state.onDone?.("", [finderBlock, { type: "quick_replies", options: [] }]);
+    });
+    expect(
+      screen.getByTestId("streaming-bubble").getAttribute("data-blocks"),
+    ).toBe("1");
   });
 });

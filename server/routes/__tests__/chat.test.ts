@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import express from "express";
 import request from "supertest";
 
@@ -10,7 +12,12 @@ import {
   generateCoachProResponse,
 } from "../../services/nutrition-coach";
 import { generateRecipeChatResponse } from "../../services/recipe-chat";
+import { STANDARD_SAFETY_MESSAGE } from "../../services/coach-pro-chat";
 import { register } from "../chat";
+import { findCommunity } from "../../services/recipe-finder/find-community";
+import { findOnline } from "../../services/recipe-finder/find-online";
+import { classifyTurn } from "../../services/recipe-finder/classify-turn";
+import type { RecipeResultsBlock } from "@shared/schemas/recipe-finder";
 import {
   createMockChatConversation,
   createMockChatMessage,
@@ -28,6 +35,7 @@ vi.mock("../../storage", () => ({
     getChatMessages: vi.fn(),
     createChatMessage: vi.fn(),
     createChatMessageWithLimitCheck: vi.fn(),
+    getChatMessageByTurnKey: vi.fn(),
     getDailyChatMessageCount: vi.fn(),
     getChatMessageCount: vi.fn(),
     getUser: vi.fn(),
@@ -46,12 +54,18 @@ vi.mock("../../storage", () => ({
     createNotebookEntries: vi.fn().mockResolvedValue([]),
     archiveOldEntries: vi.fn().mockResolvedValue(0),
     pinChatConversation: vi.fn(),
+    createFinderUserMessage: vi.fn(),
+    claimRecipeGeneration: vi.fn(),
+    claimSpoonacularSearch: vi.fn(),
   },
 }));
 
 vi.mock("../../services/nutrition-coach", () => ({
   generateCoachResponse: vi.fn(),
   generateCoachProResponse: vi.fn(),
+  // The free-tier path hashes a response-cache key that includes this.
+  getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test"),
+  SAFETY_OVERRIDE_SENTINEL: "\x00SAFETY_OVERRIDE\x00",
 }));
 
 vi.mock("../../services/coach-blocks", () => ({
@@ -59,6 +73,7 @@ vi.mock("../../services/coach-blocks", () => ({
     .fn()
     .mockImplementation((content: string) => ({ text: content, blocks: [] })),
   BLOCKS_SYSTEM_PROMPT: "test prompt",
+  getBlocksSystemPrompt: vi.fn().mockReturnValue("test prompt"),
 }));
 
 vi.mock("../../services/notebook-extraction", () => ({
@@ -93,6 +108,27 @@ vi.mock("../../services/recipe-chat", async () => {
     generateRecipeChatResponse: vi.fn(),
   };
 });
+
+// Recipe finder: stub only the AI/Spoonacular/search boundaries — the entry
+// rules, transition, fallback text and orchestration stay real.
+vi.mock("../../services/recipe-finder/extract-query", () => ({
+  extractQuery: vi.fn(async (text: string) => ({ q: text.slice(0, 200) })),
+  rawQuery: vi.fn((text: string) => ({ q: text.slice(0, 200) })),
+}));
+vi.mock("../../services/recipe-finder/find-community", () => ({
+  findCommunity: vi.fn(),
+}));
+vi.mock("../../services/recipe-finder/find-online", () => ({
+  findOnline: vi.fn(),
+}));
+vi.mock("../../services/recipe-finder/ask-clarifying", () => ({
+  askClarifying: vi.fn(),
+  FALLBACK_QUESTIONS: [],
+}));
+vi.mock("../../services/recipe-finder/classify-turn", () => ({
+  classifyTurn: vi.fn(),
+  CLASSIFY_TURN_TIMEOUT_MS: 6000,
+}));
 
 vi.mock("../../lib/openai", () => ({
   isAiConfigured: true,
@@ -543,8 +579,8 @@ describe("Chat Routes", () => {
 
       // Mock an async generator yielding chunks
       async function* fakeStream() {
-        yield "Hello ";
-        yield "world!";
+        yield { type: "content" as const, content: "Hello " };
+        yield { type: "content" as const, content: "world!" };
       }
       vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
 
@@ -557,13 +593,15 @@ describe("Chat Routes", () => {
       expect(res.text).toContain("Hello ");
       expect(res.text).toContain("world!");
       expect(res.text).toContain('"done":true');
-      // Saved assistant message (4th arg is metadata — null when no blocks)
+      // Saved assistant message (4th arg is metadata — null when no blocks;
+      // 5th is the route-minted per-turn key the H6 disconnect settle uses)
       expect(storage.createChatMessage).toHaveBeenCalledWith(
         1,
         "1",
         "assistant",
         "Hello world!",
         null,
+        expect.any(String),
       );
       // Title updated for first exchange (history.length === 0)
       expect(storage.updateChatConversationTitle).toHaveBeenCalled();
@@ -573,7 +611,7 @@ describe("Chat Routes", () => {
       mockStreamingSetup();
 
       async function* errorStream() {
-        yield "Partial";
+        yield { type: "content" as const, content: "Partial" };
         throw new Error("AI crash");
       }
       vi.mocked(generateCoachProResponse).mockReturnValue(errorStream());
@@ -592,7 +630,7 @@ describe("Chat Routes", () => {
       mockStreamingSetup();
 
       async function* hugeStream() {
-        yield "x".repeat(60 * 1024);
+        yield { type: "content" as const, content: "x".repeat(60 * 1024) };
       }
       vi.mocked(generateCoachProResponse).mockReturnValue(hugeStream());
 
@@ -612,7 +650,7 @@ describe("Chat Routes", () => {
         createMockUser({ dailyCalorieGoal: null }),
       );
       async function* emptyStream() {
-        yield "Ok";
+        yield { type: "content" as const, content: "Ok" };
       }
       vi.mocked(generateCoachProResponse).mockReturnValue(emptyStream());
 
@@ -650,6 +688,760 @@ describe("Chat Routes", () => {
 
       expect(res.status).toBe(200);
       expect(storage.updateChatConversationTitle).not.toHaveBeenCalled();
+    });
+
+    // H6 — closing Ask Coach mid-answer used to leave a quota-counted user
+    // message with no reply. Hybrid policy: disconnect before any content →
+    // refund (delete the user row; quota is a count of user rows); disconnect
+    // after content → persist the partial reply. supertest cannot drop a
+    // connection mid-stream, so these drive a real socket.
+    describe("client disconnect mid-stream (H6)", () => {
+      const USER_MSG_ID = 42;
+
+      /** Resolves when `signal` aborts (the route wires req close → abort). */
+      function untilAborted(signal: AbortSignal): Promise<void> {
+        return new Promise((resolve) => {
+          if (signal.aborted) return resolve();
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }
+
+      /**
+       * POSTs a coach message over a real socket and destroys the client
+       * side once `disconnectWhen(body)` is true. Resolves when the route
+       * handler calls `res.end()` — the H6 decision runs before that, so
+       * negative assertions after this resolves are meaningful.
+       *
+       * `onServerClose`, when given, is wired to the SAME `res` "close" event
+       * the route's own disconnect handler listens on — it fires regardless
+       * of path (coach or recipe/remix), since `res.on("close")` is
+       * registered unconditionally in `chat.ts`; only what it DOES differs
+       * by path. This lets a recipe/remix test pause its fake generator
+       * until the server has genuinely observed the disconnect, without
+       * relying on the `AbortSignal` the coach path's generator awaits
+       * (recipe/remix generation never receives that signal — see
+       * `docs/solutions/logic-errors/req-close-never-fires-after-body-parser-use-res-close-2026-09-24.md`).
+       */
+      async function postAndDisconnect(
+        disconnectWhen: (bodySoFar: string) => boolean,
+        onServerClose?: () => void,
+      ): Promise<void> {
+        const testApp = express();
+        let signalEnd!: () => void;
+        const ended = new Promise<void>((r) => (signalEnd = r));
+        testApp.use((_req, res, next) => {
+          const origEnd = res.end.bind(res);
+          res.end = ((...args: Parameters<typeof res.end>) => {
+            signalEnd();
+            return origEnd(...args);
+          }) as typeof res.end;
+          if (onServerClose) res.on("close", onServerClose);
+          next();
+        });
+        testApp.use(express.json());
+        register(testApp);
+        const server = testApp.listen(0);
+        await new Promise<void>((r) => server.once("listening", r));
+        const { port } = server.address() as AddressInfo;
+        try {
+          await new Promise<void>((resolve) => {
+            const payload = JSON.stringify({ content: "Hello" });
+            const clientReq = http.request(
+              {
+                port,
+                method: "POST",
+                path: "/api/chat/conversations/1/messages",
+                headers: {
+                  Authorization: "Bearer token",
+                  "Content-Type": "application/json",
+                  "Content-Length": Buffer.byteLength(payload),
+                },
+              },
+              (res) => {
+                let body = "";
+                const check = () => {
+                  if (disconnectWhen(body)) {
+                    clientReq.destroy();
+                    resolve();
+                  }
+                };
+                res.on("data", (chunk: Buffer) => {
+                  body += chunk.toString();
+                  check();
+                });
+                check();
+              },
+            );
+            clientReq.on("error", () => {}); // destroy() surfaces ECONNRESET
+            clientReq.on("close", () => resolve());
+            clientReq.end(payload);
+          });
+          await ended;
+        } finally {
+          server.closeAllConnections();
+          await new Promise((r) => server.close(r));
+        }
+      }
+
+      function setupDisconnect() {
+        mockStreamingSetup();
+        vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+          createMockChatMessage({ id: USER_MSG_ID, role: "user" }),
+        );
+        vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
+        vi.mocked(storage.deleteChatMessage).mockResolvedValue(true);
+      }
+
+      const assistantWrites = () =>
+        vi
+          .mocked(storage.createChatMessage)
+          .mock.calls.filter((c) => c[2] === "assistant");
+
+      it("refunds the user message when the client leaves before any content", async () => {
+        setupDisconnect();
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* (_h, _c, _u, signal) {
+            await untilAborted(signal!);
+            throw Object.assign(new Error("Request was aborted."), {
+              name: "AbortError",
+            });
+          },
+        );
+
+        await postAndDisconnect(() => true);
+
+        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+          USER_MSG_ID,
+          "1",
+        );
+        expect(assistantWrites()).toHaveLength(0);
+      });
+
+      it("refunds on a free-tier (non-Pro) coach turn too", async () => {
+        setupDisconnect();
+        vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+          tier: "free",
+          expiresAt: null,
+        });
+        vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+        vi.mocked(generateCoachResponse).mockImplementation(
+          async function* (_h, _c, signal) {
+            await untilAborted(signal!);
+          },
+        );
+
+        await postAndDisconnect(() => true);
+
+        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+          USER_MSG_ID,
+          "1",
+        );
+        expect(assistantWrites()).toHaveLength(0);
+      });
+
+      it("persists the partial reply when the client leaves after content", async () => {
+        setupDisconnect();
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* (_h, _c, _u, signal) {
+            yield { type: "content" as const, content: "Eat more " };
+            yield { type: "content" as const, content: "protein." };
+            await untilAborted(signal!);
+            throw Object.assign(new Error("Request was aborted."), {
+              name: "AbortError",
+            });
+          },
+        );
+
+        await postAndDisconnect((body) => body.includes("protein."));
+
+        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(assistantWrites()).toHaveLength(1);
+        expect(assistantWrites()[0][3]).toBe("Eat more protein.");
+        // A partial must never be served to other users as a cached answer.
+        expect(storage.setCoachCachedResponse).not.toHaveBeenCalled();
+      });
+
+      it("strips half-formed block markup from a Coach Pro partial", async () => {
+        setupDisconnect();
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* (_h, _c, _u, signal) {
+            yield {
+              type: "content" as const,
+              content: 'Try this:\n```coach_blocks\n[{"type":',
+            };
+            await untilAborted(signal!);
+          },
+        );
+
+        await postAndDisconnect((body) => body.includes("Try this"));
+
+        expect(assistantWrites()).toHaveLength(1);
+        expect(assistantWrites()[0][3]).toBe("Try this:");
+      });
+
+      it("refunds when the only thing streamed was an unterminated block fence", async () => {
+        setupDisconnect();
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* (_h, _c, _u, signal) {
+            yield {
+              type: "content" as const,
+              content: '```coach_blocks\n[{"type":',
+            };
+            await untilAborted(signal!);
+          },
+        );
+
+        await postAndDisconnect((body) => body.includes("coach_blocks"));
+
+        expect(storage.deleteChatMessage).toHaveBeenCalledWith(
+          USER_MSG_ID,
+          "1",
+        );
+        expect(assistantWrites()).toHaveLength(0);
+      });
+
+      // Free-tier generateCoachResponse streams each delta BEFORE its
+      // containsUnsafeCoachAdvice check runs on the full text — a partial
+      // cut mid-stream has never been vetted, so the settle must vet it.
+      it("never persists an unvetted unsafe free-tier partial", async () => {
+        setupDisconnect();
+        vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+          tier: "free",
+          expiresAt: null,
+        });
+        vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+        vi.mocked(generateCoachResponse).mockImplementation(
+          async function* (_h, _c, signal) {
+            yield "You likely have diabetes.";
+            await untilAborted(signal!);
+          },
+        );
+
+        await postAndDisconnect((body) => body.includes("diabetes"));
+
+        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(assistantWrites()).toHaveLength(1);
+        expect(assistantWrites()[0][3]).not.toContain("diabetes");
+        expect(assistantWrites()[0][3]).toBe(STANDARD_SAFETY_MESSAGE);
+      });
+
+      it("does not double-write when the service already persisted the reply", async () => {
+        setupDisconnect();
+        let capturedSignal: AbortSignal | undefined;
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* (_h, _c, _u, signal) {
+            capturedSignal = signal;
+            yield { type: "content" as const, content: "Full answer." };
+          },
+        );
+        // The service's own write lands, and only then does the close
+        // arrive — the route must see the persisted turn and stand down.
+        let persisted: ReturnType<typeof createMockChatMessage> | undefined;
+        vi.mocked(storage.createChatMessage).mockImplementation(
+          async (...args) => {
+            await untilAborted(capturedSignal!);
+            persisted = createMockChatMessage({
+              id: 43,
+              role: "assistant",
+              content: args[3],
+              turnKey: args[5] ?? null,
+            });
+            return persisted;
+          },
+        );
+        vi.mocked(storage.getChatMessageByTurnKey).mockImplementation(
+          async () => persisted,
+        );
+
+        await postAndDisconnect((body) => body.includes("Full answer."));
+
+        expect(assistantWrites()).toHaveLength(1);
+        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+      });
+
+      it("control: a completed stream neither refunds nor adds a second write", async () => {
+        setupDisconnect();
+        vi.mocked(generateCoachProResponse).mockImplementation(
+          async function* () {
+            yield { type: "content" as const, content: "All done." };
+          },
+        );
+
+        await postAndDisconnect((body) => body.includes('"done":true'));
+
+        expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+        expect(assistantWrites()).toHaveLength(1);
+        expect(assistantWrites()[0][3]).toBe("All done.");
+      });
+
+      // P2-2026-09-24: the opposite policy from H6 above. Recipe/remix has no
+      // salvage for a partial (half a recipe JSON), so `isCoachPath` makes the
+      // `res.on("close")` handler return early for this path — `aborted` is
+      // never set by a disconnect, only by the SSE timeout or byte-limit guard.
+      // Generation runs to completion and the reply is saved as if the client
+      // had stayed connected; no refund, no partial-persistence branch.
+      describe("recipe/remix disconnect — finish-and-save policy", () => {
+        const RECIPE_USER_MSG_ID = 55;
+        const recipeFixture = {
+          title: "Pasta Bake",
+          description: "A cozy baked pasta",
+          difficulty: "Easy" as const,
+          timeEstimate: "30 min",
+          servings: 4,
+          ingredients: [{ name: "pasta", quantity: "1", unit: "lb" }],
+          instructions: ["Boil", "Bake"],
+          dietTags: [],
+        };
+
+        const assistantWrites = () =>
+          vi
+            .mocked(storage.createChatMessage)
+            .mock.calls.filter((c) => c[2] === "assistant");
+
+        function setupRecipeDisconnect() {
+          mockStreamingSetup();
+          // mockStreamingSetup's getChatConversation defaults to type "coach" —
+          // override AFTER calling it, or this reverts to the coach path.
+          vi.mocked(storage.getChatConversation).mockResolvedValue(
+            createMockChatConversation({ type: "recipe" }),
+          );
+          vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+            createMockChatMessage({ id: RECIPE_USER_MSG_ID, role: "user" }),
+          );
+        }
+
+        it("saves the assistant reply with recipe metadata exactly once, and never refunds, when the client disconnects mid-stream", async () => {
+          setupRecipeDisconnect();
+          let serverObservedClose = false;
+          let releaseGenerator!: () => void;
+          const closed = new Promise<void>((r) => {
+            releaseGenerator = r;
+          });
+          // No AbortSignal reaches this generator on the recipe/remix path
+          // (unlike the coach path's `untilAborted(signal)`), so the pause
+          // point is the test harness's own observation of the real socket
+          // close — proving the write isn't gated on the client staying
+          // connected.
+          vi.mocked(generateRecipeChatResponse).mockImplementation(
+            async function* () {
+              yield { content: "Sure! " };
+              await closed;
+              yield {
+                content: "",
+                recipe: recipeFixture,
+                allergenWarning: null,
+              };
+              yield { done: true };
+            },
+          );
+
+          await postAndDisconnect(
+            (body) => body.includes("Sure!"),
+            () => {
+              serverObservedClose = true;
+              releaseGenerator();
+            },
+          );
+
+          expect(serverObservedClose).toBe(true);
+          expect(assistantWrites()).toHaveLength(1);
+          const [, , , content, metadata] = assistantWrites()[0];
+          expect(content).toBe("Sure!");
+          expect(metadata).toEqual({
+            metadataVersion: 1,
+            recipe: recipeFixture,
+            allergenWarning: null,
+            imageUrl: null,
+          });
+          // Coach-only settle path — recipe/remix never refunds or looks up a
+          // turn key.
+          expect(storage.deleteChatMessage).not.toHaveBeenCalled();
+          expect(storage.getChatMessageByTurnKey).not.toHaveBeenCalled();
+        });
+      });
+    });
+
+    describe("recipe finder — RecipeChef (flag on)", () => {
+      const FLOW = "11111111-1111-4111-8111-111111111111";
+      const OTHER_FLOW = "22222222-2222-4222-8222-222222222222";
+      const listBlock: RecipeResultsBlock = {
+        type: "recipe_results",
+        source: "community",
+        items: [
+          {
+            id: 12,
+            source: "community",
+            title: "Mediterranean Quinoa Salad",
+            imageUrl: null,
+            readyInMinutes: null,
+            calories: 350,
+          },
+        ],
+        actions: ["search_online", "generate", "none_of_these"],
+        notice: null,
+        flow: {
+          flowId: FLOW,
+          stage: "results",
+          request: "Mediterranean",
+          query: { q: "mediterranean" },
+          round: 0,
+          shownIds: ["community:12"],
+        },
+      };
+      const recipe = {
+        title: "Chicken Curry",
+        description: "d",
+        difficulty: "Easy" as const,
+        timeEstimate: "30 min",
+        servings: 2,
+        ingredients: [],
+        instructions: ["cook"],
+        dietTags: [],
+      };
+      const flowHistory = () => [
+        createMockChatMessage({
+          id: 1,
+          role: "user",
+          content: "Mediterranean",
+        }),
+        createMockChatMessage({
+          id: 2,
+          role: "assistant",
+          content: "Here are 1 community recipe:…",
+          metadata: { metadataVersion: 1, finder: listBlock },
+        }),
+      ];
+      const cardHistory = () => [
+        createMockChatMessage({ id: 1, role: "user", content: "curry" }),
+        createMockChatMessage({
+          id: 2,
+          role: "assistant",
+          content: "Here!",
+          metadata: {
+            metadataVersion: 1,
+            recipe,
+            allergenWarning: null,
+            imageUrl: null,
+          },
+        }),
+      ];
+      const userRow = createMockChatMessage({
+        id: 50,
+        role: "user",
+        content: "x",
+      });
+      const send = (body: object) =>
+        request(app)
+          .post("/api/chat/conversations/1/messages")
+          .set("Authorization", "Bearer token")
+          .send(body);
+
+      beforeEach(() => {
+        vi.stubEnv("RECIPE_FINDER_ENABLED", "true");
+        vi.stubEnv("SPOONACULAR_API_KEY", "k");
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation({ type: "recipe" }),
+        );
+        vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+          tier: "premium",
+          expiresAt: null,
+        });
+        vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+        vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
+        vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+        vi.mocked(storage.getChatMessages).mockResolvedValue([]);
+        vi.mocked(storage.createChatMessage).mockResolvedValue(
+          createMockChatMessage(),
+        );
+        vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+          createMockChatMessage(),
+        );
+        // fireAndForget calls .catch on this — a bare vi.fn() returns undefined and throws.
+        vi.mocked(storage.updateChatConversationTitle).mockResolvedValue(
+          createMockChatConversation(),
+        );
+        vi.mocked(storage.deleteChatMessage).mockResolvedValue(true);
+        vi.mocked(storage.createFinderUserMessage).mockResolvedValue({
+          status: "created",
+          message: userRow,
+        });
+        vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(true);
+        vi.mocked(storage.claimSpoonacularSearch).mockResolvedValue(true);
+        vi.mocked(findCommunity).mockResolvedValue(listBlock.items);
+        vi.mocked(findOnline).mockResolvedValue({ status: "ok", items: [] });
+        vi.mocked(classifyTurn).mockResolvedValue("new_request");
+        vi.mocked(generateRecipeChatResponse).mockImplementation(
+          async function* () {
+            yield { content: "Here you go!" };
+            yield { content: "", recipe, allergenWarning: null };
+            yield { done: true };
+          },
+        );
+      });
+
+      afterEach(() => {
+        vi.unstubAllEnvs();
+      });
+
+      it("a whitespace-only request is a 400 before any row is written (no dead list)", async () => {
+        const res = await send({ content: "   \n\t " });
+        expect(res.status).toBe(400);
+        expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+        expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+        expect(findCommunity).not.toHaveBeenCalled();
+      });
+
+      it("control: flag off keeps today's path (generation quota, no finder)", async () => {
+        vi.stubEnv("RECIPE_FINDER_ENABLED", "");
+        const res = await send({ content: "Mediterranean" });
+        expect(res.status).toBe(200);
+        expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalledWith(
+          1,
+          "1",
+          "Mediterranean",
+          20,
+          "recipe",
+        );
+        expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+        expect(res.text).not.toContain('"finder"');
+      });
+
+      it("first message runs the finder and never touches the generation quota (R2)", async () => {
+        const res = await send({ content: "Mediterranean" });
+        expect(res.status).toBe(200);
+        expect(res.text).toContain(
+          'data: {"status":"Searching community recipes…"}',
+        );
+        expect(res.text).toContain('"finder":{"type":"recipe_results"');
+        expect(res.text).toContain('"done":true');
+        expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+        expect(storage.claimRecipeGeneration).not.toHaveBeenCalled();
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+        expect(storage.createFinderUserMessage).toHaveBeenCalledWith(
+          1,
+          "1",
+          "Mediterranean",
+        );
+        expect(storage.createChatMessage).toHaveBeenCalledWith(
+          1,
+          "1",
+          "assistant",
+          expect.stringMatching(
+            /^Here are 1 community recipe:\n1\. Mediterranean Quinoa Salad \(350 cal\)/,
+          ),
+          {
+            metadataVersion: 1,
+            finder: expect.objectContaining({ type: "recipe_results" }),
+          },
+        );
+      });
+
+      it("ignores an action whose flowId is not the latest finder message", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: OTHER_FLOW },
+        });
+        expect(res.status).toBe(200);
+        expect(res.text).toBe('data: {"done":true}\n\n');
+        expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+      });
+
+      it("a duplicate action (double tap) is a quiet no-op", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        vi.mocked(storage.createFinderUserMessage).mockResolvedValue({
+          status: "duplicate",
+        });
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: FLOW },
+        });
+        expect(res.text).toBe('data: {"done":true}\n\n');
+        expect(storage.createChatMessage).not.toHaveBeenCalled();
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+      });
+
+      it("Generate claims a generation and streams through the existing recipe path", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: FLOW },
+        });
+        expect(res.status).toBe(200);
+        expect(storage.createFinderUserMessage).toHaveBeenCalledWith(
+          1,
+          "1",
+          "Generate",
+          { action: { flowId: FLOW, type: "generate" } },
+        );
+        expect(storage.claimRecipeGeneration).toHaveBeenCalledWith("1", 50, 20);
+        expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+        expect(vi.mocked(generateRecipeChatResponse).mock.calls[0][0]).toEqual([
+          { role: "user", content: "Create a recipe for: Mediterranean" },
+        ]);
+        expect(res.text).toContain('"status":"Creating your recipe…"');
+        expect(storage.createChatMessage).toHaveBeenCalledWith(
+          1,
+          "1",
+          "assistant",
+          "Here you go!",
+          { metadataVersion: 1, recipe, allergenWarning: null, imageUrl: null },
+        );
+      });
+
+      it("Generate at the daily limit explains the limit and does not generate", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(false);
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: FLOW },
+        });
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+        expect(res.text).toContain('"notice":"generate_limit"');
+      });
+
+      it('treats typed "generate" in the results stage as the Generate action', async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        await send({ content: "Generate!" });
+        expect(storage.claimRecipeGeneration).toHaveBeenCalled();
+        expect(generateRecipeChatResponse).toHaveBeenCalled();
+        expect(findCommunity).not.toHaveBeenCalled();
+      });
+
+      it("typed text in the results stage refines the search (no generation)", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        await send({ content: "with chickpeas" });
+        expect(findCommunity).toHaveBeenCalled();
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+      });
+
+      it("search_online at the per-user cap reports unavailable and never calls Spoonacular", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(flowHistory());
+        vi.mocked(storage.claimSpoonacularSearch).mockResolvedValue(false);
+        const res = await send({
+          content: "Search Spoonacular",
+          finderAction: { type: "search_online", flowId: FLOW },
+        });
+        expect(findOnline).not.toHaveBeenCalled();
+        expect(res.text).toContain('"notice":"unavailable"');
+      });
+
+      it("routes a refine_current follow-up to the legacy recipe path", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(cardHistory());
+        vi.mocked(classifyTurn).mockResolvedValue("refine_current");
+        await send({ content: "make it spicier" });
+        expect(classifyTurn).toHaveBeenCalledWith(
+          "make it spicier",
+          "Chicken Curry",
+        );
+        expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalledWith(
+          1,
+          "1",
+          "make it spicier",
+          20,
+          "recipe",
+        );
+        expect(generateRecipeChatResponse).toHaveBeenCalled();
+        expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+      });
+
+      it("starts a new list for a new_request after a card (D10)", async () => {
+        vi.mocked(storage.getChatMessages).mockResolvedValue(cardHistory());
+        vi.mocked(classifyTurn).mockResolvedValue("new_request");
+        const res = await send({ content: "now a dessert" });
+        expect(res.text).toContain('"finder":{"type":"recipe_results"');
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+      });
+
+      it("remix never enters the flow", async () => {
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation({ type: "remix" }),
+        );
+        await send({ content: "make it vegan" });
+        expect(storage.createFinderUserMessage).not.toHaveBeenCalled();
+        expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalledWith(
+          1,
+          "1",
+          "make it vegan",
+          20,
+          "remix",
+        );
+      });
+
+      it("rejects finderAction when the flag is off (409)", async () => {
+        vi.stubEnv("RECIPE_FINDER_ENABLED", "");
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: FLOW },
+        });
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe("CONFLICT");
+      });
+
+      it("rejects finderAction from free Coach (409 — D7)", async () => {
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation(),
+        );
+        vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+        vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+          tier: "free",
+          expiresAt: null,
+        });
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "generate", flowId: FLOW },
+        });
+        expect(res.status).toBe(409);
+      });
+
+      it("Coach Pro: a finder action goes through the route to the Coach finder", async () => {
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation(),
+        );
+        vi.mocked(storage.getChatMessages).mockResolvedValue([
+          createMockChatMessage({
+            id: 2,
+            role: "assistant",
+            metadata: { blocks: [listBlock] },
+          }),
+        ]);
+        vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
+        vi.mocked(storage.getDailySummary).mockResolvedValue({
+          totalCalories: 0,
+          totalProtein: 0,
+          totalCarbs: 0,
+          totalFat: 0,
+          itemCount: 0,
+        });
+        const res = await send({
+          content: "Search Spoonacular",
+          finderAction: { type: "search_online", flowId: FLOW },
+        });
+        expect(res.status).toBe(200);
+        expect(storage.createFinderUserMessage).toHaveBeenCalledWith(
+          1,
+          "1",
+          "Search Spoonacular",
+          {
+            action: { flowId: FLOW, type: "search_online" },
+            coachDailyLimit: expect.any(Number),
+          },
+        );
+        expect(res.text).toContain('data: {"status":"Searching Spoonacular…"}');
+        expect(res.text).toContain(
+          '"blocks":[{"type":"recipe_results","source":"spoonacular"',
+        );
+        expect(generateCoachProResponse).not.toHaveBeenCalled();
+      });
+
+      it("rejects a malformed finderAction (400)", async () => {
+        const res = await send({
+          content: "Generate",
+          finderAction: { type: "answers", flowId: FLOW },
+        });
+        expect(res.status).toBe(400);
+      });
     });
   });
 

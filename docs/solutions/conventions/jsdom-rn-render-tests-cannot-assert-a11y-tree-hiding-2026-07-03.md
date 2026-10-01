@@ -4,9 +4,9 @@ track: knowledge
 category: conventions
 module: client
 tags: [testing, accessibility, jsdom, render-tests, mocks]
-applies_to: [client/components/**/__tests__/*.test.tsx, client/screens/**/__tests__/*.test.tsx, test/mocks/react-native.ts, test/mocks/expo-vector-icons.ts]
+applies_to: [client/components/**/__tests__/*.test.tsx, client/screens/**/__tests__/*.test.tsx, test/mocks/react-native.ts, test/mocks/expo-vector-icons.ts, test/mocks/react-native-reanimated.ts]
 created: '2026-07-03'
-last_updated: '2026-09-24'
+last_updated: '2026-09-25'
 ---
 
 # jsdom RN render tests cannot assert a11y-tree hiding OR grouping — assert label absence/uniqueness and exact full-label composition instead
@@ -20,7 +20,7 @@ In jsdom render tests, never write (or name) a test as verifying that `accessibl
 1a. **Every absence assertion needs a paired presence assertion on the same selector.** A `queryByLabelText(x)`/`queryByTestId(x)` that returns `null` cannot distinguish "the guard works" from "that selector matches nothing in this component, ever" — a typo'd testID, a renamed label, or a `testID` that was never added all produce the identical pass. Pair it with a positive-case test that resolves the same selector to a real node. The presence test is what proves the selector is wired; the absence test is only meaningful once it is.
 2. For a grouping wrapper (`accessible={true}`), assert the **exact composed `accessibilityLabel` string** — a single `getByLabelText`/`findByLabelText` match already proves uniqueness (it throws if the label resolves to more than one element). Optionally strengthen it by asserting the wrapper's icon/text children carry no independent `aria-label` of their own (e.g. `wrapper.querySelector("[aria-label]")` is `null`) — the closest verifiable proxy to "children don't have separate accessible identities." Neither check proves the real subtree-collapse the harness can't model; the composed-label content is the actual regression guard.
 3. Assert composed `accessibilityLabel` strings with **exact full-string matches, one per input combination** — never a start-anchored regex, which silently stops pinning the tail's spacing/punctuation.
-4. **Accessibility actions** (`accessibilityActions` and `onAccessibilityAction`) suffer the same mock limitation: `accessibilityActions` is an array that is not destructured by the mock, so it falls through the `...rest` spread onto the DOM element, producing a useless attribute like `accessibilityactions="[object Object]"` (with a React dev warning). `onAccessibilityAction` is a function prop matching the `/^on[A-Z]/` pattern; React treats it as an unrecognized DOM event handler and **drops it entirely**, logging `Unknown event handler property ... It will be ignored.` — it never reaches the DOM node, so there is no way to invoke it via `fireEvent` or any other jsdom-based trigger. Therefore, never assert the contents of the `accessibilityActions` array or attempt to invoke `onAccessibilityAction` from a jsdom test. Instead, rely on the same label-based assertions (absence, exact composition) and verify that the visible Pressable's `onPress`, label, and role still work via `fireEvent.click`.
+4. **Accessibility actions** (`accessibilityActions` and `onAccessibilityAction`) suffer the same mock limitation via the **DOM/fireEvent channel**: `accessibilityActions` is an array that is not destructured by the mock, so it falls through the `...rest` spread onto the DOM element, producing a useless attribute like `accessibilityactions="[object Object]"` (with a React dev warning). `onAccessibilityAction` is a function prop matching the `/^on[A-Z]/` pattern; React treats it as an unrecognized DOM event handler and **drops it entirely**, logging `Unknown event handler property ... It will be ignored.` — it never reaches the DOM node, so there is no way to invoke it via `fireEvent` or any other jsdom-based trigger. Therefore, never assert the contents of the `accessibilityActions` array or attempt to invoke `onAccessibilityAction` from a jsdom test **by querying the DOM or firing a DOM event**. Instead, rely on the same label-based assertions (absence, exact composition) and verify that the visible Pressable's `onPress`, label, and role still work via `fireEvent.click` — **unless** the test needs to assert the array's contents or invoke the handler directly, in which case the mock-boundary prop-capture technique in Exceptions (2026-09-25) below is the sound alternative; it observes the real prop values before the DOM/event mangling happens, rather than trying to see them after.
 
 5. Name the test for what it proves (e.g. "does not carry a redundant label", "exposes exactly one accessible node with the composed label"), and leave on-device VoiceOver/TalkBack verification to the emulator-logcat procedure.
 
@@ -39,9 +39,10 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
 ## Examples
 
 - `client/components/home/__tests__/CarouselRecipeCard.test.tsx` (`describe("CarouselRecipeCard empty recommendationReason")`) — the rule 1a pairing, caught empirically: `queryByTestId("carousel-card-reason")` being `null` passed **before** the `testID` existed, so only 1 of the 2 new tests went red on the first TDD run. The presence test (`getByTestId(...).textContent`) is what makes the absence test mean anything. The same block also covers both halves of the empty-value guard — the composed label and the visible caption.
-- `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — exact full-label assertions across all 4 `isRemix` × `prepTimeMinutes` combinations, plus a label-absence guard whose comment states the harness limitation explicitly (the `accessible={false}`/hiding case). Also demonstrates the pattern for `accessibilityActions`/`onAccessibilityAction`: no assertions on the actions array or event, only label and `onPress` verification.
+- `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — exact full-label assertions across all 4 `isRemix` × `prepTimeMinutes` combinations, plus a label-absence guard whose comment states the harness limitation explicitly (the `accessible={false}`/hiding case).
 - `client/screens/__tests__/ScanScreen.test.tsx` (`describe("ScanScreen — confirm-card safety badge (returnAfterLog)")`, `"exposes exactly one accessible node with the composed title+detail label"`) — the `accessible={true}`/grouping case: a single `findByLabelText` match on the composed label plus `badge.querySelector("[aria-label]")` being `null`, with a comment stating the same limitation.
-- `client/screens/__tests__/FavouriteRecipesScreen.test.tsx` — applies the same `accessible` and `accessibilityActions` avoidance pattern: asserts only the visible Pressable's label and click behavior, never the custom action.
+- `client/screens/__tests__/FavouriteRecipesScreen.test.tsx` — applies the DOM/fireEvent-channel `accessible`/`accessibilityActions` avoidance pattern (no mock-boundary capture in this file): asserts only the visible Pressable's label and click behavior, never the custom action.
+- `client/components/home/__tests__/CarouselRecipeCard.test.tsx` (`describe("CarouselRecipeCard dismiss accessibility action")`) and `client/screens/meal-plan/__tests__/MealPlanHomeScreen.test.tsx` (`describe("MealSlotItem accessibility actions")`, `describe("MealSlotSection suggest accessibility action")`) — the mock-boundary prop-capture exception (2026-09-25 below): these DO assert the `accessibilityActions` array's exact contents and DO invoke `onAccessibilityAction` directly, because they capture the raw props object before the DOM/event mangling this rule describes, not through it.
 
 `client/components/__tests__/AllergenBadge.test.tsx` and `client/components/__tests__/VerificationBadge.test.tsx` — tests for the `accessible={true}` grouping fix on allergen and verification badges. Both rely solely on exact composed `accessibilityLabel` strings; inline comments note that `accessible` is not DOM-observable in jsdom and that the on-device a11y-tree behavior is verified separately via emulator logcat.
 
@@ -55,14 +56,34 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
   `test/mocks/react-native-reanimated.ts` has its own separate `mapA11yProps()` helper that
   does **not** destructure `accessibilityElementsHidden` or `importantForAccessibility`, so
   those hiding props remain unmapped in the Reanimated path — this is a known, still-open
-  residual gap, and it is LIVE, not hypothetical: `client/screens/ProfileScreen.tsx`,
-  `client/screens/HomeScreen.tsx`, `client/components/cookbook/CookbookCoverPlate.tsx`, and
+  residual gap, and it is LIVE, not hypothetical. Sites as of 2026-09-24 (EXAMPLES, not a
+  complete census — re-sweep before relying on it): `client/screens/ProfileScreen.tsx`,
+  `client/screens/HomeScreen.tsx`, `client/components/cookbook/CookbookCoverPlate.tsx`,
   `client/camera/components/ProductChip.tsx` (its root forwards `importantForAccessibility`,
-  `"no-hide-descendants"` while the scan confirm card is up) all set `"no-hide-descendants"` and/or `accessibilityElementsHidden` directly on
-  `Animated.View`, so their hiding is not assertable in jsdom via this mechanism.
+  `"no-hide-descendants"` while the scan confirm card is up),
+  `client/screens/BatchScanScreen.tsx` (its local-toast `Animated.View` spreads
+  `behindContentA11yProps` from `useConfirmationModal()`, both hiding props while the modal is
+  open), and
+  `client/components/home/CollapsibleSection.tsx` all put `"no-hide-descendants"` and/or `accessibilityElementsHidden` on an
+  `Animated.View` (as a literal prop, a forwarded variable, or a spread), so their hiding is not assertable in jsdom via this mechanism. Sweep for
+  instances by TARGET, not literal: enumerate every `<Animated.View>`/`<Animated.Text>` in
+  `client/` and read each one's props, because the hiding props also arrive via forwarded
+  variables and helper spreads (`getScanOverlayA11y`, `behindContentA11yProps`) that a grep
+  for the prop names misses.
   `client/components/TextInput.tsx`'s `Animated.Text` is NOT an instance of this gap: it
   sets `importantForAccessibility="no"`, which `ariaHiddenProps` deliberately never maps —
-  closing the reanimated gap will not make it render `aria-hidden`). So hiding
+  closing the reanimated gap will not make it render `aria-hidden`).
+  `client/components/home/CollapsibleSection.tsx` differs from the other sites in one
+  way: an `aria-hidden` read-back on its clip container's `Animated.View` already passes
+  today, but only because the component also writes a literal `aria-hidden={!isExpanded}`
+  prop alongside `importantForAccessibility` — `mapA11yProps()` doesn't destructure
+  `aria-hidden` either, so it spreads through the `...domSafe` passthrough unchanged, not via
+  any translation this doc's `ariaHiddenProps` mechanism provides. That read-back therefore
+  tests the literal `aria-hidden`, not `importantForAccessibility`. (In production the two are
+  not independent: React Native 0.81's `View.js` sets `importantForAccessibility` to
+  `"no-hide-descendants"` whenever `aria-hidden === true`, and Reanimated's `Animated.View`
+  renders through that `View` — so on this component `aria-hidden` alone already hides the
+  subtree on Android.) So hiding
   via THAT pair **is** now assertable on plain RN primitives: `*ByRole` queries exclude the
   hidden node (use a role **count**, not a
   name filter — a name the fix itself removed can never match and the assertion is vacuous;
@@ -114,6 +135,33 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
   — the prop only suppresses EARLIER siblings on iOS, so a partial flag is a
   real, distinct failure mode from simple absence). Everything else this doc
   says is unchanged.
+- **Partially executed 2026-09-25 (meal-plan/CarouselRecipeCard accessibility-actions fix):**
+  rule 4's "never assert the contents of `accessibilityActions` or invoke
+  `onAccessibilityAction`" holds **unchanged for the DOM/fireEvent channel** — that
+  path still can't observe either prop, for the exact reasons rule 4 describes. But a
+  distinct technique sidesteps the DOM boundary entirely instead of trying to see
+  through it: a local `vi.mock("react-native", ...)` override wraps the shared
+  mock's `Pressable` in a capturing component that records each render's raw
+  `props` object **before** it reaches `mockComponent`'s `...rest` spread onto the
+  DOM (the exact point where the array gets stringified and the handler gets
+  dropped by React's unknown-DOM-event-handler rule). A plain JS object passed to
+  a React component function is never mangled the way a DOM attribute or event
+  listener is, so the captured `props.accessibilityActions` is the real array and
+  `props.onAccessibilityAction` is the real function reference the production
+  component built via its own `useMemo`/`useCallback` — both are then asserted or
+  invoked directly, proving the actual production wiring rather than a
+  re-implemented stand-in. See `client/components/home/__tests__/CarouselRecipeCard.test.tsx`
+  (`describe("CarouselRecipeCard dismiss accessibility action")`) and
+  `client/screens/meal-plan/__tests__/MealPlanHomeScreen.test.tsx`
+  (`describe("MealSlotItem accessibility actions")`,
+  `describe("MealSlotSection suggest accessibility action")`) for the worked
+  pattern. Find the Pressable under test by a **discriminating prop** (e.g.
+  `typeof p.onAccessibilityAction === "function"`), not by index or render
+  order — sibling Pressables in the same component (a visible Confirm/Remove
+  button, a Suggest chip) render into the same capture array, and only the
+  accessibility-actions-bearing one carries that prop. This is also the
+  legitimate reason category the `inline-vi-mock-globally-aliased-modules`
+  doc's numbered list was missing — see its item 5.
 
 ## Related Files
 
@@ -122,10 +170,15 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
 - `test/mocks/expo-vector-icons.ts` — icon mock now reuses `ariaHiddenProps` from `react-native.ts` (2026-09-23), making icon hiding assertable
 - `test/mocks/react-native-reanimated.ts` — `mapA11yProps()` helper (around line 120) does **not** handle `accessibilityElementsHidden` or `importantForAccessibility`; these props remain unmapped for `Animated.View`/`Animated.Text`. Known open residual gap (2026-09-23).
 - `client/camera/components/ProductChip.tsx` — root `Animated.View` forwards `importantForAccessibility` (set via `getScanOverlayA11y` in `client/screens/ScanScreenConfirmOverlay-utils.ts`); an instance of the reanimated gap above, so an `aria-hidden` hiding test against its root is meaningless until `mapA11yProps()` is fixed
+- `client/components/home/CollapsibleSection.tsx` — clip-container `Animated.View` sets both `importantForAccessibility` and a literal `aria-hidden={!isExpanded}`; another instance of the reanimated gap, but the literal `aria-hidden` prop passes through `mapA11yProps()`'s `...domSafe` spread untranslated, so an `aria-hidden` read-back against it tests the literal `aria-hidden`, not `importantForAccessibility` (production RN 0.81 `View.js` derives `importantForAccessibility="no-hide-descendants"` from `aria-hidden === true`, so the literal prop does hide it on Android)
+- `client/screens/BatchScanScreen.tsx` — local-toast `Animated.View` spreads `behindContentA11yProps` (`client/components/ConfirmationModal.tsx`'s `useConfirmationModal()`); another instance of the reanimated gap, reached through a helper spread rather than a literal prop. The other `behindContentA11yProps` spread sites split two ways: those on `View`/`Pressable`/`ScrollView`/`Text` land on mocks that call `ariaHiddenProps` (via `mockComponent`, or directly in the hand-written `Pressable`); those on `FlatList`/`SectionList` (as of 2026-09-24, examples not a census: `client/screens/SavedItemsScreen.tsx`, `client/screens/ChatListScreen.tsx`, `client/screens/CookSessionReviewScreen.tsx`, `client/screens/meal-plan/GroceryListsScreen.tsx`, `client/screens/meal-plan/PantryScreen.tsx`) hit a SEPARATE, still-open mock gap — `createFlatListMock` and the hand-written `SectionList` in `test/mocks/react-native.ts` destructure a fixed prop list and never spread the rest, so the hiding props are silently DROPPED (no translation, no raw passthrough, no unknown-prop warning). Hiding on those lists is not assertable in jsdom at all
+- Note on this doc's `applies_to`: the three `test/mocks/*` entries are currently INERT — `scripts/lib/path-domains.ts` routes `test/mocks/` to no domain (`npx tsx scripts/lib/path-domains.ts test/mocks/react-native-reanimated.ts` prints nothing), and retrieval selects by routed domain before `applies_to` is consulted. (`inject-patterns.sh` does fall back to the `typescript` domain for an unrouted `.ts` file, but this doc has no `typescript` tag, so that fallback doesn't reach it either.) They take effect only if a `test/mocks/` routing rule is added or this doc gains a `typescript` tag; until then this doc is injected on edits to the `client/**/__tests__` files only
 - `client/components/meal-plan/AddItemMenuSheet.tsx`, `SimpleEntrySheet.tsx`, `QuickAddSheet.tsx` — the `accessibilityViewIsModal` fix under test (2026-09-20); `QuickAddSheet.tsx` is also the exemplar for converting a Fragment-rooted sheet to a single content-root `View` when no existing root exists
 - `client/components/__tests__/Toast.test.tsx` — exemplar test for icon hiding assertion using `container.querySelector('[data-icon="check-circle"]').getAttribute("aria-hidden") === "true"` (2026-09-23)
-- `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — the exemplar test file for the hiding case and the accessibilityActions avoidance pattern
-- `client/components/home/CarouselRecipeCard.tsx` — the fix under test (label prefix + `accessible={false}` badge)
+- `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — the exemplar test file for the hiding case; also the exemplar for the 2026-09-25 mock-boundary prop-capture exception (`describe("CarouselRecipeCard dismiss accessibility action")`)
+- `client/components/home/CarouselRecipeCard.tsx` — the fix under test (label prefix + `accessible={false}` badge); also the `toggleFavourite`/`dismiss` `accessibilityActions` under test by the capture technique
+- `client/screens/meal-plan/__tests__/MealPlanHomeScreen.test.tsx` — the second exemplar for the 2026-09-25 mock-boundary prop-capture exception (`describe("MealSlotItem accessibility actions")`, `describe("MealSlotSection suggest accessibility action")`); extends this file's own **pre-existing** local `vi.mock("react-native", ...)` override (originally added for `RefreshControl`/`ScrollView` capture) to also capture `Pressable`, rather than adding a second `react-native` mock in the same file
+- `client/screens/meal-plan/MealPlanHomeScreen.tsx` — `MealSlotItem`'s `confirm`/`remove` and `MealSlotSection`'s `suggest` `accessibilityActions` under test by the capture technique; both components were promoted from un-exported locals to exported symbols solely so the new tests can render them in isolation
 - `client/components/__tests__/AllergenBadge.test.tsx` — test for `accessible={true}` grouping fix on AllergenBadge
 - `client/components/__tests__/VerificationBadge.test.tsx` — test for `accessible={true}` grouping fix on VerificationBadge
 - `client/screens/__tests__/ScanScreen.test.tsx` — the exemplar test file for the grouping case

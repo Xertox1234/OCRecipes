@@ -1,10 +1,43 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { CarouselRecipeCard } from "../CarouselRecipeCard";
 import type { CarouselRecipeCard as CarouselCardType } from "@shared/types/carousel";
+
+// Every rendered Pressable's raw props, captured in render order. This is the
+// only way to inspect `accessibilityActions`/`onAccessibilityAction` at all —
+// the shared mock's hand-written Pressable doesn't destructure either prop,
+// so `accessibilityActions` falls through `...rest` and is stringified to
+// "[object Object]" on the DOM node, and `onAccessibilityAction` (matching
+// React's `/^on[A-Z]/` DOM-event-handler heuristic) is dropped outright
+// before it ever reaches an attribute — see
+// docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md.
+// Capturing at the mock-component boundary (before that spread) sidesteps the
+// gap: a plain JS object passed to a component function is never mangled the
+// way a DOM attribute/event is. `react-native` is aliased globally in
+// vitest.config.mts to test/mocks/react-native.ts — this local override is
+// item 5 ("Prop capture") in
+// docs/solutions/conventions/inline-vi-mock-globally-aliased-modules-2026-05-13.md.
+const { capturedPressables } = vi.hoisted(() => ({
+  capturedPressables: [] as Record<string, unknown>[],
+}));
+
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  const CapturingPressable = React.forwardRef<unknown, Record<string, unknown>>(
+    (props, ref) => {
+      capturedPressables.push(props);
+      return React.createElement(
+        actual.Pressable as React.ComponentType<Record<string, unknown>>,
+        { ...props, ref },
+      );
+    },
+  );
+  CapturingPressable.displayName = "Pressable";
+  return { ...actual, Pressable: CapturingPressable };
+});
 
 const baseCard: CarouselCardType = {
   id: 42,
@@ -314,5 +347,138 @@ describe("CarouselRecipeCard empty recommendationReason", () => {
       />,
     );
     expect(screen.queryByTestId("carousel-card-reason")).toBeNull();
+  });
+});
+
+// P1-2026-09-23 (M8): the "Dismiss recipe" button has the identical
+// interactive-descendant swallow as the favourite toggle above — the card
+// AnimatedPressable is accessible by default, collapsing the whole subtree
+// (including this button) into one VoiceOver/TalkBack focus stop. Extends the
+// existing `accessibilityActions` entry (see the favourite-heart describe
+// block above) to also cover `dismiss`.
+//
+// jsdom cannot observe accessibilityActions/onAccessibilityAction via the DOM
+// or fireEvent at all (see the capturedPressables comment at the top of this
+// file) — these tests capture the raw props at the mock-component boundary
+// instead of relying on a render/DOM assertion.
+describe("CarouselRecipeCard dismiss accessibility action", () => {
+  function findCardProps() {
+    return capturedPressables.find(
+      (p) => typeof p.onAccessibilityAction === "function",
+    );
+  }
+
+  it("exposes toggleFavourite and dismiss as accessibility actions on the card", () => {
+    capturedPressables.length = 0;
+    renderComponent(<CarouselRecipeCard card={baseCard} onPress={vi.fn()} />);
+    const cardProps = findCardProps();
+    expect(
+      cardProps,
+      "no accessibility-actions Pressable captured",
+    ).toBeDefined();
+    expect(cardProps!.accessibilityActions).toEqual([
+      { name: "toggleFavourite", label: "Add to favourites" },
+      { name: "dismiss", label: "Dismiss recipe" },
+    ]);
+  });
+
+  it("labels toggleFavourite as remove when already favourited", () => {
+    capturedPressables.length = 0;
+    renderComponent(
+      <CarouselRecipeCard card={baseCard} onPress={vi.fn()} isFavourited />,
+    );
+    const cardProps = findCardProps();
+    expect(cardProps!.accessibilityActions).toEqual([
+      { name: "toggleFavourite", label: "Remove from favourites" },
+      { name: "dismiss", label: "Dismiss recipe" },
+    ]);
+  });
+
+  it("is undefined when actions are hidden", () => {
+    capturedPressables.length = 0;
+    renderComponent(
+      <CarouselRecipeCard
+        card={baseCard}
+        onPress={vi.fn()}
+        showActions={false}
+      />,
+    );
+    const cardProps = findCardProps();
+    expect(cardProps!.accessibilityActions).toBeUndefined();
+  });
+
+  it("dispatches onDismiss when the dismiss accessibility action fires", () => {
+    capturedPressables.length = 0;
+    const onDismiss = vi.fn();
+    renderComponent(
+      <CarouselRecipeCard
+        card={baseCard}
+        onPress={vi.fn()}
+        onDismiss={onDismiss}
+      />,
+    );
+    const cardProps = findCardProps();
+    act(() => {
+      (cardProps!.onAccessibilityAction as (e: unknown) => void)({
+        nativeEvent: { actionName: "dismiss" },
+      });
+    });
+    expect(onDismiss).toHaveBeenCalledWith(baseCard);
+  });
+
+  it("dispatches onFavourite when the toggleFavourite accessibility action fires", () => {
+    capturedPressables.length = 0;
+    const onFavourite = vi.fn();
+    renderComponent(
+      <CarouselRecipeCard
+        card={baseCard}
+        onPress={vi.fn()}
+        onFavourite={onFavourite}
+      />,
+    );
+    const cardProps = findCardProps();
+    act(() => {
+      (cardProps!.onAccessibilityAction as (e: unknown) => void)({
+        nativeEvent: { actionName: "toggleFavourite" },
+      });
+    });
+    expect(onFavourite).toHaveBeenCalledWith(42);
+  });
+
+  it("does not dispatch either handler for an unrecognized action name", () => {
+    capturedPressables.length = 0;
+    const onFavourite = vi.fn();
+    const onDismiss = vi.fn();
+    renderComponent(
+      <CarouselRecipeCard
+        card={baseCard}
+        onPress={vi.fn()}
+        onFavourite={onFavourite}
+        onDismiss={onDismiss}
+      />,
+    );
+    const cardProps = findCardProps();
+    act(() => {
+      (cardProps!.onAccessibilityAction as (e: unknown) => void)({
+        nativeEvent: { actionName: "unknown" },
+      });
+    });
+    expect(onFavourite).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("keeps the visible dismiss button independently reachable by touch, unaffected by the fix", () => {
+    capturedPressables.length = 0;
+    const onDismiss = vi.fn();
+    renderComponent(
+      <CarouselRecipeCard
+        card={baseCard}
+        onPress={vi.fn()}
+        onDismiss={onDismiss}
+      />,
+    );
+    const dismissButton = screen.getByLabelText("Dismiss recipe");
+    fireEvent.click(dismissButton);
+    expect(onDismiss).toHaveBeenCalledWith(baseCard);
   });
 });

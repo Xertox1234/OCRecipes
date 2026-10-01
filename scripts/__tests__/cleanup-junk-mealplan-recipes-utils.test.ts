@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -8,6 +8,9 @@ import {
   buildJunkMealplanTitleWhere,
   parseCleanupFlags,
 } from "../cleanup-junk-mealplan-recipes-utils";
+import { main } from "../cleanup-junk-mealplan-recipes";
+import { db } from "../../server/db";
+import { savedItems, cookbookRecipes } from "../../shared/schema";
 
 /**
  * cleanup-junk-mealplan-recipes deletes by EXACT title match across ALL users
@@ -20,6 +23,69 @@ import {
 function render(where: SQL | undefined) {
   if (!where) throw new Error("expected SQL");
   return new PgDialect().sqlToQuery(where);
+}
+
+// This script calls `process.exit(0)` directly on BOTH the early-exit path
+// (dry-run, or no junk found) and the success path (after the delete
+// transaction) — mirrors the sibling `cleanup-junk-recipes-utils.test.ts`.
+class ProcessExitSignal extends Error {
+  constructor(public code?: string | number | null) {
+    super(`process.exit(${code})`);
+  }
+}
+
+const { deletes } = vi.hoisted(() => ({
+  deletes: [] as { table: unknown; where: unknown }[],
+}));
+
+vi.mock("../../server/db", () => {
+  const FIXTURE_ROW = { id: 1, title: "Meal 1", count: 0 };
+  const chain: Record<string, unknown> = {};
+  Object.assign(chain, {
+    select: vi.fn(() => chain),
+    from: vi.fn(() => chain),
+    where: vi.fn(() => chain),
+    delete: vi.fn((table: unknown) => {
+      const rec: { table: unknown; where: unknown } = {
+        table,
+        where: undefined,
+      };
+      deletes.push(rec);
+      const sub: Record<string, unknown> = {};
+      Object.assign(sub, {
+        where: vi.fn((w: unknown) => {
+          rec.where = w;
+          return sub;
+        }),
+        then: (resolve: (v: unknown) => void) => resolve([FIXTURE_ROW]),
+      });
+      return sub;
+    }),
+    then: (resolve: (v: unknown) => void) => resolve([FIXTURE_ROW]),
+  });
+  return {
+    db: {
+      select: vi.fn(() => chain),
+      transaction: vi.fn((cb: (tx: unknown) => Promise<unknown>) =>
+        Promise.resolve(cb(chain)),
+      ),
+    },
+  };
+});
+
+const mockDb = db as unknown as {
+  select: ReturnType<typeof vi.fn>;
+  transaction: ReturnType<typeof vi.fn>;
+};
+
+function emptySelectChain(): Record<string, unknown> {
+  const c: Record<string, unknown> = {};
+  Object.assign(c, {
+    from: vi.fn(() => c),
+    where: vi.fn(() => c),
+    then: (resolve: (v: unknown) => void) => resolve([]),
+  });
+  return c;
 }
 
 describe("cleanup-junk-mealplan-recipes-utils", () => {
@@ -88,6 +154,127 @@ describe("cleanup-junk-mealplan-recipes-utils", () => {
       );
       expect(parseCleanupFlags(["node", "s", "--dry-run", "--commit"])).toEqual(
         { commit: false, vetoed: true },
+      );
+    });
+  });
+
+  describe("cleanup-junk-mealplan-recipes main() — the real commit gate (mocked db)", () => {
+    let exitSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      deletes.length = 0;
+      exitSpy = vi
+        .spyOn(process, "exit")
+        .mockImplementation((code?: string | number | null): never => {
+          throw new ProcessExitSignal(code);
+        });
+    });
+
+    afterEach(() => {
+      exitSpy.mockRestore();
+    });
+
+    it("a bare invocation does NOT reach db.transaction (must never delete)", async () => {
+      const err: unknown = await main(["node", "s"]).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ProcessExitSignal);
+      expect(err).toMatchObject({ code: 0 });
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("--commit DOES reach db.transaction (arms the delete)", async () => {
+      const err: unknown = await main(["node", "s", "--commit"]).catch(
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ProcessExitSignal);
+      expect(err).toMatchObject({ code: 0 });
+      expect(mockDb.transaction).toHaveBeenCalled();
+    });
+
+    it("--commit --dry-run does NOT reach db.transaction (--dry-run vetoes)", async () => {
+      const err: unknown = await main([
+        "node",
+        "s",
+        "--commit",
+        "--dry-run",
+      ]).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ProcessExitSignal);
+      expect(err).toMatchObject({ code: 0 });
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("--commit with ZERO junk recipes found does NOT reach db.transaction", async () => {
+      mockDb.select.mockImplementationOnce(() => emptySelectChain());
+
+      const err: unknown = await main(["node", "s", "--commit"]).catch(
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ProcessExitSignal);
+      expect(err).toMatchObject({ code: 0 });
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("--commit deletes saved_items rows scoped to (recipeType='mealPlan', recipeId=<deleted ids>)", async () => {
+      const err: unknown = await main(["node", "s", "--commit"]).catch(
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ProcessExitSignal);
+      const rec = deletes.find((d) => d.table === savedItems);
+      expect(rec).toBeDefined();
+      const q = render(rec!.where as SQL);
+      expect(q.sql).toContain(String.raw`"saved_items"."recipe_id"`);
+      expect(q.sql).toContain(String.raw`"saved_items"."recipe_type"`);
+      expect(q.params).toContain("mealPlan");
+      expect(q.params).toContain(1);
+    });
+
+    it("--commit scopes the cookbookRecipes cleanup by recipeType='mealPlan' (regression pin for the mismatched 'meal_plan' literal)", async () => {
+      const err: unknown = await main(["node", "s", "--commit"]).catch(
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(ProcessExitSignal);
+      const rec = deletes.find((d) => d.table === cookbookRecipes);
+      expect(rec).toBeDefined();
+      const q = render(rec!.where as SQL);
+      expect(q.params).toContain("mealPlan");
+      expect(q.params).not.toContain("meal_plan");
+    });
+  });
+
+  describe("cleanup-junk-mealplan-recipes banner — wiring seam (spawnSync, no DB)", () => {
+    const ROOT = join(__dirname, "..", "..");
+    const scriptPath = join(
+      ROOT,
+      "scripts",
+      "cleanup-junk-mealplan-recipes.ts",
+    );
+    const env = {
+      ...process.env,
+      DATABASE_URL: "postgresql://t:t@127.0.0.1:1/nope",
+    };
+
+    function run(...flags: string[]) {
+      return spawnSync(
+        process.execPath,
+        ["--import=tsx", scriptPath, ...flags],
+        { encoding: "utf8", timeout: 10_000, cwd: ROOT, env },
+      );
+    }
+
+    it("bare invocation prints === DRY RUN ===", () => {
+      const r = run();
+      expect(r.stdout).toContain("=== DRY RUN ===  (pass --commit to delete)");
+    });
+
+    it("--commit prints === LIVE RUN ===", () => {
+      const r = run("--commit");
+      expect(r.stdout).toContain("=== LIVE RUN ===");
+    });
+
+    it("--commit --dry-run prints === DRY RUN === and NAMES --dry-run as the veto", () => {
+      const r = run("--commit", "--dry-run");
+      expect(r.stdout).toContain(
+        "=== DRY RUN ===  (--dry-run overrides --commit; drop --dry-run to delete)",
       );
     });
   });

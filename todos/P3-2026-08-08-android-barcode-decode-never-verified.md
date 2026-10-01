@@ -97,3 +97,9 @@ so an iOS pass says nothing about this.
 
 - **A physical Android device.** None is available as of 2026-08-08; that is the
   entire reason this is deferred rather than done.
+
+## Updates
+
+### 2026-09-25
+
+- **User decision:** keep it parked, gated. The user has Apple hardware only; this waits for an Android phone or tester. Do not re-ask in decision sweeps.

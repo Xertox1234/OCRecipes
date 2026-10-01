@@ -6,6 +6,7 @@ import {
   SkeletonBox,
   SkeletonItem,
   SkeletonList,
+  SkeletonLoadingRegion,
   SkeletonProvider,
 } from "../SkeletonLoader";
 
@@ -53,18 +54,28 @@ describe("SkeletonProvider", () => {
 });
 
 describe("SkeletonItem", () => {
-  it("renders with Loading accessibility label", () => {
+  // Rule 1a pairing: the presence half. Proves `testID="skeleton-item"` is
+  // wired, so the absence assertion below means something.
+  it("renders its root as testID skeleton-item", () => {
     renderComponent(<SkeletonItem />);
-    expect(screen.getByLabelText("Loading...")).toBeDefined();
+    expect(screen.getByTestId("skeleton-item")).toBeDefined();
+  });
+
+  // Rule 1a pairing: the absence half. SkeletonItem is only ever rendered
+  // inside SkeletonList's SkeletonLoadingRegion, which hides the whole
+  // subtree. The region does NOT announce: each screen announces "Loading"
+  // itself. A per-item label would be unreachable (nested in a hidden region)
+  // or, if it were reachable, one of several identical labels. Fails on main
+  // (SkeletonItem currently sets `accessibilityLabel="Loading..."`).
+  it("does not carry its own Loading accessibility label", () => {
+    renderComponent(<SkeletonItem />);
+    expect(screen.queryByLabelText("Loading...")).toBeNull();
   });
 
   it("renders default content with multiple child elements", () => {
     renderComponent(<SkeletonItem />);
-    // SkeletonItem renders with Loading label and contains skeleton boxes
-    expect(screen.getByLabelText("Loading...")).toBeDefined();
-    expect(
-      screen.getByLabelText("Loading...").childNodes.length,
-    ).toBeGreaterThan(0);
+    const item = screen.getByTestId("skeleton-item");
+    expect(item.childNodes.length).toBeGreaterThan(0);
   });
 
   it("renders custom children instead of default content", () => {
@@ -80,14 +91,12 @@ describe("SkeletonItem", () => {
 describe("SkeletonList", () => {
   it("renders 5 items by default", () => {
     renderComponent(<SkeletonList />);
-    const items = screen.getAllByLabelText("Loading...");
-    expect(items).toHaveLength(5);
+    expect(screen.getAllByTestId("skeleton-item")).toHaveLength(5);
   });
 
   it("renders custom count of items", () => {
     renderComponent(<SkeletonList count={3} />);
-    const items = screen.getAllByLabelText("Loading...");
-    expect(items).toHaveLength(3);
+    expect(screen.getAllByTestId("skeleton-item")).toHaveLength(3);
   });
 
   it("uses custom renderItem when provided", () => {
@@ -99,5 +108,49 @@ describe("SkeletonList", () => {
     );
     expect(screen.getByText("Item 0")).toBeDefined();
     expect(screen.getByText("Item 1")).toBeDefined();
+  });
+
+  // Fails on main: SkeletonList's container has no hide props at all today,
+  // so it carries neither `aria-hidden` nor the region testID.
+  it("hides the whole list from screen readers as one region", () => {
+    renderComponent(<SkeletonList count={3} />);
+    const region = screen.getByTestId("skeleton-list");
+    expect(region.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  // Fails on main: today each of the 5 default items carries its own
+  // "Loading..." label (SkeletonItem), so this resolves 5 matches instead
+  // of 0 — the exact per-item announcement noise this todo removes.
+  it("does not expose a per-item Loading label", () => {
+    renderComponent(<SkeletonList />);
+    expect(screen.queryAllByLabelText("Loading...")).toHaveLength(0);
+  });
+});
+
+describe("SkeletonLoadingRegion", () => {
+  it("renders its children", () => {
+    renderComponent(
+      <SkeletonLoadingRegion>
+        <span>region content</span>
+      </SkeletonLoadingRegion>,
+    );
+    expect(screen.getByText("region content")).toBeDefined();
+  });
+
+  // The iOS half (`accessibilityElementsHidden`) and the Android half
+  // (`importantForAccessibility="no-hide-descendants"`) both OR into the
+  // same `aria-hidden` attribute in this harness (ariaHiddenProps in
+  // test/mocks/react-native.ts) — this proves at least one hiding prop is
+  // set, not which platform is covered. See the jsdom a11y-tree-hiding
+  // solution doc's "Scope limit" note.
+  it("marks the region aria-hidden", () => {
+    renderComponent(
+      <SkeletonLoadingRegion testID="region">
+        <span>content</span>
+      </SkeletonLoadingRegion>,
+    );
+    expect(screen.getByTestId("region").getAttribute("aria-hidden")).toBe(
+      "true",
+    );
   });
 });

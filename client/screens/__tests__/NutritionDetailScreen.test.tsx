@@ -9,7 +9,7 @@
 // flags branches (each gated on a barcode or a non-empty array) stay out of
 // the render tree — only the Additional Nutrients card is exercised.
 import React from "react";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
@@ -864,7 +864,22 @@ describe("NutritionDetailScreen — loading branch (2b characterisation)", () =>
     return renderComponent(<NutritionDetailScreen />);
   }
 
-  it("renders the skeleton and announces Loading", () => {
+  // P3-2026-09-23 (L12): this screen is a `presentation: "modal"` route
+  // (RootStackNavigator), so the "Loading" announce must be delayed past the
+  // modal-present focus shift rather than firing synchronously on mount —
+  // see docs/solutions/conventions/on-open-announce-must-delay-past-modal-present-focus-shift-2026-06-25.md.
+  // Fake timers are scoped to this describe only; other describes in this
+  // file spy on the same announce function without them.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  it("does not announce Loading synchronously, then announces it after the modal-present delay", () => {
     const announceSpy = vi.spyOn(
       RN.AccessibilityInfo,
       "announceForAccessibility",
@@ -872,11 +887,33 @@ describe("NutritionDetailScreen — loading branch (2b characterisation)", () =>
     try {
       const { queryByText } = renderLoading();
 
+      // Not yet — an immediate announce races the OS's own present
+      // focus-shift and can be swallowed on iOS.
+      expect(announceSpy).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(500);
+
       expect(announceSpy).toHaveBeenCalledWith("Loading");
       // Negative control: the loading branch returns EARLY, so no main-branch
       // content may be in the tree. Without this, a component that rendered
       // both branches would still pass the announcement assertion.
       expect(queryByText("Cherry Coke")).toBeNull();
+    } finally {
+      announceSpy.mockRestore();
+    }
+  });
+
+  it("cancels the pending Loading announce if the skeleton unmounts before the delay elapses", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const { unmount } = renderLoading();
+      unmount();
+      vi.advanceTimersByTime(500);
+
+      expect(announceSpy).not.toHaveBeenCalled();
     } finally {
       announceSpy.mockRestore();
     }
@@ -902,6 +939,19 @@ describe("NutritionDetailScreen — loading branch (2b characterisation)", () =>
 // NutritionDetailScreen.tsx — one per branch (loading and main) — remains
 // untested here today; verify on device with VoiceOver per
 // docs/rules/accessibility.md in the meantime.
+
+// NutritionDetailScreen — manual-search decorative icons (P3-2026-09-23, L12):
+// deliberately NOT a test. The `search` icon in the manual-search header and
+// the `arrow-right` icon inside the labeled search button both got
+// `accessible={false}` per docs/rules/accessibility.md. Per
+// docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md,
+// `accessible` never reaches the rendered DOM in this harness for either
+// boolean value, and neither icon ever carried its own `accessibilityLabel`
+// (there is no label-absence delta a test could pin — it would pass
+// identically before and after the fix). Same precedent as
+// `todos/archive/2026-06-03-coach-pro-bookmark-icon-accessible-false.md`,
+// which shipped the identical fix with no matching jsdom test. Verify on
+// device with VoiceOver/TalkBack per docs/rules/accessibility.md.
 
 describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
   function renderHero(nutrition: Record<string, unknown>) {
@@ -1711,14 +1761,20 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
       // but `correctionNotice` and `showPer100gInfo` survive, so `NoticeStack`
       // still announces and collides with `InlineError` in the same commit —
       // TWO utterances, which on iOS means the first is cut off.
-      // Reachable in production, not just constructible: nothing in
-      // `useNutritionLookup` resets `correctionNotice` between lookups (there is
-      // no `setCorrectionNotice(null)` in the file) and `isPer100g` is not
-      // re-armed at the top of `fetchBarcodeData`, so a label RETAKE carries a
-      // stale correction into a lookup that errors.
-      // Pinned so that fixing it — resetting both per lookup, which lives in
-      // `useNutritionLookup` and is on this slice's do-not-touch list — turns
-      // this RED and has to be updated deliberately rather than silently.
+      //
+      // CLOSED as a production path (P2-2026-09-23-correction-notice-not-reset-
+      // per-lookup): `useNutritionLookup.ts`'s per-lookup reset block now calls
+      // `setCorrectionNotice(null)` and `setIsPer100g(false)` at the top of
+      // `fetchBarcodeData`, so a label RETAKE can no longer carry a stale
+      // correction or a stale per-100g flag into a lookup that errors — pinned
+      // by `client/hooks/__tests__/useNutritionLookup.test.ts`. This screen has
+      // no gate of its own on the combination, though, so the fixture below
+      // still constructs it directly and still exercises real defense-in-depth
+      // behavior (what the screen does IF handed this combination), not a
+      // reachable production state. The fix lives entirely in the hook, and
+      // this test never touches the hook (`renderScan` supplies the fixture
+      // props directly) — so it stays green, unchanged, both before and after
+      // the fix.
       // Literal rather than a `noticeAnnouncementKey` call, for the same reason
       // given on the open-gate test above.
       expect(announce.mock.calls.map((c) => c[0])).toEqual([
@@ -1763,10 +1819,14 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
    * no utterance is issued at all. That is what this test pins: one call, and
    * it is the error's.
    *
-   * It does NOT close the collision class. `correctionNotice` and
-   * `showPer100gInfo` are not gated on `error`, so either surviving alongside
-   * a fresh error still produces two announces in one commit — see the
-   * "routes error through InlineError" test above, which pins that residual.
+   * It does NOT close the collision class at the SCREEN level: this screen
+   * still has no gate of its own on `correctionNotice`/`showPer100gInfo`
+   * surviving alongside a fresh `error` — see the "routes error through
+   * InlineError" test above. That combination is no longer reachable in
+   * PRODUCTION, though (CLOSED, P2-2026-09-23-correction-notice-not-reset-per-
+   * lookup): `useNutritionLookup.ts` now resets both per lookup, so this is
+   * defense-in-depth coverage of a fixture the hook itself can no longer
+   * produce, not a live gap.
    */
   it("suppresses the label notice while an error is showing", () => {
     const announce = vi

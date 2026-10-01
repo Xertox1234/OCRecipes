@@ -35,6 +35,13 @@ Merging is the irreversible step: squash-merge to protected `main` auto-deploys 
 5. **Sync** — `git pull --ff-only` on main. A burst of "new" commits arriving is normal fast-forward catch-up, not squash pollution.
 6. **Branch sweep** — decision table below, then `git fetch --prune`.
 7. **Reconcile** — verify the PR contained only the expected commits (`gh pr view <n> --json commits`); copy any todos archived inside worktrees into the main checkout's `todos/archive/`.
+8. **Ledger note** — record what landed, so it survives a compaction:
+
+   ```bash
+   bash .claude/hooks/ledger-note.sh VERIFIED "#<n> MERGED <short sha>; main=<short sha>; <open follow-ups>" "gh pr view <n> --json mergeCommit + git log --oneline -1 origin/main"
+   ```
+
+   Run it as its own command from the repo or worktree root; a `cd … &&` prefix misses the allow rule. Each field is single-line and at most 500 bytes, so use 7-character SHAs, and when several PRs land together write one row with a range (`#1073–#1106 merged; main=<short sha>`) rather than listing each. Skip it only when nothing merged.
 
 ## The Review Gate
 

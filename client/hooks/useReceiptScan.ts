@@ -20,6 +20,14 @@ export interface ReceiptScanCount {
   remaining: number;
 }
 
+/**
+ * No opt-out (deliberate): ReceiptReviewScreen's visibility for a scan
+ * failure is conditional at runtime, not a second call site — when local-OCR
+ * fallback items already populated the screen, a scan failure shows nothing
+ * at all today; only the no-fallback branch shows the full-screen error.
+ * Leaving `meta` unset accepts a redundant toast on the no-fallback branch
+ * in exchange for finally covering the has-fallback branch's silent gap.
+ */
 export function useReceiptScan() {
   const abortRef = useRef<AbortController | null>(null);
 

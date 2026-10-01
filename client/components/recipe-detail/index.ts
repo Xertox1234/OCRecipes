@@ -7,4 +7,3 @@ export { RecipeDietTags } from "./RecipeDietTags";
 export { RecipeDetailSkeleton } from "./RecipeDetailSkeleton";
 export { FoodFacts } from "./FoodFacts";
 export { RecipeInstructions } from "./RecipeInstructions";
-export { ServingStepperChip } from "./ServingStepperChip";

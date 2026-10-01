@@ -182,5 +182,8 @@ export async function drainQueue(): Promise<void> {
     void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
     void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
     void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.frequentItems });
+    // A replayed food log changes today's calories: refresh the daily-budget
+    // header too. The bare prefix reaches the undated and every dated key.
+    void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
   }
 }

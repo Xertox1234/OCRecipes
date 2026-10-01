@@ -16,7 +16,7 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
-import { recipeDismissals } from "@shared/schema";
+import { recipeDismissals, savedItems } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 
 // Mock the db import so the storage functions use our test transaction
@@ -524,6 +524,35 @@ describe("community storage", () => {
           ),
         );
       expect(remaining).toHaveLength(0);
+    });
+
+    it("removes the Saved Items row linked to the deleted recipe", async () => {
+      const recipe = await createTestRecipe(testUser.id);
+      await tx.insert(savedItems).values([
+        {
+          userId: testUser.id,
+          type: "recipe",
+          title: recipe.title,
+          recipeId: recipe.id,
+          recipeType: "community",
+        },
+        // Same id, other recipe type: a different recipe — must survive.
+        {
+          userId: testUser.id,
+          type: "recipe",
+          title: "Meal-plan twin",
+          recipeId: recipe.id,
+          recipeType: "mealPlan",
+        },
+      ]);
+
+      await deleteCommunityRecipe(recipe.id, testUser.id);
+
+      const left = await tx
+        .select({ recipeType: savedItems.recipeType })
+        .from(savedItems)
+        .where(eq(savedItems.recipeId, recipe.id));
+      expect(left).toEqual([{ recipeType: "mealPlan" }]);
     });
   });
 

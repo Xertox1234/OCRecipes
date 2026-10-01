@@ -37,7 +37,7 @@ const EXPECTED: Record<string, CoachIntent> = {
   "accuracy-keto-protein-moderate-01": "personalized_advice",
 
   // ── Helpfulness ──────────────────────────────────────────────────
-  "helpfulness-specific-suggestion-01": "personalized_advice",
+  "helpfulness-specific-suggestion-01": "recipe_request",
   "helpfulness-diet-feedback-01": "personalized_advice",
   "helpfulness-vague-message-01": "vague_request",
   "helpfulness-skipped-meals-01": "personalized_advice",
@@ -45,7 +45,7 @@ const EXPECTED: Record<string, CoachIntent> = {
   "helpfulness-muscle-gain-surplus-01": "personalized_advice",
   "helpfulness-pre-workout-meal-01": "personalized_advice",
   "helpfulness-kidney-beans-01": "personalized_advice",
-  "helpfulness-hearty-dinner-01": "personalized_advice",
+  "helpfulness-hearty-dinner-01": "recipe_request",
 
   // ── Personalization ──────────────────────────────────────────────
   "personalization-keto-nut-allergy-01": "general_fact",
@@ -54,10 +54,10 @@ const EXPECTED: Record<string, CoachIntent> = {
   "personalization-multiple-restrictions-01": "personalized_advice",
   "personalization-notebook-context-01": "personalized_advice",
   "personalization-screen-context-recipe-01": "personalized_advice",
-  "personalization-vegetarian-high-protein-01": "personalized_advice",
-  "personalization-about-user-skill-01": "personalized_advice",
+  "personalization-vegetarian-high-protein-01": "recipe_request",
+  "personalization-about-user-skill-01": "recipe_request",
   "personalization-severe-allergy-01": "personalized_advice",
-  "personalization-frequent-foods-01": "personalized_advice",
+  "personalization-frequent-foods-01": "recipe_request",
 
   // ── Edge cases ───────────────────────────────────────────────────
   "edge-minimal-context-01": "personalized_advice",
@@ -145,8 +145,14 @@ describe("classifyIntent", () => {
       expect(classifyIntent("Hi").intent).toBe("vague_request");
     });
 
-    it("classifies short message with no ? as vague_request", () => {
-      expect(classifyIntent("meal ideas").intent).toBe("vague_request");
+    it("classifies 'meal ideas' as recipe_request (was vague_request before the finder)", () => {
+      expect(classifyIntent("meal ideas").intent).toBe("recipe_request");
+    });
+
+    it("legacy control: with recipeRequests off, 'meal ideas' is still vague_request", () => {
+      expect(
+        classifyIntent("meal ideas", { recipeRequests: false }).intent,
+      ).toBe("vague_request");
     });
 
     it("classifies 'How much fiber per day?' as general_fact", () => {
@@ -374,6 +380,164 @@ describe("classifyIntent", () => {
       const start = Date.now();
       classifyIntent(adversarial);
       expect(Date.now() - start).toBeLessThan(100);
+    });
+  });
+
+  describe("recipe_request routing (R4)", () => {
+    it.each([
+      "meal ideas",
+      "dinner ideas",
+      "Any hearty dinner ideas for tonight?",
+      "Find me a chicken recipe",
+      "Give me a recipe for salmon",
+      "I want a vegan pasta recipe",
+      "Suggest a recipe with tofu",
+      "Recipe for banana bread?",
+      "Chicken recipe with rice",
+      "Show me some dessert recipes",
+      "What can I cook tonight?",
+      "What should I make for lunch?",
+      "Ideas for a higher-protein breakfast?",
+    ])("routes %j", (msg) => {
+      expect(classifyIntent(msg).intent).toBe("recipe_request");
+    });
+
+    it.each([
+      "Is this a good recipe for me today?",
+      "log this recipe",
+      "Log my breakfast",
+      "Save this recipe to my cookbook",
+      "How many calories are in this recipe?",
+      "What should I eat for dinner?",
+      "How do I cook kidney beans?",
+      "Snack ideas for this afternoon?",
+      "What are some good snack ideas for me?",
+      "I logged my dinner, any ideas how to hit protein?",
+      "Can you track my lunch?",
+      "I need more protein",
+    ])("does NOT route %j", (msg) => {
+      expect(classifyIntent(msg).intent).not.toBe("recipe_request");
+    });
+
+    // #1151 review: an action on a recipe the user already has belongs to the
+    // coach's tools (meal plan, grocery list, substitutions, nutrition).
+    it.each([
+      "I want to add this recipe to my meal plan",
+      "I need a substitute for eggs in my recipe",
+      "give me the calories in that recipe",
+      "Can you add that recipe to my grocery list?",
+      "Put this recipe on my meal plan for Tuesday",
+      "I want to swap the butter in this chicken recipe",
+      "Give me the macros for my lasagna recipe",
+      "Show me the nutrition for this recipe",
+      "I need a grocery list for that recipe",
+      "Find a substitute for milk in my recipe",
+      "Get me the protein in these recipes",
+      "Replace the chicken with tofu in the recipe",
+      "Give me the calories in the recipe",
+      "Get me a shopping list for the recipe",
+      "Show me the ingredients for the recipe",
+      "I want to add a recipe to my meal plan",
+    ])("does NOT route an action on an existing recipe: %j", (msg) => {
+      expect(classifyIntent(msg).intent).not.toBe("recipe_request");
+    });
+
+    it.each([
+      "Find me a recipe for my dinner",
+      "Give me the recipe for lasagna",
+      "I want a high protein recipe",
+      "Find me a low calorie recipe",
+      "Give me a recipe with the ingredients in my fridge",
+      "Find me a recipe that uses tofu",
+      "Suggest a recipe to add to my meal plan",
+      "Send me your best chicken recipe",
+    ])("still routes a request for a new recipe: %j", (msg) => {
+      expect(classifyIntent(msg).intent).toBe("recipe_request");
+    });
+
+    // A request for A recipe that also names one the user has: the referent
+    // comes after the request, so it is context, not the object of an action.
+    it.each([
+      "Find me a recipe, I don't like that recipe",
+      "Give me a recipe similar to my lasagna recipe",
+      "Send me a recipe better than my usual recipe",
+      "Find me a new recipe for my recipe box",
+      "Suggest a recipe to replace my chili recipe",
+      "Find me a quick easy chicken recipe like my usual recipe",
+      "Show me some recipes instead of my usual recipe",
+      "Give me any recipe similar to my lasagna recipe",
+      "Find me any quick vegan recipes, I hate my chili recipe",
+    ])(
+      "routes a new-recipe request that also mentions an existing one: %j",
+      (msg) => {
+        expect(classifyIntent(msg).intent).toBe("recipe_request");
+      },
+    );
+
+    // The referent comes first, so the indefinite recipe describes what to do
+    // to it. A gate that only asked "is there an indefinite recipe anywhere?"
+    // routed every one of these.
+    it.each([
+      "I want to turn my chili recipe into a slow-cooker recipe",
+      "I want to make my lasagna recipe into a low-carb recipe",
+      "I need to fix my curry recipe, it's a spicy recipe",
+      "I want this recipe to be a dairy-free recipe",
+      "I want to swap the butter in my recipe for a lighter recipe",
+      "Show me how to make this recipe a vegan recipe",
+      "I need my bread recipe to become a gluten-free recipe",
+      "Show me this recipe again, it was a good recipe",
+      "I want to put a recipe in my meal plan: my lasagna recipe",
+    ])(
+      "does NOT route an action on an existing recipe that names a new one: %j",
+      (msg) => {
+        expect(classifyIntent(msg).intent).not.toBe("recipe_request");
+      },
+    );
+
+    // #1156 review: the indefinite phrase's modifier words must not swallow
+    // the referent ("a name for my recipe" is not a request for a recipe).
+    it("does NOT route 'a <noun> for my recipe' (generated corpus)", () => {
+      const routed: string[] = [];
+      for (const head of ["I want", "I need", "Give me", "Show me", "Find me"])
+        for (const det of ["a", "an", "some", "new", "different", "a new"])
+          for (const noun of ["name", "sauce", "twist", "fix", "tip"])
+            for (const prep of ["for", "with", "on", "to"])
+              for (const ref of [
+                "my recipe",
+                "this recipe",
+                "my chili recipe",
+              ]) {
+                const msg = `${head} ${det} ${noun} ${prep} ${ref}`;
+                if (classifyIntent(msg).intent === "recipe_request")
+                  routed.push(msg);
+              }
+      expect(routed).toEqual([]);
+    });
+
+    it("safety still wins over a recipe request", () => {
+      expect(classifyIntent("Give me a recipe for my diabetes").intent).toBe(
+        "safety_refusal",
+      );
+    });
+  });
+
+  describe("prompt template version covers every intent", () => {
+    it("getSystemPromptTemplateVersion's hard-coded list names all CoachIntent members", () => {
+      const src = fs.readFileSync(
+        path.join(__dirname, "../nutrition-coach.ts"),
+        "utf8",
+      );
+      const start = src.indexOf("const allIntents: CoachIntent[] = [");
+      const list = src.slice(start, src.indexOf("];", start));
+      for (const intent of [
+        "safety_refusal",
+        "general_fact",
+        "vague_request",
+        "personalized_advice",
+        "recipe_request",
+      ]) {
+        expect(list).toContain(`"${intent}"`);
+      }
     });
   });
 });

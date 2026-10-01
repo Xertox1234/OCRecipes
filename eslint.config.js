@@ -36,6 +36,33 @@ module.exports = defineConfig([
     },
   },
   {
+    // eslint-config-expo's TS block (node_modules/eslint-config-expo/flat/utils/typescript.js)
+    // only assigns the TS parser to **/*.ts, **/*.tsx, **/*.d.ts — a bare ".mts" file (the
+    // native-ESM vitest config files) gets no parser at all and is silently skipped ("File
+    // ignored because no matching configuration was supplied"). This block mirrors just the
+    // parser/plugin assignment (not the full expo TS ruleset) so .mts files parse and get
+    // basic unused-vars coverage; the type-aware async rules below add real @typescript-eslint
+    // coverage for it. See docs/solutions — Vite 8.3 native-config-loader migration.
+    files: ["**/*.mts"],
+    languageOptions: {
+      parser: tseslint.parser,
+    },
+    plugins: { "@typescript-eslint": tseslint.plugin },
+    rules: {
+      "no-undef": "off",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          vars: "all",
+          args: "none",
+          ignoreRestSiblings: true,
+          caughtErrors: "all",
+        },
+      ],
+    },
+  },
+  {
     files: ["server/**/*.ts"],
     rules: {
       "no-console": "error",
@@ -62,6 +89,25 @@ module.exports = defineConfig([
                 "toLocalDateString is device-local; on the server that is the host's zone, not the user's. Derive the user's civil date from parseTimezone(req.headers['x-timezone']) with the helpers in server/storage/helpers.ts.",
             },
           ],
+        },
+      ],
+    },
+  },
+  {
+    // Hermes (the app's JS engine) has no global `crypto`. A bare
+    // `crypto.randomUUID()` in client code passes every Vitest test (Node has
+    // it) and throws on device: it broke every coach stream from 2026-05-04 and
+    // every offline-queue enqueue from 2026-06-12, until 2026-09-25. Tests are
+    // excluded because they stub the global on purpose to model Hermes.
+    files: ["client/**/*.{ts,tsx}"],
+    ignores: ["**/__tests__/**", "**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        {
+          name: "crypto",
+          message:
+            "Hermes has no global `crypto` — this throws on device while passing in Vitest. Use randomUuidV4() from @/lib/uuid.",
         },
       ],
     },
@@ -96,7 +142,7 @@ module.exports = defineConfig([
     ? []
     : [
         {
-          files: ["**/*.{ts,tsx}"],
+          files: ["**/*.{ts,tsx,mts}"],
           languageOptions: {
             parser: tseslint.parser,
             parserOptions: {

@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { useNutritionLookup } from "../useNutritionLookup";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import { logger } from "@/lib/logger";
 
 const { mockGoBack, mockReset, mockPopTo, mockApiRequest } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
@@ -194,5 +195,153 @@ describe("useNutritionLookup — flags (Task 7)", () => {
         tier: "safety",
       }),
     ]);
+  });
+});
+
+// Characterization tests added for P1-2026-09-23 (atomic lookup state
+// refactor): pin exit paths not yet covered by the tests above, against
+// BOTH the pre-refactor and post-refactor hook.
+describe("useNutritionLookup — 5xx vs network-error OFF-fallback distinction (P1-2026-09-23 characterization)", () => {
+  const mockServerFetch = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockServerFetch);
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: async () => ({ hasFrontLabelData: false }),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("a 5xx server response falls back to OFF with the 'couldn't reach' copy and calls neither logger.warn nor logger.error", async () => {
+    const warnSpy = vi
+      .spyOn(logger, "warn")
+      .mockImplementation(() => undefined);
+    const errorSpy = vi
+      .spyOn(logger, "error")
+      .mockImplementation(() => undefined);
+
+    mockServerFetch
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: "internal" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 1,
+          product: {
+            product_name: "Fallback Snack",
+            brands: "GenericBrand",
+            nutriments: {
+              "energy-kcal_100g": 400,
+              proteins_100g: 5,
+              carbohydrates_100g: 60,
+              fat_100g: 10,
+            },
+          },
+        }),
+      });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "000000000010" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.nutrition?.productName).toBe("Fallback Snack");
+    expect(result.current.flags).toEqual([
+      expect.objectContaining({
+        id: "allergen-unavailable",
+        detail:
+          "We couldn't reach our service to check this against your allergies — check the package label.",
+      }),
+    ]);
+    // A plain HTTP error status never throws inside the server-lookup try —
+    // there is no catch to warn from, unlike a genuine connectivity failure.
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(errorSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  // Positive control for the silence assertion above: a REAL connectivity
+  // failure must still warn, or the "not called" assertion would be vacuous.
+  it("a genuine network error falls back to OFF AND calls logger.warn", async () => {
+    const warnSpy = vi
+      .spyOn(logger, "warn")
+      .mockImplementation(() => undefined);
+
+    mockServerFetch
+      .mockRejectedValueOnce(new Error("server unreachable"))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: 1,
+          product: {
+            product_name: "Fallback Snack",
+            nutriments: { "energy-kcal_100g": 400 },
+          },
+        }),
+      });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "000000000011" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+});
+
+describe("useNutritionLookup — off-not-found (P1-2026-09-23 characterization)", () => {
+  const mockServerFetch = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockServerFetch);
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: async () => ({ hasFrontLabelData: false }),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("server unreachable + OFF status !== 1 ⇒ 'Product not found', Unknown Product nutrition, no flag", async () => {
+    mockServerFetch
+      .mockRejectedValueOnce(new Error("server unreachable"))
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 0 }) });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "000000000012" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.error).toBe("Product not found in database");
+    expect(result.current.nutrition).toEqual({
+      productName: "Unknown Product",
+      barcode: "000000000012",
+    });
+    // "No product ⇒ no flag" — pinned current behaviour, unlike the
+    // off-fallback and total-outage paths.
+    expect(result.current.flags).toEqual([]);
   });
 });

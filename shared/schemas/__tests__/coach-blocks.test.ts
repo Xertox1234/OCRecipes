@@ -444,6 +444,28 @@ describe("validateNavigateParams stripping", () => {
       initialMessage: "Make this vegan",
     });
   });
+
+  it("keeps recipeType catalog on a FeaturedRecipeDetail navigate action", () => {
+    const card = {
+      type: "action_card",
+      title: "Spoonacular Chili",
+      subtitle: "Preview",
+      action: {
+        type: "navigate",
+        screen: "FeaturedRecipeDetail",
+        params: { recipeId: 715538, recipeType: "catalog" },
+      },
+      actionLabel: "View recipe",
+    };
+    const parsed = actionCardSchema.parse(card);
+    if (parsed.action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(parsed.action.params).toEqual({
+      recipeId: 715538,
+      recipeType: "catalog",
+    });
+  });
 });
 
 describe("RecipeBrowserModal navigate params", () => {

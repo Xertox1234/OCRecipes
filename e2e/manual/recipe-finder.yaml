@@ -1,0 +1,131 @@
+# e2e/manual/recipe-finder.yaml
+appId: com.ocrecipes.app
+name: "Manual - Recipe finder in RecipeChef and Coach Pro"
+# MANUAL ONLY (outside e2e/flows/** — CI never discovers it). Needs:
+#   - server: RECIPE_FINDER_ENABLED=true npm run server:dev (+ SPOONACULAR_API_KEY)
+#   - a dev-client build that includes the recipe-finder client (PR C)
+#   - a Premium account:  maestro test -e USERNAME=… -e PASSWORD=… e2e/manual/recipe-finder.yaml
+#   - Android: adb reverse tcp:8081 tcp:8081 AND tcp:3000 tcp:3000 (the bundle's
+#     API domain is localhost:3000, which on the emulator is the emulator)
+# appId is the Android package; the helpers only openLink, so it also runs on
+# iOS (bundle com.williamtower.ocrecipes) — checked on the iOS simulator.
+# AI output varies, so every assertion is on app-authored text, and every
+# branch the AI can take (matches vs no matches, generate vs another list)
+# is handled with a `when:` gate. Older finder lists stay on screen with their
+# buttons disabled, so every Generate tap and wait asks for `enabled: true`.
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+- runFlow: ../helpers/launch-app.yaml
+- runFlow:
+    file: ../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# ── RecipeChef ─────────────────────────────────────────────────────────
+- openLink: "ocrecipes://recipe-chat"
+# iOS reads the input as its label plus placeholder ("Recipe request Describe
+# what you want to cook..."); Maestro text is a full-string regex.
+- extendedWaitUntil:
+    visible: "Recipe request.*"
+    timeout: 15000
+- tapOn: "Recipe request.*"
+- inputText: "Mediterranean"
+- tapOn: "Send message"
+# Either a community list or the no-match notice — both carry the buttons.
+- extendedWaitUntil:
+    visible: "(From the community|No community recipes matched\\.)"
+    timeout: 45000
+- assertVisible:
+    text: "Generate"
+    enabled: true
+- assertVisible: "None of these"
+# One clarifying round.
+- tapOn: "None of these"
+- extendedWaitUntil:
+    visible: "Search with these"
+    timeout: 45000
+# Answer by typing (chips are AI-authored; typed answers are always valid).
+- tapOn: "Recipe request.*"
+- inputText: "under 30 minutes"
+- tapOn: "Send message"
+# Either a round-1 list (its Generate is the only enabled one) or an automatic
+# generation (the card's Save). The first list's header is still on screen, so
+# the wait can't key on it.
+- extendedWaitUntil:
+    visible:
+      text: "(Generate|Save .* recipe)"
+      enabled: true
+    timeout: 120000
+- runFlow:
+    when:
+      visible:
+        text: "Generate"
+        enabled: true
+    commands:
+      - tapOn:
+          text: "Generate"
+          enabled: true
+- extendedWaitUntil:
+    visible: "Save .* recipe"
+    timeout: 120000
+# Maestro counts a list row as visible while it sits behind the composer and
+# the tab bar, and tapping its centre then lands on the Plan tab. One scroll
+# pins the list's end (the new card) above them; at the end already, it's a
+# no-op. (scrollUntilVisible with centerElement can't centre the LAST row.)
+- waitForAnimationToEnd
+- scroll
+- tapOn: "Save .* recipe"
+- extendedWaitUntil:
+    visible: ".* saved"
+    timeout: 20000
+- tapOn: "Close"
+
+# ── Coach Pro ──────────────────────────────────────────────────────────
+- tapOn:
+    id: "tab-coach"
+- extendedWaitUntil:
+    visible: "Start a new coach conversation"
+    timeout: 20000
+- tapOn: "Start a new coach conversation"
+- tapOn: "Message your nutrition coach"
+- inputText: "Find me a chicken dinner recipe"
+- tapOn: "Send message"
+- extendedWaitUntil:
+    visible: "(From the community|No community recipes matched\\.)"
+    timeout: 45000
+# Spoonacular list → open a preview (nothing saved) → back.
+- tapOn: "Search Spoonacular"
+- extendedWaitUntil:
+    visible: "(From Spoonacular|Spoonacular isn't available right now.*|Spoonacular had no matches\\.)"
+    timeout: 45000
+- runFlow:
+    when:
+      visible: "From Spoonacular"
+    commands:
+      - tapOn:
+          text: ".*Opens recipe\\."
+          index: 0
+      - extendedWaitUntil:
+          visible: "Save .* to your recipes"
+          timeout: 30000
+      - tapOn: "Close recipe"
+# Generate in Coach → RecipeChef's card with Save.
+- tapOn:
+    text: "Generate"
+    enabled: true
+- extendedWaitUntil:
+    visible: "Save .* recipe"
+    timeout: 120000
+# Maestro counts a list row as visible while it sits behind the composer and
+# the tab bar, and tapping its centre then lands on the Plan tab. One scroll
+# pins the list's end (the new card) above them; at the end already, it's a
+# no-op. (scrollUntilVisible with centerElement can't centre the LAST row.)
+- waitForAnimationToEnd
+- scroll
+- tapOn: "Save .* recipe"
+- extendedWaitUntil:
+    visible: "(.* saved|Recipe saved)"
+    timeout: 20000

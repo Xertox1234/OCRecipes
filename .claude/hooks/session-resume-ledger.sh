@@ -31,7 +31,7 @@ RESUME="$LEDGER_DIR/resume.md"
 context_ledger_path_ok "$RESUME" || exit 0
 [ -s "$RESUME" ] || exit 0
 
-# Clamp on READ, not just on write. The writer's own 4096-byte cap bounds what THIS repo
+# Clamp on READ, not just on write. The writer's own 6144-byte cap bounds what THIS repo
 # produces and says nothing about what it will consume: measured against the pre-fix path,
 # planted files of 4 KiB, 64 KiB, 200 KB, 400 KB and 900 KB all reached additionalContext
 # in full, and a 3 MB file emitted ZERO bytes while still exiting 0 — the jq `--arg`

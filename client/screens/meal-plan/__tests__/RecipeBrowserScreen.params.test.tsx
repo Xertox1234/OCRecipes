@@ -40,6 +40,7 @@
 import React from "react";
 import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import RecipeBrowserScreen from "../RecipeBrowserScreen";
 
 const {
@@ -47,6 +48,9 @@ const {
   mockNavigate,
   mockGoBack,
   mockRouteParams,
+  mockSearchState,
+  DEFAULT_SEARCH_STATE,
+  capturedSectionListProps,
   TEST_RECIPE,
   capturedFilterSheetRef,
 } = vi.hoisted(() => {
@@ -82,11 +86,22 @@ const {
     isCanonical: false,
     allergens: [],
   };
+  const DEFAULT_SEARCH_STATE = {
+    data: { results: [] as (typeof TEST_RECIPE)[], total: 0 },
+    isLoading: false,
+    loadMore: undefined as (() => void) | undefined,
+    isFetchingNextPage: false,
+  };
   return {
     mockMutateAsync: vi.fn(),
     mockNavigate: vi.fn(),
     mockGoBack: vi.fn(),
     mockRouteParams: { value: {} as Record<string, unknown> },
+    mockSearchState: { value: { ...DEFAULT_SEARCH_STATE } },
+    DEFAULT_SEARCH_STATE,
+    capturedSectionListProps: {
+      value: undefined as Record<string, unknown> | undefined,
+    },
     TEST_RECIPE,
     // Populated by the @gorhom/bottom-sheet override below — lets the
     // Android-trap-release test call the filter sheet's real `.dismiss()`
@@ -99,6 +114,28 @@ const {
       current: null as { dismiss: () => void } | null,
     },
   };
+});
+
+// L9 (2026-09-23 front-end audit): the search-results `AnimatedSectionList`
+// must spread FLATLIST_DEFAULTS. The shared jsdom `SectionList` test mock
+// (test/mocks/react-native.ts) deliberately destructures only the props
+// existing tests need and drops everything else via no `...rest` — so a DOM
+// assertion can never see whether `removeClippedSubviews`/`maxToRenderPerBatch`/
+// `windowSize` were spread onto it. Rather than touch that shared mock (out of
+// this todo's Scope Contract), override just `SectionList` here to capture the
+// exact props the screen passes and render nothing — this also sidesteps
+// having to support every `renderItem` dependency (FallbackImage, icons, etc.)
+// for a test that only cares about the props reaching the list itself.
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  const SectionList = React.forwardRef<unknown, Record<string, unknown>>(
+    (props, _ref) => {
+      capturedSectionListProps.value = props;
+      return null;
+    },
+  );
+  SectionList.displayName = "SectionList";
+  return { ...actual, SectionList };
 });
 
 // Wraps the shared BottomSheetModal mock (test/mocks/gorhom-bottom-sheet.ts,
@@ -166,12 +203,7 @@ vi.mock("@/hooks/useFavouriteRecipes", () => ({
 // "Test Personal Recipe" reaches the screen — see the RecipeDiscoveryFeed
 // mock below for why.
 vi.mock("@/hooks/useRecipeSearch", () => ({
-  useRecipeSearch: () => ({
-    data: { results: [], total: 0 },
-    isLoading: false,
-    loadMore: undefined,
-    isFetchingNextPage: false,
-  }),
+  useRecipeSearch: () => mockSearchState.value,
 }));
 
 vi.mock("@/hooks/useCatalogSearch", () => ({
@@ -289,6 +321,38 @@ describe("RecipeBrowserScreen — filter sheet iOS a11y-leaf fix", () => {
     expect(
       screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible"),
     ).toBe("false");
+  });
+});
+
+// AC #1 of
+// todos/P3-2026-09-23-perf-minor-recipe-browser-windowing-and-stream-rescan.md
+// (2026-09-23 front-end audit finding L9): the search-results
+// `AnimatedSectionList` (RecipeBrowserScreen.tsx, rendered when a query or
+// filter is active) must spread `FLATLIST_DEFAULTS` for scroll-perf
+// virtualization on long result lists.
+describe("RecipeBrowserScreen — FlatList windowing defaults (L9)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedSectionListProps.value = undefined;
+    // A non-empty searchQuery seeds `debouncedQuery`, which makes
+    // `isBlankBrowseState` false — that renders the search-results
+    // AnimatedSectionList branch instead of RecipeDiscoveryFeed.
+    mockRouteParams.value = { searchQuery: "chicken" };
+    mockSearchState.value = {
+      ...DEFAULT_SEARCH_STATE,
+      data: { results: [TEST_RECIPE], total: 1 },
+    };
+  });
+
+  afterEach(() => {
+    mockSearchState.value = { ...DEFAULT_SEARCH_STATE };
+  });
+
+  it("spreads FLATLIST_DEFAULTS onto the results AnimatedSectionList", () => {
+    renderComponent(<RecipeBrowserScreen />);
+
+    expect(capturedSectionListProps.value).toBeDefined();
+    expect(capturedSectionListProps.value).toMatchObject(FLATLIST_DEFAULTS);
   });
 });
 

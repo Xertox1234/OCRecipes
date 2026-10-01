@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
@@ -11,10 +12,11 @@ import {
   checkAiConfigured,
   parseTimezone,
 } from "./_helpers";
-import { chatRateLimit } from "./_rate-limiters";
+import { chatRateLimit, chatReadRateLimit } from "./_rate-limiters";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 import {
   generateRecipeChatResponse,
   buildRecipeContext,
@@ -26,10 +28,29 @@ import { logger, toError } from "../lib/logger";
 import {
   handleCoachChat,
   tryArchiveNotebook,
+  STANDARD_SAFETY_MESSAGE,
 } from "../services/coach-pro-chat";
-import { sanitizeUserInput, sanitizeContextField } from "../lib/ai-safety";
+import {
+  sanitizeUserInput,
+  sanitizeContextField,
+  containsUnsafeCoachAdvice,
+} from "../lib/ai-safety";
+import { parseBlocksFromContent } from "../services/coach-blocks";
+import type { ChatMessage } from "@shared/schema";
+import { finderActionSchema } from "@shared/schemas/recipe-finder";
+import {
+  isRecipeFinderEnabled,
+  decideRecipeChefEntry,
+  getLatestFinderBlock,
+  isActionCurrent,
+  classifyTurn,
+  prepareFinderTurn,
+  executeFinderStep,
+  finderStatusLabel,
+  type FinderInput,
+  type GenerationMessages,
+} from "../services/recipe-finder";
 
-const SSE_TIMEOUT_MS = 120_000; // 2 minutes max per SSE connection
 const SSE_MAX_RESPONSE_BYTES = 50 * 1024; // 50KB max response size
 
 export function register(app: Express): void {
@@ -37,7 +58,7 @@ export function register(app: Express): void {
   app.get(
     "/api/chat/conversations",
     requireAuth,
-    chatRateLimit,
+    chatReadRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const limit = parseQueryInt(req.query.limit, { default: 20, max: 50 });
@@ -74,7 +95,7 @@ export function register(app: Express): void {
   app.get(
     "/api/chat/conversations/:id",
     requireAuth,
-    chatRateLimit,
+    chatReadRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
@@ -222,7 +243,7 @@ export function register(app: Express): void {
   app.get(
     "/api/chat/conversations/:id/messages",
     requireAuth,
-    chatRateLimit,
+    chatReadRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
@@ -285,6 +306,9 @@ export function register(app: Express): void {
           screenContext: z.string().max(1500).optional(),
           warmUpId: z.string().max(100).optional(),
           turnKey: z.string().uuid().optional(),
+          // Recipe finder button taps (R2): structured, never parsed from
+          // `content`, and never from route params (#1147/#1148).
+          finderAction: finderActionSchema.optional(),
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
@@ -326,35 +350,140 @@ export function register(app: Express): void {
         if (!user)
           return sendError(res, 401, "Unauthorized", ErrorCode.UNAUTHORIZED);
 
-        // Atomically check daily limit and create message in a single
-        // transaction to prevent TOCTOU races bypassing the limit.
-        const dailyLimit =
-          isRecipeChat || isRemixChat
-            ? features.dailyRecipeGenerations
-            : features.coachPro
-              ? features.coachProDailyMessages
-              : features.dailyCoachMessages;
         const sanitizedContent = sanitizeUserInput(parsed.data.content);
-        const message = await storage.createChatMessageWithLimitCheck(
-          id,
-          req.userId,
-          sanitizedContent,
-          dailyLimit,
-          conversationType,
-        );
-
-        if (!message) {
+        // "   " passes min(1) but sanitizes to "" — a finder flow built on it
+        // stores a request its own schema rejects, leaving a dead list.
+        if (!sanitizedContent) {
           return sendError(
             res,
-            429,
-            isRecipeChat || isRemixChat
-              ? "Daily recipe generation limit reached"
-              : features.coachPro
-                ? "Daily Coach Pro message limit reached"
-                : "Daily chat message limit reached",
-            ErrorCode.DAILY_LIMIT_REACHED,
+            400,
+            "Message can't be empty",
+            ErrorCode.VALIDATION_ERROR,
           );
         }
+        const finderEnabled = isRecipeFinderEnabled();
+        const finderAction = parsed.data.finderAction;
+        if (
+          finderAction &&
+          (!finderEnabled ||
+            isRemixChat ||
+            (!isRecipeChat && !features.coachPro))
+        ) {
+          return sendError(
+            res,
+            409,
+            "Recipe finder isn't available right now.",
+            ErrorCode.CONFLICT,
+          );
+        }
+
+        // ─── RECIPE FINDER ENTRY (flag on) ───────────────────
+        // Must run BEFORE createChatMessageWithLimitCheck: that check counts
+        // every recipe-chat user row as a generation (R2 quota trap). Finder
+        // rows go through createFinderUserMessage (never counted); only a
+        // Generate step claims a generation (executeFinderStep).
+        let message: ChatMessage | null = null;
+        let finderHistory: ChatMessage[] = [];
+        let recipeFinderInput: FinderInput | null = null;
+        if (finderEnabled && (finderAction || isRecipeChat)) {
+          finderHistory = await storage.getChatMessages(id, 20, req.userId);
+          if (finderAction) {
+            // Stale (an older list's button) → quiet no-op, before any row.
+            if (
+              !isActionCurrent(
+                getLatestFinderBlock(finderHistory),
+                finderAction,
+              )
+            ) {
+              return endQuietly(res);
+            }
+            const created = await storage.createFinderUserMessage(
+              id,
+              req.userId,
+              sanitizedContent,
+              {
+                action: {
+                  flowId: finderAction.flowId,
+                  type: finderAction.type,
+                },
+                ...(isRecipeChat
+                  ? {}
+                  : { coachDailyLimit: features.coachProDailyMessages }),
+              },
+            );
+            // Double tap: the same flowId already has a row → quiet no-op.
+            if (created.status === "duplicate") return endQuietly(res);
+            if (created.status === "limit_reached") {
+              return sendError(
+                res,
+                429,
+                "Daily Coach Pro message limit reached",
+                ErrorCode.DAILY_LIMIT_REACHED,
+              );
+            }
+            message = created.message;
+            if (isRecipeChat) {
+              recipeFinderInput = { kind: "action", action: finderAction };
+            }
+          } else {
+            // RecipeChef typed turn (§3.3). Remix never gets here.
+            const entry = decideRecipeChefEntry(
+              finderHistory,
+              sanitizedContent,
+            );
+            if (entry.kind === "finder") {
+              recipeFinderInput = entry.input;
+            } else if (entry.kind === "classify") {
+              const turn = await classifyTurn(
+                sanitizedContent,
+                entry.recipeTitle,
+              );
+              if (turn === "new_request") {
+                recipeFinderInput = { kind: "start", text: sanitizedContent };
+              }
+            }
+            if (recipeFinderInput) {
+              const created = await storage.createFinderUserMessage(
+                id,
+                req.userId,
+                sanitizedContent,
+              );
+              if (created.status !== "created") return endQuietly(res);
+              message = created.message;
+            }
+          }
+        }
+
+        if (!message) {
+          // Atomically check daily limit and create message in a single
+          // transaction to prevent TOCTOU races bypassing the limit.
+          const dailyLimit =
+            isRecipeChat || isRemixChat
+              ? features.dailyRecipeGenerations
+              : features.coachPro
+                ? features.coachProDailyMessages
+                : features.dailyCoachMessages;
+          message = await storage.createChatMessageWithLimitCheck(
+            id,
+            req.userId,
+            sanitizedContent,
+            dailyLimit,
+            conversationType,
+          );
+          if (!message) {
+            return sendError(
+              res,
+              429,
+              isRecipeChat || isRemixChat
+                ? "Daily recipe generation limit reached"
+                : features.coachPro
+                  ? "Daily Coach Pro message limit reached"
+                  : "Daily chat message limit reached",
+              ErrorCode.DAILY_LIMIT_REACHED,
+            );
+          }
+        }
+        const userMessage = message;
 
         // Stream response via SSE
         res.setHeader("Content-Type", "text/event-stream");
@@ -366,9 +495,24 @@ export function register(app: Express): void {
         // AbortController wires the HTTP close event directly into the OpenAI
         // SDK so in-flight generation is cancelled immediately, not just after
         // the next chunk boundary. (M8 — 2026-04-18)
+        //
+        // Listen on `res`, not `req`: express.json() has already consumed the
+        // body, so the request's own "close" fired before this line and a
+        // `req.on("close")` listener never runs (measured on Node 24, our
+        // runtime) — M8 was dead code.
+        // `!res.writableFinished` separates a dropped client from our own
+        // res.end().
+        //
+        // Coach path only: the recipe/remix path cannot salvage a partial
+        // (half a recipe JSON), so it keeps finishing and saving the reply
+        // after a disconnect rather than burning quota for nothing.
+        const isCoachPath = !isRecipeChat && !isRemixChat;
         const abortController = new AbortController();
         let aborted = false;
-        req.on("close", () => {
+        let clientDisconnected = false;
+        res.on("close", () => {
+          if (res.writableFinished || !isCoachPath) return;
+          clientDisconnected = true;
           aborted = true;
           abortController.abort();
         });
@@ -377,6 +521,12 @@ export function register(app: Express): void {
         const sseTimeout = setTimeout(() => {
           aborted = true;
           abortController.abort();
+          // The coach generators' own "streaming error" log is downgraded to
+          // debug on any abort (a disconnect and this timeout share the
+          // signal — see nutrition-coach.ts), so a genuine hang
+          // would otherwise vanish above debug. Log it here, where the
+          // SSE-timeout cause is unambiguous.
+          logger.warn({ conversationId: id }, "chat SSE stream timed out");
           if (!res.writableEnded) {
             res.write(
               `data: ${JSON.stringify({ error: "Response timeout" })}\n\n`,
@@ -386,131 +536,216 @@ export function register(app: Express): void {
         }, SSE_TIMEOUT_MS);
 
         let responseBytes = 0;
+        // Coach path: the content actually delivered to the client, and a
+        // per-turn key so the service's write and the disconnect settle below
+        // can tell whether this turn's reply already exists.
+        let streamedContent = "";
+        const coachTurnKey = parsed.data.turnKey ?? randomUUID();
 
         try {
           if (isRecipeChat || isRemixChat) {
             // ─── RECIPE / REMIX CHAT PATH ────────────────────────
-            const remixSourceId = isRemixChat
-              ? remixConversationMetadataSchema.safeParse(conversation.metadata)
-                  ?.data?.sourceRecipeId
-              : undefined;
-
-            const [profile, history, sourceRecipe] = await Promise.all([
-              storage.getUserProfile(req.userId),
-              storage.getChatMessages(id, 10, req.userId),
-              remixSourceId
-                ? storage.getCommunityRecipe(remixSourceId, req.userId)
-                : undefined,
-            ]);
-
-            const contextMessages = buildRecipeContext(history);
-
-            // For remix, build a specialized system prompt with the original recipe
-            let remixPromptOverride: string | undefined;
-            if (isRemixChat && sourceRecipe) {
-              remixPromptOverride = buildRemixSystemPrompt(
-                {
-                  title: sourceRecipe.title,
-                  ingredients: sourceRecipe.ingredients ?? [],
-                  instructions: sourceRecipe.instructions,
-                  dietTags: sourceRecipe.dietTags ?? [],
-                  description: sourceRecipe.description,
-                  difficulty: sourceRecipe.difficulty,
-                  timeEstimate: sourceRecipe.timeEstimate,
-                  servings: sourceRecipe.servings,
-                },
-                profile,
+            // ─── RECIPE FINDER STEP (RecipeChef, flag on) ────────
+            let finderGeneration: GenerationMessages | null = null;
+            if (recipeFinderInput) {
+              const finderProfile = await storage.getUserProfile(req.userId);
+              const { step } = prepareFinderTurn(
+                finderHistory,
+                recipeFinderInput,
               );
-            }
-
-            let fullTextResponse = "";
-            let recipeData: RecipeChatRecipe | null = null;
-            let allergenWarning: string | null = null;
-            let recipeImageUrl: string | null = null;
-
-            const sanitizedScreenContext = parsed.data.screenContext
-              ? sanitizeContextField(parsed.data.screenContext, 200)
-              : undefined;
-
-            for await (const event of generateRecipeChatResponse(
-              contextMessages,
-              profile,
-              sanitizedScreenContext,
-              remixPromptOverride
-                ? { systemPromptOverride: remixPromptOverride }
-                : undefined,
-            )) {
-              if (aborted) break;
-
-              const eventJson = JSON.stringify(event);
-              responseBytes += eventJson.length;
-              if (responseBytes > SSE_MAX_RESPONSE_BYTES) {
-                aborted = true;
-                abortController.abort();
-                if (!res.writableEnded) {
-                  res.write(
-                    `data: ${JSON.stringify({ error: "Response too large" })}\n\n`,
-                  );
-                }
-                break;
+              const label = finderStatusLabel(step);
+              if (label) {
+                res.write(`data: ${JSON.stringify({ status: label })}\n\n`);
               }
-
-              if ("done" in event && event.done) {
-                // Terminal event — handled after loop
-              } else if ("recipe" in event && event.recipe) {
-                recipeData = event.recipe;
-                allergenWarning = event.allergenWarning;
-                res.write(`data: ${eventJson}\n\n`);
-              } else if ("imageUrl" in event && event.imageUrl) {
-                recipeImageUrl = event.imageUrl;
-                res.write(`data: ${eventJson}\n\n`);
-              } else if (
-                "imageUnavailable" in event &&
-                event.imageUnavailable
-              ) {
-                res.write(`data: ${eventJson}\n\n`);
-              } else if ("content" in event && event.content) {
-                fullTextResponse += event.content;
-                res.write(`data: ${eventJson}\n\n`);
-              }
-            }
-
-            // Save assistant message with recipe in metadata
-            if (!aborted && (fullTextResponse || recipeData)) {
-              const metadata = recipeData
-                ? {
-                    metadataVersion: 1,
-                    recipe: recipeData,
-                    allergenWarning,
-                    imageUrl: recipeImageUrl,
-                  }
-                : null;
-
-              // Strip the JSON code block — recipe is in metadata; only save conversational text
-              const conversationalText = fullTextResponse
-                .replace(/\n*```json[\s\S]*?```\s*/g, "")
-                .trim();
-
-              await storage.createChatMessage(
-                id,
-                req.userId,
-                "assistant",
-                conversationalText || "Here's a recipe for you!",
-                metadata,
-              );
-            }
-
-            // Auto-title from recipe name on first exchange (fire-and-forget — non-critical)
-            // history.length is the count before this exchange; +2 for user+assistant messages
-            if (!aborted && recipeData && history.length <= 1) {
-              fireAndForget(
-                "recipe-chat-auto-title",
-                storage.updateChatConversationTitle(
+              const turn = await executeFinderStep(step, {
+                userId: req.userId,
+                userMessageId: userMessage.id,
+                history: finderHistory,
+                profile: finderProfile,
+                features,
+              });
+              if (turn.kind === "message") {
+                await storage.createChatMessage(
                   id,
                   req.userId,
-                  recipeData.title,
-                ),
-              );
+                  "assistant",
+                  turn.content,
+                  { metadataVersion: 1, finder: turn.block },
+                );
+                if (!res.writableEnded) {
+                  res.write(
+                    `data: ${JSON.stringify({ finder: turn.block })}\n\n`,
+                  );
+                }
+                if (!finderHistory.some((m) => m.role === "user")) {
+                  fireAndForget(
+                    "recipe-finder-auto-title",
+                    storage.updateChatConversationTitle(
+                      id,
+                      req.userId,
+                      sanitizedContent.slice(0, 50),
+                    ),
+                  );
+                }
+              } else if (turn.kind === "ignored") {
+                // e.g. Search Spoonacular on a Spoonacular list — nothing to
+                // answer, so don't leave a dangling user bubble.
+                await storage.deleteChatMessage(userMessage.id, req.userId);
+              } else {
+                finderGeneration = turn.messages;
+                // A round-1 search that found nothing falls through to
+                // Generate: update the thinking bubble.
+                if (step.kind !== "generate") {
+                  res.write(
+                    `data: ${JSON.stringify({ status: "Creating your recipe…" })}\n\n`,
+                  );
+                }
+              }
+            }
+
+            if (!recipeFinderInput || finderGeneration) {
+              const remixSourceId = isRemixChat
+                ? remixConversationMetadataSchema.safeParse(
+                    conversation.metadata,
+                  )?.data?.sourceRecipeId
+                : undefined;
+
+              const [profile, history, sourceRecipe] = await Promise.all([
+                storage.getUserProfile(req.userId),
+                storage.getChatMessages(id, 10, req.userId),
+                remixSourceId
+                  ? storage.getCommunityRecipe(remixSourceId, req.userId)
+                  : undefined,
+              ]);
+
+              // A finder Generate sends only the refined request (spec §3.1).
+              const contextMessages =
+                finderGeneration ?? buildRecipeContext(history);
+
+              // For remix, build a specialized system prompt with the original recipe
+              let remixPromptOverride: string | undefined;
+              if (isRemixChat && sourceRecipe) {
+                remixPromptOverride = buildRemixSystemPrompt(
+                  {
+                    title: sourceRecipe.title,
+                    ingredients: sourceRecipe.ingredients ?? [],
+                    instructions: sourceRecipe.instructions,
+                    dietTags: sourceRecipe.dietTags ?? [],
+                    description: sourceRecipe.description,
+                    difficulty: sourceRecipe.difficulty,
+                    timeEstimate: sourceRecipe.timeEstimate,
+                    servings: sourceRecipe.servings,
+                  },
+                  profile,
+                );
+              }
+
+              let fullTextResponse = "";
+              let recipeData: RecipeChatRecipe | null = null;
+              let allergenWarning: string | null = null;
+              let recipeImageUrl: string | null = null;
+
+              const sanitizedScreenContext = parsed.data.screenContext
+                ? sanitizeContextField(parsed.data.screenContext, 200)
+                : undefined;
+
+              for await (const event of generateRecipeChatResponse(
+                contextMessages,
+                profile,
+                sanitizedScreenContext,
+                remixPromptOverride
+                  ? { systemPromptOverride: remixPromptOverride }
+                  : undefined,
+              )) {
+                // On this path `aborted` starts false and stays false unless
+                // the byte-limit guard below or the SSE timeout trips it — a
+                // client disconnect never reaches here (isCoachPath is false,
+                // so res.on("close") above returns early). This break is not
+                // a disconnect check any more.
+                if (aborted) break;
+
+                const eventJson = JSON.stringify(event);
+                responseBytes += eventJson.length;
+                if (responseBytes > SSE_MAX_RESPONSE_BYTES) {
+                  aborted = true;
+                  abortController.abort();
+                  // Closes the generator via return(), not a catch, so nothing
+                  // else logs this runaway response; record it here.
+                  logger.warn(
+                    { conversationId: id, responseBytes },
+                    "chat SSE response exceeded the size limit",
+                  );
+                  if (!res.writableEnded) {
+                    res.write(
+                      `data: ${JSON.stringify({ error: "Response too large" })}\n\n`,
+                    );
+                  }
+                  break;
+                }
+
+                if ("done" in event && event.done) {
+                  // Terminal event — handled after loop
+                } else if ("recipe" in event && event.recipe) {
+                  recipeData = event.recipe;
+                  allergenWarning = event.allergenWarning;
+                  res.write(`data: ${eventJson}\n\n`);
+                } else if ("imageUrl" in event && event.imageUrl) {
+                  recipeImageUrl = event.imageUrl;
+                  res.write(`data: ${eventJson}\n\n`);
+                } else if (
+                  "imageUnavailable" in event &&
+                  event.imageUnavailable
+                ) {
+                  res.write(`data: ${eventJson}\n\n`);
+                } else if ("content" in event && event.content) {
+                  fullTextResponse += event.content;
+                  res.write(`data: ${eventJson}\n\n`);
+                }
+              }
+
+              // Save assistant message with recipe in metadata.
+              // `aborted` here can only be true from the SSE timeout or the
+              // byte-limit guard above — a client disconnect never sets it on
+              // this path, so this gate does not skip saving on disconnect
+              // (recipe/remix finish-and-save policy, P2-2026-09-24).
+              if (!aborted && (fullTextResponse || recipeData)) {
+                const metadata = recipeData
+                  ? {
+                      metadataVersion: 1,
+                      recipe: recipeData,
+                      allergenWarning,
+                      imageUrl: recipeImageUrl,
+                    }
+                  : null;
+
+                // Strip the JSON code block — recipe is in metadata; only save conversational text
+                const conversationalText = fullTextResponse
+                  .replace(/\n*```json[\s\S]*?```\s*/g, "")
+                  .trim();
+
+                await storage.createChatMessage(
+                  id,
+                  req.userId,
+                  "assistant",
+                  conversationalText || "Here's a recipe for you!",
+                  metadata,
+                );
+              }
+
+              // Auto-title from recipe name on first exchange (fire-and-forget — non-critical)
+              // history.length is the count before this exchange; +2 for user+assistant messages
+              // Same `aborted` semantics as the persistence gate above — a
+              // client disconnect does not skip this either.
+              if (!aborted && recipeData && history.length <= 1) {
+                fireAndForget(
+                  "recipe-chat-auto-title",
+                  storage.updateChatConversationTitle(
+                    id,
+                    req.userId,
+                    recipeData.title,
+                  ),
+                );
+              }
             }
           } else {
             // ─── COACH CHAT PATH ─────────────────────────────────
@@ -520,7 +755,7 @@ export function register(app: Express): void {
               content: sanitizedContent,
               screenContext: parsed.data.screenContext,
               warmUpId: parsed.data.warmUpId,
-              turnKey: parsed.data.turnKey,
+              turnKey: coachTurnKey,
               isCoachPro: !!features.coachPro,
               user: {
                 dailyCalorieGoal: user.dailyCalorieGoal,
@@ -534,6 +769,18 @@ export function register(app: Express): void {
               tz: parseTimezone(req.headers["x-timezone"]),
               isAborted: () => aborted,
               abortSignal: abortController.signal,
+              finder:
+                finderEnabled && features.coachPro
+                  ? {
+                      action: finderAction,
+                      userMessageId: userMessage.id,
+                      features: {
+                        catalogSave: features.catalogSave,
+                        recipeGeneration: features.recipeGeneration,
+                        dailyRecipeGenerations: features.dailyRecipeGenerations,
+                      },
+                    }
+                  : undefined,
             })) {
               if (aborted) break;
               const eventJson = JSON.stringify(
@@ -549,6 +796,12 @@ export function register(app: Express): void {
               if (responseBytes > SSE_MAX_RESPONSE_BYTES) {
                 aborted = true;
                 abortController.abort();
+                // Closes the generator via return(), not a catch, so nothing
+                // else logs this runaway response; record it here.
+                logger.warn(
+                  { conversationId: id, responseBytes },
+                  "chat SSE response exceeded the size limit",
+                );
                 if (!res.writableEnded) {
                   res.write(
                     `data: ${JSON.stringify({ error: "Response too large" })}\n\n`,
@@ -556,6 +809,14 @@ export function register(app: Express): void {
                 }
                 break;
               }
+              if (event.type === "content") streamedContent += event.content;
+              // The override replaces what the client shows, as it does the
+              // service's own fullResponse. Defensive: today no I/O await sits
+              // between this event and the service's own save, so a close
+              // cannot land in between — but if one ever does, a delivered
+              // override must not count as "nothing streamed" (refund).
+              else if (event.type === "safety_override")
+                streamedContent = event.message;
               res.write(`data: ${eventJson}\n\n`);
             }
           }
@@ -564,7 +825,16 @@ export function register(app: Express): void {
             res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
           }
         } catch (error) {
-          logger.error({ err: toError(error) }, "chat streaming error");
+          // A client disconnect aborts the OpenAI stream, which throws —
+          // the expected exit, so log it at debug rather than error.
+          if (clientDisconnected) {
+            logger.debug(
+              { err: toError(error) },
+              "chat stream ended by client disconnect",
+            );
+          } else {
+            logger.error({ err: toError(error) }, "chat streaming error");
+          }
           if (!aborted && !res.writableEnded) {
             res.write(
               `data: ${JSON.stringify({ error: "Failed to generate response" })}\n\n`,
@@ -572,6 +842,58 @@ export function register(app: Express): void {
           }
         } finally {
           clearTimeout(sseTimeout);
+        }
+
+        // H6 — the client left mid-answer. The user message is already
+        // quota-counted (quota = count of today's user rows), so either
+        // refund it (nothing was streamed) or keep what they paid for as the
+        // assistant reply (something was). Refunding a turn whose content
+        // was already delivered would let a client read an answer and abort
+        // just before `done` to get the message back for free.
+        if (clientDisconnected) {
+          try {
+            // Skip if the service's own write landed before the close did.
+            const alreadyPersisted = await storage.getChatMessageByTurnKey(
+              id,
+              coachTurnKey,
+            );
+            if (!alreadyPersisted) {
+              const parsedPartial = features.coachPro
+                ? parseBlocksFromContent(streamedContent)
+                : { text: streamedContent.trim(), blocks: [] };
+              // An unterminated fence is half-written block JSON — the client
+              // hid it while streaming, so it was never "delivered".
+              const strippedText = parsedPartial.text
+                .replace(/```coach_blocks[\s\S]*$/, "")
+                .trim();
+              // Free-tier deltas stream BEFORE the service's end-of-response
+              // safety check, so a partial cut mid-stream was never vetted.
+              const partialText = containsUnsafeCoachAdvice(strippedText)
+                ? STANDARD_SAFETY_MESSAGE
+                : strippedText;
+              const { blocks } = parsedPartial;
+              if (!partialText && blocks.length === 0) {
+                // Paid recipe-finder claims live in recipe_finder_claims, so
+                // this refund can never hand a paid slot back (#1151).
+                await storage.deleteChatMessage(userMessage.id, req.userId);
+              } else {
+                // Never cached, titled, or notebook-extracted — a partial.
+                await storage.createChatMessage(
+                  id,
+                  req.userId,
+                  "assistant",
+                  partialText,
+                  blocks.length > 0 ? { blocks } : null,
+                  coachTurnKey,
+                );
+              }
+            }
+          } catch (error) {
+            logger.error(
+              { err: toError(error) },
+              "failed to settle aborted coach turn",
+            );
+          }
         }
         res.end();
       } catch (error) {
@@ -683,4 +1005,14 @@ export function register(app: Express): void {
       }
     },
   );
+}
+
+/** A no-op turn (stale or repeated finder action): open and close the SSE. */
+function endQuietly(res: Response): void {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+  res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+  res.end();
 }

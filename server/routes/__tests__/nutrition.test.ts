@@ -12,6 +12,8 @@ import {
   createMockNutritionData,
   createMockUserProfile,
 } from "../../__tests__/factories";
+import { barcodeLookupResponseSchema } from "@shared/types/barcode-lookup";
+import { expectResponseToMatch } from "../../../test/utils/expect-response-schema";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -293,6 +295,9 @@ describe("Nutrition Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.productName).toBe("Greek Yogurt");
+      // Provider-side contract check — see client/hooks/useNutritionLookup.ts
+      // (scripts/__tests__/contract-coverage-guard.test.ts requires this).
+      expectResponseToMatch(res.body, barcodeLookupResponseSchema);
     });
 
     it("returns 400 for non-numeric barcode", async () => {
@@ -600,6 +605,9 @@ describe("Nutrition Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.isBeverage).toBe(true);
       expect(res.body.conflict.label.isBeverage).toBe(true);
+      // Also exercises the schema's `conflict.label` branch — the strictest
+      // one, since it requires the full nested result shape.
+      expectResponseToMatch(res.body, barcodeLookupResponseSchema);
     });
 
     it("omits isBeverage on BOTH the top level and conflict.label when categoriesTags is empty", async () => {

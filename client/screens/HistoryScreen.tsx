@@ -46,6 +46,7 @@ import {
 import { pressSpringConfig, expandTimingConfig } from "@/constants/animations";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { ScannedItemResponse } from "@/types/api";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 /** Height of the expanded action row */
 const ACTION_ROW_HEIGHT = 90;
@@ -335,7 +336,10 @@ function LoadingFooter() {
 function DashboardSkeleton() {
   return (
     <SkeletonProvider>
-      <View accessibilityElementsHidden>
+      <View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         {/* Stats row skeleton */}
         <View style={styles.statsRow}>
           <SkeletonBox
@@ -675,6 +679,23 @@ export default function HistoryScreen() {
     }
   }, [isError]);
 
+  // Tell screen-reader users the dashboard/history is loading. Delayed
+  // 500ms to match the modal-safe pattern (docs/solutions/conventions/on-open-
+  // announce-must-delay-past-modal-present-focus-shift-2026-06-25.md) —
+  // harmless on this non-modal route, kept for consistency with the other
+  // skeleton screens fixed alongside this one
+  // (todos/archive/P2-2026-09-23-skeleton-loaders-screen-reader-busy-state.md).
+  // Covers both skeleton render sites below (the dashboard early-return and
+  // the full-history FlatList's ListEmptyComponent) — both key off this same
+  // `isLoading` flag.
+  //
+  // Gated on !isError too: isLoading and isError key off two independent
+  // queries (client/hooks/useHistoryData.ts), so one can error while the
+  // other is still loading. Without this guard, a fast error could announce
+  // "Couldn't load..." and then, once this timer elapses, "Loading" — a
+  // stale announcement after the failure was already reported.
+  useDelayedLoadingAnnouncement(isLoading && !isError);
+
   // Offline transitions are announced by the always-mounted global OfflineBanner
   // (client/components/OfflineBanner.tsx) — iOS via announceForAccessibility,
   // Android via its assertive live-region alert. A per-screen announce here would
@@ -834,9 +855,10 @@ export default function HistoryScreen() {
         }
         ListEmptyComponent={
           isLoading ? (
-            <View accessibilityElementsHidden>
-              <SkeletonList count={5} />
-            </View>
+            // SkeletonList hides its own subtree on both platforms — no
+            // wrapper needed (see client/components/SkeletonLoader.tsx's
+            // SkeletonLoadingRegion).
+            <SkeletonList count={5} />
           ) : (
             <HistoryEmptyState onScan={handleScanPress} />
           )

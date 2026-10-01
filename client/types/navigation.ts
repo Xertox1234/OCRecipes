@@ -284,16 +284,17 @@ export type MenuScanResultScreenNavigationProp = NativeStackNavigationProp<
 
 /**
  * Navigation prop for AllConversationsScreen.
- * 3-level composite: RootStack → MainTab → ChatStack.
- * Allows AllConversationsScreen to navigate back to CoachPro (in ChatStack)
- * with a selectedConversationId param, rather than passing a callback in route params.
+ * AllConversations is registered on the ROOT stack, not inside the Coach tab,
+ * so this is a plain root-stack prop. It used to be a RootStack → MainTab →
+ * ChatStack composite, which let a bare `navigate("CoachPro")` type-check even
+ * though React Navigation never delivers it (navigationInChildEnabled is off).
+ * Reach CoachPro through the nested form, popping back to the existing Main:
+ * `navigate("Main", { screen: "CoachTab", params: { screen: "CoachPro", params } }, { pop: true })`.
+ * Without `pop: true` the root stack pushes a second Main above this modal.
  */
-export type AllConversationsNavigationProp = CompositeNavigationProp<
-  NativeStackNavigationProp<RootStackParamList, "AllConversations">,
-  CompositeNavigationProp<
-    BottomTabNavigationProp<MainTabParamList, "CoachTab">,
-    NativeStackNavigationProp<ChatStackParamList>
-  >
+export type AllConversationsNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "AllConversations"
 >;
 
 /**

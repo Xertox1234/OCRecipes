@@ -68,8 +68,15 @@ type NutritionDetailRoute = RouteProp<RootStackParamList, "NutritionDetail">;
 const SKELETON_PANEL_ROW_WIDTHS = [70, 92, 64, 76, 58, 84];
 
 function NutritionDetailSkeleton() {
+  // This screen is a `presentation: "modal"` route (RootStackNavigator), so
+  // firing the announce on the same tick it mounts races the OS's own
+  // present focus-shift and can be swallowed on iOS. Delay past it per
+  // docs/solutions/conventions/on-open-announce-must-delay-past-modal-present-focus-shift-2026-06-25.md.
   React.useEffect(() => {
-    AccessibilityInfo.announceForAccessibility("Loading");
+    const timer = setTimeout(() => {
+      AccessibilityInfo.announceForAccessibility("Loading");
+    }, 500);
+    return () => clearTimeout(timer);
   }, []);
 
   return (
@@ -359,7 +366,7 @@ export default function NutritionDetailScreen() {
             Nothing mutes its announcer, deliberately — not even while the log
             gate is unmet. The gated screen IS the screen carrying "Label not
             used" (`deriveLogGate` gates on a label that could not be used;
-            `useNutritionLookup.ts:382` sets the notice on the same failure), so
+            `useNutritionLookup.ts` (`setLabelReadNotice`) sets the notice on the same failure), so
             muting there would switch the announcer off exactly where it earns
             its keep. There is nothing to collide with: the acknowledge
             announcement fires from a click handler that re-renders only
@@ -389,22 +396,30 @@ export default function NutritionDetailScreen() {
           // before calling `announceForAccessibility`, so no utterance is
           // issued to be silenced.
           //
-          // But `correctionNotice` and `showPer100gInfo` below are NOT gated
-          // on `error`. When either survives alongside a newly-set `error`,
-          // `NoticeStack` still announces and DOES collide with
-          // `InlineError`. That is reachable, not theoretical: nothing in
-          // `useNutritionLookup` ever resets `correctionNotice` (there is no
-          // `setCorrectionNotice(null)` in the file) and `isPer100g` is not
-          // re-armed at the top of `fetchBarcodeData` the way
-          // `labelReadNotice`/`validatedData`/`isBeverage` are — so a label
-          // RETAKE can carry a stale correction into a lookup that errors.
-          // The `lastAnnouncedRef` guard does not absorb it either:
-          // suppressing one contributor makes the composed key SHORTER, not
-          // absent, so it no longer matches the stored key.
+          // `correctionNotice` and `showPer100gInfo` below are still NOT
+          // gated on `error` here — this screen has no logic preventing the
+          // two from surviving alongside a newly-set `error`, which would
+          // make `NoticeStack` announce and collide with `InlineError` in the
+          // same commit. The `lastAnnouncedRef` guard does not absorb it
+          // either: suppressing one contributor makes the composed key
+          // SHORTER, not absent, so it no longer matches the stored key.
           //
-          // Resetting those two per-lookup is the real fix and is out of this
-          // slice's scope (`useNutritionLookup.ts` is on its do-not-touch
-          // list). Do not read this gate as having closed it.
+          // CLOSED (P2-2026-09-23-correction-notice-not-reset-per-lookup):
+          // that combination is no longer reachable in production.
+          // `useNutritionLookup.ts`'s per-lookup reset block now calls
+          // `setCorrectionNotice(null)` and `setIsPer100g(false)` at the top
+          // of `fetchBarcodeData`, alongside `labelReadNotice`/
+          // `validatedData`/`isBeverage` — so a label RETAKE can no longer
+          // carry a stale correction or a stale per-100g flag into a lookup
+          // that errors. Pinned by
+          // `client/hooks/__tests__/useNutritionLookup.test.ts` ("resets
+          // correctionNotice to null…" / "resets isPer100g to false…").
+          // `NutritionDetailScreen.test.tsx`'s "routes error through
+          // InlineError" test still characterizes what this screen would DO
+          // if handed that combination directly (it has no gate of its own —
+          // the fix lives entirely in the hook), which is why this comment
+          // and that fixture-driven test remain, now marked as
+          // defense-in-depth rather than a live production path.
           //
           // Historical note: the hook's own duplicate announcer for these
           // notices was deleted in `c87fb790`, two commits before this range.
@@ -441,7 +456,14 @@ export default function NutritionDetailScreen() {
         {showManualSearch ? (
           <Card elevation={1} style={styles.manualSearchCard}>
             <View style={styles.manualSearchHeader}>
-              <Feather name="search" size={20} color={theme.link} />
+              {/* Decorative icon — the heading text beside it already conveys
+                  the meaning; hide it per docs/rules/accessibility.md. */}
+              <Feather
+                name="search"
+                size={20}
+                color={theme.link}
+                accessible={false}
+              />
               <View style={{ flex: 1, marginLeft: Spacing.sm }}>
                 <ThemedText
                   type="body"
@@ -491,10 +513,14 @@ export default function NutritionDetailScreen() {
                 {isSearching ? (
                   <ActivityIndicator size="small" color={theme.buttonText} />
                 ) : (
+                  // Decorative — the Pressable's own accessibilityLabel above
+                  // already conveys the action; hide the icon per
+                  // docs/rules/accessibility.md.
                   <Feather
                     name="arrow-right"
                     size={20}
                     color={theme.buttonText}
+                    accessible={false}
                   />
                 )}
               </Pressable>

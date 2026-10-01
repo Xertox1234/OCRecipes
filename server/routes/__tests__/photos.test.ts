@@ -165,7 +165,7 @@ describe("Photos Routes", () => {
       vi.mocked(batchNutritionLookup).mockResolvedValue(
         new Map([
           [
-            "1 medium Apple",
+            "Apple",
             createMockNutritionData({
               name: "Apple",
               calories: 95,
@@ -258,6 +258,188 @@ describe("Photos Routes", () => {
       expect(res.body.needsFollowUp).toBe(true);
       expect(res.body.followUpQuestions).toEqual(["What type of apple pie?"]);
       expect(res.body.overallConfidence).toBe(0.4);
+    });
+  });
+
+  describe("portion nutrition", () => {
+    function premium() {
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
+      vi.mocked(needsFollowUp).mockReturnValue(false);
+      vi.mocked(getFollowUpQuestions).mockReturnValue([]);
+    }
+
+    function food(
+      name: string,
+      quantity: string,
+      grams?: number,
+      lookupName?: string,
+    ) {
+      return {
+        name,
+        quantity,
+        grams,
+        lookupName,
+        category: "other" as const,
+        confidence: 0.9,
+        needsClarification: false,
+      };
+    }
+
+    /** A lookup result on a per-100 g basis, as CNF and USDA answer. */
+    function per100g(name: string, overrides = {}) {
+      return createMockNutritionData({
+        name,
+        calories: 130,
+        protein: 2.7,
+        carbs: 28,
+        fat: 0.3,
+        fiber: 0.4,
+        sugar: 0.1,
+        sodium: 1,
+        servingSize: "100g",
+        ...overrides,
+      });
+    }
+
+    async function analyze(
+      foods: ReturnType<typeof food>[],
+      lookups: Record<string, ReturnType<typeof per100g>>,
+    ) {
+      premium();
+      vi.mocked(analyzePhoto).mockResolvedValue({
+        foods,
+        overallConfidence: 0.9,
+        followUpQuestions: [],
+      });
+      vi.mocked(batchNutritionLookup).mockResolvedValue(
+        new Map(Object.entries(lookups)),
+      );
+      return request(app)
+        .post("/api/photos/analyze")
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from("fake"), "test.jpg");
+    }
+
+    it("looks each food up by name, without its quantity", async () => {
+      const res = await analyze(
+        [food("steamed white rice", "1 cup", 160), food("apple", "1 medium")],
+        {},
+      );
+
+      expect(res.body).toMatchObject({ foods: expect.any(Array) });
+      expect(batchNutritionLookup).toHaveBeenCalledWith([
+        "steamed white rice",
+        "apple",
+      ]);
+    });
+
+    it("looks a food up by its lookup name when the model gave one", async () => {
+      const res = await analyze(
+        [
+          food("banana slices", "1 banana", 120, "bananas, raw"),
+          food("apple", "1 medium"),
+        ],
+        { "bananas, raw": per100g("Banana, raw", { calories: 89 }) },
+      );
+
+      expect(batchNutritionLookup).toHaveBeenCalledWith([
+        "bananas, raw",
+        "apple",
+      ]);
+      expect(res.body.foods[0].nutrition).toMatchObject({
+        name: "Banana, raw",
+        calories: 107, // 89 × 1.2
+        servingSize: "1 banana (120 g)",
+      });
+    });
+
+    it("scales per-100 g values to the estimated weight", async () => {
+      const res = await analyze([food("steamed white rice", "1 cup", 160)], {
+        "steamed white rice": per100g("Rice, white, cooked"),
+      });
+
+      expect(res.body.foods[0].nutrition).toMatchObject({
+        name: "Rice, white, cooked",
+        calories: 208, // 130 × 1.6
+        protein: 4.3,
+        carbs: 44.8,
+        fat: 0.5,
+        fiber: 0.6,
+        sugar: 0.2,
+        sodium: 1.6,
+        servingSize: "1 cup (160 g)",
+      });
+    });
+
+    it("does not scale a per-serving result twice", async () => {
+      // API Ninjas answers per serving: 208 kcal in 160 g
+      const res = await analyze([food("steamed white rice", "1 cup", 160)], {
+        "steamed white rice": per100g("rice", {
+          calories: 208,
+          servingSize: "160g",
+        }),
+      });
+
+      expect(res.body.foods[0].nutrition.calories).toBe(208);
+    });
+
+    it("marks a food with no weight estimate, keeping it per 100 g", async () => {
+      const res = await analyze([food("apple", "1 medium")], {
+        apple: per100g("Apple, raw", { calories: 52 }),
+      });
+
+      expect(res.body.foods[0].nutrition).toMatchObject({
+        calories: 52,
+        servingSize: "100 g (portion unknown)",
+      });
+    });
+
+    it("keeps a result it cannot weigh with the source's own serving size", async () => {
+      const res = await analyze([food("granola bar", "1 bar", 40)], {
+        "granola bar": per100g("granola bar", {
+          calories: 190,
+          servingSize: "1 serving",
+        }),
+      });
+
+      expect(res.body.foods[0].nutrition).toMatchObject({
+        calories: 190,
+        servingSize: "1 serving",
+      });
+    });
+
+    it("returns null nutrition for a food the lookup missed", async () => {
+      const res = await analyze([food("mystery stew", "1 bowl", 300)], {});
+
+      expect(res.body.foods[0].nutrition).toBeNull();
+    });
+
+    it("scales the refined foods after a follow-up answer", async () => {
+      const first = await analyze([food("rice", "1 cup")], {});
+      vi.mocked(refineAnalysis).mockResolvedValue({
+        foods: [food("brown rice", "1 cup", 195)],
+        overallConfidence: 0.95,
+        followUpQuestions: [],
+      });
+      vi.mocked(batchNutritionLookup).mockResolvedValue(
+        new Map([["brown rice", per100g("Rice, brown", { calories: 112 })]]),
+      );
+
+      const res = await request(app)
+        .post(`/api/photos/analyze/${first.body.sessionId}/followup`)
+        .set("Authorization", "Bearer token")
+        .send({ question: "Which rice?", answer: "brown" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.foods[0].nutrition).toMatchObject({
+        calories: 218, // 112 × 1.95
+        servingSize: "1 cup (195 g)",
+      });
     });
   });
 

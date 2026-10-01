@@ -314,6 +314,12 @@ describe("generateCookbookCover — provider fallback", () => {
       "https://cdn.test/c.png",
     );
     expect(vi.mocked(dalleClient.images.generate)).not.toHaveBeenCalled();
+    // Runware bytes are JPEG (no outputFormat requested) — the stored label
+    // must match, not saveCookbookCover's "png" default.
+    expect(vi.mocked(saveCookbookCover)).toHaveBeenCalledWith(
+      expect.any(Buffer),
+      "jpg",
+    );
   });
 
   it("sends the cover-specific negative prompt and 3:4 dimensions to Runware", async () => {
@@ -336,6 +342,11 @@ describe("generateCookbookCover — provider fallback", () => {
       "https://cdn.test/c.png",
     );
     expect(vi.mocked(dalleClient.images.generate)).toHaveBeenCalled();
+    // DALL-E-3 returns PNG bytes — the fallback must keep
+    // saveCookbookCover's "png" default, not the Runware path's "jpg".
+    expect(vi.mocked(saveCookbookCover)).toHaveBeenCalledWith(
+      expect.any(Buffer),
+    );
   });
 
   it("falls back to DALL-E when Runware throws", async () => {

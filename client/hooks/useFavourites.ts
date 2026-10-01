@@ -58,5 +58,9 @@ export function useToggleFavourite() {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
     },
+    // Reviewed for the global mutation net (2026-09-25): no opt-out — its
+    // one call site (useHistoryData.handleFavourite, via HistoryScreen)
+    // shows no visible failure feedback beyond this rollback, so the global
+    // toast is a genuine improvement here.
   });
 }

@@ -407,6 +407,7 @@ describe("todo-automerge-guard.sh (xhigh review: known Bearer-token/health-PII/m
     "client/hooks/useHistoryData.ts",
     "client/hooks/useMenuScan.ts",
     "client/hooks/useNutritionLookup.ts",
+    "client/hooks/nutrition-lookup-outcome.ts",
     "client/hooks/useReceiptScan.ts",
     "client/hooks/useSavedItems.ts",
     "client/hooks/useCoachStream.ts",

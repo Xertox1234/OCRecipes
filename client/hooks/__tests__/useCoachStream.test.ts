@@ -8,8 +8,11 @@ import {
   HOLD_GATE_MS,
   CHARS_PER_TICK,
   DRAIN_INTERVAL_MS,
+  STREAM_INACTIVITY_MS,
+  XHR_TIMEOUT_MS,
   type UseCoachStreamReturn,
 } from "../useCoachStream";
+import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 
 // ── Pure helper tests (no timers, no XHR) ────────────────────────
 
@@ -72,10 +75,21 @@ vi.mock("@/lib/query-client", () => ({ getApiUrl: mockGetApiUrl }));
 vi.mock("@/lib/timezone", () => ({
   getDeviceTimezone: () => "America/Los_Angeles",
 }));
-vi.mock("@/components/coach/coach-chat-utils", () => ({
-  stripCoachBlocksFence: (s: string) => s.trim(),
-  filterValidBlocks: (arr: unknown[]) => arr,
-}));
+// The hook now also imports stripCoachBlocksFenceIncremental and
+// createFenceScanState (perf fix — see coach-chat-utils.ts). None of this
+// file's fixtures include a coach_blocks fence, so the real strip functions
+// behave identically to the old `(s) => s.trim()` stub for them; only
+// filterValidBlocks stays overridden, as before.
+vi.mock("@/components/coach/coach-chat-utils", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@/components/coach/coach-chat-utils")
+    >();
+  return {
+    ...actual,
+    filterValidBlocks: (arr: unknown[]) => arr,
+  };
+});
 
 /**
  * MockXHR is a plain object that the hook will receive as the XHR instance.
@@ -86,8 +100,11 @@ class MockXHR {
   readyState = 0;
   responseText = "";
   status = 200;
+  timeout = 0;
   onreadystatechange: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  ontimeout: (() => void) | null = null;
+  onload: (() => void) | null = null;
   sentBody: string | null = null;
   aborted = false;
   headers: Record<string, string> = {};
@@ -98,8 +115,16 @@ class MockXHR {
     this.sentBody = body;
     this.readyState = 1;
   });
+  // RN's abort() (XMLHttpRequest.js `abort`) zeroes status, then dispatches
+  // readystatechange at DONE before `abort`. Model it, or a hook that treats
+  // any readyState 4 as a finish passes here and misfires on device.
   abort = vi.fn(() => {
     this.aborted = true;
+    if (this.readyState === 0 || this.readyState === 4) return;
+    this.status = 0;
+    this.responseText = "";
+    this.readyState = 4;
+    this.onreadystatechange?.();
   });
 
   /** Simulate an SSE event arriving from the server. */
@@ -109,11 +134,34 @@ class MockXHR {
     this.onreadystatechange?.();
   }
 
-  /** Simulate the connection completing successfully. */
+  /** Simulate the connection completing cleanly: readystatechange, then load. */
   complete() {
     this.readyState = 4;
     this.status = 200;
     this.onreadystatechange?.();
+    this.onload?.();
+  }
+
+  /**
+   * Simulate a native failure after headers arrived, in RN's order
+   * (`__didCompleteResponse` → `setReadyState(DONE)`): the response text is
+   * replaced by the error string, status stays 200, readystatechange fires
+   * FIRST, and only then `timeout` or `error`. No `load`.
+   */
+  private failNatively(kind: "timeout" | "error") {
+    this.responseText = kind === "timeout" ? "timed out" : "network lost";
+    this.readyState = 4;
+    this.onreadystatechange?.();
+    if (kind === "timeout") this.ontimeout?.();
+    else this.onerror?.();
+  }
+
+  fireTimeout() {
+    this.failNatively("timeout");
+  }
+
+  fireNetworkError() {
+    this.failNatively("error");
   }
 }
 
@@ -281,6 +329,199 @@ describe("useCoachStream abort", () => {
   });
 });
 
+// P3-2026-09-24: most of this hook's internal state (buffer, accumulated
+// text, xhrRef, timers) is a single shared slot, not per-request, so an
+// overlapping startStream call is refused outright rather than tracking a
+// second in-flight XHR (the same-instance XHR mock below can't distinguish
+// two different XHR objects, so these assert via call counts instead).
+describe("useCoachStream overlapping starts", () => {
+  it("refuses a second startStream while one is already in flight", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    expect(mockXhr.open).toHaveBeenCalledTimes(1);
+    expect(mockXhr.send).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      result.current.startStream(2, "second message");
+      await Promise.resolve();
+    });
+
+    // No second request was opened or sent.
+    expect(mockXhr.open).toHaveBeenCalledTimes(1);
+    expect(mockXhr.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("abortStream still reaches the original in-flight XHR after a refused overlap", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    await act(async () => {
+      result.current.startStream(2, "second message");
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.abortStream();
+    });
+
+    expect(mockXhr.abort).toHaveBeenCalled();
+    expect(result.current.isStreaming).toBe(false);
+  });
+
+  // The token read is async: an abort (or unmount) that lands while it is
+  // still pending must stop its continuation from sending a request later —
+  // otherwise it races the next startStream, reopening the overlap above.
+  function deferToken() {
+    let resolve!: (token: string) => void;
+    mockTokenStorage.get.mockImplementationOnce(
+      () => new Promise<string>((r) => (resolve = r)),
+    );
+    return (token = "test-token") => resolve(token);
+  }
+
+  it("does not send a request when aborted before the token read resolves", async () => {
+    const { result } = await setupHook();
+    const resolveToken = deferToken();
+
+    act(() => {
+      result.current.startStream(1, "first");
+    });
+    act(() => {
+      result.current.abortStream();
+    });
+    await act(async () => {
+      resolveToken();
+      await Promise.resolve();
+    });
+
+    expect(mockXhr.open).not.toHaveBeenCalled();
+    expect(mockXhr.send).not.toHaveBeenCalled();
+  });
+
+  it("sends only the new stream's request after an abort-then-restart during the token read", async () => {
+    const { result } = await setupHook();
+    const resolveFirst = deferToken();
+    const resolveSecond = deferToken();
+
+    act(() => {
+      result.current.startStream(1, "first");
+    });
+    act(() => {
+      result.current.abortStream();
+    });
+    act(() => {
+      result.current.startStream(2, "second");
+    });
+    await act(async () => {
+      resolveFirst();
+      resolveSecond();
+      await Promise.resolve();
+    });
+
+    expect(mockXhr.open).toHaveBeenCalledTimes(1);
+    expect(mockXhr.open.mock.calls[0][1]).toContain("/conversations/2/");
+    expect(mockXhr.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a stale token-read failure from an aborted stream while a new one runs", async () => {
+    const { result, onError } = await setupHook();
+    let rejectFirst!: (err: Error) => void;
+    mockTokenStorage.get.mockImplementationOnce(
+      () => new Promise<string>((_, reject) => (rejectFirst = reject)),
+    );
+    deferToken(); // the second stream's read stays pending
+
+    act(() => {
+      result.current.startStream(1, "first");
+    });
+    act(() => {
+      result.current.abortStream();
+    });
+    act(() => {
+      result.current.startStream(2, "second");
+    });
+    await act(async () => {
+      rejectFirst(new Error("keychain locked"));
+      await Promise.resolve();
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(result.current.isStreaming).toBe(true);
+  });
+
+  it("does not send a request when unmounted before the token read resolves", async () => {
+    const onDone = vi.fn();
+    const onError = vi.fn();
+    const { useCoachStream } = await import("../useCoachStream");
+    const { result, unmount } = renderHook(() =>
+      useCoachStream({ onDone, onError }),
+    );
+    const resolveToken = deferToken();
+
+    act(() => {
+      result.current.startStream(1, "first");
+    });
+    unmount();
+    await act(async () => {
+      resolveToken();
+      await Promise.resolve();
+    });
+
+    expect(mockXhr.send).not.toHaveBeenCalled();
+  });
+
+  it("allows a new stream to start once the first one has finished", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Hi" });
+      mockXhr.emit({ done: true });
+      mockXhr.complete();
+    });
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 5);
+    });
+    expect(result.current.isStreaming).toBe(false);
+    expect(mockXhr.open).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      result.current.startStream(2, "second message");
+      await Promise.resolve();
+    });
+
+    expect(mockXhr.open).toHaveBeenCalledTimes(2);
+  });
+});
+
+// P3-2026-09-26: fail() is defined per-startStream-call and reads `settled`
+// (a per-call flag) but, before this fix, never checked whether its OWN
+// epoch was still current. abortStream's synthetic onreadystatechange (from
+// its own xhr.abort()) clears responseText/status first, so it never called
+// fail — but a genuinely late native event landing on the same (not yet
+// reassigned) xhr handlers after abortStream would have, against whatever
+// stream is current now.
+describe("useCoachStream fail() epoch guard", () => {
+  it("ignores a very late native error event on an already-aborted stream", async () => {
+    const { result, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      result.current.abortStream();
+    });
+
+    // A late native failure on the (not yet reassigned) xhr handlers.
+    // `settled` was never set true by the abort itself, so without the
+    // epoch guard this would still call fail() and report an error.
+    act(() => {
+      mockXhr.fireNetworkError();
+    });
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+});
+
 describe("useCoachStream onDone", () => {
   it("calls onDone with full text after buffer drains", async () => {
     const { result, onDone } = await setupHook();
@@ -392,5 +633,234 @@ describe("useCoachStream request headers", () => {
     await startAndFlush(result);
 
     expect(mockXhr.headers["X-Timezone"]).toBe("America/Los_Angeles");
+  });
+});
+
+describe("useCoachStream on a runtime with no global crypto", () => {
+  // Hermes (the app's JS engine) has no global `crypto`. A bare
+  // `crypto.randomUUID()` threw inside startStream's `.then`, so the XHR was
+  // never sent and every coach message failed with "Response interrupted" on
+  // device — while this suite, running in Node, stayed green.
+  it("still sends the request, with a v4 turnKey", async () => {
+    vi.stubGlobal("crypto", undefined);
+    const { result, onError } = await setupHook();
+    await startAndFlush(result);
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(mockXhr.send).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(mockXhr.sentBody ?? "{}") as { turnKey?: string };
+    expect(body.turnKey).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+});
+
+describe("useCoachStream guaranteed termination", () => {
+  // Before this, the hook cleared isStreaming only on a `done` event, a
+  // `data.error` event, a status >= 400, or `onerror`. A stalled socket, a
+  // native timeout (RN dispatches `timeout`, not `error`), or a clean close
+  // without `done` left it true forever, and CoachChat.handleSend refuses to
+  // send while streaming, so the user was stuck until an app restart.
+  // Every cell asserts the terminal callback fired exactly ONCE: RN dispatches
+  // readystatechange before timeout/error, so a hook with two terminal paths
+  // double-fires while still ending with isStreaming === false.
+
+  it("orders the ceilings: server SSE cap < inactivity < XHR timeout", () => {
+    // SSE_TIMEOUT_MS (server/routes/chat.ts's own cap) is imported from
+    // shared/constants/sse.ts, not hand-copied, so this assertion can't drift
+    // out of sync with the server value. The server sends its own
+    // `{ error: "Response timeout" }` at this cap, so on a live connection
+    // that graceful error must arrive before either client ceiling fires.
+    // STREAM_INACTIVITY_MS is derived from SSE_TIMEOUT_MS (see
+    // useCoachStream.ts), which pins the derivation's direction here.
+    expect(STREAM_INACTIVITY_MS).toBeGreaterThan(SSE_TIMEOUT_MS);
+    expect(XHR_TIMEOUT_MS).toBeGreaterThan(STREAM_INACTIVITY_MS);
+  });
+
+  it("sets xhr.timeout on the request", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+    expect(mockXhr.timeout).toBe(XHR_TIMEOUT_MS);
+  });
+
+  it("a native timeout mid-stream ends the stream with one error", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Partial answer" });
+      mockXhr.fireTimeout();
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("a network error mid-stream ends the stream with one error", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Partial answer" });
+      mockXhr.fireNetworkError();
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("a clean close without `done` after content ends the stream with one error", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Half an ans" });
+      mockXhr.complete();
+    });
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 10);
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("a clean close without `done` and no content ends the stream with one error", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.complete();
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("a stalled stream is aborted after the inactivity window, which any event resets", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    // A status event counts as activity, not just content.
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS - 1);
+      mockXhr.emit({ status: "Checking your pantry…" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS - 1);
+      mockXhr.emit({ content: "Here is" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS - 1);
+    });
+    expect(result.current.isStreaming).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(2);
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    // The abort also dispatches readystatechange at DONE; it must not re-enter.
+    expect(mockXhr.abort).toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("a server `data.error` followed by the clean close fires one error", async () => {
+    const { result, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ error: "Response timeout" });
+      mockXhr.complete();
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0]?.[0]).toBe("Response timeout");
+  });
+
+  it("control: `done` then a clean close fires onDone once and no error, even after a long drain", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Hi" });
+      mockXhr.emit({ done: true });
+      mockXhr.complete();
+    });
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS * 2);
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledWith("Hi", undefined);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("abortStream fires no error, and its inactivity timer does not fire later", async () => {
+    const { result, onDone, onError } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Some" });
+      result.current.abortStream();
+    });
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS * 2);
+    });
+
+    expect(result.current.isStreaming).toBe(false);
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("unmount mid-stream fires no error, and its inactivity timer does not fire later", async () => {
+    const onDone = vi.fn();
+    const onError = vi.fn();
+    const { useCoachStream } = await import("../useCoachStream");
+    const { result, unmount } = renderHook(() =>
+      useCoachStream({ onDone, onError }),
+    );
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "Some" });
+    });
+    unmount();
+    act(() => {
+      vi.advanceTimersByTime(STREAM_INACTIVITY_MS * 2);
+    });
+
+    expect(mockXhr.abort).toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+});
+
+describe("useCoachStream recipe finder actions", () => {
+  it("sends finderAction in the request body", async () => {
+    const finderAction = {
+      type: "generate" as const,
+      flowId: "00000000-0000-4000-8000-000000000000",
+    };
+    const { result } = await setupHook();
+    await act(async () => {
+      result.current.startStream(7, "Generate", { finderAction });
+      // Flush the tokenStorage.get() microtask so the XHR is sent.
+      await Promise.resolve();
+    });
+    const body = JSON.parse(mockXhr.sentBody ?? "{}") as {
+      content?: string;
+      finderAction?: unknown;
+    };
+    expect(body.content).toBe("Generate");
+    expect(body.finderAction).toEqual(finderAction);
   });
 });

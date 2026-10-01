@@ -81,3 +81,4 @@ return <Stack initialRouteName={isCoachPro ? "CoachPro" : "ChatList"} />;
 ## See Also
 
 - TanStack Query v5 status/fetchStatus matrix: `status: 'error'` sets `isLoading=false` while `data` stays `undefined`
+- [Gate an error EmptyState on no-cached-data (isLoadingError), never bare isError](gate-error-emptystate-on-no-cached-data-not-bare-iserror-2026-09-25.md) — the per-render-branch sibling of this mount-once-gate rule

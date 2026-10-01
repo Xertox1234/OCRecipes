@@ -23,16 +23,22 @@
 // BeveragePickerSheet.test.tsx) — the shared test/mocks/gorhom-bottom-sheet.ts
 // mock reflects the `accessible` prop onto a `data-accessible` DOM attribute.
 import React from "react";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, act } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import HomeScreen from "../HomeScreen";
+import { QuickLogDrawer } from "@/components/home/QuickLogDrawer";
+import { UpgradeModal } from "@/components/UpgradeModal";
 
 // Defaults to false (every existing test relies on the collapsed bar being
 // hidden). The Android-trap-covers-the-collapsed-bar block below is the only
 // one that flips it, to prove the bar stays excluded from the Android a11y
 // tree even while VISIBLE, if the import sheet is also open.
-const { isBarVisibleHolder } = vi.hoisted(() => ({
+const { isBarVisibleHolder, authHolder, premiumHolder } = vi.hoisted(() => ({
   isBarVisibleHolder: { value: false },
+  // Quick Log lock cells: the raw tier (what HomeScreen used to compare) and
+  // the server-resolved features (what the gate must read) vary separately.
+  authHolder: { user: null as { subscriptionTier: string } | null },
+  premiumHolder: { textFoodParsing: false, isPremiumResolved: true },
 }));
 
 // The shared test/mocks/react-native-reanimated.ts mock's `Animated` namespace
@@ -48,6 +54,10 @@ vi.mock("react-native-reanimated", async () => {
   >("react-native-reanimated");
   return {
     ...actual,
+    // Opening an inline drawer glides its row (measure + scrollTo on the UI
+    // thread); jsdom has no layout, so measure reports "not laid out".
+    measure: () => null,
+    scrollTo: vi.fn(),
     default: {
       ...actual.default,
       ScrollView: actual.default.View,
@@ -67,7 +77,14 @@ vi.mock("@react-navigation/bottom-tabs", () => ({
 }));
 
 vi.mock("@/context/AuthContext", () => ({
-  useAuthContext: () => ({ user: null }),
+  useAuthContext: () => ({ user: authHolder.user }),
+}));
+
+vi.mock("@/context/PremiumContext", () => ({
+  usePremiumContext: () => ({
+    features: { textFoodParsing: premiumHolder.textFoodParsing },
+    isPremiumResolved: premiumHolder.isPremiumResolved,
+  }),
 }));
 
 vi.mock("@/hooks/useHomeActions", () => ({
@@ -116,7 +133,7 @@ vi.mock("@/components/meal-plan/ImportRecipeSheet", () => ({
 }));
 
 vi.mock("@/components/UpgradeModal", () => ({
-  UpgradeModal: () => null,
+  UpgradeModal: vi.fn(() => null),
 }));
 
 // ── Heavy home-screen children — thin doubles, none needed to prove the
@@ -161,14 +178,17 @@ vi.mock("@/components/home/DiscoveryCarousel", async () => {
       ),
   };
 });
+// Renders its children so the inline drawers (Quick Log's lock and open
+// state) are reachable; every child is itself a thin double.
 vi.mock("@/components/home/CollapsibleSection", () => ({
-  CollapsibleSection: () => null,
+  CollapsibleSection: ({ children }: { children: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
 }));
 vi.mock("@/components/home/ActionRow", () => ({
   ActionRow: () => null,
 }));
 vi.mock("@/components/home/QuickLogDrawer", () => ({
-  QuickLogDrawer: () => null,
+  QuickLogDrawer: vi.fn(() => null),
 }));
 vi.mock("@/components/home/RecipeSearchDrawer", () => ({
   RecipeSearchDrawer: () => null,
@@ -293,5 +313,87 @@ describe("HomeScreen — Android TalkBack background trap also covers the collap
         .getByTestId("home-collapsed-bar")
         .getAttribute("importantforaccessibility"),
     ).toBe("auto");
+  });
+});
+
+describe("HomeScreen — Quick Log lock", () => {
+  const quickLogProps = () => vi.mocked(QuickLogDrawer).mock.calls.at(-1)![0];
+  const upgradeVisible = () =>
+    vi.mocked(UpgradeModal).mock.calls.at(-1)![0].visible;
+
+  beforeEach(() => {
+    vi.mocked(QuickLogDrawer).mockClear();
+    vi.mocked(UpgradeModal).mockClear();
+    authHolder.user = { subscriptionTier: "free" };
+    premiumHolder.textFoodParsing = false;
+    premiumHolder.isPremiumResolved = true;
+  });
+
+  it("locks the row for a free account", () => {
+    renderComponent(<HomeScreen />);
+    expect(quickLogProps().isLocked).toBe(true);
+  });
+
+  it("leaves the row unlocked for premium (control)", () => {
+    authHolder.user = { subscriptionTier: "premium" };
+    premiumHolder.textFoodParsing = true;
+    renderComponent(<HomeScreen />);
+    expect(quickLogProps().isLocked).toBe(false);
+  });
+
+  it("locks the row for a lapsed subscriber whose raw tier still says premium", () => {
+    authHolder.user = { subscriptionTier: "premium" };
+    premiumHolder.textFoodParsing = false;
+    renderComponent(<HomeScreen />);
+    expect(quickLogProps().isLocked).toBe(true);
+  });
+
+  it("does not lock the row before the subscription has loaded (the server still gates)", () => {
+    authHolder.user = { subscriptionTier: "premium" };
+    premiumHolder.isPremiumResolved = false;
+    renderComponent(<HomeScreen />);
+    expect(quickLogProps().isLocked).toBe(false);
+  });
+
+  it("opens the upgrade modal, not the drawer, when a locked row is tapped", () => {
+    renderComponent(<HomeScreen />);
+    expect(upgradeVisible()).toBe(false);
+    act(() => quickLogProps().onToggle());
+    expect(upgradeVisible()).toBe(true);
+    expect(quickLogProps().isOpen).toBe(false);
+  });
+
+  it("opens the drawer for premium, and closes it through onClose", () => {
+    authHolder.user = { subscriptionTier: "premium" };
+    premiumHolder.textFoodParsing = true;
+    renderComponent(<HomeScreen />);
+    expect(quickLogProps().isOpen).toBe(false);
+    act(() => quickLogProps().onToggle());
+    expect(quickLogProps().isOpen).toBe(true);
+    expect(upgradeVisible()).toBe(false);
+    act(() => quickLogProps().onClose());
+    expect(quickLogProps().isOpen).toBe(false);
+  });
+
+  it("hands the drawer a results-shown callback for the glide", () => {
+    renderComponent(<HomeScreen />);
+    expect(typeof quickLogProps().onResultsShown).toBe("function");
+  });
+
+  // The subscription check can resolve AFTER a free/lapsed user has already
+  // opened the row (isPremiumResolved arrives late). Without this, the
+  // header repaints locked but the body stays open with a live input, and
+  // the next tap closes the drawer instead of showing the upgrade flow.
+  it("closes the drawer when the lock resolves to true while it is open", () => {
+    premiumHolder.isPremiumResolved = false;
+    const { rerender } = renderComponent(<HomeScreen />);
+    expect(quickLogProps().isLocked).toBe(false);
+    act(() => quickLogProps().onToggle());
+    expect(quickLogProps().isOpen).toBe(true);
+
+    premiumHolder.isPremiumResolved = true;
+    rerender(<HomeScreen />);
+    expect(quickLogProps().isLocked).toBe(true);
+    expect(quickLogProps().isOpen).toBe(false);
   });
 });

@@ -54,6 +54,8 @@ import { useHomeActions } from "@/hooks/useHomeActions";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
+import { usePremiumContext } from "@/context/PremiumContext";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
 import { useTheme } from "@/hooks/useTheme";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
@@ -87,7 +89,12 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<HomeScreenNavigationProp>();
-  const haptics = useHaptics();
+  // Destructure rather than depend on the whole useHaptics() return —
+  // although useHaptics() now memoizes it (see useHaptics.ts), depending on
+  // the specific method each callback actually calls is the primary fix
+  // (docs/rules/hooks.md) and keeps these four callbacks' deps minimal.
+  const { impact: hapticImpact, notification: hapticNotification } =
+    useHaptics();
   const { reducedMotion } = useAccessibility();
   const { user } = useAuthContext();
   const { theme } = useTheme();
@@ -121,6 +128,23 @@ export default function HomeScreen() {
 
   const isPremium = user?.subscriptionTier === "premium";
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  // Quick Log reads the server-resolved, expiry-aware feature flag: the raw
+  // tier above still says "premium" after a subscription lapses, and the
+  // server refuses that account's parse. It stays unlocked until the
+  // subscription has loaded, so a premium user never sees the lock flash
+  // (the server still enforces the gate).
+  const canQuickLog = usePremiumFeature("textFoodParsing");
+  const { isPremiumResolved } = usePremiumContext();
+  const quickLogLocked = isPremiumResolved && !canQuickLog;
+  const isActionLocked = useCallback(
+    (action: HomeAction) => {
+      if (!action.premium) return false;
+      if (action.id === "quick-log") return quickLogLocked;
+      return !isPremium;
+    },
+    [isPremium, quickLogLocked],
+  );
 
   // BottomSheetModal must be declared directly in this screen component —
   // declaring it inside an imported child component silently breaks
@@ -222,9 +246,11 @@ export default function HomeScreen() {
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const searchRowRef = useAnimatedRef<Animated.View>();
   const generateRowRef = useAnimatedRef<Animated.View>();
+  const quickLogRowRef = useAnimatedRef<Animated.View>();
   const drawerRowRefs: Record<string, typeof searchRowRef> = {
     "search-recipes": searchRowRef,
     "generate-recipe": generateRowRef,
+    "quick-log": quickLogRowRef,
   };
 
   const [openDrawerId, setOpenDrawerId] = useState<string | null>(null);
@@ -242,17 +268,17 @@ export default function HomeScreen() {
       queryKey: ["/api/carousel"],
     });
     void queryClient.invalidateQueries({ queryKey: ["/api/curated-recipes"] });
-    void refetch().then(() => haptics.impact());
-  }, [queryClient, refetch, haptics]);
+    void refetch().then(() => hapticImpact());
+  }, [queryClient, refetch, hapticImpact]);
 
   const handleActionPress = useCallback(
     (action: HomeAction) => {
-      if (action.premium && !isPremium) {
-        haptics.notification(Haptics.NotificationFeedbackType.Warning);
+      if (isActionLocked(action)) {
+        hapticNotification(Haptics.NotificationFeedbackType.Warning);
         setShowUpgradeModal(true);
         return;
       }
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      hapticImpact(Haptics.ImpactFeedbackStyle.Light);
       recordAction(action.id);
       if (action.id === "import-recipe") {
         importSheetRef.current?.present();
@@ -261,7 +287,13 @@ export default function HomeScreen() {
       }
       navigateAction(action, navigation);
     },
-    [isPremium, haptics, recordAction, navigation],
+    [
+      isActionLocked,
+      hapticNotification,
+      hapticImpact,
+      recordAction,
+      navigation,
+    ],
   );
 
   const glideRowToTop = useCallback(
@@ -294,12 +326,12 @@ export default function HomeScreen() {
     (action: HomeAction) => {
       // Premium gate reimplemented here (inline path bypasses handleActionPress)
       const opening = openDrawerId !== action.id;
-      if (opening && action.premium && !isPremium) {
-        haptics.notification(Haptics.NotificationFeedbackType.Warning);
+      if (opening && isActionLocked(action)) {
+        hapticNotification(Haptics.NotificationFeedbackType.Warning);
         setShowUpgradeModal(true);
         return;
       }
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      hapticImpact(Haptics.ImpactFeedbackStyle.Light);
       // Any tap supersedes a pending drawer-switch reopen — cancel it first so a
       // fast re-tap during the collapse window (which sees openDrawerId already
       // null → the non-switch branch below) can't be clobbered by the stale timer.
@@ -326,7 +358,14 @@ export default function HomeScreen() {
         if (next) glideRowToTop(next);
       }
     },
-    [openDrawerId, isPremium, haptics, glideRowToTop, reducedMotion],
+    [
+      openDrawerId,
+      isActionLocked,
+      hapticNotification,
+      hapticImpact,
+      glideRowToTop,
+      reducedMotion,
+    ],
   );
 
   useFocusEffect(
@@ -342,20 +381,47 @@ export default function HomeScreen() {
     }, []),
   );
 
+  // The subscription check can resolve AFTER a free/lapsed user has already
+  // opened the Quick Log row (isPremiumResolved arrives late). Without this,
+  // the header repaints locked but the body stays open with a live input,
+  // and the next tap closes the drawer instead of showing the upgrade flow.
+  useEffect(() => {
+    if (quickLogLocked && openDrawerId === "quick-log") setOpenDrawerId(null);
+  }, [quickLogLocked, openDrawerId]);
+
   useEffect(() => {
     const uid = user?.id != null ? String(user.id) : null;
     void initRecentSearchesCache(uid);
   }, [user?.id]);
 
+  const closeDrawer = useCallback(() => setOpenDrawerId(null), []);
+  // Parsed results land under the input; glide the row up so they and Log All
+  // are on screen rather than below the fold.
+  const handleQuickLogResults = useCallback(
+    () => glideRowToTop("quick-log"),
+    [glideRowToTop],
+  );
+
   const renderInlineAction = (action: HomeAction) => {
-    if (action.id === "quick-log") {
-      return <QuickLogDrawer key={action.id} action={action} />;
-    }
     const rowRef = drawerRowRefs[action.id];
-    const isLocked = !!action.premium && !isPremium;
+    const isLocked = isActionLocked(action);
     const isOpen = openDrawerId === action.id;
-    // HomeInlineDrawer is a presentational shell (no ref); wrap here so measure()
+    // The drawer shells are presentational (no ref); wrap here so measure()
     // can locate this row for glide-to-top.
+    if (action.id === "quick-log") {
+      return (
+        <Animated.View key={action.id} ref={rowRef}>
+          <QuickLogDrawer
+            action={action}
+            isOpen={isOpen}
+            onToggle={() => handleDrawerToggle(action)}
+            onClose={closeDrawer}
+            isLocked={isLocked}
+            onResultsShown={handleQuickLogResults}
+          />
+        </Animated.View>
+      );
+    }
     return (
       <Animated.View key={action.id} ref={rowRef}>
         <HomeInlineDrawer
@@ -387,13 +453,13 @@ export default function HomeScreen() {
   const budgetErrored = budgetIsError && !budget;
 
   const handleCalorieTap = useCallback(() => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     if (budgetErrored) {
       void refetch();
       return;
     }
     navigation.navigate("DailyNutritionDetail");
-  }, [haptics, navigation, budgetErrored, refetch]);
+  }, [hapticImpact, navigation, budgetErrored, refetch]);
 
   const calorieText = budget
     ? `${Math.round(budget.foodCalories).toLocaleString()} / ${Math.round(budget.calorieGoal).toLocaleString()} cal`
@@ -553,7 +619,7 @@ export default function HomeScreen() {
                     label={action.label}
                     subtitle={action.subtitle}
                     onPress={() => handleActionPress(action)}
-                    isLocked={action.premium && !isPremium}
+                    isLocked={isActionLocked(action)}
                   />
                 ),
               )}

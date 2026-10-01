@@ -24,10 +24,9 @@ import {
   markQueryCacheRestored,
 } from "@/lib/query-client";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
-import * as Notifications from "expo-notifications";
 
 import RootStackNavigator from "@/navigation/RootStackNavigator";
-import { linking } from "@/navigation/linking";
+import { linking, flushPendingNotificationUrl } from "@/navigation/linking";
 import { navigationRef } from "@/navigation/navigationRef";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
@@ -91,7 +90,11 @@ function AppContent() {
         <ToastProvider>
           <BottomSheetModalProvider>
             <BatchScanProvider>
-              <NavigationContainer ref={navigationRef} linking={linking}>
+              <NavigationContainer
+                ref={navigationRef}
+                linking={linking}
+                onReady={flushPendingNotificationUrl}
+              >
                 <RootStackNavigator />
               </NavigationContainer>
             </BatchScanProvider>
@@ -108,24 +111,14 @@ function AppContent() {
 }
 
 export default function App() {
-  // Set up Android notification channel once at app startup (no-op on iOS)
-  // and register a tap listener that deep-links commitment reminders to
-  // the relevant NotebookEntry screen.
+  // Set up the Android notification channel once at app startup (no-op on
+  // iOS). Coach reminder taps are routed through the `linking` config's
+  // getInitialURL/subscribe (client/navigation/linking.ts) instead of a
+  // separate listener here — see that file for why.
   useEffect(() => {
     setupNotificationChannel().catch((err) =>
       logger.error("Failed to set up notification channels:", err),
     );
-    const sub = Notifications.addNotificationResponseReceivedListener(
-      (response) => {
-        const entryId = response.notification.request.content.data?.entryId as
-          | number
-          | undefined;
-        if (entryId && navigationRef.isReady()) {
-          navigationRef.navigate("NotebookEntry", { entryId });
-        }
-      },
-    );
-    return () => sub.remove();
   }, []);
 
   const [fontsLoaded] = useFonts({

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { CoachChatEvent, CoachChatParams } from "../coach-pro-chat";
 import type { CoachNotebookEntry, UserProfile } from "@shared/schema";
 import {
@@ -23,7 +23,7 @@ import {
   generateCoachProResponse,
   generateCoachResponse,
 } from "../nutrition-coach";
-import type { CoachContext } from "../nutrition-coach";
+import type { CoachContext, CoachProChunk } from "../nutrition-coach";
 import { parseBlocksFromContent } from "../coach-blocks";
 import { consumeWarmUp } from "../coach-warm-up";
 import { fireAndForget } from "../../lib/fire-and-forget";
@@ -33,6 +33,10 @@ import { civilDateToInstant } from "../../lib/civil-date";
 import express from "express";
 import request from "supertest";
 import { register as registerNotebookRoutes } from "../../routes/notebook";
+import { generateRecipeChatResponse } from "../recipe-chat";
+import { findCommunity } from "../recipe-finder/find-community";
+import { classifyTurn } from "../recipe-finder/classify-turn";
+import type { RecipeResultsBlock } from "@shared/schemas/recipe-finder";
 
 // ── Mocks ───────────────────────────────────────────────────
 
@@ -54,6 +58,10 @@ vi.mock("../../storage", () => ({
     createNotebookEntries: vi.fn(),
     createNotebookEntry: vi.fn(),
     archiveOldEntries: vi.fn(),
+    getChatMessageByTurnKey: vi.fn(),
+    deleteChatMessage: vi.fn(),
+    claimRecipeGeneration: vi.fn(),
+    claimSpoonacularSearch: vi.fn(),
   },
 }));
 
@@ -67,7 +75,21 @@ vi.mock("../nutrition-coach", () => ({
 vi.mock("../coach-blocks", () => ({
   parseBlocksFromContent: vi.fn().mockReturnValue({ text: "", blocks: [] }),
   BLOCKS_SYSTEM_PROMPT: "[BLOCKS_SYSTEM_PROMPT]",
+  getBlocksSystemPrompt: vi.fn().mockReturnValue("[BLOCKS_SYSTEM_PROMPT]"),
 }));
+
+vi.mock("../recipe-chat", async () => {
+  const actual =
+    await vi.importActual<typeof import("../recipe-chat")>("../recipe-chat");
+  return { ...actual, generateRecipeChatResponse: vi.fn() };
+});
+vi.mock("../recipe-finder/extract-query", () => ({
+  extractQuery: vi.fn(async (t: string) => ({ q: t })),
+}));
+vi.mock("../recipe-finder/find-community", () => ({ findCommunity: vi.fn() }));
+vi.mock("../recipe-finder/find-online", () => ({ findOnline: vi.fn() }));
+vi.mock("../recipe-finder/ask-clarifying", () => ({ askClarifying: vi.fn() }));
+vi.mock("../recipe-finder/classify-turn", () => ({ classifyTurn: vi.fn() }));
 
 vi.mock("../notebook-extraction", () => ({
   extractNotebookEntries: vi.fn().mockResolvedValue([]),
@@ -115,6 +137,16 @@ vi.mock("../../lib/logger", () => ({
 async function* fakeStream(chunks: string[]): AsyncGenerator<string> {
   for (const c of chunks) {
     yield c;
+  }
+}
+
+/**
+ * Creates a fake generateCoachProResponse stream that yields plain content
+ * chunks (no tool_calls chunks) — for tests that don't exercise tool status.
+ */
+async function* fakeProStream(chunks: string[]): AsyncGenerator<CoachProChunk> {
+  for (const c of chunks) {
+    yield { type: "content", content: c };
   }
 }
 
@@ -203,7 +235,7 @@ describe("handleCoachChat", () => {
     coachProInternals.lastArchivedAt.clear();
     setupDefaultStorage();
     vi.mocked(generateCoachProResponse).mockReturnValue(
-      fakeStream(["Hello ", "world!"]),
+      fakeProStream(["Hello ", "world!"]),
     );
     vi.mocked(generateCoachResponse).mockReturnValue(
       fakeStream(["Standard ", "response."]),
@@ -397,6 +429,45 @@ describe("handleCoachChat", () => {
       await collectEvents(handleCoachChat(params));
 
       expect(consumeWarmUp).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── DB history window reliance (AC4) ───────────────────────
+  // On the non-warm-up path, `messageHistory` is built straight from
+  // `storage.getChatMessages(conversationId, 20, userId)` (coach-pro-chat.ts
+  // ~line 684) with no separate append of `content` — the current turn's
+  // text. `createChatMessageWithLimitCheck` (server/routes/chat.ts) persists
+  // that turn BEFORE this generator runs, so once a conversation exceeds 20
+  // messages, the model only sees the user's actual question if storage's
+  // newest-20 window ends with the row it just inserted. This pins that
+  // contract so a future change to the limit, or a caller that stops
+  // trusting storage to include the current turn, breaks visibly here.
+  describe("DB history window reliance (>20 message conversations)", () => {
+    it("passes the current turn through unmodified when it is the newest row", async () => {
+      const content = "What should I eat today?";
+      const history = Array.from({ length: 19 }, (_, i) =>
+        createMockChatMessage({
+          role: i % 2 === 0 ? "user" : "assistant",
+          content: `Older message ${i}`,
+        }),
+      ).concat(createMockChatMessage({ role: "user", content }));
+      expect(history).toHaveLength(20);
+
+      vi.mocked(storage.getChatMessages).mockResolvedValue(history);
+
+      const params = makeParams({ content, isCoachPro: true });
+
+      await collectEvents(handleCoachChat(params));
+
+      expect(storage.getChatMessages).toHaveBeenCalledWith(1, 20, "user-42");
+
+      const passedHistory = vi.mocked(generateCoachProResponse).mock
+        .calls[0][0];
+      // No manual append happened — the length is exactly what storage
+      // returned, and the last entry is the current turn (not duplicated,
+      // not dropped).
+      expect(passedHistory).toHaveLength(20);
+      expect(passedHistory.at(-1)).toEqual({ role: "user", content });
     });
   });
 
@@ -729,7 +800,7 @@ describe("handleCoachChat", () => {
   describe("SSE event yielding", () => {
     it("yields content events from the generator stream", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Hello ", "world!"]),
+        fakeProStream(["Hello ", "world!"]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Hello world!",
@@ -757,7 +828,7 @@ describe("handleCoachChat", () => {
         } as unknown as CoachBlock,
       ];
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Here is your plan."]),
+        fakeProStream(["Here is your plan."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Here is your plan.",
@@ -777,7 +848,7 @@ describe("handleCoachChat", () => {
 
     it("does not yield blocks event when blocks are empty", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["No blocks here."]),
+        fakeProStream(["No blocks here."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "No blocks here.",
@@ -878,7 +949,7 @@ describe("handleCoachChat", () => {
   describe("notebook extraction", () => {
     it("triggers notebook extraction for Coach Pro after response", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Advice here."]),
+        fakeProStream(["Advice here."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Advice here.",
@@ -913,7 +984,7 @@ describe("handleCoachChat", () => {
     });
 
     it("does not trigger notebook extraction when response is empty", async () => {
-      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream([]));
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeProStream([]));
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "",
         blocks: [],
@@ -944,7 +1015,7 @@ describe("handleCoachChat", () => {
 
     it("anchors followUpDate with civilDateToInstant using the request tz, not new Date() (UTC-negative tz)", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Let's check in."]),
+        fakeProStream(["Let's check in."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Let's check in.",
@@ -990,7 +1061,7 @@ describe("handleCoachChat", () => {
 
     it("threads the request's tz (and a captured `now`) into extractNotebookEntries — pins the wiring across the mock boundary", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Let's check in."]),
+        fakeProStream(["Let's check in."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Let's check in.",
@@ -1022,7 +1093,7 @@ describe("handleCoachChat", () => {
 
     it("anchors followUpDate with civilDateToInstant using the request tz, not new Date() (UTC-positive tz — the opposite-sign companion of the test above)", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Let's check in."]),
+        fakeProStream(["Let's check in."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Let's check in.",
@@ -1065,7 +1136,7 @@ describe("handleCoachChat", () => {
 
     it("does not anchor a commitment as due before the user's local midnight (UTC-negative tz) — Postgres-independent mirror of the storage-layer 'not due early' test", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Let's check in."]),
+        fakeProStream(["Let's check in."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Let's check in.",
@@ -1121,7 +1192,7 @@ describe("handleCoachChat", () => {
       const dateStr = "2026-09-05";
 
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Let's check in."]),
+        fakeProStream(["Let's check in."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Let's check in.",
@@ -1166,7 +1237,7 @@ describe("handleCoachChat", () => {
   describe("message persistence", () => {
     it("persists assistant message after response", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Test response"]),
+        fakeProStream(["Test response"]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Test response",
@@ -1195,7 +1266,7 @@ describe("handleCoachChat", () => {
         } as unknown as CoachBlock,
       ];
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Plan here."]),
+        fakeProStream(["Plan here."]),
       );
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Plan here.",
@@ -1216,7 +1287,7 @@ describe("handleCoachChat", () => {
     });
 
     it("does not persist message when response is empty", async () => {
-      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream([]));
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeProStream([]));
 
       const params = makeParams({ isCoachPro: true });
 
@@ -1227,7 +1298,7 @@ describe("handleCoachChat", () => {
 
     it("does not persist partial assistant message after abort", async () => {
       vi.mocked(generateCoachProResponse).mockReturnValue(
-        fakeStream(["Partial response"]),
+        fakeProStream(["Partial response"]),
       );
       let abortChecks = 0;
       const params = makeParams({
@@ -1279,18 +1350,12 @@ describe("handleCoachChat", () => {
   // ── Status events ─────────────────────────────────────────
 
   describe("status events", () => {
-    it("yields status events for Coach Pro tool calls before content resumes", async () => {
+    it("yields a status event immediately when tool calls are detected, before the next content event", async () => {
       vi.mocked(generateCoachProResponse).mockImplementation(
-        async function* (
-          _messages,
-          _context,
-          _userId,
-          _signal,
-          onBeforeToolCalls,
-        ) {
-          yield "First chunk";
-          onBeforeToolCalls?.(["search_recipes"]);
-          yield "After tool";
+        async function* (): AsyncGenerator<CoachProChunk> {
+          yield { type: "content", content: "First chunk" };
+          yield { type: "tool_calls", toolNames: ["search_recipes"] };
+          yield { type: "content", content: "After tool" };
         },
       );
 
@@ -1304,24 +1369,22 @@ describe("handleCoachChat", () => {
         label: "Searching recipes…",
       });
 
-      // Status event appears between content chunks
+      // The status event sits between the two content chunks — it is not
+      // deferred until (or past) the content chunk that follows the tool
+      // round.
       const types = events.map((e) => e.type);
       const firstContentIdx = types.indexOf("content");
       const statusIdx = types.indexOf("status");
+      const secondContentIdx = types.indexOf("content", firstContentIdx + 1);
       expect(statusIdx).toBeGreaterThan(firstContentIdx);
+      expect(statusIdx).toBeLessThan(secondContentIdx);
     });
 
     it("falls back to 'Working on it…' for unknown tool names", async () => {
       vi.mocked(generateCoachProResponse).mockImplementation(
-        async function* (
-          _messages,
-          _context,
-          _userId,
-          _signal,
-          onBeforeToolCalls,
-        ) {
-          onBeforeToolCalls?.(["some_future_tool"]);
-          yield "Done";
+        async function* (): AsyncGenerator<CoachProChunk> {
+          yield { type: "tool_calls", toolNames: ["some_future_tool"] };
+          yield { type: "content", content: "Done" };
         },
       );
 
@@ -1717,5 +1780,378 @@ describe("getSystemPromptTemplateVersion (real implementation)", () => {
     const v2 = getSystemPromptTemplateVersion();
     expect(v1).toMatch(/^[0-9a-f]{16}$/);
     expect(v1).toBe(v2);
+  });
+});
+
+describe("handleCoachChat — recipe finder (Coach Pro, flag on)", () => {
+  const FLOW = "11111111-1111-4111-8111-111111111111";
+  const finder = {
+    userMessageId: 77,
+    features: {
+      catalogSave: true,
+      recipeGeneration: true,
+      dailyRecipeGenerations: 20,
+    },
+  };
+  const item = {
+    id: 12,
+    source: "community" as const,
+    title: "Chicken Tray Bake",
+    imageUrl: null,
+    readyInMinutes: null,
+    calories: 480,
+  };
+  const recipe = {
+    title: "Chicken Curry",
+    description: "d",
+    difficulty: "Easy" as const,
+    timeEstimate: "30 min",
+    servings: 2,
+    ingredients: [],
+    instructions: ["cook"],
+    dietTags: [],
+  };
+  const listBlock: RecipeResultsBlock = {
+    type: "recipe_results",
+    source: "community",
+    items: [item],
+    actions: ["search_online", "generate", "none_of_these"],
+    notice: null,
+    flow: {
+      flowId: FLOW,
+      stage: "results",
+      request: "chicken",
+      query: { q: "chicken" },
+      round: 0,
+      shownIds: ["community:12"],
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupDefaultStorage();
+    vi.stubEnv("SPOONACULAR_API_KEY", "k");
+    vi.mocked(findCommunity).mockResolvedValue([item]);
+    vi.mocked(storage.getChatMessageByTurnKey).mockResolvedValue(undefined);
+    vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(true);
+    vi.mocked(generateRecipeChatResponse).mockImplementation(
+      async function* () {
+        yield { content: "Here's a curry!\n```json\n{}\n```" };
+        yield { content: "", recipe, allergenWarning: null };
+        yield { content: "", imageUrl: "https://img/curry.png" };
+        yield { done: true };
+      },
+    );
+    vi.mocked(generateCoachProResponse).mockReturnValue(
+      fakeProStream(["coach reply"]),
+    );
+    vi.mocked(parseBlocksFromContent).mockReturnValue({
+      text: "coach reply",
+      blocks: [],
+    });
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("routes a recipe_request to the finder and persists a recipe_results block", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "user",
+        content: "Find me a chicken recipe",
+      }),
+    ]);
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Find me a chicken recipe",
+          finder,
+          turnKey: "11111111-2222-4333-8444-555555555555",
+        }),
+      ),
+    );
+    expect(events[0]).toEqual({
+      type: "status",
+      label: "Searching community recipes…",
+    });
+    expect(events.at(-1)).toMatchObject({
+      type: "blocks",
+      blocks: [{ type: "recipe_results" }],
+    });
+    expect(events.some((e) => e.type === "content")).toBe(false);
+    expect(generateCoachProResponse).not.toHaveBeenCalled();
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      expect.stringMatching(/^Here are 1 community recipe:/),
+      { blocks: [expect.objectContaining({ type: "recipe_results" })] },
+      "11111111-2222-4333-8444-555555555555",
+    );
+  });
+
+  it("flag off (no finder param): a recipe_request keeps its legacy prompt intent", async () => {
+    await collectEvents(handleCoachChat(makeParams({ content: "meal ideas" })));
+    // 6th arg of generateCoachProResponse is the intent.
+    expect(vi.mocked(generateCoachProResponse).mock.calls[0][5]).toBe(
+      "vague_request",
+    );
+  });
+
+  it("free Coach never enters the finder (D7)", async () => {
+    vi.mocked(generateCoachResponse).mockReturnValue(
+      fakeStream(["free reply"]),
+    );
+    await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Find me a chicken recipe",
+          isCoachPro: false,
+          finder,
+        }),
+      ),
+    );
+    expect(findCommunity).not.toHaveBeenCalled();
+    expect(generateCoachResponse).toHaveBeenCalled();
+  });
+
+  it("safety_refusal never enters the finder, even mid-flow", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: { blocks: [listBlock] },
+      }),
+      createMockChatMessage({
+        role: "user",
+        content: "I have diabetes, what should I eat?",
+      }),
+    ]);
+    await collectEvents(
+      handleCoachChat(
+        makeParams({ content: "I have diabetes, what should I eat?", finder }),
+      ),
+    );
+    expect(findCommunity).not.toHaveBeenCalled();
+    expect(generateCoachProResponse).toHaveBeenCalled();
+  });
+
+  it("Generate action generates a card with TOP-LEVEL recipe metadata (save-recipe works — R5)", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: { blocks: [listBlock] },
+      }),
+      createMockChatMessage({ id: 77, role: "user", content: "Generate" }),
+    ]);
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Generate",
+          finder: { ...finder, action: { type: "generate", flowId: FLOW } },
+        }),
+      ),
+    );
+    expect(storage.claimRecipeGeneration).toHaveBeenCalledWith(
+      "user-42",
+      77,
+      20,
+    );
+    expect(vi.mocked(generateRecipeChatResponse).mock.calls[0][0]).toEqual([
+      { role: "user", content: "Create a recipe for: chicken" },
+    ]);
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      "Here's a curry!",
+      {
+        metadataVersion: 1,
+        recipe,
+        allergenWarning: null,
+        imageUrl: "https://img/curry.png",
+      },
+      undefined,
+    );
+    expect(events.at(-1)).toEqual({
+      type: "content",
+      content: "Here's a curry!",
+    });
+  });
+
+  it("a claimed Generate finishes and persists even after the client left (#1151 — no paid work lost, no refund)", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: { blocks: [listBlock] },
+      }),
+      createMockChatMessage({ id: 77, role: "user", content: "Generate" }),
+    ]);
+    await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Generate",
+          turnKey: "11111111-2222-4333-8444-555555555555",
+          isAborted: () => true,
+          finder: { ...finder, action: { type: "generate", flowId: FLOW } },
+        }),
+      ),
+    );
+    expect(storage.claimRecipeGeneration).toHaveBeenCalled();
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      "Here's a curry!",
+      expect.objectContaining({ recipe }),
+      "11111111-2222-4333-8444-555555555555",
+    );
+  });
+
+  it("a round-1 fall-through Generate is never abandoned between its claim and its persist", async () => {
+    const questionsBlock = {
+      type: "recipe_questions" as const,
+      questions: [{ question: "Spicy?", options: ["yes", "no"] }],
+      flow: { ...listBlock.flow, stage: "clarifying" as const },
+    };
+    vi.mocked(findCommunity).mockResolvedValue([]);
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: { blocks: [questionsBlock] },
+      }),
+      createMockChatMessage({ id: 77, role: "user", content: "Spicy? yes" }),
+    ]);
+    const gen = handleCoachChat(
+      makeParams({
+        content: "Spicy? yes",
+        finder: {
+          ...finder,
+          action: {
+            type: "answers",
+            flowId: FLOW,
+            answers: [{ question: "Spicy?", answer: "yes" }],
+          },
+        },
+      }),
+    );
+    // The route stops iterating (generator.return()) at the first yield after
+    // the client leaves; model the worst case — it leaves right after the claim.
+    for (let r = await gen.next(); !r.done; r = await gen.next()) {
+      if (vi.mocked(storage.claimRecipeGeneration).mock.calls.length > 0) {
+        await gen.return(undefined);
+        break;
+      }
+    }
+    expect(storage.claimRecipeGeneration).toHaveBeenCalled();
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      "Here's a curry!",
+      expect.objectContaining({ recipe }),
+      undefined,
+    );
+  });
+
+  it("a finder list step persists its block even after the client left", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "user",
+        content: "Find me a chicken recipe",
+      }),
+    ]);
+    await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Find me a chicken recipe",
+          turnKey: "11111111-2222-4333-8444-555555555555",
+          isAborted: () => true,
+          finder,
+        }),
+      ),
+    );
+    expect(storage.createChatMessage).toHaveBeenCalledWith(
+      1,
+      "user-42",
+      "assistant",
+      expect.stringMatching(/^Here are 1 community recipe:/),
+      { blocks: [expect.objectContaining({ type: "recipe_results" })] },
+      "11111111-2222-4333-8444-555555555555",
+    );
+  });
+
+  it("the daily generation limit is enforced in Coach too", async () => {
+    vi.mocked(storage.claimRecipeGeneration).mockResolvedValue(false);
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: { blocks: [listBlock] },
+      }),
+      createMockChatMessage({ id: 77, role: "user", content: "Generate" }),
+    ]);
+    const events = await collectEvents(
+      handleCoachChat(
+        makeParams({
+          content: "Generate",
+          finder: { ...finder, action: { type: "generate", flowId: FLOW } },
+        }),
+      ),
+    );
+    expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({
+      type: "blocks",
+      blocks: [{ notice: "generate_limit" }],
+    });
+  });
+
+  it("after a generated card, refine_current regenerates the card (and claims a generation)", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        content: "Here!",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+        },
+      }),
+      createMockChatMessage({
+        id: 77,
+        role: "user",
+        content: "make it spicier",
+      }),
+    ]);
+    vi.mocked(classifyTurn).mockResolvedValue("refine_current");
+    const events = await collectEvents(
+      handleCoachChat(makeParams({ content: "make it spicier", finder })),
+    );
+    expect(events[0]).toEqual({
+      type: "status",
+      label: "Updating your recipe…",
+    });
+    expect(storage.claimRecipeGeneration).toHaveBeenCalled();
+    expect(
+      vi.mocked(generateRecipeChatResponse).mock.calls[0][0].at(-1),
+    ).toEqual({ role: "user", content: "make it spicier" });
+  });
+
+  it("after a generated card, 'other' gets a normal coach reply", async () => {
+    vi.mocked(storage.getChatMessages).mockResolvedValue([
+      createMockChatMessage({
+        role: "assistant",
+        metadata: {
+          metadataVersion: 1,
+          recipe,
+          allergenWarning: null,
+          imageUrl: null,
+        },
+      }),
+      createMockChatMessage({ role: "user", content: "thanks!" }),
+    ]);
+    vi.mocked(classifyTurn).mockResolvedValue("other");
+    await collectEvents(
+      handleCoachChat(makeParams({ content: "thanks!", finder })),
+    );
+    expect(generateCoachProResponse).toHaveBeenCalled();
+    expect(generateRecipeChatResponse).not.toHaveBeenCalled();
   });
 });

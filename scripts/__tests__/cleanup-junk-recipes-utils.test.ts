@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { and, eq, ilike, isNull, or, sql as drizzleSql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
-import { communityRecipes } from "../../shared/schema";
+import { communityRecipes, savedItems } from "../../shared/schema";
 import {
   buildJunkCommunityRecipeWhere,
   parseCleanupFlags,
@@ -15,6 +15,10 @@ import { db } from "../../server/db";
 // Deliberately generic — this mock proves the COMMIT GATE discriminates, not
 // the deletion perimeter (that SQL is pinned separately above by
 // `buildJunkCommunityRecipeWhere`'s own tests).
+const { deletes } = vi.hoisted(() => ({
+  deletes: [] as { table: unknown; where: unknown }[],
+}));
+
 vi.mock("../../server/db", () => {
   // One fixture row, resolved by every terminal DB call. Defined INSIDE the
   // factory: vi.mock factories are hoisted above module-scope const
@@ -29,7 +33,22 @@ vi.mock("../../server/db", () => {
     select: vi.fn(() => chain),
     from: vi.fn(() => chain),
     where: vi.fn(() => chain),
-    delete: vi.fn(() => chain),
+    delete: vi.fn((table: unknown) => {
+      const rec: { table: unknown; where: unknown } = {
+        table,
+        where: undefined,
+      };
+      deletes.push(rec);
+      const sub: Record<string, unknown> = {};
+      Object.assign(sub, {
+        where: vi.fn((w: unknown) => {
+          rec.where = w;
+          return sub;
+        }),
+        then: (resolve: (v: unknown) => void) => resolve([FIXTURE_ROW]),
+      });
+      return sub;
+    }),
     then: (resolve: (v: unknown) => void) => resolve([FIXTURE_ROW]),
   });
   return {
@@ -294,6 +313,7 @@ describe("cleanup-junk-recipes-utils", () => {
 
     beforeEach(() => {
       vi.clearAllMocks();
+      deletes.length = 0;
       exitSpy = vi
         .spyOn(process, "exit")
         .mockImplementation((code?: string | number | null): never => {
@@ -347,6 +367,18 @@ describe("cleanup-junk-recipes-utils", () => {
       expect(err).toBeInstanceOf(ProcessExitSignal);
       expect(err).toMatchObject({ code: 0 });
       expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("--commit deletes saved_items rows scoped to (recipeType='community', recipeId=<deleted ids>)", async () => {
+      const err: unknown = await main(["--commit"]).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ProcessExitSignal);
+      const rec = deletes.find((d) => d.table === savedItems);
+      expect(rec).toBeDefined();
+      const q = render(rec!.where as SQL);
+      expect(q.sql).toContain(String.raw`"saved_items"."recipe_id"`);
+      expect(q.sql).toContain(String.raw`"saved_items"."recipe_type"`);
+      expect(q.params).toContain("community");
+      expect(q.params).toContain(1);
     });
   });
 

@@ -5,15 +5,15 @@
 -- Lab design rail "one schema file per item, no shared migration file".
 --
 -- dev.test_runs is an APPEND-ONLY event ledger: one row per test case per local Vitest
--- run (scripts/pg-lab/vitest-flake-reporter.ts's FlakeLedgerReporter, wired into
--- vitest.config.ts's `reporters` array for local (non-CI) runs only). Never a source of
+-- run (scripts/pg-lab/vitest-flake-reporter.mts's FlakeLedgerReporter, wired into
+-- vitest.config.mts's `reporters` array for local (non-CI) runs only). Never a source of
 -- truth, never hand-edited, never truncated or rebuilt — a run's history IS the data.
 --
 -- Idempotent: safe to re-run (IF NOT EXISTS everywhere). Also safe to apply standalone,
 -- without scripts/pg-lab/init.sh having run first (CREATE SCHEMA is repeated here
 -- defensively, matching the codify-neardup.sql / eval-results.sql precedent).
 --
--- Bootstrap note: the writer (persistTestRuns in vitest-flake-reporter.ts) is fail-silent
+-- Bootstrap note: the writer (persistTestRuns in vitest-flake-reporter.mts) is fail-silent
 -- by design (PG Lab rail: "Postgres down or ocrecipes_lab missing -> no-op instantly") and
 -- deliberately never creates this table itself — a missing table is treated the same as
 -- "DB unreachable". Apply this file once (directly, or via the first
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS dev.test_runs (
     duration_ms REAL NOT NULL CHECK (duration_ms >= 0),
     -- Number of RETRIES beyond the first attempt (Vitest's diagnostic().retryCount) —
     -- total attempts = retry_count + 1. A test with retry_count = 0 passed or failed on
-    -- its first try; the project's global `retry: 2` (vitest.config.ts) caps this at 2.
+    -- its first try; the project's global `retry: 2` (vitest.config.mts) caps this at 2.
     retry_count INTEGER NOT NULL CHECK (retry_count >= 0),
     -- Vitest's diagnostic().flaky: true only when the test failed at least once but
     -- ultimately passed after a retry — the clearest single "this test IS flaky" signal.

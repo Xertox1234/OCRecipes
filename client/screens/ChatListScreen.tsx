@@ -21,6 +21,10 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
+  REFRESH_ON_FOCUS_SETTLE_MS,
+  useRefreshOnFocus,
+} from "@/hooks/useRefreshOnFocus";
+import {
   useChatConversations,
   useCreateConversation,
   useDeleteConversation,
@@ -87,14 +91,53 @@ export default function ChatListScreen() {
   const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const isRecipeMode = activeSegment === "recipe";
 
+  // pollPendingRecipeTurns: while a recipe/remix turn is pending a post-abort
+  // save (marked by RecipeChatScreen's unmount cleanup), keep polling this
+  // list until it resolves or expires — the fixed settle margin below
+  // doesn't cover generation that keeps running for tens of seconds. The
+  // server filters the list strictly by type, so a `recipe` mark can only
+  // resolve in the recipe segment's fetch — gate on it, because polling the
+  // coach segment for one would just waste requests for the whole cap
+  // window. A `remix` mark resolves in neither segment (no list fetch
+  // returns remix conversations), so while one is pending the recipe
+  // segment polls until the cap drops it. That waste is bounded, and the
+  // remix conversation itself is resolved by RecipeChatScreen's own
+  // per-conversation poll when it is reopened.
   const {
     data: conversations,
     isLoading,
     refetch,
-    isRefetching,
-  } = useChatConversations(activeSegment);
+  } = useChatConversations(activeSegment, {
+    pollPendingRecipeTurns: isRecipeMode,
+  });
+  // A conversation whose reply finished after the user left is marked stale
+  // with `refetchType: "none"` (#1060/#1065) — that only refetches once a
+  // query observer mounts, and this screen stays mounted across a stack
+  // push/pop. Pick it up the next time the list regains focus instead of
+  // waiting for a manual pull-to-refresh. `refetch` is stable across
+  // `activeSegment` switches (react-query keeps the same observer instance
+  // for this component's lifetime), so no extra guard/memo is needed here.
+  const refetchOnFocus = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+  // settleMs: the refocus usually lands in the same transition as the abort
+  // that invalidated this list with `refetchType: "none"` — re-read once the
+  // server's post-disconnect write has settled (see the constant's comment).
+  useRefreshOnFocus(refetchOnFocus, { settleMs: REFRESH_ON_FOCUS_SETTLE_MS });
+  // Local flag (not the query's own `isRefetching`) so a background,
+  // focus-triggered refetch above doesn't flash the pull-to-refresh spinner —
+  // only a user-initiated pull should show it.
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const handleManualRefresh = useCallback(() => {
+    setIsManualRefreshing(true);
+    void refetch()
+      .then(() => haptics.impact())
+      .finally(() => setIsManualRefreshing(false));
+  }, [refetch, haptics]);
+  // handleNewChat's own catch below already toasts on a creation failure —
+  // opt out so the global net doesn't double it.
   const { mutateAsync: createConversationAsync, isPending: isCreatingChat } =
-    useCreateConversation();
+    useCreateConversation({ silentError: true });
   const { mutate: deleteConversationMutate } = useDeleteConversation();
 
   const handleNewChat = useCallback(async () => {
@@ -333,8 +376,8 @@ export default function ChatListScreen() {
         }}
         refreshControl={
           <RefreshControl
-            refreshing={isRefetching}
-            onRefresh={() => refetch().then(() => haptics.impact())}
+            refreshing={isManualRefreshing}
+            onRefresh={handleManualRefresh}
             tintColor={theme.link}
           />
         }

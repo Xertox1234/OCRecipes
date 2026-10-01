@@ -1,8 +1,32 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, getApiUrl, type QueryErrorMeta } from "@/lib/query-client";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
+import {
+  apiRequest,
+  getApiUrl,
+  type QueryErrorMeta,
+  type MutationErrorMeta,
+} from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
+import type { SavedRecipeLinkStatus } from "@shared/schemas/saved-items";
+import {
+  finderBlockSchema,
+  type FinderAction,
+  type FinderBlock,
+} from "@shared/schemas/recipe-finder";
+
+// Must exceed the server's SSE_TIMEOUT_MS (same route, server/routes/chat.ts):
+// the server arms its timer only after auth and the daily-limit write, so an
+// equal client timer fires first and the server's graceful
+// `{ error: "Response timeout" }` never arrives. Same 150s ceiling as
+// useCoachStream's XHR_TIMEOUT_MS; this hook has no inactivity watchdog.
+export const CHAT_XHR_TIMEOUT_MS = SSE_TIMEOUT_MS + 30_000;
 
 export interface ChatConversation {
   id: number;
@@ -37,13 +61,141 @@ export interface StreamingRecipe {
   imageUrl?: string | null;
 }
 
+// ---- Recipe/remix post-abort poll ----
+//
+// The recipe/remix finish-and-save policy (server/routes/chat.ts) keeps
+// generating — and saves the full reply — after the client disconnects. An
+// intentional abort (RecipeChatScreen unmounting mid-stream) marks the
+// conversation's queries stale with `refetchType: "none"` below, but that
+// only refetches once a query OBSERVER mounts; a screen that stays mounted
+// (ChatListScreen) or is reopened before generation finishes never gets a
+// second look. #1096's fixed 2s settle margin (useRefreshOnFocus) covers the
+// coach path (a couple of DB writes) but not this one, where generation can
+// run for tens of seconds. This polls instead, bounded by a cap.
+//
+// Poll interval and cap: SSE_TIMEOUT_MS is the server's own ceiling on every
+// chat SSE connection (coach, recipe, remix), so no post-disconnect save can
+// land later than that measured from the ORIGINAL request — comfortably
+// less measured from the abort, which happens partway through. The +30s
+// margin covers the final DB write plus network latency, mirroring
+// CHAT_XHR_TIMEOUT_MS's own margin over the same constant.
+export const RECIPE_TURN_POLL_INTERVAL_MS = 5_000;
+export const RECIPE_TURN_POLL_CAP_MS = SSE_TIMEOUT_MS + 30_000;
+
+// Marks live only for the session: stored in the TanStack Query cache
+// (never a bare module-level singleton — see
+// docs/solutions/design-patterns/global-mutable-client-singleton-lifecycle-2026-06-19.md)
+// so `queryClient.clear()` — already called on every local auth teardown
+// path (logout/expireSession/deleteAccount, docs/rules/client-state.md) —
+// wipes it automatically. No new teardown wiring needed, and a poll's own
+// `refetchInterval` timer is owned by its query observer, so it is cleared
+// by React Query itself the moment that observer unmounts.
+const PENDING_RECIPE_TURNS_KEY = ["__pendingRecipeTurns"] as const;
+type PendingRecipeTurns = Record<number, number>; // conversationId -> abortedAt (ms)
+
+/**
+ * Marks a recipe/remix conversation as having an outstanding server-side
+ * turn after an intentional client abort. Call from the aborting screen's
+ * unmount cleanup — `useChatConversations`/`useChatMessages` consumers that
+ * opt into `pollPendingRecipe*` below poll until it resolves or expires.
+ */
+export function useMarkPendingRecipeTurn() {
+  const queryClient = useQueryClient();
+  // The pollers below never subscribe to this key via `useQuery` (they only
+  // read/write it directly), so its default gcTime (5 min) would otherwise
+  // garbage-collect the WHOLE map on a timer rooted at its first-ever write
+  // and never rescheduled by later writes — shorter than two marks can
+  // legitimately span in one session, and unrelated to how fresh any single
+  // mark still is. Pin it before the first write (below) ever happens; a
+  // per-render call is idempotent and cheap.
+  queryClient.setQueryDefaults(PENDING_RECIPE_TURNS_KEY, { gcTime: Infinity });
+  return useCallback(
+    (conversationId: number) => {
+      queryClient.setQueryData<PendingRecipeTurns>(
+        PENDING_RECIPE_TURNS_KEY,
+        (prev) => ({ ...(prev ?? {}), [conversationId]: Date.now() }),
+      );
+    },
+    [queryClient],
+  );
+}
+
+/**
+ * Shared `refetchInterval` decision for a query that should keep polling
+ * while a pending recipe turn relevant to it hasn't resolved yet. Every
+ * pending id past `RECIPE_TURN_POLL_CAP_MS` is dropped unconditionally
+ * (safety net). `relevant` scopes which ids matter to THIS query — `"all"`
+ * for the conversation list (any pending id might settle there), or a
+ * specific `conversationId` for a messages query (only its own turn does) —
+ * so an unrelated pending id can't keep an uninvolved query polling.
+ * `isResolved` inspects the freshly-fetched data to decide whether a given
+ * pending id has settled; once true (or expired) that id's mark clears.
+ */
+function pollRecipeTurn<TData>(
+  queryClient: QueryClient,
+  relevant: "all" | number,
+  data: TData | undefined,
+  isResolved: (
+    data: TData,
+    conversationId: number,
+    abortedAt: number,
+  ) => boolean,
+): number | false {
+  const pending = queryClient.getQueryData<PendingRecipeTurns>(
+    PENDING_RECIPE_TURNS_KEY,
+  );
+  if (!pending || Object.keys(pending).length === 0) return false;
+
+  const now = Date.now();
+  const next: PendingRecipeTurns = {};
+  let changed = false;
+  for (const [idStr, abortedAt] of Object.entries(pending)) {
+    const conversationId = Number(idStr);
+    const expired = now - abortedAt > RECIPE_TURN_POLL_CAP_MS;
+    const resolved =
+      !expired &&
+      data !== undefined &&
+      isResolved(data, conversationId, abortedAt);
+    if (expired || resolved) {
+      changed = true;
+      continue;
+    }
+    next[conversationId] = abortedAt;
+  }
+  if (changed) {
+    // `setQueryData` treats a resulting value of `undefined` as a no-op (it
+    // leaves the previous data in place) — write `{}` instead so an
+    // emptied-out map actually clears the stale entries.
+    queryClient.setQueryData<PendingRecipeTurns>(
+      PENDING_RECIPE_TURNS_KEY,
+      next,
+    );
+  }
+
+  const stillRelevant = Object.keys(next)
+    .map(Number)
+    .some((id) => relevant === "all" || relevant === id);
+  return stillRelevant ? RECIPE_TURN_POLL_INTERVAL_MS : false;
+}
+
 export function useChatConversations(
   type?: "coach" | "recipe",
-  opts?: { search?: string; page?: number },
+  opts?: {
+    search?: string;
+    page?: number;
+    /** Poll while any recipe/remix turn is pending a post-abort save (see above). */
+    pollPendingRecipeTurns?: boolean;
+  },
 ) {
+  const queryClient = useQueryClient();
+  // pollPendingRecipeTurns configures polling BEHAVIOR only — excluded from
+  // the query key so opting a caller into it doesn't fragment a cache entry
+  // another caller already shares (e.g. CoachProScreen's identical "coach"
+  // fetch) into a second, separately-fetched entry.
+  const { pollPendingRecipeTurns, ...keyOpts } = opts ?? {};
   const queryKey = type
-    ? ["/api/chat/conversations", { type, ...opts }]
-    : ["/api/chat/conversations", opts];
+    ? ["/api/chat/conversations", { type, ...keyOpts }]
+    : ["/api/chat/conversations", opts ? keyOpts : undefined];
 
   return useQuery<ChatConversation[]>({
     queryKey,
@@ -57,21 +209,62 @@ export function useChatConversations(
       const res = await apiRequest("GET", url);
       return res.json();
     },
+    ...(pollPendingRecipeTurns && {
+      refetchInterval: (query) =>
+        pollRecipeTurn(
+          queryClient,
+          "all",
+          query.state.data,
+          (conversations, conversationId, abortedAt) => {
+            const convo = conversations.find((c) => c.id === conversationId);
+            return !!convo && new Date(convo.updatedAt).getTime() > abortedAt;
+          },
+        ),
+    }),
   });
 }
 
 export function useChatMessages(
   conversationId: number | null,
   meta?: QueryErrorMeta,
+  opts?: {
+    /** Poll while THIS conversation's recipe/remix turn is pending a post-abort save (see above). */
+    pollPendingRecipeTurn?: boolean;
+  },
 ) {
+  const queryClient = useQueryClient();
   return useQuery<ChatMessage[]>({
     queryKey: [`/api/chat/conversations/${conversationId}/messages`],
     enabled: !!conversationId,
     meta,
+    ...(opts?.pollPendingRecipeTurn &&
+      conversationId !== null && {
+        refetchInterval: (query) =>
+          pollRecipeTurn(
+            queryClient,
+            conversationId,
+            query.state.data,
+            (messages, id, abortedAt) =>
+              id === conversationId &&
+              messages.some(
+                (m) =>
+                  m.role === "assistant" &&
+                  new Date(m.createdAt).getTime() > abortedAt,
+              ),
+          ),
+      }),
   });
 }
 
-export function useCreateConversation() {
+/**
+ * `meta` is threaded (not hardcoded) because this hook is shared by 5
+ * screens with different error-handling conventions: pass
+ * `{ silentError: true }` from a caller that already shows its own visible
+ * error on a conversation-create failure (ChatScreen, ChatListScreen,
+ * CoachProScreen via CoachChat's own catch, CoachOverlayContent). Leave it
+ * unset for a caller with no local handling — the global net now covers it.
+ */
+export function useCreateConversation(meta?: MutationErrorMeta) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data?: {
@@ -91,6 +284,7 @@ export function useCreateConversation() {
         queryKey: ["/api/chat/conversations"],
       });
     },
+    meta,
   });
 }
 
@@ -105,6 +299,9 @@ export function useDeleteConversation() {
         queryKey: ["/api/chat/conversations"],
       });
     },
+    // Both call sites (ChatListScreen, AllConversationsScreen) already show
+    // a visible toast via a per-call onError — the global net would double it.
+    meta: { silentError: true },
   });
 }
 
@@ -114,6 +311,11 @@ export function useSendMessage(conversationId: number | null) {
   const [streamingRecipe, setStreamingRecipe] =
     useState<StreamingRecipe | null>(null);
   const [allergenWarning, setAllergenWarning] = useState<string | null>(null);
+  const [streamingFinder, setStreamingFinder] = useState<FinderBlock | null>(
+    null,
+  );
+  // Recipe finder progress ("Searching community recipes…") for the thinking bubble.
+  const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -121,25 +323,77 @@ export function useSendMessage(conversationId: number | null) {
   // Refs for stale-closure-safe access inside streaming callbacks
   const isStreamingRef = useRef(false);
   const streamingContentRef = useRef("");
+  // The in-flight XHR, exposed so a caller (e.g. a screen's unmount cleanup)
+  // can abort it from outside sendMessage.
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
+  // Bumped by every sendMessage call, by abortStream, and on unmount.
+  // sendMessage's token read is async; its continuation — and its `finally`
+  // teardown — only touch this hook's shared, single-slot UI state when the
+  // epoch they captured is still current, so an abort (or a newer send)
+  // can't leave an orphaned request or clobber whichever request is current
+  // now. Same pattern as useCoachStream's streamEpochRef.
+  const sendEpochRef = useRef(0);
+
+  const abortStream = useCallback(() => {
+    if (!isStreamingRef.current) return; // nothing in flight — no-op
+    sendEpochRef.current += 1;
+    xhrRef.current?.abort();
+    xhrRef.current = null;
+    isStreamingRef.current = false;
+    setIsStreaming(false);
+    setStreamingContent("");
+    setStreamingRecipe(null);
+    setAllergenWarning(null);
+    setStreamingFinder(null);
+    setStreamingStatus(null);
+  }, []);
+
+  // On unmount, stop a send that has NOT gone out yet: bumping the epoch
+  // makes sendMessage's token-read continuation return instead of sending
+  // an orphaned request once the token resolves. A reply that is already
+  // streaming is deliberately left running (user ruling 2026-09-29): its
+  // done handler still refreshes the conversation, so the full answer is
+  // there on return. Screens that want to stop the reply on leave call
+  // abortStream in their own cleanup. No setState here: the component is
+  // gone.
+  useEffect(() => {
+    return () => {
+      sendEpochRef.current += 1;
+    };
+  }, []);
 
   const sendMessage = useCallback(
     async (
       content: string,
       screenContext?: string,
       conversationIdOverride?: number,
+      options?: { finderAction?: FinderAction },
     ) => {
       const effectiveId = conversationIdOverride ?? conversationId;
       if (!effectiveId) return;
+      // Refuse an overlapping send: `xhrRef`/`isStreamingRef` are single-slot
+      // state for this hook instance, so a second concurrent call would
+      // overwrite (and orphan) the first in-flight request's XHR reference —
+      // see todos/archive/P3-2026-09-24-chat-stream-hooks-xhrref-last-write-wins.md.
+      if (isStreamingRef.current) return;
       isStreamingRef.current = true;
+      const epoch = ++sendEpochRef.current;
       streamingContentRef.current = "";
       setIsStreaming(true);
       setStreamingContent("");
       setStreamingRecipe(null);
       setAllergenWarning(null);
+      setStreamingFinder(null);
+      setStreamingStatus(null);
       setStreamError(false);
       setRequestError(null);
 
       let receivedDone = false;
+      // Captured separately from xhrRef so the `finally` below (outside this
+      // `try` block's own scope) can tell whether xhrRef still points at
+      // THIS request's XHR before nulling it — defense in depth alongside
+      // the isStreamingRef guard above.
+      let ownXhr: XMLHttpRequest | null = null;
 
       try {
         const baseUrl = getApiUrl();
@@ -148,6 +402,14 @@ export function useSendMessage(conversationId: number | null) {
           baseUrl,
         );
         const token = await tokenStorage.get();
+        if (epoch !== sendEpochRef.current) {
+          // Aborted (or superseded by a newer send) while awaiting the
+          // token — no XHR was ever created, so there's nothing to cancel.
+          // Whoever bumped the epoch (abortStream, unmount, or a newer
+          // sendMessage) already reset — or now owns — the shared UI
+          // state; this call must not touch it or send a request.
+          return;
+        }
         // X-Timezone is required, not decorative: a coach conversation's
         // notebook follow-up dates and "today" are anchored in this zone on
         // the server, which falls back to UTC without it.
@@ -160,6 +422,7 @@ export function useSendMessage(conversationId: number | null) {
         const requestBody = JSON.stringify({
           content,
           ...(screenContext && { screenContext }),
+          ...(options?.finderAction && { finderAction: options.finderAction }),
         });
 
         // XHR is used instead of fetch because React Native's fetch polyfill
@@ -175,6 +438,14 @@ export function useSendMessage(conversationId: number | null) {
           try {
             const data = JSON.parse(line.slice(6));
 
+            if (typeof data.status === "string") {
+              setStreamingStatus(data.status);
+            }
+            if (data.finder) {
+              // An old or malformed block is dropped, never rendered.
+              const parsed = finderBlockSchema.safeParse(data.finder);
+              if (parsed.success) setStreamingFinder(parsed.data);
+            }
             if (data.recipe) {
               setStreamingRecipe(data.recipe);
               if (data.allergenWarning) {
@@ -241,8 +512,10 @@ export function useSendMessage(conversationId: number | null) {
 
         await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
+          ownXhr = xhr;
+          xhrRef.current = xhr;
           xhr.open("POST", url.href, true);
-          xhr.timeout = 120_000;
+          xhr.timeout = CHAT_XHR_TIMEOUT_MS;
           Object.entries(headers).forEach(([k, v]) =>
             xhr.setRequestHeader(k, v),
           );
@@ -289,12 +562,27 @@ export function useSendMessage(conversationId: number | null) {
           xhr.send(requestBody);
         });
 
-        // Stream ended — check if it completed normally (skip for intentional aborts)
-        if (
-          !aborted &&
-          !receivedDone &&
-          streamingContentRef.current.length > 0
-        ) {
+        // Stream ended — check if it completed normally
+        if (aborted) {
+          // The XHR was intentionally aborted (e.g. RecipeChatScreen
+          // unmounted). Recipe/remix generation keeps running and saves the
+          // reply server-side after a disconnect (finish-and-save policy —
+          // see server/routes/chat.ts); this used to be skipped entirely
+          // back when the server also stopped on disconnect and there was
+          // nothing new to fetch. Mark both queries stale so the next view
+          // refetches the finished reply instead of serving this pre-settle
+          // cache. `refetchType: "none"` defers the refetch instead of
+          // racing the server's still-in-flight write (same pattern as
+          // CoachOverlayContent / CoachChat, #1060).
+          void queryClient.invalidateQueries({
+            queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
+            refetchType: "none",
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ["/api/chat/conversations"],
+            refetchType: "none",
+          });
+        } else if (!receivedDone && streamingContentRef.current.length > 0) {
           setStreamError(true);
           void queryClient.invalidateQueries({
             queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
@@ -304,24 +592,49 @@ export function useSendMessage(conversationId: number | null) {
           });
         }
       } catch (e) {
-        // Catch-all: network errors from xhr.onerror/ontimeout propagate here.
-        setRequestError(
-          e instanceof Error && e.message
-            ? e.message
-            : "Something went wrong. Please try again.",
-        );
+        // Catch-all: network errors from xhr.onerror/ontimeout propagate
+        // here, as does a rejected tokenStorage.get(). A stale call's
+        // failure (e.g. the token read rejected after this call was
+        // aborted or superseded) must not report an error for whichever
+        // request is current now.
+        if (epoch === sendEpochRef.current) {
+          setRequestError(
+            e instanceof Error && e.message
+              ? e.message
+              : "Something went wrong. Please try again.",
+          );
+        }
       } finally {
-        isStreamingRef.current = false;
-        setIsStreaming(false);
-        setStreamingContent("");
-        setStreamingRecipe(null);
-        setAllergenWarning(null);
+        // Ownership-scoped: only the call that still owns the current
+        // epoch may reset this hook's shared, single-slot UI state. A
+        // stale call's finally can run after a newer call has already
+        // started (abortStream and a fresh sendMessage both bump the
+        // epoch synchronously) — resetting unconditionally here would
+        // tear down whichever request is current now.
+        if (epoch === sendEpochRef.current) {
+          // Only clear the ref if it still points at this request's XHR —
+          // a guard against a future caller that bypasses the
+          // isStreamingRef check above and starts a second request;
+          // without this, the second request's cleanup could null out the
+          // first request's still-live reference (or vice versa).
+          if (xhrRef.current === ownXhr) xhrRef.current = null;
+          isStreamingRef.current = false;
+          setIsStreaming(false);
+          setStreamingContent("");
+          setStreamingRecipe(null);
+          setAllergenWarning(null);
+          setStreamingFinder(null);
+          setStreamingStatus(null);
+        }
         // requestError is intentionally NOT cleared here: clearing in the same
         // synchronous finally frame as setRequestError(errorMsg) batches to null
         // before the component re-renders (React 19 automatic batching). It is
-        // cleared at the start of the next sendMessage call. RecipeChatScreen is
-        // a fullScreenModal that unmounts on dismiss, so stale requestError state
-        // across navigation isn't a concern.
+        // cleared at the start of the next sendMessage call instead — that
+        // holds for every consumer of this hook regardless of screen
+        // lifetime: ChatScreen is a persistent tab screen that never unmounts
+        // between sends, and RecipeChatScreen is a fullScreenModal that
+        // unmounts on dismiss, but neither relies on unmount to clear stale
+        // requestError state.
       }
     },
     [conversationId, queryClient],
@@ -329,9 +642,12 @@ export function useSendMessage(conversationId: number | null) {
 
   return {
     sendMessage,
+    abortStream,
     streamingContent,
     streamingRecipe,
     allergenWarning,
+    streamingFinder,
+    streamingStatus,
     isStreaming,
     streamError,
     requestError,
@@ -347,6 +663,9 @@ export function useDeleteChatMessageForRetry() {
       // Intentionally no cache invalidation — CoachChat manages
       // message state directly during retry to avoid UI flicker.
     },
+    // Its one call site (CoachChat.handleRetry) already sets a visible
+    // streamingError in its own catch — the global net would double it.
+    meta: { silentError: true },
   });
 }
 
@@ -366,10 +685,21 @@ export function usePinConversation() {
         queryKey: ["/api/chat/conversations"],
       });
     },
+    // Its one call site (AllConversationsScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }
 
-/** Save a recipe from a chat message to the user's library */
+/**
+ * Save a recipe from a chat message to the user's library.
+ *
+ * No opt-out: the one call site (RecipeChatScreen.handleSaveRecipe) only
+ * plays a haptic + an iOS-only VoiceOver announce on failure, which this
+ * project's convention treats as NOT visible feedback (haptics/console/
+ * iOS-only-announce alone don't count — see the mutation rule in
+ * docs/rules/client-state.md). The global toast is a genuine improvement
+ * here, not a double-report.
+ */
 export function useSaveRecipeFromChat() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -385,11 +715,19 @@ export function useSaveRecipeFromChat() {
         `/api/chat/conversations/${conversationId}/save-recipe`,
         { messageId },
       );
-      return res.json();
+      return res.json() as Promise<{
+        id: number;
+        savedItemStatus?: SavedRecipeLinkStatus;
+      }>;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: ["/api/chat/conversations"],
+      });
+      // The server also puts the recipe into Saved Items.
+      void queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/saved-items/count"],
       });
     },
   });
@@ -453,6 +791,8 @@ export function useCreateNotebookEntry() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
     },
+    // Its one call site (NotebookEntryScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }
 
@@ -482,6 +822,9 @@ export function useUpdateNotebookEntry() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
     },
+    // Every call site (NotebookEntryScreen x3, NotebookScreen) already
+    // toasts on failure.
+    meta: { silentError: true },
   });
 }
 
@@ -494,5 +837,7 @@ export function useDeleteNotebookEntry() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
     },
+    // Its one call site (NotebookScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }

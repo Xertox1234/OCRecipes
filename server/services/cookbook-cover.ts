@@ -305,7 +305,8 @@ export async function generateCookbookCover(
         width: COVER_WIDTH,
         height: COVER_HEIGHT,
       });
-      if (buffer) return await saveCookbookCover(buffer);
+      // Runware returns JPEG (no outputFormat requested) — label it to match.
+      if (buffer) return await saveCookbookCover(buffer, "jpg");
       log.warn("Runware returned no cover image, falling back to DALL-E");
     } catch (error) {
       log.warn(

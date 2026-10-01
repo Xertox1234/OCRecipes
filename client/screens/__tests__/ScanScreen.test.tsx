@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
 import { renderComponent } from "../../../test/utils/render-component";
 
 import ScanScreen from "../ScanScreen";
@@ -10,6 +11,8 @@ import * as Haptics from "expo-haptics";
 import { AccessibilityInfo } from "react-native";
 import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
 import { parseFrontLabelFromOCR } from "@/lib/front-label-ocr-parser";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 const {
   mockGoBack,
@@ -21,10 +24,15 @@ const {
   mockPermissionStatus,
   mockShortcutToSessionComplete,
   mockSessionCompleteOcrText,
+  mockFeatures,
   mockRefreshScanCount,
   mockApiRequest,
   mockCapturePhotoToFile,
   mockRecognizeText,
+  mockIsFocused,
+  mockDeleteAsync,
+  mockToastError,
+  capturedPressProps,
 } = vi.hoisted(() => {
   const mockGoBack = vi.fn();
   const mockCanGoBack = vi.fn();
@@ -46,7 +54,7 @@ const {
       goBack: mockGoBack,
       canGoBack: mockCanGoBack,
       reset: mockReset,
-      isFocused: () => true,
+      isFocused: (): boolean => true,
     },
     mockRouteParams: {
       value: undefined as
@@ -71,6 +79,11 @@ const {
     // object omits the `ocrText` key entirely, same as the real reducer's
     // BARCODE_LOCKED→CONFIRM_PRODUCT branch (scan-phase-reducer.ts:47).
     mockSessionCompleteOcrText: { value: undefined as string | undefined },
+    // Mutable so a test can grant a gated feature (e.g. receiptScanner) to
+    // reach a smart-classification route that would otherwise resolve to
+    // "blocked" — default `{}` matches every existing test's assumption of
+    // no premium features.
+    mockFeatures: { value: {} as Record<string, boolean> },
     // Stable across renders (unlike a fresh vi.fn() per usePremiumContext()
     // call) — mirrors the real PremiumContext, which memoizes refreshScanCount
     // via useCallback. The session-complete navigate effect depends on this
@@ -86,6 +99,14 @@ const {
     // the behaviour under test.
     mockCapturePhotoToFile: vi.fn(),
     mockRecognizeText: vi.fn(),
+    // Mutable so individual tests can simulate the screen losing focus
+    // (blur) without a real navigation transition — default true matches
+    // every existing test's assumption of a focused screen.
+    mockIsFocused: { value: true },
+    mockDeleteAsync: vi.fn().mockResolvedValue(undefined),
+    mockToastError: vi.fn(),
+    // Keyed by accessibilityLabel — see the react-native mock override below.
+    capturedPressProps: {} as Record<string, Record<string, unknown>>,
   };
 });
 
@@ -103,7 +124,7 @@ vi.mock("react-native-vision-camera", () => ({
     capturePhotoToFile: mockCapturePhotoToFile,
   })),
 }));
-// The package is ALSO aliased to test/mocks/ in vitest.config.ts (it calls
+// The package is ALSO aliased to test/mocks/ in vitest.config.mts (it calls
 // requireNativeModule() at module scope). That alias and this vi.mock compose —
 // vi.mock replaces whatever the resolver returns — so the shutter tests below
 // can drive real OCR text through recognizeTextFromPhoto. Same pattern as
@@ -118,7 +139,11 @@ vi.mock("react-native-gesture-handler", () => ({
   GestureDetector: ({ children }: { children: React.ReactNode }) => children,
   Gesture: {
     Tap: () => ({ onEnd: () => ({}) }),
-    Pinch: () => ({ onStart: () => ({ onUpdate: () => ({}) }) }),
+    Pinch: () => ({
+      onBegin: () => ({
+        onStart: () => ({ onUpdate: () => ({ onFinalize: () => ({}) }) }),
+      }),
+    }),
     Simultaneous: () => ({}),
   },
 }));
@@ -137,8 +162,13 @@ vi.mock("@/camera/hooks/useCameraPermissions", () => ({
 // reproduced in isolation outside ScanScreen, so it is not specific to this file.
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => mockNavigationObject,
-  useIsFocused: () => true,
+  useIsFocused: () => mockIsFocused.value,
   useRoute: () => ({ params: mockRouteParams.value }),
+}));
+// ScanScreen deletes abandoned capture files on reset/unmount — the real
+// module hits a native module at import time under jsdom.
+vi.mock("expo-file-system/legacy", () => ({
+  deleteAsync: mockDeleteAsync,
 }));
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumCamera: () => ({ isPremium: true, remainingScans: null }),
@@ -146,7 +176,7 @@ vi.mock("@/hooks/usePremiumFeatures", () => ({
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({
     refreshScanCount: mockRefreshScanCount,
-    features: {},
+    features: mockFeatures.value,
   }),
 }));
 // @/lib/photo-upload transitively imports expo-file-system, a native module
@@ -166,7 +196,7 @@ vi.mock("@/components/UpgradeModal", () => ({
   UpgradeModal: () => null,
 }));
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn() }),
+  useToast: () => ({ success: vi.fn(), error: mockToastError }),
 }));
 // Only handleConfirmLog (post-log-success close) reaches apiRequest; the
 // other two safe-back-navigation call sites never touch the network.
@@ -205,6 +235,36 @@ vi.mock("@/camera/reducers/scan-phase-reducer", async (importOriginal) => {
     },
   };
 });
+// Captures the raw props (style/hitSlop) each labeled Pressable/TouchableOpacity
+// receives, keyed by accessibilityLabel, for the P2-2026-09-23 touch-target
+// tests below — the shared react-native mock's Pressable drops `style` before
+// rendering to the DOM (test/mocks/react-native.ts), so asserting on the
+// rendered node can't see it. Forwards to the real (mocked) component
+// afterwards, so every other test in this file renders unaffected.
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  const capture = (Component: React.ComponentType<Record<string, unknown>>) => {
+    const Capturing = React.forwardRef<unknown, Record<string, unknown>>(
+      (props, ref) => {
+        const label = props.accessibilityLabel as string | undefined;
+        if (label) capturedPressProps[label] = props;
+        // Plain Views are captured by testID: their style is often an ARRAY,
+        // which the shared mock passes to the DOM unflattened (and dropped).
+        const testID = props.testID as string | undefined;
+        if (testID) capturedPressProps[`view:${testID}`] = props;
+        return React.createElement(Component, { ...props, ref });
+      },
+    );
+    Capturing.displayName = `Capturing(${Component.displayName ?? "Component"})`;
+    return Capturing;
+  };
+  return {
+    ...actual,
+    Pressable: capture(actual.Pressable),
+    TouchableOpacity: capture(actual.TouchableOpacity),
+    View: capture(actual.View),
+  };
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -213,10 +273,14 @@ beforeEach(() => {
   mockPermissionStatus.value = "granted";
   mockShortcutToSessionComplete.value = false;
   mockSessionCompleteOcrText.value = undefined;
+  mockFeatures.value = {};
+  mockIsFocused.value = true;
+  mockNavigationObject.isFocused = () => true;
   // Re-seeded every test (clearAllMocks wipes history, not implementations, so
   // a per-test override would otherwise leak into the next test in this file).
   mockCapturePhotoToFile.mockResolvedValue({ filePath: "/label.jpg" });
   mockRecognizeText.mockResolvedValue({ text: "", blocks: [] });
+  mockDeleteAsync.mockResolvedValue(undefined);
   mockApiRequest.mockImplementation(async (_method: string, url: string) => {
     if (url.startsWith("/api/nutrition/barcode/")) {
       return {
@@ -340,6 +404,94 @@ describe("ScanScreen — safe back navigation", () => {
       );
       expect(mockGoBack).not.toHaveBeenCalled();
       expect(mockNavigate).not.toHaveBeenCalled();
+    });
+
+    // L5 (2026-09-23 front-end audit): handleConfirmLog's catch used to show
+    // the same generic toast for every /api/scanned-items failure. Branch on
+    // ApiError.code the same way NutritionDetail's log-to-database path does
+    // (useNutritionLookup.ts onError), instead of leaving RATE_LIMITED
+    // indistinguishable from any other failure.
+    it("shows a rate-limit-specific message when the log request is throttled", async () => {
+      mockCanGoBack.mockReturnValue(true);
+      mockApiRequest.mockImplementation(
+        async (_method: string, url: string) => {
+          if (url === "/api/scanned-items") {
+            throw new ApiError("Too many requests", ErrorCode.RATE_LIMITED);
+          }
+          if (url.startsWith("/api/nutrition/barcode/")) {
+            return {
+              json: async () => ({
+                productName: "Test Product",
+                calories: 120,
+              }),
+            } as Response;
+          }
+          return { json: async () => ({}) } as Response;
+        },
+      );
+
+      renderComponent(<ScanScreen />);
+      fireEvent.click(await screen.findByLabelText("Log It"));
+
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledWith(
+          "Too many requests. Please wait a moment and try again.",
+        );
+      });
+      expect(mockGoBack).not.toHaveBeenCalled();
+      expect(mockReset).not.toHaveBeenCalled();
+    });
+
+    it("shows the generic message for a non-rate-limit log failure", async () => {
+      mockCanGoBack.mockReturnValue(true);
+      mockApiRequest.mockImplementation(
+        async (_method: string, url: string) => {
+          if (url === "/api/scanned-items") {
+            throw new Error("boom");
+          }
+          if (url.startsWith("/api/nutrition/barcode/")) {
+            return {
+              json: async () => ({
+                productName: "Test Product",
+                calories: 120,
+              }),
+            } as Response;
+          }
+          return { json: async () => ({}) } as Response;
+        },
+      );
+
+      renderComponent(<ScanScreen />);
+      fireEvent.click(await screen.findByLabelText("Log It"));
+
+      await waitFor(() => {
+        expect(mockToastError).toHaveBeenCalledWith(
+          "Failed to log item. Please try again.",
+        );
+      });
+    });
+
+    // P1-2026-09-23: this log-success path used to invalidate only
+    // dailySummary + scannedItems, leaving Home's "X / Y cal" header (which
+    // reads useDailyBudget) stale until the 5-min staleTime lapsed.
+    it("invalidates /api/daily-budget on a successful log, not just daily-summary and scanned-items", async () => {
+      const invalidateSpy = vi.spyOn(
+        QueryClient.prototype,
+        "invalidateQueries",
+      );
+      mockCanGoBack.mockReturnValue(true);
+
+      renderComponent(<ScanScreen />);
+      fireEvent.click(await screen.findByLabelText("Log It"));
+
+      await waitFor(() => {
+        expect(mockGoBack).toHaveBeenCalledOnce();
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/daily-budget"],
+      });
+
+      invalidateSpy.mockRestore();
     });
   });
 });
@@ -1065,6 +1217,600 @@ describe("ScanScreen — label mode forwards verifyBarcode to LabelAnalysis", ()
         imageUri: "file:///label.jpg",
         localOCRText: OCR,
       });
+    });
+  });
+});
+
+describe("ScanScreen — fetchProductInfo Warning haptic is gated on liveness (audit L1)", () => {
+  const dangerFlag = {
+    id: "allergen:tree_nuts",
+    kind: "allergen",
+    severity: "danger",
+    tier: "safety",
+    title: "Contains Tree Nuts",
+  };
+
+  const driveBarcodeLock = async () => {
+    renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    expect(firstHandler).toBeDefined();
+
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+  };
+
+  it("fires the Warning haptic for a danger flag while the screen is focused", async () => {
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Trail Mix",
+            calories: 200,
+            flags: [dangerFlag],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    await driveBarcodeLock();
+
+    await waitFor(() => {
+      expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+        Haptics.NotificationFeedbackType.Warning,
+      );
+    });
+  });
+
+  // Reproduces audit finding L1 (ScanScreen.tsx ~396-398): fetchProductInfo
+  // fired the Warning haptic after its async fetch resolved with no check
+  // that the user was still on Scan. Fails on main.
+  it("does not fire the Warning haptic when the screen lost focus before the fetch resolved", async () => {
+    let resolveFetch: (value: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return pending;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    await driveBarcodeLock();
+
+    // The user leaves Scan while the barcode lookup is still in flight.
+    mockNavigationObject.isFocused = () => false;
+
+    await act(async () => {
+      resolveFetch({
+        json: async () => ({
+          productName: "Trail Mix",
+          calories: 200,
+          flags: [dangerFlag],
+        }),
+      } as Response);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Control: the fetch really did resolve and dispatch PRODUCT_LOADED —
+    // otherwise "not called" would be true for the wrong reason.
+    expect(await screen.findByText("⚠ Contains Tree Nuts")).toBeTruthy();
+    expect(Haptics.notificationAsync).not.toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Warning,
+    );
+  });
+});
+
+describe("ScanScreen — onSmartPhotoConfirm's navigate case does not leak untracked destinations", () => {
+  // has_barcode and grocery_receipt/restaurant_receipt route to screens whose
+  // params never carry `imageUri` (ClassificationRoute in scan-screen-utils.ts).
+  // onSmartPhotoConfirm used to call releaseTempUri(imageUri) unconditionally
+  // before routing, which forgot the file from pendingTempUrisRef WITHOUT
+  // deleting it — for these two outcomes nothing else ever deletes it either.
+  // The fix leaves the URI tracked for these outcomes so the existing
+  // blur-triggered abandon-cleanup (resetScan -> cleanupPendingUris) deletes
+  // it once the navigate's own blur fires — proven below by simulating that
+  // blur and asserting deleteAsync eventually runs.
+
+  it("does not permanently leak the capture file when smart-classification routes to NutritionDetail (has_barcode)", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce({
+      sessionId: null,
+      intent: "auto",
+      foods: [],
+      overallConfidence: 0.9,
+      needsFollowUp: false,
+      followUpQuestions: [],
+      contentType: "has_barcode",
+      barcode: "0778918011332",
+    });
+
+    const { rerender } = renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    const confirm = await screen.findByLabelText(
+      "Confirm smart photo analysis",
+    );
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("NutritionDetail", {
+        barcode: "0778918011332",
+      });
+    });
+    // Not yet deleted — ScanScreen hasn't blurred yet.
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    // Simulate the blur the real navigate causes (same pattern as the
+    // existing "abandoned by leaving Scan" test below) — this is what must
+    // eventually clean up the file, since NutritionDetail's params never
+    // carried it.
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+  });
+
+  it("does not permanently leak the capture file when smart-classification routes to ReceiptCapture (grocery_receipt)", async () => {
+    mockFeatures.value = { receiptScanner: true };
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce({
+      sessionId: null,
+      intent: "auto",
+      foods: [],
+      overallConfidence: 0.9,
+      needsFollowUp: false,
+      followUpQuestions: [],
+      contentType: "grocery_receipt",
+    });
+
+    const { rerender } = renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    const confirm = await screen.findByLabelText(
+      "Confirm smart photo analysis",
+    );
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("ReceiptCapture");
+    });
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+  });
+});
+
+describe("ScanScreen — abandoned capture files are deleted (audit L2)", () => {
+  const classificationResult = {
+    sessionId: null,
+    intent: "auto" as const,
+    foods: [],
+    overallConfidence: 0.9,
+    needsFollowUp: false,
+    followUpQuestions: [],
+    contentType: "prepared_meal" as const,
+  };
+
+  // Reproduces audit finding L2: capturePhotoToFile writes to the OS temp
+  // dir and nothing ever deleted it. Fails on main (deleteAsync is never
+  // imported/called by ScanScreen).
+  it("deletes the captured photo file when a failed smart classification is retried", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockRejectedValueOnce(
+      new Error("classification failed"),
+    );
+
+    renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    const retry = await screen.findByLabelText("Retry smart photo analysis");
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(retry);
+    });
+
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+  });
+
+  // The other half of the Risk note: leaving Scan mid-classification (no
+  // retry, no confirm) must still clean up — abandonment via blur, not just
+  // via the retry button.
+  it("deletes the captured photo file when the smart flow is abandoned by leaving Scan", async () => {
+    vi.mocked(uploadPhotoForAnalysis).mockResolvedValueOnce(
+      classificationResult,
+    );
+
+    const { rerender } = renderComponent(<ScanScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    await screen.findByLabelText("Confirm smart photo analysis");
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+  });
+
+  // Drives the real barcode-lock -> STEP2 capture -> confirm flow (the
+  // mockShortcutToSessionComplete reducer override used below skips CAMERA_READY
+  // straight to SESSION_COMPLETE, so it never runs trackTempUri — a real capture
+  // is required for these two tests to actually exercise pendingTempUrisRef).
+  const driveToStep2Reviewing = async () => {
+    const rendered = renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+
+    fireEvent.click(await screen.findByLabelText("Scan Nutrition Facts →"));
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    return rendered;
+  };
+
+  // Risk guard: a photo forwarded to NutritionDetail must survive — the
+  // SESSION_COMPLETE navigate releases it before firing, so the blur that
+  // navigation causes must not also delete it.
+  //
+  // The original version of this test used mockShortcutToSessionComplete,
+  // which jumps CAMERA_READY straight to SESSION_COMPLETE without ever
+  // capturing a photo — trackTempUri never ran, so pendingTempUrisRef never
+  // held "file:///label.jpg" and the "not deleted" assertion passed whether
+  // or not the SESSION_COMPLETE effect's releaseTempUri calls existed
+  // (mutation-checked: deleting them here still leaves this version green
+  // unless the drive below is real). Driving a real capture makes this test
+  // actually depend on the guard.
+  it("does not delete the nutrition photo forwarded to NutritionDetail", async () => {
+    const { rerender } = await driveToStep2Reviewing();
+
+    fireEvent.click(
+      await screen.findByLabelText("Finish scan", {}, { timeout: 3000 }),
+    );
+
+    await waitFor(
+      () => {
+        expect(mockNavigate).toHaveBeenCalledWith(
+          "NutritionDetail",
+          expect.objectContaining({
+            nutritionImageUri: "file:///label.jpg",
+          }),
+        );
+      },
+      { timeout: 3000 },
+    );
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    // The navigate above blurs ScanScreen — simulate that and confirm the
+    // abandon-cleanup still doesn't delete the file NutritionDetail now owns.
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    expect(mockDeleteAsync).not.toHaveBeenCalledWith(
+      "file:///label.jpg",
+      expect.anything(),
+    );
+  });
+
+  // Positive control (the denominator for the test above): abandoning the
+  // scan at STEP2_REVIEWING — before confirming — must still delete the file,
+  // proving trackTempUri really did track it and the abandon-cleanup path is
+  // live for this flow, not just for the smart-photo flow covered above.
+  it("deletes the STEP2 photo when the two-step flow is abandoned before confirming", async () => {
+    const { rerender } = await driveToStep2Reviewing();
+
+    await screen.findByLabelText(
+      "Nutrition label captured. Double tap to edit.",
+    );
+    expect(mockDeleteAsync).not.toHaveBeenCalled();
+
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+  });
+});
+
+describe("ScanScreen — onEditStep2/onEditStep3 release the transferred photo, not the whole phase", () => {
+  const driveBarcodeLockAndProceed = async () => {
+    const rendered = renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+    fireEvent.click(await screen.findByLabelText("Scan Nutrition Facts →"));
+
+    return rendered;
+  };
+
+  // Zero coverage previously (PR #1055 review finding): onEditStep2 releases
+  // the STEP2 photo (ownership transfers to LabelAnalysis) instead of leaving
+  // it for the abandon-cleanup this navigate's own blur would otherwise run.
+  it("onEditStep2 releases the photo instead of leaving it for abandon-cleanup", async () => {
+    const { rerender } = await driveBarcodeLockAndProceed();
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    fireEvent.click(
+      await screen.findByLabelText(
+        "Nutrition label captured. Double tap to edit.",
+      ),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith("LabelAnalysis", {
+      imageUri: "file:///label.jpg",
+    });
+
+    // Simulate the blur this navigate causes — must NOT delete: ownership
+    // transferred to LabelAnalysis, which owns its own cleanup.
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    expect(mockDeleteAsync).not.toHaveBeenCalledWith(
+      "file:///label.jpg",
+      expect.anything(),
+    );
+  });
+
+  // Zero coverage previously. onEditStep3 releases only frontImageUri (the
+  // URI it knows transfers) — nutritionImageUri must stay pending so the
+  // abandon-cleanup this navigate's blur triggers still deletes it. Distinct
+  // mock paths per capture are required: mockCapturePhotoToFile resolving the
+  // same path for both captures would dedupe them to one pendingTempUrisRef
+  // entry and make this assertion vacuous.
+  it("onEditStep3 releases only frontImageUri, leaving nutritionImageUri pending for abandon-cleanup", async () => {
+    mockCapturePhotoToFile
+      .mockResolvedValueOnce({ filePath: "/label.jpg" })
+      .mockResolvedValueOnce({ filePath: "/front.jpg" });
+
+    const { rerender } = await driveBarcodeLockAndProceed();
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    // Auto-advance (1s) out of STEP2_REVIEWING into STEP2_CONFIRMED.
+    await screen.findByLabelText("Finish scan", {}, { timeout: 3000 });
+
+    // Front-of-package capture -> STEP3_REVIEWING.
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+
+    fireEvent.click(
+      await screen.findByLabelText("Front label captured. Double tap to edit."),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      "FrontLabelConfirm",
+      expect.objectContaining({ imageUri: "file:///front.jpg" }),
+    );
+
+    mockIsFocused.value = false;
+    await act(async () => {
+      rerender(<ScanScreen />);
+    });
+
+    // frontImageUri was released — ownership transferred, must survive.
+    expect(mockDeleteAsync).not.toHaveBeenCalledWith(
+      "file:///front.jpg",
+      expect.anything(),
+    );
+    // nutritionImageUri was never released here — abandon-cleanup deletes it.
+    expect(mockDeleteAsync).toHaveBeenCalledWith("file:///label.jpg", {
+      idempotent: true,
+    });
+  });
+});
+
+// Regression coverage for todos/archive/P2-2026-09-23-touch-targets-regressed-below-44pt.md
+// (M13, 2026-09-23 front-end audit): the close-camera button and the confirm
+// buttons fell below the 44pt platform minimum. Reads the RAW props each
+// Pressable/TouchableOpacity receives (captured above) rather than the
+// rendered DOM node — the shared mock drops Pressable's `style` before
+// rendering, so a DOM-based assertion can't see it either way.
+function flattenStyle(
+  style: unknown,
+  pressed = false,
+): Record<string, unknown> {
+  if (typeof style === "function") {
+    return flattenStyle(
+      (style as (state: { pressed: boolean }) => unknown)({ pressed }),
+    );
+  }
+  if (Array.isArray(style)) {
+    return style.reduce(
+      (acc: Record<string, unknown>, s) => ({ ...acc, ...flattenStyle(s) }),
+      {},
+    );
+  }
+  return (style as Record<string, unknown> | null | undefined) ?? {};
+}
+
+function flattenHitSlop(hitSlop: unknown): {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+} {
+  if (typeof hitSlop === "number") {
+    return { top: hitSlop, bottom: hitSlop, left: hitSlop, right: hitSlop };
+  }
+  if (hitSlop && typeof hitSlop === "object") {
+    const h = hitSlop as Record<string, number>;
+    return {
+      top: h.top ?? 0,
+      bottom: h.bottom ?? 0,
+      left: h.left ?? 0,
+      right: h.right ?? 0,
+    };
+  }
+  return { top: 0, bottom: 0, left: 0, right: 0 };
+}
+
+/** visual box size (explicit width/height, or minWidth/minHeight, or the
+ * given fallback) PLUS hitSlop on each axis — hitSlop always adds to the
+ * visual box, it never gets shadowed by an explicit size. */
+function effectiveTouchSize(
+  props: Record<string, unknown> | undefined,
+  fallbackVisualSize: number,
+): { width: number; height: number } {
+  const style = flattenStyle(props?.style);
+  const hitSlop = flattenHitSlop(props?.hitSlop);
+  const visualWidth =
+    typeof style.width === "number"
+      ? style.width
+      : typeof style.minWidth === "number"
+        ? style.minWidth
+        : fallbackVisualSize;
+  const visualHeight =
+    typeof style.height === "number"
+      ? style.height
+      : typeof style.minHeight === "number"
+        ? style.minHeight
+        : fallbackVisualSize;
+  return {
+    width: visualWidth + hitSlop.left + hitSlop.right,
+    height: visualHeight + hitSlop.top + hitSlop.bottom,
+  };
+}
+
+describe("ScanScreen — touch targets meet the 44pt minimum (P2-2026-09-23, M13)", () => {
+  beforeEach(() => {
+    for (const key of Object.keys(capturedPressProps)) {
+      delete capturedPressProps[key];
+    }
+  });
+
+  it("Close camera button reaches 44pt on both axes (visual 36x36 + hitSlop)", () => {
+    renderComponent(<ScanScreen />);
+
+    // Denominator: the button actually rendered and was captured.
+    expect(capturedPressProps["Close camera"]).toBeDefined();
+
+    // styles.closeBtn (ScanScreen.tsx) is a fixed 36x36 box.
+    const { width, height } = effectiveTouchSize(
+      capturedPressProps["Close camera"],
+      36,
+    );
+    expect(width).toBeGreaterThanOrEqual(44);
+    expect(height).toBeGreaterThanOrEqual(44);
+
+    // RN clips hitSlop to the parent's bounds: the 4pt slop needs room on
+    // the right (the button's own marginRight inside the full-width overlay)
+    // and on top (the overlay's paddingTop). The overlay is a plain View, so
+    // its props are captured by testID.
+    const closeStyle = (capturedPressProps["Close camera"]?.style ?? {}) as {
+      marginRight?: number;
+    };
+    expect(closeStyle.marginRight ?? 0).toBeGreaterThanOrEqual(4);
+    const overlay = flattenStyle(
+      capturedPressProps["view:scan-top-overlay"]?.style,
+    );
+    expect(Number(overlay.paddingTop ?? 0)).toBeGreaterThanOrEqual(4);
+  });
+
+  describe("confirm-card Dismiss / Log It buttons", () => {
+    beforeEach(() => {
+      // confirmCard (Dismiss/Log It) only renders when returnAfterLog is true
+      // (ScanScreen.tsx's SESSION_COMPLETE effect) — mirrors the "post-log-success
+      // close" / "confirm-card safety badge" setups above.
+      mockRouteParams.value = { returnAfterLog: true };
+      mockShortcutToSessionComplete.value = true;
+    });
+
+    it("both reach a 44pt minimum height", async () => {
+      renderComponent(<ScanScreen />);
+      await screen.findByLabelText("Log It");
+
+      // styles.confirmDismissButton/confirmLogButton (ScanScreen.tsx) are
+      // full-width flex-row buttons — only the height axis is at risk here
+      // (padding-only, no minHeight); width is governed by the row's flex
+      // sizing, not a fixed visual constant.
+      const dismissHeight = flattenStyle(
+        capturedPressProps["Dismiss"]?.style,
+      ).minHeight;
+      const logHeight = flattenStyle(
+        capturedPressProps["Log It"]?.style,
+      ).minHeight;
+
+      expect(dismissHeight).toBeGreaterThanOrEqual(44);
+      expect(logHeight).toBeGreaterThanOrEqual(44);
     });
   });
 });

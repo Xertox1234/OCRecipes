@@ -56,5 +56,8 @@ export function useBatchConfirm() {
         });
       }
     },
+    // Its one call site (BatchSummaryScreen.handleConfirm) already toasts on
+    // failure via its own try/catch.
+    meta: { silentError: true },
   });
 }

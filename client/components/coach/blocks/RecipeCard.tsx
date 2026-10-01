@@ -44,7 +44,14 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
             onAction?.({
               type: "navigate",
               screen: "FeaturedRecipeDetail",
-              params: { recipeId: recipe.recipeId, source: recipe.source },
+              // A Spoonacular id previews through the catalog endpoint; the
+              // old `source` param was never read, so every card opened as a
+              // community id (R1).
+              params: {
+                recipeId: recipe.recipeId,
+                recipeType:
+                  recipe.source === "spoonacular" ? "catalog" : "community",
+              },
             })
           }
           accessibilityRole="button"

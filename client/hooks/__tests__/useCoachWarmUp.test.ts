@@ -16,6 +16,16 @@ describe("useCoachWarmUp", () => {
     vi.clearAllMocks();
   });
 
+  // CoachChat's handleSend depends on this object; a fresh literal per render
+  // gave handleSend (and every row's renderItem) a new identity whenever the
+  // parent screen re-rendered.
+  it("returns the same object across re-renders with the same conversation", () => {
+    const { result, rerender } = renderHook(() => useCoachWarmUp(42));
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
+  });
+
   describe("sendWarmUp", () => {
     it("does not fire for transcript shorter than 20 chars", async () => {
       vi.useFakeTimers();

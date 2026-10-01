@@ -3,11 +3,25 @@ import {
   coachBlockSchema,
   type CoachBlock,
 } from "@shared/schemas/coach-blocks";
+import { isFinderBlockType } from "@shared/schemas/recipe-finder";
 import { logger } from "../lib/logger";
 
 export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
   const valid: CoachBlock[] = [];
   for (const block of rawBlocks) {
+    // Finder blocks carry flow state the server derives the next step from;
+    // a model-authored one would let model output steer the flow.
+    if (
+      typeof block === "object" &&
+      block !== null &&
+      isFinderBlockType((block as { type?: unknown }).type)
+    ) {
+      logger.debug(
+        { type: (block as { type?: unknown }).type },
+        "Dropped server-only finder block from model output",
+      );
+      continue;
+    }
     const result = coachBlockSchema.safeParse(block);
     if (result.success) {
       valid.push(result.data);
@@ -80,6 +94,8 @@ Rules:
 - When you DO emit a coach_blocks fence, it must contain a quick_replies block with 2-3 contextual follow-up options; include other block types only when they add value
 - Place the coach_blocks fence after your text response
 - For recipe suggestions, use search_recipes tool first to get real recipe data
+- Never put a recipe image or link in your prose reply (no ![]() markdown images, no [text](url) links). Refer to a recipe by its name.
+- Use a recipe_card only when you have real calories, protein and prep time for that recipe from a tool result — search_recipes does not return calories or protein, so never estimate them to fill a card; name the recipe in prose instead. When you do use a recipe_card, put its image URL in the imageUrl field.
 - For nutrition data, use lookup_nutrition tool first for accuracy
 
 Example response (match this format exactly — prose first, then the fence):
@@ -88,3 +104,21 @@ You're at 1,400 of 2,000 cal with 60g protein still to go — dinner has room fo
 [{"type":"quick_replies","options":[{"label":"Dinner ideas","message":"Suggest a dinner that fits my remaining macros"},{"label":"Show my progress","message":"How is my day looking so far?"}]}]
 \`\`\`
 `.trim();
+
+const SEARCH_RECIPES_RULE =
+  "- For recipe suggestions, use search_recipes tool first to get real recipe data";
+const RECIPE_CARD_RULE =
+  "- Use a recipe_card only when you have real calories, protein and prep time for that recipe from a tool result — search_recipes does not return calories or protein, so never estimate them to fill a card; name the recipe in prose instead. When you do use a recipe_card, put its image URL in the imageUrl field.";
+const FINDER_RECIPE_RULE =
+  '- Recipe requests are answered by the app\'s recipe finder, not by you. If the user wants a recipe, tell them to ask for one directly (for example "find me a chicken dinner recipe") and do not search for or invent recipes yourself';
+const FINDER_RECIPE_CARD_RULE =
+  "- Never emit a recipe_card: you have no tool that returns real recipe data";
+
+/** BLOCKS_SYSTEM_PROMPT, minus search_recipes when the finder is on. */
+export function getBlocksSystemPrompt(finderEnabled: boolean): string {
+  if (!finderEnabled) return BLOCKS_SYSTEM_PROMPT;
+  return BLOCKS_SYSTEM_PROMPT.replace(
+    SEARCH_RECIPES_RULE,
+    FINDER_RECIPE_RULE,
+  ).replace(RECIPE_CARD_RULE, FINDER_RECIPE_CARD_RULE);
+}

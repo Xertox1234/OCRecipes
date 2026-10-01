@@ -75,6 +75,9 @@ export function useGenerateMealPlanFromPantry() {
       );
       return res.json();
     },
+    // Its one call site (ReceiptMealPlanScreen) already shows an inline
+    // error banner, driven by `mutation.isError`.
+    meta: { silentError: true },
   });
 }
 

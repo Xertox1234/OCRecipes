@@ -1,0 +1,114 @@
+[
+  {
+    "message": "make it spicier",
+    "recipeTitle": "Chicken Tikka Masala",
+    "expected": "refine_current"
+  },
+  {
+    "message": "swap chicken for tofu",
+    "recipeTitle": "Chicken Stir Fry",
+    "expected": "refine_current"
+  },
+  {
+    "message": "double it for 8",
+    "recipeTitle": "Beef Chili",
+    "expected": "refine_current"
+  },
+  {
+    "message": "can you make it dairy free?",
+    "recipeTitle": "Creamy Tuscan Chicken",
+    "expected": "refine_current"
+  },
+  {
+    "message": "less salt please",
+    "recipeTitle": "Miso Soup",
+    "expected": "refine_current"
+  },
+  {
+    "message": "use brown rice instead",
+    "recipeTitle": "Salmon Rice Bowl",
+    "expected": "refine_current"
+  },
+  {
+    "message": "make it vegan",
+    "recipeTitle": "Lasagna",
+    "expected": "refine_current"
+  },
+  {
+    "message": "cut the calories a bit",
+    "recipeTitle": "Mac and Cheese",
+    "expected": "refine_current"
+  },
+  {
+    "message": "now a dessert",
+    "recipeTitle": "Grilled Salmon",
+    "expected": "new_request"
+  },
+  {
+    "message": "something vegan instead",
+    "recipeTitle": "Beef Tacos",
+    "expected": "new_request"
+  },
+  {
+    "message": "what about breakfast?",
+    "recipeTitle": "Chicken Curry",
+    "expected": "new_request"
+  },
+  {
+    "message": "something with salmon instead",
+    "recipeTitle": "Pork Chops",
+    "expected": "new_request"
+  },
+  {
+    "message": "give me another recipe",
+    "recipeTitle": "Greek Salad",
+    "expected": "new_request"
+  },
+  {
+    "message": "I also need a side dish",
+    "recipeTitle": "Roast Chicken",
+    "expected": "new_request"
+  },
+  {
+    "message": "any soup ideas?",
+    "recipeTitle": "Caesar Salad",
+    "expected": "new_request"
+  },
+  {
+    "message": "now something for lunch tomorrow",
+    "recipeTitle": "Pancakes",
+    "expected": "new_request"
+  },
+  {
+    "message": "can I freeze this",
+    "recipeTitle": "Lentil Soup",
+    "expected": "other"
+  },
+  { "message": "thanks!", "recipeTitle": "Banana Bread", "expected": "other" },
+  {
+    "message": "how long does it keep?",
+    "recipeTitle": "Chicken Salad",
+    "expected": "other"
+  },
+  {
+    "message": "what does braise mean?",
+    "recipeTitle": "Braised Short Ribs",
+    "expected": "other"
+  },
+  {
+    "message": "perfect, saving it",
+    "recipeTitle": "Shrimp Pasta",
+    "expected": "other"
+  },
+  {
+    "message": "is this good for meal prep?",
+    "recipeTitle": "Turkey Chili",
+    "expected": "other"
+  },
+  {
+    "message": "what wine goes with it?",
+    "recipeTitle": "Beef Bourguignon",
+    "expected": "other"
+  },
+  { "message": "ok", "recipeTitle": "Overnight Oats", "expected": "other" }
+]

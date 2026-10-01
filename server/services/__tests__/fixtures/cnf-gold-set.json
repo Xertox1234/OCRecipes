@@ -1,0 +1,100 @@
+{
+  "description": "Labeled gold set for the CNF whole-word scorer (scoreCNFMatch/fuzzyMatchCNF in server/services/nutrition-lookup.ts). Each entry is a query and a regex (source string, case-insensitive) the WINNING CNF food_description must match for the query to count as right; no match at all is separately tallied as no-match; anything else is wrong. Read back by server/services/__tests__/nutrition-lookup.test.ts (\"fuzzyMatchCNF — committed gold set\"). See docs/solutions/logic-errors/food-name-matcher-whole-words-gold-set-2026-09-27.md and todos/archive/P3-2026-09-27-cnf-matcher-review-followups.md.",
+  "baseline": "The first 51 entries are the original PR #1120 / #1122 gold set (41/6/4 pre-#1126, 43/4/4 after #1126, measured against the real 5,690-row CNF EN list). The remaining 16 entries were added by the P3 matcher follow-up todo (2026-09-27) for the taco, dehydrated-form-residual and beverage-pinned-name items. Combined measured result against the real CNF EN list: right 52, wrong 11, no-match 4.",
+  "entries": [
+    { "query": "egg", "pattern": "^Egg, chicken, whole" },
+    { "query": "butter", "pattern": "^Butter, " },
+    { "query": "banana", "pattern": "^Banana, raw" },
+    { "query": "apple", "pattern": "^Apple," },
+    { "query": "almonds", "pattern": "^Nuts, almonds" },
+    { "query": "orange juice", "pattern": "^Orange juice" },
+    { "query": "bagel", "pattern": "^Bagel, " },
+    { "query": "rice", "pattern": "^Grains, rice" },
+    { "query": "avocado", "pattern": "^Avocado, raw" },
+    { "query": "potato", "pattern": "^Potato," },
+    { "query": "tomato", "pattern": "^Tomato," },
+    { "query": "carrot", "pattern": "^Carrot," },
+    { "query": "onion", "pattern": "^Onion," },
+    { "query": "corn", "pattern": "^Corn, " },
+    { "query": "salmon", "pattern": "^Fish, salmon" },
+    { "query": "tofu", "pattern": "^Tofu" },
+    { "query": "spinach", "pattern": "^Spinach," },
+    { "query": "broccoli", "pattern": "^Broccoli," },
+    { "query": "cheddar cheese", "pattern": "^Cheese, cheddar" },
+    { "query": "peanut butter", "pattern": "^Peanut butter" },
+    { "query": "honey", "pattern": "^Sweets, honey" },
+    { "query": "sugar", "pattern": "^Sweets, sugars?, " },
+    { "query": "white sugar", "pattern": "^Sweets, sugars, granulated" },
+    { "query": "olive oil", "pattern": "^Vegetable oil, olive" },
+    { "query": "ground beef", "pattern": "^Beef, ground" },
+    { "query": "lentils", "pattern": "^Lentils," },
+    { "query": "black beans", "pattern": "^Beans, black" },
+    { "query": "strawberries", "pattern": "^Strawberry," },
+    { "query": "watermelon", "pattern": "^Watermelon" },
+    { "query": "papaya", "pattern": "^Papaya, raw" },
+    { "query": "milk", "pattern": "^Milk, fluid" },
+    { "query": "coffee", "pattern": "^Coffee, brewed" },
+    { "query": "greek yogurt", "pattern": "^Yogourt, Greek" },
+    { "query": "chicken breast", "pattern": "^Chicken, broiler, breast" },
+    {
+      "query": "egg, chicken, whole, cooked",
+      "pattern": "^Egg, chicken, whole, cooked"
+    },
+    {
+      "query": "egg chicken whole raw",
+      "pattern": "^Egg, chicken, whole, fresh or frozen, raw"
+    },
+    {
+      "query": "bread, whole wheat, toasted",
+      "pattern": "^Bread, whole wheat.*toasted"
+    },
+    { "query": "butter, salted", "pattern": "^Butter," },
+    { "query": "banana, raw", "pattern": "^Banana, raw" },
+    { "query": "apple, raw", "pattern": "^Apple, raw" },
+    { "query": "almonds, raw", "pattern": "^Nuts, almonds" },
+    { "query": "juice, orange, fresh-squeezed", "pattern": "^Orange juice" },
+    { "query": "bread, bagel, plain", "pattern": "^Bagel, plain" },
+    {
+      "query": "rice, white, long-grain, cooked",
+      "pattern": "^Grains, rice, white, long-grain.*cooked"
+    },
+    {
+      "query": "carbonated drinks, cola",
+      "pattern": "^Carbonated drinks, cola"
+    },
+    {
+      "query": "yogurt, greek, plain",
+      "pattern": "^Yogourt, Greek style, plain"
+    },
+    {
+      "query": "chicken, breast, roasted",
+      "pattern": "^Chicken, broiler, breast"
+    },
+    { "query": "avocado, raw", "pattern": "^Avocado, raw" },
+    { "query": "coffee, brewed", "pattern": "^Coffee, brewed" },
+    { "query": "milk, 2%", "pattern": "^Milk, fluid, partly skimmed, 2%" },
+    { "query": "watermelon, raw", "pattern": "^Watermelon, raw" },
+
+    { "query": "taco", "pattern": "^Fast foods, mexican, taco with" },
+    { "query": "tacos", "pattern": "^Fast foods, mexican, taco with" },
+    { "query": "1 taco", "pattern": "^Fast foods, mexican, taco with" },
+    { "query": "beef taco", "pattern": "^Fast foods, mexican, taco with beef" },
+    {
+      "query": "chicken taco",
+      "pattern": "^Fast foods, mexican, taco with chicken"
+    },
+
+    { "query": "cocoa", "pattern": "^Sweets, cocoa, powder" },
+    { "query": "currant", "pattern": "^Currant, zante, dried" },
+    { "query": "currants", "pattern": "^Currant, zante, dried" },
+    { "query": "thyme", "pattern": "^Spices, thyme, dried" },
+    { "query": "rosemary", "pattern": "^Spices, rosemary, dried" },
+    { "query": "dill weed", "pattern": "^Spices, dill weed, dried" },
+    { "query": "cherries", "pattern": "^Cherry, sweet, raw" },
+
+    { "query": "tea, brewed", "pattern": "^Tea, brewed" },
+    { "query": "cola", "pattern": "^Carbonated drinks, cola" },
+    { "query": "cream, table", "pattern": "^Cream, table" },
+    { "query": "sugar, granulated", "pattern": "^Sweets, sugars, granulated" }
+  ]
+}

@@ -148,6 +148,8 @@ Route flow: set `text/event-stream` headers → `res.flushHeaders()` (required �
 - Accumulate `fullResponse` for DB persistence before ending; write a terminal `{ done: true }` event on success and an `{ error: ... }` event on failure.
 - `res.end()` always runs — never leave the SSE connection dangling.
 - An `isAborted` callback lets the service check client disconnect without importing Express types.
+- Client-disconnect detection is `res.on("close")` gated on `!res.writableFinished`, **never `req.on("close")`**. After `express.json()` the request's `close` has already fired, so a late `req` listener is dead code (M8 was dead until 2026-09-24). Any disconnect behavior needs a real-socket test (`postAndDisconnect` in `server/routes/__tests__/chat.test.ts`); supertest cannot drop a connection. See `docs/solutions/logic-errors/req-close-never-fires-after-body-parser-use-res-close-2026-09-24.md`
+- A service generator whose policy is "finish and save after a disconnect" must have **no `yield` between a paid claim (generation / Spoonacular quota) and its persist**. The route's `if (aborted) break` calls `return()`, which completes the generator at whatever yield it is suspended on, so not checking `isAborted` is not enough. List each claim path's yields and require a test that `return()`s at the first post-claim yield and then asserts the row was persisted. See `docs/solutions/logic-errors/yield-between-paid-claim-and-persist-drops-work-on-disconnect-2026-09-28.md`
 
 Reference: `server/routes/chat.ts`, `server/services/coach-pro-chat.ts`.
 
@@ -236,6 +238,7 @@ Context: `shared/schema.ts` defines the full PostgreSQL schema (33 tables); stor
 
 - [ ] `text()` for enum-like columns, never `pgEnum` — `pgEnum` requires an `ALTER TYPE` migration to add values; validate with a Zod enum at the boundary instead.
 - [ ] Unique indexes on cache composite keys.
+- [ ] **A descending index column's NULLS placement must match the query's.** Drizzle's query `desc(col)` emits a bare `DESC` (= `NULLS FIRST`), but the index builder defaults every column to `NULLS LAST`, so a bare `.desc()` in `index().on(...)` does not serve that `ORDER BY`. The planner still adds a `Sort` node, even on `NOT NULL` columns. Require `.desc().nullsFirst()`, and an `EXPLAIN` of the app's literal `ORDER BY` showing no `Sort` node (#1103; `docs/solutions/conventions/indexes-for-foreign-keys-and-sort-columns-2026-05-13.md`).
 - [ ] CHECK constraints don't conflict with `ON DELETE SET NULL` — prefer `ON DELETE CASCADE` or `ON DELETE RESTRICT` when a CHECK references the FK column.
 - [ ] New tables with secrets have safe-column sets.
 - [ ] All nutrition-bearing tables have `>= 0` CHECK constraints on calories, protein, carbs, fat columns (existing tables scannedItems, mealPlanRecipes, barcodeNutrition all have them).

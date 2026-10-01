@@ -6,6 +6,7 @@ module: client
 tags: [react-native, navigation, typescript, ai, zod, type-narrowing]
 applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx, shared/schemas/**/*.ts]
 created: '2026-05-13'
+last_updated: '2026-09-24'
 ---
 
 # Typed navigation dispatch from AI-generated actions
@@ -61,6 +62,35 @@ switch (screen) {
 
 `navigation.navigate(variable, params)` with a `string` variable forces TypeScript to accept any params shape (or none). With a literal `"FeaturedRecipeDetail"`, TypeScript requires `params` to match `{ recipeId: number; ... }`. The switch ensures each screen gets its correct param constraint while the Zod enum upstream ensures only allowlisted screens reach this code.
 
+## Exhaustiveness guard (required when switching over a discriminated union)
+
+**Refinement added 2026-09-24.**
+
+When this switch-on-literal-screen-names pattern is applied to dispatch a typed `navigate` call over a discriminated union, ALWAYS add an exhaustiveness-guard `default` arm — not just the per-screen switch cases themselves. The guard is the `never`-typed const plus `throw`; it turns a future unhandled union member into a compile error instead of a silent runtime no-op.
+
+This was discovered while updating `client/screens/ScanScreen.tsx`'s `onSmartPhotoConfirm` handler. A new switch over `ClassificationRoute` (six members: `PhotoAnalysis`, `LabelAnalysis`, `MenuScanResult`, `CookSessionCapture`, `ReceiptCapture`, `NutritionDetail`) replaced an untyped `navigation.navigate` cast. Two independent code reviewers flagged the same WARNING on the new switch: it had no `default`/exhaustiveness arm, so a future new `ClassificationRoute` member would compile clean and silently no-op (no navigation, no error surfaced) instead of failing loudly.
+
+The same file already established the fix on a sibling switch over `action.kind` nine lines away:
+
+```typescript
+default: {
+  // a silent no-op is exactly the bug this change fixes
+  const _exhaustive: never = action;
+  throw new Error(`Unhandled action kind: ${action.kind}`);
+}
+```
+
+The fix applied to the new switch uses the same pattern:
+
+```typescript
+default: {
+  const _exhaustive: never = action.route;
+  throw new Error(`Unhandled ClassificationRoute member: ${action.route}`);
+}
+```
+
+This is easy to omit because the switch still type-checks and lints clean without the `default` arm — no ESLint `switch-exhaustiveness-check` rule exists in this repo. Every switch over a discriminated union that dispatches typed navigation must include this guard.
+
 ## Exceptions
 
 When to use:
@@ -77,6 +107,7 @@ When NOT to use:
 
 - `client/components/coach/CoachChat.tsx` — `handleBlockAction` switch dispatch
 - `shared/schemas/coach-blocks.ts` — `NAVIGABLE_SCREENS` Zod enum + `navigateActionSchema`
+- `client/screens/ScanScreen.tsx` — `onSmartPhotoConfirm` switch over `ClassificationRoute` with exhaustiveness-guard default
 - "Whitelist AI-Generated Navigation Targets" pattern in `docs/legacy-patterns/security.md` — the validation side of this pattern
 
 Origin: Coach Pro code review (2026-04-10) — navigation type cast flagged as Important finding

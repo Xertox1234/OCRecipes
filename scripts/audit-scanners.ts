@@ -252,16 +252,23 @@ export function sweepFileLengths(
   entries: { path: string; lines: number }[],
   threshold: number = FILE_LENGTH_THRESHOLD,
 ): ScannerFinding[] {
-  return entries
-    .filter((e) => e.lines > threshold)
-    .map((e) => ({
-      tool: "file-length" as const,
-      severity: "Low" as const,
-      description: `File exceeds ${threshold} lines (${e.lines})`,
-      files: e.path,
-      verification:
-        "re-run: npx tsx scripts/audit-scanners.ts <scope> (file-length sweep)",
-    }));
+  return (
+    entries
+      .filter((e) => e.lines > threshold)
+      // Biggest first: every file-length finding is the same "Low" severity, so
+      // capFindings' severity sort is a no-op tie here and preserves this order —
+      // without it, a per-tool cap kept whatever git ls-files happened to list
+      // first (alphabetical), silently hiding the worst offenders.
+      .sort((a, b) => b.lines - a.lines)
+      .map((e) => ({
+        tool: "file-length" as const,
+        severity: "Low" as const,
+        description: `File exceeds ${threshold} lines (${e.lines})`,
+        files: e.path,
+        verification:
+          "re-run: npx tsx scripts/audit-scanners.ts <scope> (file-length sweep)",
+      }))
+  );
 }
 
 const SEVERITY_RANK: Record<Severity, number> = {
@@ -274,13 +281,14 @@ const SEVERITY_RANK: Record<Severity, number> = {
 export function capFindings(
   findings: ScannerFinding[],
   max: number = MAX_FINDINGS_PER_TOOL,
-): { kept: ScannerFinding[]; dropped: number } {
+): { kept: ScannerFinding[]; dropped: number; hidden: ScannerFinding[] } {
   const sorted = [...findings].sort(
     (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity],
   );
   return {
     kept: sorted.slice(0, max),
     dropped: Math.max(0, sorted.length - max),
+    hidden: sorted.slice(max),
   };
 }
 
@@ -361,6 +369,8 @@ interface ToolRun {
   note: string;
   findings: ScannerFinding[];
   dropped: number;
+  /** The findings the per-tool cap dropped — printed as a "hidden by cap" list in the CLI summary. */
+  hidden: ScannerFinding[];
 }
 
 function timeoutMs(): number {
@@ -410,11 +420,18 @@ function noteWithStderr(base: string, res: ExecResult): string {
 }
 
 function skipped(tool: ScannerName, note: string): ToolRun {
-  return { tool, status: "skipped", note, findings: [], dropped: 0 };
+  return {
+    tool,
+    status: "skipped",
+    note,
+    findings: [],
+    dropped: 0,
+    hidden: [],
+  };
 }
 
 function ok(tool: ScannerName, findings: ScannerFinding[]): ToolRun {
-  const { kept, dropped } = capFindings(findings);
+  const { kept, dropped, hidden } = capFindings(findings);
   return {
     tool,
     status: "ok",
@@ -424,6 +441,7 @@ function ok(tool: ScannerName, findings: ScannerFinding[]): ToolRun {
         : "",
     findings: kept,
     dropped,
+    hidden,
   };
 }
 
@@ -648,12 +666,24 @@ export function runCli(argv: string[]): number {
 
   console.log(`## Deterministic scanner findings — scope: ${scope}\n`);
   console.log("Summary:");
+  const HIDDEN_PREVIEW = 5;
   for (const run of runs) {
     if (run.status === "skipped") {
       console.log(`- ${run.tool}: skipped — ${run.note} (fail-open)`);
     } else {
       const capNote = run.note ? ` (${run.note})` : "";
       console.log(`- ${run.tool}: ${run.findings.length} finding(s)${capNote}`);
+      if (run.hidden.length > 0) {
+        const preview = run.hidden
+          .slice(0, HIDDEN_PREVIEW)
+          .map((f) => f.files)
+          .join(", ");
+        const more =
+          run.hidden.length > HIDDEN_PREVIEW
+            ? `, +${run.hidden.length - HIDDEN_PREVIEW} more`
+            : "";
+        console.log(`  hidden by cap: ${preview}${more}`);
+      }
     }
   }
 

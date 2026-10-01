@@ -20,7 +20,7 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
    git worktree prune
    ```
 
-2. **Delete stale remote branches.** Every `/todo` run pushes a `todo/<slug>` branch for its PR; nothing deletes it after the PR merges, so they pile up on `origin`. Delete every remote branch whose PRs are **all `MERGED`** — but never one with an open PR, never one whose PR was closed WITHOUT merging (that is a rejection signal, not cleanup — see below), and never `main` or the current branch:
+2. **Delete stale remote branches.** Every `/todo` run pushes a `todo/<slug>` branch for its PR. The repo auto-deletes a PR's head branch on merge (`delete_branch_on_merge`), but a branch left from before that setting, or re-pushed after its PR merged, stays on `origin`. Delete every remote `todo/*` branch whose PRs are **all `MERGED`** (other branches are out of scope) — but never one with an open PR, never one whose PR was closed WITHOUT merging (that is a rejection signal, not cleanup — see below), and never `main` or the current branch:
 
    ```bash
    git fetch --prune --quiet
@@ -30,12 +30,15 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
    rm -f /tmp/todo-open-prs.txt /tmp/todo-delete-branches.txt /tmp/todo-closed-unmerged-branches.txt \
      /tmp/todo-local-branches.txt /tmp/todo-delete-local-branches.txt /tmp/todo-local-closed-unmerged-branches.txt \
      /tmp/todo-local-no-pr-branches.txt /tmp/todo-delete-skipped.txt /tmp/todo-scheduler-state.json
-   # ONE fetch of every PR; the open/merged/closed views below derive from it. gh returns
-   # newest-first, so a truncated fetch silently drops the OLDEST PRs — exactly the ones
-   # the sweep needs. If the returned count EQUALS the limit, treat the sweep as
+   # ONE fetch of every todo/* PR; the open/merged/closed views below derive from it.
+   # `head:todo/` matches head branches starting with "todo/" (measured 2026-09-28: 493
+   # PRs, set-equal to a full `gh api --paginate` listing filtered to todo/). An unfiltered
+   # fetch passed 1000 PRs, so the cap check below skipped the sweep on every run. gh
+   # returns newest-first, so a truncated fetch silently drops the OLDEST PRs — exactly
+   # the ones the sweep needs. If the returned count EQUALS the limit, treat the sweep as
    # unreliable: keep the open-PR list (best available data for Phase 2) but skip branch
    # deletion this run and note the skip in the Phase 5 summary.
-   gh pr list --state all --limit 1000 --json headRefName,state > /tmp/todo-all-prs.json \
+   gh pr list --state all --search "head:todo/" --limit 1000 --json headRefName,state > /tmp/todo-all-prs.json \
      || { rm -f /tmp/todo-all-prs.json; echo "gh pr list failed — step SKIPPED"; }
    if [ -s /tmp/todo-all-prs.json ]; then
      jq -r '.[] | select(.state=="OPEN")   | .headRefName' /tmp/todo-all-prs.json | sort -u > /tmp/todo-open-prs.txt
@@ -50,7 +53,7 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
        merged_only() {
          comm -12 /tmp/todo-merged-prs.txt "$1" | comm -23 - /tmp/todo-open-prs.txt | comm -23 - /tmp/todo-closed-prs.txt
        }
-       git branch -r --format='%(refname:short)' | sed 's#^origin/##' \
+       git branch -r --format='%(refname:short)' | sed 's#^origin/##' | grep '^todo/' \
          | grep -vxE "HEAD|main|${CURRENT:-main}" | sort -u > /tmp/todo-remote-branches.txt
        # Delete only all-MERGED branches: ≥1 merged PR, no open PR, no closed-unmerged PR.
        merged_only /tmp/todo-remote-branches.txt > /tmp/todo-delete-branches.txt
@@ -354,7 +357,7 @@ Dispatched agents run in the **background**. Launching them does not block your 
 
 ### Recording results
 
-Each executor reports one of: `success`, `failed`, `blocked`, `skipped`. Every `skipped`/`blocked` report carries a `REASON_CODE` (enum in the executor's Step 11) — keep it verbatim; Phase 5 routes on it. Each successful executor additionally reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes (auto-merge enabled)` = guard OK, executor already armed `gh pr merge --auto` — nothing further needed; `yes (auto-merge enable FAILED ...)` = guard OK but the `gh pr merge --auto` call itself errored — needs manual merge or review; `held` = guard HOLD via the path or todo-frontmatter gate, with the guard's reason line in parentheses; `review-required` = medium/high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them. These accumulate in `/tmp/todo-scheduler-state.json`'s `results` array as they arrive, rather than per batch — Phase 5 reads that array rather than relying on memory of the whole run.
+Each executor reports one of: `success`, `failed`, `blocked`, `skipped`. Every `skipped`/`blocked` report carries a `REASON_CODE` (enum in the executor's Step 11) — keep it verbatim; Phase 5 routes on it. Each successful executor additionally reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes (auto-merge enabled)` = guard OK, executor already armed `gh pr merge --auto` — nothing further needed; `yes (auto-merge enable FAILED ...)` = guard OK but the `gh pr merge --auto` call itself errored — needs manual merge or review; `held` = guard HOLD via the path or todo-frontmatter gate, with the guard's reason line in parentheses; `review-required` = medium/high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped; `lightweight — docs/config-only files` if the Lightweight path skipped it instead; else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them. These accumulate in `/tmp/todo-scheduler-state.json`'s `results` array as they arrive, rather than per batch — Phase 5 reads that array rather than relying on memory of the whole run.
 
 ## Phase 5 — Session Summary
 
@@ -395,7 +398,7 @@ After the queue is fully drained (or after early termination):
    Failed:    F
    Remaining: X (todos still in backlog after this session)
    Patterns codified: P
-   Short-circuited: SC (todos that reused a verified solution and skipped research; list the docs/solutions paths)
+   Short-circuited: SC (todos that reused a verified solution and skipped research — only `SHORT_CIRCUIT` values that are a docs/solutions path; list those paths. A `lightweight — …` value skipped research for an unrelated reason — a docs/config-only diff, no verified solution involved — and does not count toward SC.)
    Advisor: G green, Y yellow, R red, S skipped (not available)
    Final test count: T (baseline was B)
    ```

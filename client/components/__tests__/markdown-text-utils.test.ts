@@ -2,6 +2,7 @@ import {
   parseInline,
   BULLET_REGEX,
   NUMBERED_REGEX,
+  spokenMarkdown,
 } from "../markdown-text-utils";
 
 describe("parseInline", () => {
@@ -89,6 +90,18 @@ describe("parseInline", () => {
       { text: "italic", italic: true },
     ]);
   });
+
+  it("renders a markdown link as its plain text, dropping the URL", () => {
+    expect(parseInline("Check out [this recipe](https://example.com)")).toEqual(
+      [{ text: "Check out this recipe" }],
+    );
+  });
+
+  it("still applies bold/italic markers inside link-stripped text", () => {
+    expect(parseInline("[**bold link**](https://example.com)")).toEqual([
+      { text: "bold link", bold: true },
+    ]);
+  });
 });
 
 describe("BULLET_REGEX", () => {
@@ -161,5 +174,42 @@ describe("NUMBERED_REGEX", () => {
   it("does not match period without space after", () => {
     const match = "1.item".match(NUMBERED_REGEX);
     expect(match).toBeNull();
+  });
+});
+
+describe("spokenMarkdown", () => {
+  it("drops images, keeps link text without the URL, and collapses the gap", () => {
+    expect(
+      spokenMarkdown(
+        "See ![pic](https://a.test/p.png) and [the recipe](https://b.test) now",
+      ),
+    ).toBe("See and the recipe now");
+  });
+
+  it("leaves plain text unchanged", () => {
+    expect(spokenMarkdown("Eat more greens.")).toBe("Eat more greens.");
+  });
+
+  // The coach prompt asks for bold/italic and bullet lists, and MarkdownText
+  // renders those without their markers — the spoken text must match.
+  it("drops bold/italic markers and list markers, like MarkdownText renders", () => {
+    expect(spokenMarkdown("This is **great** and *easy* advice.")).toBe(
+      "This is great and easy advice.",
+    );
+    expect(spokenMarkdown("Snacks:\n- Almonds\n* Greek yogurt")).toBe(
+      "Snacks:\nAlmonds\nGreek yogurt",
+    );
+    expect(spokenMarkdown("1. First step\n2. Second step")).toBe(
+      "First step\nSecond step",
+    );
+  });
+
+  it("drops an image-only line entirely, leaving no blank line behind", () => {
+    expect(
+      spokenMarkdown(
+        "Here is a picture:\n![cat](https://c.test/c.png)\nIsn't it cute?",
+      ),
+    ).toBe("Here is a picture:\nIsn't it cute?");
+    expect(spokenMarkdown("- ![cat](https://c.test/c.png)")).toBe("");
   });
 });

@@ -91,14 +91,12 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
 
   // The card AnimatedPressable is accessible by default, which collapses its
   // whole subtree into a single VoiceOver/TalkBack focus stop — the nested
-  // favourite Pressable below (in the actions row) is never independently
-  // reachable. Expose it as an accessibilityAction on the card instead (same
-  // pattern as RecipeBrowserScreen's UnifiedRecipeCard and BatchSummaryScreen's
-  // BatchItemRow) so the primary "open recipe" label stays the single focus
-  // stop while the favourite toggle is still independently activatable via
-  // the screen reader's actions/rotor. Scoped to the favourite-heart swallow
-  // only — the adjacent "Dismiss recipe" button has the identical shape but
-  // is out of this todo's scope.
+  // favourite and dismiss Pressables below (in the actions row) are never
+  // independently reachable. Expose both as accessibilityActions on the card
+  // instead (same pattern as RecipeBrowserScreen's UnifiedRecipeCard and
+  // BatchSummaryScreen's BatchItemRow) so the primary "open recipe" label
+  // stays the single focus stop while the favourite toggle and dismiss are
+  // still independently activatable via the screen reader's actions/rotor.
   const accessibilityActions = useMemo(
     () =>
       showActions
@@ -109,6 +107,7 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
                 ? "Remove from favourites"
                 : "Add to favourites",
             },
+            { name: "dismiss", label: "Dismiss recipe" },
           ]
         : undefined,
     [showActions, isFavourited],
@@ -118,9 +117,11 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
     (event: { nativeEvent: { actionName: string } }) => {
       if (event.nativeEvent.actionName === "toggleFavourite") {
         handleFavourite();
+      } else if (event.nativeEvent.actionName === "dismiss") {
+        handleDismiss();
       }
     },
-    [handleFavourite],
+    [handleFavourite, handleDismiss],
   );
 
   const imageUri = card.imageUrl ? resolveImageUrl(card.imageUrl) : null;

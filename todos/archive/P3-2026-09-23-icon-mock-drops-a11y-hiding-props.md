@@ -3,7 +3,7 @@ title: "Vector-icon test mock drops accessibility-hiding props, so icon hiding c
 status: done
 priority: low
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -45,3 +45,28 @@ Raised by #1027's mobile review (non-blocking). #1027 added `importantForAccessi
   removing the prop from `Toast.tsx` (then restored — `Toast.tsx` itself is unmodified). Full
   client suite (284 files / 3019 tests) and full repo suite (541 files / 8601 tests, with
   `.env` present) pass; `code-reviewer` and `mobile-reviewer` both returned no findings.
+
+### 2026-09-24
+
+- Post-review follow-up commits on PR #1040 (after the "no findings" pass above) corrected
+  three things in `docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md`:
+  the `ariaHiddenProps` docblock's OR/scope-limit claim, the incorrect inclusion of
+  `client/components/TextInput.tsx` in the reanimated-gap enumeration (its `Animated.Text`
+  sets `importantForAccessibility="no"`, which `ariaHiddenProps` never maps, so it isn't an
+  instance of the gap), and the addition of `client/camera/components/ProductChip.tsx` as a
+  live gap instance.
+- Follow-up PR #1043 (docs-only) adds `client/components/home/CollapsibleSection.tsx` as a
+  further live gap instance (with a caveat: its `aria-hidden` read-back already passes today,
+  but only via a literal `aria-hidden` prop passing through `mapA11yProps()` untranslated, not
+  via the `importantForAccessibility` mapping this doc's mechanism provides), adds
+  `client/screens/BatchScanScreen.tsx` (reached via the `behindContentA11yProps` helper
+  spread), and adds `test/mocks/react-native-reanimated.ts` to the doc's `applies_to`
+  frontmatter — which review found is inert today, like the two existing `test/mocks/*`
+  entries, because `scripts/lib/path-domains.ts` routes `test/mocks/` to no domain. The doc
+  now says so. Its review also found that the `FlatList`/`SectionList` mocks drop the hiding
+  props entirely (a second, separate mock gap, now documented), that RN 0.81's `View.js`
+  derives `importantForAccessibility` from a literal `aria-hidden` (so CollapsibleSection's
+  literal prop does hide it on Android — the caveat was corrected), and that the per-site lists
+  kept growing each review round, so they are now marked as dated examples with a
+  sweep-by-target method instead of a census. Fixing both mock gaps is tracked in
+  `todos/P3-2026-09-24-test-mocks-drop-a11y-hiding-props-reanimated-and-lists.md` (PR #1048).

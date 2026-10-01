@@ -30,6 +30,8 @@ import { usePremiumContext } from "@/context/PremiumContext";
 import { useToast } from "@/context/ToastContext";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { PRIVACY_POLICY_URL, TERMS_URL } from "@/constants/legal";
@@ -135,7 +137,7 @@ export default function SettingsScreen() {
       });
     } catch (error) {
       const message =
-        error instanceof Error && /^429:/.test(error.message)
+        error instanceof ApiError && error.code === ErrorCode.RATE_LIMITED
           ? "You have already exported recently. Please wait before trying again."
           : "Could not export your data. Please try again.";
       Alert.alert("Export Failed", message);

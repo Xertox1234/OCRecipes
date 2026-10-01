@@ -146,10 +146,11 @@ else
   no "glob fallback failed to resolve the transcript"
 fi
 
-# Test 10: digest over the cap -> stays within 4KB, newest curated entries survive.
-# The pressure MUST come from a large curated.md, not a large transcript: the floor is
-# already bounded (12 lines, commands clipped to 100 chars), so a big transcript cannot
-# breach the cap and such a test would pass against an unenforced cap. See ledger Ruling 1.
+# Test 10: digest over the cap -> stays within the 6144-byte cap, newest curated entries survive.
+# The pressure comes from a large curated.md, so the trim loop's curated branch is what is
+# exercised. (Under the original 12-row floor a transcript alone could not breach the cap;
+# the four section caps, 8+5+8+8 rows, now can — the sectioned-cap case covers that.) See
+# ledger Ruling 1.
 SID10="sess-task2-cap"; L10="$CONTEXT_LEDGER_ROOT/$SID10"; mkdir -p "$L10"
 : > "$L10/curated.md"
 i=0
@@ -165,8 +166,8 @@ cp "$FAKE_TX" "$FAKE_TX2"
 printf '{"session_id":"%s","transcript_path":"%s"}' "$SID10" "$FAKE_TX2" \
   | bash "$PRECOMPACT" >/dev/null 2>&1
 size=$(wc -c < "$L10/resume.md" 2>/dev/null || echo 999999)
-if [ "$size" -le 4096 ] && grep -q "sentinel-curated-row" "$L10/resume.md" 2>/dev/null; then
-  ok "digest respects the 4KB cap and keeps the newest curated entry ($size bytes)"
+if [ "$size" -le 6144 ] && grep -q "sentinel-curated-row" "$L10/resume.md" 2>/dev/null; then
+  ok "digest respects the 6144-byte cap and keeps the newest curated entry ($size bytes)"
 else
   no "cap violated or newest curated entry dropped (size=$size)"
 fi
@@ -303,7 +304,7 @@ printf '{"session_id":"%s","transcript_path":"%s"}' "$SID14" "$FAKE_TX4" \
   | bash "$PRECOMPACT" >/dev/null 2>&1
 size14=$(wc -c < "$L14/resume.md" 2>/dev/null || echo 999999)
 echo "INFO: cap proof fixture — curated.md=${curated_size} bytes, resume.md=${size14} bytes"
-if [ "$size14" -le 4096 ]; then
+if [ "$size14" -le 6144 ]; then
   ok "cap holds against realistic input: 12 distinct floor rows + oversized curated ($size14 bytes)"
 else
   no "cap VIOLATED against realistic input ($size14 bytes)"
@@ -1310,7 +1311,244 @@ else
   no "no write-time directory check between the reads and mkdir (last=$last_guard mkdir=$mkdir_line)"
 fi
 
-EXPECTED_TOTAL=92
+# --- Sectioned floor: BLOCKED / UNRESOLVED FAILURES / STATE CHANGES / RECENT COMMANDS ---
+# "Last 12 commands" surfaced bookkeeping: a real 2026-09-25 ledger held 12 PR-merge rows and
+# none of the session's 18 guard/permission denials, its commits, or its failures. Each kind
+# now gets its own section, so filler can only ever evict RECENT rows.
+# sect <header-prefix> <file>: the rows under one section header, up to the next blank line.
+sect() { awk -v h="$1" 'index($0,h)==1{f=1;next} /^[[:space:]]*$/{f=0} f' "$2" 2>/dev/null; }
+
+SIDS="sess-sections"; LS="$CONTEXT_LEDGER_ROOT/$SIDS"; mkdir -p "$LS"
+TXS="$TMPROOT/sections.jsonl"
+cat > "$TXS" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_B1","name":"Bash","input":{"command":"eas build --platform ios","description":"Start an EAS build"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_B1","is_error":true,"content":"PreToolUse:Bash hook error: [guard-outward-cli] eas is outward-facing"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_B2","name":"Bash","input":{"command":"rm -rf build","description":"Remove build dir"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_B2","is_error":true,"content":"Permission to use Bash with command rm -rf build has been denied."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_B3","name":"Bash","input":{"command":"gh api user","description":"Check the token owner"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_B3","is_error":true,"content":"PreToolUse:Bash hook error: saw GITHUB_TOKEN=ghp_FAKEaaaaaaaaaaaaaaaaaaaaaaaa1 in args"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_B4","name":"Bash","input":{"command":"git push --force","description":"Force-push the branch"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_B4","is_error":true,"content":"The user doesn't want to proceed with this tool use. The tool use was rejected."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_E1","name":"Edit","input":{"file_path":"/repo/server/denied-edit-sentinel.ts","old_string":"a","new_string":"b"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_E1","is_error":true,"content":"PreToolUse:Edit hook error: Worktree contract: edit outside the declared worktree"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_E2","name":"Edit","input":{"file_path":"/repo/client/success-edit-sentinel.ts","old_string":"a","new_string":"b"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_E2","content":"The file has been updated successfully."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_F1","name":"Bash","input":{"command":"npm run lint -- fixed-later-sentinel","description":"Lint before the fix"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_F1","is_error":true,"content":"Exit code 1\nlint error in foo.ts"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_F2","name":"Bash","input":{"command":"npm run build-still-broken-sentinel","description":"Build still broken"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_F2","is_error":true,"content":"Exit code 2\nerror TS2322: still broken"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_F3","name":"Bash","input":{"command":"curl -s localhost/odd-failure-sentinel","description":"Odd-shaped failure"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_F3","is_error":true,"content":"---\nodd failure tail"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_H1","name":"Bash","input":{"command":"python3 - <<'PY'\nprint('heredoc-one')\nraise SystemExit(1)\nPY","description":"Heredoc one fails"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_H1","is_error":true,"content":"Exit code 1\nheredoc-one failed"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_H2","name":"Bash","input":{"command":"python3 - <<'PY'\nprint('heredoc-two')\nPY","description":"Heredoc two succeeds"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_H2","content":"heredoc-two"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_F1B","name":"Bash","input":{"command":"npm run lint -- fixed-later-sentinel","description":"Lint after the fix"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_F1B","content":"lint clean"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_C1","name":"Bash","input":{"command":"git commit -F /tmp/msg.txt","description":"Commit the fix"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_C1","content":"[feat/x abc1234] fix the thing"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_C2","name":"Bash","input":{"command":"cd repo\ngit push -u origin feat/x","description":"Push branch multi-line"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_C2","content":"branch 'feat/x' set up to track 'origin/feat/x'."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_C3","name":"Bash","input":{"command":"ALLOW_OUTWARD_CLI=1 gh pr merge 1093 --squash","description":"Merge PR 1093"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_C3","content":""}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_M1","name":"Bash","input":{"command":"/usr/bin/git merge-tree --write-tree main feat/x && git merge-base main feat/x","description":"Probe mergeability read-only"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_M1","content":"abc123"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_P1","name":"mcp__github__merge_pull_request","input":{"owner":"o","repo":"r","pullNumber":1093}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_P1","is_error":true,"content":"PreToolUse:mcp__github__merge_pull_request hook error: merge-review-guard: no review record"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_P2","name":"mcp__github__create_pull_request","input":{"owner":"o","repo":"r","title":"t"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_P2","is_error":true,"content":"Permission to use mcp__github__create_pull_request has been denied."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_T1","name":"Bash","input":{"command":"git tag v1.2.0","description":"Tag the release"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T1","content":""}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_T2","name":"Bash","input":{"command":"git tag -l 'v*'","description":"List release tags"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T2","content":"v1.1.0"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_T3","name":"Bash","input":{"command":"git tag","description":"Show all tags"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T3","content":"v1.1.0"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_T4","name":"Bash","input":{"command":"git tag -af v1.2.0 -m 'release'","description":"Force annotate tag combined flags"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T4","content":""}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_T5","name":"Bash","input":{"command":"git tag --delete v0.9.0","description":"Delete old tag long flag"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_T5","content":"Deleted tag 'v0.9.0'"}]}}
+EOF
+i=1
+while [ $i -le 15 ]; do
+  printf '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_Q%02d","name":"Bash","input":{"command":"echo filler-%02d","description":"Filler %02d"}}]}}\n' "$i" "$i" "$i" >> "$TXS"
+  printf '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_Q%02d","content":"filler-%02d"}]}}\n' "$i" "$i" >> "$TXS"
+  i=$((i+1))
+done
+# A successful Edit and MCP call AFTER the fillers: placed before them, RECENT's own cap would evict them
+# and "absent from every section" would pass even if successful edits were kept as rows.
+cat >> "$TXS" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_E3","name":"Write","input":{"file_path":"/repo/client/success-edit-sentinel-late.ts","content":"x"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_E3","content":"File created successfully."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_P3","name":"mcp__github__pull_request_read","input":{"method":"get","pullNumber":7777}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_P3","content":"mcp-read-success-sentinel"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_P4","name":"mcp__infra__set_variables","input":{"password":"Hunter2PasswordXyz20","owner":"o"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_P4","is_error":true,"content":"Permission to use mcp__infra__set_variables has been denied."}]}}
+EOF
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SIDS" "$TXS" | bash "$PRECOMPACT" >/dev/null 2>&1
+RS="$LS/resume.md"
+BLK=$(sect "BLOCKED" "$RS"); UNR=$(sect "UNRESOLVED FAILURES" "$RS")
+STC=$(sect "STATE CHANGES" "$RS"); RCT=$(sect "RECENT COMMANDS" "$RS")
+
+grep -q "eas build --platform ios.*guard-outward-cli\] eas is outward-facing" <<< "$BLK" \
+  && ok "BLOCKED carries a guard denial with its full reason (past the 60-char result width)" \
+  || no "guard denial missing from BLOCKED: [$BLK]"
+grep -q "rm -rf build.*Permission to use Bash" <<< "$BLK" \
+  && ok "BLOCKED carries a permission denial" \
+  || no "permission denial missing from BLOCKED"
+grep -q "denied-edit-sentinel.ts.*Worktree contract" <<< "$BLK" \
+  && ok "BLOCKED carries a denied Edit (file path + reason)" \
+  || no "denied Edit missing from BLOCKED"
+grep -q "git push --force.*doesn't want to proceed" <<< "$BLK" \
+  && ok "BLOCKED carries a tool use the user rejected" \
+  || no "user-rejected tool use missing from BLOCKED"
+if ! grep -q "ghp_FAKEaaaaaaaaaaaaaaaaaaaaaaaa1" "$RS" 2>/dev/null \
+   && grep -q 'GITHUB_TOKEN=\[redacted\]' <<< "$BLK"; then
+  ok "a secret inside a denial reason is redacted, the row kept"
+else
+  no "denial-reason secret leaked, or the row was dropped"
+fi
+grep -q "success-edit-sentinel" "$RS" 2>/dev/null \
+  && no "a SUCCESSFUL Edit leaked into the digest (native compaction already lists edits)" \
+  || ok "a successful Edit appears in no section"
+grep -q "build-still-broken-sentinel" <<< "$UNR" \
+  && ok "UNRESOLVED carries a command that failed and was never re-run" \
+  || no "still-failing command missing from UNRESOLVED: [$UNR]"
+grep -q "odd-failure-sentinel" <<< "$UNR" \
+  && ok "UNRESOLVED keys on is_error, not the 'Exit code' wording" \
+  || no "an is_error result without 'Exit code' was not classed as a failure"
+grep -q "fixed-later-sentinel" <<< "$UNR" \
+  && no "a failure re-run SUCCESSFULLY later still shows as unresolved" \
+  || ok "a failure fixed by a later successful re-run is not unresolved"
+grep -q "Heredoc one fails" <<< "$UNR" \
+  && ok "a failed heredoc stays unresolved when a DIFFERENT heredoc later succeeds (full-command key)" \
+  || no "a different heredoc's success resolved the failed one (first-line keying)"
+grep -q "Commit the fix ← git commit" <<< "$STC" \
+  && ok "STATE carries a git commit" \
+  || no "git commit missing from STATE: [$STC]"
+grep -q "Push branch multi-line" <<< "$STC" \
+  && ok "STATE catches git push on line 2 of a multi-line command" \
+  || no "a line-2 git push was not classed as a state change"
+grep -q "Merge PR 1093 ← ALLOW_OUTWARD_CLI=1 gh pr merge" <<< "$STC" \
+  && ok "STATE carries an env-prefixed gh pr merge" \
+  || no "env-prefixed gh pr merge missing from STATE"
+# `\b` after a verb matched `git merge-tree`/`git merge-base` (a word boundary sits before the
+# hyphen) — a real 2026-09-25 digest listed a read-only merge-tree probe as a state change.
+grep -q "Probe mergeability read-only" <<< "$STC" \
+  && no "read-only git merge-tree/merge-base classed as a state change" \
+  || ok "git merge-tree / merge-base are not state changes (verb must end at whitespace)"
+# MCP tools: this repo prefers mcp__github__* for PR work and wires merge-review-guard onto
+# them, so a denied MCP merge is exactly the call a resumed session would retry.
+grep -q "mcp__github__merge_pull_request.*merge-review-guard: no review record" <<< "$BLK" \
+  && ok "BLOCKED carries a guard-denied MCP tool call" \
+  || no "guard-denied MCP call missing from BLOCKED: [$BLK]"
+grep -q "Permission to use mcp__github__create_pull_request" <<< "$BLK" \
+  && ok "BLOCKED carries a permission-refused MCP tool call" \
+  || no "permission-refused MCP call missing from BLOCKED"
+grep -q "mcp-read-success-sentinel\|7777" "$RS" 2>/dev/null \
+  && no "a SUCCESSFUL MCP call leaked into the digest" \
+  || ok "a successful MCP call appears in no section"
+grep -q "Tag the release ← git tag v1.2.0" <<< "$STC" \
+  && ok "STATE carries git tag <name>" \
+  || no "git tag <name> missing from STATE"
+grep -q "Force annotate tag combined flags" <<< "$STC" && grep -q "Delete old tag long flag" <<< "$STC" \
+  && ok "STATE carries git tag with combined short flags (-af) and a long flag (--delete)" \
+  || no "combined-flag or long-flag git tag missing from STATE: [$STC]"
+# A denied non-Bash call shows its input KEYS, never values: redaction keys on NAME=value and
+# 32+-char digit runs, and a JSON "password":"<20 chars>" matches neither (measured on #1104).
+if ! grep -q "Hunter2PasswordXyz20" "$RS" 2>/dev/null \
+   && grep -q "mcp__infra__set_variables.*password" <<< "$BLK"; then
+  ok "a denied MCP call shows its input keys, not a short secret value"
+else
+  no "a denied MCP call leaked its input value, or its row is missing: [$BLK]"
+fi
+if grep -q "List release tags\|Show all tags" <<< "$STC"; then
+  no "read-only git tag / git tag -l classed as a state change"
+else
+  ok "read-only git tag and git tag -l are not state changes"
+fi
+rct_n=$(printf '%s\n' "$RCT" | grep -c "Filler")
+rct_set=$(grep -o "Filler [0-9][0-9]" <<< "$RCT" | tr '\n' ' ')
+if [ "$rct_n" -eq 8 ] && [ "$rct_set" = "Filler 08 Filler 09 Filler 10 Filler 11 Filler 12 Filler 13 Filler 14 Filler 15 " ]; then
+  ok "RECENT keeps the newest 8 fillers; filler evicts only RECENT rows ($rct_n rows)"
+else
+  no "RECENT cap/recency wrong ($rct_n filler rows): [$RCT]"
+fi
+
+# --- Standing instruction: a SessionStart hook tells EVERY session how to write a note ---
+INSTR="$HOOKS_DIR/session-ledger-instruction.sh"
+for src in startup resume compact clear; do
+  iout=$(printf '{"session_id":"x","source":"%s"}' "$src" | bash "$INSTR" 2>/dev/null)
+  ev=$(jq -r '.hookSpecificOutput.hookEventName // empty' <<< "$iout" 2>/dev/null)
+  ictx=$(jq -r '.hookSpecificOutput.additionalContext // empty' <<< "$iout" 2>/dev/null)
+  if [ "$ev" = "SessionStart" ] && grep -q 'bash .claude/hooks/ledger-note.sh VERIFIED' <<< "$ictx"; then
+    ok "instruction hook emits the ledger-note instruction for source=$src"
+  else
+    no "instruction hook silent or malformed for source=$src: [$iout]"
+  fi
+done
+SETTINGS="$HOOKS_DIR/../settings.json"
+if jq -e '[.hooks.SessionStart[].hooks[].command] | any(test("session-ledger-instruction\\.sh"))' "$SETTINGS" >/dev/null 2>&1; then
+  ok "settings.json registers the instruction hook on SessionStart"
+else
+  no "instruction hook not registered on SessionStart"
+fi
+# The allow rule and the instruction must spell the command identically: permission rules
+# prefix-match the UNEXPANDED string, so a drift in either reintroduces the prompt.
+ictx=$(printf '{"source":"startup"}' | bash "$INSTR" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null)
+if jq -e '.permissions.allow | index("Bash(bash .claude/hooks/ledger-note.sh *)")' "$SETTINGS" >/dev/null 2>&1 \
+   && grep -q '`bash .claude/hooks/ledger-note.sh ' <<< "$ictx"; then
+  ok "allow rule and instruction text use the same literal ledger-note command"
+else
+  no "allow rule missing, or the instruction spells the command differently"
+fi
+# /land's step 8 is a third copy of the same command; a drift there prompts on every merge.
+if grep -qE '^[[:space:]]*bash \.claude/hooks/ledger-note\.sh VERIFIED ' "$HOOKS_DIR/../skills/land/SKILL.md"; then
+  ok "/land skill spells the ledger-note command the allow rule matches"
+else
+  no "/land skill's ledger-note command drifted from the allow rule"
+fi
+
+# --- Cap: every section full + curated must fit, trimming RECENT first ---
+# Curated is 10 rows (~1.2 KB), not the 2 KB window: with BLOCKED at its real cap of 8, a full
+# window left no room for any STATE row, and "newest STATE kept" could not be observed.
+LEDGER_CAP=6144
+SIDX="sess-sections-cap"; LX="$CONTEXT_LEDGER_ROOT/$SIDX"; mkdir -p "$LX"
+: > "$LX/curated.md"
+i=0
+while [ $i -lt 10 ]; do
+  printf 'VERIFIED | claim about subsystem behavior number %03d confirmed by direct measurement | inspect-subsystem-%03d.sh --check\n' "$i" "$i" >> "$LX/curated.md"
+  i=$((i+1))
+done
+TXX="$TMPROOT/sections-cap.jsonl"; : > "$TXX"
+emit() { # emit <id> <desc> <cmd> <is_error:true|false> <content>
+  printf '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"%s","name":"Bash","input":{"command":"%s","description":"%s"}}]}}\n' "$1" "$3" "$2" >> "$TXX"
+  printf '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"%s","is_error":%s,"content":"%s"}]}}\n' "$1" "$4" "$5" >> "$TXX"
+}
+PAD="padding-padding-padding-padding-padding-padding-padding-padding-padding-padding"
+i=1; while [ $i -le 8 ]; do emit "b$i" "blocked-row-$i $PAD" "blocked-cmd-$i $PAD $PAD" true "PreToolUse:Bash hook error: blocked-reason-$i $PAD"; i=$((i+1)); done
+i=1; while [ $i -le 5 ]; do emit "f$i" "failed-row-$i $PAD" "failed-cmd-$i $PAD $PAD" true "Exit code 1\\nfailed-tail-$i $PAD"; i=$((i+1)); done
+i=1; while [ $i -le 8 ]; do emit "s$i" "state-row-$i $PAD" "git commit -m state-$i $PAD $PAD" false "state-out-$i $PAD"; i=$((i+1)); done
+i=1; while [ $i -le 8 ]; do emit "r$i" "recent-row-$i $PAD" "echo recent-cmd-$i $PAD $PAD" false "recent-out-$i $PAD"; i=$((i+1)); done
+printf '{"session_id":"%s","transcript_path":"%s"}' "$SIDX" "$TXX" | bash "$PRECOMPACT" >/dev/null 2>&1
+sizeX=$(wc -c < "$LX/resume.md" 2>/dev/null | tr -d '[:space:]'); sizeX=${sizeX:-999999}
+echo "INFO: sectioned cap fixture — resume.md=${sizeX} bytes (cap $LEDGER_CAP)"
+[ "$sizeX" -le "$LEDGER_CAP" ] \
+  && ok "sectioned digest fits the ${LEDGER_CAP}-byte cap with every section full ($sizeX bytes)" \
+  || no "sectioned digest over cap ($sizeX bytes)"
+if ! grep -q "recent-row-" "$LX/resume.md" && grep -q "state-row-8 " "$LX/resume.md" \
+   && ! grep -q "state-row-1 " "$LX/resume.md"; then
+  ok "trim order: RECENT emptied before STATE lost its oldest row (newest STATE kept)"
+else
+  no "trim order wrong between RECENT and STATE"
+fi
+bf_n=$(grep -cE "blocked-row-[1-8] |failed-row-[1-5] " "$LX/resume.md")
+if [ "$bf_n" -eq 13 ] && grep -q "number 009" "$LX/resume.md"; then
+  ok "BLOCKED and FAILED rows and the newest curated row survive while STATE is trimmed"
+else
+  no "trim reached BLOCKED/FAILED/curated too early ($bf_n of 13 kept)"
+fi
+
+EXPECTED_TOTAL=124
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

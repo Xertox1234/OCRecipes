@@ -6,6 +6,7 @@ module: server
 tags: [api, sse, abort-controller, openai, streaming, cost-control]
 applies_to: [server/routes/**/*.ts, server/services/**/*.ts]
 created: '2026-05-13'
+last_updated: '2026-09-24'
 ---
 
 # SSE AbortController — cancel OpenAI stream on client disconnect
@@ -21,7 +22,7 @@ OpenAI charges by output tokens. A client that opens an SSE stream and immediate
 ## Pattern
 
 1. Create an `AbortController` at the route level, next to `let aborted = false`.
-2. Call `abortController.abort()` everywhere `aborted = true` is set (req.close, SSE timeout).
+2. Call `abortController.abort()` everywhere `aborted = true` is set (client disconnect via **`res.on("close")` + `!res.writableFinished`**, SSE timeout). **Never `req.on("close")`**: once `express.json()` has consumed the body, the request's `close` has already fired, and a late listener never runs. This example was dead code from M8 until 2026-09-24, measured on Node 24. See [the bug doc](../logic-errors/req-close-never-fires-after-body-parser-use-res-close-2026-09-24.md).
 3. Pass `abortSignal` through the service layer to the generator function.
 4. Pass `{ signal: abortSignal }` as the second argument to `openai.chat.completions.create`.
 
@@ -31,7 +32,8 @@ OpenAI charges by output tokens. A client that opens an SSE stream and immediate
 // Route handler (server/routes/chat.ts)
 const abortController = new AbortController();
 let aborted = false;
-req.on("close", () => {
+res.on("close", () => {
+  if (res.writableFinished) return;     // our own res.end() — not a disconnect
   aborted = true;
   abortController.abort();              // ← kills the OpenAI stream
 });
@@ -79,6 +81,8 @@ export async function* generateCoachResponse(
 Audit finding M8 (2026-04-18).
 
 ## See Also
+
+- [req.on('close') never fires after body-parser — use res close](../logic-errors/req-close-never-fires-after-body-parser-use-res-close-2026-09-24.md)
 
 - [OpenAI SDK timeout and tiered error handling](openai-sdk-timeout-and-error-handling-2026-05-13.md)
 - [Fetch timeout with AbortSignal for every external API call](../conventions/fetch-timeout-abort-signal-external-apis-2026-05-13.md)

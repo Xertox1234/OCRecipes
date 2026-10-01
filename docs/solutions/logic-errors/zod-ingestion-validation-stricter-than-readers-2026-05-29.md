@@ -8,7 +8,7 @@ tags: [zod, validation, typescript, architecture, nutrition-pipeline, silent-fai
 applies_to: [server/services/**/*.ts, server/lib/**/*.ts, shared/schema.ts, shared/schemas/**/*.ts]
 symptoms: [A third-party lookup that used to return data now returns null/empty, One bad row/sibling in an upstream response drops the whole valid result, '`.default(0)` does not stop a `null` from failing `z.number()`', A wrong-typed present value (e.g. `"N/A"` string) passes `.optional()` but still rejects the parent object parse, A schema that was only ever checked for `.success` becomes load-bearing after a `result.data` reassignment, One malformed value in a newly-typed field (e.g. recipeType: "spoonacular") fails the entire enclosing array via discriminated-union superRefine]
 created: '2026-05-29'
-last_updated: '2026-08-16'
+last_updated: '2026-09-27'
 ---
 
 # A Zod ingestion schema stricter than its readers is a new silent failure
@@ -96,6 +96,7 @@ The conservative direction for a monetized/cached data path is still **drop bad 
 - Never use `z.coerce.number()` for ingestion from untrusted APIs — it poisons `null`/`"N/A"`/empty strings to `0`, creating false data that the cache treats as authoritative.
 - Prefer per-item lenient parse + filter over whole-array `safeParse` when one bad element shouldn't disable the batch.
 - A validation fix is not done until you've confirmed it does not reject inputs the old code accepted — a too-strict guard is a silent failure wearing a safety vest.
+- **Adding a field to an existing external schema is the same trap.** #1128 added `unitName: z.string().nullish()` to the USDA nutrient schema; review showed one nutrient with `unitName: 7` would fail the whole `foods` array, where the old schema (no `unitName`) parsed it. It shipped as `.nullish().catch(undefined)`, and the reader treats a missing unit as its old default.
 - **When activating a previously-inert schema** (one that was only checked for `.success` without using `result.data`), every field that was previously unlisted must be widened to a typed field with `.optional().catch(undefined)` — not just `.optional()`. Otherwise, any value (including one that is perfectly valid but from a sibling schema's enum) will fail the containing object parse, and if that object is inside a `z.array` validated by a discriminated union's `superRefine`, one bad item will silently drop all siblings.
 
 ## Related Files

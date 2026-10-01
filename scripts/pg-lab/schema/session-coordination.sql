@@ -3,7 +3,7 @@
 -- Schema for cross-terminal session coordination (PG Lab Phase D) — spec:
 -- docs/superpowers/specs/2026-07-10-pg-session-coordination-design.md (local-only).
 --
--- session_registry and files_in_flight are EPHEMERAL lease tables (TTL 10 min,
+-- session_registry and files_in_flight are EPHEMERAL lease tables (TTL 15 min,
 -- reap-on-read): drop them mid-session and they repopulate within one heartbeat.
 -- Nothing durable may ever read them. coordination_log is the ONLY durable table —
 -- an APPEND-ONLY event ledger feeding the ~60-day value probe (spec §10).
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS harness.session_registry (
     session_kind  TEXT NOT NULL DEFAULT 'unknown',
     started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at    TIMESTAMPTZ NOT NULL DEFAULT now() + interval '10 minutes'
+    expires_at    TIMESTAMPTZ NOT NULL DEFAULT now() + interval '15 minutes'
 );
 
 -- Reap-on-read: every refresh-snapshot/reap DELETEs by this predicate first.
@@ -30,11 +30,12 @@ CREATE INDEX IF NOT EXISTS session_registry_expires_idx ON harness.session_regis
 
 CREATE TABLE IF NOT EXISTS harness.files_in_flight (
     session_id   TEXT NOT NULL REFERENCES harness.session_registry(session_id) ON DELETE CASCADE,
+    agent_id     TEXT NOT NULL DEFAULT '',   -- hook input agent_id; '' = the session's main agent
     abs_path     TEXT NOT NULL,
     rel_path     TEXT NOT NULL,
     first_touch  TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_touch   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (session_id, abs_path)
+    PRIMARY KEY (session_id, agent_id, abs_path)
 );
 
 -- Cross-worktree comparison (spec §6 level 2) groups by rel_path.
@@ -43,9 +44,11 @@ CREATE INDEX IF NOT EXISTS files_in_flight_rel_idx ON harness.files_in_flight (r
 CREATE TABLE IF NOT EXISTS harness.coordination_log (
     id            BIGSERIAL PRIMARY KEY,
     ts            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    event         TEXT NOT NULL, -- warn-collision | warn-worktree | drift-attributed |
-                                 -- drift-unattributed | lock-acquired | lock-waited |
-                                 -- lock-timeout | lock-released | lock-orphan-released
+    event         TEXT NOT NULL, -- warn-collision | warn-collision-sibling | warn-worktree |
+                                 -- warn-worktree-sibling | drift-attributed | drift-unattributed |
+                                 -- block-collision | block-downgraded |
+                                 -- lock-acquired | lock-waited | lock-timeout | lock-released |
+                                 -- lock-orphan-released
     session_id    TEXT,
     other_session TEXT,
     detail        JSONB
@@ -53,3 +56,15 @@ CREATE TABLE IF NOT EXISTS harness.coordination_log (
 
 CREATE INDEX IF NOT EXISTS coordination_log_ts_idx ON harness.coordination_log (ts);
 CREATE INDEX IF NOT EXISTS coordination_log_event_idx ON harness.coordination_log (event);
+
+-- v2 migration (spec 2026-09-27 §5.3) — idempotent for DBs created before agent_id existed.
+ALTER TABLE harness.files_in_flight ADD COLUMN IF NOT EXISTS agent_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE harness.session_registry ALTER COLUMN expires_at SET DEFAULT now() + interval '15 minutes';
+DO $$
+BEGIN
+  IF (SELECT array_length(conkey, 1) FROM pg_constraint
+      WHERE conrelid = 'harness.files_in_flight'::regclass AND contype = 'p') = 2 THEN
+    ALTER TABLE harness.files_in_flight DROP CONSTRAINT files_in_flight_pkey;
+    ALTER TABLE harness.files_in_flight ADD PRIMARY KEY (session_id, agent_id, abs_path);
+  END IF;
+END $$;

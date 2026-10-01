@@ -65,3 +65,56 @@ Review-stamp writer, recorded from the #1019 review (no todo filed):
 | P3-2026-09-15-corpus-row-count-prose-drifted-from-an-earlier-pin     | Corpus prose quotes stale row counts                          |
 | P3-2026-09-15-git-safety-outcome-clauses-still-hardcode-branch-nouns | Six outcome clauses still hardcode branch nouns               |
 | P3-2026-09-20-scope-contract-forbade-the-only-workable-fix           | Scope contracts name files too narrowly                       |
+
+`test-preflight-output.sh`, found 2026-09-23 (no todo filed):
+
+- Its "quiet mode" assertions (`assert_not ... "NPM_NOISE_LINE" ...` and the `✗` marker check)
+  never `unset PREFLIGHT_VERBOSE` before invoking the real `scripts/preflight.sh` under test. If
+  the _calling_ shell already exports `PREFLIGHT_VERBOSE=1` (e.g. a human or agent streaming
+  `preflight.sh --fast --uncommitted` for its own debugging visibility) AND the diff also touches
+  `scripts/*.sh`/`.claude/hooks/**`/`.husky/**` (so `run-hook-tests.sh` actually runs), the leaked
+  env var flips the nested preflight.sh into verbose mode mid-self-test, producing 2 false FAILs
+  ("quiet: npm noise suppressed on success", "fail: shows a failure marker"). Reproduced 3x: fails
+  every time under `PREFLIGHT_VERBOSE=1 scripts/preflight.sh --fast --uncommitted` when
+  `scripts/preflight.sh` itself is the changed file; passes every time (`bash
+.claude/hooks/test-preflight-output.sh` standalone, `bash scripts/run-hook-tests.sh` standalone,
+  and `scripts/preflight.sh --fast --uncommitted` with no env override — the documented Step 5a
+  invocation and what CI/the real gate always uses). Non-blocking: CI and the documented executor
+  invocation never set `PREFLIGHT_VERBOSE`, so this never fires in practice — only when someone
+  passes the env var by hand into a diff that also touches hook/script files. Workaround: don't
+  pass `PREFLIGHT_VERBOSE=1` to an outer preflight run whose diff also triggers
+  `run-hook-tests.sh`; run the hook suite standalone instead (`bash scripts/run-hook-tests.sh`).
+
+`test-inject-patterns.sh`, found 2026-09-24, source PR #1039 review (no todo filed):
+
+- Its routing assertion at ~lines 225-226 (`check "vitest.config.ts → testing rules" ...`)
+  asserts pattern-injection routing against the literal fixture `"vitest.config.ts"` and never
+  exercises `"vitest.config.mts"`, though the real config file was renamed to `.mts` in #1039
+  (Vite native-config-loader migration). `scripts/lib/path-domains.ts`'s `config-file` matcher
+  currently matches ANY extension on the basename, so nothing is broken today — but the self-test
+  gives no regression coverage if that matcher were ever narrowed to `.ts`-only. Frozen harness →
+  residual only, no fix.
+
+`.claude/hooks/checkpoint.sh`, found 2026-09-27 (no todo filed): the Bash trigger uses
+`cmd_git_work_discarder_verb`, which inherits the shared `_CMD_POS_PREFIX` grammar and so only
+matches a literal `git` in command position. `/usr/bin/git checkout -- .` (the spelling agents
+use inside worktrees to bypass RTK) takes **no** checkpoint. The Agent/Task trigger still fires
+before any subagent dispatch, which covers the #956 reviewer case. Reopen if a work loss is
+traced to an absolute-path git discard.
+
+`.claude/hooks/lib/write-targets.sh --relative`, found 2026-09-27 (no todo filed): known
+fail-open / spurious shapes. `cp -t DIR`/`--target-directory` reports the wrong destination,
+same as default mode. `rm -- -weird` is missed (no `--` end-of-options handling). `sed -i
+--expression=… f.ts` consumes `f.ts` as the script (target missed; only the two-token
+`-e`/`--expression VALUE` form is skipped). `xargs rm` is missed (targets come on stdin, not
+argv). An unquoted `cd`/`pushd` word anywhere suppresses ALL relative output; a quoted `"cd"`
+does not. `npm rm pkg` is a spurious match. `~` and `$VAR` are never expanded — joined to `cwd`
+exactly as spelled.
+
+lint-staged stash vs. the shared stash stack, found 2026-09-29 (#1172, no todo filed): an
+executor's archive commit recorded its todo at `status: in-progress` although the working tree
+held `status: done` at commit time; the code files in the same commit were byte-identical to the
+tree. Not root-caused. Suspected mechanism: lint-staged's own stash/restore runs against the git
+stash stack that every worktree shares, while other sessions had live entries on it (one was
+`wip-quicklogdrawer-red-check-…`). The next commit on that branch corrected the file. Reopen if a
+commit is again seen recording content different from the staged tree.

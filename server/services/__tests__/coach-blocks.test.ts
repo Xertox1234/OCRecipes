@@ -4,6 +4,7 @@ import {
   validateBlocks,
   parseBlocksFromContent,
   BLOCKS_SYSTEM_PROMPT,
+  getBlocksSystemPrompt,
 } from "../coach-blocks";
 import {
   coachBlockSchema,
@@ -108,6 +109,28 @@ describe("Coach Blocks Service", () => {
     );
   });
 
+  it("forbids markdown images and links in prose and names recipes instead", () => {
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(
+      /never put a recipe image or link in your prose/i,
+    );
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(/refer to a recipe by its name/i);
+  });
+
+  // search_recipes returns no calories/protein/prep time, and recipe_card
+  // requires all three: steering every search hit into a card would make the
+  // model invent nutrition numbers in an authoritative-looking card.
+  it("allows a recipe_card only when real calories, protein and prep time came from a tool", () => {
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(
+      /recipe_card only when you have real calories, protein and prep time/i,
+    );
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(
+      /search_recipes does not return calories or protein/i,
+    );
+    expect(BLOCKS_SYSTEM_PROMPT).not.toMatch(
+      /Present each recipe from that result as a recipe_card/,
+    );
+  });
+
   it("parses both fences when content contains two coach_blocks fences", () => {
     const content = `Here is chart one.\n\`\`\`coach_blocks\n[{"type":"quick_replies","options":[{"label":"Yes","message":"yes"}]}]\n\`\`\`\nAnd here is another.\n\`\`\`coach_blocks\n[{"type":"quick_replies","options":[{"label":"No","message":"no"}]}]\n\`\`\``;
     const result = parseBlocksFromContent(content);
@@ -115,5 +138,54 @@ describe("Coach Blocks Service", () => {
     expect(result.text).not.toContain("```coach_blocks");
     // At least two blocks parsed
     expect(result.blocks.length).toBe(2);
+  });
+});
+
+describe("server-only finder blocks", () => {
+  const flow = {
+    flowId: "11111111-1111-4111-8111-111111111111",
+    stage: "results",
+    request: "anything",
+    query: { q: "anything" },
+    round: 0,
+    shownIds: [],
+  };
+
+  it("drops a recipe_results block the model wrote — only the server builds finder blocks", () => {
+    const content =
+      "Here you go.\n```coach_blocks\n" +
+      JSON.stringify([
+        {
+          type: "recipe_results",
+          source: "community",
+          items: [],
+          actions: [],
+          notice: null,
+          flow,
+        },
+        {
+          type: "quick_replies",
+          options: [{ label: "More", message: "More" }],
+        },
+      ]) +
+      "\n```";
+    const { blocks } = parseBlocksFromContent(content);
+    expect(blocks.map((b) => b.type)).toEqual(["quick_replies"]);
+  });
+});
+
+describe("getBlocksSystemPrompt", () => {
+  it("is the unchanged prompt with the finder off", () => {
+    expect(getBlocksSystemPrompt(false)).toBe(BLOCKS_SYSTEM_PROMPT);
+  });
+
+  it("drops every search_recipes instruction with the finder on", () => {
+    // Positive control: the source prompt really has the lines being replaced.
+    expect(BLOCKS_SYSTEM_PROMPT).toContain("search_recipes");
+    const on = getBlocksSystemPrompt(true);
+    expect(on).not.toContain("search_recipes");
+    expect(on).toContain("recipe finder");
+    // The example still validates.
+    expect(parseBlocksFromContent(on).blocks.length).toBeGreaterThan(0);
   });
 });

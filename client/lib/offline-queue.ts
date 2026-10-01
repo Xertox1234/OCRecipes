@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { randomUuidV4 } from "@/lib/uuid";
+
 const STORAGE_KEY = "@ocrecipes_offline_queue";
 const TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_DEPTH = 50;
@@ -99,7 +101,7 @@ export async function enqueue(
 ): Promise<void> {
   const entry: QueuedMutation = {
     ...item,
-    id: crypto.randomUUID(),
+    id: randomUuidV4(),
     attempts: 0,
     savedAt: Date.now(),
   };

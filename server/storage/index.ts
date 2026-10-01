@@ -14,6 +14,7 @@ import * as mealPlans from "./meal-plans";
 import * as groceryLists from "./grocery-lists";
 import * as pantry from "./pantry";
 import * as chat from "./chat";
+import * as chatQuota from "./chat-quota";
 import * as cache from "./cache";
 import * as community from "./community";
 import * as menu from "./menu";
@@ -98,6 +99,7 @@ export const storage = {
   getSavedItems: nutrition.getSavedItems,
   getSavedItemCount: nutrition.getSavedItemCount,
   createSavedItem: nutrition.createSavedItem,
+  saveRecipeToSavedItems: nutrition.saveRecipeToSavedItems,
   deleteSavedItem: nutrition.deleteSavedItem,
 
   // Meal plans (recipes and items)
@@ -165,6 +167,9 @@ export const storage = {
   getDailyChatMessageCount: chat.getDailyChatMessageCount,
   getChatMessageCount: chat.getChatMessageCount,
   createChatMessageWithLimitCheck: chat.createChatMessageWithLimitCheck,
+  createFinderUserMessage: chatQuota.createFinderUserMessage,
+  claimRecipeGeneration: chatQuota.claimRecipeGeneration,
+  claimSpoonacularSearch: chatQuota.claimSpoonacularSearch,
   saveRecipeFromChat: recipeFromChat.saveRecipeFromChat,
   getCoachCachedResponse: chat.getCoachCachedResponse,
   setCoachCachedResponse: chat.setCoachCachedResponse,

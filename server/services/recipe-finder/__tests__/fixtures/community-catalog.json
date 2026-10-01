@@ -1,0 +1,2002 @@
+[
+  {
+    "id": 25,
+    "title": "Greek Yogurt Tzatziki & Chickpea Bowl",
+    "description": "A refreshing Mediterranean-inspired bowl featuring creamy Greek yogurt tzatziki, protein-rich chickpeas, and fresh vegetables.",
+    "ingredients": [
+      {
+        "name": "Greek yogurt",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "Cucumber",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "Garlic",
+        "quantity": "2",
+        "unit": "cloves"
+      },
+      {
+        "name": "Lemon juice",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "Olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "Fresh dill",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "Salt",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "Black pepper",
+        "quantity": "0.5",
+        "unit": "tsp"
+      },
+      {
+        "name": "Chickpeas",
+        "quantity": "1",
+        "unit": "can"
+      },
+      {
+        "name": "Cherry tomatoes",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "Red onion",
+        "quantity": "0.5",
+        "unit": ""
+      },
+      {
+        "name": "Kalamata olives",
+        "quantity": "0.5",
+        "unit": "cup"
+      },
+      {
+        "name": "Feta cheese",
+        "quantity": "0.5",
+        "unit": "cup"
+      }
+    ],
+    "dietTags": [
+      "vegetarian",
+      "high-protein",
+      "Mediterranean",
+      "mediterranean"
+    ],
+    "mealTypes": ["breakfast", "snack", "lunch", "dinner"],
+    "allergens": [
+      {
+        "id": "milk",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "550.00",
+    "proteinPerServing": "25.00",
+    "carbsPerServing": "45.00",
+    "fatPerServing": "30.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:41:59.247Z"
+  },
+  {
+    "id": 24,
+    "title": "Indian-Spiced Lentil Curry",
+    "description": "This aromatic Indian-spiced lentil curry is a hearty, vegan dish filled with flavorful spices and rich in fiber.",
+    "ingredients": [
+      {
+        "name": "red lentils",
+        "quantity": "200",
+        "unit": "g"
+      },
+      {
+        "name": "coconut oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "onion",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "garlic cloves",
+        "quantity": "3",
+        "unit": ""
+      },
+      {
+        "name": "ginger",
+        "quantity": "1",
+        "unit": "inch piece"
+      },
+      {
+        "name": "cumin seeds",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "ground turmeric",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "ground coriander",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "chili powder",
+        "quantity": "1/2",
+        "unit": "tsp"
+      },
+      {
+        "name": "tomatoes",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "coconut milk",
+        "quantity": "400",
+        "unit": "ml"
+      },
+      {
+        "name": "spinach leaves",
+        "quantity": "100",
+        "unit": "g"
+      },
+      {
+        "name": "salt",
+        "quantity": "to taste",
+        "unit": ""
+      },
+      {
+        "name": "fresh coriander",
+        "quantity": "handful",
+        "unit": ""
+      }
+    ],
+    "dietTags": ["vegan", "high-fiber", "Indian"],
+    "mealTypes": ["dinner"],
+    "allergens": [
+      {
+        "id": "tree_nuts",
+        "viaDerived": true
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "550.00",
+    "proteinPerServing": "20.00",
+    "carbsPerServing": "60.00",
+    "fatPerServing": "30.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:41:51.339Z"
+  },
+  {
+    "id": 23,
+    "title": "French Herb Omelette with Cheese",
+    "description": "A classic French omelette enhanced with fresh herbs and cheese, perfect for a vegetarian and keto-friendly meal.",
+    "ingredients": [
+      {
+        "name": "eggs",
+        "quantity": "3",
+        "unit": ""
+      },
+      {
+        "name": "butter",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "heavy cream",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "grated Gruyère cheese",
+        "quantity": "30",
+        "unit": "g"
+      },
+      {
+        "name": "fresh chives",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "fresh parsley",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "1/4",
+        "unit": "tsp"
+      },
+      {
+        "name": "black pepper",
+        "quantity": "1/4",
+        "unit": "tsp"
+      }
+    ],
+    "dietTags": ["vegetarian", "keto", "low-carb"],
+    "mealTypes": ["breakfast"],
+    "allergens": [
+      {
+        "id": "milk",
+        "viaDerived": false
+      },
+      {
+        "id": "eggs",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "305.00",
+    "proteinPerServing": "20.00",
+    "carbsPerServing": "2.00",
+    "fatPerServing": "24.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:41:43.274Z"
+  },
+  {
+    "id": 22,
+    "title": "Indian Spiced Quinoa Pilaf",
+    "description": "A flavorful and aromatic Indian-inspired quinoa pilaf that is both vegan and gluten-free. Perfect for a nutritious and hearty meal.",
+    "ingredients": [
+      {
+        "name": "quinoa",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "water",
+        "quantity": "2",
+        "unit": "cups"
+      },
+      {
+        "name": "olive oil",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "cumin seeds",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "mustard seeds",
+        "quantity": "1/2",
+        "unit": "tsp"
+      },
+      {
+        "name": "turmeric powder",
+        "quantity": "1/2",
+        "unit": "tsp"
+      },
+      {
+        "name": "onion",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "garlic cloves",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "carrot",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "green peas",
+        "quantity": "1/2",
+        "unit": "cup"
+      },
+      {
+        "name": "ground coriander",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "cayenne pepper",
+        "quantity": "1/4",
+        "unit": "tsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "1/2",
+        "unit": "tsp"
+      },
+      {
+        "name": "cilantro",
+        "quantity": "1/4",
+        "unit": "cup"
+      }
+    ],
+    "dietTags": ["vegan", "gluten-free", "Indian"],
+    "mealTypes": ["unclassified"],
+    "allergens": [],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "320.00",
+    "proteinPerServing": "10.00",
+    "carbsPerServing": "54.00",
+    "fatPerServing": "10.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:41:43.037Z"
+  },
+  {
+    "id": 21,
+    "title": "Mediterranean Falafel Bowl",
+    "description": "A vibrant and nutritious Mediterranean falafel bowl that is vegan and high in fiber, perfect as a fulfilling lunch or dinner.",
+    "ingredients": [
+      {
+        "name": "falafel",
+        "quantity": "8",
+        "unit": ""
+      },
+      {
+        "name": "quinoa",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "cherry tomatoes",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "cucumber",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "red onion",
+        "quantity": "0.5",
+        "unit": ""
+      },
+      {
+        "name": "kalamata olives",
+        "quantity": "0.5",
+        "unit": "cup"
+      },
+      {
+        "name": "fresh parsley",
+        "quantity": "0.5",
+        "unit": "cup"
+      },
+      {
+        "name": "lemon",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "0.5",
+        "unit": "tsp"
+      },
+      {
+        "name": "black pepper",
+        "quantity": "0.25",
+        "unit": "tsp"
+      },
+      {
+        "name": "hummus",
+        "quantity": "0.5",
+        "unit": "cup"
+      }
+    ],
+    "dietTags": ["vegan", "high-fiber", "Mediterranean", "mediterranean"],
+    "mealTypes": ["lunch", "dinner", "snack"],
+    "allergens": [
+      {
+        "id": "sesame",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "650.00",
+    "proteinPerServing": "20.00",
+    "carbsPerServing": "85.00",
+    "fatPerServing": "30.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:41:34.111Z"
+  },
+  {
+    "id": 20,
+    "title": "Mediterranean Spiced Lamb with Vegetable Couscous",
+    "description": "This Mediterranean spiced lamb dish is rich in flavor and high in protein, perfect for a nutritious and satisfying meal.",
+    "ingredients": [
+      {
+        "name": "lamb chops",
+        "quantity": "4",
+        "unit": ""
+      },
+      {
+        "name": "olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "garlic cloves",
+        "quantity": "3",
+        "unit": ""
+      },
+      {
+        "name": "ground cumin",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "ground coriander",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "black pepper",
+        "quantity": "1/2",
+        "unit": "tsp"
+      },
+      {
+        "name": "couscous",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "chicken broth",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "zucchini",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "red bell pepper",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "cherry tomatoes",
+        "quantity": "200",
+        "unit": "g"
+      },
+      {
+        "name": "fresh parsley",
+        "quantity": "1/4",
+        "unit": "cup"
+      },
+      {
+        "name": "lemon",
+        "quantity": "1",
+        "unit": ""
+      }
+    ],
+    "dietTags": ["high-protein", "mediterranean"],
+    "mealTypes": ["unclassified"],
+    "allergens": [
+      {
+        "id": "wheat",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "650.00",
+    "proteinPerServing": "40.00",
+    "carbsPerServing": "60.00",
+    "fatPerServing": "30.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:41:27.454Z"
+  },
+  {
+    "id": 19,
+    "title": "Mediterranean Feta Stuffed Peppers",
+    "description": "These Mediterranean-style stuffed peppers are filled with a flavorful mixture of feta cheese, quinoa, and fresh vegetables. Perfect as a satisfying vegetarian dish.",
+    "ingredients": [
+      {
+        "name": "large bell peppers",
+        "quantity": "4",
+        "unit": ""
+      },
+      {
+        "name": "cooked quinoa",
+        "quantity": "200",
+        "unit": "g"
+      },
+      {
+        "name": "crumbled feta cheese",
+        "quantity": "150",
+        "unit": "g"
+      },
+      {
+        "name": "cherry tomatoes",
+        "quantity": "150",
+        "unit": "g"
+      },
+      {
+        "name": "kalamata olives",
+        "quantity": "50",
+        "unit": "g"
+      },
+      {
+        "name": "olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "fresh parsley",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "lemon juice",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "garlic clove",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "salt",
+        "quantity": "1/2",
+        "unit": "tsp"
+      },
+      {
+        "name": "black pepper",
+        "quantity": "1/4",
+        "unit": "tsp"
+      }
+    ],
+    "dietTags": ["vegetarian", "gluten-free", "mediterranean"],
+    "mealTypes": ["unclassified"],
+    "allergens": [
+      {
+        "id": "milk",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "450.00",
+    "proteinPerServing": "15.00",
+    "carbsPerServing": "40.00",
+    "fatPerServing": "25.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:41:26.144Z"
+  },
+  {
+    "id": 18,
+    "title": "Mediterranean Chickpea Stew",
+    "description": "This hearty Mediterranean chickpea stew is full of warm spices and fresh vegetables, making it a delightful vegan dish for any occasion.",
+    "ingredients": [
+      {
+        "name": "chickpeas",
+        "quantity": "400",
+        "unit": "g can, drained and rinsed"
+      },
+      {
+        "name": "olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "onion",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "garlic cloves",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "red bell pepper",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "zucchini",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "canned tomatoes",
+        "quantity": "400",
+        "unit": "g"
+      },
+      {
+        "name": "vegetable broth",
+        "quantity": "500",
+        "unit": "ml"
+      },
+      {
+        "name": "ground cumin",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "ground coriander",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "smoked paprika",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "spinach",
+        "quantity": "100",
+        "unit": "g"
+      },
+      {
+        "name": "lemon juice",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "to taste",
+        "unit": ""
+      },
+      {
+        "name": "black pepper",
+        "quantity": "to taste",
+        "unit": ""
+      }
+    ],
+    "dietTags": [
+      "vegan",
+      "vegetarian",
+      "gluten-free",
+      "dairy-free",
+      "mediterranean"
+    ],
+    "mealTypes": ["dinner"],
+    "allergens": [],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "350.00",
+    "proteinPerServing": "15.00",
+    "carbsPerServing": "45.00",
+    "fatPerServing": "12.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:41:18.319Z"
+  },
+  {
+    "id": 17,
+    "title": "Vietnamese Rice Noodle Salad with Grilled Chicken",
+    "description": "This refreshing Vietnamese rice noodle salad features tender grilled chicken, crisp vegetables, and a tangy dressing, all integrated into a gluten-free dish.",
+    "ingredients": [
+      {
+        "name": "rice noodles",
+        "quantity": "200",
+        "unit": "g"
+      },
+      {
+        "name": "chicken breast",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "carrot",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "cucumber",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "fresh mint leaves",
+        "quantity": "1/4",
+        "unit": "cup"
+      },
+      {
+        "name": "fresh cilantro",
+        "quantity": "1/4",
+        "unit": "cup"
+      },
+      {
+        "name": "fish sauce",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "lime juice",
+        "quantity": "3",
+        "unit": "tbsp"
+      },
+      {
+        "name": "sugar",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "red chili",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "garlic clove",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "vegetable oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      }
+    ],
+    "dietTags": ["gluten-free", "asian"],
+    "mealTypes": ["lunch", "dinner"],
+    "allergens": [
+      {
+        "id": "fish",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "550.00",
+    "proteinPerServing": "40.00",
+    "carbsPerServing": "70.00",
+    "fatPerServing": "15.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:41:08.724Z"
+  },
+  {
+    "id": 16,
+    "title": "Stir-Fried Bok Choy with Ginger and Garlic",
+    "description": "This simple yet flavorful dish features tender-crisp bok choy stir-fried with ginger and garlic, capturing the essence of Asian cuisine. Perfect for a light, vegan, and low-carb meal.",
+    "ingredients": [
+      {
+        "name": "Bok choy",
+        "quantity": "500",
+        "unit": "g"
+      },
+      {
+        "name": "Ginger",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "Garlic",
+        "quantity": "3",
+        "unit": "cloves"
+      },
+      {
+        "name": "Sesame oil",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "Tamari",
+        "quantity": "2",
+        "unit": "tbsp"
+      }
+    ],
+    "dietTags": ["vegan", "low-carb", "asian"],
+    "mealTypes": ["unclassified"],
+    "allergens": [
+      {
+        "id": "soy",
+        "viaDerived": false
+      },
+      {
+        "id": "sesame",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Easy",
+    "servings": 2,
+    "caloriesPerServing": "120.00",
+    "proteinPerServing": "3.00",
+    "carbsPerServing": "8.00",
+    "fatPerServing": "9.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:41:07.031Z"
+  },
+  {
+    "id": 15,
+    "title": "Korean-Inspired Sweet Potato Japchae",
+    "description": "A delightful twist on a Korean classic, using sweet potatoes as the noodle base for a nutrient-packed vegan and paleo dish.",
+    "ingredients": [
+      {
+        "name": "large sweet potatoes",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "sesame oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "red bell pepper",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "carrot",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "shiitake mushrooms",
+        "quantity": "100",
+        "unit": "g"
+      },
+      {
+        "name": "baby spinach",
+        "quantity": "100",
+        "unit": "g"
+      },
+      {
+        "name": "green onions",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "garlic",
+        "quantity": "2",
+        "unit": "cloves"
+      },
+      {
+        "name": "tamari (gluten-free soy sauce alternative)",
+        "quantity": "3",
+        "unit": "tbsp"
+      },
+      {
+        "name": "toasted sesame seeds",
+        "quantity": "1",
+        "unit": "tbsp"
+      }
+    ],
+    "dietTags": ["vegan", "paleo", "asian", "gluten-free", "dairy-free"],
+    "mealTypes": ["unclassified"],
+    "allergens": [
+      {
+        "id": "wheat",
+        "viaDerived": true
+      },
+      {
+        "id": "soy",
+        "viaDerived": false
+      },
+      {
+        "id": "sesame",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "350.00",
+    "proteinPerServing": "8.00",
+    "carbsPerServing": "60.00",
+    "fatPerServing": "12.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:41:00.272Z"
+  },
+  {
+    "id": 14,
+    "title": "Miso-Glazed Salmon with Sesame Greens",
+    "description": "This Japanese-inspired dish features omega-3 rich salmon fillets glazed with miso and served alongside sesame-seasoned greens, perfect for a flavorful pescatarian meal.",
+    "ingredients": [
+      {
+        "name": "salmon fillets",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "white miso paste",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "mirin",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "soy sauce",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "honey",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "sesame oil",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "baby spinach",
+        "quantity": "200",
+        "unit": "g"
+      },
+      {
+        "name": "sesame seeds",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "scallions",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "ginger",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "garlic",
+        "quantity": "1",
+        "unit": "clove"
+      }
+    ],
+    "dietTags": ["pescatarian", "asian", "high-protein", "omega-3"],
+    "mealTypes": ["dinner"],
+    "allergens": [
+      {
+        "id": "soy",
+        "viaDerived": false
+      },
+      {
+        "id": "fish",
+        "viaDerived": false
+      },
+      {
+        "id": "sesame",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "400.00",
+    "proteinPerServing": "30.00",
+    "carbsPerServing": "15.00",
+    "fatPerServing": "25.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:40:52.959Z"
+  },
+  {
+    "id": 13,
+    "title": "Thai Basil Tofu Stir-Fry",
+    "description": "A flavorful Thai-inspired tofu stir-fry with fresh basil, infused with aromatic spices and a hint of spice, perfect for a vegan meal.",
+    "ingredients": [
+      {
+        "name": "extra-firm tofu",
+        "quantity": "400",
+        "unit": "g"
+      },
+      {
+        "name": "vegetable oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "garlic",
+        "quantity": "3",
+        "unit": "cloves"
+      },
+      {
+        "name": "red chili",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "soy sauce",
+        "quantity": "3",
+        "unit": "tbsp"
+      },
+      {
+        "name": "brown sugar",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "lime juice",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "fresh basil leaves",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "bell pepper",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "spring onions",
+        "quantity": "2",
+        "unit": ""
+      }
+    ],
+    "dietTags": ["vegan", "asian"],
+    "mealTypes": ["dinner"],
+    "allergens": [
+      {
+        "id": "soy",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "400.00",
+    "proteinPerServing": "20.00",
+    "carbsPerServing": "30.00",
+    "fatPerServing": "25.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:40:52.766Z"
+  },
+  {
+    "id": 12,
+    "title": "Mexican Pork Shoulder Stew",
+    "description": "This hearty and flavorful Mexican pork shoulder stew is packed with protein and spiced to perfection, offering a comforting meal ideal for any occasion.",
+    "ingredients": [
+      {
+        "name": "pork shoulder",
+        "quantity": "1.5",
+        "unit": "kg"
+      },
+      {
+        "name": "olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "onion",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "garlic cloves",
+        "quantity": "4",
+        "unit": ""
+      },
+      {
+        "name": "jalapeño pepper",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "canned diced tomatoes",
+        "quantity": "400",
+        "unit": "g"
+      },
+      {
+        "name": "chipotle chili powder",
+        "quantity": "2",
+        "unit": "tsp"
+      },
+      {
+        "name": "ground cumin",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "ground coriander",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "bay leaves",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "chicken stock",
+        "quantity": "500",
+        "unit": "ml"
+      },
+      {
+        "name": "black beans",
+        "quantity": "400",
+        "unit": "g"
+      },
+      {
+        "name": "lime",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "fresh cilantro",
+        "quantity": "1/2",
+        "unit": "bunch"
+      },
+      {
+        "name": "salt",
+        "quantity": "to taste",
+        "unit": ""
+      },
+      {
+        "name": "black pepper",
+        "quantity": "to taste",
+        "unit": ""
+      }
+    ],
+    "dietTags": ["high-protein", "Mexican", "gluten-free", "mexican"],
+    "mealTypes": ["dinner"],
+    "allergens": [],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "850.00",
+    "proteinPerServing": "70.00",
+    "carbsPerServing": "50.00",
+    "fatPerServing": "40.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:40:39.699Z"
+  },
+  {
+    "id": 11,
+    "title": "Corn Tortilla Black Bean Tacos",
+    "description": "Enjoy a flavorful and satisfying meal with these Mexican-style vegetarian tacos, featuring robust spices and fresh ingredients, all wrapped in gluten-free corn tortillas.",
+    "ingredients": [
+      {
+        "name": "Corn tortillas",
+        "quantity": "8",
+        "unit": ""
+      },
+      {
+        "name": "Canned black beans",
+        "quantity": "400",
+        "unit": "g"
+      },
+      {
+        "name": "Red onion",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "Cherry tomatoes",
+        "quantity": "200",
+        "unit": "g"
+      },
+      {
+        "name": "Avocado",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "Fresh cilantro",
+        "quantity": "1/4",
+        "unit": "cup"
+      },
+      {
+        "name": "Lime",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "Olive oil",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "Ground cumin",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "Smoked paprika",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "Salt",
+        "quantity": "1/2",
+        "unit": "tsp"
+      },
+      {
+        "name": "Black pepper",
+        "quantity": "1/4",
+        "unit": "tsp"
+      }
+    ],
+    "dietTags": ["vegetarian", "gluten-free", "mexican", "quick"],
+    "mealTypes": ["unclassified"],
+    "allergens": [],
+    "difficulty": "Easy",
+    "servings": 2,
+    "caloriesPerServing": "450.00",
+    "proteinPerServing": "15.00",
+    "carbsPerServing": "60.00",
+    "fatPerServing": "18.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:40:36.902Z"
+  },
+  {
+    "id": 10,
+    "title": "Mexican Black Bean and Quinoa Stuffed Peppers",
+    "description": "A delicious and satisfying Mexican-inspired dish with black beans and quinoa, these stuffed peppers are flavorful, vegan, and packed with fiber.",
+    "ingredients": [
+      {
+        "name": "bell peppers",
+        "quantity": "4",
+        "unit": ""
+      },
+      {
+        "name": "cooked quinoa",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "black beans",
+        "quantity": "1",
+        "unit": "can"
+      },
+      {
+        "name": "corn kernels",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "tomato salsa",
+        "quantity": "1/2",
+        "unit": "cup"
+      },
+      {
+        "name": "lime juice",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "cumin",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "chili powder",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "fresh cilantro",
+        "quantity": "1/4",
+        "unit": "cup"
+      },
+      {
+        "name": "avocado",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "olive oil",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "to taste",
+        "unit": ""
+      },
+      {
+        "name": "black pepper",
+        "quantity": "to taste",
+        "unit": ""
+      }
+    ],
+    "dietTags": ["vegan", "high-fiber", "Mexican", "mexican"],
+    "mealTypes": ["dinner", "snack"],
+    "allergens": [],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "450.00",
+    "proteinPerServing": "15.00",
+    "carbsPerServing": "60.00",
+    "fatPerServing": "18.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:40:36.719Z"
+  },
+  {
+    "id": 9,
+    "title": "Grilled Eggplant with Herbed Couscous",
+    "description": "This Italian-inspired vegan dish features smoky grilled eggplant served over a bed of herbed couscous, perfect for a Mediterranean flair.",
+    "ingredients": [
+      {
+        "name": "eggplant",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "olive oil",
+        "quantity": "3",
+        "unit": "tbsp"
+      },
+      {
+        "name": "lemon juice",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "garlic cloves",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "dried oregano",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "couscous",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "vegetable broth",
+        "quantity": "1 1/4",
+        "unit": "cup"
+      },
+      {
+        "name": "fresh parsley",
+        "quantity": "1/4",
+        "unit": "cup"
+      },
+      {
+        "name": "cherry tomatoes",
+        "quantity": "1",
+        "unit": "cup"
+      },
+      {
+        "name": "pine nuts",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "to taste",
+        "unit": ""
+      },
+      {
+        "name": "black pepper",
+        "quantity": "to taste",
+        "unit": ""
+      }
+    ],
+    "dietTags": [
+      "vegan",
+      "vegetarian",
+      "dairy-free",
+      "mediterranean",
+      "italian"
+    ],
+    "mealTypes": ["snack"],
+    "allergens": [
+      {
+        "id": "tree_nuts",
+        "viaDerived": false
+      },
+      {
+        "id": "wheat",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "450.00",
+    "proteinPerServing": "10.00",
+    "carbsPerServing": "60.00",
+    "fatPerServing": "20.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:40:23.294Z"
+  },
+  {
+    "id": 8,
+    "title": "Mexican-Style Ground Turkey Lettuce Wraps",
+    "description": "These Mexican-style lettuce wraps are a flavorful, high-protein, and low-fat dish. They offer a healthy twist on traditional tacos by using lettuce leaves instead of tortillas.",
+    "ingredients": [
+      {
+        "name": "ground turkey",
+        "quantity": "500",
+        "unit": "g"
+      },
+      {
+        "name": "olive oil",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "onion",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "red bell pepper",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "garlic",
+        "quantity": "2",
+        "unit": "cloves"
+      },
+      {
+        "name": "ground cumin",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "chili powder",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "canned black beans",
+        "quantity": "400",
+        "unit": "g"
+      },
+      {
+        "name": "lime",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "salt",
+        "quantity": "1/2",
+        "unit": "tsp"
+      },
+      {
+        "name": "black pepper",
+        "quantity": "1/4",
+        "unit": "tsp"
+      },
+      {
+        "name": "large lettuce leaves",
+        "quantity": "8",
+        "unit": ""
+      },
+      {
+        "name": "fresh cilantro",
+        "quantity": "1/4",
+        "unit": "cup"
+      }
+    ],
+    "dietTags": [
+      "high-protein",
+      "low-fat",
+      "gluten-free",
+      "dairy-free",
+      "mexican"
+    ],
+    "mealTypes": ["dinner"],
+    "allergens": [],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "400.00",
+    "proteinPerServing": "35.00",
+    "carbsPerServing": "30.00",
+    "fatPerServing": "15.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:40:21.534Z"
+  },
+  {
+    "id": 7,
+    "title": "Italian Lemon-Garlic Shrimp with Zucchini Noodles",
+    "description": "A light and flavorful Italian-inspired shrimp dish with the refreshing taste of lemon and the aromatic touch of garlic, served over zucchini noodles for a low-carb twist.",
+    "ingredients": [
+      {
+        "name": "large shrimp, peeled and deveined",
+        "quantity": "450",
+        "unit": "g"
+      },
+      {
+        "name": "zucchini",
+        "quantity": "3",
+        "unit": ""
+      },
+      {
+        "name": "olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "garlic, minced",
+        "quantity": "3",
+        "unit": "cloves"
+      },
+      {
+        "name": "lemon juice",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "lemon zest",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "red pepper flakes",
+        "quantity": "1/4",
+        "unit": "tsp"
+      },
+      {
+        "name": "fresh parsley, chopped",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "to taste",
+        "unit": ""
+      },
+      {
+        "name": "black pepper",
+        "quantity": "to taste",
+        "unit": ""
+      }
+    ],
+    "dietTags": ["pescatarian", "low-carb", "italian"],
+    "mealTypes": ["unclassified"],
+    "allergens": [
+      {
+        "id": "shellfish",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "320.00",
+    "proteinPerServing": "36.00",
+    "carbsPerServing": "10.00",
+    "fatPerServing": "16.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:40:20.324Z"
+  },
+  {
+    "id": 6,
+    "title": "Creamy Tomato and Spinach Pasta",
+    "description": "This Italian-inspired vegetarian pasta dish combines the freshness of spinach and tomatoes with a creamy sauce, perfect for a comforting meal.",
+    "ingredients": [
+      {
+        "name": "pasta",
+        "quantity": "300",
+        "unit": "g"
+      },
+      {
+        "name": "olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "garlic cloves",
+        "quantity": "3",
+        "unit": ""
+      },
+      {
+        "name": "cherry tomatoes",
+        "quantity": "200",
+        "unit": "g"
+      },
+      {
+        "name": "baby spinach",
+        "quantity": "150",
+        "unit": "g"
+      },
+      {
+        "name": "heavy cream",
+        "quantity": "150",
+        "unit": "ml"
+      },
+      {
+        "name": "Parmesan cheese",
+        "quantity": "50",
+        "unit": "g"
+      },
+      {
+        "name": "salt",
+        "quantity": "to taste",
+        "unit": ""
+      },
+      {
+        "name": "black pepper",
+        "quantity": "to taste",
+        "unit": ""
+      }
+    ],
+    "dietTags": ["vegetarian", "italian"],
+    "mealTypes": ["dinner"],
+    "allergens": [
+      {
+        "id": "milk",
+        "viaDerived": false
+      },
+      {
+        "id": "wheat",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "685.00",
+    "proteinPerServing": "20.00",
+    "carbsPerServing": "85.00",
+    "fatPerServing": "30.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:40:03.820Z"
+  },
+  {
+    "id": 5,
+    "title": "Italian Herb Roasted Chicken Thighs",
+    "description": "This Italian-inspired dish features succulent chicken thighs seasoned with a blend of aromatic herbs for a high-protein meal full of flavor.",
+    "ingredients": [
+      {
+        "name": "chicken thighs",
+        "quantity": "4",
+        "unit": ""
+      },
+      {
+        "name": "olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "garlic",
+        "quantity": "3",
+        "unit": "cloves"
+      },
+      {
+        "name": "fresh rosemary",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "fresh thyme",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "lemon",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "salt",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "black pepper",
+        "quantity": "1/2",
+        "unit": "tsp"
+      }
+    ],
+    "dietTags": ["high-protein", "Italian", "italian"],
+    "mealTypes": ["unclassified"],
+    "allergens": [],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "400.00",
+    "proteinPerServing": "30.00",
+    "carbsPerServing": "3.00",
+    "fatPerServing": "30.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:40:03.612Z"
+  },
+  {
+    "id": 4,
+    "title": "Herb-Crusted Turkey Breast",
+    "description": "A flavorful and juicy herb-crusted turkey breast that's perfect for a high-protein, low-fat meal. This American-inspired dish is both healthy and satisfying.",
+    "ingredients": [
+      {
+        "name": "turkey breast",
+        "quantity": "500",
+        "unit": "g"
+      },
+      {
+        "name": "olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "fresh rosemary",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "fresh thyme",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "garlic",
+        "quantity": "2",
+        "unit": "cloves"
+      },
+      {
+        "name": "lemon zest",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "black pepper",
+        "quantity": "1/2",
+        "unit": "tsp"
+      }
+    ],
+    "dietTags": ["high-protein", "low-fat", "gluten-free", "american"],
+    "mealTypes": ["unclassified"],
+    "allergens": [],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "335.00",
+    "proteinPerServing": "62.00",
+    "carbsPerServing": "2.00",
+    "fatPerServing": "12.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:40:03.489Z"
+  },
+  {
+    "id": 3,
+    "title": "Avocado and Spinach Stuffed Mushrooms",
+    "description": "These avocado and spinach stuffed mushrooms are a delightful, keto-friendly vegetarian dish that brings a fresh American twist to your table.",
+    "ingredients": [
+      {
+        "name": "large portobello mushrooms",
+        "quantity": "4",
+        "unit": ""
+      },
+      {
+        "name": "avocado",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "fresh spinach",
+        "quantity": "100",
+        "unit": "g"
+      },
+      {
+        "name": "garlic",
+        "quantity": "2",
+        "unit": "cloves"
+      },
+      {
+        "name": "olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "lemon juice",
+        "quantity": "1",
+        "unit": "tbsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "1/2",
+        "unit": "tsp"
+      },
+      {
+        "name": "black pepper",
+        "quantity": "1/4",
+        "unit": "tsp"
+      },
+      {
+        "name": "grated Parmesan cheese",
+        "quantity": "50",
+        "unit": "g"
+      }
+    ],
+    "dietTags": ["vegetarian", "keto", "gluten-free", "low-carb", "american"],
+    "mealTypes": ["unclassified"],
+    "allergens": [
+      {
+        "id": "milk",
+        "viaDerived": false
+      }
+    ],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "400.00",
+    "proteinPerServing": "10.00",
+    "carbsPerServing": "20.00",
+    "fatPerServing": "34.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:39:47.576Z"
+  },
+  {
+    "id": 2,
+    "title": "American-Style Beef and Sweet Potato Skillet",
+    "description": "This high-protein skillet dish combines ground beef with sweet potatoes and savory spices for a flavorful and satisfying meal.",
+    "ingredients": [
+      {
+        "name": "ground beef",
+        "quantity": "500",
+        "unit": "g"
+      },
+      {
+        "name": "sweet potatoes",
+        "quantity": "2",
+        "unit": ""
+      },
+      {
+        "name": "onion",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "bell pepper",
+        "quantity": "1",
+        "unit": ""
+      },
+      {
+        "name": "garlic",
+        "quantity": "2",
+        "unit": "cloves"
+      },
+      {
+        "name": "olive oil",
+        "quantity": "2",
+        "unit": "tbsp"
+      },
+      {
+        "name": "cumin",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "smoked paprika",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "black pepper",
+        "quantity": "1/2",
+        "unit": "tsp"
+      },
+      {
+        "name": "fresh parsley",
+        "quantity": "2",
+        "unit": "tbsp"
+      }
+    ],
+    "dietTags": ["high-protein", "american", "gluten-free", "dairy-free"],
+    "mealTypes": ["unclassified"],
+    "allergens": [],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "600.00",
+    "proteinPerServing": "40.00",
+    "carbsPerServing": "50.00",
+    "fatPerServing": "30.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:39:47.323Z"
+  },
+  {
+    "id": 1,
+    "title": "Grilled Lemon Herb Chicken",
+    "description": "This high-protein, gluten-free American dish features juicy grilled chicken breast marinated in a zesty lemon herb blend, perfect for a healthy meal any day.",
+    "ingredients": [
+      {
+        "name": "chicken breasts",
+        "quantity": "4",
+        "unit": ""
+      },
+      {
+        "name": "lemon juice",
+        "quantity": "1/4",
+        "unit": "cup"
+      },
+      {
+        "name": "olive oil",
+        "quantity": "3",
+        "unit": "tbsp"
+      },
+      {
+        "name": "garlic",
+        "quantity": "3",
+        "unit": "cloves (minced)"
+      },
+      {
+        "name": "dried oregano",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "dried thyme",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "salt",
+        "quantity": "1",
+        "unit": "tsp"
+      },
+      {
+        "name": "black pepper",
+        "quantity": "1/2",
+        "unit": "tsp"
+      },
+      {
+        "name": "fresh parsley",
+        "quantity": "2",
+        "unit": "tbsp (chopped)"
+      }
+    ],
+    "dietTags": ["high-protein", "gluten-free", "american"],
+    "mealTypes": ["unclassified"],
+    "allergens": [],
+    "difficulty": "Medium",
+    "servings": 2,
+    "caloriesPerServing": "360.00",
+    "proteinPerServing": "40.00",
+    "carbsPerServing": "2.00",
+    "fatPerServing": "20.00",
+    "imageUrl": null,
+    "isCanonical": true,
+    "createdAt": "2026-06-25T19:39:47.171Z"
+  }
+]

@@ -3,16 +3,31 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { onlineManager } from "@tanstack/react-query";
 import { useQuickLogSession, MAX_LOG_ITEMS } from "../useQuickLogSession";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 
-const { mockApiRequest, mockTokenStorage, mockEnqueue } = vi.hoisted(() => ({
-  mockApiRequest: vi.fn(),
-  mockTokenStorage: {
-    get: vi.fn(),
-    set: vi.fn(),
-    clear: vi.fn(),
-    invalidateCache: vi.fn(),
-  },
-  mockEnqueue: vi.fn().mockResolvedValue(undefined),
+const GENERIC_PARSE_MESSAGE = "Failed to parse food text. Please try again.";
+const QUICK_LOG_PREMIUM_MESSAGE =
+  "Quick Log is a premium feature. Upgrade to log food by text or voice.";
+
+const { mockApiRequest, mockTokenStorage, mockEnqueue, mockKeyboardDismiss } =
+  vi.hoisted(() => ({
+    mockApiRequest: vi.fn(),
+    mockTokenStorage: {
+      get: vi.fn(),
+      set: vi.fn(),
+      clear: vi.fn(),
+      invalidateCache: vi.fn(),
+    },
+    mockEnqueue: vi.fn().mockResolvedValue(undefined),
+    mockKeyboardDismiss: vi.fn(),
+  }));
+
+// The shared react-native mock has no Keyboard (see QuickLogDrawer.test.tsx's
+// identical override) — reset() dismisses it on every close path.
+vi.mock("react-native", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  Keyboard: { dismiss: mockKeyboardDismiss },
 }));
 
 vi.mock("@/lib/query-client", () => ({
@@ -173,6 +188,187 @@ describe("useQuickLogSession", () => {
     expect(result.current.parsedItems).toHaveLength(0);
   });
 
+  it("shows the premium message (not a parse failure) when text parse returns PREMIUM_REQUIRED", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockRejectedValueOnce(
+      new ApiError("403: Premium required", ErrorCode.PREMIUM_REQUIRED, 403),
+    );
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("some food"));
+    act(() => result.current.handleTextSubmit());
+
+    await waitFor(() => expect(result.current.parseError).not.toBeNull());
+    expect(result.current.parseError).toBe(QUICK_LOG_PREMIUM_MESSAGE);
+  });
+
+  it("keeps the generic parse message for a non-premium ApiError", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockRejectedValueOnce(
+      new ApiError("500: boom", ErrorCode.INTERNAL_ERROR, 500),
+    );
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("some food"));
+    act(() => result.current.handleTextSubmit());
+
+    await waitFor(() => expect(result.current.parseError).not.toBeNull());
+    expect(result.current.parseError).toBe(GENERIC_PARSE_MESSAGE);
+  });
+
+  // An empty parse is a successful request that found no food. It needs its
+  // own flag: a parseError would say "try again" about a request that worked,
+  // and no flag at all leaves the drawer looking unchanged (the device report).
+  it("sets parseEmpty (not parseError) when a text parse returns no items", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ items: [] }),
+    });
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("hello there"));
+    act(() => result.current.handleTextSubmit());
+
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+    expect(result.current.parseError).toBeNull();
+    expect(result.current.parsedItems).toHaveLength(0);
+  });
+
+  it("sets parseEmpty when a voice auto-parse returns no items", async () => {
+    const { useSpeechToText } = await import("@/hooks/useSpeechToText");
+    (useSpeechToText as ReturnType<typeof vi.fn>).mockReturnValue({
+      ...mockSpeechToText,
+      isFinal: true,
+      transcript: "um",
+    });
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ items: [] }),
+    });
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+    expect(result.current.parseError).toBeNull();
+  });
+
+  it("clears parseEmpty when the next parse finds food", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ items: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "toast",
+                quantity: 1,
+                unit: "slice",
+                calories: 80,
+                protein: 3,
+                carbs: 14,
+                fat: 1,
+                servingSize: null,
+              },
+            ],
+          }),
+      });
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("hello"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+
+    act(() => result.current.setInputText("1 slice toast"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
+    expect(result.current.parseEmpty).toBe(false);
+  });
+
+  it("clears parseEmpty on a new submit, before its result arrives", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ items: [] }),
+      })
+      .mockReturnValueOnce(new Promise(() => {})); // second parse never settles
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("hello"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+
+    act(() => result.current.handleTextSubmit());
+    expect(result.current.parseEmpty).toBe(false);
+  });
+
+  // A chip is a known-good suggestion; leaving "couldn't find any food" beside
+  // it implies the chip's item failed too.
+  it("tapping a chip clears a stale empty-parse message", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ items: [] }),
+    });
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("asdf"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+
+    act(() => result.current.handleChipPress("Coffee"));
+    expect(result.current.parseEmpty).toBe(false);
+    expect(result.current.inputText).toBe("Coffee");
+  });
+
+  it("reset clears parseEmpty", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ items: [] }),
+    });
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("hello"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parseEmpty).toBe(true));
+
+    act(() => result.current.reset());
+    expect(result.current.parseEmpty).toBe(false);
+  });
+
+  it("shows the premium message when voice auto-parse returns PREMIUM_REQUIRED", async () => {
+    const { useSpeechToText } = await import("@/hooks/useSpeechToText");
+    (useSpeechToText as ReturnType<typeof vi.fn>).mockReturnValue({
+      ...mockSpeechToText,
+      isFinal: true,
+      transcript: "3 eggs",
+    });
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockRejectedValueOnce(
+      new ApiError("403: Premium required", ErrorCode.PREMIUM_REQUIRED, 403),
+    );
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    await waitFor(() => expect(result.current.parseError).not.toBeNull());
+    expect(result.current.parseError).toBe(QUICK_LOG_PREMIUM_MESSAGE);
+  });
+
   it("removes item by index", async () => {
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(() => useQuickLogSession(), { wrapper });
@@ -315,6 +511,52 @@ describe("useQuickLogSession", () => {
     expect(result.current.inputText).toBe("");
   });
 
+  // P1-2026-09-23: this online-success path used to invalidate dailySummary,
+  // scannedItems, and frequentItems, but never daily-budget — leaving Home's
+  // calorie header stale after a QuickLog submit.
+  it("invalidates /api/daily-budget after submitLog succeeds online", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "chicken",
+                quantity: 1,
+                unit: "breast",
+                calories: 320,
+                protein: 58,
+                carbs: 0,
+                fat: 7,
+                servingSize: null,
+              },
+            ],
+          }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: 1 }),
+      });
+
+    const { result } = renderHook(() => useQuickLogSession({}), { wrapper });
+
+    act(() => result.current.setInputText("chicken breast"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
+
+    act(() => result.current.submitLog());
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/daily-budget"],
+      }),
+    );
+  });
+
   it("sets submitError when log fails", async () => {
     const { wrapper } = createQueryWrapper();
     mockApiRequest
@@ -350,7 +592,8 @@ describe("useQuickLogSession", () => {
   });
 
   it("partial failure: removes successfully logged items so retry is idempotent", async () => {
-    const { wrapper } = createQueryWrapper();
+    const { wrapper, queryClient } = createQueryWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     // Parse returns 2 items: eggs (index 0) and coffee (index 1)
     mockApiRequest
@@ -405,6 +648,13 @@ describe("useQuickLogSession", () => {
     expect(result.current.submitError).toBe(
       "Some items failed to log. Please try again.",
     );
+    // P1-2026-09-23 (code-reviewer finding): the partial-success onError
+    // branch invalidates daily-budget too — real server writes happened for
+    // the item(s) that DID persist (eggs), so Home's calorie header is stale
+    // otherwise, same as the full-success path.
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/daily-budget"],
+    });
   });
 
   it("total failure: preserves all parsedItems and shows generic error message", async () => {
@@ -472,6 +722,201 @@ describe("useQuickLogSession", () => {
     expect(result.current.parsedItems).toHaveLength(0);
     expect(result.current.parseError).toBeNull();
     expect(result.current.submitError).toBeNull();
+  });
+
+  // Closing the drawer never dismissed the keyboard before this — it could
+  // stay up over the collapsed/locked row (P3-2026-09-29). Every close path
+  // (switching drawers, leaving the tab, a successful log) funnels through
+  // this one reset(), so dismissing here covers all of them.
+  it("calls Keyboard.dismiss() on reset", async () => {
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.reset());
+
+    expect(mockKeyboardDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  // A per-parse generation counter lets consumers announce every successful
+  // parse, not just the first — see the "second manifestation" in
+  // docs/solutions/logic-errors/imperative-announce-must-be-content-keyed-not-variant-keyed-2026-06-24.md.
+  describe("parseGeneration", () => {
+    it("starts at 0 and is silent until the first parse", () => {
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+      expect(result.current.parseGeneration).toBe(0);
+    });
+
+    it("bumps on a successful text-submit parse", async () => {
+      const { wrapper } = createQueryWrapper();
+      mockApiRequest.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "eggs",
+                quantity: 2,
+                unit: "large",
+                calories: 143,
+                protein: 12,
+                carbs: 1,
+                fat: 10,
+                servingSize: null,
+              },
+            ],
+          }),
+      });
+
+      const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+      act(() => result.current.setInputText("2 eggs"));
+      act(() => result.current.handleTextSubmit());
+
+      await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
+      expect(result.current.parseGeneration).toBe(1);
+    });
+
+    it("bumps again on a second successful parse that replaces the results, with no empty state in between", async () => {
+      const { wrapper } = createQueryWrapper();
+      mockApiRequest
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              items: [
+                {
+                  name: "eggs",
+                  quantity: 2,
+                  unit: "large",
+                  calories: 143,
+                  protein: 12,
+                  carbs: 1,
+                  fat: 10,
+                  servingSize: null,
+                },
+              ],
+            }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              items: [
+                {
+                  name: "toast",
+                  quantity: 1,
+                  unit: "slice",
+                  calories: 80,
+                  protein: 3,
+                  carbs: 14,
+                  fat: 1,
+                  servingSize: null,
+                },
+              ],
+            }),
+        });
+
+      const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+      act(() => result.current.setInputText("2 eggs"));
+      act(() => result.current.handleTextSubmit());
+      await waitFor(() => expect(result.current.parseGeneration).toBe(1));
+
+      // The prior result was never cleared (no empty state, no reset) —
+      // exactly the case the discriminator (`parsedItems.length > 0`) alone
+      // can't distinguish from "unchanged".
+      act(() => result.current.setInputText("1 slice toast"));
+      act(() => result.current.handleTextSubmit());
+      await waitFor(() =>
+        expect(result.current.parsedItems[0]?.name).toBe("toast"),
+      );
+      expect(result.current.parseGeneration).toBe(2);
+    });
+
+    it("bumps on a successful voice auto-parse", async () => {
+      const { useSpeechToText } = await import("@/hooks/useSpeechToText");
+      (useSpeechToText as ReturnType<typeof vi.fn>).mockReturnValue({
+        ...mockSpeechToText,
+        isFinal: true,
+        transcript: "3 eggs",
+      });
+
+      const { wrapper } = createQueryWrapper();
+      mockApiRequest.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "eggs",
+                quantity: 3,
+                unit: "large",
+                calories: 216,
+                protein: 18,
+                carbs: 1,
+                fat: 15,
+                servingSize: null,
+              },
+            ],
+          }),
+      });
+
+      const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+      await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
+      expect(result.current.parseGeneration).toBe(1);
+    });
+
+    // The counter must key off an actual new parse, not any change to
+    // parsedItems — removeItem changes the array the same way a re-parse
+    // does, and over-announcing every removal is worse than the gap this
+    // counter fixes (see the solution doc's "why this one was left unfixed"
+    // note).
+    it("does not bump when removeItem changes the list", async () => {
+      const { wrapper } = createQueryWrapper();
+      mockApiRequest.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "eggs",
+                quantity: 2,
+                unit: "large",
+                calories: 143,
+                protein: 12,
+                carbs: 1,
+                fat: 10,
+                servingSize: null,
+              },
+              {
+                name: "coffee",
+                quantity: 1,
+                unit: "cup",
+                calories: 5,
+                protein: 0,
+                carbs: 1,
+                fat: 0,
+                servingSize: null,
+              },
+            ],
+          }),
+      });
+
+      const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+      act(() => result.current.setInputText("2 eggs and coffee"));
+      act(() => result.current.handleTextSubmit());
+      await waitFor(() => expect(result.current.parsedItems).toHaveLength(2));
+      expect(result.current.parseGeneration).toBe(1);
+
+      act(() => result.current.removeItem(0));
+
+      expect(result.current.parsedItems).toHaveLength(1);
+      expect(result.current.parseGeneration).toBe(1);
+    });
   });
 
   it("does not repopulate items when a parse resolves after reset()", async () => {

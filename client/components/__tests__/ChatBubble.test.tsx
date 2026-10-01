@@ -17,6 +17,22 @@ describe("ChatBubble", () => {
     expect(screen.getByLabelText("NutriCoach: How can I help?")).toBeDefined();
   });
 
+  // The screen strips markdown images and shows links as plain text; the
+  // spoken label must match what is on screen, not read raw syntax or URLs.
+  it("speaks the same cleaned text the screen shows: no image syntax, link text without its URL", () => {
+    renderComponent(
+      <ChatBubble
+        role="assistant"
+        content={
+          "Try this ![bowl](https://x.test/b.jpg) from [Bon Appetit](https://ba.test/r)."
+        }
+      />,
+    );
+    expect(
+      screen.getByLabelText("NutriCoach: Try this from Bon Appetit."),
+    ).toBeDefined();
+  });
+
   it("returns null when content is empty and not streaming", () => {
     const { container } = renderComponent(
       <ChatBubble role="assistant" content="" />,

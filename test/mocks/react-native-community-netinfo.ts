@@ -3,7 +3,7 @@ import { vi } from "vitest";
 /**
  * Global mock for @react-native-community/netinfo.
  *
- * Registered as a resolve.alias in vitest.config.ts so that any test-suite
+ * Registered as a resolve.alias in vitest.config.mts so that any test-suite
  * file that imports query-client.ts (which calls onlineManager.setEventListener
  * at module load) does not trigger a real NetInfo native module.
  *

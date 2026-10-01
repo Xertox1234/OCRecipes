@@ -77,6 +77,44 @@ describe("useHaptics", () => {
 
     expect(result.current.disabled).toBe(true);
   });
+
+  // P1-2026-09-23-unstable-mutation-and-haptics-deps-on-compiler-skipped-screens
+  // (AC #3): useHaptics() previously returned a fresh object literal every
+  // render, so every consumer that lists the whole `haptics` object in a
+  // useCallback dep array got a new callback identity on every parent
+  // re-render even though reducedMotion never changed. The three inner
+  // functions were already useCallback-stable — only the wrapping object
+  // was not. Memoizing the return fixes every such consumer at the source.
+  it("returns a referentially stable object across re-renders when reducedMotion is unchanged", () => {
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(false);
+
+    const { result, rerender } = renderHook(() => useHaptics());
+    const first = result.current;
+
+    rerender();
+
+    expect(result.current).toBe(first);
+    // Denominator: prove this is actually testing memoization and not a
+    // vacuously-passing hook that returns a shared module-level constant —
+    // the inner functions must also be the SAME references (they are the
+    // real dependency the useMemo is keyed on).
+    expect(result.current.impact).toBe(first.impact);
+    expect(result.current.notification).toBe(first.notification);
+    expect(result.current.selection).toBe(first.selection);
+  });
+
+  it("returns a NEW object when reducedMotion changes (negative control)", () => {
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(false);
+
+    const { result, rerender } = renderHook(() => useHaptics());
+    const first = result.current;
+
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(true);
+    rerender();
+
+    expect(result.current).not.toBe(first);
+    expect(result.current.disabled).toBe(true);
+  });
 });
 
 // expo-haptics' impactAsync/notificationAsync/selectionAsync call Android's

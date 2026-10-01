@@ -26,8 +26,13 @@ import { AnimatedCheckmark } from "@/components/AnimatedCheckmark";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { useQuickLogSession } from "@/hooks/useQuickLogSession";
+import {
+  useQuickLogSession,
+  EMPTY_PARSE_MESSAGE,
+} from "@/hooks/useQuickLogSession";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { UpgradeModal } from "@/components/UpgradeModal";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import {
   Spacing,
@@ -48,6 +53,11 @@ function randomTip() {
   return QUICK_LOG_TIPS[Math.floor(Math.random() * QUICK_LOG_TIPS.length)];
 }
 
+/** Shown/announced when a parse finds food (see the success-announce effect). */
+function foundItemsMessage(count: number) {
+  return `Found ${count} item${count === 1 ? "" : "s"}. Log All to save.`;
+}
+
 const EXAMPLE_ITEMS = [
   "2 eggs and toast with butter",
   "chicken salad with ranch dressing",
@@ -62,7 +72,13 @@ export default function QuickLogScreen() {
   const toast = useToast();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { isPremium } = usePremiumContext();
+  const { isPremium, isPremiumResolved } = usePremiumContext();
+  // Coach, recent actions and deep links open this screen directly, so the
+  // gate lives here, not only on Home's row. It reads the server-resolved,
+  // expiry-aware feature, and waits for the subscription to load so a premium
+  // user never sees the upgrade flow flash (the server still enforces it).
+  const canQuickLog = usePremiumFeature("textFoodParsing");
+  const isLocked = isPremiumResolved && !canQuickLog;
   const { isOffline, offlineLabel } = useOfflineGuard();
 
   // Offline transitions are announced by the always-mounted global OfflineBanner
@@ -74,10 +90,13 @@ export default function QuickLogScreen() {
   const [showCheckmark, setShowCheckmark] = useState(false);
 
   const session = useQuickLogSession({
-    // This full-screen surface is always "open" while mounted — without this
-    // the hook's frequent-items query stays disabled and "Previous Items"
-    // never renders here (it defaults isOpen to false for drawer consumers).
-    isOpen: true,
+    // This full-screen surface is "open" while mounted and unlocked —
+    // without this the hook's frequent-items query stays disabled and
+    // "Previous Items" never renders here (it defaults isOpen to false for
+    // drawer consumers). Suppressed while locked: the `isLocked` early
+    // return below never reaches the "Previous Items" UI, so a locked
+    // render has no use for the query and must not fire it.
+    isOpen: !isLocked,
     onLogSuccess: () => {
       AccessibilityInfo.announceForAccessibility("Food items logged");
       setShowCheckmark(true);
@@ -96,12 +115,56 @@ export default function QuickLogScreen() {
   }, [session.parseError, toast]);
 
   React.useEffect(() => {
+    if (session.parseEmpty) toast.info(EMPTY_PARSE_MESSAGE);
+  }, [session.parseEmpty, toast]);
+
+  React.useEffect(() => {
     if (session.submitError) toast.error(session.submitError);
   }, [session.submitError, toast]);
 
   React.useEffect(() => {
     if (session.capWarning) toast.info(session.capWarning);
   }, [session.capWarning, toast]);
+
+  // A successful parse announces its item count — every parse, not just the
+  // first: a later parse can replace the results without `parsedItems`
+  // passing back through empty, and a discriminator keyed on
+  // `parsedItems.length > 0` alone misses that case
+  // (docs/solutions/logic-errors/imperative-announce-must-be-content-keyed-
+  // not-variant-keyed-2026-06-24.md, "Second manifestation"). iOS has no
+  // live region here, so it always gets the imperative announce. Android's
+  // note below (accessibilityLiveRegion="polite") re-reads automatically
+  // whenever the count changes the rendered text; only a same-count replace
+  // leaves that text identical, so it needs the explicit announce too —
+  // never both, on either platform (docs/rules/accessibility.md →
+  // Announcements).
+  //
+  // `lastRenderedCountRef` must be written on EVERY run of this effect, not
+  // only when the generation changes: removeItem changes `parsedItems.length`
+  // — and so the live region's own rendered text — without bumping
+  // `parseGeneration`. A version gated behind the generation check went
+  // stale across exactly that change, producing a false negative (a
+  // same-count replace after a removeItem stayed silent) and a false
+  // positive (the next parse double-announced when its count happened to
+  // match the pre-removal count) — caught by review with a constructed
+  // probe.
+  const announcedGenerationRef = React.useRef(0);
+  const lastRenderedCountRef = React.useRef(0);
+  React.useEffect(() => {
+    const count = session.parsedItems.length;
+    const prevRenderedCount = lastRenderedCountRef.current;
+    lastRenderedCountRef.current = count;
+
+    const generation = session.parseGeneration;
+    if (generation === 0 || generation === announcedGenerationRef.current) {
+      return;
+    }
+    announcedGenerationRef.current = generation;
+    if (count === 0) return;
+    if (Platform.OS === "ios" || count === prevRenderedCount) {
+      AccessibilityInfo.announceForAccessibility(foundItemsMessage(count));
+    }
+  }, [session.parseGeneration, session.parsedItems.length]);
 
   const handleCameraPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
@@ -118,6 +181,16 @@ export default function QuickLogScreen() {
 
   const hasPreviousItems =
     session.frequentItems !== undefined && session.frequentItems.length > 0;
+
+  if (isLocked) {
+    return (
+      <View
+        style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+      >
+        <UpgradeModal visible={true} onClose={() => navigation.goBack()} />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -157,7 +230,10 @@ export default function QuickLogScreen() {
               value={session.inputText}
               onChangeText={session.setInputText}
               onSubmitEditing={session.handleTextSubmit}
-              returnKeyType="search"
+              returnKeyType="done"
+              // Multiline defaults to "newline" (the key would never submit); blur
+              // too, so the keyboard leaves the results visible, as in the drawer.
+              submitBehavior="blurAndSubmit"
               multiline
               accessibilityLabel="Food description"
             />
@@ -227,6 +303,19 @@ export default function QuickLogScreen() {
           </View>
         </Card>
 
+        {session.parsedItems.length > 0 && (
+          <ThemedText
+            type="small"
+            style={{
+              color: theme.textSecondary,
+              textAlign: "center",
+              marginTop: Spacing.xs,
+            }}
+            accessibilityLiveRegion="polite"
+          >
+            {foundItemsMessage(session.parsedItems.length)}
+          </ThemedText>
+        )}
         <ParsedFoodPreview
           items={session.parsedItems}
           onRemoveItem={session.removeItem}

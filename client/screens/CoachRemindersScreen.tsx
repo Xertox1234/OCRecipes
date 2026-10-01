@@ -87,10 +87,13 @@ function useUpdateReminderMute() {
       });
     },
     onError: () => {
-      // The global query-error net is query-only; surface mutation failures here
-      // so a failed toggle does not silently leave the UI showing the wrong state.
+      // Surface mutation failures here so a failed toggle does not silently
+      // leave the UI showing the wrong state.
       toast.error("Couldn't update your reminder settings. Please try again.");
     },
+    // The onError above already toasts on failure — the global net would
+    // double it.
+    meta: { silentError: true },
   });
 }
 

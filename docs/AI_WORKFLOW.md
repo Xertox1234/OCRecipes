@@ -28,11 +28,13 @@ review-until-clean:
   the maximum: two review dispatches per PR.
 - **WARNING / SUGGESTION** → do **not** fix-and-re-review. File as a todo per the CLAUDE.md
   tier rule (or, for `.claude/hooks/**`, add to `docs/harness-residuals.md`), or fix it in a
-  **follow-up PR**. Never fix it on the reviewed branch: a record binds to one head sha, so any
+  **follow-up PR**. A `todo-executor` never files: it reports the finding under
+  `DEFERRED_WARNINGS` and the orchestrator/user decides (`todo-executor.md` Step 7). Never fix it on the reviewed branch: a record binds to one head sha, so any
   new commit needs a fresh review — the loop this rule removes. The reviewer ends with
   `No blocking findings.`, which records `verdict: advisory`, and the merge gate accepts it.
 - A **confirmation pass** exists only to bind a record to the final head. It never reopens
-  review: its non-CRITICAL findings are filed, not fixed.
+  review: its non-CRITICAL findings are filed (by a `todo-executor`: reported under
+  `DEFERRED_WARNINGS`), not fixed.
 
 **Concurrency:** keep per-review fan-out small. In `/todo`, review runs _inside_ an already-parallel batch (up to 4 executors), so cap each todo at **`code-reviewer` + 1–2 domain reviewers (≤3 total)** to avoid a 4×N subagent blow-up against the project's "max ~4 parallel agents" guidance. A branch-wide review (`/codify`) or an audit may use more (`code-reviewer` + 2–3 domain reviewers) because it is not itself nested in a parallel batch.
 
@@ -101,7 +103,7 @@ Skip it whenever the pipeline's eligibility check returns `yes` — both the aut
 #### Tier handling (project convention)
 
 - **CRITICAL** blocks — must be fixed before the work proceeds.
-- **Scope-contract violation = CRITICAL.** When the task under review carries a stated Scope Contract (`todos/TEMPLATE.md` section), any added mechanism, file, or abstraction the contract excludes is treated as a correctness failure, not a style nit — it blocks like any other CRITICAL.
+- **Scope-contract violation = CRITICAL, with one disclosed exception.** When the task under review carries a stated Scope Contract (`todos/TEMPLATE.md` section), any added mechanism, file, or abstraction the contract excludes is a correctness failure, not a style nit — it blocks like any other CRITICAL. The one exception: a file was genuinely necessary to satisfy an acceptance criterion AND it is disclosed under an "Out of contract" heading in the PR body with a one-line reason tied to that criterion. Verify the reason actually holds — a disclosed-but-unnecessary file is still CRITICAL — and an undisclosed out-of-contract file is always CRITICAL regardless of whether it was needed.
 - **WARNING** — fix inline if clearly in-scope and small; otherwise surface it (e.g. `DEFERRED_WARNINGS`) for the user to triage. Never auto-file a follow-up todo.
 - **SUGGESTION** — informational; apply only if trivial and in-scope.
 

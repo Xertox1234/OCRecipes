@@ -7,6 +7,8 @@ import type { CameraDevice, CameraRef } from "react-native-vision-camera";
 import { logger } from "@/lib/logger";
 import {
   clampZoom,
+  formatZoomLabel,
+  shouldApplyZoom,
   supportedMeteringModes,
 } from "./useCameraFocusAndZoom-utils";
 
@@ -33,6 +35,13 @@ export function useCameraFocusAndZoom({
 }: UseCameraFocusAndZoomOptions) {
   const zoom = useSharedValue(1);
   const zoomAtGestureStart = useSharedValue(1);
+  // UI-thread-side "last value bridged to JS" trackers — gates the per-frame
+  // scheduleOnRN calls below to transitions only, per the pattern in
+  // docs/legacy-patterns/animation.md -> "Gate runOnJS on Shared-Value
+  // Transitions, Not on Every Frame" (same shape as useScrollLinkedHeader.ts's
+  // lastBarVisible).
+  const lastAppliedZoom = useSharedValue(1);
+  const lastZoomLabelText = useSharedValue<string | null>(null);
   const [focusPoint, setFocusPoint] = useState<FocusPoint | null>(null);
   const focusKeyRef = useRef(0);
   const focusFailureReportedRef = useRef(false);
@@ -117,8 +126,9 @@ export function useCameraFocusAndZoom({
   // doesn't install (it's snapshot-only OCR, no frame processors). Passing
   // an animated zoom SharedValue as a prop throws inside Camera's own
   // effect ("react-native-vision-camera-worklets is not installed"),
-  // silently killing the whole preview. Bridging via scheduleOnRN on every pinch
-  // update costs a JS-thread hop per frame but avoids that dependency.
+  // silently killing the whole preview. Bridging via scheduleOnRN avoids
+  // that dependency; the pinch worklet below only schedules this once the
+  // value has moved past shouldApplyZoom's epsilon, not on every frame.
   const setCameraZoom = useCallback(
     (value: number) => {
       cameraRef.current?.controller
@@ -130,14 +140,21 @@ export function useCameraFocusAndZoom({
           zoomFailureReportedRef.current = false;
         })
         .catch((error: unknown) => {
-          // Latched: setZoom is invoked via scheduleOnRN on EVERY pinch-gesture
-          // frame (not once per tap, like runFocus's focusTo) — unlatched,
-          // one dragged pinch on a broken zoom would emit dozens of Sentry
-          // events. NOTE: the bound is "one report per success→failure
-          // transition", not "one report per mount" — the .then() re-arm
-          // above means an INTERMITTENTLY failing setZoom during one drag
-          // can still emit more than one report; that's the same tradeoff
-          // runFocus already accepts, just at a much higher call rate here.
+          // Latched: setZoom is invoked via scheduleOnRN on every frame that
+          // crosses shouldApplyZoom's epsilon (still a much higher rate than
+          // runFocus's once-per-tap focusTo) — unlatched, one dragged pinch on
+          // a broken zoom would emit dozens of Sentry events. NOTE: the bound
+          // is "one report per success→failure transition", not "one report
+          // per mount" — the .then() re-arm above means an INTERMITTENTLY
+          // failing setZoom during one drag can still emit more than one
+          // report; that's the same tradeoff runFocus already accepts, just
+          // at a much higher call rate here. Also note lastAppliedZoom (in
+          // pinchGesture.onUpdate) advances before this promise settles, so a
+          // rejection leaves it ahead of the actual native zoom — accepted,
+          // not fixed: the next pinch frame that moves >epsilon past THIS
+          // value (rather than the last successfully applied one) retries,
+          // which is fine at epsilon's scale and avoids writing a UI-thread
+          // shared value from a JS-thread promise callback mid-gesture.
           if (zoomFailureReportedRef.current) return;
           zoomFailureReportedRef.current = true;
           logger.error(
@@ -149,13 +166,19 @@ export function useCameraFocusAndZoom({
     [cameraRef, device],
   );
 
-  // Bridged from the pinch worklet on every update via scheduleOnRN — shows a live
-  // "1.8x" readout during the gesture, fades out ~600ms after it stops
-  // changing. Re-arms the hide timer on each call rather than debouncing, so
-  // the label stays visible for the whole gesture and only starts its
-  // fade-out countdown once the fingers actually stop moving.
+  // Bridged from the pinch worklet via scheduleOnRN only when the displayed
+  // toFixed(1) text actually changes (see formatZoomLabel/lastZoomLabelText
+  // gating in pinchGesture.onUpdate below) — shows a live "1.8x" readout.
+  // It only cancels a pending hide: the label stays up for the whole gesture
+  // (a steady pinch sends no frames to re-arm a timer), and hideZoomLabel,
+  // called once from pinchGesture.onFinalize, starts the ~600ms fade.
   const showZoomLabel = useCallback((value: number) => {
-    setZoomLabel(`${value.toFixed(1)}x`);
+    setZoomLabel(formatZoomLabel(value));
+    if (zoomLabelHideTimer.current) clearTimeout(zoomLabelHideTimer.current);
+    zoomLabelHideTimer.current = null;
+  }, []);
+
+  const hideZoomLabel = useCallback(() => {
     if (zoomLabelHideTimer.current) clearTimeout(zoomLabelHideTimer.current);
     zoomLabelHideTimer.current = setTimeout(() => {
       setZoomLabel(null);
@@ -173,6 +196,16 @@ export function useCameraFocusAndZoom({
   });
 
   const pinchGesture = Gesture.Pinch()
+    // Reset the label gate on EVERY touch attempt, not just activated ones:
+    // onFinalize also fires for an attempt that never activates (on Android a
+    // single-finger tap drives the pinch recognizer BEGAN→FAILED), and a gate
+    // left over from the previous pinch would make it re-arm the hide. The
+    // reset also lets a new pinch show the readout even if it ends in the
+    // bucket the last one left off in. lastAppliedZoom is NOT reset: it tracks
+    // native state, so an unchanged zoom correctly stays un-re-sent.
+    .onBegin(() => {
+      lastZoomLabelText.value = null;
+    })
     .onStart(() => {
       zoomAtGestureStart.value = zoom.value;
     })
@@ -183,8 +216,33 @@ export function useCameraFocusAndZoom({
         device.minZoom,
         device.maxZoom,
       );
-      scheduleOnRN(setCameraZoom, zoom.value);
-      scheduleOnRN(showZoomLabel, zoom.value);
+      if (shouldApplyZoom(zoom.value, lastAppliedZoom.value)) {
+        lastAppliedZoom.value = zoom.value;
+        scheduleOnRN(setCameraZoom, zoom.value);
+      }
+      const nextZoomLabel = formatZoomLabel(zoom.value);
+      if (nextZoomLabel !== lastZoomLabelText.value) {
+        lastZoomLabelText.value = nextZoomLabel;
+        scheduleOnRN(showZoomLabel, zoom.value);
+      }
+    })
+    // onFinalize (not onEnd) so a system-cancelled pinch still flushes and
+    // hides. At most one bridge call per ACTIVATED gesture (a never-activated
+    // attempt finds both gates clean and sends nothing): apply a final value the epsilon
+    // gate held back, and start the label fade if this gesture showed it.
+    .onFinalize(() => {
+      if (zoom.value !== lastAppliedZoom.value) {
+        lastAppliedZoom.value = zoom.value;
+        scheduleOnRN(setCameraZoom, zoom.value);
+      }
+      if (lastZoomLabelText.value !== null) {
+        // Clear the gate where it's used. Every gesture that set it was
+        // active and ends here (END/FAILED/CANCELLED), so this holds whatever
+        // order the platform delivers begin/finalize in; the onBegin reset is
+        // only defence in depth.
+        lastZoomLabelText.value = null;
+        scheduleOnRN(hideZoomLabel);
+      }
     });
 
   return { focusPoint, zoomLabel, tapGesture, pinchGesture };

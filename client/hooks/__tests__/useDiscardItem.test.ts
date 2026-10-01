@@ -114,6 +114,9 @@ describe("useDiscardItem", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: QUERY_KEYS.dailySummary,
     });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["/api/daily-budget"],
+    });
   });
 
   it("enqueues the delete to the durable offline queue when offline (must not pause in-memory)", async () => {

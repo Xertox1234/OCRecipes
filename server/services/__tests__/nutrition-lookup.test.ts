@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 
 import {
   lookupNutrition,
   batchNutritionLookup,
   _resetCNFCacheForTesting,
+  fuzzyMatchCNF,
 } from "../nutrition-lookup";
 import { lookupBarcode } from "../barcode-lookup";
 
@@ -219,7 +222,8 @@ describe("lookupBarcode", () => {
             },
           }),
         }),
-      // CNF will match "sugar" → "Sweets, sugars, granulated" → 387 kcal
+      // CNF matches "sugar" to a sugar row; the nutrient mock ignores the id,
+      // so either row yields 387 kcal
       "food/?lang=en": cnfWithSugarEN,
       "food/?lang=fr": cnfWithSugarFR,
       nutrientamount: cnfSugarNutrients,
@@ -290,7 +294,8 @@ describe("lookupBarcode", () => {
             },
           }),
         }),
-      // CNF food lists — hot chocolate should match
+      // CNF food lists (no CNF match: "k-cup"/"pods" are absent, so OFF's own
+      // per-100 g stands; this test is about the serving-size correction)
       "food/?lang=en": () =>
         Promise.resolve({
           ok: true,
@@ -739,7 +744,7 @@ describe("lookupBarcode", () => {
   });
 
   it("uses secondary data when OFF has no calorie data", async () => {
-    // OFF product name "sugar" matches CNF "Sweets, sugars, granulated"
+    // OFF product name "sugar" matches a CNF sugar row
     setupFetchMock({
       "openfoodfacts.org": () =>
         Promise.resolve({
@@ -1004,6 +1009,187 @@ describe("lookupNutrition", () => {
     expect(result!.protein).toBe(31);
   });
 
+  describe("USDA energy unit", () => {
+    function usdaReturns(foodNutrients: object[]) {
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => ({
+              // "salad" (a query word) must appear in the description too —
+              // lookupUSDA's candidate filter (todo P2-2026-09-27) rejects a
+              // hit missing a query word.
+              foods: [{ description: "Quinoa salad, cooked", foodNutrients }],
+            }),
+          }),
+      });
+      return lookupNutrition("quinoa salad");
+    }
+
+    // Live USDA search, 2026-09-27: SR Legacy foods list both units in either
+    // order ("Quinoa, cooked": Energy 503 kJ, then 120 KCAL).
+    it("reads kcal when the kJ entry comes first", async () => {
+      const result = await usdaReturns([
+        { nutrientName: "Energy", value: 503, unitName: "kJ" },
+        { nutrientName: "Energy", value: 120, unitName: "KCAL" },
+        { nutrientName: "Protein", value: 4.4, unitName: "G" },
+      ]);
+
+      expect(result!.calories).toBe(120);
+      expect(result!.protein).toBe(4.4);
+    });
+
+    it("converts a kJ-only energy to kcal", async () => {
+      const result = await usdaReturns([
+        { nutrientName: "Energy", value: 503, unitName: "kJ" },
+      ]);
+
+      expect(result!.calories).toBe(120); // 503 / 4.184
+    });
+
+    it("reads a kcal Atwater energy beside a kJ one", async () => {
+      const result = await usdaReturns([
+        { nutrientName: "Energy", value: 700, unitName: "kJ" },
+        {
+          nutrientName: "Energy (Atwater General Factors)",
+          value: 168,
+          unitName: "KCAL",
+        },
+      ]);
+
+      expect(result!.calories).toBe(168);
+    });
+
+    it("ignores a malformed unit rather than failing the whole result", async () => {
+      const result = await usdaReturns([
+        { nutrientName: "Energy", value: 120, unitName: "KCAL" },
+        { nutrientName: "Protein", value: 4.4, unitName: 7 },
+      ]);
+
+      expect(result!.calories).toBe(120);
+      expect(result!.protein).toBe(4.4);
+    });
+
+    it("keeps a kcal-only energy as is", async () => {
+      // Control: Branded and FNDDS foods list kcal only
+      const result = await usdaReturns([
+        { nutrientName: "Energy", value: 52, unitName: "KCAL" },
+      ]);
+
+      expect(result!.calories).toBe(52);
+    });
+  });
+
+  describe("USDA branded candidate filter (todo P2-2026-09-27)", () => {
+    it("skips a Branded candidate whose head names a different product, picks the next", async () => {
+      // "GYOZA DIPPING SAUCE, GYOZA" passes plain word coverage (it contains
+      // "gyoza") but its head is "gyoza dipping sauce", not "gyoza" — the
+      // Branded-only head-match gate must reject it and fall through to the
+      // next candidate.
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => ({
+              foods: [
+                {
+                  description: "GYOZA DIPPING SAUCE, GYOZA",
+                  dataType: "Branded",
+                  foodNutrients: [
+                    { nutrientName: "Energy", value: 133, unitName: "KCAL" },
+                  ],
+                },
+                {
+                  description: "Gyoza, steamed",
+                  dataType: "SR Legacy",
+                  foodNutrients: [
+                    { nutrientName: "Energy", value: 224, unitName: "KCAL" },
+                  ],
+                },
+              ],
+            }),
+          }),
+      });
+
+      const result = await lookupNutrition("gyoza");
+
+      expect(result!.name).toBe("Gyoza, steamed");
+      expect(result!.calories).toBe(224);
+      expect(result!.source).toBe("usda");
+    });
+
+    it("control: the same head-mismatched description is accepted when dataType is not Branded", async () => {
+      // Isolates the Branded-only gate from plain coverage: identical
+      // description to the test above, but with dataType omitted (a
+      // generic/government row keeps its legitimate qualifier words).
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => ({
+              foods: [
+                {
+                  description: "GYOZA DIPPING SAUCE, GYOZA",
+                  foodNutrients: [
+                    { nutrientName: "Energy", value: 133, unitName: "KCAL" },
+                  ],
+                },
+              ],
+            }),
+          }),
+      });
+
+      const result = await lookupNutrition("gyoza");
+
+      expect(result!.name).toBe("GYOZA DIPPING SAUCE, GYOZA");
+      expect(result!.calories).toBe(133);
+    });
+
+    it("falls through past USDA when every Branded candidate fails coverage", async () => {
+      // Neither description covers BOTH query words: the wafer row has "doro"
+      // but not "wat" ("wafers" doesn't match it), and the WAT-AAH row has
+      // "wat" (`matchWords` splits on the hyphen) but not "doro". So every
+      // candidate is rejected at the plain-coverage stage before the head
+      // check even runs.
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => ({
+              foods: [
+                {
+                  description: "BAMBI, YO DORO WAFERS WITH HAZELNUTS",
+                  dataType: "Branded",
+                  foodNutrients: [
+                    { nutrientName: "Energy", value: 522, unitName: "KCAL" },
+                  ],
+                },
+                {
+                  description: "WAT-AAH BODY, PURE SPRING WATER",
+                  dataType: "Branded",
+                  foodNutrients: [
+                    { nutrientName: "Energy", value: 0, unitName: "KCAL" },
+                  ],
+                },
+              ],
+            }),
+          }),
+      });
+
+      const result = await lookupNutrition("doro wat");
+
+      expect(result).toBeNull();
+    });
+  });
+
   it("falls back to API Ninjas as last resort", async () => {
     const originalKey = process.env.API_NINJAS_KEY;
     process.env.API_NINJAS_KEY = "test-key";
@@ -1046,6 +1232,121 @@ describe("lookupNutrition", () => {
     }
   });
 
+  describe("API Ninjas premium-gated fields", () => {
+    /** Set up CNF/USDA as empty and API Ninjas to return a single `item`. */
+    function apiNinjasReturns(item: Record<string, unknown>) {
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () =>
+          Promise.resolve({ ok: true, json: async () => ({ foods: [] }) }),
+        "api-ninjas.com": () =>
+          Promise.resolve({ ok: true, json: async () => [item] }),
+      });
+      return lookupNutrition("kombucha");
+    }
+
+    it("returns null when calories are premium-gated, instead of a fabricated 0 kcal food", async () => {
+      const originalKey = process.env.API_NINJAS_KEY;
+      process.env.API_NINJAS_KEY = "test-key";
+      try {
+        // Measured 2026-09-27, GET /v1/nutrition?query=kombucha on our key
+        // (todo P2-2026-09-27). `serving_size_g` is a real, ungated 100 —
+        // the bug this guards against is exactly this shape: a valid
+        // serving basis riding alongside gated calories/protein, which lets
+        // the gated result scale and look like a real 0-kcal food.
+        const result = await apiNinjasReturns({
+          name: "kombucha",
+          calories: "Only available for premium subscribers.",
+          serving_size_g: 100.0,
+          protein_g: "Only available for premium subscribers.",
+          fat_total_g: 0.2,
+          carbohydrates_total_g: 7,
+          fiber_g: 0,
+          sugar_g: 3,
+          sodium_mg: 2,
+        });
+        expect(result).toBeNull();
+      } finally {
+        if (originalKey === undefined) delete process.env.API_NINJAS_KEY;
+        else process.env.API_NINJAS_KEY = originalKey;
+      }
+    });
+
+    it("returns null when only calories are premium-gated", async () => {
+      // The measured fixture above gates both fields, so the protein check
+      // alone would refuse it. This one pins the calories check by itself.
+      const originalKey = process.env.API_NINJAS_KEY;
+      process.env.API_NINJAS_KEY = "test-key";
+      try {
+        const result = await apiNinjasReturns({
+          name: "kombucha",
+          calories: "Only available for premium subscribers.",
+          serving_size_g: 100.0,
+          protein_g: 0.1,
+          fat_total_g: 0.2,
+          carbohydrates_total_g: 7,
+          fiber_g: 0,
+          sugar_g: 3,
+          sodium_mg: 2,
+        });
+        expect(result).toBeNull();
+      } finally {
+        if (originalKey === undefined) delete process.env.API_NINJAS_KEY;
+        else process.env.API_NINJAS_KEY = originalKey;
+      }
+    });
+
+    it("returns null when only protein is premium-gated, instead of a fabricated 0 g protein", async () => {
+      const originalKey = process.env.API_NINJAS_KEY;
+      process.env.API_NINJAS_KEY = "test-key";
+      try {
+        const result = await apiNinjasReturns({
+          name: "kombucha",
+          calories: 29,
+          serving_size_g: 100.0,
+          protein_g: "Only available for premium subscribers.",
+          fat_total_g: 0.2,
+          carbohydrates_total_g: 7,
+          fiber_g: 0,
+          sugar_g: 3,
+          sodium_mg: 2,
+        });
+        expect(result).toBeNull();
+      } finally {
+        if (originalKey === undefined) delete process.env.API_NINJAS_KEY;
+        else process.env.API_NINJAS_KEY = originalKey;
+      }
+    });
+
+    it("still returns a real 0-kcal food when calories are a genuine numeric 0 (e.g. water)", async () => {
+      // Positive control for the test above: a genuine numeric 0 must not be
+      // treated as gated — water, black coffee and diet soda are real
+      // 0-kcal foods, and must still come back as such.
+      const originalKey = process.env.API_NINJAS_KEY;
+      process.env.API_NINJAS_KEY = "test-key";
+      try {
+        const result = await apiNinjasReturns({
+          name: "water",
+          calories: 0,
+          protein_g: 0,
+          carbohydrates_total_g: 0,
+          fat_total_g: 0,
+          fiber_g: 0,
+          sugar_g: 0,
+          sodium_mg: 0,
+          serving_size_g: 100,
+        });
+        expect(result).not.toBeNull();
+        expect(result!.source).toBe("api-ninjas");
+        expect(result!.calories).toBe(0);
+      } finally {
+        if (originalKey === undefined) delete process.env.API_NINJAS_KEY;
+        else process.env.API_NINJAS_KEY = originalKey;
+      }
+    });
+  });
+
   it("returns null when no source has data", async () => {
     setupFetchMock({
       "food/?lang=en": emptyCNFEN,
@@ -1071,6 +1372,135 @@ describe("lookupNutrition", () => {
 
     const result = await lookupNutrition("test food");
     expect(result).toBeNull();
+  });
+});
+
+describe("lookupNutrition — cultural food names are a fallback, not a rewrite", () => {
+  /** A USDA search response that answers only the listed queries. */
+  const usdaAnswering =
+    (answers: Record<string, { description: string; kcal: number }>) =>
+    (url: string) => {
+      const query = new URL(url).searchParams.get("query") ?? "";
+      const hit = answers[query];
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          foods: hit
+            ? [
+                {
+                  description: hit.description,
+                  foodNutrients: [{ nutrientName: "Energy", value: hit.kcal }],
+                },
+              ]
+            : [],
+        }),
+      });
+    };
+
+  /** Every query string sent to the USDA search, in call order. */
+  const usdaQueries = () =>
+    mockFetch.mock.calls
+      .map(([url]) => String(url))
+      .filter((url) => url.includes("fdc/v1/foods/search"))
+      .map((url) => new URL(url).searchParams.get("query"));
+
+  function mockSources(
+    usda: Record<string, { description: string; kcal: number }>,
+    cnfEN: { food_code: number; food_description: string }[] = [],
+  ) {
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes("food/?lang=en"))
+        return Promise.resolve({ ok: true, json: async () => cnfEN });
+      if (url.includes("food/?lang=fr"))
+        return Promise.resolve({ ok: true, json: async () => [] });
+      if (url.includes("nutrientamount"))
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 1,
+              nutrient_value: 227,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        });
+      if (url.includes("fdc/v1/foods/search")) return usdaAnswering(usda)(url);
+      return Promise.resolve({ ok: false, json: async () => ({}) });
+    });
+  }
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("looks up a food containing a dish word as itself: buttermilk pancakes stay pancakes", async () => {
+    // "buttermilk" is an alias of the "yogurt drink" entry.
+    mockSources({}, [
+      { food_code: 1, food_description: "Pancake, buttermilk, homemade" },
+    ]);
+
+    const result = await lookupNutrition("buttermilk pancakes");
+
+    expect(result!.name).toBe("Pancake, buttermilk, homemade");
+    expect(usdaQueries()).toEqual([]);
+  });
+
+  it("uses the database's own row for a dish it lists: injera is not searched as 'fermented flatbread'", async () => {
+    mockSources({
+      injera: { description: "Injera, Ethiopian bread", kcal: 93 },
+      "fermented flatbread": { description: "Crackers, flatbread", kcal: 412 },
+    });
+
+    const result = await lookupNutrition("injera");
+
+    expect(result!.name).toBe("Injera, Ethiopian bread");
+    expect(usdaQueries()).toEqual(["injera"]);
+  });
+
+  it("falls back to the cultural name only after the original query finds nothing", async () => {
+    // Positive control for the two tests above: the fallback is still reachable.
+    // "spicy" (a query word) must appear in the description too — lookupUSDA's
+    // candidate filter (todo P2-2026-09-27) rejects a hit missing a query word.
+    mockSources({
+      "spicy stew": { description: "Stew, chicken, spicy", kcal: 84 },
+    });
+
+    const result = await lookupNutrition("doro wat");
+
+    expect(result!.name).toBe("Stew, chicken, spicy");
+    expect(usdaQueries()).toEqual(["doro wat", "spicy stew"]);
+  });
+
+  it("sends API Ninjas the query as typed, not the cultural name", async () => {
+    const originalKey = process.env.API_NINJAS_KEY;
+    process.env.API_NINJAS_KEY = "test-key";
+    try {
+      mockSources({});
+
+      await lookupNutrition("doro wat");
+
+      const ninjasQueries = mockFetch.mock.calls
+        .map(([url]) => new URL(String(url)))
+        .filter((url) => url.hostname === "api.api-ninjas.com")
+        .map((url) => url.searchParams.get("query"));
+      // Both forms were tried at USDA, so the cultural name was available.
+      expect(usdaQueries()).toEqual(["doro wat", "spicy stew"]);
+      expect(ninjasQueries).toEqual(["doro wat"]);
+    } finally {
+      if (originalKey === undefined) delete process.env.API_NINJAS_KEY;
+      else process.env.API_NINJAS_KEY = originalKey;
+    }
+  });
+
+  it("does not retry a query that has no cultural name", async () => {
+    mockSources({});
+
+    const result = await lookupNutrition("xyznonexistent");
+
+    expect(result).toBeNull();
+    expect(usdaQueries()).toEqual(["xyznonexistent"]);
   });
 });
 
@@ -1275,6 +1705,35 @@ describe("PR #269 — USDA-UPC safeParse failure branches", () => {
     _resetCNFCacheForTesting();
   });
 
+  it("reads kcal for a UPC food whose kJ entry comes first", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: "GRANOLA",
+                gtinUpc: "006073114236",
+                foodNutrients: [
+                  { nutrientName: "Energy", value: 1960, unitName: "kJ" },
+                  { nutrientName: "Energy", value: 468, unitName: "KCAL" },
+                ],
+              },
+            ],
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("6073114236");
+
+    expect(result!.per100g.calories).toBe(468);
+  });
+
   it("tolerates a null `value` in USDA UPC food nutrients (coerces to 0, sibling food survives)", async () => {
     // USDA UPC response with a null nutrient value — usdaUpcFoodSchema coerces
     // null→0, so the food parses instead of failing the whole `foods` array.
@@ -1383,5 +1842,485 @@ describe("PR #269 — USDA-UPC safeParse failure branches", () => {
     const result = await lookupBarcode("0000000000000");
     // Invalid UPC response → no data at all → null
     expect(result).toBeNull();
+  });
+});
+
+// Real Canadian Nutrient File rows (EN list, fetched 2026-09-27). Each correct
+// food sits beside the trap the old substring scorer picked instead.
+describe("fuzzyMatchCNF — whole-word matching and head ranking", () => {
+  const foods = [
+    "Bagel, egg",
+    "Egg Benedict",
+    "Egg, chicken, whole, fresh or frozen, raw",
+    "Egg, chicken, whole, cooked, boiled in shell, hard-cooked",
+    "Fish, butterfish, raw",
+    "Seeds, sunflower seed butter, salted",
+    "Butter, regular",
+    "Butter, light, salted",
+    "Guava, strawberry, raw",
+    "Candies, Golden Almond Solitaires, chocolate with almonds",
+    "Nuts, almonds, dried, unblanched, unroasted",
+    "Pepper, banana, raw",
+    "Banana, raw",
+    "Strudel, apple",
+    "Crabapple, raw",
+    "Apple, raw, with skin",
+    "Dessert, frozen, juice, orange",
+    "Orange juice, raw",
+    "Vegetable oil, avocado",
+    "Avocado, raw, all commercial varieties",
+    "Melon, honeydew, raw",
+    "Sweets, honey, strained or extracted",
+    "Spices, paprika",
+    "Grains, rice, white with pasta and seasonings, cooked",
+    "Grains, rice, white, long-grain, regular, cooked",
+    "Potato, mashed, prepared from flakes without milk, 2% milk and margarine added",
+    "Milk, fluid, partly skimmed, 2% M.F.",
+    "Yogourt, Greek style, plain, 2% M.F.",
+    "Sweets, sugars, granulated",
+    "Sweets, sugar, brown",
+    "Sugar-apple, raw",
+  ].map((food_description, i) => ({ food_code: 1000 + i, food_description }));
+
+  const match = (q: string) => fuzzyMatchCNF(q, foods)?.food_description;
+
+  it.each([
+    ["butter", "Butter, regular"],
+    ["banana", "Banana, raw"],
+    ["apple", "Apple, raw, with skin"],
+    ["orange juice", "Orange juice, raw"],
+    ["avocado", "Avocado, raw, all commercial varieties"],
+    ["honey", "Sweets, honey, strained or extracted"],
+    ["butter, salted", "Butter, light, salted"],
+    ["apple, raw", "Apple, raw, with skin"],
+    [
+      "egg, chicken, whole, cooked",
+      "Egg, chicken, whole, cooked, boiled in shell, hard-cooked",
+    ],
+    [
+      "rice, white, long-grain, cooked",
+      "Grains, rice, white, long-grain, regular, cooked",
+    ],
+    ["milk, 2%", "Milk, fluid, partly skimmed, 2% M.F."],
+    ["yogurt, greek, plain", "Yogourt, Greek style, plain, 2% M.F."],
+    ["brown sugar", "Sweets, sugar, brown"],
+  ])("%s → %s", (query, expected) => {
+    expect(match(query)).toBe(expected);
+  });
+
+  it("prefers a food whose head is the query over a compound that starts with it", () => {
+    // Old scorer: "Sugar-apple, raw" style heads and "Egg Benedict"
+    expect(match("sugar")).toMatch(/^Sweets, sugars?, /);
+    expect(match("egg, chicken, whole, raw")).toBe(
+      "Egg, chicken, whole, fresh or frozen, raw",
+    );
+  });
+
+  // Measured residuals, deliberately not tuned away: bare "egg" still prefers
+  // "Bagel, egg" here (the whole-egg row's six comma parts cost it the
+  // many-parts penalty), and on the real list bare "eggs" lands on
+  // "Fish, salmon, native, eggs, raw" (same before and after this change).
+  // Quick Log sends a database-style lookupName ("egg, chicken, whole,
+  // cooked", server/services/food-nlp.ts since #1118), which resolves
+  // correctly (above).
+
+  it("returns null rather than a food missing one of the query's words", () => {
+    // Old scorer: "Guava, strawberry, raw" ("raw" inside "strawberry") and
+    // the almond candy, each matching only half the query.
+    expect(match("almonds, raw")).toBeUndefined();
+    // Positive control: the same row set does resolve almonds.
+    expect(match("almonds")).toBe(
+      "Nuts, almonds, dried, unblanched, unroasted",
+    );
+  });
+
+  // Photos ("<quantity> <name>") and cooking sessions ("<quantity> <unit>
+  // <name>") still send quantities in the query. Those words never appear in
+  // a CNF description, so they must not count against the every-word rule.
+  it.each([
+    ["2 large banana", "Banana, raw"],
+    ["1 tbsp butter", "Butter, regular"],
+    ["3 oz almonds", "Nuts, almonds, dried, unblanched, unroasted"],
+    [
+      "1 cup rice, white, long-grain, cooked",
+      "Grains, rice, white, long-grain, regular, cooked",
+    ],
+    ["12oz milk, 2%", "Milk, fluid, partly skimmed, 2% M.F."],
+    ["1/2 cup orange juice", "Orange juice, raw"],
+  ])("ignores the quantity and unit in %s", (query, expected) => {
+    expect(match(query)).toBe(expected);
+  });
+
+  // Only a LEADING quantity run is dropped: a food whose own name contains a
+  // unit word must keep it. Real CNF rows; each correct row sits beside the
+  // one a blanket unit filter picked instead.
+  it.each([
+    ["reese's pieces", "Candies, Reese's Pieces"],
+    ["green gram", "Beans, legumes, mung (green gram), raw"],
+    ["small white beans", "Beans, small white, raw"],
+    [
+      "cup noodles",
+      "Soup, NISSIN, CUP NOODLES, ramen noodle, chicken flavour, dry",
+    ],
+    // The same property for the serving units added by the P3 matcher todo
+    // (item 1): each is now a stripped LEADING quantity unit, but none of
+    // them is the leading word of a real CNF row, so a mid-name occurrence
+    // is never at risk of being stripped — these real rows document that.
+    ["broccoli stalks", "Broccoli, stalks, raw"],
+    ["fish sticks", "Fish, fish sticks, frozen, prepared"],
+    ["pork ears", "Pork, ears, frozen, raw"],
+    ["potato wedge", "Potato, french-fried, wedge cut, frozen, unprepared"],
+  ])(
+    "keeps a unit word that is part of the food name: %s",
+    (query, expected) => {
+      const rows = [
+        "Candies, Reese's Pieces",
+        "Candies, REESE'S, FAST BREAK, milk chocolate peanut butter and soft nougat",
+        "Beans, legumes, mung (green gram), raw",
+        "Peas, green, raw",
+        "Beans, small white, raw",
+        "Beans, white, raw",
+        "Soup, NISSIN, CUP NOODLES, ramen noodle, chicken flavour, dry",
+        "Restaurant, Chinese, noodles, crunchy",
+        "Broccoli, stalks, raw",
+        "Fish, fish sticks, frozen, prepared",
+        "Pork, ears, frozen, raw",
+        "Potato, french-fried, wedge cut, frozen, unprepared",
+      ].map((food_description, i) => ({
+        food_code: 2000 + i,
+        food_description,
+      }));
+      expect(fuzzyMatchCNF(query, rows)?.food_description).toBe(expected);
+    },
+  );
+
+  // New serving units (P3 matcher todo item 1): callers send "<quantity>
+  // <unit> <name>" for units CNF names never use, so they must join the
+  // existing "2 large banana"/"1 tbsp butter" stripping behaviour above.
+  it.each([
+    ["1 pinch salt", "Salt, table"],
+    ["1 dash salt", "Salt, table"],
+    ["3 stalk celery", "Celery, raw"],
+    ["2 sprig thyme", "Spices, thyme, dried"],
+    ["1 bunch spinach", "Spinach, raw"],
+    ["1 head lettuce", "Lettuce, butterhead (Boston, bibb)"],
+    ["1 ear corn", "Corn, sweet, white, raw"],
+    ["1 wedge lime", "Lime, raw"],
+    ["1 sheet phyllo", "Phyllo dough"],
+    ["1 stick butter", "Butter, regular"],
+    ["1 container cottage cheese", "Cheese, cottage, (1% M.F.)"],
+    ["1 envelope yeast", "Leavening agent, yeast, baker's, active, dry"],
+  ])("strips the new serving unit in %s", (query, expected) => {
+    const rows = [
+      "Salt, table",
+      "Celery, raw",
+      "Spices, thyme, dried",
+      "Spices, thyme, fresh",
+      "Spinach, raw",
+      "Lettuce, butterhead (Boston, bibb)",
+      "Corn, sweet, white, raw",
+      "Lime, raw",
+      "Phyllo dough",
+      "Butter, regular",
+      "Cheese, cottage, (1% M.F.)",
+      "Leavening agent, yeast, baker's, active, dry",
+    ].map((food_description, i) => ({
+      food_code: 5000 + i,
+      food_description,
+    }));
+    expect(fuzzyMatchCNF(query, rows)?.food_description).toBe(expected);
+  });
+
+  it("keeps a percentage as a real word, not a quantity", () => {
+    expect(match("milk, 2%")).toBe("Milk, fluid, partly skimmed, 2% M.F.");
+    // A query that is only a quantity matches nothing
+    expect(match("2 cups")).toBeUndefined();
+  });
+
+  it("never matches a query word inside a longer word", () => {
+    expect(match("pap")).toBeUndefined(); // not "paprika"
+    expect(match("honeydew")).toBe("Melon, honeydew, raw"); // positive control
+  });
+});
+
+describe("fuzzyMatchCNF — dried, powdered and flour forms", () => {
+  // Real CNF rows. Each dehydrated form shares its head with the fresh food
+  // and has the shorter name, so the length tie-break used to pick it:
+  // "milk" logged dry milk powder (496 kcal/100 g).
+  const foods = [
+    "Milk, dry whole",
+    "Milk, fluid, skim",
+    "Beans, black, flour",
+    "Beans, black, mature seeds, raw",
+    "Coffee, instant with chicory, powder",
+    "Coffee, brewed, prepared with tap water",
+    "Egg, chicken, white, dried",
+    "Egg, chicken, white, fresh or frozen, raw",
+    "Tomato, sun-dried",
+    "Tomato, green, raw",
+    "Grains, quinoa, dry",
+    "Grains, quinoa, cooked",
+  ].map((food_description, i) => ({ food_code: 3000 + i, food_description }));
+
+  const match = (q: string) => fuzzyMatchCNF(q, foods)?.food_description;
+
+  it.each([
+    ["milk", "Milk, fluid, skim"],
+    ["1 cup milk", "Milk, fluid, skim"],
+    ["black beans", "Beans, black, mature seeds, raw"],
+    ["coffee", "Coffee, brewed, prepared with tap water"],
+    ["egg white", "Egg, chicken, white, fresh or frozen, raw"],
+    ["tomato", "Tomato, green, raw"],
+  ])("%s → the fresh form, %s", (query, expected) => {
+    expect(match(query)).toBe(expected);
+  });
+
+  it.each([
+    ["dry milk", "Milk, dry whole"],
+    ["black bean flour", "Beans, black, flour"],
+    ["coffee powder", "Coffee, instant with chicory, powder"],
+    ["dried egg white", "Egg, chicken, white, dried"],
+    ["sun-dried tomato", "Tomato, sun-dried"],
+  ])("keeps the form the query names: %s", (query, expected) => {
+    expect(match(query)).toBe(expected);
+  });
+
+  describe("nuts and seeds", () => {
+    const nuts = [
+      "Nuts, pecans, dried",
+      "Nuts, pecans, dry roasted",
+      "Nuts, pecans, oil roasted",
+      "Nuts, cashew nuts, dry roasted",
+      "Nuts, cashew nuts, oil roasted",
+      "Seeds, sunflower seed kernels, dried",
+      "Seeds, sunflower seed kernels, oil roasted",
+    ].map((food_description, i) => ({ food_code: 3100 + i, food_description }));
+    const matchNut = (q: string) => fuzzyMatchCNF(q, nuts)?.food_description;
+
+    // CNF names a plain shelled nut or seed "dried"; it has no fresh form.
+    it.each([
+      ["pecans", "Nuts, pecans, dried"],
+      ["1 cup pecans", "Nuts, pecans, dried"],
+      ["sunflower seed kernels", "Seeds, sunflower seed kernels, dried"],
+    ])("keeps the plain nut or seed for %s", (query, expected) => {
+      expect(matchNut(query)).toBe(expected);
+    });
+
+    // "Dry roasted" is a roasting method, not a dehydrated form.
+    it.each([
+      ["roasted pecans", "Nuts, pecans, dry roasted"],
+      ["roasted cashews", "Nuts, cashew nuts, dry roasted"],
+    ])("does not push %s to the oil-roasted row", (query, expected) => {
+      expect(matchNut(query)).toBe(expected);
+    });
+
+    it("still lets a query name the oil-roasted row", () => {
+      expect(matchNut("oil roasted pecans")).toBe("Nuts, pecans, oil roasted");
+    });
+  });
+
+  it("does not penalize a grain's raw state, a comma part that is only 'dry'", () => {
+    // A cooking-session ingredient is the raw grain; "Pasta, dry" and
+    // "Grains, quinoa, dry" are how CNF names it.
+    expect(match("quinoa")).toBe("Grains, quinoa, dry");
+  });
+});
+
+describe("fuzzyMatchCNF — committed gold set", () => {
+  // Real CNF EN rows (food_code + food_description exactly as published),
+  // hand-picked so this fixed-size list reproduces the SAME right/wrong/
+  // no-match outcome fuzzyMatchCNF gets on the full 5,690-row CNF EN list
+  // (verified 2026-09-27 by scoring every gold-set query against both the
+  // full list and this subset: identical classification for all queries).
+  // Order matters for the three spices rows below — see the comment there.
+  const rows = [
+    { food_code: 16, food_description: "Butter, whipped" },
+    { food_code: 1704, food_description: "Banana, raw" },
+    { food_code: 1696, food_description: "Apple, raw, with skin" },
+    { food_code: 2539, food_description: "Nuts, almonds, toasted, unblanched" },
+    { food_code: 1619, food_description: "Orange juice, raw" },
+    { food_code: 3673, food_description: "Bagel, egg" },
+    { food_code: 1513, food_description: "Avocado, raw, florida" },
+    { food_code: 2418, food_description: "Potato, skin, raw" },
+    { food_code: 2255, food_description: "Tomato, green, raw" },
+    { food_code: 2380, food_description: "Carrot, raw" },
+    { food_code: 2401, food_description: "Onion, raw" },
+    { food_code: 6408, food_description: "Corn, sweet, white, raw" },
+    { food_code: 6577, food_description: "Tofu, fried" },
+    { food_code: 2213, food_description: "Spinach, raw" },
+    { food_code: 2374, food_description: "Broccoli, raw" },
+    { food_code: 119, food_description: "Cheese, cheddar" },
+    { food_code: 6289, food_description: "Peanut butter, natural" },
+    {
+      food_code: 4294,
+      food_description: "Sweets, honey, strained or extracted",
+    },
+    { food_code: 4317, food_description: "Sweets, sugar, brown" },
+    { food_code: 422, food_description: "Vegetable oil, olive" },
+    { food_code: 2698, food_description: "Beef, ground, regular" },
+    { food_code: 3392, food_description: "Lentils, raw" },
+    { food_code: 3376, food_description: "Beans, black, mature seeds, raw" },
+    { food_code: 1749, food_description: "Strawberry, raw" },
+    { food_code: 1691, food_description: "Watermelon, raw" },
+    { food_code: 1628, food_description: "Papaya, raw" },
+    { food_code: 114, food_description: "Milk, fluid, skim" },
+    {
+      food_code: 2873,
+      food_description: "Coffee, brewed, prepared with tap water",
+    },
+    {
+      food_code: 7469,
+      food_description: "Yogourt, Greek style, plain, 2% M.F.",
+    },
+    { food_code: 129, food_description: "Egg, chicken, whole, cooked, fried" },
+    {
+      food_code: 125,
+      food_description: "Egg, chicken, whole, fresh or frozen, raw",
+    },
+    {
+      food_code: 4068,
+      food_description: "Bread, whole wheat, commercial, toasted",
+    },
+    { food_code: 5307, food_description: "Butter, light, salted" },
+    {
+      food_code: 4523,
+      food_description: "Grains, rice, white, long-grain, regular, cooked",
+    },
+    { food_code: 5288, food_description: "Carbonated drinks, cola" },
+    {
+      food_code: 842,
+      food_description: "Chicken, broiler, breast, meat, roasted",
+    },
+    { food_code: 61, food_description: "Milk, fluid, partly skimmed, 2% M.F." },
+    // Baseline (#1120) residuals — real wrong-attractor rows, unrelated to
+    // this fixture's own fixes; kept so the gold set reproduces them.
+    { food_code: 6718, food_description: "Egg, chicken, yolk, cooked" },
+    { food_code: 7448, food_description: "Rice, Spanish rice" },
+    { food_code: 461, food_description: "Fish oil, salmon" },
+    { food_code: 3049, food_description: "Fish, salmon, atlantic, wild, raw" },
+    {
+      food_code: 1220,
+      food_description: "Deli-meat, chicken breast, cooked, extra lean",
+    },
+    // Taco family (P3 matcher todo item 7) — not fixed, see the gold set.
+    { food_code: 4134, food_description: "Snacks, tortilla chips, taco" },
+    {
+      food_code: 7098,
+      food_description:
+        "Fast foods, mexican, taco with beef, cheese and lettuce, soft",
+    },
+    {
+      food_code: 7100,
+      food_description:
+        "Fast foods, mexican, taco with chicken, cheese and lettuce, soft",
+    },
+    // Dehydrated-form residuals (P3 matcher todo item 8).
+    {
+      food_code: 71,
+      food_description: "Hot chocolate, cocoa, homemade, prepared with 2% milk",
+    },
+    { food_code: 4223, food_description: "Sweets, cocoa, powder, unsweetened" },
+    { food_code: 1709, food_description: "Currant, red and white, raw" },
+    { food_code: 1542, food_description: "Currant, zante, dried" },
+    // Real CNF list order: "dried" precedes "fresh" for these three spices,
+    // so the exemption's tie (see isUnaskedDehydratedForm) resolves to
+    // "dried" here — keep this order or the test stops matching production.
+    { food_code: 185, food_description: "Spices, dill weed, dried" },
+    { food_code: 204, food_description: "Spices, rosemary, dried" },
+    { food_code: 210, food_description: "Spices, thyme, dried" },
+    { food_code: 213, food_description: "Spices, dill weed, fresh" },
+    { food_code: 4723, food_description: "Spices, rosemary, fresh" },
+    { food_code: 215, food_description: "Spices, thyme, fresh" },
+    { food_code: 4397, food_description: "Candied foods, cherries" },
+    { food_code: 1531, food_description: "Cherry, sweet, raw" },
+    // Beverage route's pinned lookup names (shared/constants/beverages.ts).
+    { food_code: 2909, food_description: "Tea, brewed" },
+    { food_code: 136, food_description: "Cream, table (coffee), 18% M.F." },
+    { food_code: 4318, food_description: "Sweets, sugars, granulated" },
+  ];
+
+  interface GoldSetEntry {
+    query: string;
+    pattern: string;
+  }
+  const fixturePath = path.join(
+    process.cwd(),
+    "server",
+    "services",
+    "__tests__",
+    "fixtures",
+    "cnf-gold-set.json",
+  );
+  const goldSet: GoldSetEntry[] = JSON.parse(
+    fs.readFileSync(fixturePath, "utf8"),
+  ).entries;
+
+  function classify(entry: GoldSetEntry): "right" | "wrong" | "no-match" {
+    const match = fuzzyMatchCNF(entry.query, rows);
+    if (!match) return "no-match";
+    return new RegExp(entry.pattern).test(match.food_description)
+      ? "right"
+      : "wrong";
+  }
+
+  it("scores right/wrong/no-match on the committed gold set", () => {
+    const counts = { right: 0, wrong: 0, "no-match": 0 };
+    const wrongQueries: string[] = [];
+    const noMatchQueries: string[] = [];
+    for (const entry of goldSet) {
+      const status = classify(entry);
+      counts[status]++;
+      if (status === "wrong") wrongQueries.push(entry.query);
+      if (status === "no-match") noMatchQueries.push(entry.query);
+    }
+
+    // eslint-disable-next-line no-console -- the AC asks this be printed
+    console.log("CNF gold set:", counts);
+
+    // Assert the exact residual SET, not just the counts: a tie-break that
+    // trades one wrong answer for another must fail this test even when
+    // the totals happen to still add up.
+    expect(wrongQueries.sort()).toEqual(
+      [
+        "egg",
+        "rice",
+        "salmon",
+        "chicken breast",
+        "taco",
+        "tacos",
+        "1 taco",
+        "cocoa",
+        "currant",
+        "currants",
+        "cherries",
+      ].sort(),
+    );
+    expect(noMatchQueries.sort()).toEqual(
+      [
+        "white sugar",
+        "almonds, raw",
+        "juice, orange, fresh-squeezed",
+        "bread, bagel, plain",
+      ].sort(),
+    );
+    expect(counts).toEqual({ right: 52, wrong: 11, "no-match": 4 });
+  });
+
+  it("keeps beef/chicken taco resolving to their own row (positive controls beside the bare-taco residual)", () => {
+    expect(fuzzyMatchCNF("beef taco", rows)?.food_description).toBe(
+      "Fast foods, mexican, taco with beef, cheese and lettuce, soft",
+    );
+    expect(fuzzyMatchCNF("chicken taco", rows)?.food_description).toBe(
+      "Fast foods, mexican, taco with chicken, cheese and lettuce, soft",
+    );
+  });
+
+  it("fixes bare thyme/rosemary/dill weed to the dried spice row, without disturbing an explicit fresh/dried query", () => {
+    expect(fuzzyMatchCNF("thyme", rows)?.food_description).toBe(
+      "Spices, thyme, dried",
+    );
+    expect(fuzzyMatchCNF("fresh thyme", rows)?.food_description).toBe(
+      "Spices, thyme, fresh",
+    );
   });
 });
