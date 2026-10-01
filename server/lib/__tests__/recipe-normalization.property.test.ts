@@ -11,6 +11,15 @@
  *   R3 robustness   normalizeRecipeFields never throws over arbitrary strings
  *                   and arrays — the fuzz-shaped coverage that replaces a fuzzer.
  *
+ * REGIME
+ *   Under the pinned seed, 100 uniform draws never reach four of R1's branches
+ *   (measured: 0/100 each) — a lowercase joining word in a title, a difficulty
+ *   synonym, a numbered instruction, and a measurement inside an ingredient
+ *   name. Each runs as fast-check `examples`, together with the four inputs
+ *   that were not idempotent before the fix in the same branch ("ß" and "ﬁ"
+ *   title starts, a doubled step prefix, a measurement name with leading
+ *   whitespace). After each fc.assert, the relation asserts it saw its regime.
+ *
  * Seed pinning per repo convention; not in any Stryker testInclude.
  */
 import { describe, it, expect } from "vitest";
@@ -74,15 +83,48 @@ const arbFields: fc.Arbitrary<RecipeFieldsInput> = fc.record(
   { requiredKeys: [] },
 );
 
+const TITLE_EXAMPLES: [string][] = [
+  ["toast with butter and jam"],
+  ["ßauce of the day"],
+  ["ﬁsh and chips"],
+];
+const DIFFICULTY_EXAMPLES: [string][] = [["Moderate"], [" expert "]];
+const INSTRUCTION_EXAMPLES: [string[]][] = [
+  [["1. 2. whisk the eggs", "Step 3: fold in the flour"]],
+];
+// Hoisted: the seed guard's paren matcher cannot see inside a regex literal
+// (its documented limitation), and this one has unmatched ")" characters.
+const DOUBLE_STEP_PREFIX_RE = /^\s*\d+[.)]\s*\d+[.)]/;
+const INGREDIENT_EXAMPLES: [IngredientInput][] = [
+  [{ name: "3 tbsp sugar", quantity: "", unit: "" }],
+  [{ name: " 2 cups flour", quantity: "", unit: "" }],
+];
+
 describe("recipe-normalization properties", () => {
   describe("R1: idempotence", () => {
     it("normalizeTitle", () => {
+      let keptJoiningWord = 0;
+      let multiCharUpperStart = 0;
       fc.assert(
         fc.property(arbText, (s) => {
-          expect(normalizeTitle(normalizeTitle(s))).toBe(normalizeTitle(s));
+          const once = normalizeTitle(s);
+          expect(normalizeTitle(once)).toBe(once);
+          if (
+            once
+              .split(" ")
+              .slice(1)
+              .some((w) => /^[a-z]+$/.test(w))
+          ) {
+            keptJoiningWord++;
+          }
+          if (s.trim().toLowerCase().charAt(0).toUpperCase().length > 1) {
+            multiCharUpperStart++;
+          }
         }),
-        FC_PARAMS,
+        { ...FC_PARAMS, examples: TITLE_EXAMPLES },
       );
+      expect(keptJoiningWord).toBeGreaterThan(0);
+      expect(multiCharUpperStart).toBeGreaterThan(0);
     });
     it("normalizeDescription", () => {
       fc.assert(
@@ -95,27 +137,33 @@ describe("recipe-normalization properties", () => {
       );
     });
     it("normalizeDifficulty", () => {
+      let mapped = 0;
       fc.assert(
         fc.property(arbMaybeText, (s) => {
-          expect(normalizeDifficulty(normalizeDifficulty(s))).toBe(
-            normalizeDifficulty(s),
-          );
+          const once = normalizeDifficulty(s);
+          expect(normalizeDifficulty(once)).toBe(once);
+          if (once !== null) mapped++;
         }),
-        FC_PARAMS,
+        { ...FC_PARAMS, examples: DIFFICULTY_EXAMPLES },
       );
+      expect(mapped).toBeGreaterThan(0);
     });
     it("normalizeInstructions", () => {
+      let doublePrefixed = 0;
       fc.assert(
         fc.property(
           fc.option(fc.array(arbText, { maxLength: 8 }), { nil: null }),
           (xs) => {
-            expect(normalizeInstructions(normalizeInstructions(xs))).toEqual(
-              normalizeInstructions(xs),
-            );
+            const once = normalizeInstructions(xs);
+            expect(normalizeInstructions(once)).toEqual(once);
+            if (xs?.some((step) => DOUBLE_STEP_PREFIX_RE.test(step))) {
+              doublePrefixed++;
+            }
           },
         ),
-        FC_PARAMS,
+        { ...FC_PARAMS, examples: INSTRUCTION_EXAMPLES },
       );
+      expect(doublePrefixed).toBeGreaterThan(0);
     });
     it("normalizeUnit", () => {
       fc.assert(
@@ -126,13 +174,21 @@ describe("recipe-normalization properties", () => {
       );
     });
     it("normalizeIngredient", () => {
+      let extracted = 0;
+      let extractedFromPaddedName = 0;
       fc.assert(
         fc.property(arbIngredient, (ing) => {
           const once = normalizeIngredient(ing);
           expect(normalizeIngredient(once)).toEqual(once);
+          if (!ing.quantity.trim() && !ing.unit.trim() && once.unit !== "") {
+            extracted++;
+            if (ing.name !== ing.name.trimStart()) extractedFromPaddedName++;
+          }
         }),
-        FC_PARAMS,
+        { ...FC_PARAMS, examples: INGREDIENT_EXAMPLES },
       );
+      expect(extracted).toBeGreaterThan(0);
+      expect(extractedFromPaddedName).toBeGreaterThan(0);
     });
     it("normalizeRecipeFields", () => {
       fc.assert(
