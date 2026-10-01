@@ -80,7 +80,8 @@ export function normalizeDifficulty(
 
 // ── Instructions ────────────────────────────────────────────────────────────
 
-const STEP_PREFIX_RE = /^\s*(?:\d+[.)]\s*|step\s+\d+[:.]\s*)/i;
+// The `(?!\d)` keeps a decimal quantity: "2.5 cups" is not step "2." + "5 cups".
+const STEP_PREFIX_RE = /^\s*(?:\d+[.)](?!\d)\s*|step\s+\d+[:.]\s*)/i;
 
 // Strip every leading prefix ("1. 2. Mix"), not just the first, so a second
 // pass finds none to remove.

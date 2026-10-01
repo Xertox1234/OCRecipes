@@ -99,6 +99,21 @@ describe("normalizeInstructions", () => {
       "Preheat oven",
     ]);
   });
+  it("keeps a decimal quantity at the start of a step", () => {
+    expect(
+      normalizeInstructions([
+        "1. 2.5 cups flour into the bowl",
+        "3) 0.5 tsp salt",
+        "Step 1: 2.5 cups flour",
+        "2.5 cups flour",
+      ]),
+    ).toEqual([
+      "2.5 cups flour into the bowl",
+      "0.5 tsp salt",
+      "2.5 cups flour",
+      "2.5 cups flour",
+    ]);
+  });
   it("capitalizes first letter", () => {
     expect(normalizeInstructions(["preheat oven"])).toEqual(["Preheat oven"]);
   });
