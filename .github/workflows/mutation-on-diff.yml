@@ -1,0 +1,66 @@
+name: Mutation-on-diff
+
+# ADVISORY — not a required check, never red on score. Generalises "prove the
+# test can fail" from the registered Stryker targets to whatever pure module a
+# PR touched: runs `mutation:explore` (gate-respecting; Hard-Exclusion
+# re-enforced in stryker.explore.conf.mjs) per changed, co-located-tested,
+# non-excluded module and posts score + survivors to the job summary.
+# Registered targets are skipped here — their required gates cover them.
+# The job goes red only when the harness itself fails for a module.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-on-diff-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation-on-diff:
+    name: Mutation-on-diff (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # need the merge-base for the three-dot diff below
+
+      # Same checks as mutation-non-excluded.yml: FAIL LOUD on a missing SHA or
+      # merge-base rather than defaulting to an empty change list. The list goes
+      # to a FILE, not an env var or step output: every process the script
+      # spawns inherits its env, and one oversized variable makes exec fail
+      # with E2BIG on Linux.
+      - name: Detect changed files
+        run: |
+          set -euo pipefail
+          BASE='${{ github.event.pull_request.base.sha }}'
+          HEAD='${{ github.event.pull_request.head.sha }}'
+          git rev-parse --verify "$BASE^{commit}" >/dev/null
+          git rev-parse --verify "$HEAD^{commit}" >/dev/null
+          # three-dot = merge-base..head, so a moved base branch does not pull in
+          # unrelated upstream changes.
+          git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed-files.txt"
+          echo "Changed files in this PR:"
+          cat "$RUNNER_TEMP/changed-files.txt"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Mutation-on-diff
+        run: node scripts/ci/mutation-on-diff.mjs "$RUNNER_TEMP/changed-files.txt"
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-on-diff-${{ github.run_id }}
+          path: reports/mutation/on-diff/
+          if-no-files-found: ignore

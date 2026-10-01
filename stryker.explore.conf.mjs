@@ -8,6 +8,7 @@ import { isHardExclusion, isApprovedExclusion } from "./stryker.targets.mjs";
 const mutate = process.env.STRYKER_EXPLORE_MUTATE;
 const test = process.env.STRYKER_EXPLORE_TEST;
 const spike = process.env.STRYKER_EXPLORE_SPIKE === "1";
+const jsonReport = process.env.STRYKER_EXPLORE_JSON === "1";
 
 if (!mutate || !test) {
   throw new Error(
@@ -43,6 +44,17 @@ export default {
   disableTypeChecks: false,
   mutate: [mutate],
   incremental: false,
-  reporters: ["clear-text", "progress"],
+  reporters: jsonReport
+    ? ["clear-text", "progress", "json"]
+    : ["clear-text", "progress"],
+  ...(jsonReport
+    ? {
+        jsonReporter: {
+          fileName:
+            process.env.STRYKER_EXPLORE_JSON_FILE ??
+            "reports/mutation/explore.json",
+        },
+      }
+    : {}),
   tempDirName: ".stryker-tmp",
 };
