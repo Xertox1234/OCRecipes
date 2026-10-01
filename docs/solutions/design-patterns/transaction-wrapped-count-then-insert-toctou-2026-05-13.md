@@ -74,7 +74,7 @@ export async function createSavedItem(userId: string, itemData: CreateSavedItemI
 - `server/storage/community.ts` — `createRecipeWithLimitCheck()` (limit check + recipe + generation log)
 - `server/storage/meal-plans.ts` — `createGroceryListWithLimitCheck()` (limit check + list + items)
 - `server/storage/medication.ts` (removed in 4db1cdda) — `applyAdaptiveGoalsAtomically()`, `dismissAdaptiveGoalsAtomically()`
-- `server/storage/users.ts` — `createWeightLogAndUpdateUser()` (weight log + user weight update)
+- `server/storage/users.ts` — `createWeightLogAndUpdateUser()` (weight log + user weight update; removed in 4db1cdda; historical example)
 
 ## See Also
 

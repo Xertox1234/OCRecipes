@@ -112,7 +112,7 @@ covers `filter_review`; the hook's `clean-model-prose` case covers the backstop.
 ## Related Files
 
 - `.claude/hooks/kimi-review.sh` (removed in 6d1e43f8) — the pre-commit CRITICAL-detection gate
-  (removed in 6d1e43f8 in the reviewer-roster consolidation; historical example)
+  (retired in the reviewer-roster consolidation; historical example)
 - `~/.local/bin/kimi-review` — out-of-repo tool; emits `[TIER] path:line — desc`
   finding lines and a `No findings in requested tiers: ...` clean message
   (retired alongside the hook — no longer installed as of 2026-08; historical

@@ -49,7 +49,7 @@ await storage.createWeightLog({
 
 - `server/routes/weight.ts` (removed in 4db1cdda)
 - `server/services/healthkit-sync.ts` (removed in 4db1cdda)
-- `shared/schema.ts` → `weightLogs`
+- `shared/schema.ts` → `weightLogs` (table removed in 4db1cdda)
 
 ## Origin
 
