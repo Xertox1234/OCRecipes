@@ -32,7 +32,7 @@ export const weightLogs = pgTable(
   }),
 );
 
-// server/storage/health.ts — upsert via raw SQL (Drizzle cannot target expression indexes)
+// server/storage/health.ts (removed in 4db1cdda) — upsert via raw SQL (Drizzle cannot target expression indexes)
 const result = await db.execute<WeightLog>(
   sql`INSERT INTO weight_logs (user_id, weight, unit, source, note)
       VALUES (${log.userId}, ${log.weight}, ${log.unit ?? "lb"}, ${log.source ?? "manual"}, ${log.note ?? null})
@@ -59,8 +59,8 @@ Any `ON CONFLICT` clause that must target a functional/partial unique index rath
 
 ## Related Files
 
-- `shared/schema.ts` — `weight_logs_user_date_idx` uniqueIndex with `sql\`DATE(...)\``
-- `server/storage/health.ts` — `createWeightLog` and `createWeightLogAndUpdateUser`
+- `shared/schema.ts` — `weight_logs_user_date_idx` uniqueIndex with `sql\`DATE(...)\`` (removed with the `weight_logs` table in 4db1cdda; historical example)
+- `server/storage/health.ts` (removed in 4db1cdda; weight logging retired) — `createWeightLog` and `createWeightLogAndUpdateUser`
 - M9 finding from the 2026-04-26 schema/data-integrity audit
 
 ## See Also

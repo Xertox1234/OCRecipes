@@ -98,7 +98,7 @@ caller's failure path is honest about it.
 ## Related Files
 
 - `shared/lib/label-serving.ts` — the unified parser
-- `shared/__tests__/label-serving.test.ts` — the `regression: forms the predecessors accepted` block
+- `shared/lib/__tests__/label-serving.test.ts` — the `regression: forms the predecessors accepted` block
 - `client/lib/serving-size-utils.ts` and `server/services/barcode-lookup.ts` — the two predecessors, both retained for their own callers
 
 ## See Also

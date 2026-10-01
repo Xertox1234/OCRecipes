@@ -60,7 +60,7 @@ If `exhaustive-deps` warns, suppress with a comment explaining these are timer I
 
 ## Related Files
 
-- `client/camera/hooks/useScanClassification.ts` (deleted in the scan-flow rework; historical origin of the bug)
+- `client/hooks/useScanClassification.ts` (removed in cc67c76d, the scan-flow rework; historical origin of the bug)
 - `client/camera/hooks/useCamera.ts` — live example: cleanup reads `scanTimeoutRef.current` directly at cleanup time
 - Audit: 2026-04-07-full-2 finding M13
 

@@ -54,7 +54,7 @@ function TipCard() {
 
 ## Related Files
 
-- `client/components/quick-log/TipCard.tsx` (component removed with the quick-log tips UI; historical example)
+- `client/screens/QuickLogScreen.tsx` — `QUICK_LOG_TIPS` / `randomTip()`, the Quick Log tip picker (uses `Math.random()`; there was never a separate `TipCard.tsx`)
 
 ## See Also
 

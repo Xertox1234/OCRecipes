@@ -108,8 +108,8 @@ already remaps keys to camelCase and parses timestamps to `Date`, so
 
 ## Related Files
 
-- `server/storage/health.ts` — `createWeightLog` / `createWeightLogAndUpdateUser`,
-  the original cast sites, now aliased + Zod-parsed.
+- `server/storage/health.ts` (removed in 4db1cdda, weight-tracking feature retired) — `createWeightLog` / `createWeightLogAndUpdateUser`,
+  the original cast sites, aliased + Zod-parsed before removal.
 - `server/storage/cookbooks.ts` — `addRecipeToCookbook` already aliases its
   `RETURNING` columns to camelCase (the precedent that confirmed the snake_case
   behavior).

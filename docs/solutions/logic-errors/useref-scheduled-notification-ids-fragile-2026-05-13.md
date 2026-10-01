@@ -51,7 +51,7 @@ await Notifications.cancelAllScheduledNotificationsAsync();
 
 ## Related Files
 
-- `client/screens/FastingScreen.tsx` — `handleEndFast` uses global cancel (fasting feature removed; historical example — `expo-notifications` itself remains a live dependency, so the lesson still applies to any future scheduled-notification code)
+- `client/screens/FastingScreen.tsx` — `handleEndFast` uses global cancel (removed in 4db1cdda with the fasting feature; historical example — `expo-notifications` itself remains a live dependency, so the lesson still applies to any future scheduled-notification code)
 
 ## See Also
 

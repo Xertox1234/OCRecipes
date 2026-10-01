@@ -185,7 +185,7 @@ information was sitting in the file's own import list.
 
 ## Where this ended up
 
-`scripts/check-route-params.js` was deleted and replaced by the
+`scripts/check-route-params.js` was deleted (50bed11d) and replaced by the
 `ocrecipes/no-shadowed-route-paramlist` ESLint rule
 (`eslint-plugin-ocrecipes/index.js`), which resolves the ParamList argument of
 `RouteProp` / `NativeStackScreenProps` through scope analysis and requires it to
@@ -391,7 +391,7 @@ them against `ParamListBase`.
   regression case, because that is the form a real violation takes, plus one case
   per residual the text scanner could not reach
 - `client/screens/ItemDetailScreen.tsx` — the instance both greps missed
-- `scripts/check-route-params.js` — **deleted**; the structural, whitespace-tolerant
+- `scripts/check-route-params.js` — **deleted** (50bed11d, #816); the structural, whitespace-tolerant
   regex guard this doc was written about. Kept in the narrative because the
   residuals it was forced to document are the whole lesson.
 

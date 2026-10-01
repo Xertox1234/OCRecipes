@@ -47,7 +47,7 @@ When introducing a new `fullScreenModal` screen that programmatically forwards t
 
 ## Related Files
 
-- `client/screens/RecipeGenerationModal.tsx` (refactored into `client/components/RecipeGenerationModal.tsx`, an in-screen component that no longer navigates; historical example)
+- `client/components/RecipeGenerationModal.tsx` (origin of audit finding H6; now an in-screen component that does not navigate — historical example)
 - `client/screens/QuickLogScreen.tsx` — live example of the modal-dismissal contract (`handleCameraPress` on this `presentation: "modal"` screen pairs `goBack()` with the forwarding `navigate()`, using the dismiss-then-navigate ordering)
 - Audit 2026-05-09 H6
 

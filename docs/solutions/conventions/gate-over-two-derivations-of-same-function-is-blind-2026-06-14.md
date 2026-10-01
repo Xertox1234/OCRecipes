@@ -92,8 +92,8 @@ drift detection, not correctness — it passes for any shared mistake.
 
 ## Related Files
 
-- `scripts/solutions-db/parity-check.ts` — same-parser parity (drift gate; blind to parser bugs) (toolchain retired 2026-07, PR #491; historical example)
-- `scripts/solutions-db/hook-equivalence-check.ts` — grep-vs-DB (independent reader; caught the bug) (toolchain retired 2026-07, PR #491; historical example)
+- `scripts/solutions-db/parity-check.ts` — same-parser parity (drift gate; blind to parser bugs) (toolchain retired 2026-07 in 24774950, PR #491; historical example)
+- `scripts/solutions-db/hook-equivalence-check.ts` — grep-vs-DB (independent reader; caught the bug) (toolchain retired 2026-07 in 24774950, PR #491; historical example)
 - `shared/constants/nutrition-bands.ts` — `FSA_FOOD`, the 2026-07-31 same-source-document example
 
 ## See Also

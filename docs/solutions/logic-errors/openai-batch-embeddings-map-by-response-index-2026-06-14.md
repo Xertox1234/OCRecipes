@@ -6,7 +6,7 @@ module: server
 severity: high
 tags: [openai, embeddings, ai-integration, pgvector, batch, data-integrity, reliability, server]
 symptoms: [Semantic search returns the wrong document for a query that should match exactly, An item's stored vector seems to belong to a different item in the same batch, 'No error, no crash — embeddings are silently attached to the wrong rows']
-applies_to: [scripts/solutions-db/lib/embeddings.ts, server/services/**/*.ts]
+applies_to: [server/services/**/*.ts]
 created: '2026-06-14'
 ---
 
@@ -61,8 +61,8 @@ so a parity gate stays green.
 
 ## Related Files
 
-- `scripts/solutions-db/lib/embeddings.ts` — `embedBatch` (the fix) (toolchain retired 2026-07, PR #491; historical example — no live `embeddings.create` call remains in the repo)
-- `scripts/solutions-db/lib/upsert.ts` — downstream positional `vectors[i]` map (safe once embedBatch is ordered) (toolchain retired 2026-07, PR #491; historical example)
+- `scripts/solutions-db/lib/embeddings.ts` — `embedBatch` (the fix) (toolchain retired 2026-07, PR #491, removed in 24774950; historical example — no live `embeddings.create` call remains in the repo)
+- `scripts/solutions-db/lib/upsert.ts` — downstream positional `vectors[i]` map (safe once embedBatch is ordered) (toolchain retired 2026-07, PR #491, removed in 24774950; historical example)
 
 ## See Also
 

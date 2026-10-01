@@ -112,7 +112,7 @@ const UpgradeResponseSchema = z.object({
 
 ## Related Files
 
-- `server/utils/sendError.ts` — error response helper aligned to the
+- `server/lib/api-errors.ts` — `sendError` error response helper aligned to the
   codebase convention.
 - `shared/schemas/subscription.ts` — `subscriptionTierSchema` (domain schema
   used by `UpgradeResponseSchema`).

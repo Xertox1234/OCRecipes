@@ -6,7 +6,7 @@ module: client
 severity: high
 tags: [hooks, safety-guard, typescript-optional, code-review, scan]
 symptoms: [Hook declares an optional safety parameter (e.g. `isFocused`) but the call site never passes it, Inner guard logic that depends on the parameter never fires — guard is permanently disabled, TypeScript reports no error and the call site looks correct]
-applies_to: [client/screens/ScanScreen.tsx, client/camera/hooks/useScanClassification.ts]
+applies_to: [client/screens/ScanScreen.tsx]
 created: '2026-04-28'
 ---
 
@@ -44,7 +44,7 @@ useScanClassification({ isFocused /* was: missing */ });
 
 ## Related Files
 
-- `client/camera/hooks/useScanClassification.ts` — `isFocused` parameter and L20 guard
+- `client/hooks/useScanClassification.ts` — `isFocused` parameter and L20 guard (removed in cc67c76d, the scan-flow rework; historical example)
 - `client/screens/ScanScreen.tsx` — call site that now passes `isFocused`
 
 ## See Also

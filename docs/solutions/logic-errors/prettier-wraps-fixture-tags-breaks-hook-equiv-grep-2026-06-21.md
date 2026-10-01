@@ -60,8 +60,8 @@ So `solutions_from_markdown` found the solution **0** times (`md=0`), while
 `EXISTS (unnest(tags) WHERE t ~ ...)` — matched it under **both** the
 `react-native` and `accessibility` domains (`db=2`, undeduped). Divergence.
 
-The real mirror files this fixture is supposed to imitate are produced by
-`scripts/solutions-db/export.ts`, are **gitignored** (so Prettier never touches
+The real mirror files this fixture is supposed to imitate were produced by
+`scripts/solutions-db/export.ts` (removed in 24774950), were **gitignored** (so Prettier never touches
 them), and use **single-line inline-flow arrays**. The committed fixture had been
 silently reformatted into a shape production never has — the gate was testing an
 unreal input.

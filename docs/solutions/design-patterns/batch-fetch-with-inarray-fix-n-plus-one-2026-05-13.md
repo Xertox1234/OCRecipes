@@ -94,7 +94,7 @@ async getScannedItemsByIds(
 
 ## Related Files
 
-- `server/storage.ts` — `getScannedItemsByIds(ids, userId?)`
+- `server/storage/nutrition.ts` — `getScannedItemsByIds(ids, userId?)`
 - `server/routes/micronutrients.ts` — daily micronutrient endpoint
 
 ## See Also

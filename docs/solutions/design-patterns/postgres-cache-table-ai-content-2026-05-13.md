@@ -150,7 +150,7 @@ correctness:
 ## Related Files
 
 - `shared/schema.ts` — cache table definitions.
-- `server/storage.ts` — cache storage methods.
+- `server/storage/cache.ts` — cache storage methods (exposed via the `server/storage/index.ts` facade).
 - `server/utils/profile-hash.ts` — `profileHash` computation utility.
 
 ## See Also

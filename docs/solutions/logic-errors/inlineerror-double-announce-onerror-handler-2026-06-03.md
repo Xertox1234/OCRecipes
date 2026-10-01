@@ -74,7 +74,7 @@ The `InlineError` component fires `announceForAccessibility(message)` on iOS and
 ## Related Files
 
 - `client/components/InlineError.tsx`
-- `client/screens/WeightTrackingScreen.tsx`
+- `client/screens/WeightTrackingScreen.tsx` (removed in 4db1cdda; historical example)
 - `docs/rules/accessibility.md`
 
 ## See Also

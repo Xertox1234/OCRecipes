@@ -6,7 +6,7 @@ module: server
 severity: high
 tags: [database, api, drizzle, postgresql, decimal, timestamp, sql-template, arithmetic, type-coercion]
 symptoms: [proteinGoal - totalProtein produces NaN or string concatenation, Aggregate SUM(CAST(... AS DECIMAL)) compiles as number but is a string at runtime, 'TypeError: maxLoggedAt.toISOString is not a function', Compiles cleanly but crashes or produces nonsense on the first real request, Bug only reproduces against real PostgreSQL — mocked storage returns true numbers/Dates]
-applies_to: [server/storage/**/*.ts, server/routes/medication.ts]
+applies_to: [server/storage/**/*.ts]
 created: '2026-02-24'
 last_updated: '2026-08-10'
 ---
@@ -77,7 +77,7 @@ Alternative for numerics: cast to a type `pg` parses as a number, when precision
 ## Related Files
 
 - `server/storage/nutrition.ts` — `getDailySummary()` (numeric aggregates), Quick Log recent-items query (timestamp aggregate)
-- `server/routes/medication.ts` — protein-suggestions route
+- `server/routes/medication.ts` — protein-suggestions route (removed in 4db1cdda, #384; historical example)
 
 ## See Also
 

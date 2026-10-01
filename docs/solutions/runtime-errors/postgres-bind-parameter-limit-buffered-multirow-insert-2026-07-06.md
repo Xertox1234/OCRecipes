@@ -14,7 +14,7 @@ created: '2026-07-06'
 
 ## Problem
 
-`scripts/pg-lab/vitest-flake-reporter.ts`'s `persistTestRuns` buffers one row per Vitest
+`scripts/pg-lab/vitest-flake-reporter.mts`'s `persistTestRuns` buffers one row per Vitest
 test case for the whole suite run and, at `onTestRunEnd`, built ONE `INSERT ... VALUES
 ($1,...,$8), ($9,...,$16), ...` statement covering every buffered row — bind-parameter
 count grows linearly with the row count (`rows.length * columnsPerRow`). Code review (two
@@ -102,7 +102,7 @@ not a size tuned to "today's largest observed run."
 
 ## Related Files
 
-- `scripts/pg-lab/vitest-flake-reporter.ts` — `persistTestRuns`, the writer this was found in
+- `scripts/pg-lab/vitest-flake-reporter.mts` — `persistTestRuns`, the writer this was found in
 - `scripts/pg-lab/__tests__/vitest-flake-reporter.test.ts` — regression test asserting
   exactly 2 `client.query` calls (not 1) when given `ROWS_PER_BATCH + 1` rows
 

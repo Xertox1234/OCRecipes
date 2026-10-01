@@ -64,7 +64,7 @@ async getPlannedNutritionSummary(
 ## Related Files
 
 - `server/routes.ts` — daily-summary endpoint
-- `server/storage.ts` — `getPlannedNutritionSummary(userId, date, confirmedIds?)`
+- `server/storage/meal-plan-analytics.ts` — `getPlannedNutritionSummary(userId, plannedDate, confirmedIds)` (confirmedIds is now required); `server/storage/meal-plan-items.ts` — `getConfirmedMealPlanItemIds`
 
 ## See Also
 

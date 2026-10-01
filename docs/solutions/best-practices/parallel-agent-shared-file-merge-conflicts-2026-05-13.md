@@ -4,7 +4,7 @@ track: knowledge
 category: best-practices
 module: shared
 tags: [process, architecture, parallel-agents, merge-conflicts, planning]
-applies_to: [shared/schema.ts, server/storage.ts, server/routes.ts, shared/types/premium.ts]
+applies_to: [shared/schema.ts, server/storage/index.ts, server/routes.ts, shared/types/premium.ts]
 created: '2026-05-13'
 ---
 
@@ -16,7 +16,7 @@ When planning multi-feature work executed in parallel by separate agents (or con
 
 ## Smell patterns
 
-- Multiple feature branches all adding entries to the same file (`shared/schema.ts`, `server/storage.ts`, `shared/types/premium.ts`).
+- Multiple feature branches all adding entries to the same file (`shared/schema.ts`, `server/storage/index.ts`, `shared/types/premium.ts`).
 - Three-way merges where each agent's diff inserts at a different line in the same object literal.
 - Feature flag tables, route registries, or storage interfaces that grow with every new feature.
 
@@ -25,7 +25,7 @@ When planning multi-feature work executed in parallel by separate agents (or con
 Concurrent edits to canonical files are not a code-quality problem — they are a coordination problem. Three patterns observed during Phases 8-11 of the premium-tier rollout, where four agents added `glp1Companion`, `menuScanner`, `micronutrientTracking`, and `culturalFoodRecognition` features in parallel:
 
 1. **`shared/schema.ts`** — Each agent added new tables. Inserting at arbitrary positions produced overlapping edits.
-2. **`server/storage.ts`** — Each phase added new storage methods. The interface declaration and implementation grew independently, so conflicts appeared twice per method.
+2. **`server/storage.ts`** (since split by f1abb9c2 into `server/storage/<domain>.ts`, composed in `server/storage/index.ts`) — Each phase added new storage methods. The interface declaration and implementation grew independently, so conflicts appeared twice per method.
 3. **`shared/types/premium.ts`** — Each phase added a feature flag to `TIER_FEATURES`. Conflicts were shallow but blocked every merge.
 
 ## Examples
@@ -49,7 +49,7 @@ For solo work or strictly sequential agent dispatches, the overhead of plugin-st
 ## Related Files
 
 - `shared/schema.ts` — table registry across all phases
-- `server/storage.ts` — storage interface + implementation
+- `server/storage/index.ts` — storage facade composing the per-domain `server/storage/*.ts` modules (was `server/storage.ts` until f1abb9c2)
 - `server/routes.ts` — route module registrations
 - `shared/types/premium.ts` — `TIER_FEATURES` flag table
 
