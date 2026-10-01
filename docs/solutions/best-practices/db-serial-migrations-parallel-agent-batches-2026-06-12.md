@@ -36,7 +36,7 @@ Vitest in every worktree connects to the single `postgresql://localhost/nutricam
 
 ## Related Files
 
-- `server/test/db-test-utils.ts` — where the shared-DB inserts fail
+- `test/db-test-utils.ts` — where the shared-DB inserts fail
 - `server/__tests__/factories/` — factory defaults that pin the expected schema
 - `.claude/skills/todo/SKILL.md` — Phase 3 batching, where the DB-serial constraint applies
 

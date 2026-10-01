@@ -27,4 +27,4 @@ under the main checkout but outside the worktree, when the session cwd is inside
 (reports `blocked` if not running in a worktree) and is instructed to keep every
 edit path inside its worktree.
 
-See the full root-cause analysis: `docs/research/2026-05-16-worktree-isolation-leak-rca.md`.
+The full root-cause analysis (`docs/research/2026-05-16-worktree-isolation-leak-rca.md`) was untracked in fc979a8f and is no longer on disk; the implementation plan survives at `docs/superpowers/plans/2026-05-16-worktree-isolation-leak.md`.

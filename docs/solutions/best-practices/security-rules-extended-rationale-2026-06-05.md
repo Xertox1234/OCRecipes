@@ -81,7 +81,7 @@ silently).
 Sanitize ALL prompt roles (`user`, `assistant`, `system`) before sending to OpenAI — never
 only `user` role. Never trust parameters that "look server-generated" in AI prompt inputs —
 always sanitize at the prompt boundary. Rate-limit all AI/OpenAI endpoints — every new AI
-route needs a rate limiter from `server/middleware/rate-limiter.ts`.
+route needs a rate limiter from `server/routes/_rate-limiters.ts`.
 Precedent solutions:
 `docs/solutions/logic-errors/unsanitized-ai-prompt-parameter-question-2026-05-13.md`,
 `docs/solutions/logic-errors/new-recipe-generation-endpoint-skipped-quota-2026-05-13.md`.

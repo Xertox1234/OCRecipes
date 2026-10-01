@@ -31,7 +31,7 @@ When to use Alert.alert: Only for destructive confirmations that need explicit u
 
 ## Related Files
 
-- `client/screens/FastingScreen.tsx` — error haptics on mutation failure
+- `client/screens/FastingScreen.tsx` — error haptics on mutation failure (removed in 4db1cdda)
 - `client/screens/CookSessionReviewScreen.tsx` — 3 mutation error paths
 - `client/screens/ChatListScreen.tsx` — conversation creation error
 

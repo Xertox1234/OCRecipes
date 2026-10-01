@@ -12,7 +12,7 @@
 - All route bodies must be Zod-validated before any field access (`schema.safeParse(req.body)`) — never `req.body.x` raw.
 - `req.userId` is a UUID string — never `parseInt` it (returns `NaN`, silently bypasses ownership checks).
 - Sanitize ALL prompt roles (`user`, `assistant`, `system`) at the OpenAI prompt boundary — never only `user`, and never trust parameters that "look server-generated".
-- Rate-limit every AI/OpenAI endpoint — apply a limiter from `server/middleware/rate-limiter.ts` before the handler.
+- Rate-limit every AI/OpenAI endpoint — apply a limiter from `server/routes/_rate-limiters.ts` before the handler.
 - Safety/classifier regexes spanning newlines must bound every `.*`/`[\s\S]*` gap, and for a safety/injection detector the bound VALUE must be ≥ the upstream input-length cap (e.g. `[\s\S]{0,2000}` vs a 2000-char limit) — a smaller bound is itself a bypass. Routing-only heuristics may use a tighter bound.
 - Premium-gate BOTH read AND write endpoints of a premium feature — gating only writes leaves data readable for free.
 - Never index `TIER_FEATURES[tier]` with the raw stored `users.subscriptionTier` (not reset on expiry → lapsed users keep paid features). Use `storage.getEffectiveTierForUser(userId)`; fall back to `resolveEffectiveTier(tier, expiresAt)` (`@shared/types/premium`) only when you already hold a subscription record. Never route per-request gates through the cached `resolveSubscriptionTierFeatures` (breaks route tests). EXEMPTION: B2B `ApiTier` has no expiry — never pass it through either.

@@ -17,7 +17,7 @@ When a resource should have exactly one row per user (or per unique key) and the
 ## Examples
 
 ```typescript
-// server/routes/fasting.ts — one schedule per user
+// server/routes/fasting.ts (removed in 4db1cdda) — one schedule per user
 const [result] = await db
   .insert(fastingSchedules)
   .values({ userId: req.userId!, ...parsed.data })
@@ -30,7 +30,7 @@ res.json(result);
 ```
 
 ```typescript
-// server/storage.ts — one HealthKit sync setting per (userId, dataType)
+// server/storage.ts (split in f1abb9c2; HealthKit sync removed in 4db1cdda) — one HealthKit sync setting per (userId, dataType)
 const [result] = await db
   .insert(healthKitSync)
   .values({ userId, dataType, enabled, syncDirection })
@@ -74,8 +74,8 @@ export const fastingSchedules = pgTable("fasting_schedules", {
 
 ## Related Files
 
-- `server/routes/fasting.ts` — `PUT /api/fasting/schedule`
-- `server/storage.ts` — `upsertHealthKitSyncSetting()`
+- `server/routes/fasting.ts` (removed in 4db1cdda) — `PUT /api/fasting/schedule`
+- `server/storage.ts` (split in f1abb9c2; HealthKit sync removed in 4db1cdda) — `upsertHealthKitSyncSetting()`
 - `server/services/nutrition-lookup.ts` — nutrition cache upsert
 
 ## See Also

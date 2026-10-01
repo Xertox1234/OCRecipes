@@ -21,7 +21,7 @@ The `weight_logs` table stores weights as decimal strings. If the client sends `
 ## Examples
 
 ```typescript
-// server/routes/weight.ts
+// server/routes/weight.ts (removed in 4db1cdda; historical example)
 const createWeightLogSchema = z.object({
   weight: z.number().positive().max(999),
   unit: z.enum(["lb", "kg"]), // required — never defaulted
@@ -47,8 +47,8 @@ await storage.createWeightLog({
 
 ## Related Files
 
-- `server/routes/weight.ts`
-- `server/services/healthkit-sync.ts`
+- `server/routes/weight.ts` (removed in 4db1cdda)
+- `server/services/healthkit-sync.ts` (removed in 4db1cdda)
 - `shared/schema.ts` → `weightLogs`
 
 ## Origin

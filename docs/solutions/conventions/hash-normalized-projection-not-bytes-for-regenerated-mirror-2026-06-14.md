@@ -71,9 +71,9 @@ round-trip test — never reimplemented.
 
 ## Related Files
 
-- `scripts/solutions-db/lib/parse.ts` — `canonicalProjection` / `computeContentHash` / `deepSortKeys` (toolchain retired 2026-07, PR #491; historical example)
-- `scripts/solutions-db/lib/serialize.ts` — the inverse serializer (must round-trip to the same hash) (toolchain retired 2026-07, PR #491; historical example)
-- `scripts/solutions-db/parity-check.ts`, `export.ts --verify` — the gates built on the projection hash (toolchain retired 2026-07, PR #491; historical example)
+- `scripts/solutions-db/lib/parse.ts` — `canonicalProjection` / `computeContentHash` / `deepSortKeys` (removed in 24774950, PR #491; historical example)
+- `scripts/solutions-db/lib/serialize.ts` — the inverse serializer (must round-trip to the same hash) (removed in 24774950, PR #491; historical example)
+- `scripts/solutions-db/parity-check.ts`, `export.ts --verify` — the gates built on the projection hash (removed in 24774950, PR #491; historical example)
 - `server/lib/contract-snapshot.ts` — live analogue: `recordSnapshot` compares a normalized projection (JSON round-trip + `deriveShape`) against the stored mirror, not raw bytes
 
 ## See Also

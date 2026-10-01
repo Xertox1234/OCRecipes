@@ -38,7 +38,7 @@ useEffect(() => {
 
 - `client/camera/components/StepPill.tsx` — `announceForAccessibility` fired only on discrete state transitions (guarded by a `prevState` ref), not on every update
 - `client/camera/components/ProductChip.tsx` — container `accessibilityLiveRegion` deliberately removed from this frequently-updating chip (see inline comments)
-- `client/screens/FastingScreen.tsx` (feature removed; historical example) — phase transition announcements via effect, not live region
+- `client/screens/FastingScreen.tsx` (removed in 4db1cdda; historical example) — phase transition announcements via effect, not live region
 - Discovered during PR #25 performance + accessibility review
 
 ## See Also

@@ -90,7 +90,7 @@ The test is **plurality of consumers**, not "this shape is reused once." A singl
 
 - `shared/types/auth.ts` — legitimate shared types (User, AuthResponse)
 - `client/screens/HistoryScreen.tsx` — inline response types for screen-specific endpoints
-- _(removed)_ `shared/types/models.ts` — deleted; was a response-type dumping ground
+- _(removed)_ `shared/types/models.ts` — deleted in 331433da; was a response-type dumping ground
 
 ## See Also
 

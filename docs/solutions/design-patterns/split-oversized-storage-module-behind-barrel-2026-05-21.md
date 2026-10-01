@@ -88,5 +88,5 @@ targeted storage tests for the split modules → `check:types` → `lint` →
 
 ## See Also
 
-- `docs/solutions/design-patterns/facade-mock-alignment-re-exported-values-2026-05-13.md`
-- `docs/kimi-review-architecture.md` — why the gate is diff-scoped
+- `docs/solutions/conventions/facade-mock-alignment-re-exported-values-2026-05-13.md`
+- `docs/kimi-review-architecture.md` (removed in 6d1e43f8; kimi pre-commit gate retired) — why the gate was diff-scoped

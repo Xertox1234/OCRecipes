@@ -52,7 +52,7 @@ meal-plan confirm, recipe-catalog, favourite-recipes, fasting); see the migratio
 
 - `server/storage/nutrition.ts`, `server/storage/favourite-recipes.ts`,
   `server/routes/recipe-catalog.ts` — `err.code === "23505"` (needs `.cause` fallback)
-- `server/routes/auth.ts`, `server/routes/meal-plan.ts`, `server/routes/fasting.ts` —
+- `server/routes/auth.ts`, `server/routes/meal-plan.ts`, `server/routes/fasting.ts` (removed in 4db1cdda) —
   message-text matching (fragile)
 - `todos/2026-05-23-drizzle-orm-0.45-migration.md` — the deferred fix + `isUniqueViolation` helper
 

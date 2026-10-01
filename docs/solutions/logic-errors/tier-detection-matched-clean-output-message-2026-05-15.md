@@ -14,7 +14,7 @@ created: '2026-05-15'
 
 ## Problem
 
-The Claude-Code kimi-review pre-commit hook (`.claude/hooks/kimi-review.sh`)
+The Claude-Code kimi-review pre-commit hook (`.claude/hooks/kimi-review.sh`, removed in 6d1e43f8)
 decides whether to block a commit by parsing `kimi-review`'s stdout. It got
 this wrong three times, each failure a variation on the same theme — keying
 detection on a _guess about the tool's clean-output wording_ instead of on the
@@ -111,8 +111,8 @@ covers `filter_review`; the hook's `clean-model-prose` case covers the backstop.
 
 ## Related Files
 
-- `.claude/hooks/kimi-review.sh` — the pre-commit CRITICAL-detection gate
-  (retired in the reviewer-roster consolidation; historical example)
+- `.claude/hooks/kimi-review.sh` (removed in 6d1e43f8) — the pre-commit CRITICAL-detection gate
+  (removed in 6d1e43f8 in the reviewer-roster consolidation; historical example)
 - `~/.local/bin/kimi-review` — out-of-repo tool; emits `[TIER] path:line — desc`
   finding lines and a `No findings in requested tiers: ...` clean message
   (retired alongside the hook — no longer installed as of 2026-08; historical

@@ -83,12 +83,12 @@ export function useMeasurementUnit(): MeasurementUnit {
 }
 ```
 
-### Display conversion at the leaf — `client/screens/WeightTrackingScreen.tsx`
+### Display conversion at the leaf — `client/screens/WeightTrackingScreen.tsx` (removed in 4db1cdda)
 
 The stored value is kg; convert and round only when rendering.
 
 ```typescript
-// client/screens/WeightTrackingScreen.tsx
+// client/screens/WeightTrackingScreen.tsx (removed in 4db1cdda)
 import {
   weightFromKg,
   weightUnitLabel,
@@ -100,7 +100,7 @@ function formatWeight(weightKg: string, unit: MeasurementUnit): string {
 }
 ```
 
-### Input validation on the _converted_ value — `client/screens/WeightTrackingScreen.tsx`
+### Input validation on the _converted_ value — `client/screens/WeightTrackingScreen.tsx` (removed in 4db1cdda)
 
 Guard for `NaN` first, then convert to kg, then validate against the kg storage cap.
 
@@ -162,7 +162,7 @@ const progress = currentWeightKg / goalWeightKg;
 
 - `shared/lib/units.ts` — conversion factors, helpers, and `measurementUnitSchema`
 - `client/hooks/useMeasurementUnit.ts` — reads the preference from auth context
-- `client/screens/WeightTrackingScreen.tsx` — display + input leaf example
+- `client/screens/WeightTrackingScreen.tsx` (removed in 4db1cdda) — display + input leaf example
 - `client/screens/SettingsScreen.tsx` — the metric/imperial toggle (persists via `/api/auth/profile`)
 - `server/services/profile-hub.ts` — server-side display conversion
 

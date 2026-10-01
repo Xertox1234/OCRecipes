@@ -124,7 +124,7 @@ export function isSubscriptionTier(value: unknown): value is SubscriptionTier {
 
 ## Related Files
 
-- `server/storage.ts:252-257` - Fixed implementation
+- `server/storage/users.ts` (`getSubscriptionStatus`) - Fixed implementation
 - `shared/types/premium.ts` - Zod schema and type definitions
 - `docs/PATTERNS.md:169-271` - Type Guards for Runtime Validation
 

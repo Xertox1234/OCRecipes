@@ -65,7 +65,7 @@ For timer refs specifically, `undefined` is correct because `clearTimeout(undefi
 
 ## Related Files
 
-- `client/components/Snackbar.tsx` — timer ref, fixed during Phase 4
+- `client/screens/meal-plan/GroceryListScreen.tsx` — pantry-snackbar `dismissTimerRef` (`useRef<ReturnType<typeof setTimeout>>(undefined)`), fixed during Phase 4
 - `client/camera/hooks/useCamera.ts` — `isScanningRef` uses explicit `useRef(false)`
 
 ## See Also

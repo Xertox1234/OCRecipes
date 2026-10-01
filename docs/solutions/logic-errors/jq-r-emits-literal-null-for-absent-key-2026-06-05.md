@@ -66,13 +66,13 @@ DEDUP=1
   back-compat assertion ("a caller with no session_id always gets full output, never the
   deduped pointer") is the test that surfaced this — the case that "obviously passes" is
   exactly where the bug hid.
-- Grep sibling hooks for the same idiom — `lsp-nudge.sh` uses `jq -re '.session_id' || echo nosess`, which has the same latent behavior (benign there only because its fallback key is cosmetic).
+- Grep sibling hooks for the same idiom — `lsp-nudge.sh` (removed in 772c5d99) used `jq -re '.session_id' || echo nosess`, which had the same latent behavior (benign there only because its fallback key was cosmetic).
 
 ## Related Files
 
 - `.claude/hooks/inject-patterns.sh` — session-dedup SESSION extraction (fixed).
 - `.claude/hooks/test-inject-patterns.sh` — the session-less back-compat assertion.
-- `.claude/hooks/lsp-nudge.sh` — same idiom, latent.
+- `.claude/hooks/lsp-nudge.sh` — same idiom, latent (removed in 772c5d99).
 
 ## See Also
 

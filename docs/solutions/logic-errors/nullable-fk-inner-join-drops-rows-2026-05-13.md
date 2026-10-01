@@ -68,7 +68,7 @@ const result = await db
 
 ## Related Files
 
-- `server/storage.ts` — `getDailySummary()`
+- `server/storage/nutrition.ts` — `getDailySummary()`
 - `shared/schema.ts` — `dailyLogs.scannedItemId` (made nullable in Phase 4)
 - `docs/PATTERNS.md` — "LEFT JOIN with COALESCE for Nullable Foreign Keys"
 
