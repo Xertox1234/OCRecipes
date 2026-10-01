@@ -2,7 +2,8 @@ export type CoachIntent =
   | "safety_refusal"
   | "general_fact"
   | "vague_request"
-  | "personalized_advice";
+  | "personalized_advice"
+  | "recipe_request";
 
 export interface IntentClassification {
   intent: CoachIntent;
@@ -112,6 +113,75 @@ const GENERAL_FACT_RE =
  */
 const TEMPORAL_PERSONAL_RE = /\b(today|now|right now|currently)\b/i;
 
+// ── Recipe request (recipe finder, spec R4) ──────────────────────────────────
+
+/**
+ * A request for a dish/recipe → the server-run recipe finder (Coach Pro, flag
+ * on). Checked AFTER safety and BEFORE vague/general_fact, so "meal ideas"
+ * (≤3 words) and "What's a …" stems route here. Measured 2026-09-28 against
+ * evals/datasets/coach-cases.json: exactly 5 of 41 cases route.
+ * `[^.?!]{0,40}` / `[^?!]{0,40}` bound each gap (routing heuristic, not a
+ * safety detector — see GENERAL_FACT_RE's note on bounded gaps).
+ */
+const RECIPE_REQUEST_PATTERNS: { pattern: RegExp; name: string }[] = [
+  {
+    pattern:
+      /\b(?:find|give|show|suggest|recommend|send|share|need|want|get|looking for|search for)\b[^.?!]{0,40}\brecipes?\b/i,
+    name: "recipe_verb",
+  },
+  {
+    pattern:
+      /^(?:a |an |any |some )?(?:[\w-]+ ){0,3}recipes? (?:for|with|using)\b/i,
+    name: "recipe_leading",
+  },
+  {
+    pattern: /\bwhat (?:should|can|could|shall) (?:i|we) (?:make|cook|bake)\b/i,
+    name: "what_to_cook",
+  },
+  {
+    pattern:
+      /\b(?:meal|dinner|lunch|breakfast|brunch)s?\b[^?!]{0,40}\bideas?\b/i,
+    name: "meal_ideas",
+  },
+  {
+    pattern:
+      /\bideas?\b[^.?!]{0,40}\b(?:meal|dinner|lunch|breakfast|brunch)s?\b/i,
+    name: "ideas_for_meal",
+  },
+];
+
+// "a recipe", "some quick vegan recipes" (not "a recipe on/in/into …", which
+// files one). {0,3} matches recipe_leading's modifier bound. A modifier is
+// never a referent determiner, so "a name for my recipe" is not one.
+const REFERENT_DETERMINER = String.raw`(?:this|that|these|those|my)`;
+const INDEFINITE_RECIPE = String.raw`\b(?:a|an|any|another|new|different|some)\s+(?:(?!${REFERENT_DETERMINER}\b)[\w-]+\s+){0,3}recipes?\b(?!\s+(?:on|in|into)\b)`;
+// "this recipe", "my lasagna recipe".
+const REFERENT_RECIPE = String.raw`\b${REFERENT_DETERMINER}\s+(?:[\w-]+\s+){0,2}recipes?\b`;
+
+/**
+ * Acting on a meal or a recipe the user already has is a coach action (log,
+ * meal plan, grocery list, substitutions, nutrition), not a search — the
+ * coach's tools answer it (#1151 review). A referent vetoes only when no
+ * indefinite recipe comes before it: "Find me a recipe like my lasagna
+ * recipe" routes, "Turn my chili recipe into a slow-cooker recipe" does not.
+ * Known miss: a referent-first message that then asks for a new one ("My
+ * chili recipe is boring. Find me a better one") stays with the coach.
+ */
+const RECIPE_REQUEST_EXCLUSIONS: RegExp[] = [
+  // Logging/saving/tracking.
+  /\b(?:log|logged|logging|save|saved|delete|track)\b[^.?!]{0,30}\b(?:recipe|meal|dinner|lunch|breakfast|brunch)s?\b/i,
+  // A recipe they already have, named before any request for a new one. One
+  // left-to-right pass; each step's lookahead is bounded by the word counts.
+  new RegExp(
+    String.raw`^(?:(?!${INDEFINITE_RECIPE})[\s\S])*?${REFERENT_RECIPE}`,
+    "i",
+  ),
+  // Asking about one: "the calories in the recipe", "a shopping list for it".
+  /\b(?:calories|macros|nutrition|nutrients|protein|carbs|fat|ingredients|grocery list|shopping list|substitutes?|substitutions?)\s+(?:in|of|for|from)\s+(?:the|this|that|these|those|my)\s+(?:[\w-]+\s+){0,2}recipes?\b/i,
+  // Filing one: "add a recipe to my meal plan".
+  /\b(?:add|put)\s+(?:(?:a|an|the)\s+)?(?:[\w-]+\s+){0,2}recipes?\s+(?:to|on|in|into)\b/i,
+];
+
 // ── Classifier ────────────────────────────────────────────────────────────────
 
 function wordCount(message: string): number {
@@ -120,10 +190,15 @@ function wordCount(message: string): number {
 
 /**
  * Deterministic regex/keyword intent classifier. Pure function — no I/O,
- * no LLM call. Rule precedence: safety > vague > general_fact > personalized.
- * Safety wins all ties.
+ * no LLM call. Rule precedence: safety > recipe_request > vague >
+ * general_fact > personalized. Safety wins all ties. `recipeRequests: false`
+ * skips the recipe_request rule (flag off, free Coach, and the generators'
+ * self-classification fallback keep their legacy prompt intent).
  */
-export function classifyIntent(message: string): IntentClassification {
+export function classifyIntent(
+  message: string,
+  opts: { recipeRequests?: boolean } = {},
+): IntentClassification {
   const trimmed = message.trim();
 
   // ── Rule 1: safety_refusal (highest priority) ─────────────────────────────
@@ -144,7 +219,19 @@ export function classifyIntent(message: string): IntentClassification {
     };
   }
 
-  // ── Rule 2: vague_request ─────────────────────────────────────────────────
+  // ── Rule 2: recipe_request (after safety, before vague/general_fact) ──────
+  if (
+    opts.recipeRequests !== false &&
+    !RECIPE_REQUEST_EXCLUSIONS.some((re) => re.test(trimmed))
+  ) {
+    for (const { pattern, name } of RECIPE_REQUEST_PATTERNS) {
+      if (pattern.test(trimmed)) {
+        return { intent: "recipe_request", matchedRule: name };
+      }
+    }
+  }
+
+  // ── Rule 3: vague_request ─────────────────────────────────────────────────
   const hasQuestion = trimmed.includes("?");
   if (
     VAGUE_EXACT_RE.test(trimmed) ||
@@ -153,11 +240,11 @@ export function classifyIntent(message: string): IntentClassification {
     return { intent: "vague_request", matchedRule: "vague_exact_or_short" };
   }
 
-  // ── Rule 3: general_fact ──────────────────────────────────────────────────
+  // ── Rule 4: general_fact ──────────────────────────────────────────────────
   if (GENERAL_FACT_RE.test(trimmed) && !TEMPORAL_PERSONAL_RE.test(trimmed)) {
     return { intent: "general_fact", matchedRule: "general_fact_question" };
   }
 
-  // ── Rule 4: personalized_advice (default) ─────────────────────────────────
+  // ── Rule 5: personalized_advice (default) ─────────────────────────────────
   return { intent: "personalized_advice", matchedRule: "default" };
 }

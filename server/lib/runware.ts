@@ -38,6 +38,13 @@ export interface GenerateImageOptions {
   width?: number;
   height?: number;
   model?: string;
+  /**
+   * Request a specific Runware output format. Omitted by default — Runware's
+   * own default is JPEG (see docs/solutions/conventions/runware-imageinference-defaults-to-jpeg-without-outputformat-2026-09-29.md).
+   * Pass "PNG" only when the caller actually needs real PNG bytes (e.g. an
+   * app-icon asset written to a `.png` path); do not default this globally.
+   */
+  outputFormat?: "PNG";
 }
 
 /**
@@ -70,6 +77,9 @@ export async function generateImage(
           height: options.height ?? 1024,
           outputType: "base64Data",
           numberResults: 1,
+          ...(options.outputFormat
+            ? { outputFormat: options.outputFormat }
+            : {}),
         },
       ]),
       signal: controller.signal,
@@ -177,7 +187,15 @@ export async function removeBackground(
 /**
  * Persist a generated image Buffer (delegates to the image-store, which writes
  * to R2 in production and disk in dev). Returns the stored URL.
+ *
+ * `ext` must match the actual bytes of `buffer` — pass it explicitly whenever
+ * the caller knows the provider returned something other than
+ * saveRecipeImage's "png" default (e.g. Runware without `outputFormat`, which
+ * returns JPEG). Omit it only when the bytes really are PNG.
  */
-export async function saveImageBuffer(buffer: Buffer): Promise<string> {
-  return saveRecipeImage(buffer);
+export async function saveImageBuffer(
+  buffer: Buffer,
+  ext?: NonNullable<Parameters<typeof saveRecipeImage>[1]>,
+): Promise<string> {
+  return saveRecipeImage(buffer, ext);
 }

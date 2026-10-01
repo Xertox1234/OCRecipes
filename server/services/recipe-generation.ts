@@ -313,7 +313,8 @@ export async function generateRecipeImage(
   if (isRunwareConfigured) {
     try {
       const buffer = await runwareGenerateImage({ prompt });
-      if (buffer) return await saveRecipeImage(buffer);
+      // Runware returns JPEG (no outputFormat requested) — label it to match.
+      if (buffer) return await saveRecipeImage(buffer, "jpg");
       log.warn("Runware returned no image, falling back to DALL-E");
     } catch (error) {
       log.warn(

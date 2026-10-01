@@ -25,7 +25,12 @@
  */
 import "dotenv/config";
 import { db } from "../server/db";
-import { communityRecipes, cookbookRecipes, users } from "../shared/schema";
+import {
+  communityRecipes,
+  cookbookRecipes,
+  savedItems,
+  users,
+} from "../shared/schema";
 import { eq, and } from "drizzle-orm";
 import {
   buildJunkCommunityRecipeWhere,
@@ -102,6 +107,19 @@ export async function main(argv: readonly string[] = process.argv) {
           and(
             eq(cookbookRecipes.recipeId, id),
             eq(cookbookRecipes.recipeType, "community"),
+          ),
+        );
+    }
+    // Clear saved_items links (PR #1165 polymorphic recipe_id/recipe_type
+    // link, no DB FK) before deleting the parent recipe. Mirrors
+    // deleteCommunityRecipe in server/storage/community-recipes.ts.
+    for (const id of ids) {
+      await tx
+        .delete(savedItems)
+        .where(
+          and(
+            eq(savedItems.recipeId, id),
+            eq(savedItems.recipeType, "community"),
           ),
         );
     }

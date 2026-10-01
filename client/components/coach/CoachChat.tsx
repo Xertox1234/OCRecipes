@@ -36,14 +36,34 @@ import { useTheme } from "@/hooks/useTheme";
 import {
   useChatMessages,
   useDeleteChatMessageForRetry,
+  useSaveRecipeFromChat,
   type ChatMessage,
+  type StreamingRecipe,
 } from "@/hooks/useChat";
+import { RecipeCard as GeneratedRecipeCard } from "@/components/recipe-chat/RecipeCard";
+import {
+  finderItemNavParams,
+  lockedFinderButtons,
+} from "@/components/recipe-finder/recipe-finder-utils";
+import { recipeChatMetadataSchema } from "@shared/schemas/recipe-chat";
+import {
+  isFinderBlockType,
+  type FinderAction,
+  type FinderItem,
+} from "@shared/schemas/recipe-finder";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem, useMealPlanItems } from "@/hooks/useMealPlan";
 import { useToast } from "@/context/ToastContext";
 import { useHaptics } from "@/hooks/useHaptics";
+import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
+import {
+  useAddFavouriteRecipe,
+  useFavouriteRecipeIds,
+  useToggleFavouriteRecipe,
+} from "@/hooks/useFavouriteRecipes";
+import { savedRecipeIdFromMetadata } from "@/components/recipe-chat/saved-recipe-utils";
 import type { MealType } from "@/screens/meal-plan/meal-plan-utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { Spacing } from "@/constants/theme";
@@ -98,19 +118,55 @@ export default function CoachChat({
   // "catalogSave" on POST /api/meal-plan/catalog/:id/save) — gate here too so
   // a free user gets the upgrade path instead of a failed request.
   const canSaveCatalog = usePremiumFeature("catalogSave");
-  const deleteChatMessage = useDeleteChatMessageForRetry();
   const queryClient = useQueryClient();
   const toast = useToast();
   const haptics = useHaptics();
   // Destructure rather than depend on the mutation objects themselves —
   // useMutation returns a new object identity every render, which would
   // make every useCallback below that depends on it re-create every render.
+  const { mutateAsync: deleteChatMessage } = useDeleteChatMessageForRetry();
   const { mutateAsync: saveCatalogRecipe, isPending: isSavingCatalog } =
     useSaveCatalogRecipe();
   const { mutateAsync: addMealPlanItem, isPending: isAddingPlanItem } =
     useAddMealPlanItem();
+  const canGenerateRecipes = usePremiumFeature("recipeGeneration");
+  const finderLocks = useMemo(
+    () =>
+      lockedFinderButtons({
+        canSearchOnline: canSaveCatalog,
+        canGenerate: canGenerateRecipes,
+      }),
+    [canSaveCatalog, canGenerateRecipes],
+  );
+  const { mutateAsync: saveRecipeFromChat } = useSaveRecipeFromChat();
+  // messageId → the community recipe id it was saved as (this session).
+  const savedRecipeIdsRef = useRef<Map<number, number>>(new Map());
+  const { data: favouriteIds } = useFavouriteRecipeIds();
+  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
+  const addFavourite = useAddFavouriteRecipe();
+  const [savingRecipeMessageId, setSavingRecipeMessageId] = useState<
+    number | null
+  >(null);
 
-  const [inputText, setInputText] = useState("");
+  const [inputText, setInputTextState] = useState("");
+  // Latest-value mirror of `inputText`. handleSend reads this ref instead of
+  // `inputText` so its identity doesn't change on every keystroke — see H3
+  // (2026-09-23 audit): handleSend depending on inputText cascaded into
+  // handleRetry/handleBlockAction/handleQuickReply/renderItem all getting new
+  // identities per keystroke, forcing every visible FlatList row to re-render.
+  // The ref is written together with the state in this setter, NOT in the
+  // render body: a render-phase `ref.current =` write is a React Compiler
+  // CompileError ("Cannot access refs during render"), and writing here also
+  // keeps the ref current before the re-render. (This file is compiler-exempt
+  // anyway — see the CORRECTION note on handleConfirmPlanSlot's `finally` —
+  // so this avoids adding a second bailout, it doesn't restore coverage.)
+  // Every write to inputText must go through setInputText (the raw state
+  // setter is not used elsewhere).
+  const inputTextRef = useRef(inputText);
+  const setInputText = useCallback((text: string) => {
+    inputTextRef.current = text;
+    setInputTextState(text);
+  }, []);
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
   const [streamingError, setStreamingError] = useState<string | null>(null);
   const [isAtDailyLimit, setIsAtDailyLimit] = useState(false);
@@ -248,7 +304,12 @@ export default function CoachChat({
   } = useCoachStream({
     onDone: (_fullText, blocks) => {
       setOptimisticMessage(null);
-      if (blocks && blocks.length > 0) setStreamBlocks(blocks);
+      // Finder blocks render from the refetched message (with the right
+      // active state); keeping them in the footer too would show two lists.
+      const liveBlocks = (blocks ?? []).filter(
+        (b) => !isFinderBlockType(b.type),
+      );
+      if (liveBlocks.length > 0) setStreamBlocks(liveBlocks);
       if (activeConvIdRef.current !== null) {
         void queryClient.invalidateQueries({
           queryKey: [
@@ -356,6 +417,28 @@ export default function CoachChat({
     return map;
   }, [messages]);
 
+  // A Coach message generated by the recipe finder carries RecipeChef's
+  // top-level recipe metadata (R5), image included (#1158) — render
+  // RecipeChef's card, not the recipe_card block (which needs a recipeId and
+  // macros).
+  const generatedRecipes = useMemo(() => {
+    const map = new Map<
+      number,
+      { recipe: StreamingRecipe; allergenWarning: string | null }
+    >();
+    for (const msg of messages ?? []) {
+      if (msg.role !== "assistant") continue;
+      const parsed = recipeChatMetadataSchema.safeParse(msg.metadata);
+      if (parsed.success) {
+        map.set(msg.id, {
+          recipe: { ...parsed.data.recipe, imageUrl: parsed.data.imageUrl },
+          allergenWarning: parsed.data.allergenWarning,
+        });
+      }
+    }
+    return map;
+  }, [messages]);
+
   const lastAssistantMessageId = useMemo(() => {
     if (!messages || messages.length === 0) return null;
     const last = messages[messages.length - 1];
@@ -371,7 +454,7 @@ export default function CoachChat({
         warmUpHook.sendWarmUp(transcript);
       }
     }
-  }, [isListening, transcript, isCoachPro, warmUpHook]);
+  }, [isListening, transcript, isCoachPro, warmUpHook, setInputText]);
 
   // Auto-send when speech finalizes
   useEffect(() => {
@@ -383,7 +466,9 @@ export default function CoachChat({
   const handleSend = useCallback(
     async (text?: string) => {
       // onPress/onSubmitEditing invoke this with an event object, not a string — only trust an explicit string arg (quick replies, voice).
-      const content = (typeof text === "string" ? text : inputText).trim();
+      const content = (
+        typeof text === "string" ? text : inputTextRef.current
+      ).trim();
       if (!content || isStreaming) return;
 
       setInputText("");
@@ -398,7 +483,16 @@ export default function CoachChat({
         try {
           convId = await onCreateConversation();
         } catch {
+          // The input was already cleared and the optimistic bubble was
+          // already shown above — a bare catch here left the user with no
+          // feedback and their typed message gone. Restore what they typed
+          // so they can retry without retyping, and surface the failure via
+          // the same InlineError surface used for stream/retry failures.
           setOptimisticMessage(null);
+          setInputText(content);
+          setStreamingError(
+            "Couldn't start the conversation. Please try again.",
+          );
           return;
         }
       }
@@ -410,7 +504,10 @@ export default function CoachChat({
       onMessageSent?.();
     },
     [
-      inputText,
+      // inputText intentionally excluded — handleSend reads the latest value
+      // from inputTextRef instead so its identity (and every callback that
+      // transitively depends on it: handleRetry, handleBlockAction,
+      // handleQuickReply, renderItem) stays stable across keystrokes.
       isStreaming,
       conversationId,
       onCreateConversation,
@@ -419,6 +516,7 @@ export default function CoachChat({
       ttsStop,
       startStream,
       onMessageSent,
+      setInputText,
     ],
   );
 
@@ -438,8 +536,8 @@ export default function CoachChat({
 
     try {
       // Delete assistant then user message (in order — each was "most recent" at time of delete)
-      await deleteChatMessage.mutateAsync(lastMsg.id);
-      await deleteChatMessage.mutateAsync(lastUserMsg.id);
+      await deleteChatMessage(lastMsg.id);
+      await deleteChatMessage(lastUserMsg.id);
     } catch {
       queryClient.setQueryData(msgQueryKey, snapshot);
       setStreamingError("Retry failed. Check your connection and try again.");
@@ -687,28 +785,118 @@ export default function CoachChat({
     [handleSend],
   );
 
+  // A finder tap sends its visible label as the message, with the action.
+  const handleFinderAction = useCallback(
+    (action: FinderAction, label: string) => {
+      if (isStreaming || !conversationId) return;
+      setOptimisticMessage(label);
+      setStreamBlocks([]);
+      setStreamingError(null);
+      setIsAtDailyLimit(false);
+      ttsStop();
+      activeConvIdRef.current = conversationId;
+      startStream(conversationId, label, { finderAction: action });
+      onMessageSent?.();
+    },
+    [isStreaming, conversationId, ttsStop, startStream, onMessageSent],
+  );
+
+  const handleOpenFinderItem = useCallback(
+    (item: FinderItem) => {
+      navigation.navigate("FeaturedRecipeDetail", finderItemNavParams(item));
+    },
+    [navigation],
+  );
+
+  const openUpgrade = useCallback(() => setShowUpgrade(true), []);
+
+  /** Resolves the saved community recipe id, or null if nothing was saved. */
+  const handleSaveGeneratedRecipe = useCallback(
+    async (messageId: number): Promise<number | null> => {
+      const known = savedRecipeIdsRef.current.get(messageId);
+      if (known !== undefined) return known;
+      if (!conversationId || savingRecipeMessageId !== null) return null;
+      setSavingRecipeMessageId(messageId);
+      try {
+        const saved = await saveRecipeFromChat({ conversationId, messageId });
+        savedRecipeIdsRef.current = new Map([
+          ...savedRecipeIdsRef.current,
+          [messageId, saved.id],
+        ]);
+        haptics.notification(Haptics.NotificationFeedbackType.Success);
+        if (saved.savedItemStatus === "limit_reached") {
+          toast.info(SAVED_ITEMS_FULL_MESSAGE);
+        } else {
+          toast.success("Recipe saved");
+        }
+        return saved.id;
+      } catch {
+        // useSaveRecipeFromChat has no silentError: the global net toasts it.
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+        return null;
+      } finally {
+        setSavingRecipeMessageId(null);
+      }
+    },
+    [conversationId, savingRecipeMessageId, saveRecipeFromChat, haptics, toast],
+  );
+
+  // The card's heart (ruling 2026-09-29): toggles the saved copy; on an
+  // unsaved recipe it saves first, then favourites without ever toggling off.
+  const handleFavouriteGeneratedRecipe = useCallback(
+    async (messageId: number, savedRecipeId: number | null) => {
+      if (savedRecipeId !== null) {
+        toggleFavourite({ recipeId: savedRecipeId, recipeType: "community" });
+        return;
+      }
+      const id = await handleSaveGeneratedRecipe(messageId);
+      if (id === null) return;
+      try {
+        await addFavourite({ recipeId: id, recipeType: "community" });
+      } catch {
+        // useToggleFavouriteRecipe surfaces its own failures; the save stands.
+      }
+    },
+    [toggleFavourite, handleSaveGeneratedRecipe, addFavourite],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: ChatListItem }) => {
       if (item.type === "message") {
         const msg = item.message;
+        const isAssistant = msg.role === "assistant";
+        const blocksForMsg = messageBlocks.get(msg.id);
+        // A finder message's text is the old-client fallback; the block replaces it.
+        const hasFinderBlock =
+          blocksForMsg?.some((b) => isFinderBlockType(b.type)) ?? false;
+        // No Regenerate under a finder message: handleRetry re-sends the
+        // last user text without its finderAction, so a "Search Spoonacular"
+        // tap would come back as a community search for that label. The
+        // finder message's own buttons are the next step.
         const isRetryTarget =
           !isStreaming &&
-          msg.role === "assistant" &&
+          isAssistant &&
+          !hasFinderBlock &&
           msg.id === lastAssistantMessageId;
-        const isAssistant = msg.role === "assistant";
+        const generated = generatedRecipes.get(msg.id);
+        const savedRecipeId =
+          savedRecipeIdsRef.current.get(msg.id) ??
+          savedRecipeIdFromMetadata(msg.metadata);
         return (
           <View>
-            <ChatBubble
-              role={msg.role as "user" | "assistant"}
-              content={msg.content}
-              onSpeak={
-                isAssistant ? () => ttsSpeak(msg.id, msg.content) : undefined
-              }
-              isSpeaking={
-                isAssistant && speakingMessageId === msg.id && isSpeaking
-              }
-            />
-            {messageBlocks.get(msg.id)?.map((block, i) => {
+            {!hasFinderBlock && (
+              <ChatBubble
+                role={msg.role as "user" | "assistant"}
+                content={msg.content}
+                onSpeak={
+                  isAssistant ? () => ttsSpeak(msg.id, msg.content) : undefined
+                }
+                isSpeaking={
+                  isAssistant && speakingMessageId === msg.id && isSpeaking
+                }
+              />
+            )}
+            {blocksForMsg?.map((block, i) => {
               const bKey = `${msg.id}-${i}`;
               return (
                 <BlockRenderer
@@ -727,9 +915,34 @@ export default function CoachChat({
                         )
                       : undefined
                   }
+                  isActive={!isStreaming && msg.id === lastAssistantMessageId}
+                  lockedFinderButtons={finderLocks}
+                  onFinderAction={handleFinderAction}
+                  onLockedFinderButton={openUpgrade}
+                  onOpenFinderItem={handleOpenFinderItem}
                 />
               );
             })}
+            {generated ? (
+              <GeneratedRecipeCard
+                recipe={generated.recipe}
+                allergenWarning={generated.allergenWarning}
+                isSaved={savedRecipeId !== null}
+                isSaving={savingRecipeMessageId === msg.id}
+                onSave={() => void handleSaveGeneratedRecipe(msg.id)}
+                isFavourited={
+                  savedRecipeId !== null &&
+                  !!favouriteIds?.ids.some(
+                    (f) =>
+                      f.recipeId === savedRecipeId &&
+                      f.recipeType === "community",
+                  )
+                }
+                onFavourite={() =>
+                  void handleFavouriteGeneratedRecipe(msg.id, savedRecipeId)
+                }
+              />
+            ) : null}
             {isRetryTarget && (
               <Pressable
                 onPress={handleRetry}
@@ -766,6 +979,15 @@ export default function CoachChat({
       lastAssistantMessageId,
       messageBlocks,
       theme.textSecondary,
+      finderLocks,
+      handleFinderAction,
+      openUpgrade,
+      handleOpenFinderItem,
+      generatedRecipes,
+      savingRecipeMessageId,
+      handleSaveGeneratedRecipe,
+      handleFavouriteGeneratedRecipe,
+      favouriteIds,
     ],
   );
 
@@ -829,8 +1051,23 @@ export default function CoachChat({
   useEffect(() => {
     return () => {
       abortStream();
+      // Unmounting mid-answer makes the server settle the turn after we're
+      // gone (refund or partial reply, H6) — mark the conversation stale so
+      // the next view refetches it instead of serving the pre-settle cache.
+      // `refetchType: "none"` avoids racing the server's write.
+      const convId = activeConvIdRef.current;
+      if (convId !== null) {
+        void queryClient.invalidateQueries({
+          queryKey: [`/api/chat/conversations/${convId}/messages`],
+          refetchType: "none",
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/chat/conversations"],
+          refetchType: "none",
+        });
+      }
     };
-  }, [abortStream]);
+  }, [abortStream, queryClient]);
 
   const handleMicPress = useCallback(() => {
     if (isListening) {
@@ -845,7 +1082,7 @@ export default function CoachChat({
       setInputText(text);
       if (isCoachPro) warmUpHook.sendTextWarmUp(text);
     },
-    [isCoachPro, warmUpHook],
+    [isCoachPro, warmUpHook, setInputText],
   );
 
   const micAdornment = useMemo(
@@ -901,6 +1138,12 @@ export default function CoachChat({
       onSend={handleSend}
       isStreaming={isStreaming}
       inputAdornment={micAdornment}
+      // Multiline like RecipeChef and the Coach overlay: iOS offered no Paste
+      // in the single-line input's long-press menu (user report 2026-09-30).
+      // Return still sends.
+      multilineInput
+      submitOnReturn
+      inputBarAlign="flex-end"
       keyboardVerticalOffset={90}
       streamingError={streamingError}
       inlineBanner={limitBanner}

@@ -437,6 +437,12 @@ export const savedItems = pgTable(
     }),
     sourceProductName: text("source_product_name"),
 
+    // Link to a real recipe the user saved (catalog or chat Save). Server-set
+    // only; both null on a snapshot item. Polymorphic like favourite_recipes,
+    // so no FK: the recipe delete paths remove the linked row.
+    recipeId: integer("recipe_id"),
+    recipeType: text("recipe_type"), // "mealPlan" | "community"
+
     // Metadata
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
@@ -446,6 +452,13 @@ export const savedItems = pgTable(
     index("saved_items_user_id_created_at_idx").on(
       table.userId,
       table.createdAt,
+    ),
+    uniqueIndex("saved_items_user_recipe_unique")
+      .on(table.userId, table.recipeType, table.recipeId)
+      .where(sql`${table.recipeId} IS NOT NULL`),
+    check(
+      "saved_items_recipe_link_both_or_neither",
+      sql`(${table.recipeId} IS NULL) = (${table.recipeType} IS NULL)`,
     ),
   ],
 );
@@ -1024,15 +1037,72 @@ export const chatMessages = pgTable(
       .notNull(),
   },
   (table) => [
+    // Kept alongside the composite index below: getChatMessageCount is the
+    // only other query that filters on conversationId alone, and while the
+    // composite index's leading column can serve it too, this table is
+    // still small pre-launch scale — see the EXPLAIN evidence in this
+    // todo's Updates section (todos/ or todos/archive/, by the time it's
+    // read — P3-2026-09-24-chat-messages-newest-first-order-index.md).
     index("chat_messages_conversation_id_idx").on(table.conversationId),
     index("chat_messages_conv_role_created_idx").on(
       table.conversationId,
       table.role,
       table.createdAt,
     ),
+    // Covers getChatMessages' `ORDER BY created_at DESC, id DESC LIMIT n`
+    // per-conversation — without this, Postgres sorts (or scans) every
+    // message in the conversation to return the newest N.
+    // `.nullsFirst()` is load-bearing: Drizzle's index builder defaults every
+    // column to NULLS LAST, but the query's `desc()` helper emits a bare
+    // `DESC`, which Postgres reads as NULLS FIRST. The planner matches NULLS
+    // placement syntactically (NOT NULL columns don't relax it), so a NULLS
+    // LAST index still leaves a Sort node on this query.
+    index("chat_messages_conv_created_id_idx").on(
+      table.conversationId,
+      table.createdAt.desc().nullsFirst(),
+      table.id.desc().nullsFirst(),
+    ),
     uniqueIndex("chat_messages_turn_key_idx")
       .on(table.conversationId, table.turnKey)
       .where(sql`${table.turnKey} IS NOT NULL`),
+  ],
+);
+
+/**
+ * Paid recipe-finder claims (spec 2026-09-28 §6, D9). Append-only and kept
+ * apart from chat rows: a user may delete a message or a whole conversation
+ * (which cascades its rows), and neither may hand a claimed slot back. No
+ * conversation FK for that reason; messageId only records which row the
+ * claim was taken on, and goes null when that row is deleted.
+ */
+export const recipeFinderClaims = pgTable(
+  "recipe_finder_claims",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    kind: text("kind").notNull(), // 'recipe_generation' | 'spoonacular_search'
+    messageId: integer("message_id").references(() => chatMessages.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    // The daily count: one user, one kind, today's UTC bounds.
+    index("recipe_finder_claims_user_kind_created_idx").on(
+      table.userId,
+      table.kind,
+      table.createdAt,
+    ),
+    // One claim per row and kind, so a repeated claim on a row counts once.
+    // NULLs are distinct, so claims whose row was deleted never collide.
+    uniqueIndex("recipe_finder_claims_message_kind_idx").on(
+      table.messageId,
+      table.kind,
+    ),
   ],
 );
 

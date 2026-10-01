@@ -9,6 +9,7 @@ import { db } from "../db";
 import { eq, desc, and, gte, lt, sql, inArray, ilike } from "drizzle-orm";
 import { getDayBounds, escapeLike } from "./helpers";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { countRecipeGenerationsToday, lockUser } from "./chat-quota";
 
 type ChatMessageRole = "user" | "assistant" | "system";
 
@@ -99,6 +100,12 @@ export async function getChatMessages(
   limit = 100,
   userId: string,
 ): Promise<ChatMessage[]> {
+  // Fetch the newest `limit` rows (desc, with an `id` tiebreak since rows
+  // inserted in the same transaction can share a `createdAt`), then reverse
+  // in memory to hand the caller chronological (oldest-first) order. A plain
+  // ascending `.orderBy(createdAt).limit(limit)` would instead return the
+  // OLDEST `limit` rows, silently dropping the newest turns once a
+  // conversation grows past `limit` messages.
   const rows = await db
     .select({ message: chatMessages })
     .from(chatMessages)
@@ -112,9 +119,9 @@ export async function getChatMessages(
         eq(chatConversations.userId, userId),
       ),
     )
-    .orderBy(chatMessages.createdAt)
+    .orderBy(desc(chatMessages.createdAt), desc(chatMessages.id))
     .limit(limit);
-  return rows.map((r) => r.message);
+  return rows.map((r) => r.message).reverse();
 }
 
 /**
@@ -309,8 +316,10 @@ export async function getDailyChatMessageCount(
  *
  * Counting strategy varies by conversation type:
  * - coach: counts user messages in coach conversations today
- * - recipe/remix: counts recipe user messages + remix conversations today
- *   (remix conversations count as 1 generation regardless of message count)
+ * - recipe/remix: countRecipeGenerationsToday (chat-quota.ts) — recipe user
+ *   messages that are not recipe-finder steps, finder Generates claimed in any
+ *   conversation, and remix conversations today (each remix counts as 1
+ *   generation regardless of message count)
  *
  * Returns the created message, or null if the daily limit has been reached.
  */
@@ -322,12 +331,8 @@ export async function createChatMessageWithLimitCheck(
   conversationType?: "coach" | "recipe" | "remix",
 ): Promise<ChatMessage | null> {
   return db.transaction(async (tx) => {
-    // Advisory lock per user to serialize concurrent generation attempts
-    // hashtextextended returns a 64-bit bigint, eliminating the ~65k-user
-    // birthday-collision risk of the 32-bit hashtext() form (L31).
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))`,
-    );
+    // Advisory lock per user to serialize concurrent generation attempts.
+    await lockUser(tx, userId);
 
     // Enforce conversation ownership inside the tx so storage is safe to
     // call from any route, not just the ones that pre-check via
@@ -366,50 +371,9 @@ export async function createChatMessageWithLimitCheck(
       const hasExistingMessage = Number(existingMsgResult[0]?.count ?? 0) > 0;
 
       if (!hasExistingMessage) {
-        // First message — check shared recipe+remix generation quota.
-        // Count: recipe user messages + distinct remix conversations today.
-        // M15 (2026-04-18): run both count queries in parallel to halve
-        // advisory-lock hold time.
-        const [recipeMessageCount, remixConvCount] = await Promise.all([
-          tx
-            .select({ count: sql<number>`count(*)` })
-            .from(chatMessages)
-            .innerJoin(
-              chatConversations,
-              eq(chatMessages.conversationId, chatConversations.id),
-            )
-            .where(
-              and(
-                eq(chatConversations.userId, userId),
-                eq(chatConversations.type, "recipe"),
-                eq(chatMessages.role, "user"),
-                gte(chatMessages.createdAt, startOfDay),
-                lt(chatMessages.createdAt, endOfDay),
-              ),
-            ),
-          tx
-            .select({
-              count: sql<number>`count(DISTINCT ${chatConversations.id})`,
-            })
-            .from(chatConversations)
-            .innerJoin(
-              chatMessages,
-              eq(chatMessages.conversationId, chatConversations.id),
-            )
-            .where(
-              and(
-                eq(chatConversations.userId, userId),
-                eq(chatConversations.type, "remix"),
-                eq(chatMessages.role, "user"),
-                gte(chatConversations.createdAt, startOfDay),
-                lt(chatConversations.createdAt, endOfDay),
-              ),
-            ),
-        ]);
-
-        const totalGenerations =
-          Number(recipeMessageCount[0]?.count ?? 0) +
-          Number(remixConvCount[0]?.count ?? 0);
+        // First message — check the shared recipe generation quota
+        // (recipe + finder Generate + remix; chat-quota.ts).
+        const totalGenerations = await countRecipeGenerationsToday(tx, userId);
 
         if (totalGenerations >= dailyLimit) {
           return null;
@@ -417,50 +381,9 @@ export async function createChatMessageWithLimitCheck(
       }
       // If hasExistingMessage, skip quota check — refinements are free
     } else if (conversationType === "recipe") {
-      // Recipe messages share quota with remix conversations.
-      // Count recipe user messages + distinct remix conversations (not remix messages).
-      // M15 (2026-04-18): run both count queries in parallel to halve
-      // advisory-lock hold time.
-      const [recipeMessageCount, remixConvCount] = await Promise.all([
-        tx
-          .select({ count: sql<number>`count(*)` })
-          .from(chatMessages)
-          .innerJoin(
-            chatConversations,
-            eq(chatMessages.conversationId, chatConversations.id),
-          )
-          .where(
-            and(
-              eq(chatConversations.userId, userId),
-              eq(chatConversations.type, "recipe"),
-              eq(chatMessages.role, "user"),
-              gte(chatMessages.createdAt, startOfDay),
-              lt(chatMessages.createdAt, endOfDay),
-            ),
-          ),
-        tx
-          .select({
-            count: sql<number>`count(DISTINCT ${chatConversations.id})`,
-          })
-          .from(chatConversations)
-          .innerJoin(
-            chatMessages,
-            eq(chatMessages.conversationId, chatConversations.id),
-          )
-          .where(
-            and(
-              eq(chatConversations.userId, userId),
-              eq(chatConversations.type, "remix"),
-              eq(chatMessages.role, "user"),
-              gte(chatConversations.createdAt, startOfDay),
-              lt(chatConversations.createdAt, endOfDay),
-            ),
-          ),
-      ]);
-
-      const totalGenerations =
-        Number(recipeMessageCount[0]?.count ?? 0) +
-        Number(remixConvCount[0]?.count ?? 0);
+      // Recipe messages share one quota with finder Generates and remix
+      // conversations (chat-quota.ts).
+      const totalGenerations = await countRecipeGenerationsToday(tx, userId);
 
       if (totalGenerations >= dailyLimit) {
         return null;

@@ -253,13 +253,66 @@ describe("chat storage", () => {
       expect(messages[1].content).toBe("Second");
     });
 
-    it("respects limit", async () => {
+    it("respects limit by returning the NEWEST N messages, oldest-first", async () => {
       const conv = await createChatConversation(testUser.id, "Chat");
+      const created: schema.ChatMessage[] = [];
       for (let i = 0; i < 5; i++) {
-        await createChatMessage(conv.id, testUser.id, "user", `Message ${i}`);
+        created.push(
+          await createChatMessage(conv.id, testUser.id, "user", `Message ${i}`),
+        );
       }
+      // Same reason as the "ordered by createdAt asc" test above: inside one
+      // test transaction CURRENT_TIMESTAMP is fixed, so give every row a
+      // distinct, explicitly-ordered createdAt (database.md rule 17).
+      const base = new Date();
+      for (let i = 0; i < created.length; i++) {
+        await tx
+          .update(chatMessages)
+          .set({
+            createdAt: new Date(base.getTime() - (created.length - i) * 1000),
+          })
+          .where(eq(chatMessages.id, created[i].id));
+      }
+
       const messages = await getChatMessages(conv.id, 3, testUser.id);
       expect(messages).toHaveLength(3);
+      // The newest 3 of 5 ("Message 2", "Message 3", "Message 4"), returned
+      // oldest-first — NOT the oldest 3, which is what the pre-fix ascending
+      // `.orderBy(createdAt).limit(limit)` query returned.
+      expect(messages.map((m) => m.content)).toEqual([
+        "Message 2",
+        "Message 3",
+        "Message 4",
+      ]);
+    });
+
+    it("breaks createdAt ties by id (rows inserted in the same transaction can share a createdAt)", async () => {
+      const conv = await createChatConversation(testUser.id, "Chat");
+      const created: schema.ChatMessage[] = [];
+      // Deliberately do NOT backdate — every row shares the same
+      // transaction-start CURRENT_TIMESTAMP, so only the `id` tiebreak can
+      // determine which 3 of 5 are "newest".
+      for (let i = 0; i < 5; i++) {
+        created.push(
+          await createChatMessage(conv.id, testUser.id, "user", `Message ${i}`),
+        );
+      }
+
+      const messages = await getChatMessages(conv.id, 3, testUser.id);
+      expect(messages.map((m) => m.id)).toEqual([
+        created[2].id,
+        created[3].id,
+        created[4].id,
+      ]);
+    });
+
+    it("returns an empty array for a conversation owned by another user (IDOR)", async () => {
+      const otherUser = await createTestUser(tx);
+      const conv = await createChatConversation(otherUser.id, "Other Chat");
+      await createChatMessage(conv.id, otherUser.id, "user", "Secret");
+
+      const messages = await getChatMessages(conv.id, 100, testUser.id);
+      expect(messages).toEqual([]);
     });
   });
 

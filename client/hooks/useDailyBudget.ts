@@ -16,9 +16,14 @@ export function useDailyBudget(
   const params = date ? `?date=${date}` : "";
   const tz = getDeviceTimezone();
   return useQuery<DailyBudget>({
-    // Include tz in the key so cache entries are per-timezone (different users
-    // in different tzs on the same device get distinct cache slots).
-    queryKey: [`/api/daily-budget${params}`, { tz }],
+    // Date is its own key element (not baked into the URL string in element
+    // 0) so the undated and every dated variant share queryKey[0] ===
+    // "/api/daily-budget" — one `invalidateQueries({ queryKey:
+    // ["/api/daily-budget"] })` (TanStack's default partial/prefix match)
+    // then reaches every variant instead of only the undated one. Include tz
+    // in the key so cache entries are per-timezone (different users in
+    // different tzs on the same device get distinct cache slots).
+    queryKey: ["/api/daily-budget", date ?? null, { tz }],
     queryFn: async () => {
       const res = await apiRequest(
         "GET",

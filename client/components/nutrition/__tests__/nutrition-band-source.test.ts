@@ -54,13 +54,11 @@ describe("selectBandSource — serving invariance (the defect this module exists
     };
 
     const atOne = selectBandSource({
-      itemId: undefined,
       validatedData: cherryCokeValidated,
       nutrition: cherryCokeNutrition,
       isBeverage: true,
     });
     const atTwo = selectBandSource({
-      itemId: undefined,
       validatedData: cherryCokeValidated,
       nutrition: doubled,
       isBeverage: true,
@@ -84,7 +82,6 @@ describe("selectBandSource — serving invariance (the defect this module exists
     // the serving controls never rewrite — that is what lets the panel apply
     // an override the module once had to skip.
     const { rows } = buildPanelRows({
-      itemId: undefined,
       validatedData: cherryCokeValidated,
       nutrition: cherryCokeNutrition,
       isBeverage: true,
@@ -100,7 +97,6 @@ describe("selectBandSource — serving invariance (the defect this module exists
     // move a band it would move it here.
     const doubled: NutritionData = { ...cherryCokeNutrition, sugar: 78 };
     const { rows } = buildPanelRows({
-      itemId: undefined,
       validatedData: cherryCokeValidated,
       nutrition: doubled,
       isBeverage: true,
@@ -110,72 +106,12 @@ describe("selectBandSource — serving invariance (the defect this module exists
     expect(sugar?.displayValue).toBe(78);
   });
 
-  it("saved-item path APPLIES the override when a real portion crosses it", () => {
-    // The positive case for the saved-item branch, which nothing else covers:
-    // every other saved-item test lands under a portion line and so only ever
-    // proves the override does NOT fire. 28 g of sugar in a 700 g serving is
-    // 4 g/100 g — LOW on its own — so the per-100 arm cannot produce this
-    // verdict and only the portion arm can (28 > 27, 700 > 100).
-    const { rows } = buildPanelRows({
-      itemId: 42,
-      validatedData: null,
-      nutrition: {
-        productName: "Big tub",
-        servingSize: "700 g",
-        calories: 500,
-        sugar: 28,
-      },
-      isBeverage: false,
-    });
-    const sugar = rows.find((r) => r.row.key === "sugar");
-    expect(sugar?.band).toEqual({ group: "concern", band: "high" });
-  });
-
-  it("saved-item path stays unbanded on an ESTIMATED serving string", () => {
-    // The module docblock calls this "fragile" and nothing pinned it. A
-    // corrected serving is stored as `~355g (estimated)`; `parseServingBasis`
-    // returns null for it (the `~` defeats its token anchor), so the basis is
-    // unknown and NOTHING bands — which is the only thing stopping the saved
-    // item path from banding off an invented denominator. If a future edit
-    // widens the parser's leading-character tolerance, this goes red.
-    const { rows } = buildPanelRows({
-      itemId: 42,
-      validatedData: null,
-      nutrition: {
-        productName: "Corrected serving",
-        servingSize: "~355g (estimated)",
-        calories: 156,
-        sugar: 39,
-      },
-      isBeverage: true,
-    });
-    const sugar = rows.find((r) => r.row.key === "sugar");
-    expect(sugar?.band).toEqual({ group: "concern", band: "unknown" });
-    // Non-vacuity: the same numbers with a PARSEABLE serving do band, so the
-    // `unknown` above is the parser refusing the string, not an absent value.
-    const parseable = buildPanelRows({
-      itemId: 42,
-      validatedData: null,
-      nutrition: {
-        productName: "Same numbers",
-        servingSize: "355 ml",
-        calories: 156,
-        sugar: 39,
-      },
-      isBeverage: true,
-    });
-    expect(parseable.rows.find((r) => r.row.key === "sugar")?.band).not.toEqual(
-      { group: "concern", band: "unknown" },
-    );
-  });
-
   it("skips the override when the serving was ESTIMATED, mirroring the server", () => {
     // `isServingDataTrusted: false` is how the server decides not to pass
     // `perServing` to `evaluateUniversalFlags` at all. The panel must not
     // escalate off a portion weight the server refused to trust, or the two
     // disagree on screen in the over-warning direction.
     const { rows } = buildPanelRows({
-      itemId: undefined,
       validatedData: { ...cherryCokeValidated, isServingDataTrusted: false },
       nutrition: cherryCokeNutrition,
       isBeverage: true,
@@ -194,7 +130,6 @@ describe("selectBandSource — the SCALE channel (servingSize is ALSO rewritten)
   // shows up here even though `factor` stays pinned at 1 either way.
   it("keeps the drink scale when nutrition.servingSize has been rewritten to a gram string", () => {
     const source = selectBandSource({
-      itemId: undefined,
       validatedData: cherryCokeValidated, // servingInfo.displayLabel: "1 can (355 mL)"
       nutrition: { ...cherryCokeNutrition, servingSize: "355g" },
       isBeverage: null,
@@ -211,7 +146,6 @@ describe("selectBandSource — the SCALE channel (servingSize is ALSO rewritten)
     // later gram string that happens to parse. Fabricating a basis here is
     // exactly what Global Constraint 2 forbids.
     const source = selectBandSource({
-      itemId: undefined,
       validatedData: {
         ...cherryCokeValidated,
         servingInfo: {
@@ -230,7 +164,6 @@ describe("selectBandSource — the SCALE channel (servingSize is ALSO rewritten)
 describe("selectBandSource — path selection", () => {
   it("scan path with no validatedData yields an unknown basis, never a guess", () => {
     const source = selectBandSource({
-      itemId: undefined,
       validatedData: null,
       nutrition: cherryCokeNutrition,
       isBeverage: true,
@@ -239,75 +172,12 @@ describe("selectBandSource — path selection", () => {
     expect(source.values).toEqual({});
   });
 
-  it("saved-item path bands from `nutrition`, which no control can scale there", () => {
-    // Amy's chili: 680 mg sodium per 236 g serving = 288 mg/100 g -> MEDIUM.
-    const source = selectBandSource({
-      itemId: 42,
-      validatedData: null,
-      nutrition: {
-        productName: "Amy's Organic Chili",
-        servingSize: "1 cup (236g)",
-        sodium: 680,
-      },
-      isBeverage: null,
-    });
-    expect(source.basis).toEqual({
-      kind: "resolved",
-      scale: "food",
-      factor: 100 / 236,
-    });
-    expect(source.values.sodium).toBe(680);
-  });
-
-  it("bands Amy's chili MEDIUM, not HIGH", () => {
-    const { rows } = buildPanelRows({
-      itemId: 42,
-      validatedData: null,
-      nutrition: {
-        productName: "Amy's Organic Chili",
-        servingSize: "1 cup (236g)",
-        sodium: 680,
-      },
-      isBeverage: null,
-    });
-    const sodium = rows.find((r) => r.row.key === "sodium");
-    expect(sodium?.band).toEqual({ group: "concern", band: "medium" });
-  });
-
-  it("bands a label scan's saved item the SAME whether servingsConsumed was 1 or 3 (regression, todo P2-2026-08-13)", () => {
-    // The confirm-label route no longer scales macros by servingsConsumed
-    // before writing — the scanned item stores unscaled per-serving values
-    // that match its OWN servingSize. 10 g of sugar in a 150 g serving is
-    // 6.67 g/100 g (MEDIUM on the per-100 food scale: over the 5.0 low line,
-    // under the 22.5 high line) and well under the 27 g per-portion RED
-    // line, so no override fires and the band stays MEDIUM. Before the fix,
-    // servingsConsumed = 3 would have written 30 g (10 x 3) against the SAME
-    // "150 g" label — crossing the portion line and producing a false
-    // "High in sugar" (see the todo's Background table). Pinning the exact
-    // MEDIUM band, not just "not high", so this can't pass vacuously if the
-    // row stops banding at all.
-    const { rows } = buildPanelRows({
-      itemId: 42,
-      validatedData: null,
-      nutrition: {
-        productName: "Trail Mix",
-        servingSize: "150 g",
-        calories: 200,
-        sugar: 10,
-      },
-      isBeverage: null,
-    });
-    const sugar = rows.find((r) => r.row.key === "sugar");
-    expect(sugar?.band).toEqual({ group: "concern", band: "medium" });
-  });
-
   it("holds a good per-100 payload and STILL renders unbanded when no scale resolves", () => {
     // The most counterintuitive outcome in the slice, and the one most likely
     // to be "fixed" later by defaulting to food. Food thresholds are roughly
     // DOUBLE drink thresholds, so defaulting halves the strictness applied to
     // every untagged drink. Unbanded is the correct answer.
     const { rows } = buildPanelRows({
-      itemId: undefined,
       validatedData: {
         ...cherryCokeValidated,
         servingInfo: {
@@ -323,28 +193,10 @@ describe("selectBandSource — path selection", () => {
     expect(sugar?.band).toEqual({ group: "concern", band: "unknown" });
     expect(sugar?.hasValue).toBe(true);
   });
-
-  it("saved item with an unparseable serving string renders unbanded, not defaulted", () => {
-    const { rows } = buildPanelRows({
-      itemId: 42,
-      validatedData: null,
-      nutrition: {
-        productName: "Mystery Drink",
-        servingSize: "1 bottle",
-        sugar: 39,
-      },
-      isBeverage: null,
-    });
-    const sugar = rows.find((r) => r.row.key === "sugar");
-    expect(sugar?.band).toEqual({ group: "concern", band: "unknown" });
-    expect(sugar?.displayValue).toBe(39);
-    expect(sugar?.hasValue).toBe(true);
-  });
 });
 
 describe("buildPanelRows — the three states that must stay distinct", () => {
   const base = {
-    itemId: undefined,
     isBeverage: false,
     validatedData: {
       ...cherryCokeValidated,
@@ -379,9 +231,22 @@ describe("buildPanelRows — the three states that must stay distinct", () => {
   });
 
   it("a known value with an unresolved basis keeps hasValue true and bands unknown", () => {
+    // `validatedData` is PRESENT (so `source.values` carries the fibre) but its
+    // serving resolves to no basis — "1 bottle" carries no unit and there is no
+    // category signal. `hasValue` reads `source.values`, so a null
+    // `validatedData` here would make this pass for the wrong reason (an empty
+    // source, not an unresolved basis).
     const { rows } = buildPanelRows({
-      itemId: 42,
-      validatedData: null,
+      ...base,
+      validatedData: {
+        ...base.validatedData,
+        per100g: { fiber: 5 },
+        servingInfo: {
+          displayLabel: "1 bottle",
+          grams: null,
+          wasCorrected: false,
+        },
+      },
       nutrition: { productName: "X", servingSize: "1 bottle", fiber: 5 },
       isBeverage: null,
     });
@@ -441,7 +306,6 @@ describe("buildPanelRows — the direct-OFF fallback's ASYMMETRIC sources", () =
   };
 
   const divergentInput = {
-    itemId: undefined,
     validatedData: divergentValidated,
     nutrition: divergentNutrition,
     isBeverage: true,
@@ -511,7 +375,6 @@ describe("buildPanelRows — the direct-OFF fallback's ASYMMETRIC sources", () =
 describe("buildPanelRows — bands feed pickStandouts from the SAME derivation", () => {
   it("emits a NutrientBands object whose hasValue matches the rows'", () => {
     const { rows, bands } = buildPanelRows({
-      itemId: undefined,
       validatedData: cherryCokeValidated,
       nutrition: cherryCokeNutrition,
       isBeverage: true,

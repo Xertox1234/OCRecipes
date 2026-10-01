@@ -20,6 +20,13 @@ export function useAcknowledgeReminders() {
       setCoachContext(data.coachContext);
       void queryClient.invalidateQueries({ queryKey: PENDING_REMINDERS_KEY });
     },
+    // Judgment call, not a double-toast avoidance: every call site treats a
+    // failure here as inconsequential best-effort background housekeeping
+    // (it silently retries on the next message send — see each caller's
+    // `.catch(() => { hasAcknowledgedRef.current = false; ... })`). Showing
+    // a generic "Something went wrong" toast right after the user just
+    // successfully sent a message would be confusing, not helpful.
+    meta: { silentError: true },
   });
 
   return {

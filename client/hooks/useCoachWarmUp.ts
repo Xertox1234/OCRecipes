@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useMemo } from "react";
 import { apiRequest } from "@/lib/query-client";
 
 export function useCoachWarmUp(conversationId: number | null) {
@@ -80,5 +80,10 @@ export function useCoachWarmUp(conversationId: number | null) {
     if (timerRef.current) clearTimeout(timerRef.current);
   }, []);
 
-  return { sendWarmUp, sendTextWarmUp, getWarmUpId, reset };
+  // Stable object: CoachChat's handleSend depends on it, so a fresh literal
+  // per render re-created every chat row's renderItem on parent re-renders.
+  return useMemo(
+    () => ({ sendWarmUp, sendTextWarmUp, getWarmUpId, reset }),
+    [sendWarmUp, sendTextWarmUp, getWarmUpId, reset],
+  );
 }

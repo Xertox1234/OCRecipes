@@ -6,6 +6,7 @@ import type {
   CommunityRecipe,
 } from "@shared/schema";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
+import type { SavedRecipeLinkStatus } from "@shared/schemas/saved-items";
 
 type RecipeWithIngredients = MealPlanRecipe & {
   ingredients: RecipeIngredient[];
@@ -116,6 +117,9 @@ export function useCreateMealPlanRecipe() {
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
+    // Every call site (MealPlanHomeScreen, WizardShell, SimpleEntrySheet)
+    // already toasts/alerts on failure via a shared try/catch.
+    meta: { silentError: true },
   });
 }
 
@@ -141,15 +145,24 @@ export function useCatalogSearch(params: CatalogSearchParams | null) {
   });
 }
 
-export function useSaveCatalogRecipe() {
+/**
+ * `addToSavedItems` is the preview's Save (user ruling 2026-09-29: a Save also
+ * lands in Profile > Saved Items). Coach's meal-plan slot saves without it.
+ */
+export function useSaveCatalogRecipe(options?: { addToSavedItems?: boolean }) {
   const queryClient = useQueryClient();
+  const addToSavedItems = options?.addToSavedItems === true;
 
   return useMutation({
-    mutationFn: async (spoonacularId: number): Promise<MealPlanRecipe> => {
-      const res = await apiRequest(
-        "POST",
-        `/api/meal-plan/catalog/${spoonacularId}/save`,
-      );
+    mutationFn: async (
+      spoonacularId: number,
+    ): Promise<
+      MealPlanRecipe & { savedItemStatus?: SavedRecipeLinkStatus }
+    > => {
+      const url = `/api/meal-plan/catalog/${spoonacularId}/save`;
+      const res = addToSavedItems
+        ? await apiRequest("POST", url, { addToSavedItems: true })
+        : await apiRequest("POST", url);
       return res.json();
     },
     onSuccess: () => {
@@ -157,7 +170,17 @@ export function useSaveCatalogRecipe() {
         queryKey: ["/api/meal-plan/recipes"],
       });
       void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
+      if (addToSavedItems) {
+        void queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/saved-items/count"],
+        });
+      }
     },
+    // Both call sites surface failures themselves: CoachChat's
+    // handleConfirmPlanSlot toast.error()s, and FeaturedRecipeDetailScreen's
+    // catalog Save shows an InlineError (or a toast once it has unmounted).
+    meta: { silentError: true },
   });
 }
 
@@ -192,5 +215,8 @@ export function useParseRecipeFromUrl() {
       });
       return res.json();
     },
+    // Its one call site (RecipeImportScreen) already shows an inline error
+    // + retry on failure via its own try/catch.
+    meta: { silentError: true },
   });
 }

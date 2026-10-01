@@ -26,12 +26,11 @@ The mitigating factor in the discovering PR: `LabelAnalysisScreen.tsx` also rend
 
 ## Solution
 
-Not yet fixed (tracked as a follow-up, not bundled into the discovering PR since `Toast.tsx` is a shared, widely-used component). The correct fix, per the reviewing agent:
+Fixed 2026-09-23. `Toast.tsx`'s root `Animated.View` now carries only layout, animation and the swipe gesture. An inner `View` holds `accessible`, the role, `accessibilityLabel={message}` and `accessibilityLiveRegion="polite"`, and wraps the icon and the text. The action `Pressable` is that group's **sibling**, so on iOS the toast is two focus stops, and an action-less toast is one grouped node. Android does **not** collapse an `accessible` wrapper (device-verified 2026-08-04 on `FlagSections`; see `CapturedPhotos.tsx`). Left alone, TalkBack would read the group label and then the message text again. So the icon and the message text carry `importantForAccessibility="no-hide-descendants"` (on a leaf it behaves like `"no"`, and the jsdom mock maps it to `aria-hidden`, so the text's removal is test-pinned). The group's label is the same message string, so nothing is lost. Not yet verified on an Android device.
 
-- Keep the *message* group `accessible={true}` for the existing grouped-announcement/Android-live-region behavior that every action-less toast call site relies on.
-- Move the `action` Pressable to be a **sibling** outside that accessible scope (or expose it via `accessibilityActions`/`onAccessibilityAction` on the parent) rather than a descendant of the same `accessible={true}` node.
-- A naive removal of `accessible` from the root would regress the grouped-announcement behavior for every existing (action-less) toast call site — do not do that.
-- Add a render/accessibility test asserting the action Pressable is independently focusable when `action` is passed, so a future regression is test-caught, not review-caught.
+An action toast also stays up for 10s instead of 5s while a screen reader is on (`useAccessibility().screenReaderEnabled`). The user has to swipe to the action before activating it, and 5s was not enough time for that.
+
+Tests in `client/components/__tests__/Toast.test.tsx` → "screen-reader reachability". The jsdom harness drops `accessible` itself, so the tests assert where the **label** is: exactly one node carries the message label, and that node does not contain the action button. A mutant that drops `accessible` from the inner group still passes. That is the documented harness limit (`../conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md`).
 
 ## Prevention
 

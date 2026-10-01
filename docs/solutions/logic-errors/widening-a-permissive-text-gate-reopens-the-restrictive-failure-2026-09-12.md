@@ -93,7 +93,7 @@ So when a predicate keeps oscillating:
 ## Related Files
 
 - `.claude/hooks/merge-review-guard.sh` — the withdrawn predicate's site, with the gap recorded where the check is defined
-- `todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md` — the 537-row corpus, three mechanisms, and the candidate fix
+- `todos/archive/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md` — the 537-row corpus, three mechanisms, and the candidate fix
 - `.claude/hooks/lib/cmd-detect.sh` — the shared extractor whose `gh[[:space:]]+pr` needle the redirect family also defeats
 
 ## See Also

@@ -102,6 +102,74 @@ fi
 #       real transcripts, the honest shape is exactly one. Anything else is ambiguous, so
 #       refuse to choose — not substituting leaves $MSG as the wrapper, the sha parse below
 #       finds nothing, and the hook exits without a record. Fail closed.
+#
+#   (c) A PRIOR OBJECTION IN A HAND-BACK OR IN A PRIOR REPORT TEXT, WHEN THE DELIVERED TEXT
+#       CARRIES THE CONTRACT. Guards (a) and (b) live inside the `$MSG lacks ^REVIEWED-SHA:`
+#       block below, so a final text that CARRIES the contract was parsed directly and the
+#       transcript was never consulted. That is the fail-open shape (b)'s own comment refuses,
+#       reached by a route it did not consider: a resumed reviewer that objected in its
+#       hand-back and then re-issued a clean report as plain TEXT wrote `verdict: clean` over
+#       its own `verdict: findings` record at that head (measured 2026-09-22 on constructed
+#       transcripts, PR #1010 gate-lens review; pinned as cases 36-41), and a reviewer whose
+#       first report was itself a contract-bearing TEXT laundered the same way with no
+#       hand-back anywhere (PR #1012 confirmation review; cases 44-47). This guard keys on an
+#       OBJECTION in any hand-back body or any prior contract-bearing text, never on the mere
+#       presence of one: one clean hand-back plus a clean text contradicts nothing and still
+#       stamps (case 40), a prior clean report text does not refuse (case 46), and an objection
+#       hand-back behind a plain WRAPPER still records `findings` through (b) below (case 36,
+#       stop 1), which is why this check is scoped to the contract-bearing-text path rather
+#       than run unconditionally. It reads the same `.input.message` bodies (b)'s count reads,
+#       through the same two arms (a) uses, so the three guards cannot drift on what an
+#       objection is.
+#
+# The two objection arms, defined ONCE for guards (a) and (c). Arm 1 is the marker-tolerant
+# BRACKET form, case-INSENSITIVE; arm 2 is ANY standalone severity word, case-SENSITIVE — the
+# comment at guard (a)'s call site below records why the two differ and why neither may be
+# narrowed. Arm 2 is captured into a variable rather than piped into `grep -q`: under
+# `pipefail` an early-exiting reader makes the writer take SIGPIPE and the pipeline reports
+# failure even though the read succeeded.
+objection_in() {  # $1 = text; returns 0 when either arm matches
+  local sev
+  sev=$(grep -E '(^|[^A-Za-z0-9_])(CRITICAL|WARNING|SUGGESTION)($|[^A-Za-z0-9_])' <<<"$1" || true)
+  grep -qiE '^[[:space:]]*(([-*+>#]+|[0-9]+[.)])[[:space:]]*)*\[(CRITICAL|WARNING|SUGGESTION)\]' <<<"$1" \
+    || [ -n "$sev" ]
+}
+if [ -n "$TP" ] && [ -r "$TP" ] && grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
+  # `// empty` so an absent message contributes nothing rather than a literal `null`. A
+  # transcript jq cannot parse exits WITHOUT writing (the header's policy; case 42): the first
+  # version emptied the bodies and fell through to the text parse, which would stamp the text
+  # over an objection this hook could not read -- the fail-open direction, and the opposite of
+  # guard (b), whose jq failure yields no substitution and no record. The cost is one
+  # re-dispatch for a text-only review whose transcript is malformed (case 43).
+  HB_BODIES=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
+                       | select(.type=="tool_use" and .name=="SubagentHandback")
+                       | .input.message // empty] | join("\n")' "$TP" 2>/dev/null) || exit 0
+  # PRIOR REPORTS DELIVERED AS TEXT COUNT TOO (confirmation review, 2026-09-22). A reviewer that
+  # delivered its objection as a contract-bearing TEXT -- the majority delivery shape -- was
+  # resumed, and re-issued a clean contract text launders exactly as the hand-back shape did,
+  # with no hand-back anywhere in the transcript (cases 44-45). Only assistant text bodies that
+  # THEMSELVES carry the contract are read: a prior REPORT, never the reviewer's working
+  # narration, which names the format freely (case 47). The delivered text is excluded by
+  # value, or a single-stop findings report would refuse its own record (case 44, stop 1) --
+  # and the comparison normalises BOTH sides, because the two copies are not byte-identical
+  # in general: `$MSG` came through `$(...)`, which strips every trailing newline, while the
+  # transcript's `.text` keeps them, and this file's CR normalisation runs below, after this
+  # guard. Compared raw, a findings delivery ending in a newline (or differing by CR alone)
+  # re-entered as its own prior report, tripped an arm, and lost its record -- fail-closed,
+  # but a regression on findings deliveries (confirmation round 2; cases 48-51). NOT replaced
+  # by positional exclusion of the last transcript entry: a transcript flushed before the
+  # delivery is appended would then drop a genuine prior report, the fail-open direction.
+  PRIOR_REPORTS=$(jq -rs --arg cur "$MSG" '[.[] | select(.type=="assistant") | .message.content[]?
+                       | select(.type=="text") | (.text // empty)
+                       | select(test("(^|\n)REVIEWED-SHA:"))
+                       | select((. | gsub("\r"; "") | sub("\\s+$"; ""))
+                                != ($cur | gsub("\r"; "") | sub("\\s+$"; "")))]
+                      | join("\n")' "$TP" 2>/dev/null) || exit 0
+  if { [ -n "$HB_BODIES" ] && objection_in "$HB_BODIES"; } \
+     || { [ -n "$PRIOR_REPORTS" ] && objection_in "$PRIOR_REPORTS"; }; then
+    exit 0
+  fi
+fi
 if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
   # Match the marker-tolerant BRACKET form OR the roster's own UNBRACKETED rendering.
   # Both, because they live in different documents and only one of them is what the
@@ -158,9 +226,9 @@ if [ -n "$TP" ] && [ -r "$TP" ] && ! grep -q '^REVIEWED-SHA:' <<<"$MSG"; then
   # and "a critical path in the reducer" all NOMATCH, while `[critical]` and `- [Critical]`
   # both match. Arm 2 stays case-SENSITIVE: unanchored, it is exactly where residual 4's
   # prose problem lives.
-  SEV=$(grep -E '(^|[^A-Za-z0-9_])(CRITICAL|WARNING|SUGGESTION)($|[^A-Za-z0-9_])' <<<"$MSG" || true)
-  if grep -qiE '^[[:space:]]*(([-*+>#]+|[0-9]+[.)])[[:space:]]*)*\[(CRITICAL|WARNING|SUGGESTION)\]' <<<"$MSG" \
-     || [ -n "$SEV" ]; then
+  # Both arms live in objection_in (defined above guard (c)), shared with that guard so the
+  # two sites cannot drift on what an objection looks like.
+  if objection_in "$MSG"; then
     exit 0
   fi
   NHB=$(jq -rs '[.[] | select(.type=="assistant") | .message.content[]?
@@ -265,8 +333,8 @@ DIGEST=$(printf '%s\n' "$FILES" | shasum 2>/dev/null | cut -c1-16)
 #
 # Fix: match a STANDALONE CRITICAL token anywhere on a line (word-bounded via a
 # bracket-class boundary, not `\b` — BSD grep on macOS doesn't support `\b`), which
-# catches both renderings by construction — no special-casing the brackets needed — plus
-# any other position a reviewer's own prose puts the tag in.
+# catches both renderings by construction — no special-casing the brackets needed. (HISTORY:
+# it also caught the tag in any prose position until the 2026-09-23 NARROWED block below.)
 #
 # That alone would also match a REVIEWED-FILES entry whose path happens to contain the
 # word (e.g. `client/hooks/CRITICAL.ts`). Excluded not by scoping to a parsed region (see
@@ -274,6 +342,8 @@ DIGEST=$(printf '%s\n' "$FILES" | shasum 2>/dev/null | cut -c1-16)
 # task-3 contract requires a REVIEWED-FILES line be a bare path with no whitespace at all
 # ("no leading whitespace, bullets, numbering, backticks, or trailing commentary").
 #
+# (HISTORY — the whitespace/citation exclusion in the next two paragraphs was replaced by the
+# line-START shape filter in the NARROWED block below; kept for the reasoning.)
 # A single "no whitespace at all" exclusion is NOT enough on its own — constructing the
 # adversarial input (not just measuring real transcripts, see
 # docs/solutions/logic-errors/union-over-renderings-does-not-cover-selection-within-one-2026-09-07.md)
@@ -299,12 +369,35 @@ DIGEST=$(printf '%s\n' "$FILES" | shasum 2>/dev/null | cut -c1-16)
 # else.
 #
 # DIRECTION: when in doubt, over-detect. A false "findings" blocks a merge and a human
-# unblocks it; a false "clean" ships unreviewed code past the gate. This also fires on
-# prose that merely mentions the word CRITICAL (e.g. "No CRITICAL issues found.") — a
-# deliberate choice, pinned by this writer's own test suite, not an oversight.
+# unblocks it; a false "clean" ships unreviewed code past the gate. (Until 2026-09-23 this
+# also fired on prose that merely mentions the word; see NARROWED below for why that was
+# dropped and why the terminal literal keeps the direction safe.)
+#
+# NARROWED 2026-09-23 (user ruling), superseding the prose over-detection above: a line
+# counts only when, after optional list markers, it STARTS with the tag (`[CRITICAL]`,
+# `**CRITICAL**`, `CRITICAL:`) or with a `file:line` citation (`a.ts:42 — … (CRITICAL)`).
+# Prose that mentions the word — "a CRITICAL match still wins" — mis-recorded 2 of 5
+# clean reviews and cost a re-dispatch each. Why this cannot open the gate: `clean` and
+# `advisory` ALSO require the last line to be the exact literal, so an uncounted finding
+# slips through only if the reviewer ALSO ends with the literal the contract reserves for a
+# report with nothing blocking — the contradiction residual 1 names. Which finding SHAPES go
+# uncounted is residual 7 (the first version of this paragraph said "only prose"; PR #1018's
+# review measured table rows and wrapped tags too, now counted — see WIDENED below). The shape filter still keeps the
+# `client/hooks/CRITICAL.ts` REVIEWED-FILES line out (no citation, no leading tag), and the
+# hyphen-packed `path:10-CRITICAL-x` line in (citation first).
+#
+# WIDENED the same day after PR #1018's review constructed finding renderings the first
+# narrowing missed (tests 61-76): the lead now absorbs ANY run of non-alphanumerics (table
+# pipes, `(`, backticks, bold, unicode bullets, emoji), `1.`/`1)` and lettered `a)` markers,
+# and an optional `Severity:`/`File:` label; a citation may be `:42`, `:L42`, `#L42` or
+# `line 42`, with the path optionally backticked. Still OPEN, by design (residual 7): a path
+# with NO line reference, which cannot be told from prose that opens with a filename.
+_CRIT_LEAD='^([^A-Za-z0-9]|[0-9]+[.)]|[A-Za-z][.)][[:space:]])*((Severity|SEVERITY|severity|File|FILE|file)[^A-Za-z0-9]*)?'
+_CRIT_TAG='CRITICAL([^A-Za-z0-9_]|$)'
+_CRIT_CITE='[^[:space:]`|]+(`?:L?[0-9]+|#L[0-9]+|`?[[:space:]]+\(?line[[:space:]]+[0-9]+)'
 CRITICALS=$(printf '%s\n' "$MSG" \
   | grep -E '(^|[^A-Za-z0-9_])CRITICAL($|[^A-Za-z0-9_])' \
-  | grep -E '[[:space:]]|:[0-9]|^\[CRITICAL\]$' || true)
+  | grep -E "${_CRIT_LEAD}(${_CRIT_TAG}|${_CRIT_CITE})" || true)
 
 # `clean` must be a POSITIVE signal, never the absence of one. The earlier `else clean`
 # fallback made every non-review cause of a missing/mismatched CRITICAL tag — transcript
@@ -345,6 +438,11 @@ if [ -n "$CRITICALS" ]; then
   VERDICT=findings
 elif [ "$LAST_LINE" = "No findings." ] || [ "$LAST_LINE" = "No findings" ]; then
   VERDICT=clean
+elif [ "$LAST_LINE" = "No blocking findings." ] || [ "$LAST_LINE" = "No blocking findings" ]; then
+  # ADVISORY (2026-09-22 user ruling): WARNING/SUGGESTION findings are FILED, not fixed and
+  # re-reviewed, so they must not block the merge. Same positive-terminal rule as `clean`:
+  # a truncated review never reaches this literal and writes nothing. Supersedes residual 3.
+  VERDICT=advisory
 else
   exit 0   # no findings section -> not a contract-compliant review -> write nothing
 fi
@@ -374,12 +472,10 @@ fi
 #    -> NO STAMP). The merge outcome is unchanged (both deny); only which residual class
 #    it lands in changed, and no-stamp is the more honest of the two.
 #
-# 3. Pre-existing gate-blindness: a review whose only findings are WARNING/SUGGESTION tags
-#    (no CRITICAL match, and the literal "No findings." is never written because real
-#    issues WERE found) writes no stamp either — nothing in this file distinguishes "the
-#    reviewer found only minor issues" from "the reviewer never ran." Both deny; that is
-#    the same fail-closed direction as everything else here, but worth naming since a human
-#    reading a denied merge has no way to tell the two apart from this stamp alone.
+# 3. WARNING/SUGGESTION-only reviews (NARROWED 2026-09-22): ending with the literal
+#    "No blocking findings." records `advisory`, which the gate accepts. One that ends with
+#    neither literal still writes no stamp, so "the reviewer found only minor issues but
+#    omitted the terminal line" still reads like "the reviewer never ran". Both deny.
 #
 # 4. CRITICAL-detection stays case-SENSITIVE by design: "Critical"/"critical" never counts,
 #    on purpose — a known, deliberate narrowing, not an oversight, and is NOT to be "fixed"
@@ -425,6 +521,12 @@ fi
 #    leaves a space-only separator and infers from that shorter wording that the block
 #    already ended reaches every row of the table above with a `clean` verdict.
 
+# 7. UNCOUNTED FINDING SHAPE (fail-open only together with residual 1): a top-severity line
+#    that neither starts with the tag (after punctuation, list markers, `Severity:`/`File:`)
+#    nor with a path plus line reference is not counted — chiefly `a.ts — CRITICAL — x` with
+#    no line number, which cannot be told apart from prose opening with a filename. Pinned
+#    as test case 77. It matters only if the reply ALSO ends with a clean literal.
+
 # 6. Objection-guard false-DENY class (fail-closed; introduced by the async handback
 #    fallback, widened by its roster-rendering fix, named here rather than narrowed).
 #    Guard (a) above scans the DELIVERED message for an objection before it will let a
@@ -466,6 +568,31 @@ fi
 #    `$MSG` lacking `^REVIEWED-SHA:`, so a clean report that CARRIES the contract never
 #    reaches either arm. The set of contract-shaped clean reports arm 2 can eat is empty by
 #    construction.
+#
+#    THAT IS A NO-FALSE-DENY PROPERTY OF THIS BLOCK, AND NOTHING MORE. An earlier revision of
+#    this item read it as "skipping the fallback on contract-bearing text is safe", which was
+#    true of the false-deny direction and FALSE of the fail-open one: a contract-bearing clean
+#    text was parsed with the transcript never consulted, so a resumed reviewer that objected
+#    in a hand-back and then re-issued its report as plain text OVERWROTE its own `findings`
+#    record at that head (measured 2026-09-22 on constructed transcripts, PR #1010 review).
+#    Guard (c) above closes it on that path: whenever `$MSG` carries the contract, every
+#    hand-back body AND every prior contract-bearing text in the transcript is read through the
+#    SAME two arms, and an objection in any of them writes nothing. So the set arm 2 can eat is
+#    still empty, AND a prior objection is no longer invisible in either delivery shape (the
+#    text-delivered shape was missed by the first version and caught in PR #1012's confirmation
+#    review; cases 44-47). Guard (c) keys on an objection, never on the presence of a hand-back
+#    or a prior report -- one clean hand-back plus a clean text stamps (case 40), a prior clean
+#    report text stamps (case 46), an objection hand-back behind a plain wrapper still records
+#    `findings` through (b) (case 36), and the text-only single-stop majority is unchanged
+#    (cases 39 and 44 stop 1). Residuals left OPEN by (c): an objection that carries no severity
+#    word at all is invisible to both arms in either delivery shape, same as (a); and a prior
+#    objection TEXT that WITHHELD the contract -- a refusal rather than a report -- is not read,
+#    because prior texts are selected by the contract marker so that working narration is never
+#    mistaken for a report. That second one is pre-existing (a stop-1 refusal text writes
+#    nothing on main too) and is tracked as the second class of
+#    todos/archive/P3-2026-09-22-a-later-objection-cannot-retract-an-earlier-clean-record-at-the-same-head.md,
+#    with the candidate widening (also select prior texts matching arm 1) and the narration
+#    cost it has to decide.
 #
 #    An earlier version of this item claimed more than that — that all five agent
 #    definitions forbid the severity words in clean prose, so "a reviewer following the
@@ -513,8 +640,8 @@ mkdir -p "$DIR" 2>/dev/null || exit 0
 # (Task 5 recomputes/consumes it under this name) — but its CONTENTS are wider than the
 # name suggests: every line that survived the union-CRITICAL detection above, i.e. every
 # line that caused VERDICT=findings. That can be a bracketed `[CRITICAL] ...` finding, an
-# unbracketed agent-definition finding, or — by the over-detect direction this writer
-# deliberately takes — a bare sentence of prose that merely mentions the word CRITICAL.
+# unbracketed agent-definition finding, or any line that STARTS with the tag or a
+# `file:line` citation and names the word (see NARROWED above).
 # Do not read a non-empty `unresolved` as "the list of CRITICAL findings" and do not
 # filter/render it assuming every entry is a `file:line — issue — fix` shape; a consumer
 # that does (e.g. `select(startswith("[CRITICAL]"))`) will silently see it as empty on a

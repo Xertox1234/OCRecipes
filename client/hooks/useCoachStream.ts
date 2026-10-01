@@ -1,16 +1,39 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
+import { getDeviceTimezone } from "@/lib/timezone";
+import { randomUuidV4 } from "@/lib/uuid";
 import {
   stripCoachBlocksFence,
+  stripCoachBlocksFenceIncremental,
+  createFenceScanState,
   filterValidBlocks,
 } from "@/components/coach/coach-chat-utils";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
+import type { FinderAction } from "@shared/schemas/recipe-finder";
 
 // Exported so tests can import and verify against them
 export const HOLD_GATE_MS = 700;
 export const DRAIN_INTERVAL_MS = 50;
 export const CHARS_PER_TICK = 20;
+
+// Termination ceilings. Order: server SSE_TIMEOUT_MS (shared/constants/sse.ts,
+// enforced by server/routes/chat.ts) < STREAM_INACTIVITY_MS < XHR_TIMEOUT_MS.
+// The server sends its own `{ error: "Response timeout" }` at SSE_TIMEOUT_MS,
+// so on a live connection that graceful error always arrives first; these
+// fire only on a dead or half-open one. Coach Pro now flushes a status event
+// immediately when a tool round is detected — before the tools run — instead
+// of deferring it to the next content chunk (see
+// todos/archive/P3-2026-09-25-coach-pro-flush-tool-status-immediately.md), so
+// a multi-round tool turn is no longer silent for the whole server budget.
+// This constant is kept at the server budget anyway: tool execution itself
+// has no explicit per-call timeout, so the wire can still legitimately go
+// quiet for longer than a single OpenAI call's cap while a slow tool runs.
+export const STREAM_INACTIVITY_MS = SSE_TIMEOUT_MS + 5_000;
+// A backstop in case the JS timer is starved. On Android, xhr.timeout is an
+// OkHttp total-call cap, not an idle one.
+export const XHR_TIMEOUT_MS = STREAM_INACTIVITY_MS + 25_000;
 
 /**
  * Pure helper — returns the slice of buffer to release this drain tick.
@@ -62,7 +85,11 @@ export interface UseCoachStreamReturn {
   startStream: (
     conversationId: number,
     userMessage: string,
-    extras?: { warmUpId?: string | null; screenContext?: string },
+    extras?: {
+      warmUpId?: string | null;
+      screenContext?: string;
+      finderAction?: FinderAction;
+    },
   ) => void;
   abortStream: () => void;
   streamingContent: string;
@@ -94,11 +121,31 @@ export function useCoachStream({
   const startedAtRef = useRef(0); // Date.now() when startStream was called
   const accumulatedRef = useRef(""); // full raw text from server (may contain fence)
   const displayedLengthRef = useRef(0); // chars of stripped text already pushed to buffer
+  // Scan-offset state for the incremental fence stripper — must be reset
+  // alongside accumulatedRef everywhere accumulatedRef is reset, or stale
+  // offsets from a prior stream corrupt the next one's fence detection.
+  const fenceStateRef = useRef(createFenceScanState());
   const firstCharDrainedRef = useRef(false); // cleared status on first drain?
   const fullTextRef = useRef(""); // fence-stripped text to pass to onDone
   const blocksRef = useRef<CoachBlock[]>([]);
+  // Mirrors `isStreaming` for a synchronous, stale-closure-safe guard read in
+  // startStream — see the guard there.
+  const isStreamingRef = useRef(false);
+  // Bumped by every startStream, abortStream and unmount. startStream's
+  // token read is async; its continuation sends only if the epoch it captured
+  // is still current, so an abort/unmount during the read can't leave an
+  // orphaned request that races the next stream.
+  const streamEpochRef = useRef(0);
   const xhrRef = useRef<XMLHttpRequest | null>(null);
   const drainIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearInactivity = useCallback(() => {
+    if (inactivityTimerRef.current !== null) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+  }, []);
 
   const stopDrain = useCallback(() => {
     if (drainIntervalRef.current !== null) {
@@ -123,6 +170,7 @@ export function useCoachStream({
         if (isDoneRef.current && bufferRef.current.length === 0) {
           // Buffer exhausted and server is done — finish
           stopDrain();
+          isStreamingRef.current = false;
           setIsStreaming(false);
           setStatusText("");
           onDoneRef.current?.(
@@ -144,38 +192,59 @@ export function useCoachStream({
   }, [stopDrain]);
 
   const abortStream = useCallback(() => {
+    streamEpochRef.current += 1;
     xhrRef.current?.abort();
     xhrRef.current = null;
+    clearInactivity();
     stopDrain();
     bufferRef.current = "";
     isDoneRef.current = false;
     accumulatedRef.current = "";
     displayedLengthRef.current = 0;
+    fenceStateRef.current = createFenceScanState();
     firstCharDrainedRef.current = false;
+    isStreamingRef.current = false;
     setIsStreaming(false);
     setStatusText("");
     setStreamingContent("");
-  }, [stopDrain]);
+  }, [clearInactivity, stopDrain]);
 
   // Abort XHR and drain interval on unmount
   useEffect(() => {
     return () => {
+      streamEpochRef.current += 1;
       xhrRef.current?.abort();
+      clearInactivity();
       stopDrain();
     };
-  }, [stopDrain]);
+  }, [clearInactivity, stopDrain]);
 
   const startStream = useCallback(
     (
       conversationId: number,
       userMessage: string,
-      extras?: { warmUpId?: string | null; screenContext?: string },
+      extras?: {
+        warmUpId?: string | null;
+        screenContext?: string;
+        finderAction?: FinderAction;
+      },
     ) => {
+      // Refuse an overlapping stream: most internal state here (buffer,
+      // accumulated text, xhrRef, timers) is a single shared slot, not
+      // per-request, so a second concurrent startStream would corrupt or
+      // orphan the first — see
+      // todos/archive/P3-2026-09-24-chat-stream-hooks-xhrref-last-write-wins.md.
+      if (isStreamingRef.current) return;
+      isStreamingRef.current = true;
+      const epoch = ++streamEpochRef.current;
+
       // Reset all state for a fresh stream
+      clearInactivity();
       bufferRef.current = "";
       isDoneRef.current = false;
       accumulatedRef.current = "";
       displayedLengthRef.current = 0;
+      fenceStateRef.current = createFenceScanState();
       firstCharDrainedRef.current = false;
       fullTextRef.current = "";
       blocksRef.current = [];
@@ -188,19 +257,56 @@ export function useCoachStream({
       tokenStorage
         .get()
         .then((token) => {
+          if (epoch !== streamEpochRef.current) return;
           const xhr = new XMLHttpRequest();
           xhrRef.current = xhr;
           const url = `${getApiUrl()}/api/chat/conversations/${conversationId}/messages`;
           xhr.open("POST", url, true);
           xhr.setRequestHeader("Content-Type", "application/json");
           if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+          // Required, not decorative: the server anchors notebook follow-up
+          // dates and the coach's "today" in this zone, and falls back to UTC
+          // without it. This raw XHR bypasses `apiRequest`, which adds no
+          // header either — every caller passes it explicitly.
+          xhr.setRequestHeader("X-Timezone", getDeviceTimezone());
 
           let lastProcessedIndex = 0;
+          // Once a terminal outcome is chosen, every later event is ignored.
+          // RN dispatches readystatechange at DONE before timeout/error (and
+          // on abort), so without this one stream can report twice.
+          let settled = false;
+          const fail = (msg: string, code?: string) => {
+            if (settled) return;
+            // A very late event on an already-superseded (aborted/unmounted)
+            // stream must not tear down or report an error against whatever
+            // stream is current now — same epoch guard as the token-read
+            // continuation above.
+            if (epoch !== streamEpochRef.current) return;
+            settled = true;
+            clearInactivity();
+            stopDrain();
+            isStreamingRef.current = false;
+            setIsStreaming(false);
+            setStatusText("");
+            onErrorRef.current?.(msg, code);
+          };
+          // Reset on every event, status included: a stalled socket never
+          // closes or errors on its own, so without this the stream hangs.
+          const armInactivity = () => {
+            clearInactivity();
+            inactivityTimerRef.current = setTimeout(() => {
+              // Settle before aborting: abort() re-dispatches readystatechange.
+              fail("Response timeout");
+              xhr.abort();
+            }, STREAM_INACTIVITY_MS);
+          };
 
           xhr.onreadystatechange = () => {
+            if (settled) return;
             if (xhr.readyState >= 3 && xhr.responseText) {
               const newText = xhr.responseText.slice(lastProcessedIndex);
               lastProcessedIndex = xhr.responseText.length;
+              if (newText) armInactivity();
 
               for (const line of newText.split("\n")) {
                 if (!line.startsWith("data: ")) continue;
@@ -214,10 +320,7 @@ export function useCoachStream({
                     continue;
                   const data = raw as Record<string, unknown>;
                   if (data.error) {
-                    stopDrain();
-                    setIsStreaming(false);
-                    setStatusText("");
-                    onErrorRef.current?.(String(data.error));
+                    fail(String(data.error));
                     return;
                   }
                   if (
@@ -228,8 +331,12 @@ export function useCoachStream({
                   }
                   if (typeof data.content === "string") {
                     accumulatedRef.current += data.content;
-                    const stripped = stripCoachBlocksFence(
+                    // Incremental: tracks scan offsets in fenceStateRef so
+                    // this doesn't re-scan the full accumulated text from
+                    // position 0 on every event (see coach-chat-utils.ts).
+                    const stripped = stripCoachBlocksFenceIncremental(
                       accumulatedRef.current,
+                      fenceStateRef.current,
                     );
                     const newChars = stripped.slice(displayedLengthRef.current);
                     displayedLengthRef.current = stripped.length;
@@ -239,6 +346,7 @@ export function useCoachStream({
                   if (typeof data.safety_override === "string") {
                     accumulatedRef.current = "";
                     displayedLengthRef.current = 0;
+                    fenceStateRef.current = createFenceScanState();
                     firstCharDrainedRef.current = false;
                     fullTextRef.current = data.safety_override;
                     setStreamingContent("");
@@ -248,6 +356,10 @@ export function useCoachStream({
                     blocksRef.current = filterValidBlocks(data.blocks);
                   }
                   if (data.done) {
+                    // The drain now owns finishing (onDone). Nothing after
+                    // `done` — a late error or close — may override it.
+                    settled = true;
+                    clearInactivity();
                     isDoneRef.current = true;
                     if (accumulatedRef.current) {
                       fullTextRef.current = stripCoachBlocksFence(
@@ -262,36 +374,45 @@ export function useCoachStream({
             }
 
             if (xhr.readyState === 4 && xhr.status >= 400) {
-              stopDrain();
-              setIsStreaming(false);
-              setStatusText("");
-              onErrorRef.current?.(
+              fail(
                 `${xhr.status}: ${xhr.responseText}`,
                 parseErrorCode(xhr.responseText),
               );
             }
           };
 
-          xhr.onerror = () => {
-            stopDrain();
-            setIsStreaming(false);
-            setStatusText("");
-            onErrorRef.current?.("Network error");
+          xhr.onerror = () => fail("Network error");
+          // RN dispatches `timeout`, not `error`, when xhr.timeout elapses.
+          xhr.ontimeout = () => fail("Response timeout");
+          // `load` fires only on a clean close (never after timeout, error or
+          // abort, unlike readyState 4). A clean 2xx close before `done` means
+          // the server or a proxy cut the stream: the reply was never
+          // finished or saved, so report it rather than finalize a partial.
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              fail("Response interrupted");
+            }
           };
+          xhr.timeout = XHR_TIMEOUT_MS;
 
           startDrain();
 
-          const turnKey = crypto.randomUUID();
+          const turnKey = randomUuidV4();
           const body: Record<string, unknown> = {
             content: userMessage,
             turnKey,
           };
           if (extras?.warmUpId) body.warmUpId = extras.warmUpId;
           if (extras?.screenContext) body.screenContext = extras.screenContext;
+          if (extras?.finderAction) body.finderAction = extras.finderAction;
+          armInactivity();
           xhr.send(JSON.stringify(body));
         })
         .catch((err: unknown) => {
+          // A stale stream's failure must not tear down the current one.
+          if (epoch !== streamEpochRef.current) return;
           stopDrain();
+          isStreamingRef.current = false;
           setIsStreaming(false);
           setStatusText("");
           onErrorRef.current?.(
@@ -299,7 +420,7 @@ export function useCoachStream({
           );
         });
     },
-    [startDrain, stopDrain],
+    [clearInactivity, startDrain, stopDrain],
   );
 
   return {

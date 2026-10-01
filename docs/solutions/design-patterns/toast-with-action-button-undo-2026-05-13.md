@@ -12,9 +12,7 @@ created: '2026-05-13'
 
 ## When this applies
 
-The Toast system supports an optional action button for recoverable operations. Pass `action: { label, onPress }` to any toast method. Auto-dismiss extends from 3s to 5s when an action is present. iOS VoiceOver announces the action availability.
-
-**Known gap (2026-07-13):** the announcement is not backed by a reachable control — see [../logic-errors/toast-action-button-unreachable-by-screen-reader-2026-07-13.md](../logic-errors/toast-action-button-unreachable-by-screen-reader-2026-07-13.md). Don't rely on this pattern for a screen-reader-critical action until that's fixed; keep an independently-reachable on-screen control as the primary path, as `LabelAnalysisScreen.tsx`'s retry button does.
+The Toast system supports an optional action button for recoverable operations. Pass `action: { label, onPress }` to any toast method. Auto-dismiss extends from 3s to 5s when an action is present, and to 10s when a screen reader is also on. iOS VoiceOver announces the action availability, and the action is its own focus stop, a sibling of the grouped message node (fixed 2026-09-23; history in [../logic-errors/toast-action-button-unreachable-by-screen-reader-2026-07-13.md](../logic-errors/toast-action-button-unreachable-by-screen-reader-2026-07-13.md)). A toast is still transient: keep an independently reachable on-screen control for a critical action, as `LabelAnalysisScreen.tsx`'s retry button does.
 
 ## Examples
 

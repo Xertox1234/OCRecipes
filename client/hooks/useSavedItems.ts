@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, getApiUrl } from "@/lib/query-client";
+import {
+  apiRequest,
+  getApiUrl,
+  type MutationErrorMeta,
+} from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import type { SavedItem } from "@shared/schema";
 import type { CreateSavedItemInput } from "@shared/schemas/saved-items";
@@ -68,13 +72,20 @@ export function useCreateSavedItem() {
         });
       }
     },
+    // Its one call site (SaveButton) already shows a visible error state
+    // (button recolors + error haptic) on failure via its own try/catch.
+    meta: { silentError: true },
   });
 }
 
 /**
  * Hook to delete a saved item.
+ *
+ * `meta` is threaded (not hardcoded): SavedItemCard already shows an Alert
+ * on failure and should opt out, but SavedItemsScreen's swipe-to-delete has
+ * no error handling at all — the global net should still cover it.
  */
-export function useDeleteSavedItem() {
+export function useDeleteSavedItem(meta?: MutationErrorMeta) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -87,5 +98,6 @@ export function useDeleteSavedItem() {
         queryKey: ["/api/saved-items/count"],
       });
     },
+    meta,
   });
 }

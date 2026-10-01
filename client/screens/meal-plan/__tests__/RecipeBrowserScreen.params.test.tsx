@@ -38,8 +38,9 @@
 // primitives) and mocking them added no safety, only more surface to keep in
 // sync with the real hooks' shapes.
 import React from "react";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import RecipeBrowserScreen from "../RecipeBrowserScreen";
 
 const {
@@ -47,7 +48,11 @@ const {
   mockNavigate,
   mockGoBack,
   mockRouteParams,
+  mockSearchState,
+  DEFAULT_SEARCH_STATE,
+  capturedSectionListProps,
   TEST_RECIPE,
+  capturedFilterSheetRef,
 } = vi.hoisted(() => {
   const TEST_RECIPE = {
     id: "mealPlan:42",
@@ -81,13 +86,86 @@ const {
     isCanonical: false,
     allergens: [],
   };
+  const DEFAULT_SEARCH_STATE = {
+    data: { results: [] as (typeof TEST_RECIPE)[], total: 0 },
+    isLoading: false,
+    loadMore: undefined as (() => void) | undefined,
+    isFetchingNextPage: false,
+  };
   return {
     mockMutateAsync: vi.fn(),
     mockNavigate: vi.fn(),
     mockGoBack: vi.fn(),
     mockRouteParams: { value: {} as Record<string, unknown> },
+    mockSearchState: { value: { ...DEFAULT_SEARCH_STATE } },
+    DEFAULT_SEARCH_STATE,
+    capturedSectionListProps: {
+      value: undefined as Record<string, unknown> | undefined,
+    },
     TEST_RECIPE,
+    // Populated by the @gorhom/bottom-sheet override below — lets the
+    // Android-trap-release test call the filter sheet's real `.dismiss()`
+    // (mirroring the real user gesture that closes it: backdrop tap or
+    // swipe-down — SearchFilterSheet has no in-content close button, unlike
+    // ImportRecipeSheetContent's, so this is the only way to exercise the
+    // close edge without touching SearchFilterSheet.tsx, which is outside
+    // this todo's Scope Contract).
+    capturedFilterSheetRef: {
+      current: null as { dismiss: () => void } | null,
+    },
   };
+});
+
+// L9 (2026-09-23 front-end audit): the search-results `AnimatedSectionList`
+// must spread FLATLIST_DEFAULTS. The shared jsdom `SectionList` test mock
+// (test/mocks/react-native.ts) deliberately destructures only the props
+// existing tests need and drops everything else via no `...rest` — so a DOM
+// assertion can never see whether `removeClippedSubviews`/`maxToRenderPerBatch`/
+// `windowSize` were spread onto it. Rather than touch that shared mock (out of
+// this todo's Scope Contract), override just `SectionList` here to capture the
+// exact props the screen passes and render nothing — this also sidesteps
+// having to support every `renderItem` dependency (FallbackImage, icons, etc.)
+// for a test that only cares about the props reaching the list itself.
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  const SectionList = React.forwardRef<unknown, Record<string, unknown>>(
+    (props, _ref) => {
+      capturedSectionListProps.value = props;
+      return null;
+    },
+  );
+  SectionList.displayName = "SectionList";
+  return { ...actual, SectionList };
+});
+
+// Wraps the shared BottomSheetModal mock (test/mocks/gorhom-bottom-sheet.ts,
+// aliased in vitest.config.ts) only to capture its imperative handle into
+// capturedFilterSheetRef above, forwarding the ref through unchanged so
+// production's own filterSheetRef.current?.present() still works.
+vi.mock("@gorhom/bottom-sheet", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@gorhom/bottom-sheet")>();
+  const CapturingBottomSheetModal = React.forwardRef<
+    unknown,
+    Record<string, unknown>
+  >((props, forwardedRef) =>
+    React.createElement(
+      actual.BottomSheetModal as unknown as React.ComponentType<
+        Record<string, unknown>
+      >,
+      {
+        ...props,
+        ref: (instance: { dismiss: () => void } | null) => {
+          capturedFilterSheetRef.current = instance;
+          if (typeof forwardedRef === "function") forwardedRef(instance);
+          else if (forwardedRef)
+            (forwardedRef as React.MutableRefObject<unknown>).current =
+              instance;
+        },
+      },
+    ),
+  );
+  CapturingBottomSheetModal.displayName = "CapturingBottomSheetModal";
+  return { ...actual, BottomSheetModal: CapturingBottomSheetModal };
 });
 
 vi.mock("@react-navigation/native", () => ({
@@ -125,12 +203,7 @@ vi.mock("@/hooks/useFavouriteRecipes", () => ({
 // "Test Personal Recipe" reaches the screen — see the RecipeDiscoveryFeed
 // mock below for why.
 vi.mock("@/hooks/useRecipeSearch", () => ({
-  useRecipeSearch: () => ({
-    data: { results: [], total: 0 },
-    isLoading: false,
-    loadMore: undefined,
-    isFetchingNextPage: false,
-  }),
+  useRecipeSearch: () => mockSearchState.value,
 }));
 
 vi.mock("@/hooks/useCatalogSearch", () => ({
@@ -248,5 +321,87 @@ describe("RecipeBrowserScreen — filter sheet iOS a11y-leaf fix", () => {
     expect(
       screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible"),
     ).toBe("false");
+  });
+});
+
+// AC #1 of
+// todos/P3-2026-09-23-perf-minor-recipe-browser-windowing-and-stream-rescan.md
+// (2026-09-23 front-end audit finding L9): the search-results
+// `AnimatedSectionList` (RecipeBrowserScreen.tsx, rendered when a query or
+// filter is active) must spread `FLATLIST_DEFAULTS` for scroll-perf
+// virtualization on long result lists.
+describe("RecipeBrowserScreen — FlatList windowing defaults (L9)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedSectionListProps.value = undefined;
+    // A non-empty searchQuery seeds `debouncedQuery`, which makes
+    // `isBlankBrowseState` false — that renders the search-results
+    // AnimatedSectionList branch instead of RecipeDiscoveryFeed.
+    mockRouteParams.value = { searchQuery: "chicken" };
+    mockSearchState.value = {
+      ...DEFAULT_SEARCH_STATE,
+      data: { results: [TEST_RECIPE], total: 1 },
+    };
+  });
+
+  afterEach(() => {
+    mockSearchState.value = { ...DEFAULT_SEARCH_STATE };
+  });
+
+  it("spreads FLATLIST_DEFAULTS onto the results AnimatedSectionList", () => {
+    renderComponent(<RecipeBrowserScreen />);
+
+    expect(capturedSectionListProps.value).toBeDefined();
+    expect(capturedSectionListProps.value).toMatchObject(FLATLIST_DEFAULTS);
+  });
+});
+
+// Android TalkBack background focus trap: iOS already has a working trap via
+// accessibilityViewIsModal on the sheet's own content root (PR #1000); the
+// Android lever is importantForAccessibility="no-hide-descendants" on the
+// screen's OWN background content, applied only while the sheet is open. The
+// root View here already carries accessibilityViewIsModal (pre-existing,
+// unrelated to the filter sheet — see docs/solutions/conventions/
+// a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md), so
+// it's the same per-element target for the new Android prop. jsdom can't
+// assert real a11y-tree exclusion — it maps the hiding-prop pair to
+// aria-hidden (test/mocks/react-native.ts's ariaHiddenProps), so these tests
+// pin THAT, per docs/solutions/conventions/
+// jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md.
+describe("RecipeBrowserScreen — Android TalkBack background trap", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockMutateAsync.mockResolvedValue({ id: 1 });
+    mockRouteParams.value = {};
+    capturedFilterSheetRef.current = null;
+  });
+
+  it("does not hide the background content before the filter sheet opens", () => {
+    renderComponent(<RecipeBrowserScreen />);
+    expect(
+      screen.getByTestId("recipe-browser-root").getAttribute("aria-hidden"),
+    ).toBeNull();
+  });
+
+  it("hides the background content from the Android accessibility tree while the filter sheet is open", () => {
+    renderComponent(<RecipeBrowserScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Advanced filters" }));
+    expect(
+      screen.getByTestId("recipe-browser-root").getAttribute("aria-hidden"),
+    ).toBe("true");
+  });
+
+  it("releases the background trap once the filter sheet is dismissed — a trap that never releases makes the screen unusable to TalkBack", () => {
+    renderComponent(<RecipeBrowserScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Advanced filters" }));
+    expect(
+      screen.getByTestId("recipe-browser-root").getAttribute("aria-hidden"),
+    ).toBe("true");
+    act(() => {
+      capturedFilterSheetRef.current?.dismiss();
+    });
+    expect(
+      screen.getByTestId("recipe-browser-root").getAttribute("aria-hidden"),
+    ).toBeNull();
   });
 });

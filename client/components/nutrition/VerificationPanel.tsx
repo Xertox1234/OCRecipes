@@ -13,18 +13,61 @@ interface VerificationPanelProps {
   hasFrontLabelData: boolean;
   /** The screen owns the navigation call — it holds `barcode` and the route shape. */
   onAddProductDetails: () => void;
+  /** Opens the label scan that submits a verification for this barcode. */
+  onVerifyLabel: () => void;
 }
 
 export function VerificationPanel({
   verificationLevel,
   hasFrontLabelData,
   onAddProductDetails,
+  onVerifyLabel,
 }: VerificationPanelProps) {
   const { theme } = useTheme();
 
   return (
     <View style={styles.verificationSection}>
       <VerificationBadge level={verificationLevel} />
+
+      {/* The only entry to a verification submit: LabelAnalysis in
+          verification mode. The barcode flow's own label step never submits. */}
+      {verificationLevel !== "verified" && (
+        <Pressable
+          onPress={onVerifyLabel}
+          accessibilityLabel="Verify nutrition data with a label photo"
+          accessibilityRole="button"
+          style={[
+            styles.verifyPrompt,
+            { backgroundColor: withOpacity(theme.info, 0.08) },
+          ]}
+        >
+          <Feather
+            name="camera"
+            size={18}
+            color={theme.info}
+            accessible={false}
+          />
+          <View style={{ flex: 1 }}>
+            {/* textSecondary, not info: theme.info fails AA as light-mode
+                text (~2.9:1 on backgroundRoot). info stays on the icon. */}
+            <ThemedText
+              type="body"
+              style={{ color: theme.textSecondary, fontWeight: "600" }}
+            >
+              Help verify this product
+            </ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              Scan the nutrition label to confirm data
+            </ThemedText>
+          </View>
+          <Feather
+            name="chevron-right"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
+        </Pressable>
+      )}
 
       {/* Retroactive front-label CTA for verified products without front-label data */}
       {verificationLevel !== "unverified" && !hasFrontLabelData && (
@@ -37,7 +80,12 @@ export function VerificationPanel({
             { backgroundColor: withOpacity(theme.textSecondary, 0.06) },
           ]}
         >
-          <Feather name="package" size={18} color={theme.textSecondary} />
+          <Feather
+            name="package"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
           <View style={{ flex: 1 }}>
             <ThemedText
               type="body"
@@ -49,7 +97,12 @@ export function VerificationPanel({
               Scan front of package
             </ThemedText>
           </View>
-          <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+          <Feather
+            name="chevron-right"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
         </Pressable>
       )}
     </View>

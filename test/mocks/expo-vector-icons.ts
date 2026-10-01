@@ -1,6 +1,7 @@
 // Mock @expo/vector-icons for component render tests.
 // Renders a span with the icon name as text content for easy assertions.
 import React from "react";
+import { ariaHiddenProps } from "./react-native";
 
 function createIconComponent(setName: string) {
   const Icon = React.forwardRef<
@@ -11,13 +12,34 @@ function createIconComponent(setName: string) {
       color?: string;
       style?: unknown;
       testID?: string;
+      accessibilityElementsHidden?: boolean;
+      importantForAccessibility?: string;
     }
-  >(({ name, testID, ...rest }, ref) =>
-    React.createElement(
-      "span",
-      { ref, "data-testid": testID, "data-icon": name, ...rest },
-      name,
-    ),
+  >(
+    (
+      {
+        name,
+        testID,
+        accessibilityElementsHidden,
+        importantForAccessibility,
+        ...rest
+      },
+      ref,
+    ) =>
+      React.createElement(
+        "span",
+        {
+          ref,
+          "data-testid": testID,
+          "data-icon": name,
+          ...ariaHiddenProps(
+            accessibilityElementsHidden,
+            importantForAccessibility,
+          ),
+          ...rest,
+        },
+        name,
+      ),
   );
   Icon.displayName = setName;
   return Icon;

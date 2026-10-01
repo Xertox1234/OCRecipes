@@ -1,11 +1,18 @@
 appId: com.ocrecipes.app
 name: "Profile - View and edit dietary profile"
 tags:
+  - regression
   - profile
 env:
   USERNAME: ${USERNAME}
   PASSWORD: ${PASSWORD}
 ---
+# Selectors below were read from a live hierarchy dump of the Profile screen
+# and the Edit Preferences modal (iOS sim, 2026-09-23), not from source. The
+# previous version asserted "Edit Profile", "Weight Tracking", "Nutrition
+# Goals" and "Sign Out", none of which the Profile tab renders; it was never
+# tagged for CI, so nothing noticed.
+
 # Login first
 - runFlow: ../../helpers/launch-app.yaml
 - runFlow:
@@ -15,29 +22,52 @@ env:
       PASSWORD: ${PASSWORD}
 
 # Navigate to Profile tab
-- tapOn: "Profile"
+- tapOn:
+    id: "tab-profile"
 - extendedWaitUntil:
     visible:
-      text: "Edit Profile"
-    timeout: 5000
+      text: "YOUR LIBRARY"
+    timeout: 10000
 
-# Verify profile sections are visible
-- assertVisible: "Weight Tracking"
+# Verify profile sections are visible. Tile counts depend on the account's
+# data, and a premium tile appends ". Premium feature, locked" for a free-tier
+# account, so match the label shape rather than the whole string.
+- assertVisible: "Favourites: \\d+ items.*"
+- assertVisible: "Recipes: \\d+ items.*"
 - assertVisible: "Dietary Profile"
-- assertVisible: "Nutrition Goals"
-- assertVisible: "Sign Out"
+- assertVisible: "Appearance.*"
 
-# Open Dietary Profile
+# Open Dietary Profile (the "Edit Preferences" modal)
 - tapOn: "Dietary Profile"
 - extendedWaitUntil:
     visible:
       text: "Save Changes"
-    timeout: 5000
+    timeout: 10000
+- assertVisible: "Edit Preferences"
+- assertVisible: "Allergies"
+- assertVisible: "Health Conditions"
 
-# Verify dietary profile sections exist
-- scrollUntilVisible:
-    element: "Save Changes"
-    direction: DOWN
+# Close without saving. The screen is a native `presentation: "modal"`:
+# iOS dismisses it with a downward swipe from the sheet's top edge, and
+# Maestro's `back` is Android-only, so each platform gets its own step.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - swipe:
+          start: 50%, 15%
+          end: 50%, 90%
+          duration: 400
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - back
 
-# Go back without saving
-- back
+# Contract: the flow exits on the Profile tab with the modal closed, so the
+# next flow in the same run does not inherit an open sheet.
+- extendedWaitUntil:
+    visible:
+      text: "YOUR LIBRARY"
+    timeout: 10000
+- assertNotVisible: "Save Changes"

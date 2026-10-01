@@ -5,6 +5,7 @@ import {
   mealPlanItems,
   recipeIngredients,
   cookbookRecipes,
+  savedItems,
 } from "../shared/schema";
 import { sql, eq, and, inArray } from "drizzle-orm";
 import {
@@ -15,9 +16,13 @@ import {
 // Predicate + flags live in the -utils leaf so the deletion perimeter is
 // unit-tested. Dry-run by DEFAULT — pass --commit (without --dry-run, which
 // vetoes it) to actually delete.
-const { commit: COMMIT, vetoed: VETOED } = parseCleanupFlags(process.argv);
+//
+// Exported (rather than a module-private function) so a test can invoke it
+// directly with a controlled argv and a mocked `db`, bypassing the auto-run
+// below — mirrors the sibling `cleanup-junk-recipes.ts`.
+export async function main(argv: readonly string[] = process.argv) {
+  const { commit: COMMIT, vetoed: VETOED } = parseCleanupFlags(argv);
 
-async function main() {
   console.log(
     COMMIT
       ? "=== LIVE RUN ==="
@@ -62,7 +67,18 @@ async function main() {
         .where(
           and(
             inArray(cookbookRecipes.recipeId, batch),
-            eq(cookbookRecipes.recipeType, "meal_plan"),
+            eq(cookbookRecipes.recipeType, "mealPlan"),
+          ),
+        );
+      // Clear saved_items links (PR #1165 polymorphic recipe_id/recipe_type
+      // link, no DB FK) before deleting the parent recipe. Mirrors
+      // deleteMealPlanRecipe in server/storage/meal-plan-recipes-crud.ts.
+      await tx
+        .delete(savedItems)
+        .where(
+          and(
+            inArray(savedItems.recipeId, batch),
+            eq(savedItems.recipeType, "mealPlan"),
           ),
         );
       await tx
@@ -83,7 +99,17 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((err) => {
-  console.error("Cleanup failed:", err);
-  process.exit(1);
-});
+// Guard the auto-run so importing main (mocked-db test) skips the CLI entrypoint.
+const isMain = (() => {
+  try {
+    return Boolean(process.argv[1]?.includes("cleanup-junk-mealplan-recipes"));
+  } catch {
+    return false;
+  }
+})();
+if (isMain) {
+  main().catch((err) => {
+    console.error("Cleanup failed:", err);
+    process.exit(1);
+  });
+}

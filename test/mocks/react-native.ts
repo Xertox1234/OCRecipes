@@ -70,11 +70,14 @@ export const I18nManager = {
  * which is the actual property under test. (`getByLabelText` does NOT — it
  * still matches hidden nodes, so never assert exclusion with it.)
  *
- * Either prop alone marks the node hidden: a component that hides correctly on
- * both platforms sets both, and a component that sets only one is a real
- * single-platform bug this mock should surface rather than mask.
+ * Either prop alone marks the node hidden (the two are OR'd). Consequence: a
+ * passing `aria-hidden` assertion proves AT LEAST ONE hiding prop is set — it
+ * cannot tell which platform is covered, so a component that sets only one
+ * (a real single-platform bug when the other platform has no other hiding
+ * path) is masked, not surfaced. When one platform's hiding hangs on one
+ * specific prop, that platform needs on-device verification.
  */
-function ariaHiddenProps(
+export function ariaHiddenProps(
   accessibilityElementsHidden: unknown,
   importantForAccessibility: unknown,
 ): { "aria-hidden"?: true } {
@@ -82,6 +85,23 @@ function ariaHiddenProps(
     importantForAccessibility === "no-hide-descendants"
     ? { "aria-hidden": true }
     : {};
+}
+
+/**
+ * `accessibilityViewIsModal` maps to its ARIA equivalent, `aria-modal`, for
+ * the same reason `ariaHiddenProps` above exists: unmapped, it falls through
+ * `...rest` as a raw camelCase attribute, which React silently drops (with a
+ * dev warning) rather than rendering — an empirically confirmed gap, not the
+ * "lowercased passthrough" `accessible`/`accessibilityActions` have (see
+ * docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md).
+ * Without this mapping the prop is invisible to jsdom entirely, in either
+ * direction. `undefined` is omitted by React when not set, matching the
+ * `aria-live` pattern above.
+ */
+export function ariaModalProps(accessibilityViewIsModal: unknown): {
+  "aria-modal"?: true;
+} {
+  return accessibilityViewIsModal === true ? { "aria-modal": true } : {};
 }
 
 /** Helper to create a forwarding mock component that renders an HTML element. */
@@ -103,6 +123,7 @@ function mockComponent(
         accessibilityLiveRegion,
         accessibilityElementsHidden,
         importantForAccessibility,
+        accessibilityViewIsModal,
         ...rest
       },
       ref,
@@ -131,10 +152,14 @@ function mockComponent(
           ...(a11y?.checked != null && {
             "aria-checked": a11y.checked,
           }),
+          ...(a11y?.expanded != null && {
+            "aria-expanded": a11y.expanded,
+          }),
           ...ariaHiddenProps(
             accessibilityElementsHidden,
             importantForAccessibility,
           ),
+          ...ariaModalProps(accessibilityViewIsModal),
           ...rest,
         } as Record<string, unknown>,
         children as React.ReactNode,
@@ -197,6 +222,7 @@ export const Pressable = React.forwardRef<unknown, Record<string, unknown>>(
             ...(a11y?.selected != null && { "aria-selected": a11y.selected }),
             ...(a11y?.busy != null && { "aria-busy": a11y.busy }),
             ...(a11y?.checked != null && { "aria-checked": a11y.checked }),
+            ...(a11y?.expanded != null && { "aria-expanded": a11y.expanded }),
           };
         })(),
         ...ariaHiddenProps(

@@ -2,11 +2,12 @@
 title: Relaxing or extending a shared contract requires auditing what relied on the old guarantee
 track: knowledge
 category: conventions
-tags: [architecture, typescript, validation, shared-types, preconditions, discriminated-union, fail-silent, review-checklist]
+tags: [architecture, typescript, validation, shared-types, preconditions, discriminated-union, fail-silent, review-checklist, harness]
 module: shared
-applies_to: ["shared/types/**/*.ts", "server/services/**/*.ts", "client/lib/**/*.ts"]
+applies_to: ["shared/types/**/*.ts", "server/services/**/*.ts", "client/lib/**/*.ts", ".claude/agents/**/*.md", ".claude/hooks/**/*.sh"]
 symptoms: ["A gate is loosened and something unrelated downstream quietly stops working", "A new union member is added and never appears in the UI", "No test fails, no type error appears, and the regression is only visible on a device", "A correct, well-commented, tested behaviour becomes a bug without its code changing"]
 created: 2026-07-30
+last_updated: 2026-09-24
 ---
 
 # Relaxing or extending a shared contract requires auditing what relied on the old guarantee
@@ -31,7 +32,8 @@ the *new* possibility space.
 
 ## Why
 
-Two instances, one change, same session:
+Two instances from one change in one session, and a third from a harness gate
+(below):
 
 **1. Removing a precondition.** `buildLabelConflict` blanks the macros a label
 did not read, with a well-argued comment: the record is demonstrably mis-scaled,
@@ -58,6 +60,23 @@ silently dropped.
 The common shape: a set-membership or presence check degrades **quietly** when
 the set grows or the guarantee shrinks. A `switch` with no `default` would have
 failed the build; a `Set` lookup with an `else` branch will not.
+
+**3. A consumer written in prose (2026-09-24).** The 2026-09-22 one-review-pass
+ruling (#1015) grew `merge-review-guard.sh`'s accepted verdict set from `clean`
+to `clean | advisory`, and updated `docs/AI_WORKFLOW.md` to match. That left one
+consumer: `todo-executor.md` Step 10.7c, a jq check that copies the gate's
+predicate so an executor can confirm its PR will pass before reporting. It still
+selected `.verdict=="clean"` only. For an advisory-only review, that returned
+empty, used up the re-dispatch, and reported `REVIEW_STAMP: none at` for a PR the
+gate would admit. Nothing could flag it: CI does not run agent markdown. Six
+real executor runs (#1038–#1040, #1047, #1049, #1055) worked around it by
+improvising a report, and five of them labelled an `advisory` record `clean at`.
+Found by reading the stamps on disk against each executor's report.
+
+A consumer can be a copied predicate in documentation or an agent prompt, not
+only an importer. `git grep` for the set's literal members (`"clean"`,
+`verdict==`) finds those copies. A symbol search does not. The fixed copy now
+says which gate line it mirrors and that the two change in the same PR.
 
 ## Examples
 
@@ -98,6 +117,8 @@ the sweep. That is rare; verify rather than assume it.
 - `shared/types/scan-flags.ts` — `ScanFlagKind`, `createNutrientUnavailableFlag`
 - `client/screens/nutrition-detail-flags-utils.ts` — `UNIVERSAL_KINDS` and the warn-and-drop default
 - `client/screens/scan-screen-utils.ts` — `getCapturePlan`, the exhaustive-switch precedent
+- `.claude/hooks/merge-review-guard.sh` — the `VERDICT` accept set (`clean` or `advisory`), instance 3's contract
+- `.claude/agents/todo-executor.md` — Step 10.7c's jq, the prose-side copy of that set
 
 ## See Also
 

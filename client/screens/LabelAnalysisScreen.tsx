@@ -19,12 +19,14 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { deleteAsync } from "expo-file-system/legacy";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
+import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
@@ -35,7 +37,6 @@ import {
   getConfidenceColor,
 } from "@/lib/confidence";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import { QUERY_KEYS } from "@/lib/query-keys";
 import {
   uploadLabelForAnalysis,
   confirmLabelAnalysis,
@@ -47,6 +48,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { parseNutritionFromOCR } from "@/lib/nutrition-ocr-parser";
 import type { VerificationSubmitResponse } from "@shared/types/verification";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { invalidateFoodLogQueries } from "@/lib/food-log-invalidation";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import {
@@ -92,28 +94,43 @@ export default function LabelAnalysisScreen() {
   const dataSourceRef = useRef<"local" | "ai" | null>(null);
   const labelDataRef = useRef<LabelExtractionResult | null>(null);
   const prevSessionIdRef = useRef<string | null>(null);
+  const prevShowUpdatedToastRef = useRef(false);
 
-  // Announce the Verifying → Ready transition for screen readers: a user who
-  // focused the log button while it read "Verifying..." (disabled) gets no
-  // signal when the background AI upload's sessionId arrives and the button
-  // becomes actionable. Announced on BOTH platforms — no accessibilityLiveRegion
-  // exists on this button, so per the project's announce-vs-live-region
-  // convention (docs/rules/accessibility.md) this imperative announce is the
-  // sole announcer on Android too (the Button's accessibilityState.disabled/busy
-  // trait is only read on-demand when TalkBack focus lands on the node, not
-  // proactively — see ProductChip.tsx for the same no-live-region shape).
-  // Edge-guarded on null→set via the prev-value ref so it never fires on mount
-  // (sessionId always starts null) or refires on unrelated re-renders.
+  // Announce the Verifying → Ready transition, and any "Updated with AI
+  // analysis" upgrade, for screen readers. Merged into ONE effect/utterance
+  // rather than two separate announcers because both can land in the SAME
+  // React commit: the upload effect below calls setSessionId(...) and (when
+  // the AI photo materially disagrees with the local OCR preview)
+  // setShowUpdatedToast(true) synchronously, one after another, with no
+  // `await` between them — React batches that into a single commit, and
+  // iOS's `UIAccessibility.post(.announcement, ...)` does not queue two
+  // posts in the same tick (it silently drops one). See
+  // docs/solutions/logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md.
+  // Announced on BOTH platforms, ungated — neither the log button nor the
+  // toast carries an accessibilityLiveRegion, so per the project's
+  // announce-vs-live-region convention (docs/rules/accessibility.md) this
+  // imperative call is the sole announcer for both transitions on both
+  // platforms (see ProductChip.tsx for the same no-live-region shape).
+  // Edge-guarded via prev-value refs so each half fires once, never on mount
+  // or on an unrelated re-render.
   useEffect(() => {
-    if (sessionId && !prevSessionIdRef.current) {
-      AccessibilityInfo.announceForAccessibility(
+    const sessionArrived = !!sessionId && !prevSessionIdRef.current;
+    const toastAppeared = showUpdatedToast && !prevShowUpdatedToastRef.current;
+    prevSessionIdRef.current = sessionId;
+    prevShowUpdatedToastRef.current = showUpdatedToast;
+    if (!sessionArrived && !toastAppeared) return;
+
+    const parts: string[] = [];
+    if (toastAppeared) parts.push("Updated with AI analysis");
+    if (sessionArrived) {
+      parts.push(
         verificationMode && verifyBarcode
           ? "Ready to submit verification"
           : "Ready to log",
       );
     }
-    prevSessionIdRef.current = sessionId;
-  }, [sessionId, verificationMode, verifyBarcode]);
+    AccessibilityInfo.announceForAccessibility(parts.join(". "));
+  }, [sessionId, showUpdatedToast, verificationMode, verifyBarcode]);
 
   // Parse local OCR data for instant preview (if available)
   useEffect(() => {
@@ -129,6 +146,19 @@ export default function LabelAnalysisScreen() {
       }
     }
   }, [route.params.localOCRText]);
+
+  // Delete the captured temp photo when this flow ends. Unmount only — never
+  // useFocusEffect: the front-label CTA below keeps LabelAnalysis ON the stack
+  // (navigate, not replace) so pop(2) can return to it, and the upload effect
+  // re-reads `imageUri` on every retry. A focus-based cleanup would delete the
+  // file out from under that retry. `imageUri` is never rendered on this
+  // screen (upload is its only consumer), so cleanup can wait for the real end
+  // of the flow — this screen's three exits (goBack/pop) all unmount it.
+  useEffect(() => {
+    return () => {
+      deleteAsync(imageUri, { idempotent: true }).catch(() => {});
+    };
+  }, [imageUri]);
 
   const retryUpload = useCallback(() => {
     toast.dismiss();
@@ -214,8 +244,7 @@ export default function LabelAnalysisScreen() {
       haptics.notification(
         getConfidenceHapticType(getConfidenceTier(labelData?.confidence ?? 0)),
       );
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+      invalidateFoodLogQueries(queryClient);
       navigation.goBack();
     },
     onError: (err) => {
@@ -235,10 +264,35 @@ export default function LabelAnalysisScreen() {
       }
       toast.error(msg);
     },
+    // The onError above already toasts on failure.
+    meta: { silentError: true },
   });
 
   const [verificationResult, setVerificationResult] =
     useState<VerificationSubmitResponse | null>(null);
+
+  // Computed once and reused for both the rendered banner text below and the
+  // announcer's content key — the two can never drift out of sync.
+  const verificationMessage = verificationResult
+    ? verificationResult.isMatch
+      ? `Thanks for verifying! (${verificationResult.verificationCount}/3 confirmations)`
+      : "Values differ from other scans. We've recorded your data."
+    : null;
+
+  // Announce the verification result once per distinct message — same
+  // ref-guarded, content-keyed shape as NoticeStack's announcer
+  // (NoticeStack.tsx). Ungated on both platforms: this banner carries no
+  // accessibilityLiveRegion (adding one here would double-announce on
+  // Android alongside this imperative call), and its accessibilityRole="alert"
+  // is a no-op on both platforms (docs/rules/accessibility.md) — so this
+  // imperative call is the sole announcer.
+  const lastAnnouncedVerificationRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!verificationMessage) return;
+    if (lastAnnouncedVerificationRef.current === verificationMessage) return;
+    lastAnnouncedVerificationRef.current = verificationMessage;
+    AccessibilityInfo.announceForAccessibility(verificationMessage);
+  }, [verificationMessage]);
 
   const { mutate: verifyLog, isPending: isVerifying } = useMutation({
     mutationFn: async () => {
@@ -263,6 +317,8 @@ export default function LabelAnalysisScreen() {
           : "Couldn't submit verification. Please try again.",
       );
     },
+    // The onError above already toasts on failure.
+    meta: { silentError: true },
   });
 
   const handleLog = useCallback(() => {
@@ -345,13 +401,11 @@ export default function LabelAnalysisScreen() {
     return (
       <ThemedView style={styles.container} accessibilityViewIsModal>
         <View style={styles.loadingContainer}>
-          <Feather name="alert-circle" size={48} color={theme.error} />
-          <ThemedText
-            type="body"
-            style={[styles.loadingText, { color: theme.error }]}
-          >
-            {error}
-          </ThemedText>
+          {/* InlineError owns both the icon (already accessible={false}) and
+              the cross-platform announce (iOS-gated imperative announce +
+              Android accessibilityRole="alert"/accessibilityLiveRegion) — do
+              not add a second announceForAccessibility call here. */}
+          <InlineError message={error} />
           <Button
             onPress={() => navigation.goBack()}
             style={{ marginTop: Spacing.lg }}
@@ -402,6 +456,7 @@ export default function LabelAnalysisScreen() {
                 onPress={() => adjustServings(-0.5)}
                 accessibilityLabel="Decrease servings"
                 accessibilityRole="button"
+                hitSlop={4}
                 style={[
                   styles.servingButton,
                   { backgroundColor: withOpacity(theme.link, 0.1) },
@@ -420,6 +475,7 @@ export default function LabelAnalysisScreen() {
                 onPress={() => adjustServings(0.5)}
                 accessibilityLabel="Increase servings"
                 accessibilityRole="button"
+                hitSlop={4}
                 style={[
                   styles.servingButton,
                   { backgroundColor: withOpacity(theme.link, 0.1) },
@@ -626,12 +682,13 @@ export default function LabelAnalysisScreen() {
               ),
             },
           ]}
-          accessibilityRole="alert"
         >
           <Feather
             name={verificationResult.isMatch ? "check-circle" : "info"}
             size={20}
             color={verificationResult.isMatch ? theme.success : theme.warning}
+            accessible={false}
+            importantForAccessibility="no-hide-descendants"
           />
           <ThemedText
             type="body"
@@ -640,9 +697,7 @@ export default function LabelAnalysisScreen() {
               flex: 1,
             }}
           >
-            {verificationResult.isMatch
-              ? `Thanks for verifying! (${verificationResult.verificationCount}/3 confirmations)`
-              : "Values differ from other scans. We've recorded your data."}
+            {verificationMessage}
           </ThemedText>
         </View>
       )}
@@ -661,7 +716,12 @@ export default function LabelAnalysisScreen() {
           </ThemedText>
           <Button
             onPress={() =>
-              navigation.replace("Scan", {
+              // navigate (push), not replace: replacing this screen removes
+              // it from the stack, so FrontLabelConfirm's pop(2) lands on the
+              // Scan(label) camera underneath instead of back here. Keeping
+              // LabelAnalysis on the stack lets pop(2) return to it, where
+              // the verification result and Done are still shown.
+              navigation.navigate("Scan", {
                 mode: "front-label",
                 verifyBarcode,
               })
@@ -677,13 +737,19 @@ export default function LabelAnalysisScreen() {
 
       {showUpdatedToast && (
         <Animated.View
-          entering={FadeInUp.duration(200)}
+          entering={reducedMotion ? undefined : FadeInUp.duration(200)}
           style={[
             styles.updatedToast,
             { backgroundColor: withOpacity(theme.info, 0.12) },
           ]}
         >
-          <Feather name="check-circle" size={14} color={theme.info} />
+          <Feather
+            name="check-circle"
+            size={14}
+            color={theme.info}
+            accessible={false}
+            importantForAccessibility="no-hide-descendants"
+          />
           <ThemedText type="small" style={{ color: theme.info }}>
             Updated with AI analysis
           </ThemedText>
@@ -702,7 +768,10 @@ export default function LabelAnalysisScreen() {
         ]}
       >
         {verificationResult ? (
-          <Button onPress={() => navigation.goBack()} style={{ flex: 1 }}>
+          // Verification opens Scan from NutritionDetail, so goBack() would
+          // land on that Scan's live camera. pop(2) returns to the product,
+          // as FrontLabelConfirm's "Add product details" flow does.
+          <Button onPress={() => navigation.pop(2)} style={{ flex: 1 }}>
             Done
           </Button>
         ) : (
@@ -764,6 +833,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.md,
+    // RN clips hitSlop to the parent view's bounds — this row had no padding,
+    // so it was exactly button-edge-to-button-edge and the +/- buttons'
+    // hitSlop={4} (below) had nowhere to expand into on any axis. Padding
+    // gives it that room without changing the visible 36x36 button size.
+    padding: Spacing.xs,
   },
   servingButton: {
     width: 36,

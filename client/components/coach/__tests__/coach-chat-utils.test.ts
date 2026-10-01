@@ -4,6 +4,8 @@ import {
   parsePlanDays,
   planBannerA11yLabel,
   stripCoachBlocksFence,
+  stripCoachBlocksFenceIncremental,
+  createFenceScanState,
   filterValidBlocks,
   describePlanSaveFailure,
   formatPlanSaveSuccess,
@@ -144,6 +146,121 @@ describe("stripCoachBlocksFence", () => {
   it("handles text after closing fence", () => {
     const input = "Before.\n```coach_blocks\n{}\n```\nAfter.";
     expect(stripCoachBlocksFence(input)).toBe("Before.\nAfter.");
+  });
+});
+
+// AC #2 of
+// todos/P3-2026-09-23-perf-minor-recipe-browser-windowing-and-stream-rescan.md
+// (2026-09-23 front-end audit finding L10): `stripCoachBlocksFence` re-scans
+// the FULL accumulated text from index 0 on every SSE event, which is O(n^2)
+// over a long streamed response. `stripCoachBlocksFenceIncremental` tracks
+// scan offsets in a `FenceScanState` across repeated calls on a growing
+// string so each call only re-scans the unsearched suffix (plus a small
+// constant overlap to catch a marker split across two chunks) instead of
+// starting over from position 0 every time.
+//
+// The contract under test: for ANY sequence of chunks appended to build up
+// `accumulated`, calling stripCoachBlocksFenceIncremental(accumulated, state)
+// after each chunk must return EXACTLY what the whole-text
+// stripCoachBlocksFence(accumulated) would return at that same point — the
+// incremental version must be a drop-in, cheaper-to-compute replacement, not
+// a behavior change.
+describe("stripCoachBlocksFenceIncremental", () => {
+  /** Feed `full` in the given chunk sizes and assert equivalence with the
+   *  whole-text stripCoachBlocksFence after every chunk. */
+  function assertEquivalentAcrossChunks(full: string, chunkSizes: number[]) {
+    const state = createFenceScanState();
+    let acc = "";
+    let pos = 0;
+    for (const size of chunkSizes) {
+      acc += full.slice(pos, pos + size);
+      pos += size;
+      expect(stripCoachBlocksFenceIncremental(acc, state)).toBe(
+        stripCoachBlocksFence(acc),
+      );
+    }
+    expect(pos).toBe(full.length); // sanity: chunk sizes covered the whole string
+  }
+
+  it("matches the whole-text version for a single-chunk call with no fence", () => {
+    const state = createFenceScanState();
+    expect(stripCoachBlocksFenceIncremental("  hello world  ", state)).toBe(
+      stripCoachBlocksFence("  hello world  "),
+    );
+  });
+
+  it("matches the whole-text version for a single-chunk call with a complete fence", () => {
+    const state = createFenceScanState();
+    const input =
+      'Here is your plan.\n```coach_blocks\n{"type":"action_card"}\n```';
+    expect(stripCoachBlocksFenceIncremental(input, state)).toBe(
+      stripCoachBlocksFence(input),
+    );
+  });
+
+  it("stays equivalent when the open marker is split across chunks (split at 3, 8, 15 chars in)", () => {
+    const full = 'Before text.\n```coach_blocks\n{"a":1}\n```\nAfter.';
+    const markerStart = full.indexOf("```coach_blocks\n");
+    for (const splitAt of [3, 8, 15]) {
+      const firstChunkLen = markerStart + splitAt;
+      assertEquivalentAcrossChunks(full, [
+        firstChunkLen,
+        full.length - firstChunkLen,
+      ]);
+    }
+  });
+
+  it("stays equivalent when the close marker is split across chunks", () => {
+    const full = "Before.\n```coach_blocks\n{}\n```\nAfter.";
+    const closeStart = full.lastIndexOf("```");
+    for (const splitAt of [1, 2]) {
+      const firstChunkLen = closeStart + splitAt;
+      assertEquivalentAcrossChunks(full, [
+        firstChunkLen,
+        full.length - firstChunkLen,
+      ]);
+    }
+  });
+
+  it("stays equivalent when the newline right after the close fence arrives in the next chunk", () => {
+    const full = "Before.\n```coach_blocks\n{}\n```\nAfter.";
+    const closeEnd =
+      full.indexOf("```", full.indexOf("```coach_blocks\n") + 16) + 3;
+    assertEquivalentAcrossChunks(full, [closeEnd, full.length - closeEnd]);
+  });
+
+  it("does not confuse a near-miss triple-backtick fence (e.g. ```json) with the coach_blocks marker", () => {
+    const state = createFenceScanState();
+    const input = 'Here\'s some code:\n```json\n{"a":1}\n```\nDone.';
+    expect(stripCoachBlocksFenceIncremental(input, state)).toBe(
+      stripCoachBlocksFence(input),
+    );
+  });
+
+  it("stays equivalent when the fence never closes (stream still mid-block)", () => {
+    const full = 'Before.\n```coach_blocks\n{"partial":"jso';
+    assertEquivalentAcrossChunks(
+      full,
+      Array.from({ length: full.length }, () => 1),
+    );
+  });
+
+  it("stays equivalent across every possible 1-character chunk boundary for a fenced response", () => {
+    const full =
+      'Here is your meal plan for today.\n```coach_blocks\n{"type":"action_card","title":"Log Lunch"}\n```\nLet me know if you want changes.';
+    assertEquivalentAcrossChunks(
+      full,
+      Array.from({ length: full.length }, () => 1),
+    );
+  });
+
+  it("stays equivalent across every possible 1-character chunk boundary for a response with no fence", () => {
+    const full =
+      "Just a plain streamed answer with no coach_blocks fence at all.";
+    assertEquivalentAcrossChunks(
+      full,
+      Array.from({ length: full.length }, () => 1),
+    );
   });
 });
 

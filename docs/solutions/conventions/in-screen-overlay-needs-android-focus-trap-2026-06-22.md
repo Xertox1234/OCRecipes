@@ -7,7 +7,7 @@ tags: [accessibility, talkback, voiceover, react-native, modal, overlay, focus-t
 symptoms: [Focus trap works in VoiceOver but a TalkBack user can swipe past the overlay to the controls behind it on Android, An overlay carries accessibilityViewIsModal but nothing hides the behind-content on Android]
 applies_to: [client/**/*.tsx]
 created: '2026-06-22'
-last_updated: '2026-09-14'
+last_updated: '2026-09-23'
 ---
 
 # In-screen modal overlays need an Android focus trap, not just iOS accessibilityViewIsModal
@@ -91,6 +91,16 @@ const overlayA11y = getScanOverlayA11y(!!confirmCard, productChipVisible);
 - **React Native `<Modal>`** already traps focus on both platforms (it's a new window on Android). You do **not** need this. The only a11y hide you may need inside a `<Modal>` is on a focusable backdrop `Pressable` — see `DeleteAccountModal.tsx` (it pairs `accessibilityElementsHidden` + `importantForAccessibility="no-hide-descendants"` on the backdrop).
 - If the overlay surface is genuinely *visually hidden but mounted* (collapsed/expanded swap), you want rule 17's pattern, not this one.
 - **Portal-rendered overlay** (e.g. `@gorhom/bottom-sheet`'s `BottomSheetModal`): the "don't complete the pair" rule above does **not** apply. A portal-rendered overlay is not a literal view-tree sibling of the host's content, so the sibling-scoped `accessibilityViewIsModal` can't be relied on to hide it (verified concretely for this library: `BottomSheetModal` has no rest-spread, so a prop like `accessibilityViewIsModal` passed to it is silently dropped — check the installed version's source, don't assume). With the iOS side unavailable, `accessibilityElementsHidden` on the host's **own** behind-content becomes the only iOS trap there is — apply it together with `importantForAccessibility="no-hide-descendants"`, both on the behind-content, never on the overlay itself. See `client/components/ConfirmationModal.tsx`'s `behindContentA11yProps` (derived from an `isOpen` state flipped `true` in the imperative `confirm()` call and `false` only once the sheet's own `onDismiss` fires, post close-animation) and the 8 screens that spread it.
+
+  **Update (2026-09-20/23) — this "iOS side unavailable" premise does NOT hold for every `BottomSheetModal`.** It was true for `ConfirmationModal.tsx` at the time this bullet was written, but a later fix (`docs/solutions/conventions/a11y-viewismodal-on-sheet-content-not-bottomsheetmodal-2026-07-02.md`) found that `accessibilityViewIsModal` set on the sheet's own **content root View** (not on `BottomSheetModal`, and not on the host's behind-content) DOES work on iOS — see that doc for the finding. 7 of the 8 `BottomSheetModal` sites, fixed by
+  `todos/archive/P2-2026-09-20-android-talkback-background-trap-missing-on-bottomsheetmodal-sites.md`
+  use that content-root mechanism for iOS, so their Android fix applies **only**
+  `importantForAccessibility="no-hide-descendants"` to the host's own
+  behind-content — deliberately **without** `accessibilityElementsHidden`, which
+  would be redundant with (and duplicate host-owned state alongside) the
+  content-root trap. Use `behindContentA11yProps`'s both-props shape only when
+  the sheet's content genuinely has no working iOS trap of its own, as
+  `ConfirmationModal.tsx` did at the time.
 
 ## Related Files
 

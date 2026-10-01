@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { Platform } from "react-native";
 import * as Haptics from "expo-haptics";
 import { useAccessibility } from "./useAccessibility";
@@ -75,14 +75,23 @@ export function useHaptics() {
     }
   }, [reducedMotion]);
 
-  return {
-    /** Trigger impact feedback */
-    impact,
-    /** Trigger notification feedback (success, warning, error) */
-    notification,
-    /** Trigger selection feedback */
-    selection,
-    /** Whether haptics are disabled due to reduced motion preference */
-    disabled: reducedMotion,
-  };
+  // impact/notification/selection are each already useCallback-stable on
+  // [reducedMotion] — only this wrapping object literal was fresh every
+  // render. Memoizing it means every consumer that lists the whole `haptics`
+  // object in a useCallback dep array (rather than destructuring individual
+  // methods, the primary fix per docs/rules/hooks.md) still gets a stable
+  // reference, instead of a new one on every parent re-render.
+  return useMemo(
+    () => ({
+      /** Trigger impact feedback */
+      impact,
+      /** Trigger notification feedback (success, warning, error) */
+      notification,
+      /** Trigger selection feedback */
+      selection,
+      /** Whether haptics are disabled due to reduced motion preference */
+      disabled: reducedMotion,
+    }),
+    [impact, notification, selection, reducedMotion],
+  );
 }

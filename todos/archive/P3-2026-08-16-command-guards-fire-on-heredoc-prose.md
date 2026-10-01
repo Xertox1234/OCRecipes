@@ -1,0 +1,140 @@
+---
+title: "Writing ABOUT a guarded command in a commit message or PR body trips the command guards"
+status: backlog
+priority: low
+created: 2026-08-16
+updated: 2026-09-22
+assignee:
+labels: [deferred, harness, agents]
+github_issue:
+---
+
+# A heredoc body reads as command position, so documenting a deny trips the deny
+
+## Summary
+
+`.claude/hooks/lib/cmd-detect.sh`'s command-position anchors are per-line (`^`-anchored),
+and `cmd_bare` blanks quoted spans but not heredoc bodies. So a commit message or PR body
+written with `<<'EOF'` that _mentions_ a guarded command on its own line is seen as an
+invocation. Documenting a guard's behaviour trips that guard.
+
+## Background
+
+Hit twice in one session, 2026-08-16, both while doing the correct thing:
+
+1. **`pr-preflight-guard.sh`** blocked a `git commit` whose heredoc message body contained
+   a line-initial `gh pr create` (reported by the PR #844 executor, which reworded the
+   message rather than bypassing).
+2. **`guard-outward-cli.sh`** blocked a `gh pr create` whose `--body` heredoc contained a
+   table of `npm run … update:preview` bypass spellings — i.e. the PR _explaining_ the fix
+   was blocked by the fix. Worked around with `--body-file`, which keeps the guard fully
+   armed because the command string itself is then clean.
+
+Both are **fail-safe** (a deny, never a silent allow) and both have clean workarounds, so
+this is friction, not a hole. But it has a real cost: the natural way to document a guard
+is to quote the commands it blocks, and an agent that hits the deny may reword the
+documentation into vagueness — degrading exactly the record that makes the guard
+understandable later.
+
+Note this is NOT the quoted-mention case, which is already handled correctly:
+`git commit -m "add eas update guard"` allows, because `cmd_bare` blanks the quoted span.
+It is specifically heredoc bodies.
+
+## Acceptance Criteria
+
+- [ ] Decide and record the intended behaviour: either (a) heredoc bodies are blanked like
+      quoted spans, or (b) they deliberately are not, and `--body-file` / `--message-file`
+      is the documented pattern
+- [ ] If (a): `cmd_bare` blanks `<<'EOF' … EOF` / `<<EOF … EOF` bodies, with a two-sided
+      test — a heredoc _mentioning_ a guarded command allows, while a heredoc that actually
+      _pipes_ one into a shell still denies
+- [ ] If (b): the residuals block in `guard-outward-cli.sh` and the equivalent in
+      `pr-preflight-guard.sh` name this case explicitly, so the next agent recognises it
+      instead of rewording its commit message
+- [ ] Either way, `docs/AI_WORKFLOW.md` or the relevant skill notes `--body-file` as the
+      way to write about a guarded command
+- [ ] Closes with zero follow-ups
+
+## Implementation Notes
+
+- Option (b) is probably right and is much cheaper. Blanking heredoc bodies weakens a
+  genuine attack surface — `bash <<'EOF' … eas update … EOF` really is an invocation — and
+  distinguishing "heredoc fed to an interpreter" from "heredoc fed to `gh --body`" means
+  parsing which command consumes the redirect. That is a parser, not a regex.
+- If (b), the cheapest real improvement is the deny message: add one line pointing at
+  `--body-file`/`--message-file` when the matched text sits inside a heredoc. Even a crude
+  "the match was inside a `<<` body — if you are documenting rather than invoking, use
+  `--body-file`" would have saved both incidents.
+- Do not weaken the anchors to fix this. Both guards are deny gates; a fail-safe false
+  positive with a documented workaround is the correct trade.
+
+## Scope Contract
+
+- **Mechanisms to use:** the existing `cmd_bare` / anchor machinery and the existing deny
+  messages — no new parser unless option (a) is chosen and justified
+- **Files in scope:** `.claude/hooks/lib/cmd-detect.sh`, `.claude/hooks/guard-outward-cli.sh`,
+  `.claude/hooks/pr-preflight-guard.sh`, their co-located `test-*.sh`, and one doc note
+- No new mechanisms, files, or abstractions beyond those listed.
+
+## Dependencies
+
+- None. PR #844 and the follow-up #846 are the source incidents.
+
+## Risks
+
+- Option (a) risks a real bypass: anything that blanks a heredoc body also blanks a heredoc
+  actually piped into `bash`/`sh`/`eval`. If (a) is chosen, that pairing must be pinned as
+  a deny test first.
+- Low urgency — both failures are denies with working workarounds.
+
+## Updates
+
+### 2026-08-16
+
+- Filed during the review round for PRs #833–#845, after the same class fired twice: once
+  on `pr-preflight-guard.sh` (reported by #844's executor) and once on
+  `guard-outward-cli.sh` while opening #846.
+
+### 2026-09-06 — REACHABILITY WIDENED, and now measured. No decision taken here.
+
+The bare-paren fix in `lib/cmd-detect.sh` (todo
+`P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners`) made
+`cmd_extract_substitutions` stop truncating, so **more heredoc prose now reaches the
+scanners than before** — and this class fires proportionally more often. The decision this
+todo is blocked on is unchanged and was deliberately NOT made while measuring it.
+
+Measured by execution, 1,658 unique real Bash commands harvested from this project's own
+transcripts (the decision-relevant subset: those containing a `(` or one of the `$` digraphs),
+run through the pre-change and post-change hooks and diffed per command:
+
+- **1 decision flip in 1,658 (0.06%)**, ALLOW → DENY, and it is this class.
+- The command was a `git commit -m "$(cat <<'EOF' … EOF)"`. Extraction went from 52 bytes to
+  2,099 — the whole message body instead of a fragment truncated at the `)` of `fix(e2e):`.
+- The trigger is one prose phrase: **`` `patch-package` `` followed by the word `run`**. A
+  markdown code span renders as a backtick-substitution token, and `run` is in
+  `_OUT_GATED_VERB`, so the narrow-deny rule's "expansion in command position followed by a
+  gated verb" alternative matches. Attribution read from the deny REASON, not inferred.
+
+So the practical shape of this todo has changed: writing a commit message in markdown, with
+code spans, is now the common way to hit it — not just naming a guarded command on its own
+line. The workaround is unchanged (`--body-file`, or `ALLOW_OUTWARD_CLI=1` for one command),
+and the direction is still safe (an over-DENY, never an allow).
+
+### 2026-09-22 — user answered "yes"; clarification needed, gate left in place
+
+- Put to the user in session as "(a) blank heredoc bodies like quoted spans — parser work, and it
+  weakens a real attack surface since a heredoc piped into `bash`/`eval` IS an invocation — or
+  (b) document `--body-file` as the pattern, one comment plus one deny-message line?" The answer
+  was "yes", which does not pick between (a) and (b). If "yes" meant "go ahead", the option that
+  breaks nothing and costs an hour is **(b)**: the deny message names `--body-file` and the
+  Write-tool-plus-`-F` pattern, and the guard is otherwise untouched. (a) needs its own ruling
+  because it changes what the guard can see. Proceeding with (b) on the user's confirmation.
+
+### 2026-09-22 — user ruling: (b)
+
+- Confirmed **(b)**: acceptance criterion 1 resolves to "document, do not blank". The deny
+  message for a text-only hit names `--body-file` (and, for commit messages, the Write tool plus
+  `git commit -F`) as the pattern, with one comment at the deny site saying why heredoc bodies
+  stay visible to the guard (a heredoc piped into `bash`/`eval` IS an invocation). No parser
+  change. `human_led` and `blocked_reason` removed on that in-session ruling; nothing else in the
+  frontmatter changed.

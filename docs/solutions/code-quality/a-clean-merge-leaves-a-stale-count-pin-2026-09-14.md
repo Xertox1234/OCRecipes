@@ -7,6 +7,7 @@ module: shared
 applies_to: [".claude/hooks/**/*.sh", "scripts/**/*.sh", ".github/workflows/*.yml"]
 symptoms: ["two PRs are each green and `git merge-tree` reports no conflict, but the second one turns main red on the next push run", "a hook suite fails with 'assertion total is N, expected M' immediately after an unrelated PR merged", "`gh pr view` shows mergeStateStatus CLEAN for a PR whose suite will fail once its sibling lands", "a pinned EXPECTED_TOTAL / EXPECTED_ROWS is correct on each branch alone and wrong on their union"]
 created: 2026-09-14
+last_updated: 2026-09-19
 severity: high
 ---
 
@@ -108,6 +109,19 @@ CI does run these suites — via `scripts/run-hook-tests.sh`, which GLOBS
 literal-filename grep of `.github/workflows/` misses that; only the corpus script is named
 outright. So "is this suite even in CI?" is not answerable by grepping the workflow.
 
+### Third instance, 2026-09-18 — the same number for DIFFERENT reasons (#993 ⊕ #995)
+
+The two cases above are "correct for only one side". This one was correct for **neither**.
+`EXPECTED_EMIT_SITES` (the corpus's count of deny call sites in `guard-outward-cli.sh`) read 42 at
+the fork. #993 took it to 43 for an interpreter/expansion check; #995, stacked on #993's pre-review
+tip, took it to 43 for an implicit-POST check. Different deny sites, same number. Git saw
+`base=42 ours=43 theirs=43`, called it agreement, and merged the line with **no conflict marker at
+all** — only the comment block above it conflicted, and only because one side had annotated its bump
+and the other had not. The merged guard emits **44**. Three other pins in the same merge DID
+conflict and were resolved by hand; they were the safe ones. Measured across all four trees with
+the corpus's own derivation: base 42 / #993 43 / #995 43 / merged 44 — reproducing each side's own
+pin is what makes 44 evidence rather than arithmetic.
+
 ## Solution
 
 **Within a lane, only the FIRST merge may ride its existing green.** Every successor must
@@ -172,6 +186,12 @@ the new value is right.
   must be re-derived from a clean run, never hand-incremented.
 - A green PR plus a clean `merge-tree` is not evidence the union is green. Under
   `strict:false` nothing else will check before it lands.
+- **After merging a pinned file, re-derive every pin against BOTH parents, not just the ones
+  that conflicted.** A pin both sides moved to the _same_ value is the one git cannot see; diff
+  the merged value against each parent's and against a fresh run, and expect the true value to be
+  `base + (ours − base) + (theirs − base)` when the two sides' additions are disjoint. Name the
+  referent of every bump in its comment — the silent case above was silent partly because one side
+  wrote "42 -> 43 (round 8)" and the other wrote nothing.
 
 ## Related Files
 
@@ -181,6 +201,7 @@ the new value is right.
 
 ## See Also
 
+- [An allowlist inside a deny predicate fails open](../logic-errors/an-allowlist-inside-a-deny-predicate-fails-open-2026-09-19.md) — the other lesson from the #995 merge: the predicate that shared this file's review rounds
 - [A pin records its VALUE but must also record whether it is CORRECT](a-pin-records-its-value-but-must-also-record-whether-it-is-correct-2026-09-13.md) — the same pin, one layer in: this doc is about two branches, that one about one branch's verdict
 - [A measurement belongs to the tree it was taken on](a-measurement-belongs-to-the-tree-it-was-taken-on-2026-09-13.md) — why re-deriving the pin on the MERGED tree is the only valid reading
 - [A control that runs BEFORE the work cannot validate the work](a-control-that-runs-before-the-work-cannot-validate-it-2026-09-07.md) — why the per-branch controls above are load-bearing

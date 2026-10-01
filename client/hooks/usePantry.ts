@@ -43,6 +43,8 @@ export function useCreatePantryItem() {
         queryKey: ["/api/pantry/expiring"],
       });
     },
+    // Its one call site (PantryScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }
 
@@ -90,5 +92,7 @@ export function useDeletePantryItem() {
         queryKey: ["/api/pantry/expiring"],
       });
     },
+    // Its one call site (PantryScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }

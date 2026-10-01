@@ -152,7 +152,8 @@ export async function rebuildSearchIndex(): Promise<{ total: number }> {
 export async function searchRecipes(
   params: RecipeSearchParams,
   userId: string,
-): Promise<RecipeSearchResponse> {
+  opts: { includeScores?: boolean } = {},
+): Promise<RecipeSearchResponse & { scores?: Record<string, number> }> {
   if (!isIndexInitialized()) {
     await initSearchIndex();
   }
@@ -406,5 +407,14 @@ export async function searchRecipes(
       filters,
       sort,
     },
+    // Opt-in (recipe finder close-match threshold, R3): MiniSearch scores are
+    // otherwise discarded after sorting.
+    ...(opts.includeScores
+      ? {
+          scores: Object.fromEntries(
+            page.map((r) => [r.id, relevanceScores.get(r.id) ?? 0]),
+          ),
+        }
+      : {}),
   };
 }

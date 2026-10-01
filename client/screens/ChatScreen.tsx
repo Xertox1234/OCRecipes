@@ -39,6 +39,7 @@ import {
   useSendMessage,
   useCreateConversation,
 } from "@/hooks/useChat";
+import { usePendingAssistantBridge } from "@/hooks/usePendingAssistantBridge";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import {
   Spacing,
@@ -268,76 +269,62 @@ export default function ChatScreen() {
     route.params && "conversationId" in route.params
       ? route.params.conversationId
       : null;
-  const initialMessage =
+  // Only a string is ever auto-sent: linking.ts strips this param from links,
+  // but a repeated query key would arrive as an array.
+  const routeInitialMessage: unknown =
     route.params && "initialMessage" in route.params
       ? route.params.initialMessage
       : undefined;
+  const initialMessage =
+    typeof routeInitialMessage === "string" ? routeInitialMessage : undefined;
 
-  const { data: messages, isLoading } = useChatMessages(conversationId);
+  // `conversationId` is omitted (null) for the in-app "start a new chat"
+  // flow; a deep link always provides a value, and a malformed one coerces to
+  // 0 (or a negative number — linking's parseIntOrZero does not clamp
+  // negatives). Malformed is specifically "present but not a positive
+  // integer" — NOT any falsy id — otherwise a bad link silently starts a new
+  // chat with it. Precedent: NotebookEntryScreen.tsx (docs/rules/react-native.md).
+  const isMalformedId = conversationId !== null && !(conversationId > 0);
+  const validConversationId = isMalformedId ? null : conversationId;
+
+  const { data: messages, isLoading } = useChatMessages(validConversationId);
   const {
     sendMessage,
     streamingContent,
     isStreaming,
     streamError,
     requestError,
-  } = useSendMessage(conversationId);
-  const createConversation = useCreateConversation();
+  } = useSendMessage(validConversationId);
+  // handleSend's own catch below already toasts on a creation failure —
+  // opt out so the global net doesn't double it.
+  const createConversation = useCreateConversation({ silentError: true });
   const { acknowledge } = useAcknowledgeReminders();
   // Reminders clear when the user actually sends a message, not on mere
   // screen focus — fire at most once per mount.
   const hasAcknowledgedRef = useRef(false);
 
   const [inputText, setInputText] = useState("");
-  const [pendingAssistantContent, setPendingAssistantContent] = useState<
-    string | null
-  >(null);
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
-  const prevStreamingRef = useRef(false);
-  const lastStreamingContentRef = useRef("");
-  const pendingBaselineAssistantCountRef = useRef(0);
   const shownStreamErrorRef = useRef(false);
   const shownRequestErrorRef = useRef(false);
 
-  useEffect(() => {
-    if (isStreaming && streamingContent) {
-      lastStreamingContentRef.current = streamingContent;
-    }
-    if (prevStreamingRef.current && !isStreaming) {
-      AccessibilityInfo.announceForAccessibility("Coach response received");
-      // Bridge the stream-end → message-refetch gap, but only for responses
-      // that will actually persist. On stream/request error the server keeps
-      // no message, so a pending bubble would never clear.
-      if (lastStreamingContentRef.current && !streamError && !requestError) {
-        pendingBaselineAssistantCountRef.current = (messages || []).filter(
-          (m) => m.role === "assistant",
-        ).length;
-        setPendingAssistantContent(lastStreamingContentRef.current);
-      }
-      lastStreamingContentRef.current = "";
-    }
-    prevStreamingRef.current = isStreaming;
-  }, [isStreaming, streamingContent, streamError, requestError, messages]);
-
-  useEffect(() => {
-    if (!pendingAssistantContent) return;
-    // Clear once a new assistant message has been persisted (count grew past
-    // the pre-completion baseline). Count, not content equality — a safety
-    // override or server-side trim can make the persisted text diverge from
-    // the streamed text, which would otherwise strand the bubble forever.
-    const assistantCount = (messages || []).filter(
+  const pendingAssistantContent = usePendingAssistantBridge<string>({
+    isStreaming,
+    streamingValue: streamingContent,
+    hasStreamingValue: !!streamingContent,
+    hasError: !!streamError || !!requestError,
+    assistantMessageCount: (messages || []).filter(
       (m) => m.role === "assistant",
-    ).length;
-    if (assistantCount > pendingBaselineAssistantCountRef.current) {
-      setPendingAssistantContent(null);
-    }
-  }, [messages, pendingAssistantContent]);
+    ).length,
+    announce: { message: "Coach response received", always: true },
+  });
 
   useEffect(() => {
     if (streamError && !shownStreamErrorRef.current) {
       shownStreamErrorRef.current = true;
       haptics.notification(Haptics.NotificationFeedbackType.Error);
-      toast.error("Response was interrupted. Partial response may be visible.");
+      toast.error("Response interrupted. Try sending again.");
     }
     if (!streamError) {
       shownStreamErrorRef.current = false;
@@ -400,19 +387,24 @@ export default function ChatScreen() {
   const handleSend = useCallback(
     async (text?: string) => {
       const content = (text || inputText).trim();
-      if (!content || isStreaming) return;
+      // A malformed id (see isMalformedId above) must never create or send —
+      // this guard also covers the cross-tab initialMessage auto-send effect
+      // below, which fires independently of what the not-found render shows.
+      if (!content || isStreaming || isMalformedId) return;
 
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setInputText("");
 
       try {
-        if (!conversationId) {
+        if (conversationId === null) {
           // Auto-create a conversation if none exists
           const conversation = await createConversation.mutateAsync(undefined);
           navigation.setParams({ conversationId: conversation.id });
-          // Need to wait and send after navigation updates
-          // For now, just send immediately after creating
-          await sendMessage(content);
+          // navigation.setParams doesn't apply until the next render, so
+          // sendMessage (closed over the pre-update conversationId) would
+          // silently drop this message — pass the fresh id explicitly via the
+          // override param instead of relying on the closure.
+          await sendMessage(content, undefined, conversation.id);
         } else {
           await sendMessage(content);
         }
@@ -441,6 +433,7 @@ export default function ChatScreen() {
     [
       inputText,
       isStreaming,
+      isMalformedId,
       haptics,
       conversationId,
       createConversation,
@@ -464,6 +457,40 @@ export default function ChatScreen() {
       <ChatBubble role={item.role} content={item.content} isStreaming={false} />
     );
   }, []);
+
+  if (isMalformedId) {
+    return (
+      <View
+        style={[
+          styles.notFound,
+          { backgroundColor: theme.backgroundRoot, paddingTop: headerInset },
+        ]}
+      >
+        <ThemedText
+          style={[styles.notFoundText, { color: theme.textSecondary }]}
+        >
+          {"This chat couldn't be found."}
+        </ThemedText>
+        {/* A chat/:id deep link builds a Coach stack holding only Chat, so the
+            header has no back button. Don't branch on canGoBack(): it bubbles
+            to the tab navigator (backBehavior "firstRoute") and goBack() would
+            land on Home. popTo pops back to an existing ChatList, or REPLACES
+            this screen with one (v7 navigate() would push, leaving the dead end
+            behind the list). */}
+        <Pressable
+          onPress={() => navigation.popTo("ChatList")}
+          hitSlop={12}
+          style={styles.notFoundBackButton}
+          accessibilityRole="button"
+          accessibilityLabel="Back to chats"
+        >
+          <ThemedText style={[styles.notFoundBack, { color: theme.link }]}>
+            Back to chats
+          </ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
 
   const streamingFooter = isStreaming ? (
     <CoachStreamingFooter content={streamingContent} />
@@ -604,6 +631,24 @@ const styles = StyleSheet.create({
   emptyContent: {
     flexGrow: 1,
     justifyContent: "center",
+  },
+  notFound: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.xl,
+  },
+  notFoundText: {
+    fontSize: 15,
+    textAlign: "center",
+  },
+  notFoundBackButton: {
+    minHeight: 44,
+    justifyContent: "center",
+    marginTop: Spacing.md,
+  },
+  notFoundBack: {
+    fontSize: 15,
   },
   typingRow: {
     flexDirection: "row",

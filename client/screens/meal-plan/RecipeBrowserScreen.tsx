@@ -17,21 +17,21 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import Animated from "react-native-reanimated";
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-} from "@gorhom/bottom-sheet";
-import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
+import { useSheetHostProps } from "@/hooks/useSheetHostProps";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Chip } from "@/components/Chip";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
 import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
-import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
+import {
+  SkeletonBox,
+  SkeletonLoadingRegion,
+  SkeletonProvider,
+} from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
@@ -43,6 +43,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
 import {
   useFavouriteRecipeIds,
@@ -64,6 +65,10 @@ import {
   shouldGatePremiumSource,
   isQuotaExceededError,
   resolveOnlineCtaState,
+  computeActiveFilterCount,
+  DEFAULT_FILTERS,
+  detailParamsForSearchResult,
+  type RecipeFilters,
 } from "@/screens/meal-plan/recipe-browser-utils";
 import type {
   SearchableRecipe,
@@ -73,6 +78,7 @@ import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
 import { planBannerA11yLabel } from "@/components/coach/coach-chat-utils";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 const RECIPE_HEADER_EXPANDED = 160;
 const RECIPE_HEADER_COLLAPSED = 0;
@@ -282,12 +288,17 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
       {item.source !== "spoonacular" && (
         <Pressable
           onPress={handleFavourite}
-          hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={
             isFavourited ? "Remove from favourites" : "Add to favourites"
           }
-          style={{ marginRight: Spacing.sm }}
+          style={{
+            width: 44,
+            height: 44,
+            justifyContent: "center",
+            alignItems: "center",
+            marginRight: Spacing.sm,
+          }}
         >
           <Ionicons
             name={isFavourited ? "heart" : "heart-outline"}
@@ -338,30 +349,36 @@ export default function RecipeBrowserScreen() {
   const { mealType, plannedDate, searchQuery, planDays } = route.params || {};
 
   const [searchText, setSearchText] = useState(searchQuery || "");
-  const [activeCuisine, setActiveCuisine] = useState<string | undefined>();
-  const [activeDiet, setActiveDiet] = useState<string | undefined>();
-  const [curatedOnly, setCuratedOnly] = useState(false);
-  const [safeForMe, setSafeForMe] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
-  const [advancedFilters, setAdvancedFilters] = useState<SearchFilters>({
-    sort: "relevance",
-    maxPrepTime: undefined,
-    maxCalories: undefined,
-    minProtein: undefined,
-    source: "all",
-  });
-  const [activeDifficulty, setActiveDifficulty] = useState<
-    string | undefined
-  >();
-  const [pantryMode, setPantryMode] = useState(false);
+  const [filters, setFilters] = useState<RecipeFilters>(DEFAULT_FILTERS);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const filterSheetRef = React.useRef<BottomSheetModal>(null);
+
+  // Host prop bundle (backdrop, themed background, handle indicator, and the
+  // accessible={false} iOS a11y fix — see useSheetHostProps' own JSDoc). No
+  // backdropOpacity/backdropPressBehavior override, matching this sheet's
+  // pre-existing behavior of using gorhom's own backdrop defaults.
+  const sheetHostProps = useSheetHostProps({
+    backgroundColor: theme.backgroundRoot,
+    handleIndicatorColor: withOpacity(theme.text, 0.3),
+  });
 
   // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
   const {
     onSheetChange: handleFilterSheetChange,
     onSheetAnimate: handleFilterSheetAnimate,
   } = useSheetBackHandler(filterSheetRef);
+
+  // Android TalkBack background focus trap (iOS already trapped via
+  // accessibilityViewIsModal on the screen's own root View below). Opened
+  // synchronously alongside .present() where the filter icon is pressed;
+  // released only once BottomSheetModal's own onDismiss confirms the sheet
+  // has fully closed (post close-animation, the same asymmetric bias
+  // useSheetBackHandler uses) — never released early.
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const handleFilterSheetClosed = useCallback(() => {
+    setIsFilterSheetOpen(false);
+  }, []);
 
   const { isPremium } = usePremiumContext();
 
@@ -396,33 +413,28 @@ export default function RecipeBrowserScreen() {
   const searchParams: RecipeSearchParams = useMemo(
     () => ({
       q: debouncedQuery || undefined,
-      cuisine: activeCuisine,
-      diet: activeDiet,
-      curatedOnly: curatedOnly || undefined,
-      safeForMe: safeForMe || undefined,
+      cuisine: filters.activeCuisine,
+      diet: filters.activeDiet,
+      curatedOnly: filters.curatedOnly || undefined,
+      safeForMe: filters.safeForMe || undefined,
       mealType: mealType || undefined,
-      difficulty: activeDifficulty,
-      pantry: pantryMode || undefined,
-      sort: advancedFilters.sort,
-      source: advancedFilters.source,
-      maxPrepTime: advancedFilters.maxPrepTime,
-      maxCalories: advancedFilters.maxCalories,
-      minProtein: advancedFilters.minProtein,
+      difficulty: filters.activeDifficulty,
+      pantry: filters.pantryMode || undefined,
+      sort: filters.advanced.sort,
+      source: filters.advanced.source,
+      maxPrepTime: filters.advanced.maxPrepTime,
+      maxCalories: filters.advanced.maxCalories,
+      minProtein: filters.advanced.minProtein,
     }),
-    [
-      debouncedQuery,
-      activeCuisine,
-      activeDiet,
-      curatedOnly,
-      safeForMe,
-      mealType,
-      activeDifficulty,
-      pantryMode,
-      advancedFilters,
-    ],
+    [debouncedQuery, mealType, filters],
   );
 
-  const addItemMutation = useAddMealPlanItem();
+  // Destructure rather than depend on the mutation object itself —
+  // useMutation returns a new object identity every render, which would
+  // make handleRecipePress (and renderItem, which depends on it) re-create
+  // on every RecipeBrowserScreen render, including one caused by a single
+  // search keystroke (see CoachChat.tsx for the same pattern).
+  const { mutateAsync: addMealPlanItem } = useAddMealPlanItem();
   const { data: favouriteData } = useFavouriteRecipeIds();
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
 
@@ -436,29 +448,22 @@ export default function RecipeBrowserScreen() {
 
   const isBrowseOnly = !plannedDate || !mealType;
 
-  const activeFilterCount = useMemo(() => {
-    let count = 0;
-    if (advancedFilters.sort !== "relevance") count++;
-    if (advancedFilters.maxPrepTime !== undefined) count++;
-    if (advancedFilters.maxCalories !== undefined) count++;
-    if (advancedFilters.minProtein !== undefined) count++;
-    if (advancedFilters.source !== "all") count++;
-    if (curatedOnly) count++;
-    if (safeForMe) count++;
-    return count;
-  }, [advancedFilters, curatedOnly, safeForMe]);
+  const activeFilterCount = useMemo(
+    () => computeActiveFilterCount(filters),
+    [filters],
+  );
 
   // Show the curated Discover feed when the user has not typed a query or
   // activated any chip/filter. While the feed is shown the full-list query is
   // disabled (null) to protect the 20/min /api/recipes/search budget.
   const showDiscovery = isBlankBrowseState({
     debouncedQuery,
-    activeCuisine,
-    activeDiet,
-    activeDifficulty,
-    curatedOnly,
-    safeForMe,
-    pantryMode,
+    activeCuisine: filters.activeCuisine,
+    activeDiet: filters.activeDiet,
+    activeDifficulty: filters.activeDifficulty,
+    curatedOnly: filters.curatedOnly,
+    safeForMe: filters.safeForMe,
+    pantryMode: filters.pantryMode,
     activeFilterCount,
   });
 
@@ -525,6 +530,14 @@ export default function RecipeBrowserScreen() {
     announcedOnlineErrorRef.current = true;
   }, [ctaState]);
 
+  // Tell screen-reader users the local search results are loading. Delayed
+  // 500ms to match the modal-safe pattern (docs/solutions/conventions/on-open-
+  // announce-must-delay-past-modal-present-focus-shift-2026-06-25.md) — this
+  // screen is pushed plainly under "RecipeBrowser" but presented as a modal
+  // under "RecipeBrowserModal", so the delay is required on one route and
+  // harmless on the other.
+  useDelayedLoadingAnnouncement(isLoading);
+
   const onPressOnlineCta = useCallback(() => {
     haptics.selection();
     // Reuse the shared premium gate (spec §5.4) — free users get the upgrade hook.
@@ -538,28 +551,23 @@ export default function RecipeBrowserScreen() {
   const handleRecipePress = useCallback(
     async (item: SearchableRecipe) => {
       haptics.selection();
-      const numericId = parseInt(item.id.split(":")[1], 10);
+      const detailParams = detailParamsForSearchResult(item);
+      const numericId = detailParams.recipeId;
 
       if (item.source === "community" || item.source === "spoonacular") {
-        navigation.navigate("FeaturedRecipeDetail", {
-          recipeId: numericId,
-          recipeType: "community",
-        });
+        navigation.navigate("FeaturedRecipeDetail", detailParams);
         return;
       }
 
       // Personal recipe
       if (isBrowseOnly) {
-        navigation.navigate("FeaturedRecipeDetail", {
-          recipeId: numericId,
-          recipeType: "mealPlan",
-        });
+        navigation.navigate("FeaturedRecipeDetail", detailParams);
         return;
       }
 
       setAddingId(item.id);
       try {
-        await addItemMutation.mutateAsync({
+        await addMealPlanItem({
           recipeId: numericId,
           plannedDate,
           mealType,
@@ -577,7 +585,7 @@ export default function RecipeBrowserScreen() {
       toast,
       navigation,
       isBrowseOnly,
-      addItemMutation,
+      addMealPlanItem,
       plannedDate,
       mealType,
     ],
@@ -600,7 +608,7 @@ export default function RecipeBrowserScreen() {
         setShowUpgradeModal(true);
         return;
       }
-      setAdvancedFilters(next);
+      setFilters((prev) => ({ ...prev, advanced: next }));
     },
     [isPremium, haptics],
   );
@@ -608,7 +616,10 @@ export default function RecipeBrowserScreen() {
   const handleToggleCuisine = useCallback(
     (cuisine: string) => {
       haptics.selection();
-      setActiveCuisine((prev) => (prev === cuisine ? undefined : cuisine));
+      setFilters((prev) => ({
+        ...prev,
+        activeCuisine: prev.activeCuisine === cuisine ? undefined : cuisine,
+      }));
     },
     [haptics],
   );
@@ -616,7 +627,10 @@ export default function RecipeBrowserScreen() {
   const handleToggleDiet = useCallback(
     (diet: string) => {
       haptics.selection();
-      setActiveDiet((prev) => (prev === diet ? undefined : diet));
+      setFilters((prev) => ({
+        ...prev,
+        activeDiet: prev.activeDiet === diet ? undefined : diet,
+      }));
     },
     [haptics],
   );
@@ -625,19 +639,7 @@ export default function RecipeBrowserScreen() {
     haptics.selection();
     setSearchText("");
     setDebouncedQuery("");
-    setActiveCuisine(undefined);
-    setActiveDiet(undefined);
-    setActiveDifficulty(undefined);
-    setCuratedOnly(false);
-    setSafeForMe(false);
-    setPantryMode(false);
-    setAdvancedFilters({
-      sort: "relevance",
-      maxPrepTime: undefined,
-      maxCalories: undefined,
-      minProtein: undefined,
-      source: "all",
-    });
+    setFilters(DEFAULT_FILTERS);
   }, [haptics]);
 
   const renderItem = useCallback(
@@ -670,8 +672,18 @@ export default function RecipeBrowserScreen() {
 
   return (
     <View
+      testID="recipe-browser-root"
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       accessibilityViewIsModal
+      // Android TalkBack background focus trap while the filter sheet is
+      // open — see docs/solutions/conventions/
+      // in-screen-overlay-needs-android-focus-trap-2026-06-22.md. Unrelated
+      // to the pre-existing accessibilityViewIsModal above (an iOS-only prop
+      // for a different mechanism); no accessibilityElementsHidden here
+      // since that mechanism already traps VoiceOver on this screen.
+      importantForAccessibility={
+        isFilterSheetOpen ? "no-hide-descendants" : "auto"
+      }
     >
       <View
         style={[
@@ -681,6 +693,7 @@ export default function RecipeBrowserScreen() {
       >
         {/* Search bar always visible */}
         <View
+          testID="recipe-search-bar"
           style={[
             styles.searchBar,
             {
@@ -708,7 +721,7 @@ export default function RecipeBrowserScreen() {
                 setSearchText("");
                 setDebouncedQuery("");
               }}
-              hitSlop={8}
+              style={styles.clearSearchButton}
               accessibilityRole="button"
               accessibilityLabel="Clear search"
             >
@@ -758,20 +771,26 @@ export default function RecipeBrowserScreen() {
           <Chip
             label="Curated"
             variant="filter"
-            selected={curatedOnly}
+            selected={filters.curatedOnly}
             onPress={() => {
               haptics.selection();
-              setCuratedOnly((prev) => !prev);
+              setFilters((prev) => ({
+                ...prev,
+                curatedOnly: !prev.curatedOnly,
+              }));
             }}
             accessibilityLabel="Filter curated recipes only"
           />
           <Chip
             label="Safe for me"
             variant="filter"
-            selected={safeForMe}
+            selected={filters.safeForMe}
             onPress={() => {
               haptics.selection();
-              setSafeForMe((prev) => !prev);
+              setFilters((prev) => ({
+                ...prev,
+                safeForMe: !prev.safeForMe,
+              }));
             }}
             accessibilityLabel="Filter recipes safe for my allergies"
           />
@@ -786,7 +805,7 @@ export default function RecipeBrowserScreen() {
               key={c}
               label={c}
               variant="filter"
-              selected={activeCuisine === c}
+              selected={filters.activeCuisine === c}
               onPress={() => handleToggleCuisine(c)}
               accessibilityLabel={`Filter by ${c}`}
             />
@@ -802,7 +821,7 @@ export default function RecipeBrowserScreen() {
               key={d}
               label={d}
               variant="filter"
-              selected={activeDiet === d}
+              selected={filters.activeDiet === d}
               onPress={() => handleToggleDiet(d)}
               accessibilityLabel={`Filter by ${d}`}
             />
@@ -818,12 +837,16 @@ export default function RecipeBrowserScreen() {
               key={`diff-${d}`}
               label={d}
               variant="filter"
-              selected={activeDifficulty === d.toLowerCase()}
+              selected={filters.activeDifficulty === d.toLowerCase()}
               onPress={() => {
                 haptics.selection();
-                setActiveDifficulty((prev) =>
-                  prev === d.toLowerCase() ? undefined : d.toLowerCase(),
-                );
+                setFilters((prev) => ({
+                  ...prev,
+                  activeDifficulty:
+                    prev.activeDifficulty === d.toLowerCase()
+                      ? undefined
+                      : d.toLowerCase(),
+                }));
               }}
               accessibilityLabel={`Filter by ${d} difficulty`}
             />
@@ -837,28 +860,38 @@ export default function RecipeBrowserScreen() {
           <Chip
             label="From my pantry"
             variant="filter"
-            selected={pantryMode}
+            selected={filters.pantryMode}
             onPress={() => {
               haptics.selection();
-              setPantryMode((prev) => !prev);
+              setFilters((prev) => ({
+                ...prev,
+                pantryMode: !prev.pantryMode,
+              }));
             }}
             accessibilityLabel="Filter recipes by pantry items"
           />
           <Chip
             label="Quick meals"
             variant="filter"
-            selected={advancedFilters.maxPrepTime === 30}
+            selected={filters.advanced.maxPrepTime === 30}
             onPress={() => {
               haptics.selection();
-              setAdvancedFilters((prev) => ({
+              setFilters((prev) => ({
                 ...prev,
-                maxPrepTime: prev.maxPrepTime === 30 ? undefined : 30,
+                advanced: {
+                  ...prev.advanced,
+                  maxPrepTime:
+                    prev.advanced.maxPrepTime === 30 ? undefined : 30,
+                },
               }));
             }}
             accessibilityLabel="Filter quick meals under 30 minutes"
           />
           <Pressable
-            onPress={() => filterSheetRef.current?.present()}
+            onPress={() => {
+              filterSheetRef.current?.present();
+              setIsFilterSheetOpen(true);
+            }}
             style={[
               styles.filterIconButton,
               { borderColor: withOpacity(theme.text, 0.15) },
@@ -928,40 +961,44 @@ export default function RecipeBrowserScreen() {
           onOpenRecipe={handleRecipePress}
           onSeePreset={(key) => {
             haptics.selection();
-            if (key === "pantry") setPantryMode(true);
-            else if (key === "featured") setCuratedOnly(true);
+            if (key === "pantry")
+              setFilters((prev) => ({ ...prev, pantryMode: true }));
+            else if (key === "featured")
+              setFilters((prev) => ({ ...prev, curatedOnly: true }));
             else
-              setAdvancedFilters((f) => ({
-                ...f,
-                maxPrepTime: 20,
-                sort: "quickest",
+              setFilters((prev) => ({
+                ...prev,
+                advanced: {
+                  ...prev.advanced,
+                  maxPrepTime: 20,
+                  sort: "quickest",
+                },
               }));
           }}
           contentBottomInset={insets.bottom}
         />
       ) : isLoading ? (
         <SkeletonProvider>
-          <View
+          <SkeletonLoadingRegion
             style={styles.loadingContainer}
-            accessibilityLabel="Loading..."
-            accessibilityElementsHidden
+            testID="recipe-browser-loading-skeleton"
           >
             <SkeletonBox width="100%" height={64} borderRadius={12} />
             <View style={{ height: Spacing.sm }} />
             <SkeletonBox width="100%" height={64} borderRadius={12} />
             <View style={{ height: Spacing.sm }} />
             <SkeletonBox width="100%" height={64} borderRadius={12} />
-          </View>
+          </SkeletonLoadingRegion>
         </SkeletonProvider>
       ) : localResults.length === 0 && onlineResults.length === 0 ? (
         <View style={styles.emptyContainer}>
           {debouncedQuery ||
-          activeCuisine ||
-          activeDiet ||
-          activeDifficulty ||
-          curatedOnly ||
-          safeForMe ||
-          pantryMode ||
+          filters.activeCuisine ||
+          filters.activeDiet ||
+          filters.activeDifficulty ||
+          filters.curatedOnly ||
+          filters.safeForMe ||
+          filters.pantryMode ||
           activeFilterCount > 0 ? (
             <EmptyState
               variant="noResults"
@@ -989,6 +1026,7 @@ export default function RecipeBrowserScreen() {
         </View>
       ) : (
         <AnimatedSectionList
+          {...FLATLIST_DEFAULTS}
           sections={[
             { key: "local", title: "From OCRecipes", data: localResults },
             ...(onlineResults.length > 0
@@ -1046,40 +1084,20 @@ export default function RecipeBrowserScreen() {
       <BottomSheetModal
         ref={filterSheetRef}
         snapPoints={["70%"]}
-        backdropComponent={(props: BottomSheetBackdropProps) => (
-          <BottomSheetBackdrop
-            {...props}
-            disappearsOnIndex={-1}
-            appearsOnIndex={0}
-          />
-        )}
-        backgroundStyle={{ backgroundColor: theme.backgroundRoot }}
-        handleIndicatorStyle={{ backgroundColor: withOpacity(theme.text, 0.3) }}
         onChange={handleFilterSheetChange}
         onAnimate={handleFilterSheetAnimate}
-        // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
-        // "Bottom Sheet" on the DraggableView that WRAPS these children. On
-        // new-arch Fabric that makes the wrapper an accessibility LEAF
-        // (isAccessibilityElement=YES), so VoiceOver — and Maestro's iOS driver —
-        // see one opaque "Bottom Sheet" element and this sheet's content
-        // becomes unreachable. accessible={false} keeps the children
-        // individually exposed. MUST be `false`, not `null`: gorhom does
-        // `_providedAccessible ?? undefined`, so null re-defaults to true.
-        // See docs/solutions/logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
-        accessible={false}
+        onDismiss={handleFilterSheetClosed}
+        {...sheetHostProps}
       >
         <BottomSheetView accessibilityViewIsModal>
           <SearchFilterSheet
-            filters={advancedFilters}
+            filters={filters.advanced}
             onFiltersChange={handleFiltersChange}
             onReset={() => {
-              setAdvancedFilters({
-                sort: "relevance",
-                maxPrepTime: undefined,
-                maxCalories: undefined,
-                minProtein: undefined,
-                source: "all",
-              });
+              setFilters((prev) => ({
+                ...prev,
+                advanced: DEFAULT_FILTERS.advanced,
+              }));
             }}
             activeFilterCount={activeFilterCount}
           />
@@ -1110,9 +1128,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
+    // Room for the Clear search button's 44pt box (below) without the bar
+    // changing height when that button appears on the first keystroke.
+    minHeight: 44,
     borderRadius: BorderRadius.card,
     gap: Spacing.sm,
     marginBottom: Spacing.md,
+  },
+  // 44pt touch target for a 16pt icon. A hitSlop can't do it here: RN clips
+  // hitSlop to the parent's bounds, and the bar is only ~36pt of content +
+  // padding. The negative margins let the box fill the bar's padding instead
+  // of growing it (bar stays at its 44pt minHeight).
+  clearSearchButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: -Spacing.sm,
+    marginRight: -Spacing.md,
   },
   searchInput: {
     flex: 1,

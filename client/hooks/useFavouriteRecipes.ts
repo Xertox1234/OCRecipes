@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Share, Platform } from "react-native";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, type MutationErrorMeta } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import type { ResolvedFavouriteRecipe } from "@shared/schema";
 
@@ -27,13 +27,15 @@ export function useFavouriteRecipes(limit?: number) {
   });
 }
 
+async function fetchFavouriteIds(): Promise<{ ids: FavouriteId[] }> {
+  const res = await apiRequest("GET", "/api/favourite-recipes/ids");
+  return res.json();
+}
+
 export function useFavouriteRecipeIds() {
   return useQuery<{ ids: FavouriteId[] }>({
     queryKey: FAVOURITES_IDS_KEY,
-    queryFn: async () => {
-      const res = await apiRequest("GET", "/api/favourite-recipes/ids");
-      return res.json();
-    },
+    queryFn: fetchFavouriteIds,
     staleTime: 30_000,
     refetchOnMount: "always",
   });
@@ -53,7 +55,17 @@ export function useIsRecipeFavourited(
   );
 }
 
-export function useToggleFavouriteRecipe() {
+/**
+ * `meta` is threaded (not hardcoded): this hook has 5 call sites and only
+ * CookbookPickerModal already shows its own generic-failure Alert (deferring
+ * to this hook's own LIMIT_REACHED alert for that one code — see its
+ * onError comment) — the other 4 (FavouriteRecipesScreen, RecipeActionBar,
+ * RecipeBrowserScreen, RecipeCarousel) have no generic-failure handling at
+ * all, so leaving `meta` unset for them lets the global net cover the gap.
+ * A LIMIT_REACHED failure is unaffected either way: it's a 4xx, which
+ * `shouldSurfaceMutationError` already suppresses regardless of `meta`.
+ */
+export function useToggleFavouriteRecipe(meta?: MutationErrorMeta) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -110,7 +122,37 @@ export function useToggleFavouriteRecipe() {
       void queryClient.invalidateQueries({ queryKey: FAVOURITES_IDS_KEY });
       void queryClient.invalidateQueries({ queryKey: FAVOURITES_KEY });
     },
+    meta,
   });
+}
+
+/**
+ * Make a recipe a favourite without ever un-favouriting it. The server only
+ * offers a toggle, so this reads the favourites list (cached, else fetched)
+ * and toggles only when the recipe isn't on it. For a heart that saves a
+ * recipe and favourites it in one tap (catalog preview, chat recipe cards).
+ */
+export function useAddFavouriteRecipe() {
+  const queryClient = useQueryClient();
+  const { mutateAsync: toggleFavourite } = useToggleFavouriteRecipe();
+
+  return useCallback(
+    async (recipe: {
+      recipeId: number;
+      recipeType: "mealPlan" | "community";
+    }) => {
+      const { ids } = await queryClient.ensureQueryData({
+        queryKey: FAVOURITES_IDS_KEY,
+        queryFn: fetchFavouriteIds,
+      });
+      const already = ids.some(
+        (f) =>
+          f.recipeId === recipe.recipeId && f.recipeType === recipe.recipeType,
+      );
+      if (!already) await toggleFavourite(recipe);
+    },
+    [queryClient, toggleFavourite],
+  );
 }
 
 export function useShareRecipe() {

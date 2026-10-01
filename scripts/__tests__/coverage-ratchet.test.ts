@@ -538,7 +538,7 @@ describe("coverage-ratchet", () => {
       expect(parsed.buffer).toBe(4);
       expect(parsed.applyMode).toBe(false);
       expect(parsed.coverageFile.endsWith("coverage-final.json")).toBe(true);
-      expect(parsed.configFile.endsWith("vitest.config.ts")).toBe(true);
+      expect(parsed.configFile.endsWith("vitest.config.mts")).toBe(true);
     });
 
     it("accepts --apply, --buffer, --coverage-file, and --config-file", () => {

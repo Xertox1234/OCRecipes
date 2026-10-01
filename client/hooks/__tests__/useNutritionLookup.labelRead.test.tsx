@@ -574,6 +574,29 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
       });
     });
   });
+
+  // Characterization test added for P1-2026-09-23 (atomic lookup state
+  // refactor): `labelReadNotice` is computed AFTER the token read, so a
+  // token-read failure must leave it null even when `ocrText` is a
+  // non-ready label that would otherwise have set it.
+  it("keeps labelReadNotice null when the token read throws before it can be computed", async () => {
+    failKeychainRead = true;
+    mockServerFetch.mockResolvedValue({
+      ok: true,
+      json: async () => offFallbackRecord,
+    });
+
+    // A non-ready label (no parseable nutrition values) — under normal
+    // conditions this WOULD set labelReadNotice, but the token read throws
+    // first, so the notice is never computed at all.
+    const { result } = render("blurry nothing");
+
+    // isLoading/labelReadNotice give no signal here (the keychain rejection
+    // skips both), so wait on the OFF fallback's own side effect instead.
+    await waitFor(() => expect(result.current.flags).toHaveLength(1));
+
+    expect(result.current.labelReadNotice).toBeNull();
+  });
 });
 
 describe("useNutritionLookup — post-log navigation", () => {

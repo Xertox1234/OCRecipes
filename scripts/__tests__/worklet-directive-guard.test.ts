@@ -78,6 +78,34 @@ describe("scanFileForWorkletOffenders (unit, synthetic fixtures)", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("flags a cross-file imported function called in scheduleOnUI without a worklet directive (react-native-worklets replacement for runOnUI, regression case)", () => {
+    const memfs = memoryFs({
+      "/virtual/util.ts": `export function badFn(x: number) { return x + 1; }`,
+    });
+    const source = `
+      import { scheduleOnUI } from "react-native-worklets";
+      import { badFn } from "./util";
+      function onPress() {
+        scheduleOnUI(() => {
+          "worklet";
+          badFn(1);
+        });
+      }
+    `;
+    const offenders = scanFileForWorkletOffenders(
+      "/virtual/caller.ts",
+      source,
+      memfs,
+      NO_ALIASES,
+    );
+    expect(offenders).toHaveLength(1);
+    expect(offenders[0]).toMatchObject({
+      calleeName: "badFn",
+      workletKind: "scheduleOnUI",
+      resolvedFile: "/virtual/util",
+    });
+  });
+
   it("does not flag Reanimated worklet built-ins or Math.* calls inside a worklet", () => {
     const memfs = memoryFs({});
     const source = `

@@ -1,22 +1,56 @@
-import React, { useMemo } from "react";
-import { Pressable, StyleSheet, View, ScrollView } from "react-native";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  AccessibilityInfo,
+  Pressable,
+  StyleSheet,
+  View,
+  ScrollView,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
 
-import { ThemedText } from "@/components/ThemedText";
+import { EmptyState } from "@/components/EmptyState";
 import { RecipeDetailContent } from "@/components/RecipeDetailContent";
 import { RecipeDetailSkeleton } from "@/components/recipe-detail";
+import { InlineError } from "@/components/InlineError";
+import { ThemedText } from "@/components/ThemedText";
+import { UpgradeModal } from "@/components/UpgradeModal";
 import type { IngredientItem } from "@/components/recipe-detail";
 import {
   formatTimeDisplay,
   parseNutritionData,
 } from "@/components/recipe-detail/recipe-detail-utils";
-import { apiRequest, resolveImageUrl } from "@/lib/query-client";
+import {
+  apiRequest,
+  resolveImageUrl,
+  shouldSurfaceQueryError,
+} from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, withOpacity } from "@/constants/theme";
+import { useToast } from "@/context/ToastContext";
+import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
+import { SAVED_ITEMS_FULL_MESSAGE } from "@/lib/saved-items-full";
+import {
+  useAddFavouriteRecipe,
+  useIsRecipeFavourited,
+  useToggleFavouriteRecipe,
+} from "@/hooks/useFavouriteRecipes";
+import {
+  catalogSaveErrorMessage,
+  normalizeCatalogDetail,
+  resolveFeaturedRecipeType,
+  type CatalogDetailResponse,
+} from "@/screens/featured-recipe-detail-utils";
+import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { FeaturedRecipeDetailScreenNavigationProp } from "@/types/navigation";
@@ -26,9 +60,11 @@ import type {
   RecipeIngredient,
 } from "@shared/schema";
 import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 const HANDLE_WIDTH = 36;
 const HANDLE_HEIGHT = 5;
+const SAVE_BAR_HEIGHT = 72;
 
 type FeaturedRecipeDetailRouteProp = RouteProp<
   RootStackParamList,
@@ -65,16 +101,18 @@ interface NormalizedRecipe {
 export default function FeaturedRecipeDetailScreen() {
   const route = useRoute<FeaturedRecipeDetailRouteProp>();
   const { recipeId, recipeType, type } = route.params;
-  const resolvedRecipeType = recipeType ?? type ?? "community";
+  const resolvedRecipeType = resolveFeaturedRecipeType(recipeType, type);
   const navigation = useNavigation<FeaturedRecipeDetailScreenNavigationProp>();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const toast = useToast();
 
   // --- Community recipe fetch ---
   const {
     data: communityRecipe,
     isLoading: communityLoading,
     error: communityError,
+    refetch: refetchCommunityRecipe,
   } = useQuery<CommunityRecipe>({
     queryKey: [`/api/recipes/${recipeId}`],
     enabled: resolvedRecipeType === "community" && recipeId > 0,
@@ -85,6 +123,7 @@ export default function FeaturedRecipeDetailScreen() {
     data: mealPlanRecipe,
     isLoading: mealPlanLoading,
     error: mealPlanError,
+    refetch: refetchMealPlanRecipe,
   } = useQuery<MealPlanRecipeWithIngredients>({
     queryKey: ["/api/meal-plan/recipes", recipeId],
     queryFn: async () => {
@@ -92,10 +131,57 @@ export default function FeaturedRecipeDetailScreen() {
       return res.json();
     },
     enabled: resolvedRecipeType === "mealPlan" && recipeId > 0,
+    // This screen renders its own error UI for this query, and the key has no
+    // other live reader (useMealPlanRecipeDetail has no production call site),
+    // so opt out of the global error toast — no double error surface. NOT set
+    // on the community query above: RecipeChatScreen shares that key with no
+    // error UI of its own and relies on the global toast.
+    meta: { silentError: true },
   });
+
+  // --- Catalog (Spoonacular) preview — nothing is saved until Save ---
+  const {
+    data: catalogDetail,
+    isLoading: catalogLoading,
+    error: catalogError,
+    refetch: refetchCatalogDetail,
+  } = useQuery<CatalogDetailResponse>({
+    queryKey: ["/api/meal-plan/catalog", recipeId],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/meal-plan/catalog/${recipeId}`);
+      return res.json();
+    },
+    enabled: resolvedRecipeType === "catalog" && recipeId > 0,
+    // This screen renders its own 403/404/402/generic states for this query.
+    meta: { silentError: true },
+  });
+  const { mutateAsync: saveCatalogRecipe, isPending: isSavingCatalog } =
+    useSaveCatalogRecipe({ addToSavedItems: true });
+  const [savedRecipeId, setSavedRecipeId] = useState<number | null>(null);
+  // The preview's heart favourites the SAVED copy (a mealPlan recipe); an
+  // unsaved preview has no row to favourite yet (ruling 2026-09-29).
+  const isFavourited = useIsRecipeFavourited(savedRecipeId ?? 0, "mealPlan");
+  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
+  const addFavourite = useAddFavouriteRecipe();
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   // --- Normalize into RecipeDetailContent props ---
   const normalized = useMemo((): NormalizedRecipe | null => {
+    if (resolvedRecipeType === "catalog") {
+      if (!catalogDetail) return null;
+      return {
+        ...normalizeCatalogDetail(catalogDetail),
+        allergens: null,
+        isCanonical: false,
+        canonicalImages: [],
+        instructionDetails: [],
+        toolsRequired: [],
+        chefTips: [],
+        cuisineOrigin: null,
+      };
+    }
+
     if (resolvedRecipeType === "mealPlan" && mealPlanRecipe) {
       return {
         title: mealPlanRecipe.title,
@@ -150,17 +236,176 @@ export default function FeaturedRecipeDetailScreen() {
     }
 
     return null;
-  }, [resolvedRecipeType, mealPlanRecipe, communityRecipe]);
+  }, [resolvedRecipeType, catalogDetail, mealPlanRecipe, communityRecipe]);
 
   const isLoading =
-    resolvedRecipeType === "community" ? communityLoading : mealPlanLoading;
+    resolvedRecipeType === "catalog"
+      ? catalogLoading
+      : resolvedRecipeType === "community"
+        ? communityLoading
+        : mealPlanLoading;
   const error =
-    resolvedRecipeType === "community" ? communityError : mealPlanError;
+    resolvedRecipeType === "catalog"
+      ? catalogError
+      : resolvedRecipeType === "community"
+        ? communityError
+        : mealPlanError;
+  const refetch =
+    resolvedRecipeType === "catalog"
+      ? refetchCatalogDetail
+      : resolvedRecipeType === "community"
+        ? refetchCommunityRecipe
+        : refetchMealPlanRecipe;
+  // A genuine 404 means the recipe doesn't exist — retrying won't help, and
+  // labeling it a generic failure would assert a false cause (see
+  // docs/solutions/logic-errors/network-failure-rendered-as-wrong-credentials-2026-08-08.md).
+  // Any other error (network, 5xx, etc.) gets a generic message + retry.
+  // Branching on the machine-readable `code` (not the message string or the
+  // numeric status) matches the established convention — see
+  // client/screens/meal-plan/GroceryListScreen.tsx and
+  // client/screens/LabelAnalysisScreen.tsx.
+  const isNotFoundError =
+    error instanceof ApiError && error.code === ErrorCode.NOT_FOUND;
+  // Like showsGenericError, a failed REFETCH over cached data keeps showing
+  // the recipe (and its Save bar) rather than swapping in a wall under it.
+  const isPremiumDenied =
+    error instanceof ApiError &&
+    error.code === ErrorCode.PREMIUM_REQUIRED &&
+    !normalized;
+  const isCatalogUnavailable =
+    error instanceof ApiError &&
+    error.code === ErrorCode.CATALOG_QUOTA_EXCEEDED &&
+    !normalized;
+  const showsGenericError =
+    Boolean(error) &&
+    !isNotFoundError &&
+    !isPremiumDenied &&
+    !isCatalogUnavailable &&
+    !normalized;
+
+  // Announce whichever EmptyState branch (below) is about to render — it has
+  // no live region either. Skip the mount render so a screen that opens
+  // already-errored/not-found doesn't announce on top of focus.
+  //
+  // The community query keeps the global error toast (see its useQuery), and
+  // Toast.tsx announces its message in the same commit — iOS drops one of
+  // two same-commit announcements. So when the toast will surface this error
+  // (per the net's own predicate), stay quiet and let it speak; a 404 is
+  // suppressed by the net, so "Recipe not found." is still announced here.
+  const toastAnnouncesError =
+    resolvedRecipeType === "community" &&
+    Boolean(communityError) &&
+    shouldSurfaceQueryError(communityError, undefined);
+  const announcement = isLoading
+    ? null
+    : isPremiumDenied
+      ? "Online recipes are a Premium feature."
+      : isCatalogUnavailable
+        ? "Spoonacular isn't available right now."
+        : showsGenericError
+          ? toastAnnouncesError
+            ? null
+            : "Couldn't load this recipe. Try again."
+          : !normalized
+            ? "Recipe not found."
+            : null;
+  const errorAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (!errorAnnouncedRef.current) {
+      errorAnnouncedRef.current = true;
+      return;
+    }
+    if (announcement) {
+      AccessibilityInfo.announceForAccessibility(announcement);
+    }
+  }, [announcement]);
 
   const imageUri = useMemo(
     () => resolveImageUrl(normalized?.imageUrl),
     [normalized?.imageUrl],
   );
+
+  // The save mutation is silentError (no global toast), so a failure that
+  // lands after the user closed the preview would otherwise vanish.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const catalogTitle = normalized?.title;
+  /** Saves the preview; resolves the saved copy's id, or null on failure. */
+  const saveCatalog = useCallback(async (): Promise<number | null> => {
+    setSaveError(null);
+    try {
+      const saved = await saveCatalogRecipe(recipeId);
+      setSavedRecipeId(saved.id);
+      if (saved.savedItemStatus === "limit_reached") {
+        // The toast announces itself; one message, not two.
+        toast.info(SAVED_ITEMS_FULL_MESSAGE);
+      } else {
+        AccessibilityInfo.announceForAccessibility("Recipe saved");
+      }
+      return saved.id;
+    } catch (err) {
+      if (err instanceof ApiError && err.code === ErrorCode.PREMIUM_REQUIRED) {
+        if (!isMountedRef.current) {
+          toast.error(
+            `Couldn't save ${catalogTitle ?? "the recipe"}. Online recipes need Premium.`,
+          );
+          return null;
+        }
+        setShowUpgrade(true);
+        return null;
+      }
+      const { message, retryable } = catalogSaveErrorMessage(err);
+      if (!isMountedRef.current) {
+        toast.error(
+          `Couldn't save ${catalogTitle ?? "the recipe"}. ${
+            retryable ? "Try again." : message
+          }`,
+        );
+        return null;
+      }
+      setSaveError(message);
+      return null;
+    }
+  }, [saveCatalogRecipe, recipeId, toast, catalogTitle]);
+
+  const handleSaveCatalog = useCallback(async () => {
+    await saveCatalog();
+  }, [saveCatalog]);
+
+  const handleFavouriteCatalog = useCallback(async () => {
+    if (savedRecipeId !== null) {
+      toggleFavourite({ recipeId: savedRecipeId, recipeType: "mealPlan" });
+      return;
+    }
+    const id = await saveCatalog();
+    if (id === null) return;
+    try {
+      await addFavourite({ recipeId: id, recipeType: "mealPlan" });
+    } catch {
+      // useToggleFavouriteRecipe surfaces its own failures (limit alert,
+      // global net); the recipe itself is saved either way.
+    }
+  }, [savedRecipeId, toggleFavourite, saveCatalog, addFavourite]);
+
+  // After a purchase from the Premium wall, the 403'd preview must refetch —
+  // the subscription refresh does not touch this query, and 4xx never retries.
+  const handleUpgraded = useCallback(() => {
+    if (resolvedRecipeType === "catalog") void refetchCatalogDetail();
+  }, [resolvedRecipeType, refetchCatalogDetail]);
+
+  const handleOpenSaved = useCallback(() => {
+    if (savedRecipeId === null) return;
+    navigation.replace("FeaturedRecipeDetail", {
+      recipeId: savedRecipeId,
+      recipeType: "mealPlan",
+    });
+  }, [navigation, savedRecipeId]);
 
   return (
     <View
@@ -205,19 +450,56 @@ export default function FeaturedRecipeDetailScreen() {
         <ScrollView contentInsetAdjustmentBehavior="never">
           <RecipeDetailSkeleton />
         </ScrollView>
-      ) : error || !normalized ? (
+      ) : isPremiumDenied ? (
         <View style={styles.center}>
-          <Feather name="alert-circle" size={32} color={theme.textSecondary} />
-          <ThemedText
-            style={{ marginTop: Spacing.sm, color: theme.textSecondary }}
-          >
-            Recipe not found
-          </ThemedText>
+          <EmptyState
+            variant="temporary"
+            icon="lock"
+            title="Online recipes are a Premium feature"
+            description="Upgrade to preview and save Spoonacular recipes."
+            actionLabel="See Premium"
+            onAction={() => setShowUpgrade(true)}
+          />
+        </View>
+      ) : isCatalogUnavailable ? (
+        <View style={styles.center}>
+          <EmptyState
+            variant="temporary"
+            icon="cloud-off"
+            title="Spoonacular isn't available right now"
+            description="Try again later, or pick a community recipe."
+          />
+        </View>
+      ) : showsGenericError ? (
+        <View style={styles.center}>
+          <EmptyState
+            variant="temporary"
+            icon="alert-circle"
+            title="Couldn't load this recipe"
+            description="Something went wrong. Check your connection and try again."
+            actionLabel="Try Again"
+            onAction={() => {
+              void refetch();
+            }}
+          />
+        </View>
+      ) : !normalized ? (
+        <View style={styles.center}>
+          <EmptyState
+            variant="temporary"
+            icon="alert-circle"
+            title="Recipe not found"
+            description="This recipe may have been removed or is no longer available."
+          />
         </View>
       ) : (
         <RecipeDetailContent
-          recipeId={recipeId}
-          recipeType={resolvedRecipeType}
+          // A catalog preview is not a row in our DB yet: recipeId 0 hides
+          // the favourite/cookbook/remix affordances that key on it.
+          recipeId={resolvedRecipeType === "catalog" ? 0 : recipeId}
+          recipeType={
+            resolvedRecipeType === "catalog" ? "mealPlan" : resolvedRecipeType
+          }
           title={normalized.title}
           description={normalized.description}
           imageUrl={imageUri}
@@ -229,7 +511,11 @@ export default function FeaturedRecipeDetailScreen() {
           allergens={normalized.allergens}
           ingredients={normalized.ingredients}
           instructions={normalized.instructions}
-          contentPaddingBottom={insets.bottom + Spacing.xl}
+          contentPaddingBottom={
+            insets.bottom +
+            Spacing.xl +
+            (resolvedRecipeType === "catalog" ? SAVE_BAR_HEIGHT : 0)
+          }
           remixedFromId={normalized.remixedFromId}
           remixedFromTitle={normalized.remixedFromTitle}
           isCanonical={normalized.isCanonical}
@@ -240,6 +526,81 @@ export default function FeaturedRecipeDetailScreen() {
           cuisineOrigin={normalized.cuisineOrigin}
         />
       )}
+      {resolvedRecipeType === "catalog" && normalized ? (
+        <View
+          style={[
+            styles.saveBar,
+            {
+              paddingBottom: insets.bottom + Spacing.sm,
+              backgroundColor: theme.backgroundRoot,
+            },
+          ]}
+        >
+          <InlineError message={saveError} />
+          <View style={styles.saveRow}>
+            <Pressable
+              onPress={() => void handleFavouriteCatalog()}
+              disabled={isSavingCatalog}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isFavourited
+                  ? `Remove ${normalized.title} from favourites`
+                  : `Add ${normalized.title} to favourites`
+              }
+              accessibilityState={{
+                selected: isFavourited,
+                disabled: isSavingCatalog,
+              }}
+              style={[
+                styles.heartButton,
+                { backgroundColor: withOpacity(theme.text, 0.06) },
+              ]}
+            >
+              <Ionicons
+                name={isFavourited ? "heart" : "heart-outline"}
+                size={22}
+                color={isFavourited ? theme.error : theme.text}
+                accessible={false}
+              />
+            </Pressable>
+            <Pressable
+              onPress={
+                savedRecipeId !== null ? handleOpenSaved : handleSaveCatalog
+              }
+              disabled={isSavingCatalog}
+              accessibilityRole="button"
+              accessibilityLabel={
+                savedRecipeId !== null
+                  ? `Saved. Open ${normalized.title} in your recipes`
+                  : `Save ${normalized.title} to your recipes`
+              }
+              accessibilityState={{
+                disabled: isSavingCatalog,
+                busy: isSavingCatalog,
+              }}
+              style={[
+                styles.saveButton,
+                { backgroundColor: theme.accentSolid },
+              ]}
+            >
+              <ThemedText
+                style={{ color: theme.buttonText, fontWeight: "600" }}
+              >
+                {isSavingCatalog
+                  ? "Saving…"
+                  : savedRecipeId !== null
+                    ? "Saved · View recipe"
+                    : "Save to My Recipes"}
+              </ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+      <UpgradeModal
+        visible={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+        onUpgrade={handleUpgraded}
+      />
     </View>
   );
 }
@@ -274,5 +635,32 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  saveBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  saveRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  heartButton: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  saveButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: BorderRadius.sm,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

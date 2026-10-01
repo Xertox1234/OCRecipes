@@ -119,6 +119,58 @@ describe("Cultural Food Map", () => {
     });
   });
 
+  // An alias matches only as a whole word. As a substring, "wat" (Ethiopian
+  // stew) matched 176 of 5,690 Canadian Nutrient File foods via "water", and
+  // the rewritten query was cached for every user (measured 2026-09-27).
+  describe("whole-word alias matching", () => {
+    it.each([
+      ["watermelon", "wat"],
+      ["watermelon, raw", "wat"],
+      ["coconut water", "wat"],
+      ["papaya, raw", "pap"],
+      ["spices, paprika", "pap"],
+      ["rotisserie chicken", "roti"],
+      ["baking powder, phosphate", "pho"],
+      ["mayonnaise, cholesterol-free", "chole"],
+      ["classic macaroni", "lassi"],
+    ])("does not rewrite %s (contains %s)", (query) => {
+      expect(lookupCulturalFood(query)).toBeUndefined();
+      expect(getStandardizedFoodName(query)).toBe(query);
+    });
+
+    it.each([
+      ["doro wat", "spicy stew"],
+      ["2 naan", "flatbread"],
+      ["chicken bulgogi bowl", "Korean BBQ beef"],
+      ["Chicken ROTI wrap", "flatbread"],
+      ["mango lassi", "yogurt drink"],
+      ["pho", "Vietnamese soup with rice noodles"],
+    ])("still rewrites %s (positive control)", (query, standardName) => {
+      expect(lookupCulturalFood(query)?.standardName).toBe(standardName);
+    });
+
+    // Plural forms matched by accident under the old substring test; whole-word
+    // matching must keep them (singular controls above).
+    it.each([
+      ["2 rotis", "flatbread"],
+      ["naans", "flatbread"],
+      ["samosas", "deep fried pastry with filling"],
+      ["2 tacos", "corn tortilla with filling"],
+      ["burritos", "stuffed tortilla"],
+      ["3 tamales", "corn masa dumpling"],
+    ])("still rewrites the plural %s", (query, standardName) => {
+      expect(lookupCulturalFood(query)?.standardName).toBe(standardName);
+    });
+
+    it("treats alias punctuation literally, not as a regex", () => {
+      for (const entry of CULTURAL_FOOD_MAP) {
+        for (const alias of entry.aliases) {
+          expect(lookupCulturalFood(`a ${alias} please`)).toBeDefined();
+        }
+      }
+    });
+  });
+
   describe("getStandardizedFoodName", () => {
     it("returns the standard name for a known cultural food", () => {
       expect(getStandardizedFoodName("ramen")).toBe("soy sauce noodle soup");

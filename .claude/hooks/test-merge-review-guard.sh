@@ -67,6 +67,18 @@ printf '%s\n' "$*" >> "$GH_LOG"
 # would look identical to one that anchors itself.
 if [ -n "${FAKE_PIN_PWD:-}" ] && [ "$PWD" != "$FAKE_PIN_PWD" ]; then exit 1; fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "view" ]; then
+  # todo-automerge-guard.sh asks this endpoint for the PR's DECLARED changed-file count, so it
+  # can refuse a truncated file list. Answer that query with a count that agrees with FAKE_FILES
+  # by default, keeping the completeness check a no-op here so only the merge-gate behaviour
+  # under test can move.
+  for a in "$@"; do
+    case "$a" in
+      changedFiles)
+        printf '%s\n' "${FAKE_CHANGED_FILES:-$(printf '%s\n' "${FAKE_FILES}" | grep -c . || true)}"
+        exit 0
+        ;;
+    esac
+  done
   printf '%s\n' "${FAKE_VIEW_JSON}"; exit 0
 fi
 if [ "${1:-}" = "pr" ] && [ "${2:-}" = "diff" ]; then
@@ -74,6 +86,34 @@ if [ "${1:-}" = "pr" ] && [ "${2:-}" = "diff" ]; then
   printf '%s\n' "${FAKE_FILES}"; exit 0
 fi
 if [ "${1:-}" = "api" ]; then
+  # todo-automerge-guard.sh reads its file list from pulls/{n}/files so that a rename SOURCE
+  # path (previous_filename) is gated and not just the destination. That is also a `gh api`
+  # call, so this stub must dispatch on the ENDPOINT: without the case below, the file-list
+  # read is answered with todo frontmatter, and under this harness's DEFAULT FAKE_API_FAIL=1
+  # -- which models only the TODO GATE being unable to read the archived todo -- it fails
+  # closed and every safe-paths ALLOW row turns into an exit-2 ERROR.
+  # Scan ALL arguments rather than matching $2: the contents call puts -H at $2 and reaches the
+  # frontmatter branch only by falling off the end of a positional case, so a later reordering
+  # of the file-list call would misroute it into the frontmatter branch silently -- which under
+  # this harness's default FAKE_API_FAIL=1 is exactly the seven-row exit-2 storm this stub was
+  # widened to repair.
+  _ep=""
+  for a in "$@"; do
+    case "$a" in */pulls/*/files) _ep="files" ;; esac
+  done
+  if [ "$_ep" = "files" ]; then
+    [ -n "${FAKE_DIFF_FAIL:-}" ] && exit 1
+    # Destination CLASS, matching what the guard's own jq emits, so its completeness check
+    # counts FILES rather than lines. The `pr diff` branch above is deliberately NOT classed:
+    # merge-review-guard.sh consumes that one directly for its own changed-file digest.
+    # The guard's STRUCTURAL ROW COUNT check also expects one "N <count>" row ahead of the F
+    # rows (the page's own element count) -- without it every row through this stub would read
+    # total_N=0 against a non-zero raw F count and fail-closed there instead of exercising the
+    # merge-gate behaviour these tests are actually about.
+    _n="$(printf '%s\n' "${FAKE_FILES}" | sed -e '/^$/d' | grep -c . || true)"
+    printf 'N %s\n' "$_n"
+    printf '%s\n' "${FAKE_FILES}" | sed -e '/^$/d' -e 's/^/F /'; exit 0
+  fi
   [ -n "${FAKE_API_FAIL:-}" ] && exit 1
   printf '%s\n' "${FAKE_TODO_MD:-}"; exit 0
 fi
@@ -182,6 +222,250 @@ assert_allowed "gh pr create is not gated" "$out"
 out=$(bash_payload 'gh api --method PUT repos/Xertox1234/OCRecipes/pulls/938/merge -f merge_method=squash' | run)
 denied "$out" && ok "gh api --method PUT against pulls/N/merge denies" \
               || bad "gh api --method PUT against pulls/N/merge denies" "$out"
+
+# 3a-ter. The GLUED short form, which the first revision of the arm missed entirely, and the
+# glued method flag, which it wrongly denied. Both are the same separator mistake in opposite
+# directions: on the positive pattern it under-denied, on the negative one it over-denied.
+out=$(bash_payload 'gh api -fmerge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "the GLUED -f short form denies" \
+              || bad "the GLUED -f short form denies" "$out"
+out=$(bash_payload 'gh api -Fmerge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "the GLUED -F short form denies" \
+              || bad "the GLUED -F short form denies" "$out"
+out=$(bash_payload 'gh api -XGET /repos/o/r/pulls/42/merge -f foo=bar' | run)
+assert_allowed "a GLUED -XGET with fields is an explicit read" "$out"
+# 3a-quater. A REDIRECT GLUED TO THE ENDPOINT. The discriminator originally closed on a
+# hand-spelled `([[:space:]]|$)`, which is not a word boundary in bash: `…/merge>/dev/null` puts
+# `>` right after `merge`, the pattern missed, and this gate's whole implicit-POST arm was skipped
+# for a command whose argv is an unmodified merge. Measured ALLOW before the fix, DENY after.
+# The SPACED row below is the non-vacuity control -- it denied BOTH before and after, so a green
+# pair here means the glued row is carrying the evidence, not the arm merely being on.
+out=$(bash_payload 'gh api -f merge_method=squash /repos/o/r/pulls/42/merge>/dev/null' | run)
+denied "$out" && ok "a redirect GLUED to the merge endpoint still denies" \
+              || bad "a redirect GLUED to the merge endpoint still denies" "$out"
+out=$(bash_payload 'gh api -f merge_method=squash /repos/o/r/pulls/42/merge >/dev/null' | run)
+denied "$out" && ok "the SPACED redirect control denies (non-vacuity for the row above)" \
+              || bad "the SPACED redirect control denies (non-vacuity for the row above)" "$out"
+out=$(bash_payload 'gh api /repos/o/r/pulls/42>/dev/null' | run)
+assert_allowed "a glued redirect on a NON-merge path is still not a merge" "$out"
+# THE ENDPOINT CHECK reads field VALUES, and the implicit-POST arm made that reachable for
+# field-only calls for the first time. An anchored path pattern was tried to keep prose out; it
+# failed open FIVE ways across four review rounds (the guard's own comment above its predicate
+# lists them) and was REVERTED to main's substring test. These rows now pin the ACCEPTED
+# over-denial: prose quoting the endpoint in a field value denies. That is the safe direction; the
+# real fix is positional (argv slot, not path shape):
+# todos/archive/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md.
+out=$(bash_payload "gh api repos/o/r/issues/12/comments -f body=see pulls/42/merge for context" | run)
+denied "$out" && ok "ACCEPTED OVER-DENIAL: prose quoting the endpoint inside a field value denies under the substring test" \
+              || bad "ACCEPTED OVER-DENIAL: prose quoting the endpoint inside a field value denies under the substring test" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls -f title=merge cleanup' | run)
+denied "$out" && ok "ACCEPTED OVER-DENIAL: a field value containing the word merge on the pulls list denies" \
+              || bad "ACCEPTED OVER-DENIAL: a field value containing the word merge on the pulls list denies" "$out"
+
+# 3a-bis. DENY. gh's IMPLICIT POST — no method flag anywhere.
+# todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md. cli/cli
+# pkg/cmd/api/api.go:329-330 sets method=POST when no method flag was passed AND there is any
+# field parameter or an --input file, so these name no method and are still merges. This gate is
+# fail-closed, so before this arm each was a SILENT ALLOW of a real merge route — the worst
+# shape a merge gate can have.
+out=$(bash_payload 'gh api -f merge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "gh api -f with no method flag against pulls/N/merge denies" \
+              || bad "gh api -f with no method flag against pulls/N/merge denies" "$out"
+out=$(bash_payload 'gh api -F merge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "gh api -F with no method flag against pulls/N/merge denies" \
+              || bad "gh api -F with no method flag against pulls/N/merge denies" "$out"
+out=$(bash_payload 'gh api --raw-field merge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "gh api --raw-field with no method flag denies" \
+              || bad "gh api --raw-field with no method flag denies" "$out"
+out=$(bash_payload 'gh api --field=merge_method=squash /repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "gh api --field=k=v glued with no method flag denies" \
+              || bad "gh api --field=k=v glued with no method flag denies" "$out"
+out=$(bash_payload 'gh api /repos/o/r/pulls/42/merge --input body.json' | run)
+denied "$out" && ok "gh api --input with no method flag denies (api.go:301 ties it to the same switch)" \
+              || bad "gh api --input with no method flag denies (api.go:301 ties it to the same switch)" "$out"
+# THE ALLOW SIDE, which is what keeps the arm from denying reads. gh's switch is
+# `!RequestMethodPassed && params`, so an explicit method beats it: these are GETs.
+out=$(bash_payload 'gh api -X GET /repos/o/r/pulls/42/merge -f foo=bar' | run)
+assert_allowed "an EXPLICIT -X GET with fields at the merge endpoint is a read and allows" "$out"
+out=$(bash_payload 'gh api --method GET /repos/o/r/pulls/42/merge --field foo=bar' | run)
+assert_allowed "an EXPLICIT --method GET with fields allows" "$out"
+out=$(bash_payload 'gh api /repos/o/r/issues -f title=hello' | run)
+assert_allowed "an implicit POST to a NON-merge endpoint is not this gate's business" "$out"
+
+# 3a-bis-2. NON-ARGV TEXT MUST NOT DISARM THE ABSENCE-SHAPED CONJUNCT (2026-09-22).
+# todos/archive/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md
+# The negated `! MRG_API_ANYMETHOD` conjunct read a clause that kept an unquoted trailing comment
+# and redirect operands, so one method-shaped token in either stood the arm down. Measured ALLOW
+# on origin/main (8ff7cfd2) for every DENY row below except the controls, which denied on both
+# sides. The fix is byte-identical to guard-outward-cli.sh's, landed in the same change: the
+# negated conjunct reads an argv-cut clause, the positive field conjunct reads the full clause,
+# so the change can only ADD denials relative to main.
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v # -X GET' | run)
+denied "$out" && ok "a method flag inside a trailing COMMENT does not disarm the implicit-POST arm" \
+              || bad "a method flag inside a trailing COMMENT does not disarm the implicit-POST arm" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v # --method GET' | run)
+denied "$out" && ok "the long-form method flag inside a trailing comment does not disarm it either" \
+              || bad "the long-form method flag inside a trailing comment does not disarm it either" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v > -X' | run)
+denied "$out" && ok "a method-shaped REDIRECT OPERAND does not disarm the implicit-POST arm" \
+              || bad "a method-shaped REDIRECT OPERAND does not disarm the implicit-POST arm" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v # harmless note' | run)
+denied "$out" && ok "CONTROL: a benign trailing comment denies (the decoy token is what flipped the rows above)" \
+              || bad "CONTROL: a benign trailing comment denies (the decoy token is what flipped the rows above)" "$out"
+out=$(bash_payload "gh api repos/o/r/pulls/42/merge -f body='a # b'" | run)
+denied "$out" && ok "CONTROL: a QUOTED hash is not a comment, so the field still counts" \
+              || bad "CONTROL: a QUOTED hash is not a comment, so the field still counts" "$out"
+out=$(bash_payload 'gh api -X GET repos/o/r/pulls/42/merge -f k=v # note' | run)
+assert_allowed "an EXPLICIT read followed by a comment still allows (the cut removes only non-argv text)" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v 2>&1 -X GET' | run)
+assert_allowed "an EXPLICIT read with an interior redirect still allows (blanking an operand invents no token)" "$out"
+# THE FIELD-FLAG CLOSER. `MRG_API_FIELD` closed its three long flags on a hand-spelled
+# `([[:space:]]|=|$)`; a redirect glued to the flag put `>` where that class expected whitespace,
+# the field went unseen, and the arm stood down with no decoy token at all. `${_CMD_POS_SUFFIX}`
+# (plus `=`) absorbs it. The closer lint below was widened FIRST and watched go red on that line.
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge --field>o k=v' | run)
+denied "$out" && ok "a redirect GLUED to --field is still a field (closer widened to the exported suffix)" \
+              || bad "a redirect GLUED to --field is still a field (closer widened to the exported suffix)" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge --raw-field>o k=v' | run)
+denied "$out" && ok "a redirect glued to --raw-field is still a field" \
+              || bad "a redirect glued to --raw-field is still a field" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge --input>o body.json' | run)
+denied "$out" && ok "a redirect glued to --input is still an input file" \
+              || bad "a redirect glued to --input is still an input file" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge --field k=v' | run)
+denied "$out" && ok "CONTROL: the spaced long flag denied before and after (non-vacuity for the glued rows)" \
+              || bad "CONTROL: the spaced long flag denied before and after (non-vacuity for the glued rows)" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge --fieldx k=v' | run)
+assert_allowed "CONTROL: a longer flag sharing the prefix is still not a field (the closer did not over-widen)" "$out"
+# VALUE-POSITION DECOY: a method-shaped token that genuinely reaches argv as another flag's value.
+# Neither the cut nor the closer can see it; it needs a flag-arity table. Pinned KNOWN-WRONG with
+# its control so the gap stays visible here as well as in the sibling suite.
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v --template -X' | run)
+assert_allowed "KNOWN-WRONG (residual): --template -X after a field is a live ALLOW here too (value-slot decoy)" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v --template x' | run)
+denied "$out" && ok "CONTROL: the same carrier holding an ordinary value denies (the decoy is what flips it)" \
+              || bad "CONTROL: the same carrier holding an ordinary value denies (the decoy is what flips it)" "$out"
+# THE BLANK IS ANCHORED AT A WORD START (security review, 2026-09-22). `_CMD_REDIR`'s optional
+# fd-digit prefix is right for additive presence checks and wrong for a subtractive use: unanchored
+# it ate the trailing digit of `--method2>x` and manufactured `--method `, satisfying the method
+# closer -- main DENY, first head ALLOW. Anchored, the blank cannot alter the token before it.
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v --method2>x' | run)
+denied "$out" && ok "a digit glued between --method and a redirect is not a method flag (the blank cannot eat the digit)" \
+              || bad "a digit glued between --method and a redirect is not a method flag (the blank cannot eat the digit)" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v --method1>&2' | run)
+denied "$out" && ok "the fd-shaped digit before >&2 stays with the word" \
+              || bad "the fd-shaped digit before >&2 stays with the word" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v --method0<x' | run)
+denied "$out" && ok "the fd-shaped digit before an input redirect stays with the word" \
+              || bad "the fd-shaped digit before an input redirect stays with the word" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v --methodology>x' | run)
+denied "$out" && ok "CONTROL: a longer flag sharing the prefix, glued to a redirect, denies on both sides" \
+              || bad "CONTROL: a longer flag sharing the prefix, glued to a redirect, denies on both sides" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v >-X' | run)
+denied "$out" && ok "CONTROL: a word-initial operator with a GLUED decoy operand is still blanked" \
+              || bad "CONTROL: a word-initial operator with a GLUED decoy operand is still blanked" "$out"
+# THE COST OF THE ANCHOR: an operator glued to the preceding word with a SPACED operand is not
+# blanked. ALLOW on main, ALLOW here -- pre-existing, pinned so it stays visible.
+out=$(bash_payload 'gh api repos/o/r/pulls/42/merge -f k=v> -X' | run)
+assert_allowed "KNOWN-WRONG (residual): an operator glued to the word with a spaced decoy operand is not blanked" "$out"
+
+# 3a-quinquies. ENDPOINT SPELLINGS THE SEGMENT-CLASS DISCRIMINATOR LET THROUGH (regression vs main,
+# found by both reviewers independently, 2026-09-18). Each of these DENIED on main's
+# `pulls.*merge` substring test and ALLOWED once the class enumeration replaced it; the plain
+# `repos/o/r/...` rows above are their non-vacuity control and deny on both versions. There is no
+# combinatorial corpus behind this file -- repro-outward-cli-corpus.sh pins guard-outward-cli.sh
+# only -- so these rows ARE the coverage for this predicate.
+# LATER THE SAME DAY: after a FIFTH fail-open (`pulls//42/merge`) the anchored predicate was
+# reverted to main's substring test. Every row in this block and the next passes trivially under
+# it, and that is the point -- they are now the guard against anyone re-narrowing the check.
+out=$(bash_payload 'gh api -X PUT repos/$OWNER/$REPO/pulls/42/merge' | run)
+denied "$out" && ok "a merge endpoint spelled with shell variables is still an endpoint" \
+              || bad "a merge endpoint spelled with shell variables is still an endpoint" "$out"
+out=$(bash_payload 'gh api -X PUT "repos/$OWNER/$REPO/pulls/$PR/merge"' | run)
+denied "$out" && ok "the quoted variable-segment endpoint denies too" \
+              || bad "the quoted variable-segment endpoint denies too" "$out"
+out=$(bash_payload 'gh api --method PUT https://api.github.com/repos/o/r/pulls/42/merge' | run)
+denied "$out" && ok "a full https:// endpoint URL is a documented gh api spelling and denies" \
+              || bad "a full https:// endpoint URL is a documented gh api spelling and denies" "$out"
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge?x=1' | run)
+denied "$out" && ok "a query string after the endpoint does not end the match" \
+              || bad "a query string after the endpoint does not end the match" "$out"
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge/' | run)
+denied "$out" && ok "a trailing slash after the endpoint does not end the match" \
+              || bad "a trailing slash after the endpoint does not end the match" "$out"
+out=$(bash_payload 'gh api https://api.github.com/repos/o/r/pulls/42/merge -f merge_method=squash' | run)
+denied "$out" && ok "the implicit POST reaches a URL-spelled endpoint too" \
+              || bad "the implicit POST reaches a URL-spelled endpoint too" "$out"
+# THE WIDENING'S OWN OVER-DENIAL CONTROLS. `[^[:space:]]+` accepts more than the class did, so
+# these pin that it did not start swallowing reads or non-merge paths.
+out=$(bash_payload 'gh api -X GET https://api.github.com/repos/o/r/pulls/42/merge' | run)
+assert_allowed "an EXPLICIT read of a URL-spelled merge endpoint still allows" "$out"
+out=$(bash_payload 'gh api repos/o/r/pulls/42/comments -f body=hi' | run)
+assert_allowed "a pulls/N/<other> path is still not a merge endpoint" "$out"
+
+# 3a-sexies. THE TRAILING CONTENT, AND THE QUOTING AXIS THAT MADE TWO EARLIER FIXES LOOK DONE.
+# Constraining what may follow the endpoint failed open three times: `?query` only, then `[?#]`,
+# then `merge/?` hand-counting the slashes at one. The `[?#]` version was defended as EXHAUSTIVE
+# over RFC 3986 and was STILL false, because this predicate reads the `cmd_words_deep` rendering
+# rather than a URI -- a `#` inside a QUOTED span becomes the placeholder character, so
+# `"…/merge#frag"` renders `…/mergexfrag` and matched nothing. A 6 prefix x 8 trailing x 3 QUOTING
+# corpus measured 60 of 144 rows as main DENY / arm ALLOW, and 48 of those 60 were quoted.
+# EVERY ROW IN THE FIRST VERSION OF THIS BLOCK USED A BARE TOKEN, so the suite went green on
+# exactly the spellings that regressed. The tail is now unconstrained and the quoting axis is
+# pinned here rather than sampled.
+# THEN REVERTED: see the block above. These rows stay as the re-narrowing guard.
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge#frag' | run)
+denied "$out" && ok "a fragment glued to the endpoint does not end the match" \
+              || bad "a fragment glued to the endpoint does not end the match" "$out"
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge/#frag' | run)
+denied "$out" && ok "a trailing slash then a fragment still denies" \
+              || bad "a trailing slash then a fragment still denies" "$out"
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge?x=1#frag' | run)
+denied "$out" && ok "a query AND a fragment still denies" \
+              || bad "a query AND a fragment still denies" "$out"
+out=$(bash_payload 'gh api --method PUT repos/o/r/pulls/42/merge#frag>/dev/null' | run)
+denied "$out" && ok "a fragment followed by a glued redirect still denies (the tail is greedy, the closer still lands)" \
+              || bad "a fragment followed by a glued redirect still denies (the tail is greedy, the closer still lands)" "$out"
+out=$(bash_payload 'gh api --method PUT repos/$OWNER/$REPO/pulls/42/merge#frag' | run)
+denied "$out" && ok "variable segments AND a fragment together still deny" \
+              || bad "variable segments AND a fragment together still deny" "$out"
+# The fragment rows' own over-denial controls.
+out=$(bash_payload 'gh api -X GET repos/o/r/pulls/42/merge#frag' | run)
+assert_allowed "an EXPLICIT read of a fragment-suffixed endpoint still allows" "$out"
+out=$(bash_payload 'gh api -X GET repos/o/r/pulls/42/merge #frag' | run)
+assert_allowed "a SPACED hash is a shell comment, not a fragment, and is not a merge" "$out"
+
+# THE QUOTING AXIS. Double- and single-quoted spellings reach gh with byte-identical argv to the
+# bare form, and the rendering blanks a quoted `#` -- so these are the rows a bare-only block
+# cannot see. Each is paired with its quoted-WITHOUT-fragment control, so a failure here can never
+# be blamed on quoting alone.
+out=$(bash_payload 'gh api -X PUT "repos/o/r/pulls/42/merge#frag"' | run)
+denied "$out" && ok "a DOUBLE-QUOTED fragment endpoint still denies (the rendering blanks the hash)" \
+              || bad "a DOUBLE-QUOTED fragment endpoint still denies (the rendering blanks the hash)" "$out"
+out=$(bash_payload "gh api -X PUT 'repos/o/r/pulls/42/merge#frag'" | run)
+denied "$out" && ok "a SINGLE-QUOTED fragment endpoint still denies" \
+              || bad "a SINGLE-QUOTED fragment endpoint still denies" "$out"
+out=$(bash_payload 'gh api -X PUT "repos/o/r/pulls/42/merge/#frag"' | run)
+denied "$out" && ok "a quoted slash-then-fragment endpoint still denies" \
+              || bad "a quoted slash-then-fragment endpoint still denies" "$out"
+out=$(bash_payload 'gh api -X PUT "repos/o/r/pulls/42/merge"' | run)
+denied "$out" && ok "CONTROL: the same endpoint QUOTED with no fragment denies (quoting alone is not the cause)" \
+              || bad "CONTROL: the same endpoint QUOTED with no fragment denies (quoting alone is not the cause)" "$out"
+# AN EMPTY PATH SEGMENT IS MORE PATH, NOT CONTENT AFTER IT -- `merge/?` counted the slashes at one.
+out=$(bash_payload 'gh api -X PUT repos/o/r/pulls/42/merge//' | run)
+denied "$out" && ok "a doubled trailing slash is still the merge endpoint" \
+              || bad "a doubled trailing slash is still the merge endpoint" "$out"
+out=$(bash_payload 'gh api -X PUT repos/o/r/pulls/42/merge///' | run)
+denied "$out" && ok "and a tripled one, so the slash count is not enumerated either" \
+              || bad "and a tripled one, so the slash count is not enumerated either" "$out"
+out=$(bash_payload 'gh api -X PUT "repos/$OWNER/$REPO/pulls/42/merge//"' | run)
+denied "$out" && ok "variable segments, quoting and an empty segment together still deny" \
+              || bad "variable segments, quoting and an empty segment together still deny" "$out"
+# Under the substring test the quoted prose spelling denies too; pinned as the third accepted
+# over-denial so a future re-narrowing that "fixes" it has to say so here.
+out=$(bash_payload 'gh api repos/o/r/issues/12/comments -f body="see pulls/42/merge here"' | run)
+denied "$out" && ok "ACCEPTED OVER-DENIAL: a QUOTED prose mention of the endpoint in a field value denies" \
+              || bad "ACCEPTED OVER-DENIAL: a QUOTED prose mention of the endpoint in a field value denies" "$out"
 
 # 3b. DENY. -X spelling, path-only (no -f fields).
 out=$(bash_payload 'gh api -X PUT /repos/Xertox1234/OCRecipes/pulls/938/merge' | run)
@@ -316,14 +600,19 @@ out=$(mcp_payload 938 | run)
 denied "$out" && ok "sensitive paths deny with no record" || bad "sensitive paths deny with no record" "$out"
 
 # 7. The no-record message must not read as "you never reviewed": a reviewer whose
-#    findings were all WARNING/SUGGESTION writes NO record (review-stamp-writer.sh
-#    residual 3), so absence has more than one cause and more than one fix.
+#    findings were all WARNING/SUGGESTION and omitted "No blocking findings." writes NO
+#    record (review-stamp-writer.sh residual 3), so absence has more than one cause and more than one fix.
 r=$(reason "$out")
 if grep -qi 'no review record' <<<"$r" && grep -qi 'warning' <<<"$r"; then
   ok "no-record deny names the WARNING-only cause"
 else
   bad "no-record deny names the WARNING-only cause" "$r"
 fi
+# The advisory exit must reach the reader intact: backticks inside the double-quoted deny
+# string were command substitutions that ran `No`/`advisory` from PATH and blanked the literal.
+grep -q 'No blocking findings\.' <<<"$r" \
+  && ok "no-record deny names the 'No blocking findings.' exit verbatim" \
+  || bad "no-record deny names the 'No blocking findings.' exit verbatim" "$r"
 
 # ── Stage 3: stamp scope ─────────────────────────────────────────────────────
 
@@ -340,6 +629,18 @@ export FAKE_FILES="$FILES_TWO"
 stamp "$SHA" "$DIGEST_TWO" clean code-reviewer
 out=$(mcp_payload 938 | run)
 assert_allowed "clean record matching the 2-file digest literal allows" "$out"
+
+# 9a. ALLOW. An ADVISORY record (WARNING/SUGGESTION-only, findings filed — 2026-09-22 ruling)
+#     passes like a clean one. 9b is its control: any OTHER non-clean verdict still denies.
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" advisory code-reviewer
+out=$(mcp_payload 938 | run)
+assert_allowed "advisory record matching the digest allows" "$out"
+clear_stamps
+stamp "$SHA" "$DIGEST_TWO" maybe code-reviewer
+out=$(mcp_payload 938 | run)
+denied "$out" && ok "control: an unknown verdict with no unresolved entries still denies" \
+              || bad "control: an unknown verdict with no unresolved entries still denies" "$out"
 
 # 10. DENY. Mis-scoped review: the record describes ONE file, the PR changes TWO. Same
 #     SHA, same reviewer, clean verdict — only the scope is wrong.
@@ -586,13 +887,16 @@ out=$(mcp_payload 938 | run)
 assert_allowed "todo/* with safe paths is exempt" "$out"
 
 # 24. STAGE 1 MECHANISM. The branch name — not the file list — selects whether the FULL
-#     guard runs. The full guard's TODO GATE reads the archived todo through `gh api`;
-#     `--paths-only` never does. So an `api` line in the gh log is the observable
-#     signature of stage 1 having run.
+#     guard runs. The full guard's TODO GATE reads the archived todo through the API's
+#     CONTENTS endpoint; `--paths-only` never does. The endpoint is load-bearing in that
+#     sentence: todo-automerge-guard.sh now reads its FILE LIST through the same verb, on the
+#     pulls/{n}/files endpoint, and that read happens in BOTH modes -- so a bare `^api ` needle
+#     stopped discriminating the moment the file list moved off the diff subcommand (which it
+#     did so a rename SOURCE path is gated, not just the destination). Match contents.
 export FAKE_API_FAIL=""
 : > "$GH_LOG"
 mcp_payload 938 | run >/dev/null
-grep -q '^api ' "$GH_LOG" && ok "todo/* branch runs the FULL guard (stage 1 fires)" \
+grep -q '^api .*/contents/' "$GH_LOG" && ok "todo/* branch runs the FULL guard (stage 1 fires)" \
                           || bad "todo/* branch runs the FULL guard (stage 1 fires)" "$(cat "$GH_LOG")"
 
 # 25. …and the SAME file list on a non-todo branch does NOT run it. This is the #938
@@ -602,7 +906,7 @@ grep -q '^api ' "$GH_LOG" && ok "todo/* branch runs the FULL guard (stage 1 fire
 export FAKE_VIEW_JSON="{\"headRefName\":\"chore/close-a-todo\",\"headRefOid\":\"$SHA\"}"
 : > "$GH_LOG"
 mcp_payload 938 | run >/dev/null
-grep -q '^api ' "$GH_LOG" && bad "non-todo branch does NOT run the full guard" "$(cat "$GH_LOG")" \
+grep -q '^api .*/contents/' "$GH_LOG" && bad "non-todo branch does NOT run the full guard" "$(cat "$GH_LOG")" \
                           || ok "non-todo branch does NOT run the full guard"
 export FAKE_API_FAIL="1"
 
@@ -683,7 +987,7 @@ denied "$out" && ok "ambiguous gh pr verb fails closed" || bad "ambiguous gh pr 
 #    used by the fail-closed and cwd-independence sections further down) ─────────────────────
 # These rows assert the CURRENT, KNOWN-INCOMPLETE behaviour so the gap is visible in the
 # suite instead of invisible. It is filed as
-# todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md with its
+# todos/archive/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md with its
 # 537-row corpus. WHEN THAT TODO IS IMPLEMENTED THESE ROWS WILL FAIL, which is the point:
 # the fix must come here and convert them to deny rows rather than land silently.
 #
@@ -712,17 +1016,59 @@ for spelling in \
                 || bad "CLOSED, P1 mech (b) redirect: [$spelling]" "$out"
 done
 
-# STILL OPEN, the OTHER HALF of mechanism (b): a redirect in the NAMESPACE->VERB slot.
-# _CMD_GH_GLOBALS models the binary->namespace slot only; `pr[[:space:]]+(verb)` still has no
-# absorber, so these reach the gate with SUB empty. Not a regression — main allows them too —
-# and guard-outward-cli.sh denies all of them, because its _OUT_SEP absorbs a redirect in
-# BOTH slots. Pinned as a tripwire so closing the second slot has to come back and convert it.
+# CLOSED 2026-09-17 — the OTHER HALF of mechanism (b): a redirect in the NAMESPACE->VERB slot.
+# These were pinned as a tripwire precisely so that closing the slot had to come back and
+# convert them, and it has. `_CMD_GH_GLOBALS` modelled the binary->namespace slot from
+# 2026-09-13; the namespace->verb slot stayed spelled as a bare `[[:space:]]+` at every call
+# site, so `gh pr 2>/dev/null merge 42` resolved to NO subcommand and this gate allowed a real
+# merge. `_CMD_GH_PR_SEP` now gives that slot the same absorber, applied at every site from one
+# constant rather than per call — the per-call spelling is how the two slots drifted apart.
 for spelling in \
   'gh pr 2>/dev/null merge 42 --squash' \
   'gh pr>log merge 42 --squash' \
   'gh pr 2>&1 merge 42 --squash' ; do
   out=$(bash_payload "$spelling" | run)
-  assert_allowed "KNOWN GAP, namespace->verb slot (see P1 todo): [$spelling]" "$out"
+  denied "$out" && ok "namespace->verb slot now resolves, so the merge is gated: [$spelling]" \
+                || bad "namespace->verb slot now resolves, so the merge is gated: [$spelling]" "$out"
+done
+# THE ALLOW SIDE of the same widening. A separator absorber is the direction that invents
+# denials, and this gate has no per-command escape — SKIP_MERGE_REVIEW must be set in the shell
+# that launched the session — so a false deny here gets the whole gate switched off. A READ verb
+# in the same slot must stay allowed, and so must an ordinary command that merely mentions the
+# words: the raw-token predicate withdrawn across three review rounds died on exactly that.
+#
+# EVERY ROW BELOW CARRIES A LITERAL `merge` SOMEWHERE, AND THAT IS LOAD-BEARING, NOT DECORATION.
+# The gate opens with a necessary-substring fast path (`cmd_fastpath_has "$CMD" '*gh*pr*merge*'
+# '*gh*api*merge*' || exit 0`). A read-verb row spelled `gh pr 2>/dev/null view 42` never
+# contains `merge`, so it exits AT THAT PRE-FILTER and never reaches `_CMD_GH_PR_SEP` at all —
+# it would pass whatever the separator did, which makes it a vacuous control for this widening.
+# That is exactly the failure
+# docs/solutions/conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md describes,
+# and the first draft of this block shipped it. Each row now clears the fast path on its own and
+# is then allowed by the REAL reason: the verb in the widened slot is a read, not a merge.
+for spelling in \
+  'gh pr 2>/dev/null view 42 --comment "not a merge, just checking"' \
+  'gh pr>log view 42 --comment "merge later, not now"' \
+  'gh pr 2>/dev/null list --search "merge"' ; do
+  out=$(bash_payload "$spelling" | run)
+  assert_allowed "namespace->verb slot: a READ verb past the fast path stays allowed: [$spelling]" "$out"
+done
+out=$(bash_payload 'git commit -m "fix highlight for pr merge"' | run)
+assert_allowed "namespace->verb slot: a commit MESSAGE naming the gate stays allowed" "$out"
+# STILL OPEN, and named so this block is not read as closing the class: the BINARY renderings.
+# A path-qualified binary, a wholly quoted one, and a command substitution all defeat the
+# detector BEFORE any slot is reached, so the widening above cannot touch them. Measured on a
+# 320-row rendering x separator x slot x verb corpus driven through these fixtures: of 70 real
+# `gh pr merge` rows the gate still allows 44 (tab-separator rows excluded — a literal tab
+# collides with the harness's own field delimiter and those rows are unreliable). All are
+# denied today by guard-outward-cli.sh, so they are a defence-in-depth gap rather than a live
+# bypass; the P1 todo carries the corpus.
+for spelling in \
+  '/opt/homebrew/bin/gh pr merge 42 --squash' \
+  '"$(which gh)" pr merge 42 --squash' \
+  "'gh' pr merge 42 --squash" ; do
+  out=$(bash_payload "$spelling" | run)
+  assert_allowed "KNOWN GAP, binary rendering (see P1 todo): [$spelling]" "$out"
 done
 
 # TWO STILL OPEN, ONE CLOSED 2026-09-15 -- and the split is the point of this block. The
@@ -1218,6 +1564,42 @@ else
 fi
 unset _mrg_src _mrg_conj_line _mrg_conj _mrg_missing _mrg_sym _mrg_lbl
 
+# THE CLOSER-CLASS INVARIANT, PORTED FROM THE SIBLING SUITE (2026-09-18, review round 3).
+# test-guard-outward-cli.sh has asserted this for guard-outward-cli.sh since the 2026-09-17
+# closer sweep, and its comment names the principle: fixing one arm and leaving its siblings is
+# the most repeated mistake in that file. The invariant was asserted WITHIN one file and never
+# ported ACROSS to this one -- the same mistake one level up, and precisely how round 3's
+# CRITICAL survived: the merge-endpoint discriminator hand-spelled `([[:space:]]|$)`, a glued
+# redirect walked past it, and a 151-assertion green suite had nothing to say about it.
+# A redirect operator terminates a word without whitespace, so `…/merge>/dev/null` presents `>`
+# where the hand-spelled class expects whitespace or end-of-string; ${_CMD_POS_SUFFIX} absorbs it.
+# COUNTS OCCURRENCES with `grep -o | wc -l`, never `grep -c` (which counts LINES and would read
+# two on one line as one). COMMENT LINES ARE EXCLUDED deliberately: this guard's own comments
+# quote the fragment verbatim when explaining the defect, and a check that counted prose would
+# force the explanation to be deleted to stay green.
+# WIDENED 2026-09-22, in lock-step with the sibling suite: the literal grep saw only
+# `([[:space:]]|$)`, so `MRG_API_FIELD`'s closer `([[:space:]]|=|$)` -- the same defect with one
+# extra alternative -- reported PASS on the line this check exists to catch. The pattern now admits
+# ONE extra alternative between the space class and `$` (anything without `|` or `)`). Widened
+# FIRST and watched go red on that line before the closer was fixed:
+# todos/archive/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md.
+_mrgcloser_hits=$(grep -nE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' | wc -l | tr -d ' ')
+if [ "$_mrgcloser_hits" = "0" ]; then
+  echo "PASS: no code line in merge-review-guard.sh hand-spells a closer class that \${_CMD_POS_SUFFIX} provides"; PASS=$((PASS+1))
+else
+  echo "FAIL: $_mrgcloser_hits code-line closer class(es) hand-spelled as ([[:space:]]|\$) or a one-alternative variant such as ([[:space:]]|=|\$) instead of \${_CMD_POS_SUFFIX} -- a glued < or > escapes them"; FAIL=$((FAIL+1))
+fi
+# NON-VACUITY, because a structural grep that matches nothing passes for the wrong reason just as
+# readily as one that matches nothing for the right one. The same pipeline over COMMENT lines must
+# still find the fragment, proving the pattern itself is live rather than silently broken.
+_mrgcloser_prose=$(grep -nE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' "$HOOK" | grep -E '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' | wc -l | tr -d ' ')
+if [ "$_mrgcloser_prose" -gt 0 ]; then
+  echo "PASS: the closer-class pattern still matches merge-review-guard.sh's own prose (check is live)"; PASS=$((PASS+1))
+else
+  echo "FAIL: the closer-class pattern matches nothing anywhere -- the structural check above is vacuous"; FAIL=$((FAIL+1))
+fi
+unset _mrgcloser_hits _mrgcloser_prose
+
 # Pin the assertion TOTAL, mirroring test-cmd-detect.sh's own EXPECTED_TOTAL pin. Without it a row that is
 # skipped -- a `command not found` on a tool a fixture needs, an early `exit` in a helper,
 # a truncated file -- subtracts silently and the suite still prints a clean pass/0 fail.
@@ -1231,9 +1613,26 @@ unset _mrg_src _mrg_conj_line _mrg_conj _mrg_missing _mrg_sym _mrg_lbl
 # widened anchor.
 # 129 -> 130: +1 for the row that derives the preflight's required symbol set from the file
 # instead of trusting the comment that states it.
+# 151 -> 154 -> 156 (2026-09-18, review round 3): +3 behavioural rows for a redirect GLUED
+# to the merge endpoint (glued, a SPACED non-vacuity control, and a negative control on a
+# non-merge path), then +2 structural rows porting the closer-class invariant from the
+# sibling suite so the next hand-spelled closer in THIS file reddens instead of shipping.
 # 130 -> 131: +1 regime precondition for THE 64KB SIGPIPE ROW, which until now asserted its
 # DENY outcome with nothing asserting the input still reached the pipe buffer.
-EXPECTED_TOTAL=131
+# 131 -> 138 (2026-09-17, namespace->verb slot): +7. The three KNOWN GAP tripwire rows were
+# CONVERTED in place from assert_allowed to a deny assertion, so they contribute 0 to this
+# delta — the count moves only on genuinely new rows: +3 read-verb rows and +1 commit-message
+# row pinning the ALLOW side of a separator widening (the direction that invents denials, and
+# the one that killed the withdrawn raw-token predicate), and +3 rows pinning the BINARY
+# renderings that remain open so the block is not read as closing the whole class.
+# 179 -> 193 (2026-09-22, non-argv text in the implicit-POST arm, block 3a-bis-2): +14 = 3 deny
+# rows for the comment/redirect-operand decoys, 2 deny controls, 2 allow controls, 3 glued
+# field-closer denies with 1 deny + 1 allow control, and the value-slot decoy beside its control.
+# 193 -> 199 (2026-09-22, security review round 1): +6 = 3 manufactured-method rows the unanchored
+# blank flipped main-DENY -> head-ALLOW, 2 controls, and the anchor's cost pinned KNOWN-WRONG.
+# 199 -> 201 (2026-09-22, advisory verdict): +2 = advisory allows (9a) and its unknown-verdict control (9b).
+# 201 -> 202 (2026-09-22, review round 1): +1, case 7 asserts the advisory literal survives the deny string.
+EXPECTED_TOTAL=202
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -3,7 +3,7 @@
  *  reflects the collapsing-header delta); `collapsedBarHeight` = insets.top +
  *  HOME_HEADER_COLLAPSED. Clamped to >= 0.
  *
- *  MUST stay a worklet: HomeScreen.glideRowToTop calls this inside a runOnUI
+ *  MUST stay a worklet: HomeScreen.glideRowToTop calls this inside a scheduleOnUI
  *  worklet (alongside measure()/scrollTo()). The Reanimated Babel plugin does
  *  not workletize across imports, so without this directive the call is fatal on
  *  the UI thread ("Tried to synchronously call a non-worklet function"). The

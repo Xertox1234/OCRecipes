@@ -1,0 +1,101 @@
+---
+title: "Store ephemeral, session-scoped client state in the TanStack Query cache instead of a module-level singleton — but pin gcTime and never write undefined expecting a clear"
+track: knowledge
+category: design-patterns
+tags: [tanstack-query, client-state, query-client, lifecycle, react-native]
+module: client
+applies_to: [client/hooks/**/*.ts]
+created: '2026-09-29'
+---
+
+# Store ephemeral, session-scoped client state in the TanStack Query cache instead of a module-level singleton
+
+## Rule
+
+When a small piece of client-only state needs to (a) be shared across components without
+prop-drilling or context, (b) be READ back later without necessarily ever being fetched via
+`useQuery`, and (c) be cleared automatically on every auth teardown path
+(logout/expireSession/deleteAccount) — write it into the existing `queryClient` under a dedicated
+sentinel key (`queryClient.setQueryData`/`getQueryData`) rather than a bare module-level
+`let`/`Map`. `queryClient.clear()` already runs on all three teardown paths
+(`../conventions/clear-query-cache-on-auth-teardown-2026-05-30.md`), so this reuses an
+already-audited lifecycle instead of adding a NEW module-mutable-singleton lifecycle bug class
+(`global-mutable-client-singleton-lifecycle-2026-06-19.md`).
+
+This works well for a value nothing ever renders directly from via `useQuery` — e.g. a
+cross-screen coordination marker (`client/hooks/useChat.ts`'s `["__pendingRecipeTurns"]`, read by
+a `refetchInterval` decision function on OTHER queries). It has two gotchas that make it unsafe
+without care:
+
+1. **`setQueryData(key, undefined)` is a no-op, not a clear.** TanStack Query's `setQueryData`
+   treats a resulting value of `undefined` as "nothing to write" and leaves the PREVIOUS data in
+   place (`@tanstack/query-core`'s `queryClient.js`: `if (data === void 0) { return void 0; }`).
+   To actually clear a map-shaped entry, write `{}` (or whatever empty-but-defined value matches
+   your read-side "is anything pending" check), never `undefined`.
+2. **An entry with no `useQuery` observer never reschedules its `gcTime` timer.** A query created
+   purely via `setQueryData` (nothing ever subscribes to it with `useQuery`) gets its
+   garbage-collection timer scheduled ONCE, at first creation, using the default `gcTime` (5
+   minutes) unless overridden — and later `setQueryData` writes do NOT reschedule it (only
+   `addObserver`/`removeObserver` do). If your value needs to outlive 5 minutes between writes
+   with nothing else touching the key, pin it explicitly:
+   `queryClient.setQueryDefaults(key, { gcTime: Infinity })`, called before the first write.
+
+## Why
+
+The alternative (a bare module-level `Map`/`let`) has its OWN documented failure class — no
+per-session lifecycle, no launch-hook discipline
+(`global-mutable-client-singleton-lifecycle-2026-06-19.md`) — that this project has been burned by
+before (the offline-mutation-queue audit). Riding the query cache's ALREADY-correct teardown
+avoids reintroducing that class, but only if you know the two gotchas above; both were caught by
+review AFTER the mechanism initially shipped with a silent early-expiry bug (gotcha 2) and a mark
+that never cleared on resolution (gotcha 1), in `client/hooks/useChat.ts`'s recipe/remix
+post-abort poll (P3-2026-09-26).
+
+## Examples
+
+```ts
+// Session-scoped marker: wiped for free by queryClient.clear() on every
+// auth teardown path, survives across screens without a Context provider.
+const PENDING_KEY = ["__pendingRecipeTurns"] as const;
+
+export function useMarkPendingRecipeTurn() {
+  const queryClient = useQueryClient();
+  // Pin BEFORE the first write — no useQuery ever subscribes to this key,
+  // so nothing else would ever reschedule its gcTime.
+  queryClient.setQueryDefaults(PENDING_KEY, { gcTime: Infinity });
+  return useCallback(
+    (id: number) => {
+      queryClient.setQueryData<Record<number, number>>(PENDING_KEY, (prev) => ({
+        ...(prev ?? {}),
+        [id]: Date.now(),
+      }));
+    },
+    [queryClient],
+  );
+}
+
+// Clearing: write {} to an empty result, never undefined.
+queryClient.setQueryData(PENDING_KEY, remainingEntries); // {} when empty — NOT `undefined`
+```
+
+## Exceptions
+
+- If the value legitimately needs disk persistence across app restarts, this pattern alone is
+  insufficient — check `client/App.tsx`'s `PersistQueryClientProvider`/`shouldDehydrateQuery`
+  allowlist; a sentinel key like this should stay OUT of that allowlist (in-memory-only) unless
+  the value is meant to survive a cold start too.
+- For state a component DOES want to read reactively via `useQuery` (not just poke at from
+  elsewhere), just use a real `useQuery(key, ...)` — the gcTime gotcha only bites keys nothing
+  ever subscribes to.
+
+## Related Files
+
+- `client/hooks/useChat.ts` — `useMarkPendingRecipeTurn`, `pollRecipeTurn`,
+  `PENDING_RECIPE_TURNS_KEY`
+- `client/hooks/__tests__/useChat.test.ts` — the gcTime-survival and setQueryData-clear regression
+  tests
+
+## See Also
+
+- [Clear the TanStack Query cache on every local auth teardown](../conventions/clear-query-cache-on-auth-teardown-2026-05-30.md)
+- [Global mutable client singletons holding user data](global-mutable-client-singleton-lifecycle-2026-06-19.md)

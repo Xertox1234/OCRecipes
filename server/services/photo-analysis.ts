@@ -30,9 +30,21 @@ import type { FoodItem, AnalysisResult } from "@shared/types/photo-analysis";
 const log = createServiceLogger("photo-analysis");
 
 // Zod schemas for runtime validation (from institutional learning: unsafe-type-cast-zod-validation)
+/** Upper bound on one food's estimated weight — a whole large pizza is ~2 kg. */
+const MAX_PORTION_GRAMS = 5000;
+
 const foodItemSchema = z.object({
   name: z.string(),
   quantity: z.string(),
+  // A bad lookup name or estimate drops to undefined (look up by name /
+  // "portion unknown"), never failing the parse.
+  lookupName: z.string().trim().min(1).max(100).optional().catch(undefined),
+  grams: z
+    .number()
+    .positive()
+    .max(MAX_PORTION_GRAMS)
+    .optional()
+    .catch(undefined),
   confidence: z.number().min(0).max(1),
   needsClarification: z.boolean(),
   clarificationQuestion: z.string().optional(),
@@ -52,6 +64,13 @@ const CONFIDENCE_THRESHOLD = 0.7;
 
 const CATEGORY_INSTRUCTION = `6. Food category: one of "protein", "vegetable", "grain", "fruit", "dairy", "beverage", "other"`;
 
+/**
+ * Completion cap for a food list (logging and its follow-up refine). A
+ * multi-food photo ran the old 500 to the limit and truncated to invalid JSON
+ * (live burger photo, 2026-09-27); the cap bounds cost, not typical length.
+ */
+const LOG_MAX_TOKENS = 1000;
+
 const LOG_PROMPT = `You are a nutrition analysis assistant. Analyze food photos and identify:
 1. Each distinct food item visible
 2. Estimated portion size (e.g., "1 cup", "6 oz", "1 medium")
@@ -60,6 +79,8 @@ const LOG_PROMPT = `You are a nutrition analysis assistant. Analyze food photos 
 5. Be specific with food names (e.g., "grilled chicken breast" not just "chicken")
 ${CATEGORY_INSTRUCTION}
 7. Cuisine classification: identify the cuisine origin if recognizable (e.g., "Japanese", "Mexican", "Indian", "Italian")
+8. "grams": your best estimate of the edible weight in grams of the portion shown, without bones, shells, peels or pits. Use typical reference weights (e.g., 1 cup of cooked rice ≈ 160, 1 medium apple ≈ 180, a 6 oz steak ≈ 170, 1 slice of bread ≈ 30)
+9. "lookupName": the same food the way a nutrition database lists it: main food first, then type and preparation, comma-separated (e.g., "beef, steak, sirloin, grilled", "bananas, raw", "rice, white, long-grain, cooked", "water, tap")
 
 Rules:
 - Use standard US portion sizes
@@ -73,7 +94,9 @@ Respond with JSON only matching this schema:
   "foods": [
     {
       "name": "food name",
+      "lookupName": "food, type, preparation",
       "quantity": "portion size",
+      "grams": 150,
       "confidence": 0.85,
       "needsClarification": false,
       "clarificationQuestion": "optional question",
@@ -544,7 +567,7 @@ export function getPromptForIntent(intent: PhotoIntent): {
       return { prompt: LABEL_PROMPT, maxTokens: 800 };
     case "log":
     case "calories":
-      return { prompt: LOG_PROMPT, maxTokens: 500 };
+      return { prompt: LOG_PROMPT, maxTokens: LOG_MAX_TOKENS };
     case "menu":
       // Menu photos are parsed by analyzeMenuPhoto (/api/menu/scan), not the
       // food-logging pipeline. Reaching here means an internal caller routed a
@@ -653,7 +676,7 @@ export async function refineAnalysis(
     const response = await openai.chat.completions.create(
       {
         model: MODEL_HEAVY,
-        max_completion_tokens: 500,
+        max_completion_tokens: LOG_MAX_TOKENS,
         temperature: 0.3,
         messages: [
           {
@@ -669,7 +692,9 @@ Respond with JSON matching this schema:
   "foods": [
     {
       "name": "food name",
+      "lookupName": "food, type, preparation",
       "quantity": "portion size",
+      "grams": 150,
       "confidence": 0.95,
       "needsClarification": false,
       "clarificationQuestion": null,
@@ -681,7 +706,7 @@ Respond with JSON matching this schema:
   "followUpQuestions": []
 }
 
-Update the food names, quantities, confidence, and categories based on the user's answer. Remove any clarification flags that are now resolved.`,
+Update the food names, lookup names (the food as a nutrition database lists it), quantities, grams (edible weight of the portion), confidence, and categories based on the user's answer. Remove any clarification flags that are now resolved.`,
           },
           {
             role: "user",

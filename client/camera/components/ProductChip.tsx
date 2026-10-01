@@ -8,16 +8,16 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Image,
   type ViewProps,
 } from "react-native";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
   withSpring,
   useAnimatedStyle,
-  runOnJS,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import type { ScanPhase } from "../types/scan-phase";
 import {
   getBarcodeLockActions,
@@ -129,7 +129,7 @@ export function ProductChip({
       );
     } else {
       translateY.value = withSpring(OFF_SCREEN_Y, CHIP_SPRING, () => {
-        runOnJS(setShouldRender)(false);
+        scheduleOnRN(setShouldRender, false);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY is a stable useSharedValue ref; `phase` is read only to build the announce string for the current variant and must NOT re-trigger the effect (variant is derived from phase, so a variant transition already covers a meaningful change).
@@ -270,7 +270,11 @@ export function ProductChip({
       {/* Product info row */}
       <View style={styles.productRow}>
         {product?.imageUri ? (
-          <Image source={{ uri: product.imageUri }} style={styles.thumb} />
+          <Image
+            source={{ uri: product.imageUri }}
+            style={styles.thumb}
+            cachePolicy="memory-disk"
+          />
         ) : (
           <View style={[styles.thumb, styles.thumbPlaceholder]} />
         )}

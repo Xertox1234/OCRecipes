@@ -27,6 +27,11 @@ import {
 } from "../../services/recipe-catalog";
 import { storage } from "../../storage";
 import { createMockMealPlanRecipe } from "../../__tests__/factories";
+import {
+  catalogConfigResponseSchema,
+  catalogSearchResponseSchema,
+} from "@shared/types/recipe-catalog";
+import { expectResponseToMatch } from "../../../test/utils/expect-response-schema";
 
 vi.mock("../../services/recipe-catalog", async () => {
   const actual = await vi.importActual<
@@ -50,6 +55,7 @@ vi.mock("../../storage", () => ({
     getUserProfile: vi.fn(),
     findMealPlanRecipeByExternalId: vi.fn(),
     createMealPlanRecipe: vi.fn(),
+    saveRecipeToSavedItems: vi.fn().mockResolvedValue("linked"),
   },
 }));
 
@@ -129,6 +135,7 @@ describe("recipe-catalog routes", () => {
         results: expect.any(Array),
         totalResults: 0,
       });
+      expectResponseToMatch(res.body, catalogSearchResponseSchema);
     });
 
     it("forwards user allergies as Spoonacular intolerances", async () => {
@@ -261,6 +268,7 @@ describe("recipe-catalog routes", () => {
 
         expect(res.status).toBe(200);
         expect(res.body).toEqual({ enabled: true });
+        expectResponseToMatch(res.body, catalogConfigResponseSchema);
       } finally {
         if (prev === undefined) {
           delete process.env.SPOONACULAR_API_KEY;
@@ -380,6 +388,93 @@ describe("recipe-catalog routes", () => {
         expect.objectContaining({ userId: "1" }),
         expect.any(Array),
       );
+    });
+
+    it("the preview Save also puts the recipe into Saved Items", async () => {
+      vi.mocked(storage.findMealPlanRecipeByExternalId).mockResolvedValue(
+        undefined,
+      );
+      vi.mocked(getCatalogRecipeDetail).mockResolvedValue({
+        recipe: createMockMealPlanRecipe({ title: "Pasta" }),
+        ingredients: [],
+      });
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({
+          id: 7,
+          title: "Pasta",
+          description: "Quick",
+          difficulty: "Easy",
+          prepTimeMinutes: 10,
+          cookTimeMinutes: 25,
+        }),
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/catalog/123/save")
+        .set("Authorization", "Bearer token")
+        .send({ addToSavedItems: true });
+
+      expect(res.status).toBe(201);
+      expect(storage.saveRecipeToSavedItems).toHaveBeenCalledWith("1", {
+        recipeId: 7,
+        recipeType: "mealPlan",
+        title: "Pasta",
+        description: "Quick",
+        difficulty: "Easy",
+        timeEstimate: "35 min",
+      });
+      expect(res.body.savedItemStatus).toBe("linked");
+    });
+
+    it("an already-saved recipe gets its Saved Items row too", async () => {
+      vi.mocked(storage.findMealPlanRecipeByExternalId).mockResolvedValue(
+        createMockMealPlanRecipe({
+          id: 42,
+          title: "Saved",
+          prepTimeMinutes: null,
+          cookTimeMinutes: null,
+        }),
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/catalog/123/save")
+        .set("Authorization", "Bearer token")
+        .send({ addToSavedItems: true });
+
+      expect(res.status).toBe(200);
+      expect(storage.saveRecipeToSavedItems).toHaveBeenCalledWith(
+        "1",
+        expect.objectContaining({
+          recipeId: 42,
+          recipeType: "mealPlan",
+          timeEstimate: null,
+        }),
+      );
+      expect(res.body.savedItemStatus).toBe("linked");
+    });
+
+    it("a save that doesn't ask (Coach's meal-plan slot) leaves Saved Items alone", async () => {
+      vi.mocked(storage.findMealPlanRecipeByExternalId).mockResolvedValue(
+        createMockMealPlanRecipe({ id: 42 }),
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/catalog/123/save")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(storage.saveRecipeToSavedItems).not.toHaveBeenCalled();
+      expect(res.body.savedItemStatus).toBeUndefined();
+    });
+
+    it("rejects a malformed addToSavedItems", async () => {
+      const res = await request(app)
+        .post("/api/meal-plan/catalog/123/save")
+        .set("Authorization", "Bearer token")
+        .send({ addToSavedItems: "yes" });
+
+      expect(res.status).toBe(400);
+      expect(storage.findMealPlanRecipeByExternalId).not.toHaveBeenCalled();
     });
 
     it("returns 422 when catalog recipe has no instructions and no ingredients", async () => {

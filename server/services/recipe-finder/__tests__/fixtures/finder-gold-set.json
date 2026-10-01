@@ -1,0 +1,267 @@
+{
+  "measured": {
+    "relative": 0.7,
+    "floor": 8,
+    "right": [
+      "Mediterranean",
+      "mediterranean dinner",
+      "quick chicken dinner",
+      "salmon",
+      "something with salmon and rice",
+      "beef stir fry",
+      "tofu stir fry",
+      "lentil soup",
+      "greek salad",
+      "tacos",
+      "fish tacos",
+      "shrimp pasta",
+      "egg breakfast",
+      "turkey meatballs",
+      "keto dinner",
+      "gluten free dinner"
+    ],
+    "wrong": [
+      "chicken curry",
+      "high protein breakfast",
+      "chicken soup",
+      "quinoa salad",
+      "beef wellington"
+    ],
+    "none": [
+      "vegetarian chili",
+      "overnight oats",
+      "pancakes",
+      "banana bread",
+      "a smoothie",
+      "chocolate dessert",
+      "cookies",
+      "lobster thermidor",
+      "vegan pasta"
+    ]
+  },
+  "queries": [
+    {
+      "request": "Mediterranean",
+      "query": {
+        "q": "mediterranean"
+      },
+      "right": [25, 21, 20, 19, 18, 9]
+    },
+    {
+      "request": "mediterranean dinner",
+      "query": {
+        "q": "dinner",
+        "cuisine": "mediterranean",
+        "mealType": "dinner"
+      },
+      "right": [25, 21, 20, 19, 18, 9]
+    },
+    {
+      "request": "chicken curry",
+      "query": {
+        "q": "chicken curry"
+      },
+      "right": [24]
+    },
+    {
+      "request": "quick chicken dinner",
+      "query": {
+        "q": "chicken",
+        "mealType": "dinner",
+        "maxPrepTime": 30
+      },
+      "right": [1, 5, 17]
+    },
+    {
+      "request": "vegan pasta",
+      "query": {
+        "q": "pasta",
+        "diet": "vegan"
+      },
+      "right": []
+    },
+    {
+      "request": "vegetarian chili",
+      "query": {
+        "q": "chili",
+        "diet": "vegetarian"
+      },
+      "right": []
+    },
+    {
+      "request": "salmon",
+      "query": {
+        "q": "salmon"
+      },
+      "right": [14]
+    },
+    {
+      "request": "something with salmon and rice",
+      "query": {
+        "q": "salmon rice"
+      },
+      "right": [14]
+    },
+    {
+      "request": "high protein breakfast",
+      "query": {
+        "q": "high protein breakfast",
+        "mealType": "breakfast"
+      },
+      "right": [23, 25]
+    },
+    {
+      "request": "overnight oats",
+      "query": {
+        "q": "overnight oats"
+      },
+      "right": []
+    },
+    {
+      "request": "pancakes",
+      "query": {
+        "q": "pancakes"
+      },
+      "right": []
+    },
+    {
+      "request": "banana bread",
+      "query": {
+        "q": "banana bread"
+      },
+      "right": []
+    },
+    {
+      "request": "beef stir fry",
+      "query": {
+        "q": "beef stir fry"
+      },
+      "right": [2, 13, 16]
+    },
+    {
+      "request": "tofu stir fry",
+      "query": {
+        "q": "tofu stir fry"
+      },
+      "right": [13, 16]
+    },
+    {
+      "request": "lentil soup",
+      "query": {
+        "q": "lentil soup"
+      },
+      "right": [24, 18]
+    },
+    {
+      "request": "chicken soup",
+      "query": {
+        "q": "chicken soup"
+      },
+      "right": []
+    },
+    {
+      "request": "greek salad",
+      "query": {
+        "q": "salad",
+        "cuisine": "greek"
+      },
+      "right": [25, 21]
+    },
+    {
+      "request": "quinoa salad",
+      "query": {
+        "q": "quinoa salad"
+      },
+      "right": [21, 22]
+    },
+    {
+      "request": "tacos",
+      "query": {
+        "q": "tacos"
+      },
+      "right": [11, 8]
+    },
+    {
+      "request": "fish tacos",
+      "query": {
+        "q": "fish tacos"
+      },
+      "right": [11]
+    },
+    {
+      "request": "shrimp pasta",
+      "query": {
+        "q": "shrimp pasta"
+      },
+      "right": [7, 6]
+    },
+    {
+      "request": "egg breakfast",
+      "query": {
+        "q": "eggs",
+        "mealType": "breakfast"
+      },
+      "right": [23]
+    },
+    {
+      "request": "a smoothie",
+      "query": {
+        "q": "smoothie"
+      },
+      "right": []
+    },
+    {
+      "request": "chocolate dessert",
+      "query": {
+        "q": "chocolate dessert"
+      },
+      "right": []
+    },
+    {
+      "request": "cookies",
+      "query": {
+        "q": "cookies"
+      },
+      "right": []
+    },
+    {
+      "request": "keto dinner",
+      "query": {
+        "q": "dinner",
+        "diet": "ketogenic",
+        "mealType": "dinner"
+      },
+      "right": [3, 7, 16, 23]
+    },
+    {
+      "request": "gluten free dinner",
+      "query": {
+        "q": "dinner",
+        "diet": "gluten free",
+        "mealType": "dinner"
+      },
+      "right": [1, 2, 3, 4, 8, 10, 11, 12, 15, 17, 18, 19, 22]
+    },
+    {
+      "request": "turkey meatballs",
+      "query": {
+        "q": "turkey meatballs"
+      },
+      "right": [8, 4]
+    },
+    {
+      "request": "beef wellington",
+      "query": {
+        "q": "beef wellington"
+      },
+      "right": []
+    },
+    {
+      "request": "lobster thermidor",
+      "query": {
+        "q": "lobster thermidor"
+      },
+      "right": []
+    }
+  ]
+}

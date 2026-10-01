@@ -909,8 +909,10 @@ assert_allow "a REAL --auto after a quoted body still allows (control)" \
 # The placeholder cmd_words inserts is alphanumeric, and the method check was
 # case-INSENSITIVE, so `-f "- post"` rendered as `-xpost` and `-X` matched `-x`.
 # The flag is case-sensitive now; the value stays case-insensitive.
-assert_allow "gh api -f \"- post\" allows (placeholder must not forge -X)" \
-  "$(jsonc 'gh api repos/o/r/x -f "- post"')"
+# Boundary preserved through the REASON: a guard that forged `-X` out of the `- post` VALUE
+# would deny for the wrong reason and fail this row.
+assert_deny "gh api -f with a dash-shaped VALUE denies as an implicit POST, NOT as a forged -X" \
+  "$(jsonc 'gh api repos/o/r/x -f "- post"')" "NO -X/--method flag"
 assert_deny "gh api -X post still denies (lowercase VALUE is a real spelling)" \
   "$(jsonc 'gh api -X post repos/o/r/pulls/1/merge')" \
   "gh api"
@@ -1741,6 +1743,36 @@ assert_deny "interior redirect: gh pr + redirect + ready denies" \
 # --- the narrow-deny expansion family shares the same separator slots
 assert_deny "interior redirect x narrow-deny: a gated binary, an interior redirect, then an EXPANSION where the verb belongs, still denies" \
   "$(json 'eas 2>&1 ${v:-update}')" "verb is not literal text"
+
+# --- COMPOSITION: an EXPANSION-rendered binary x a GLUED redirect in the verb slot.
+# Closed 2026-09-17. This was a live bypass of BOTH guards and NEITHER AXIS ALONE SHOWS IT:
+#   gh pr>log merge 42          DENY  (the literal `gh pr merge` check; _OUT_SEP eats `>log`)
+#   $(which gh) pr merge 42     DENY  (this expansion arm; the verb slot is spaced)
+#   $(which gh) pr>log merge 42 ALLOW <- the composition, until this change
+# The substitution defeats the literal check's command-position anchor, and the glued `>` is
+# neither `[[:space:]]` nor end-of-string, so this arm's old `([[:space:]]|$)` boundary failed.
+# merge-review-guard.sh missed the same string, so an unreviewed merge ran with both guards
+# satisfied. Real argv `pr merge 42` measured with a shim first on PATH -- nothing reached a
+# real gh. Fixed by giving the arm the `_OUT_POS_SUFFIX` closer class every sibling already
+# uses. A CORPUS THAT VARIES ONE AXIS AT A TIME CANNOT CONTAIN THIS ROW.
+assert_deny "composition: substitution binary + GLUED redirect in the verb slot denies" \
+  "$(json '$(which gh) pr>log merge 42 --squash')" "verb is not literal text"
+assert_deny "composition: the QUOTED substitution spelling of the same row denies" \
+  "$(json '\"$(which gh)\" pr>log merge 42 --squash')" "verb is not literal text"
+assert_deny "composition: a plain PARAMETER expansion, not just \$(...), denies too" \
+  "$(json '${GHBIN} pr>log merge 42 --squash')" "verb is not literal text"
+# THE TWO SINGLE-AXIS ROWS, pinned beside the composition so a later reader can see that each
+# already denied and that the gain is specifically their product.
+assert_deny "composition control: glued redirect ALONE (literal binary) already denied" \
+  "$(json 'gh pr>log merge 42 --squash')" "gh pr merge"
+assert_deny "composition control: substitution ALONE (spaced verb) already denied" \
+  "$(json '$(which gh) pr merge 42 --squash')" "verb is not literal text"
+# THE ALLOW SIDE. Widening a trailing boundary is the direction that invents denials, and this
+# guard has a one-command bypass but a false deny on ordinary work still gets it switched off.
+assert_allow "composition: a READ verb through the same glued-redirect slot stays allowed" \
+  "$(json 'gh pr>log view 42')"
+assert_allow "composition: an expansion NAMING the binary in argument position stays allowed" \
+  "$(json 'echo $(which gh) is installed')"
 
 # --- THE GAIN, which no single-invocation row can see
 # A second, interior-redirect merge was INVISIBLE to GH_PR_MERGE_RE, so the
@@ -2637,10 +2669,14 @@ assert_allow "gh api -f field on an explicit literal GET stays allowed" \
   "$(json 'gh api repos/o/r -X GET -f name=value')"
 assert_allow "gh api -H header flag (no method flag) stays allowed" \
   "$(jsonc 'gh api repos/o/r -H "Accept: application/vnd.github+json"')"
-assert_allow "a longer flag sharing the --method prefix is not mistaken for the real flag (boundary precision — \$ elsewhere in the same clause must not trip on '"'"'--methodology'"'"')" \
-  "$(json 'gh api repos/o/r -f notes=$X --methodology=custom')"
-assert_allow "a literal backtick used as markdown formatting, no method flag, stays allowed" \
-  "$(jsonc 'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here')"
+# Boundary preserved through the REASON: denying via the METHOD-FLAG arm would mean
+# `--methodology` was mistaken for `--method`, which is a different message.
+assert_deny "--methodology WITH a field parameter denies as an implicit POST, not via the method flag" \
+  "$(json 'gh api repos/o/r -f notes=$X --methodology=custom')" "NO -X/--method flag"
+# Boundary preserved through the REASON: a guard that read the backticks as a substitution
+# would deny via the method-flag arm and fail this row.
+assert_deny "a markdown backtick WITH a field parameter denies as an implicit POST, not as a substitution" \
+  "$(jsonc 'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here')" "NO -X/--method flag"
 # DESIGN CHOICE, accepted over-denial (see the fix's own DESIGN CHOICE
 # comment on GH_API_CLAUSE): the predicate reads for a \$ or backtick
 # ANYWHERE in the clause once a method flag is present, not only inside the
@@ -2844,6 +2880,25 @@ assert_deny "railway with a brace-range-split verb denies (no argument after it)
   "$(json 'railway u{p..p}')" "glued to a brace RANGE"
 assert_deny "gh api with a brace-range-split verb denies" \
   "$(json 'gh a{p..p}i repos/o/r -X POST')" "glued to a brace RANGE"
+# --- 2026-09-17: arm3's CLOSER, pinned BEHAVIOURALLY rather than only structurally.
+# The occurrence extractor's third arm matches TOKEN + gated verb, and used to close on a
+# hand-written `([[:space:]]|$)` which cannot see a GLUED `>` or `;`. The structural row far
+# below proves no hand-spelled closer survives anywhere; it CANNOT tell a closer widened
+# correctly from one widened to something subtly wrong, because it never runs the guard. These
+# rows do. Measured on origin/main (9f19b885) before the fix and on this branch after it:
+#   npx e{a..a}s update>log        ALLOW -> DENY
+#   npm ci; e{a..a}s update>log    ALLOW -> DENY
+#   npx e{a..a}s update            DENY  -> DENY   (control: the SPACE closer already worked)
+# THE LAUNCHER IS LOAD-BEARING on this arm and is not decoration: arm3 is prefixed by
+# _OUT_POS_PREFIX_W + _OUT_OPT_QUAL, and a bare `e{a..a}s` carries none of the fastpath needles
+# (eas/railway/npm/yarn/gh/npx/bun), so the hook exits before this check ever runs. That is the
+# separately documented TOOL-POSITION residual, not this closer -- do not "fix" it here.
+assert_deny "a launcher-qualified brace-RANGE tool token with a GLUED redirect denies" \
+  "$(json 'npx e{a..a}s update>log')" "glued to a brace RANGE"
+assert_deny "a brace-RANGE tool token after a segment separator with a GLUED redirect denies" \
+  "$(json 'npm ci; e{a..a}s update>log')" "glued to a brace RANGE"
+assert_deny "the same brace-RANGE tool token closed by a SPACE still denies (unmoved control)" \
+  "$(json 'npx e{a..a}s update')" "glued to a brace RANGE"
 # MULTI-VALUE range, ruled: denied IDENTICALLY to a single-value range.
 # Distinguishing them would mean evaluating what the range expands to, which
 # this file already refuses to do for the sibling $/backtick mechanism, and
@@ -2864,7 +2919,7 @@ assert_deny "a MULTI-value brace range glued to a verb denies the same as a sing
 # increment, so the bare form typed into the Bash tool runs literally and the CLI
 # rejects it. It reconstructs under bash -- a script, a hook, or `bash -c`, and that
 # wrapper is its own accepted residual (see this file's header) tracked by
-# todos/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md.
+# todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md.
 # So these pins are grammar completeness and defense in depth, not a live bypass.
 assert_deny "a three-field increment brace range glued to a verb denies (gh)" \
   "$(json 'gh pr me{r..r..2}ge 42')" "glued to a brace RANGE"
@@ -2968,6 +3023,149 @@ assert_allow "TOOL-position brace-range split of a binary NAME stays allowed —
 assert_allow "TOOL-position brace-range split of gh stays allowed — documented residual" \
   "$(json '{g..g}h api repos/o/r -X POST')"
 
+# ---------- 2026-09-16: narrow deny — a gated binary/verb glued to a brace LIST (todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md) --
+# Bash brace LIST expansion (the comma form, {a,b}) is a THIRD reconstruction
+# mechanism, distinct from the $/backtick family above AND from the brace
+# RANGE family immediately above this block (no `..`) -- every positive below
+# measured ALLOW on the pre-fix tree (reproduced by running the guard, not
+# asserted from the regex). Same VERB-position-closes / TOOL-position-
+# documented-residual split as the RANGE block, for the identical structural
+# reason -- see guard-outward-cli.sh's DOCUMENTED RESIDUALS entry for this
+# mechanism.
+assert_deny "eas with a brace-list-split verb denies (todo's illustrative construction)" \
+  "$(json 'eas up{d,x}ate --branch preview')" "glued to a brace LIST"
+assert_deny "gh pr merge with a brace-list-split verb denies (todo's illustrative construction)" \
+  "$(json 'gh pr me{r,r}ge 42')" "glued to a brace LIST"
+assert_deny "npm with a brace-list-split verb denies (todo's illustrative construction)" \
+  "$(json 'npm pub{l,z}ish')" "glued to a brace LIST"
+assert_deny "gh pr comment with a brace-list-split verb denies" \
+  "$(jsonc 'gh pr com{m,m}ent 5 --body hi --repo other/org')" "glued to a brace LIST"
+assert_deny "railway with a brace-list-split verb denies (no argument after it)" \
+  "$(json 'railway u{p,p}')" "glued to a brace LIST"
+assert_deny "gh api with a brace-list-split verb denies" \
+  "$(json 'gh a{p,p}i repos/o/r -X POST')" "glued to a brace LIST"
+assert_deny "eas build with a brace-list-split verb denies" \
+  "$(json 'eas bui{l,l}d --auto-submit')" "glued to a brace LIST"
+# --- 2026-09-17: the SAME arm3 closer on the LIST side, pinned behaviourally. Fixing one arm
+# and leaving its sibling is this file's most repeated mistake, so both are pinned, not just the
+# one that was easiest to construct. Measured on origin/main (9f19b885) before the fix:
+#   npm ci; e{a,a}s update>log     ALLOW -> DENY
+#   npm ci; e{a,a}s update;true    ALLOW -> DENY
+#   npm ci; rail{w,w}ay up>log     ALLOW -> DENY
+#   npm ci; e{a,a}s update         DENY  -> DENY   (control: the SPACE closer already worked)
+#   npm ci; ls                     ALLOW -> ALLOW  (control: no gated text anywhere)
+# THE PRIOR SEGMENT IS LOAD-BEARING, and for a DIFFERENT reason than the launcher above: the
+# LIST arm is prefixed by plain _OUT_POS_PREFIX, which admits wrapper words but NO launcher, so
+# `npx e{a,a}s ...` cannot reach this arm at all and pinning that spelling here would pin a
+# verdict this closer has no part in. The needle that carries the hook past its fastpath has to
+# come from elsewhere on the command line -- here an ordinary `npm ci` before the `;`.
+assert_deny "a brace-LIST tool token after a separator with a GLUED redirect denies" \
+  "$(json 'npm ci; e{a,a}s update>log')" "glued to a brace LIST"
+assert_deny "a brace-LIST tool token with a GLUED semicolon denies" \
+  "$(json 'npm ci; e{a,a}s update;true')" "glued to a brace LIST"
+assert_deny "a brace-LIST railway tool token with a GLUED redirect denies" \
+  "$(json 'npm ci; rail{w,w}ay up>log')" "glued to a brace LIST"
+assert_deny "the same brace-LIST tool token closed by a SPACE still denies (unmoved control)" \
+  "$(json 'npm ci; e{a,a}s update')" "glued to a brace LIST"
+assert_allow "an ordinary compound with no gated text stays allowed (over-denial control)" \
+  "$(json 'npm ci; ls')"
+# EMPTY alternative (`{,x}`) -- real bash: "up" + "" + "date" = "update", "up"
+# + "x" + "date" = "upxdate". Denied identically to a non-empty pair: this
+# file never evaluates which alternative bash would pick.
+assert_deny "an EMPTY-alternative brace list glued to a verb denies the same as a non-empty pair" \
+  "$(json 'eas up{,x}date --branch preview')" "glued to a brace LIST"
+# Item class is `[^{}]*` (per the todo's own AC), not alnum-only -- a
+# non-alphanumeric alternative must be caught too, proving the class is not
+# narrower than specified.
+assert_deny "a brace list with a non-alphanumeric alternative denies" \
+  "$(json 'eas up{d,-x}ate --branch preview')" "glued to a brace LIST"
+# MULTI-item list (3 alternatives, not just 2).
+assert_deny "a THREE-alternative brace list glued to a verb denies" \
+  "$(json 'gh pr me{r,r,R}ge 42')" "glued to a brace LIST"
+# Quote-awareness: braces INSIDE quotes are literal to bash and must NOT count.
+assert_allow "a QUOTED brace-list-shaped span is literal to bash and stays allowed" \
+  "$(jsonc 'eas "up{d,x}ate" --branch preview')"
+# The todo's own Implementation Notes name this as a PAIR, mirroring the
+# RANGE block's own model ("me{r..r}ge" allows, m"e"{r..r}ge denies) -- a
+# PARTIALLY-quoted span (only one letter of the verb inside quotes) leaves
+# the braces themselves OUTSIDE any quoted span, so bash still expands them:
+# `eas u"p"{d,x}ate --branch preview` really is `eas update upxate ...`.
+assert_deny "a PARTIALLY-quoted brace-list-shaped span still expands and denies (the todo's own quote-awareness pair)" \
+  "$(jsonc 'eas u"p"{d,x}ate --branch preview')" "glued to a brace LIST"
+# CONTROL, already documented and pre-existing: a brace LIST that follows an
+# INTACT, complete verb (not glued INSIDE it) must keep denying via the
+# EXISTING boundary check (_OUT_POS_SUFFIX already treats `{` as a closer) --
+# and via THAT check's OWN reason, not this new one. Mirrors the identical
+# collision the RANGE block's own development hit and fixed via
+# `_OUT_BR_RANGE_ALREADY_HANDLED` -- `_OUT_BR_LIST_ALREADY_HANDLED` is built
+# the same way from the start, and these pins are its regression coverage.
+assert_deny "brace list AFTER an intact verb still denies via the pre-existing boundary check, with ITS reason (control, unaffected by this change)" \
+  "$(json 'gh pr merge{1,3} 42')" "without a REAL --auto flag"
+assert_deny "a brace list after an intact gh api still denies via the pre-existing method check, with ITS reason" \
+  "$(json 'gh api{1,3} repos/o/r -X POST')" "mutating HTTP method"
+# pnpm/yarn have NO publish check anywhere in this file -- unlike the gh
+# forms above, a comma-list glued after their verb is NOT already handled, so
+# it denies via THIS block's own reason (deliberately not added to the
+# exclusion -- this deny is the only thing standing between them and a
+# registry push).
+assert_deny "pnpm publish with a trailing brace list denies via THIS block, not a pre-existing check (no pnpm check exists)" \
+  "$(json 'pnpm publish{1,3}')" "glued to a brace LIST"
+
+# ---- DECOY regression: the SAME anchoring discipline `_OUT_BR_RANGE_ALREADY_HANDLED`
+# needed two review rounds to reach is applied to `_OUT_BR_LIST_ALREADY_HANDLED`
+# from the start. These pins prove it holds, not merely assume it inherits the
+# range block's fix by resemblance. ----
+assert_deny "a decoy merge{1,3} AFTER a genuine glued construction does not suppress its deny" \
+  "$(json 'eas up{d,x}ate --branch preview && echo merge{1,3}')" "glued to a brace LIST"
+assert_deny "a decoy merge{1,3} BEFORE a genuine glued construction does not suppress its deny (order-independence)" \
+  "$(json 'echo merge{1,3} && eas up{d,x}ate --branch preview')" "glued to a brace LIST"
+assert_deny "a decoy create{1,3} does not suppress an unrelated genuine gh pr merge glued construction" \
+  "$(json 'gh pr me{r,r}ge 42 && echo create{1,3}')" "glued to a brace LIST"
+assert_deny "a decoy api{1,3} does not suppress an unrelated genuine railway glued construction" \
+  "$(json 'railway u{p,p} && echo api{1,3}')" "glued to a brace LIST"
+
+# ---- GENUINE co-occurrence regression: same per-occurrence discipline. ----
+assert_deny "a genuine, independently-allowed gh api{X,Y} elsewhere does not suppress an unrelated genuine eas glued construction" \
+  "$(json 'eas up{d,x}ate --branch preview && gh api{1,3}')" "glued to a brace LIST"
+assert_deny "same, reversed order (order-independence)" \
+  "$(json 'gh api{1,3} && eas up{d,x}ate --branch preview')" "glued to a brace LIST"
+assert_deny "a genuine, independently-allowed gh pr create{X,Y} (no --repo) elsewhere does not suppress an unrelated genuine eas glued construction" \
+  "$(json 'eas up{d,x}ate --branch preview && gh pr create{1,3}')" "glued to a brace LIST"
+assert_deny "a genuine, independently-allowed gh pr comment{X,Y} elsewhere does not suppress an unrelated genuine railway glued construction" \
+  "$(json 'railway u{p,p} && gh pr comment{1,3}')" "glued to a brace LIST"
+# Sanity control: the co-occurring gh construction really is independently
+# benign on its own.
+assert_allow "sanity: bare gh api{X,Y} with no mutating flag stays allowed on its own" \
+  "$(json 'gh api{1,3}')"
+
+# ---- bounds: ordinary brace-list use must NOT start denying ----
+assert_allow "a comma-form brace in ARGUMENT position (mkdir), unrelated to a gated verb, stays allowed" \
+  "$(json 'mkdir -p /tmp/x/{a,b}')"
+assert_allow "a leading-empty comma-form brace in argument position stays allowed" \
+  "$(jsonc "cp f{,.bak} /tmp/")"
+assert_allow "a bare brace placeholder (find -exec, no comma) stays allowed" \
+  "$(jsonc "find . -name '*.ts' -exec grep -l x {} +")"
+assert_allow "a brace list in a NON-command, non-glued argument position stays allowed" \
+  "$(json 'gh pr view {1,2,3}')"
+assert_allow "a brace list glued to an ARGUMENT, not the verb, stays allowed" \
+  "$(json 'gh pr view 42{1,2}')"
+assert_allow "the sanctioned gh pr merge --auto automerge stays allowed with an unrelated brace list in --body" \
+  "$(jsonc 'gh pr merge 42 --auto --squash --delete-branch --body "see {a,b} done"')"
+
+# ---- TOOL-position: DOCUMENTED, DELIBERATE residual (not closed by this fix) ----
+assert_allow "TOOL-position brace-list split of a binary NAME stays allowed — documented residual, see guard-outward-cli.sh DOCUMENTED RESIDUALS" \
+  "$(json '{e,e}as update --branch preview')"
+assert_allow "TOOL-position brace-list split of gh stays allowed — documented residual" \
+  "$(json '{g,g}h api repos/o/r -X POST')"
+
+# ---- NESTED variant: DOCUMENTED, DELIBERATE residual (item class excludes {/}) ----
+assert_allow "a RANGE nested inside a LIST alternative stays allowed — documented residual, see guard-outward-cli.sh DOCUMENTED RESIDUALS" \
+  "$(json 'eas up{d,{a..z}}ate --branch preview')"
+# The class is "any nested brace construct", not just the range sibling above —
+# measured on its own rather than assumed (code-reviewer SUGGESTION).
+assert_allow "a LIST nested inside a LIST alternative stays allowed — documented residual, same class as the range sibling above" \
+  "$(json 'eas up{d,{x,y}}ate --branch preview')"
+
 # ---------- 2026-09-05: gh_pr_clause_has_repo's vanished fallback -----------
 # The SAME detector/consumer pair defect already fixed at GH_API_CLAUSE, left
 # half-done here. Once the occurrence counters read a per-rendering maximum, a
@@ -3039,6 +3237,66 @@ check "no-jq: railway run fails closed"       deny "$(nojq_hook "$(json 'railway
 check "no-jq: npm publish fails closed"       deny "$(nojq_hook "$(json 'npm publish')")"
 check "no-jq: npm run update:preview closed"  deny "$(nojq_hook "$(json 'npm run update:preview')")"
 check "no-jq: yarn update:preview closed"     deny "$(nojq_hook "$(json 'yarn update:preview')")"
+# WORKSPACE SCOPE ON THE DEGRADED PATHS. This is the only thing that makes the crude fastpath's
+# `workspaces?` alternative fail-visible: it is unreachable on the normal path, so the two
+# normal-path assert_deny rows above would pass with it deleted.
+# NON-VACUITY WAS ESTABLISHED BY MUTATION, and only TWO of the three deny rows below actually
+# discriminate -- stated because a row that passes for the wrong reason is worse than no row.
+# Measured on a NOLIB fixture against three trees (origin/main; HEAD; HEAD with ONLY this
+# alternative deleted): the `yarn workspace api run <otascript>` row and its bare-script twin
+# go ALLOW / DENY / ALLOW, so they redden if the line is removed. The `workspaces foreach exec`
+# row DENIES on all three, because it carries a literal that the PRE-EXISTING fastpath pattern
+# already matched -- it is coverage for the foreach spelling, NOT evidence about this
+# alternative, and must not be read as one. The `yarn workspace api build` rows are the
+# over-denial side.
+check "no-jq: yarn workspace run update:preview closed"  deny "$(nojq_hook "$(json 'yarn workspace api run update:preview')")"
+check "no-jq: yarn workspace bare update:preview closed" deny "$(nojq_hook "$(json 'yarn workspace api update:preview')")"
+check "no-jq: yarn workspaces foreach update:preview closed" deny "$(nojq_hook "$(json 'yarn workspaces foreach exec npm run update:preview')")"
+check "no-jq: yarn workspace ordinary script allowed"    allow "$(nojq_hook "$(json 'yarn workspace api build')")"
+# THE OVER-DENIAL ROWS THIS ARM REGRESSED ONCE, AND WHY THEY ARE HERE.
+# The first revision of the fastpath alternative spanned arbitrary words between the scope and
+# the script name, so an ordinary monorepo command that merely NAMED the script later in the
+# same clause denied -- on the degraded paths only, where nothing was looking. Found by review,
+# not by this suite. Each row below ALLOWs on main, denied on that revision, and allows now.
+check "no-jq: workspace test filter naming the script allowed" allow "$(nojq_hook "$(json 'yarn workspace api test -- -t should not call update:preview endpoint')")"
+check "no-jq: workspace lint message naming the script allowed" allow "$(nojq_hook "$(json 'yarn workspace docs lint --message this checks that update:preview stays disabled in dev')")"
+check "no-jq: npm workspace test naming the script allowed"    allow "$(nojq_hook "$(json 'npm workspace api test -- -t update:production guard')")"
+check "no-jq: pnpm workspaces grep naming the script allowed"  allow "$(nojq_hook "$(json 'pnpm workspaces run test -- --grep update:preview')")"
+check "no-jq: workspaces foreach echoing the script allowed"   allow "$(nojq_hook "$(json 'yarn workspaces foreach exec echo update:preview is the script name')")"
+# The spellings the BOUNDED span still has to catch -- flags before `run`, and `foreach run`.
+check "no-jq: workspaces foreach run script closed"      deny "$(nojq_hook "$(json 'yarn workspaces foreach run update:preview')")"
+check "no-jq: workspaces foreach flag run script closed" deny "$(nojq_hook "$(json 'yarn workspaces foreach -A run update:preview')")"
+check "no-jq: workspace flag run script closed"          deny "$(nojq_hook "$(json 'yarn workspace api --silent run update:preview')")"
+check "no-jq: workspace run production script closed"    deny "$(nojq_hook "$(json 'yarn workspace api run update:production')")"
+# FLAG VALUES. The first bounded revision absorbed BARE flags only, so a flag whose value is a
+# separate LETTER-BEARING token broke it and the row slipped. The shape of that bug is the
+# lesson: `--jobs 4 run <script>` denied ANYWAY, because a digit is non-alphabetic and the
+# separator class swallows it -- so "I tested a flag with a value" would have been true and
+# useless. The value has to contain a letter to exercise the defect.
+check "no-jq: workspace flag+value run script closed"    deny "$(nojq_hook "$(json 'yarn workspace api --cwd packages/api run update:preview')")"
+check "no-jq: foreach flag+value run script closed"      deny "$(nojq_hook "$(json 'yarn workspaces foreach --since main run update:preview')")"
+check "no-jq: workspace flag+value bare script closed"   deny "$(nojq_hook "$(json 'yarn workspace api --cwd packages/api update:preview')")"
+check "no-jq: workspace numeric flag value still closed" deny "$(nojq_hook "$(json 'yarn workspaces foreach --jobs 4 run update:production')")"
+check "no-jq: scoped workspace name run script closed"   deny "$(nojq_hook "$(json 'yarn workspace @myorg/api run update:preview')")"
+# Over-denial side of the value slot, written to attack it rather than to confirm it.
+check "no-jq: workspace flag+value ordinary script allowed" allow "$(nojq_hook "$(json 'yarn workspace api --cwd packages/api run build')")"
+check "no-jq: foreach flag+value ordinary script allowed"   allow "$(nojq_hook "$(json 'yarn workspaces foreach --since main run lint')")"
+check "no-jq: flag value then prose naming the script allowed" allow "$(nojq_hook "$(json 'yarn workspace api --message wrote docs about update:preview today')")"
+check "no-jq: commit message naming the script allowed"     allow "$(nojq_hook "$(json 'yarn workspace api commit -m fix the update:preview script')")"
+check "no-jq: scoped workspace ordinary script allowed"     allow "$(nojq_hook "$(json 'yarn workspace @myorg/api build')")"
+# NAMED RESIDUAL, pinned as ALLOW so it is visible rather than forgotten: with no `workspace`
+# word at all the crude path's own flag absorber still cannot carry a value, so this slips on
+# the degraded paths. It is ALLOW on origin/main too -- a pre-existing asymmetry between
+# _OUT_FLAG_RUN and this crude mirror, not something this PR introduced, and wider than the
+# workspace arm can reach. If this row ever flips to DENY, that asymmetry was closed and this
+# pin should move with it.
+check "no-jq: RESIDUAL bare flag+value with no workspace word allows" allow "$(nojq_hook "$(json 'yarn --cwd packages/api run update:preview')")"
+check "no-lib: yarn workspace run update:preview closed"  deny "$(nolib_hook "$(json 'yarn workspace api run update:preview')")"
+check "no-lib: yarn workspace bare update:preview closed" deny "$(nolib_hook "$(json 'yarn workspace api update:preview')")"
+check "no-lib: yarn workspace ordinary script allowed"    allow "$(nolib_hook "$(json 'yarn workspace api build')")"
+check "no-awk: yarn workspace run update:preview closed"  deny "$(noawk_hook "$(json 'yarn workspace api run update:preview')")"
+check "no-awk: yarn workspace bare update:preview closed" deny "$(noawk_hook "$(json 'yarn workspace api update:preview')")"
+check "no-awk: yarn workspace ordinary script allowed"    allow "$(noawk_hook "$(json 'yarn workspace api build')")"
 check "no-jq: gh pr merge fails closed"       deny "$(nojq_hook "$(json 'gh pr merge 42')")"
 check "no-jq: gh release create fails closed" deny "$(nojq_hook "$(json 'gh release create v1.0.0')")"
 check "no-jq: gh api fails closed"            deny "$(nojq_hook "$(json 'gh api -X PUT repos/x/y')")"
@@ -3062,6 +3320,8 @@ check "no-jq: \$-sigil-split eas update fails closed" deny "$(nojq_hook "$(jsonc
 # alternative alongside it -- a split VERB (binary name intact) is now caught
 # here too, not just on the precise path.
 check "no-jq: brace-range-split eas update fails closed" deny "$(nojq_hook "$(json 'eas up{d..d}ate --branch preview')")"
+check "no-jq: brace-list-split eas update fails closed" deny "$(nojq_hook "$(json 'eas up{d,x}ate --branch preview')")"
+check "no-jq: brace-list comma FP (mkdir) stays open"    allow "$(nojq_hook "$(json 'mkdir -p /tmp/x/{a,b}')")"
 
 # ---------- lib-unsourceable fallback (jq IS present, lib/cmd-detect.sh is NOT) ----------
 # A prior version of this hook silently ALLOWED every command here on the
@@ -3083,6 +3343,7 @@ check "no-lib: line-continuation railway up closed"  deny "$(nolib_hook "$LC_RAI
 check "no-lib: line-continuation gh pr merge closed" deny "$(nolib_hook "$LC_GH")"
 check "no-lib: \$-sigil-split eas update fails closed" deny "$(nolib_hook "$(jsonc "e\$'a's update --branch preview --platform all")")"
 check "no-lib: brace-range-split eas update fails closed" deny "$(nolib_hook "$(json 'eas up{d..d}ate --branch preview')")"
+check "no-lib: brace-list-split eas update fails closed" deny "$(nolib_hook "$(json 'eas up{d,x}ate --branch preview')")"
 
 # ---------- ROUND-3 C4: awk missing → cmd_bare returns NOTHING ----------
 # jq/grep/sed present, awk absent: the lib sources fine and `declare -F
@@ -3099,6 +3360,7 @@ check "no-awk: inline bypass prefix allows"   allow "$(noawk_hook "$(json 'ALLOW
 check "no-awk: line-continuation eas update closed" deny "$(noawk_hook "$LC_EAS")"
 check "no-awk: \$-sigil-split eas update fails closed" deny "$(noawk_hook "$(jsonc "e\$'a's update --branch preview --platform all")")"
 check "no-awk: brace-range-split eas update fails closed" deny "$(noawk_hook "$(json 'eas up{d..d}ate --branch preview')")"
+check "no-awk: brace-list-split eas update fails closed" deny "$(noawk_hook "$(json 'eas up{d,x}ate --branch preview')")"
 
 # ---------- 2026-09-05: degraded path must not fail open on an expansion -----
 # The narrow-deny ruling is explicit that a precise-path-only fix "leaves the
@@ -3993,9 +4255,27 @@ assert_deny "...opening at !" \
 # the clause is `[gh -a -c <(gh pr merge 7 --auto]` and the token is the INNER DECOY — identical
 # whether or not the outer merge carries one. The mask is therefore load-bearing for the whole
 # family, not for one row, which is why the no-authorisation variant is pinned alongside.
-# These rows pin the CURRENT verdict AND its REASON so a flip to ALLOW cannot be silent, and
-# so the eventual fix must come here and convert them. See
-# todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md.
+# These rows pin the CURRENT verdict AND its REASON so a flip to ALLOW cannot be silent.
+#
+# NOT CONVERTED — proved unfixable via occurrence counting, not merely left. The gh-api
+# SEPSAFE template (a separator-safe grammar, max()'d against the wide count) was tried here
+# and MEASURED INERT: `gh -a -c <(gh pr merge 7) pr merge 42` returns count=1 under BOTH the
+# wide AND the separator-safe grammar, because the nested invocation's own "gh" is the ONLY
+# "gh" reachable to complete ITS OWN match — the outer, really-executing "pr merge 42" has no
+# separate "gh" of its own to anchor a second, non-overlapping match, under any grammar
+# narrowing. A follow-up "does the matched span cross a command-position boundary" check was
+# also tried and rejected: it reddened 23 unrelated, already-correct assertions (interior
+# redirects like `gh pr 2>&1 merge`, and glued `;`/`&&`/`||` before an UNRELATED preceding `gh`
+# command) because those legitimately contain anchor-class bytes as ordinary redirect/glue
+# syntax, not as evidence of a second command. See
+# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md
+# for the full mechanism and both rejected approaches, and
+# todos/P2-2026-09-14-two-token-gh-needles-miscount-occurrences-through-a-process-substitution.md
+# (status: blocked, not archived — AC1 is unreachable as worded for this ordering; the one
+# decision remaining is whether to accept this tripwire-pinned residual as the permanent
+# posture). The more severe residual that investigation surfaced is NOT on this ordering
+# axis and is already filed separately as
+# todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
 assert_deny "TRIPWIRE: a hidden second pr merge is miscounted but still denies" \
   "$(json 'gh -a -c <(gh pr merge 7) pr merge 42')" \
   "without a REAL --auto flag"
@@ -4036,11 +4316,411 @@ assert_allow "a single read-only gh api stays allowed" \
 assert_allow "a single read-only gh api behind a root flag stays allowed" \
   "$(json 'gh -t x api repos/o/r')"
 # The one-command mutating form is ALLOW on main too — pinned so a reader does not mistake
-# the rows above for a claim that this change closed it. It is the P2 gh-api-route todo's.
-assert_allow "the ONE-command -f mutation is allowed here, as it is on main (pre-existing)" \
-  "$(json 'gh api -f a=b /repos/o/r/merges')"
+# the rows above for a claim that this change closed it.
+#
+# Tracked by todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+# This pointer was REPOINTED 2026-09-17. It previously read "It is the P2 gh-api-route
+# todo's", naming an archived status:done todo about a DIFFERENT hook, whose own text
+# asserts guard-outward-cli denies this form — false for the field-based spelling. So the
+# pin deferred to a closed file that disclaimed the very thing being pinned, and the gap
+# fell between the two records and went untracked. The discriminator is the absent
+# explicit method: gh infers POST from the presence of -f/-F/--field/--raw-field, so this
+# spelling is a POST that never says so and the method check never sees one.
+# WAS an assert_allow deferring to a CLOSED P2 whose own text disclaimed the thing this pin
+# pinned. The pin and the todo each pointed at the other and the gap fell between them.
+# ---------- gh's IMPLICIT POST (todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md)
+# api.go:329-330 sets method=POST when NO method flag was passed and there is any field
+# parameter or --input. Every spelling below reached the arbitrary-mutation surface while naming
+# no method at all, and every one measured ALLOW before this arm existed.
+# GLUED SHORT FORMS. The first revision of this arm required a trailing separator, so
+# `-fmerge_method=squash` never matched and the route this change exists to close stayed OPEN on
+# both guards. The file already knew: :4781 records the sibling flag's glued form as "the common
+# curl-style spelling; found bypassing a separator-only pattern in review round 2". Same
+# function, same lesson, written again.
+assert_deny "the GLUED -f short form denies (separator-only patterns miss it)" \
+  "$(json 'gh api -fmerge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "the GLUED -F short form denies" \
+  "$(json 'gh api -Fmerge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "the GLUED form against a templated endpoint denies" \
+  "$(json 'gh api -fmerge_method=squash repos/{owner}/{repo}/pulls/995/merge')" "NO -X/--method flag"
+# THE MIRROR-IMAGE BUG, on the NEGATIVE conjunct. The same separator requirement on the
+# method-flag pattern meant glued `-XGET` did not register as a method flag while the field
+# pattern did match — denying an explicit READ. gh's RequestMethodPassed is TRUE for `-XGET`.
+assert_allow "a GLUED -XGET with fields is an explicit read and stays allowed" \
+  "$(json 'gh api -XGET /repos/o/r/pulls/42/merge -f foo=bar')"
+assert_allow "a GLUED -XGET on a search endpoint with fields stays allowed" \
+  "$(json 'gh api -XGET search/issues -f q=repo:o/r')"
+assert_allow "--methodology is still not a method flag and needs no field to prove it" \
+  "$(json 'gh api --methodology=custom repos/o/r')"
+# WHY THERE ARE NO DEGRADED-PATH ROWS FOR THE GLUED FORMS, measured rather than assumed.
+# Four were written and removed. On the degraded fixtures the crude mirror denies ANY `gh api`
+# call — verified against the BASE guard, where both `gh api -fmerge_method=squash <merge
+# endpoint>` and a plain `gh api /repos/o/r/pulls/42` already DENY on nolib. So a glued-form
+# deny there passes with or without this fix: it is count, not coverage, and it would read to a
+# later maintainer as evidence the fix works on those paths. The discriminating rows are the
+# PRECISE-path ones above (base ALLOW -> head DENY). This note exists so the rows are not added
+# back for looking like a gap.
 
-_PIN_RAN=1
+assert_deny "gh api -f with no method flag denies (implicit POST)" \
+  "$(json 'gh api -f merge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "gh api -F with no method flag denies" \
+  "$(json 'gh api -F merge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "gh api --raw-field with no method flag denies" \
+  "$(json 'gh api --raw-field merge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "gh api --field with no method flag denies" \
+  "$(json 'gh api --field merge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "gh api --field=k=v GLUED with no method flag denies" \
+  "$(json 'gh api --field=merge_method=squash /repos/o/r/pulls/42/merge')" "NO -X/--method flag"
+assert_deny "gh api --input with no method flag denies (api.go:301 ties it to the same switch)" \
+  "$(json 'gh api /repos/o/r/pulls/42/merge --input body.json')" "NO -X/--method flag"
+assert_deny "an implicit POST to a NON-merge endpoint denies too (this guard gates any mutation)" \
+  "$(json 'gh api /repos/o/r/issues -f title=hello')" "NO -X/--method flag"
+# THE ALLOW SIDE IS WHAT MAKES THE ARM SAFE. gh's switch is `!RequestMethodPassed && params`, so
+# an EXPLICIT method wins and these are reads. Keying the arm on fields alone would deny them,
+# and a guard that denies reads gets switched off rather than fixed.
+assert_allow "an EXPLICIT -X GET with fields is a read and stays allowed" \
+  "$(json 'gh api -X GET /repos/o/r/pulls/42/merge -f foo=bar')"
+assert_allow "an EXPLICIT --method GET with fields stays allowed" \
+  "$(json 'gh api --method GET /repos/o/r/pulls/42/merge --field foo=bar')"
+assert_allow "a plain read with no fields and no method stays allowed" \
+  "$(json 'gh api /repos/o/r/pulls/42')"
+assert_allow "a read with --jq and no fields stays allowed" \
+  "$(json 'gh api repos/o/r/commits --jq .[0].sha')"
+assert_allow "the sanctioned automerge is untouched by this arm" \
+  "$(json 'gh pr merge --auto --squash --delete-branch 42')"
+
+assert_deny "the ONE-command -f mutation now denies (gh's implicit POST, api.go:329-330)" \
+  "$(json 'gh api -f a=b /repos/o/r/merges')" "NO -X/--method flag"
+
+# ---------- non-argv text must not disarm the ABSENCE-shaped conjunct (2026-09-22) ----------
+# todos/archive/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md
+# The implicit-POST arm is anchored on the ABSENCE of a method flag, and the clause it read kept
+# text that never reaches argv: an unquoted trailing comment and a redirect operand. One
+# method-shaped token in either made the negated conjunct false and the arm stood down.
+# Measured ALLOW on origin/main (8ff7cfd2) for every DENY row below except the two controls,
+# which denied on both sides -- so the decoy token, not the comment, is what flipped them.
+# The fix reads the NEGATED conjunct over an argv-cut clause (comment cut at an unquoted
+# word-start `#`, word-initial `_CMD_REDIR` matches blanked) and the POSITIVE field conjunct over
+# the full clause, so relative to main the change can only ADD denials: the cut removes a suffix
+# at a space and the blank replaces a WORD-INITIAL match with a space, so neither can alter the
+# token before it, and comment text could already supply a field before this change. The anchor
+# is load-bearing -- the block after the value-slot rows below records the regression an
+# unanchored blank produced.
+assert_deny "a method flag inside a trailing COMMENT does not disarm the implicit-POST arm" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v # -X GET')" "NO -X/--method flag"
+assert_deny "the long-form method flag inside a trailing comment does not disarm it either" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v # --method GET')" "NO -X/--method flag"
+assert_deny "a method-shaped REDIRECT OPERAND does not disarm the implicit-POST arm" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v > -X')" "NO -X/--method flag"
+assert_deny "the corpus one-shot merge row with a comment decoy stays denied (apicolfp-oneshot's shape)" \
+  "$(json 'gh api /repos/o/r/merges -f base=main -f head=x # -X GET')" "NO -X/--method flag"
+assert_deny "CONTROL: a benign trailing comment denies (the decoy token is what flipped the rows above)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v # harmless note')" "NO -X/--method flag"
+assert_deny "CONTROL: a QUOTED hash is not a comment, so the field still counts" \
+  "$(json "gh api repos/o/r/pulls/42/merge -f body='a # b'")" "NO -X/--method flag"
+assert_allow "an EXPLICIT read followed by a comment stays allowed (the cut removes only non-argv text)" \
+  "$(json 'gh api -X GET repos/o/r/pulls/42/merge -f k=v # note')"
+assert_allow "an EXPLICIT read with an interior redirect stays allowed (blanking an operand invents no token)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v 2>&1 -X GET')"
+# ACCEPTED OVER-DENIAL, pre-existing on main and deliberately NOT changed here: the POSITIVE
+# mutating-method literal arm still reads the full clause, comment text included, so a mutating
+# method named in a comment after an explicit read denies. That is the restrictive direction
+# (the operator drops the comment), and cutting the POSITIVE conjuncts is what could turn a
+# deny into an allow -- the one direction this change must not take. Pinned so the boundary of
+# the cut is stated by a row rather than remembered.
+assert_deny "ACCEPTED OVER-DENIAL: a mutating method named in a comment after an explicit read still denies (positive arm reads the full clause)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v -X GET # -X POST')" "mutating HTTP method"
+# THE FIELD-FLAG CLOSER. `--field`, `--raw-field` and `--input` closed on a hand-spelled
+# `([[:space:]]|=|$)`; a redirect glued to the flag put `>` where that class expected whitespace,
+# the field went unseen, and the arm stood down with NO decoy token at all -- argv identical to
+# the spaced form that denies. `${_OUT_POS_SUFFIX}` (plus `=` for the glued-value spelling)
+# absorbs it. The structural lint at the end of this file was blind to the `|=|` spelling; it
+# was widened FIRST and watched go red on that line before the closer was fixed.
+assert_deny "a redirect GLUED to --field is still a field (closer widened to the exported suffix)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge --field>o k=v')" "NO -X/--method flag"
+assert_deny "a redirect glued to --raw-field is still a field" \
+  "$(json 'gh api repos/o/r/pulls/42/merge --raw-field>o k=v')" "NO -X/--method flag"
+assert_deny "a redirect glued to --input is still an input file" \
+  "$(json 'gh api repos/o/r/pulls/42/merge --input>o body.json')" "NO -X/--method flag"
+assert_deny "CONTROL: the spaced long flag denied before and after (non-vacuity for the glued rows)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge --field k=v')" "NO -X/--method flag"
+assert_allow "CONTROL: a longer flag sharing the prefix is still not a field (the closer did not over-widen)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge --fieldx k=v')"
+# VALUE-POSITION DECOY -- a method-shaped token that genuinely REACHES argv as another flag's
+# value (`--template -X`; also `-t`, `-p`/`--preview`). Neither the cut nor the closer can see
+# it; closing it needs the flag-arity table this guard does not have. Pinned KNOWN-WRONG beside
+# its control so the gap stays visible instead of being rediscovered.
+assert_allow "KNOWN-WRONG (residual): --template -X after a field is a live ALLOW (value-slot decoy)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --template -X')"
+assert_deny "CONTROL: the same carrier holding an ordinary value denies (the decoy is what flips it)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --template x')" "NO -X/--method flag"
+# THE BLANK IS ANCHORED AT A WORD START, AND THIS BLOCK IS WHY (security review, 2026-09-22).
+# `_CMD_REDIR` opens with an optional fd-digit prefix, which is right for the ADDITIVE presence
+# checks it was written for and wrong for a SUBTRACTIVE use: unanchored, it ate the trailing digit
+# of `--method2>x` together with the operator and manufactured `--method `, which satisfies the
+# method closer -- main DENY, first head ALLOW, a regression (non-executable, since gh has no
+# such flag and pflag does not prefix-match, but a regression all the same). Anchored at
+# `(^|[[:space:]])` the blank can never alter the token before it, which is the property the
+# monotonicity claim in the block header actually rests on.
+assert_deny "a digit glued between --method and a redirect is not a method flag (the blank cannot eat the digit)" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --method2>x')" "NO -X/--method flag"
+assert_deny "the fd-shaped digit before >&2 stays with the word" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --method1>&2')" "NO -X/--method flag"
+assert_deny "the fd-shaped digit before an input redirect stays with the word" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --method0<x')" "NO -X/--method flag"
+assert_deny "CONTROL: a longer flag sharing the prefix, glued to a redirect, denies on both sides" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v --methodology>x')" "NO -X/--method flag"
+assert_deny "CONTROL: a word-initial operator with a GLUED decoy operand is still blanked" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v >-X')" "NO -X/--method flag"
+# THE COST OF THE ANCHOR, pinned rather than remembered: an operator GLUED to the preceding word
+# with a SPACED operand is not blanked, so its operand can still carry the decoy. ALLOW on main,
+# ALLOW here -- a pre-existing gap the anchor leaves open, not a regression.
+assert_allow "KNOWN-WRONG (residual): an operator glued to the word with a spaced decoy operand is not blanked" \
+  "$(json 'gh api repos/o/r/pulls/42/merge -f k=v> -X')"
+
+# ---------- launcher-family / path-qualified invocation (2026-09-16) ----------
+# todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md
+# Representative rows for direct developer feedback; the full GENERATED
+# launcher-form x path-form x binary+verb combinatorial grid (208 rows, per
+# the todo's own measured PR #952 reviewer methodology) lives in
+# repro-outward-cli-corpus.sh, the REQUIRED-check corpus this file complements.
+
+# -- launcher axis: one row per of the 12 measured forms, same target (eas update) --
+assert_deny "npx eas update denies" \
+  "$(json 'npx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npx -y eas update denies" \
+  "$(json 'npx -y eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npx --yes eas update denies" \
+  "$(json 'npx --yes eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npm exec eas update denies (the todo's headline measured row)" \
+  "$(json 'npm exec eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npm exec -- eas update denies" \
+  "$(json 'npm exec -- eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "bunx eas update denies" \
+  "$(json 'bunx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "bun x eas update denies" \
+  "$(json 'bun x eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "bun run eas update denies" \
+  "$(json 'bun run eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "pnpm dlx eas update denies" \
+  "$(json 'pnpm dlx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "pnpm exec eas update denies" \
+  "$(json 'pnpm exec eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "yarn dlx eas update denies" \
+  "$(json 'yarn dlx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "yarn exec eas update denies" \
+  "$(json 'yarn exec eas update --branch preview')" \
+  "reached through a launcher"
+
+# -- launcher axis, other binaries; an interior redirect inside the launcher's
+# own syntax must be absorbed too (the structural drift-detection assertion
+# above is what caught the first draft of this fix missing it) --
+assert_deny "npx railway up denies" \
+  "$(json 'npx railway up')" \
+  "reached through a launcher"
+assert_deny "npm exec npm publish denies" \
+  "$(json 'npm exec npm publish')" \
+  "reached through a launcher"
+assert_deny "an interior redirect inside 'npm exec' is still absorbed" \
+  "$(json 'npm 2>&1 exec eas update --branch preview')" \
+  "reached through a launcher"
+
+# -- path axis, incl. the launcher+path COMPOSED shape (npx handed a path) --
+assert_deny "absolute-path eas update denies" \
+  "$(json '/opt/homebrew/bin/eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "./node_modules/.bin path eas update denies" \
+  "$(json './node_modules/.bin/eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "../ relative-path eas update denies" \
+  "$(json '../eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "absolute-path railway up denies" \
+  "$(json '/usr/local/bin/railway up')" \
+  "reached through a launcher"
+assert_deny "npx handed an absolute path denies (launcher+path COMPOSE)" \
+  "$(json 'npx /opt/homebrew/bin/eas update --branch preview')" \
+  "reached through a launcher"
+
+# -- gh family: blanket over-denial (deliberate, see the guard's own comment) --
+assert_deny "npx gh pr merge denies" \
+  "$(json 'npx gh pr merge 42')" \
+  "gated 'gh' subcommand reached through a launcher"
+assert_deny "npx gh pr merge --auto STILL denies (deliberate over-denial vs. the bare carve-out)" \
+  "$(json 'npx gh pr merge 42 --auto')" \
+  "gated 'gh' subcommand reached through a launcher"
+assert_allow "the BARE form of the same command is unaffected (--auto carve-out intact)" \
+  "$(json 'gh pr merge 42 --auto')"
+assert_deny "absolute-path gh pr merge denies" \
+  "$(json '/opt/homebrew/bin/gh pr merge 42')" \
+  "gated 'gh' subcommand reached through a launcher"
+assert_deny "npm exec gh api mutating denies" \
+  "$(json 'npm exec gh api repos/o/r -X POST')" \
+  "gated 'gh' subcommand reached through a launcher"
+
+# -- package spelling axis (eas-cli / @railway/cli) --
+assert_deny "npx eas-cli update denies (package spelling)" \
+  "$(json 'npx eas-cli update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npm exec eas-cli update denies (the todo's second measured row)" \
+  "$(json 'npm exec eas-cli update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npx @railway/cli up denies (package spelling)" \
+  "$(json 'npx @railway/cli up')" \
+  "reached through a launcher"
+# Carve-out on the READ-ONLY VERB, never the package token -- exempting the
+# whole package spelling on a read-only-shaped rule would leave
+# 'npx eas-cli update' open, per the todo's own explicit warning.
+assert_allow "npx eas-cli --version stays allowed (read-only verb, not the package token)" \
+  "$(json 'npx eas-cli --version')"
+assert_allow "npx eas-cli update:list stays allowed (read-only colon verb)" \
+  "$(json 'npx eas-cli update:list')"
+
+# -- false-positive sweep on the newly-widened surface --
+assert_allow "npx tsc stays allowed" \
+  "$(json 'npx tsc')"
+assert_allow "npx prettier --write stays allowed" \
+  "$(json 'npx prettier --write')"
+assert_allow "npm exec vitest stays allowed" \
+  "$(json 'npm exec vitest')"
+assert_allow "/usr/bin/git status stays allowed (path form, ungated binary)" \
+  "$(json '/usr/bin/git status')"
+assert_allow "path form + read-only verb stays allowed" \
+  "$(json './node_modules/.bin/eas --version')"
+assert_allow "prose mentioning the launcher/path shapes stays allowed" \
+  "$(jsonc 'git commit -m "chore: mentions npx eas update and /usr/bin/gh pr merge"')"
+assert_allow "a /-bearing quoted mention stays allowed" \
+  "$(jsonc 'git commit -m "see docs/eas update"')"
+
+# -- round-2 security review (2026-09-16): GAP 1/2/3 (ambiguous launcher
+# flags, package-directory path aliasing, version-pin spelling) and the
+# flag-run generalization (CRITICAL: closed per-launcher flag enumeration
+# defeated every launcher-family check, incl. the gh-family blanket-deny) --
+# NOTE: these first two rows deny via check #1 ("reached through a
+# launcher"), NOT GAP-1's own message -- the round-2 _OUT_LAUNCHER flag-run
+# widening (below) makes _OUT_LAUNCHER itself absorb "--package=eas-cli --"
+# as ordinary flags, so check #1 independently reaches "eas update" too, and
+# deny() exits on the FIRST match, which is textually earlier in the file.
+# Redundant-but-correct defense in depth, not a regression -- GAP-1's OWN
+# dedicated coverage (the case check #1 CANNOT reach) is the -c/--call row
+# right below, where the target is blanked as quoted prose before check #1
+# ever sees it.
+assert_deny "npx --package=eas-cli -- eas update denies (via check #1, redundant launcher-axis coverage)" \
+  "$(json 'npx --package=eas-cli -- eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npm exec --package=eas-cli -- eas update denies (via check #1, same redundant coverage)" \
+  "$(json 'npm exec --package=eas-cli -- eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npx --package=eas-cli -c '...' denies (GAP-1's OWN coverage: the -c/--call value is BLANKED prose, check #1 cannot see it)" \
+  "$(json "npx --package=eas-cli -c 'eas update --branch preview'")" \
+  "combined with --package/-p/-c/--call"
+assert_deny "npx @railway/cli@latest up denies (version-pin spelling, npx --help's own synopsis form)" \
+  "$(json 'npx @railway/cli@latest up')" \
+  "railway up/deploy"
+assert_deny "node ./node_modules/eas-cli/bin/run update denies (package.json bin maps eas -> ./bin/run)" \
+  "$(json 'node ./node_modules/eas-cli/bin/run update --branch preview')" \
+  "INSIDE the eas-cli npm package directory"
+assert_deny "bare ./node_modules/eas-cli/bin/run update denies (no interpreter needed -- an executable script)" \
+  "$(json './node_modules/eas-cli/bin/run update --branch preview')" \
+  "INSIDE the eas-cli npm package directory"
+assert_deny "npm exec --yes eas update denies (npx's OWN --yes flag, unrecognized on npm exec pre-fix)" \
+  "$(json 'npm exec --yes eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npm exec -y eas update denies (short form of the same flag)" \
+  "$(json 'npm exec -y eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "bunx --bun eas update denies (a real bun flag, unmodeled for any launcher pre-fix)" \
+  "$(json 'bunx --bun eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npx -q eas update denies (an unrecognized flag on npx itself)" \
+  "$(json 'npx -q eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npx -q gh pr merge --auto denies (CRITICAL: the SAME gap defeated the gh-family blanket-deny)" \
+  "$(json 'npx -q gh pr merge 42 --auto')" \
+  "gated 'gh' subcommand"
+assert_allow "./node_modules/eas-cli/bin/run --version stays allowed (verb-gated, not path-gated)" \
+  "$(json './node_modules/eas-cli/bin/run --version')"
+assert_allow "./node_modules/@railway/cli/bin/run --help stays allowed (same verb-gating, railway package)" \
+  "$(json './node_modules/@railway/cli/bin/run --help')"
+assert_allow "npx -q tsc --noEmit stays allowed (unrecognized flag, but an UNGATED binary -- not blanket over-denial)" \
+  "$(json 'npx -q tsc --noEmit')"
+# ROUND-9: this row asserted the interior npm->exec flag slot stayed ALLOW as a documented
+# residual. Round 9 closed that slot, so the expectation flips here rather than the row being
+# deleted -- a residual that closes should read as one assertion changing its mind, with the
+# round named, not as a test quietly disappearing. The guard header sentence that justified
+# leaving it open ("no bypass through that specific slot was measured") was false when
+# written: repro-outward-cli-corpus.sh pinned this very command ALLOW at the same time.
+assert_deny "npm --loglevel=silent exec eas update now DENIES (round-9: the interior npm->exec flag slot closed)" \
+  "$(json 'npm --loglevel=silent exec eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "bare-form eas update still denies (negative control has a positive in this same block)" \
+  "$(json 'eas update --branch preview')" \
+  "command-position 'eas update/publish/submit'"
+
+# -- round-2 review's OWN findings, second pass (2026-09-16): the fast-path
+# pre-filter gated every launcher-family check behind a needle list missing
+# npx/bun, and the gh clause was the one of ten GAP-3 clauses missing the
+# version-pin splice --
+assert_deny "npx --package=my-tool -c '...' denies (fast-path fix: no eas/railway/npm/yarn/gh needle, npx/bun previously invisible)" \
+  "$(json "npx --package=my-tool -c 'update --branch preview'")" \
+  "combined with --package/-p/-c/--call"
+assert_deny "npx -p my-tool -- update denies (same fast-path fix, --package/-p arm)" \
+  "$(json 'npx -p my-tool -- update --branch preview')" \
+  "combined with --package/-p/-c/--call"
+assert_deny "npx gh@latest pr merge --auto denies (gh clause was the one of ten clauses missing the version-pin splice)" \
+  "$(json 'npx gh@latest pr merge 42 --auto')" \
+  "gated 'gh' subcommand"
+assert_deny "npx --package=eas-cli -- tsc --version denies via GAP-1 (discriminates the --package/-p arm from check #1's now-redundant coverage)" \
+  "$(json 'npx --package=eas-cli -- tsc --version')" \
+  "combined with --package/-p/-c/--call"
+
+# ---------- path-qualified LAUNCHER / WRAPPER / INTERPRETER, and npm's own aliases ----------
+# Four holes the launcher round left open, each found by a one-token-different pair. They are
+# pinned here because a regression in any of them is silent: the corpus could not express the
+# first one at all until its composition-order dimension was added, so an unchanged gap count
+# read as closure while measuring nothing.
+assert_deny "path-qualified LAUNCHER denies (path was modelled only AFTER the launcher, so one extra launcher word reopened a deny)" \
+  "$(json '/opt/homebrew/bin/npx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "path-qualified launcher reaches railway too (same grammar, different gated binary)" \
+  "$(json '/opt/homebrew/bin/npx railway up')" \
+  "reached through a launcher"
+assert_deny "relative path-qualified launcher denies (the property is the path, not its absoluteness)" \
+  "$(json './npx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "path-qualified WRAPPER word denies -- /usr/bin/env is the shebang spelling every script in this tree uses" \
+  "$(json '/usr/bin/env node ./node_modules/eas-cli/bin/run update --branch preview')" \
+  "a direct path invocation of a script INSIDE the eas-cli"
+assert_deny "path-qualified INTERPRETER denies (same root cause, separate code site from the wrapper above)" \
+  "$(json '/opt/homebrew/bin/node ./node_modules/eas-cli/bin/run update')" \
+  "a direct path invocation of a script INSIDE the eas-cli"
+assert_deny "npm x denies -- x is npm's own documented alias for exec (lib/utils/cmd-list.js), not an invented spelling" \
+  "$(json 'npm x eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "npm rum denies -- rum is npm's own alias for run, and this lands on THIS repo's OTA publisher" \
+  "$(json 'npm rum update:preview')" \
+  "command-position 'npm run update:preview/update:production"
+assert_deny "npm urn denies -- the second run alias from the same table; grepping it returned exactly run-script, x, rum, urn" \
+  "$(json 'npm urn update:preview -- --message hi')" \
+  "command-position 'npm run update:preview/update:production"
+# Over-denial controls: the widenings above must not make the guard refuse ordinary work, which
+# is the failure mode that gets a guard switched off rather than fixed.
+assert_allow "npm x on an UNGATED binary stays allowed (the alias widening is not a blanket deny)" \
+  "$(json 'npm x prettier --write .')"
+assert_allow "an ordinary npm run script stays allowed (only the two publish scripts are gated)" \
+  "$(json 'npm run test:run')"
+
 # 462 -> 491 on 2026-09-06/07: +27 across three rounds, itemised because the
 # breakdown was WRONG once (it said "+21" beside a total of 488 -- 462+21=483, so
 # the sentence and the number disagreed and only the number was ever checked):
@@ -4252,7 +4932,7 @@ _PIN_RAN=1
 # the suite was re-run on the resolved tree and reported the 739 itself; the
 # arithmetic is a check on the measurement, not a substitute for it.
 # 739 -> 784 (2026-09-15, merge of the root-position-flag-PROPERTY branch
-# todos/P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list.md
+# todos/archive/P2-2026-09-13-post-verb-flag-walker-still-enumerates-and-keeps-two-copies-of-the-list.md
 # into a main that had meanwhile reached 739): +45 for that branch's assertions.
 # It was at 735 on the SAME base of 690, i.e. the same +45, and main's own route
 # from 690 was +49. The two branches added DISJOINT assertions, so the totals
@@ -4261,7 +4941,1010 @@ _PIN_RAN=1
 # `Results: 784 passed, 1 failed`, the lone failure being this pin refusing a
 # total it had not been told about. The arithmetic is a check on the
 # measurement, not a substitute for it -- had they disagreed, the run wins.
-EXPECTED_TOTAL=784
+#
+# 784 -> 821 (2026-09-16,
+# todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md):
+# +37 for the launcher-family/path-qualified-invocation rows --
+#   12  launcher axis, one row per of the 12 measured forms (npx, npx -y,
+#        npx --yes, npm exec, npm exec --, bunx, bun x, bun run, pnpm dlx,
+#        pnpm exec, yarn dlx, yarn exec), same target (eas update)
+#    3  launcher axis, other binaries + an interior-redirect-inside-the-
+#        launcher-syntax regression pin (the shape the structural
+#        hardcoded-[[:space:]]+ drift-detection assertion above caught in
+#        this fix's own first draft)
+#    5  path axis (absolute, ./node_modules/.bin, ../, a second binary, and
+#        the launcher+path COMPOSED shape -- npx handed a path argument)
+#    5  gh family: the blanket over-denial, its --auto-carve-out-still-denies
+#        pin, the paired BARE-form control proving the carve-out itself is
+#        untouched, a path-form row, and a launcher-form gh api row
+#    5  package-spelling axis (eas-cli x2 launchers, @railway/cli, plus the
+#        two read-only-verb carve-out controls -- --version and update:list)
+#    7  false-positive sweep (npx tsc/prettier, npm exec vitest, an absolute
+#        path to an ungated binary, a path form on a read-only verb, and two
+#        prose/quoted mentions)
+# 12+3+5+5+5+7 = 37. MEASURED, NOT COMPUTED: the suite on this tree reported
+# `Results: 821 passed, 1 failed`, the lone failure again being this pin
+# refusing a total it had not yet been told about.
+#
+# 821 -> 837 (2026-09-16, same todo, round-2 security review): +16 for GAP
+# 1/2/3 (ambiguous launcher flags, package-directory path aliasing,
+# version-pin spelling) and the flag-run generalization (the CRITICAL finding
+# that the closed per-launcher flag enumeration defeated every
+# launcher-family check, incl. the gh-family blanket-deny) -- 6 round-1-style
+# adversarial DENYs (the todo's own r1-r6 probes), 5 flag-tolerance DENYs
+# (npm exec --yes/-y, bunx --bun, npx -q, and the CRITICAL npx -q gh pr merge
+# --auto), 2 verb-gated-not-path-gated ALLOW controls, 1 ungated-binary
+# false-positive ALLOW control, 1 documented-residual ALLOW (the interior
+# npm->exec flag slot, deliberately out of scope), 1 bare-form DENY control.
+# 6+5+2+1+1+1 = 16. MEASURED, NOT COMPUTED below -- if the run disagrees, the
+# run wins.
+# 837 -> 841 (2026-09-16, same todo, round-2 review's OWN findings second
+# pass): +4 for the fast-path needle-list fix (npx/bun previously invisible
+# to every launcher-family check unless the text also happened to contain
+# eas/railway/npm/yarn/gh), the gh clause's missing version-pin splice, and
+# one discriminating row for GAP-1's --package/-p arm (the round-2 flag-run
+# widening made the existing --package/-p test rows redundant with check #1,
+# per code-reviewer's WARNING). MEASURED, NOT COMPUTED below.
+# 841 -> 851 (2026-09-16): +8 deny rows pinning the four path/alias holes the security review
+# found, +2 over-denial controls. Each deny row was a measured ALLOW before its fix.
+
+# ---------- path-qualified WRAPPER in front of a bare gated binary ----------
+# The wrapper absorber existed only inside the package-directory clauses, so a path-qualified
+# wrapper word in front of a bare gated binary sailed past the command-position anchors. Measured
+# as one-token-different pairs: the bare wrapper spelling DENIED while its /usr/bin/ spelling
+# ALLOWED, on all four gated binaries. /usr/bin/env is the spelling every shebang in this tree
+# uses. Closed by _OUT_POS_PREFIX_W, a separate constant consumed only by boolean deny sites --
+# _OUT_POS_PREFIX itself has extraction and count consumers a widening would skew.
+assert_deny "path-qualified wrapper before a bare gated binary denies (was ALLOW while the bare wrapper spelling denied)" \
+  "$(json '/usr/bin/env eas update --branch preview')" \
+  "publishes an OTA update"
+assert_deny "path-qualified wrapper reaches railway too" \
+  "$(json '/usr/bin/env railway up')" \
+  "railway"
+assert_deny "path-qualified wrapper reaches npm publish" \
+  "$(json '/usr/bin/env npm publish')" \
+  "npm publish"
+assert_deny "path-qualified wrapper reaches a gated gh subcommand" \
+  "$(json '/usr/bin/env gh release create v1')" \
+  "gh"
+assert_deny "a different path-qualified wrapper word denies too (the property is the wrapper, not the word env)" \
+  "$(json '/bin/nohup eas update --branch preview')" \
+  "publishes an OTA update"
+
+# ---------- npm accepts an ABBREVIATION CLOSURE, not the alias table ----------
+# npm's deref() checks commands, then aliases, THEN abbrev(commands + alias keys). Computed from
+# npm's own modules: 11 tokens resolve to run (rum run run- run-s run-sc run-scr run-scri run-scrip
+# run-script ur urn) and 3 to exec (exe exec x). The previous alternation covered 4 and 2 -- it was
+# derived by grepping the aliases OBJECT, which is the wrong layer, and the assertion name said so.
+# `npm ur update:preview` runs package.json's update:preview: a real OTA to production users.
+assert_deny "npm ur denies -- an abbreviation of urn, not present in the alias table" \
+  "$(json 'npm ur update:preview')" \
+  "update:preview"
+assert_deny "npm run-s denies -- a truncation of run-script, accepted by abbrev" \
+  "$(json 'npm run-s update:preview')" \
+  "update:preview"
+assert_deny "npm run-scrip denies -- every truncation between run- and run-script resolves" \
+  "$(json 'npm run-scrip update:preview -- --message x')" \
+  "update:preview"
+assert_deny "npm exe denies -- the third exec token alongside exec and x" \
+  "$(json 'npm exe eas update --branch preview')" \
+  "reached through a launcher"
+
+# ---------- over-denial controls for BOTH widenings ----------
+# A wrapper prefix and an npm abbreviation are both everyday spellings. Denying them wholesale is
+# what gets a guard switched off rather than fixed, so each widening is pinned in both directions.
+assert_allow "path-qualified wrapper on an UNGATED binary stays allowed" \
+  "$(json '/usr/bin/env prettier --write .')"
+assert_allow "path-qualified wrapper running an ordinary repo script stays allowed" \
+  "$(json '/usr/bin/env node scripts/build.js')"
+assert_allow "a wrapper in front of an ordinary npm script stays allowed" \
+  "$(json 'nohup npm run dev')"
+assert_allow "an npm abbreviation on an UNGATED script stays allowed (only the two publish scripts are gated)" \
+  "$(json 'npm ur test:run')"
+
+# ---------- PINNED: _OUT_WRAPPER_WORD's definition line ----------
+# This constant feeds _OUT_POS_PREFIX, which _OUT_POS_PREFIX_W and _OUT_POS_PREFIX_LP are both
+# derived from, so a widening here reaches every command-position deny decision in the file --
+# including the count and `grep -oE` extraction consumers, where widening is NOT monotone-safe.
+# Deliberately not stated as a use-site COUNT: the last two numbers written here (24, then 28)
+# were both invalidated by the very round that wrote them, the second by a refactor in the same
+# commit. Derive it with grep when you need it. The comment above that constant used
+# to claim this identity was "asserted in the self-test" when nothing asserted it: an inert widening
+# was measured to move the expansion from 243 to 267 bytes while the suite still reported 851
+# passed. This row is the assertion that claim described. Reading the first definition is only sound
+# because the count is asserted alongside it -- the same reasoning as the _OUT_SEP pin above.
+_WW_DEFS=$(grep -c '^_OUT_WRAPPER_WORD=' "$HOOK" | tr -d '[:space:]')
+_WW_SHA=$(grep -m1 '^_OUT_WRAPPER_WORD=' "$HOOK" | shasum | cut -c1-16)
+if [ "${_WW_DEFS:-0}" = 1 ] && [ "$_WW_SHA" = "03c5bd2be8126234" ]; then
+  echo "PASS: _OUT_WRAPPER_WORD definition unchanged (pinned by hash; it feeds _OUT_POS_PREFIX's mixed-arity consumers)"; PASS=$((PASS+1))
+else
+  echo "FAIL: _OUT_WRAPPER_WORD moved (defs=${_WW_DEFS:-0} sha=$_WW_SHA, expected 1 / 03c5bd2be8126234) -- widening it also moves _OUT_POS_PREFIX, whose extraction and count consumers this does not merely make stricter. If the change is deliberate, re-check those consumers and update this pin on purpose."
+  FAIL=$((FAIL+1))
+fi
+
+# ---------- ROUND 5: the prefix as an AXIS, not a per-binary patch ----------
+# Round 4 applied _OUT_POS_PREFIX_W PER GATED BINARY and then claimed in the guard header that
+# path invocation was closed "on all four gated binaries". For `gh` exactly ONE anchor had been
+# converted. Seven command-position deny decisions were still bypassed by the identical
+# one-token-different pair, each measured here with its bare-wrapper control denying (so the
+# ALLOW was meaningful, not a dead probe). Six of the seven were live on `main` too, so the PR
+# regressed nothing -- what it shipped was a CLAIM wider than its coverage.
+assert_deny "path-qualified wrapper before gh pr merge --admin (round-4 claim said closed; it was not)" \
+  "$(json '/usr/bin/env gh pr merge 42 --admin')" \
+  "without a REAL --auto flag"
+assert_deny "path-qualified wrapper before a mutating gh api" \
+  "$(json '/usr/bin/env gh api --method DELETE /repos/o/r')" \
+  "with a mutating HTTP method"
+assert_deny "path-qualified wrapper before gh pr create --repo (cross-repo write)" \
+  "$(json '/usr/bin/env gh pr create --repo evil/repo --title x')" \
+  "writes to a DIFFERENT GitHub rep"
+assert_deny "path-qualified wrapper before gh pr comment -R (cross-repo write)" \
+  "$(json '/usr/bin/env gh pr comment 1 -R evil/repo -b x')" \
+  "writes to a DIFFERENT GitHub rep"
+assert_deny "path-qualified wrapper before the expansion-token narrow deny" \
+  "$(json '/usr/bin/env eas ${V} --branch production')" \
+  "the verb is not"
+assert_deny "path-qualified wrapper before the brace-range narrow deny" \
+  "$(json '/usr/bin/env gh pr me{r..r}ge 42')" \
+  "glued to a brace RANGE"
+assert_deny "path-qualified wrapper before an ambiguous-flag launcher (reaches a real OTA)" \
+  "$(jsonc '/usr/bin/env npx -c "eas update --branch production"')" \
+  "a launcher"
+
+# ---------- ROUND 5: privilege prefix, flag-tolerant by construction ----------
+# _OUT_PRIV_WORD rather than a word in _OUT_WRAPPER_WORD: that constant is defined ~150 lines
+# above _OUT_FLAG_RUN, so a plain word there closes `sudo eas update` while `sudo -E eas update`
+# stays ALLOW. Both spellings are pinned here precisely because the bare-only version of this fix
+# was written, measured, and rejected for being the same half-closed axis as round 4.
+assert_deny "privilege prefix before a bare gated binary" \
+  "$(json 'sudo eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "privilege prefix WITH A FLAG (the spelling a bare-word fix would have missed)" \
+  "$(json 'sudo -E eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "privilege prefix with a flag TAKING A VALUE" \
+  "$(json 'sudo -u ci eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "privilege prefix in front of a launcher" \
+  "$(json 'sudo npx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "corepack shim in front of a launcher" \
+  "$(json 'corepack npx eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "doas reaches railway" \
+  "$(json 'doas railway up')" \
+  "railway"
+assert_deny "path-qualified privilege word stacked on a path-qualified wrapper" \
+  "$(json '/usr/bin/sudo -E /usr/bin/env eas update --branch production')" \
+  "publishes an OTA update"
+
+# ---------- ROUND 5: ambiguity counting survives the widening ----------
+# The count consumers read >1 as AMBIGUOUS. Widening is monotone on a boolean read and NOT on a
+# count -- a longer match can absorb what would have started a second one, which would flip an
+# ambiguous deny into the single-occurrence grant path. Both spellings were ALLOW on `main`
+# because the path-qualified form never matched at all; they must now count as two.
+assert_deny "two path-qualified gh pr merge invocations still read as AMBIGUOUS (not merged into one)" \
+  "$(json '/usr/bin/env gh pr merge 1 --auto; /usr/bin/env gh pr merge 2 --auto')" \
+  "more than one command-position 'gh pr merge' occurrence"
+assert_deny "two path-qualified gh api invocations still read as AMBIGUOUS" \
+  "$(json '/usr/bin/env gh api /repos/o/r; /usr/bin/env gh api /repos/o/r2')" \
+  "more than one command-position 'gh api' occurrence"
+
+# ---------- ROUND 5: over-denial controls ----------
+# The first of these is the one that would break a live pipeline rather than merely annoy: the
+# gh pr merge clause cut is GRANT-shaped, so widening its count without its extractor would make
+# an empty clause read as "no --auto seen" and DENY this repo's own sanctioned /todo automerge.
+assert_allow "the sanctioned --auto automerge still ALLOWS through a path-qualified wrapper" \
+  "$(json '/usr/bin/env gh pr merge 42 --auto --squash --delete-branch')"
+assert_allow "a single read-only gh api through a path-qualified wrapper stays allowed" \
+  "$(json '/usr/bin/env gh api /repos/o/r')"
+assert_allow "read-only gh pr list through a path-qualified wrapper stays allowed" \
+  "$(json '/usr/bin/env gh pr list')"
+assert_allow "sudo on an UNGATED npm subcommand stays allowed" \
+  "$(json 'sudo npm install')"
+assert_allow "sudo -E on an ordinary npm script stays allowed" \
+  "$(json 'sudo -E npm run build')"
+assert_allow "sudo with a value-taking flag on an ungated binary stays allowed" \
+  "$(jsonc 'sudo -u postgres psql -c "SELECT 1"')"
+assert_allow "corepack's own subcommands stay allowed" \
+  "$(json 'corepack enable')"
+
+
+# ---------- ROUND 6: the path/launcher qualifier of the COMMAND ----------
+# Round 5 made the prefix an axis but attached (path)? to a wrapper or privilege WORD only. The
+# bare-path arm -- a path qualifying the COMMAND or the LAUNCHER -- lives solely in
+# _OUT_POS_PREFIX_LP, so the three anchors with no _LP sibling were still bypassed by it while
+# the header claimed them closed. Six one-token-different pairs, each measured with its
+# env-prefixed control DENYING, and all six also ALLOW on origin/main (pre-existing, not
+# regressions). Closed with _OUT_OPT_QUAL, the optional form of the group _LP mandates.
+assert_deny "path-qualified LAUNCHER before an ambiguous flag (a real OTA; -c hides the payload from every downstream anchor)" \
+  "$(jsonc '/opt/homebrew/bin/npx -c "eas update --branch production"')" \
+  "a launcher"
+assert_deny "path-qualified binary with an expansion-token verb" \
+  "$(json '/opt/homebrew/bin/eas $V --branch production')" \
+  "the verb is not"
+assert_deny "launcher-qualified binary with an expansion-token verb" \
+  "$(json 'npx eas $V --branch production')" \
+  "the verb is not"
+assert_deny "expansion-token verb on gh reaches the admin sink when the path qualifies it" \
+  "$(json '/opt/homebrew/bin/gh pr $V 42')" \
+  "the verb is not"
+assert_deny "path-qualified binary with a brace-RANGE verb" \
+  "$(json '/opt/homebrew/bin/eas upd{a..z}te --branch production')" \
+  "glued to a brace RANGE"
+assert_deny "launcher-qualified binary with a brace-RANGE verb" \
+  "$(json 'npx eas upd{a..z}te --branch production')" \
+  "glued to a brace RANGE"
+
+# ---------- ROUND 6 REGRESSION: a decoy --auto absorbed into the PREFIX ----------
+# Introduced by round 5, not inherited. _OUT_PRIV_WORD appends _OUT_FLAG_RUN, which absorbs any
+# dash token as a flag of sudo/doas/corepack; that text lands inside the CLAUSE the grant check
+# reads, and the scan accepted a standalone --auto ANYWHERE in it. Measured before the fix:
+# `sudo gh pr merge 1` DENIED while `sudo --auto gh pr merge 1` was a silent ALLOW -- a decoy
+# that never reaches gh satisfying the grant. A false GRANT is worse than a missed detection.
+# The scan now starts at the gh token, so a dash token in the prefix cannot grant.
+assert_deny "a decoy --auto in the privilege prefix does not grant the merge" \
+  "$(json 'sudo --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+assert_deny "decoy --auto behind another privilege flag does not grant" \
+  "$(json 'sudo -E --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+assert_deny "decoy --auto in a VALUE-taking privilege flag slot does not grant" \
+  "$(json 'sudo -u ci --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+assert_deny "decoy --auto behind a path-qualified privilege word does not grant" \
+  "$(json '/usr/bin/sudo --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+
+# ---------- ROUND 6: the grant must still work for the REAL thing ----------
+# The failure mode on this side is denying the sanctioned /todo automerge, which would break a
+# live pipeline rather than merely annoy. Pinned under each prefix form the axis now absorbs.
+assert_allow "the sanctioned --auto automerge still ALLOWS behind a privilege prefix" \
+  "$(json 'sudo gh pr merge 42 --auto --squash')"
+assert_allow "the sanctioned --auto automerge still ALLOWS behind a bare wrapper" \
+  "$(json 'env gh pr merge 42 --auto --squash --delete-branch')"
+assert_allow "the sanctioned --auto automerge still ALLOWS behind an inline assignment" \
+  "$(json 'GH_TOKEN=x gh pr merge 42 --auto --squash')"
+
+
+# ---------- ROUND 7: one flag on a WRAPPER word skipped the guard entirely ----------
+# _OUT_POS_PREFIX_W composed its two arms asymmetrically: the privilege arm ends in
+# _OUT_FLAG_RUN (round 5 added it so `sudo -E` is absorbed) while the wrapper arm was
+# WRAPPER[[:space:]]+ with no flag run. One flag on a wrapper word therefore terminated the
+# prefix match, no command-position anchor matched, the occurrence count read 0, and the whole
+# block was skipped -- a silent ALLOW. Nine two-sided pairs measured, every bare control DENYing,
+# all nine also ALLOW on origin/main. Unlike round 6's decoys, -i/-u/-p/-a are REAL options of
+# these wrappers, so the command actually executes.
+assert_deny "a flag on a wrapper word no longer skips the guard (eas)" \
+  "$(json 'env -u FOO eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "nohup with a -- terminator still reaches the gated binary" \
+  "$(json 'nohup -- eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "command -p still reaches the gated binary" \
+  "$(json 'command -p eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "exec -a still reaches the gated binary" \
+  "$(json 'exec -a x eas update --branch production')" \
+  "publishes an OTA update"
+assert_deny "env -i reaches the ADMIN merge sink (the shape a second reviewer found independently)" \
+  "$(json 'env -i gh pr merge 1 --admin')" \
+  "without a REAL --auto flag"
+assert_deny "a flagged wrapper reaches a mutating gh api" \
+  "$(json 'env -u FOO gh api repos/o/r -X DELETE')" \
+  "with a mutating HTTP method"
+assert_deny "a flagged wrapper reaches railway" \
+  "$(json 'env -u FOO railway up')" \
+  "railway"
+assert_deny "a flagged wrapper reaches npm publish" \
+  "$(json 'env -u FOO npm publish --access public')" \
+  "npm publish"
+assert_deny "a flagged wrapper reaches a launcher-qualified OTA" \
+  "$(json 'env -u FOO npx eas update --branch preview')" \
+  "reached through a launcher"
+
+# ---------- ROUND 7 COUPLING: the decoy route the wrapper fix opens ----------
+# Absorbing wrapper flags means the gh-pr-merge CLAUSE cut captures them, so a decoy --auto can
+# ride in behind a wrapper word that -- unlike sudo, which rejects it -- really does execute.
+# The scan-start gate also fired on any token ENDING in /gh, including an inline-assignment
+# VALUE. Both closed in the same change, because fixing either alone is wrong.
+assert_deny "a decoy --auto behind an executing wrapper word does not grant" \
+  "$(json 'env --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+assert_deny "an assignment VALUE ending in /gh does not start the grant scan" \
+  "$(json 'GH_CONFIG_DIR=/etc/gh sudo --auto gh pr merge 1')" \
+  "without a REAL --auto flag"
+
+# ---------- ROUND 7: over-denial controls ----------
+assert_allow "a flagged wrapper on an UNGATED npm subcommand stays allowed" \
+  "$(json 'env -u FOO npm install')"
+assert_allow "env -i on an ungated interpreter stays allowed" \
+  "$(json 'env -i node scripts/build.js')"
+assert_allow "command -p on an ordinary binary stays allowed" \
+  "$(json 'command -p ls -la')"
+assert_allow "a preceding unrelated command still leaves the automerge carve-out intact" \
+  "$(json 'echo hi;gh pr merge 42 --auto --squash')"
+
+
+# ---------- ROUND 9: a flag INSIDE a multi-word launcher skipped every check ----------
+# `_OUT_LAUNCHER` spelled its interior runner->subcommand gaps with bare `$_OUT_SEP` while
+# the trailing slot on the same line already used `_OUT_FLAG_RUN`. Moving one token one word
+# left -- `npm exec -s <gated>` to `npm -s exec <gated>` -- therefore defeated every
+# `_OUT_POS_PREFIX_LP`-gated check, including the gh-family blanket deny and the GAP-1
+# ambiguous-flag check whose own message says it denies UNCONDITIONALLY. All of these were
+# ALLOW on origin/main too, so this closes a pre-existing gap, not a regression.
+assert_deny "a flag inside the npm launcher phrase still reaches the OTA verb" \
+  "$(jsonc 'npm -s exec eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "a flag inside the npm launcher phrase still reaches the ADMIN merge sink" \
+  "$(jsonc 'npm -s exec gh pr merge 42 --admin')" \
+  "gh"
+assert_deny "a long-form interior flag with a value is absorbed too" \
+  "$(jsonc 'npm --loglevel=silent exec eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "an interior flag whose value is a separate word is absorbed" \
+  "$(jsonc 'npm --prefix /tmp exec eas update --branch preview')" \
+  "reached through a launcher"
+assert_deny "pnpm's interior gap absorbs a flag before the ADMIN merge sink" \
+  "$(jsonc 'pnpm -s dlx gh pr merge 42 --admin')" \
+  "gh"
+assert_deny "bun's interior gap absorbs a flag before the OTA verb" \
+  "$(jsonc 'bun -s run eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "yarn's interior gap absorbs a flag before railway" \
+  "$(jsonc 'yarn -s dlx railway up')" \
+  "railway"
+assert_deny "the GAP-1 check that claims to deny UNCONDITIONALLY is no longer defeated by an interior flag" \
+  "$(jsonc 'npm -s exec --package=eas-cli -- tsc --version')" \
+  "denies UNCONDITIONALLY"
+
+# ---------- 2026-09-17: the LAUNCHER GRAMMAR itself (todos/archive/P1-2026-09-16-launcher-grammar-shapes-compose-around-the-outward-cli-guard.md) --
+# Before this round the grammar admitted exactly ONE launcher word, in ONE position, IMMEDIATELY
+# followed by the gated target. Five measured shapes stepped outside one of those three
+# assumptions. They are ONE defect -- "how many launcher words, in which positions, and what may
+# sit between a launcher and its target" -- and are fixed as a property (_OUT_LAUNCH_STEP,
+# repeated) rather than as five more names in five more alternations, which is what the previous
+# three rounds each did before the next sibling turned up.
+#
+# A WRAPPER OR PRIVILEGE WORD AFTER THE LAUNCHER. _OUT_POS_PREFIX_W already admitted these in
+# COMMAND position; a wrapper word does not stop being one because a launcher preceded it.
+assert_deny "a wrapper word AFTER the launcher no longer hides the target" \
+  "$(jsonc 'npx env eas update')" "reached through a launcher"
+assert_deny "a different wrapper word after the launcher denies the same way" \
+  "$(jsonc 'npx command eas update')" "reached through a launcher"
+assert_deny "a PRIVILEGE word after the launcher denies (the inter-slot takes both classes)" \
+  "$(jsonc 'npx sudo eas update')" "reached through a launcher"
+# STACKED LAUNCHERS. One launcher hop was modelled; two were not.
+assert_deny "a stacked launcher (npm exec + npx) denies" \
+  "$(jsonc 'npm exec npx eas update')" "reached through a launcher"
+assert_deny "a stacked launcher of a different pair denies" \
+  "$(jsonc 'npx pnpm dlx eas update')" "reached through a launcher"
+assert_deny "THREE stacked launcher hops deny -- the repetition is unbounded, not special-cased at two" \
+  "$(jsonc 'npx npm exec pnpm dlx eas update')" "reached through a launcher"
+assert_deny "a bare pnpm dispatch in front of a launcher denies" \
+  "$(jsonc 'pnpm npx eas update')" "reached through a launcher"
+# A LAUNCHER THAT TAKES AN ARGUMENT BEFORE ITS TARGET. npm explore's package name sits between
+# the launcher and the command, so no fixed-width launcher pattern can reach past it. The `--`
+# is optional because npm accepts both spellings, and BOTH are pinned.
+assert_deny "npm explore with the -- separator denies" \
+  "$(jsonc 'npm explore some-pkg -- eas update')" "reached through a launcher"
+assert_deny "npm explore WITHOUT the -- separator denies too" \
+  "$(jsonc 'npm explore some-pkg eas update')" "reached through a launcher"
+# A BARE pnpm/yarn DISPATCH of a local binary -- no dlx, no exec verb at all.
+assert_deny "a bare pnpm dispatch of a local gated binary denies" \
+  "$(jsonc 'pnpm eas update')" "reached through a launcher"
+assert_deny "a bare yarn dispatch of a local gated binary denies" \
+  "$(jsonc 'yarn eas update')" "reached through a launcher"
+assert_deny "a bare pnpm dispatch reaching railway denies" \
+  "$(jsonc 'pnpm railway up')" "railway"
+# A LAUNCHER IN FRONT OF THE PACKAGE-DIR CLAUSES. Those two checks were anchored on
+# _OUT_POS_PREFIX_W, which has no launcher slot at all.
+assert_deny "a launcher in front of the eas-cli package-dir path denies" \
+  "$(jsonc 'npx node_modules/eas-cli/bin/run update')" "eas-cli npm package"
+assert_deny "a bare pnpm dispatch in front of the eas-cli package-dir path denies" \
+  "$(jsonc 'pnpm node_modules/eas-cli/bin/run update')" "eas-cli npm package"
+assert_deny "a launcher in front of the railway package-dir path denies" \
+  "$(jsonc 'npx node_modules/@railway/cli/bin/run up')" "@railway/cli npm package"
+# COMPOSITION with the already-closed command-position PREFIX axis (#980 round 5). The prefix
+# and the chain are separate dimensions and must compose, not merely coexist.
+assert_deny "a privilege prefix composed with a launcher chain and an inter word denies" \
+  "$(jsonc 'sudo npx env eas update')" "reached through a launcher"
+# COMPOSITION with the EXPANSION-token axis. These come from giving the three BOOLEAN expansion
+# arms the chain qualifier; the brace-range siblings deliberately do NOT move (see the residual).
+assert_deny "a launcher chain composed with a parameter expansion denies" \
+  "$(jsonc 'npx env ${e:-eas} update')" "not literal"
+assert_deny "npm explore composed with a parameter expansion denies" \
+  "$(jsonc 'npm explore some-pkg -- ${e:-eas} update')" "not literal"
+assert_deny "a stacked launcher composed with a command substitution denies" \
+  "$(jsonc 'npx pnpm dlx $(which eas) update')" "not literal"
+
+# A WORKSPACE SCOPE SELECTOR BETWEEN THE MANAGER AND ITS TARGET. Found by the round-1 security
+# review of this PR, measured ALLOW on origin/main AND on the first revision of this branch --
+# the same "launcher that takes an ARGUMENT before its target" class as `npm explore`, of which
+# the branch had implemented exactly one spelling while a comment beside it claimed `every
+# spelling`. `yarn workspace <ws> X` forwards X to yarn INSIDE that workspace, so the whole
+# grammar has to re-apply after the scope; _OUT_WS_SCOPE is therefore interpolated BOTH as a
+# launcher arm and as an absorber at the OTA-script anchors. The `run update:preview` row below
+# is the one that proves the second role is needed: after the launcher arm consumes the scope
+# there is no package-manager word left for that anchor to match, so a launcher arm alone
+# leaves it ALLOW.
+assert_deny "a yarn workspace scope in front of the OTA verb denies" \
+  "$(jsonc 'yarn workspace api eas update --branch preview')" "reached through a launcher"
+assert_deny "a yarn workspace scope with an explicit exec denies" \
+  "$(jsonc 'yarn workspace api exec eas update --branch preview')" "reached through a launcher"
+assert_deny "yarn workspaces foreach exec denies" \
+  "$(jsonc 'yarn workspaces foreach exec eas update --branch preview')" "reached through a launcher"
+assert_deny "yarn workspaces foreach with a flag before exec denies (the flag absorber applies here too)" \
+  "$(jsonc 'yarn workspaces foreach -A exec eas update --branch preview')" "reached through a launcher"
+assert_deny "a yarn workspace scope reaching a gated gh subcommand denies" \
+  "$(jsonc 'yarn workspaces foreach exec gh pr merge 42 --admin')" "gh"
+assert_deny "a yarn workspace scope reaching railway denies" \
+  "$(jsonc 'yarn workspaces foreach exec railway up')" "railway"
+assert_deny "a yarn workspace scope reaching npm publish denies" \
+  "$(jsonc 'yarn workspace api npm publish')" "npm publish"
+assert_deny "a launcher STACKED in front of a yarn workspace scope denies" \
+  "$(jsonc 'npx yarn workspace api eas update --branch preview')" "reached through a launcher"
+assert_deny "a wrapper word in front of a yarn workspace scope denies" \
+  "$(jsonc 'corepack yarn workspace api eas update --branch preview')" "reached through a launcher"
+assert_deny "a PRIVILEGE word in front of a yarn workspace scope denies" \
+  "$(jsonc 'sudo yarn workspace api eas update --branch preview')" "reached through a launcher"
+assert_deny "a path-qualified target after a yarn workspace scope denies" \
+  "$(jsonc 'yarn workspace api /opt/homebrew/bin/eas update --branch preview')" "reached through a launcher"
+# THE TWO OTA-SCRIPT ROWS. These do NOT go through the launcher arm: once it consumes the
+# scope there is no package-manager word left for the OTA-script anchor to match, which is why
+# _OUT_WS_SCOPE is ALSO spliced into the four update:preview anchors. The rows below exercise
+# the NORMAL path and that splice is what makes them deny.
+# The crude fastpath's `workspaces?` alternative is a SEPARATE, DEGRADED-PATH-ONLY matter --
+# an earlier revision of this comment said those two rows would not reach an anchor at all
+# without it, which a round-2 review disproved by removing just that alternative and measuring
+# zero normal-path movement. Its real effect is pinned in the degraded block further down.
+assert_deny "a yarn workspace scope in front of the OTA SCRIPT denies" \
+  "$(jsonc 'yarn workspace api run update:preview')" "update:preview"
+assert_deny "a yarn workspace scope in front of the BARE OTA script denies" \
+  "$(jsonc 'yarn workspace api update:preview')" "update:preview"
+
+# ---------- over-denial controls for the workspace scope ----------
+# THE NORMAL PATH, AND THIS IS THE SET THAT WAS MISSING. Every control in this block used to
+# put the gated script name nowhere, or put it in prose with no flag before it. A review
+# generated the cross product instead and found that ONE flag after the scope flips the verdict:
+# _OUT_FLAG_RUN's iteration is `SEP -flag (SEP value)?`, so `--silent` swallows the real command
+# word `test` as its value, the trailing `-- --grep` absorb as further flags, and the anchor
+# lands on the incidentally-named script. The flagless twin allows, which is a one-token
+# difference and exactly the kind of pair a hand-written control set never contains.
+# Fixed by _OUT_WS_SCOPE_NV on the bare-script anchors only; the run-form keeps the full scope
+# because its literal `run` stops any value slot reaching the script.
+assert_allow "a flagged workspace scope naming the script in a test filter stays allowed" \
+  "$(jsonc 'yarn workspaces foreach -A test -- --grep update:preview')"
+assert_allow "the flagless twin of that row stays allowed (the one-token discriminator)" \
+  "$(jsonc 'yarn workspaces foreach test -- --grep update:preview')"
+assert_allow "a flagged single-workspace scope naming the script stays allowed" \
+  "$(jsonc 'yarn workspace api --silent test -- --grep update:preview')"
+assert_allow "a short-flag workspace scope naming the script in a message stays allowed" \
+  "$(jsonc 'yarn workspace api -s lint --message update:production notes')"
+assert_allow "a multi-flag foreach naming the script in a filter stays allowed" \
+  "$(jsonc 'yarn workspaces foreach -pt build -- --filter update:preview')"
+# The run-form MUST keep denying through all of that -- it is what the split preserves.
+assert_deny "a flagged foreach still denies the real run-form" \
+  "$(jsonc 'yarn workspaces foreach -A run update:preview')" "update:preview"
+assert_deny "a flag WITH A VALUE still denies the real run-form" \
+  "$(jsonc 'yarn workspace api --cwd packages/api run update:preview')" "update:preview"
+# THE POST-`run` VALUE SLOT, AND WHY IT STAYS. These three rows exist to make one specific
+# "obvious repair" fail loudly. The post-`run` slot has the same value-slot behaviour as the
+# scope-level one, so `<pm> <scope> run --flag <word> <otascript>` denies even when <word> is the
+# real command and the script name is incidental -- review measured 240 such rows and proposed
+# the symmetric fix, a value-less absorber there. That candidate was BUILT AND PRICED: it does
+# not remove those denials, AND it turns the two rows below from DENY into ALLOW. Those are the
+# documented npm and pnpm spellings for running a workspace script -- two live OTA routes traded
+# for a cosmetic over-denial. If someone narrows that slot, these two rows redden first.
+assert_deny "npm's own workspace run spelling still denies (separate-token flag value)" \
+  "$(jsonc 'npm run --workspace api update:preview')" "update:preview"
+assert_deny "pnpm's filter run spelling still denies (separate-token flag value)" \
+  "$(jsonc 'pnpm run --filter api update:preview')" "update:preview"
+# The round-9 review named two further spellings the P2 had not: the SHORT `-w` form and the
+# production script. Pinned for the same reason as the two above -- a repair that opens them
+# is a repair that has to redden here first. Neither was in the P2's table until now, which is
+# itself the argument for pinning rather than describing: the description was incomplete and
+# nothing caught that, because prose has no gate.
+assert_deny "npm's SHORT workspace run spelling still denies" \
+  "$(jsonc 'npm run -w api update:preview')" "update:preview"
+assert_deny "the production script through a workspace run still denies" \
+  "$(jsonc 'npm run --workspace api update:production')" "update:production"
+# ACCEPTED OVER-DENIAL, pinned so it is a known cost rather than a surprise: a flag AFTER `run`
+# swallows the real command word, so an incidental script name in a test filter denies here even
+# though the scope-level twin was fixed. The unscoped form denies on origin/main too, so this is
+# a pre-existing class reached through one more spelling. Filed, not patched -- a fix belongs at
+# _OUT_FLAG_RUN, which every anchor in the file shares.
+assert_deny "ACCEPTED: a flag after run swallows the command word (pre-existing _OUT_FLAG_RUN class)" \
+  "$(jsonc 'yarn workspace api run --silent test -- --grep update:preview')" "update:preview"
+# The flagless twin, which is the one-token control proving the row above is about the FLAG.
+assert_allow "the flagless twin of that row stays allowed" \
+  "$(jsonc 'yarn workspace api run test -- --grep update:preview')"
+
+# THE SPLIT IS PRECISE-PATH ONLY, AND THESE ROWS SAY SO. The crude mirror never got it, so the
+# three precise-path `assert_allow` rows above are NOT path-independent -- they deny on the
+# degraded fixtures. Accepted rather than split (the crude mirror is the deliberately wider,
+# fail-closed side, and every slot patched in this area exposed the next), but asserted here so
+# the asymmetry is a pinned fact rather than something a reader infers from the absence of a row.
+check "no-jq: ACCEPTED degraded over-denial, flagged foreach naming the script" deny "$(nojq_hook "$(json 'yarn workspaces foreach -A test -- --grep update:preview')")"
+check "no-jq: ACCEPTED degraded over-denial, flagged workspace naming the script" deny "$(nojq_hook "$(json 'yarn workspace api --silent test -- --grep update:preview')")"
+check "no-jq: ACCEPTED degraded over-denial, a SECOND flag restarts the absorber" deny "$(nojq_hook "$(json 'yarn workspace api --message hi --grep update:preview')")"
+# The two rows that bound it: no flag at all, and one NON-flag word after the flag. Both allow
+# on every path, which is what makes the three rows above about the FLAG and not about the
+# script name merely appearing.
+check "no-jq: the flagless twin allows on the degraded path too" allow "$(nojq_hook "$(json 'yarn workspaces foreach test -- --grep update:preview')")"
+check "no-jq: one non-flag word after the flag allows on the degraded path too" allow "$(nojq_hook "$(json 'yarn workspace api --message wrote docs about update:preview today')")"
+# THE OTHER TWO DEGRADED ENTRY POINTS. The five rows above were nojq-only. All three fixtures
+# reach crude_smells_outward, but through DIFFERENT preconditions -- missing jq, an unsourceable
+# lib, a missing awk -- so a nojq-only pin covers the shared regex and nothing else: a change to
+# one of the other two entry paths would not redden. They behave identically today (measured),
+# which is exactly why the twins are cheap to add and worth having before that stops being true.
+check "no-lib: ACCEPTED degraded over-denial, flagged foreach naming the script" deny "$(nolib_hook "$(json 'yarn workspaces foreach -A test -- --grep update:preview')")"
+check "no-lib: ACCEPTED degraded over-denial, flagged workspace naming the script" deny "$(nolib_hook "$(json 'yarn workspace api --silent test -- --grep update:preview')")"
+check "no-lib: ACCEPTED degraded over-denial, a SECOND flag restarts the absorber" deny "$(nolib_hook "$(json 'yarn workspace api --message hi --grep update:preview')")"
+check "no-lib: the flagless twin allows" allow "$(nolib_hook "$(json 'yarn workspaces foreach test -- --grep update:preview')")"
+check "no-lib: one non-flag word after the flag allows" allow "$(nolib_hook "$(json 'yarn workspace api --message wrote docs about update:preview today')")"
+check "no-awk: ACCEPTED degraded over-denial, flagged foreach naming the script" deny "$(noawk_hook "$(json 'yarn workspaces foreach -A test -- --grep update:preview')")"
+check "no-awk: ACCEPTED degraded over-denial, flagged workspace naming the script" deny "$(noawk_hook "$(json 'yarn workspace api --silent test -- --grep update:preview')")"
+check "no-awk: ACCEPTED degraded over-denial, a SECOND flag restarts the absorber" deny "$(noawk_hook "$(json 'yarn workspace api --message hi --grep update:preview')")"
+check "no-awk: the flagless twin allows" allow "$(noawk_hook "$(json 'yarn workspaces foreach test -- --grep update:preview')")"
+check "no-awk: one non-flag word after the flag allows" allow "$(noawk_hook "$(json 'yarn workspace api --message wrote docs about update:preview today')")"
+
+# NAMED RESIDUAL of the split, pinned as ALLOW so it is visible: a flag WITH a value followed by
+# the BARE script and no `run` under-denies on the precise path. The run-form spelling above
+# denies, and the crude degraded mirror denies this one too, so it is narrow. If this flips to
+# DENY the split was tightened and this pin moves with it.
+assert_allow "RESIDUAL: flag+value then the bare script under-denies on the precise path" \
+  "$(jsonc 'yarn workspace api --cwd packages/api update:preview')"
+
+# A monorepo is this repo's own shape, so `yarn workspace <ws> <ordinary thing>` is hourly
+# typing. Every row here was measured ALLOW after the change; the word AFTER the scope still
+# has to be a gated binary or verb, which is what keeps them clear.
+assert_allow "yarn workspace with an ordinary script stays allowed" \
+  "$(jsonc 'yarn workspace api build')"
+assert_allow "yarn workspace with an ordinary test script stays allowed" \
+  "$(jsonc 'yarn workspace api test')"
+assert_allow "yarn workspace add stays allowed" \
+  "$(jsonc 'yarn workspace api add lodash')"
+assert_allow "yarn workspace remove stays allowed" \
+  "$(jsonc 'yarn workspace api remove lodash')"
+assert_allow "yarn workspace run with a NON-OTA script stays allowed" \
+  "$(jsonc 'yarn workspace api run build')"
+assert_allow "yarn workspace exec with an ungated tool stays allowed" \
+  "$(jsonc 'yarn workspace api exec tsc --noEmit')"
+assert_allow "yarn workspaces foreach exec with an ungated tool stays allowed" \
+  "$(jsonc 'yarn workspaces foreach exec tsc --noEmit')"
+assert_allow "yarn workspaces foreach run with a NON-OTA script stays allowed" \
+  "$(jsonc 'yarn workspaces foreach run build')"
+assert_allow "yarn workspaces list stays allowed" \
+  "$(jsonc 'yarn workspaces list')"
+assert_allow "prose NAMING a workspace-scoped gated command stays allowed" \
+  "$(jsonc 'echo yarn workspace api eas update is the shape')"
+
+# ---------- over-denial controls for the launcher grammar ----------
+# This widening lands on npm/pnpm/yarn/npx, which is every JS developer's hourly typing. Over-
+# denial is the failure that gets a guard switched OFF rather than fixed, so the controls are
+# not an afterthought here. Every row below was measured ALLOW before AND after the change.
+assert_allow "npx with an ungated tool stays allowed" \
+  "$(jsonc 'npx prettier --write .')"
+assert_allow "pnpm install stays allowed (bare pnpm is a launcher now -- install is not a gated binary)" \
+  "$(jsonc 'pnpm install')"
+assert_allow "yarn install stays allowed" \
+  "$(jsonc 'yarn install')"
+assert_allow "an ordinary npm run script stays allowed" \
+  "$(jsonc 'npm run lint')"
+assert_allow "an ordinary pnpm run script stays allowed" \
+  "$(jsonc 'pnpm run build')"
+assert_allow "npm explore running an ungated command stays allowed" \
+  "$(jsonc 'npm explore some-pkg -- ls')"
+assert_allow "npm explore running an ungated npm script stays allowed" \
+  "$(jsonc 'npm explore some-pkg -- npm run build')"
+assert_allow "npm explore with no command at all stays allowed" \
+  "$(jsonc 'npm explore some-pkg')"
+# A REPO SCRIPT WHOSE NAME COLLIDES WITH A GATED BINARY. These stay ALLOW because NO GATED VERB
+# follows the name -- NOT because `run` terminates the chain. For npm/pnpm `run` really is
+# script-only; for YARN it falls back to node_modules/.bin, so `run` IS a launcher step there:
+# `yarn run railway up` denies while the bare `yarn run railway` below still allows.
+assert_allow "a repo script NAMED like a gated CLI stays allowed under pnpm run" \
+  "$(jsonc 'pnpm run eas')"
+assert_allow "a repo script named like a gated CLI stays allowed under yarn run" \
+  "$(jsonc 'yarn run railway')"
+assert_allow "pnpm why stays allowed" \
+  "$(jsonc 'pnpm why lodash')"
+assert_allow "yarn info stays allowed" \
+  "$(jsonc 'yarn info lodash')"
+assert_allow "pnpm dlx of an ungated tool stays allowed" \
+  "$(jsonc 'pnpm dlx prettier --check .')"
+assert_allow "yarn dlx of an ungated tool stays allowed" \
+  "$(jsonc 'yarn dlx tsc --noEmit')"
+
+# ---------------------------------------------------------------------------
+# TWO COMPOSITION CLOSURES, 2026-09-18. Both were live ALLOWs on origin/main and
+# both were pinned here as safe by prose that did not survive measurement, so the
+# pins below are behavioural: each asserts the guard's verdict, not a comment.
+#
+# (1) REPEATED WORKSPACE SCOPE. `yarn workspace <ws> X` forwards X to yarn inside
+#     that workspace, so a SECOND `workspace <ws2>` needs no fresh `yarn` literal
+#     and _OUT_LAUNCH_STEP's repetition could never see it. One hop denied; two
+#     did not.
+# (2) YARN'S `run`. npm/pnpm `run` is script-only, but yarn's falls back to
+#     node_modules/.bin, so `yarn run <gated> <verb>` reaches the same sink as
+#     `yarn <gated> <verb>`.
+#
+# The ALLOW rows are not decoration: each is the control that proves the widening
+# is specific. Without them a blanket new denial would pass every row above.
+assert_deny "yarn run reaches the OTA sink (yarn run is a launcher step, unlike npm/pnpm run)" \
+  "$(jsonc 'yarn run eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "yarn run reaches the OTA sink with a flag after run" \
+  "$(jsonc 'yarn run -s eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "yarn run reaches railway" \
+  "$(jsonc 'yarn run railway up')" \
+  "reached through a launcher"
+assert_deny "yarn run composed with a workspace scope reaches the OTA sink" \
+  "$(jsonc 'yarn workspace api run eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "TWO workspace hops reach the OTA sink" \
+  "$(jsonc 'yarn workspace api workspace foo eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "THREE workspace hops reach the OTA sink" \
+  "$(jsonc 'yarn workspace api workspace foo workspace bar eas update')" \
+  "reached through a launcher"
+assert_deny "workspaces foreach followed by a second scope reaches the OTA sink" \
+  "$(jsonc 'yarn workspaces foreach exec workspace foo eas update')" \
+  "reached through a launcher"
+assert_deny "two workspace hops reach npm publish" \
+  "$(jsonc 'yarn workspace api workspace foo npm publish')" \
+  "reached through a launcher"
+assert_deny "two workspace hops reach the run-form OTA script anchor" \
+  "$(jsonc 'yarn workspace api workspace foo run update:production')" \
+  "update:preview/update:production"
+assert_deny "two workspace hops reach the bare-script OTA anchor" \
+  "$(jsonc 'yarn workspace api workspace foo update:production')" \
+  "update:preview/update:production"
+# CONTROLS. `run` is a launcher step for YARN ONLY; npm and pnpm keep script-only
+# semantics, and an ungated sink behind any number of hops must still run.
+assert_allow "npm run does NOT become a launcher step" \
+  "$(jsonc 'npm run eas update')"
+assert_allow "pnpm run does NOT become a launcher step" \
+  "$(jsonc 'pnpm run eas update')"
+assert_allow "a gated binary name with NO gated verb still runs under yarn run" \
+  "$(jsonc 'yarn run eas')"
+assert_allow "an ungated script still runs under yarn run" \
+  "$(jsonc 'yarn run build')"
+assert_allow "an ungated sink behind two workspace hops still runs" \
+  "$(jsonc 'yarn workspace api workspace foo build')"
+assert_allow "an ungated sink behind a mixed scope chain still runs" \
+  "$(jsonc 'yarn workspace api workspaces foreach exec jest')"
+
+# THIRD SPELLING OF THE SAME SCOPE CLASS, found by the round-3 security review after the two
+# above were closed: `yarn workspaces run <cmd>` is yarn CLASSIC's forwarding form, where berry
+# spells it `workspaces foreach <cmd>`. It was ALLOW here, at this branch's parent, and on main.
+# The scope arm now carries the forwarding property -- both spellings and no others, because
+# `workspaces info` / `list` / `focus` forward nothing and cannot reach a sink. The final three
+# rows pin exactly that boundary: widening to a bare `workspaces <anything>` would deny them.
+assert_deny "yarn workspaces run reaches the OTA sink" \
+  "$(jsonc 'yarn workspaces run eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "yarn workspaces run reaches railway" \
+  "$(jsonc 'yarn workspaces run railway up')" \
+  "reached through a launcher"
+assert_deny "yarn workspaces run reaches a gated gh subcommand" \
+  "$(jsonc 'yarn workspaces run gh pr merge 42 --admin')" \
+  "gh"
+assert_deny "yarn workspaces run reaches the OTA script anchor" \
+  "$(jsonc 'yarn workspaces run update:production')" \
+  "update:preview/update:production"
+assert_deny "yarn workspaces run reaches a path-qualified gated binary" \
+  "$(jsonc 'yarn workspaces run ./node_modules/.bin/eas update')" \
+  "reached through a launcher"
+assert_allow "an ungated script still runs under yarn workspaces run" \
+  "$(jsonc 'yarn workspaces run build')"
+assert_allow "yarn workspaces list forwards nothing and stays allowed" \
+  "$(jsonc 'yarn workspaces list --json')"
+assert_allow "yarn workspaces info forwards nothing and stays allowed" \
+  "$(jsonc 'yarn workspaces info')"
+
+# THE INTERPRETER WORD, round 4. Running a gated CLI through its interpreter reaches the same
+# sink as running it directly, but `node`/`bun`/`deno` were admitted only in front of the literal
+# `eas-cli/` and `@railway/cli/` package-directory substrings. The INSTALLED shim is a symlink
+# INTO that package whose own path carries no such substring, so the check could not see it:
+# `node /opt/homebrew/bin/eas update` was ALLOW while the interpreter-less twin denied, here and
+# on main. The interpreter is now a launcher step, so the terminal-name anchors fire on any path.
+# The three controls are the boundary: the anchors still require a GATED terminal name AND verb.
+assert_deny "an interpreter in front of a path-qualified gated binary reaches the OTA sink" \
+  "$(jsonc 'node /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "bun substitutes for node identically" \
+  "$(jsonc 'bun /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "a wrapper word in front of the interpreter does not help" \
+  "$(jsonc 'env node /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "an interpreter reaches railway through a relative bin path" \
+  "$(jsonc 'node ./node_modules/.bin/railway up')" \
+  "railway"
+assert_deny "an interpreter reaches a gated gh subcommand" \
+  "$(jsonc 'node /usr/local/bin/gh pr merge 42 --admin')" \
+  "gh"
+assert_allow "an interpreter in front of an UNGATED path-qualified binary stays allowed" \
+  "$(jsonc 'node /opt/homebrew/bin/tsc --noEmit')"
+assert_allow "an interpreter running an ordinary repo script stays allowed" \
+  "$(jsonc 'node scripts/seed.js')"
+assert_allow "a bare interpreter invocation stays allowed" \
+  "$(jsonc 'node --version')"
+
+# ROUND 5: THE INTERPRETER AS IT IS ACTUALLY TYPED. The round-4 arm ended in a bare separator,
+# which closed `deno <path>` -- a spelling deno REJECTS -- and left `deno run <path>`, the one
+# that works, ALLOW. `bun run <path>` escaped only because `bun<sep>(x|run)` already sat in
+# _OUT_LAUNCHER. The arm now takes _OUT_FLAG_RUN plus an optional `run`, which also absorbs
+# interpreter FLAGS. The ALLOW rows are the boundary: a gated terminal name and verb are still
+# required, so ordinary interpreter use is untouched.
+assert_deny "deno's real invocation syntax reaches the OTA sink" \
+  "$(jsonc 'deno run /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "deno flags before the run subcommand do not help" \
+  "$(jsonc 'deno --allow-all run /opt/homebrew/bin/eas update')" \
+  "reached through a launcher"
+assert_deny "an interpreter FLAG before the target does not help" \
+  "$(jsonc 'node -r ./reg /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "bun run reaches a path-qualified gated binary" \
+  "$(jsonc 'bun run /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_allow "deno running an ordinary repo script stays allowed" \
+  "$(jsonc 'deno run ./scripts/task.ts')"
+assert_allow "deno running an UNGATED path-qualified binary stays allowed" \
+  "$(jsonc 'deno run /opt/homebrew/bin/tsc --noEmit')"
+assert_allow "an interpreter flag with an UNGATED target stays allowed" \
+  "$(jsonc 'node -r ./reg /opt/homebrew/bin/tsc --noEmit')"
+
+# A FLAG AFTER the subcommand, not just before it. The first attempt at this arm absorbed flags
+# ahead of `run` but ended the `run` hop in a bare separator -- the same bare-separator defect one
+# slot further along, and a 125-row interpreter x flag-slot x target grid still allowed 20 rows.
+assert_deny "a flag AFTER deno's run subcommand does not help" \
+  "$(jsonc 'deno run -A /opt/homebrew/bin/eas update --branch production')" \
+  "reached through a launcher"
+assert_deny "a long flag after the run subcommand does not help either" \
+  "$(jsonc 'deno run --allow-all ./node_modules/.bin/railway up')" \
+  "railway"
+assert_allow "a flag after the run subcommand with an UNGATED target stays allowed" \
+  "$(jsonc 'deno run -A ./scripts/task.ts')"
+
+# ROUND 7: TWO ADJACENT FAMILIES. (a) THE RUNNER ALTERNATION. A package.json script is reachable
+# by more runners than npm/pnpm/yarn: `bun run`, bare `bun`, `node --run` (separated and
+# `=`-glued) and `deno task` all execute it, and `update:production` ends in
+# `exec eas update --branch production --platform all` -- a production OTA through this repo's
+# own script. (b) THE `npm:` SPECIFIER, deno's documented way to run an npm CLI, in front of
+# package names the guard already gates.
+# THE FIRST FOUR ROWS ALSO PIN THE FASTPATH NEEDLE LIST, and that is deliberate: the deep clause
+# alone was dead code, because `*node*`/`*deno*` are not needles and the pre-filter exited first.
+# These rows fail if the `*update:preview*`/`*update:production*` needles are ever removed.
+assert_deny "node --run reaches the OTA script" \
+  "$(jsonc 'node --run update:production')" "update:preview/update:production"
+assert_deny "node --run= (glued) reaches the OTA script" \
+  "$(jsonc 'node --run=update:preview')" "update:preview/update:production"
+assert_deny "deno task reaches the OTA script" \
+  "$(jsonc 'deno task update:production')" "update:preview/update:production"
+assert_deny "bun run reaches the OTA script" \
+  "$(jsonc 'bun run update:production')" "update:preview/update:production"
+assert_deny "bare bun reaches the OTA script" \
+  "$(jsonc 'bun update:preview')" "update:preview/update:production"
+assert_deny "an npm: specifier in front of eas-cli reaches the OTA sink" \
+  "$(jsonc 'deno run -A npm:eas-cli update --branch production')" "eas"
+assert_deny "an npm: specifier survives a launcher" \
+  "$(jsonc 'npx npm:eas-cli update --branch production')" "eas"
+assert_deny "an npm: specifier in front of @railway/cli reaches a gated verb" \
+  "$(jsonc 'deno run npm:@railway/cli up')" "railway"
+assert_allow "an ungated script under node --run stays allowed" \
+  "$(jsonc 'node --run build')"
+assert_allow "an ungated script under bun run stays allowed" \
+  "$(jsonc 'bun run dev')"
+assert_allow "an ungated task under deno task stays allowed" \
+  "$(jsonc 'deno task build')"
+assert_allow "an npm: specifier for an UNGATED package stays allowed" \
+  "$(jsonc 'deno run -A npm:typescript --version')"
+
+# ROUND 8: THE EXPANSION SLOT, the one cell the runner widening did not carry. `_OUT_GATED_BIN`
+# lists npm/pnpm/yarn, so `npm $(echo run update:production)` already denied; node/bun/deno are
+# deliberately NOT in it, because that arm fires on a gated binary followed by ANY expansion and
+# `node $SCRIPT` is everywhere. So the predicate is a CO-OCCURRENCE: interpreter + unreadable
+# verb AND the OTA script name in the same rendering. The four ALLOW rows are the whole reason
+# it is written that way -- widening _OUT_GATED_BIN instead would deny every one of them.
+assert_deny "an expansion in node's verb slot with the OTA script present" \
+  "$(jsonc 'node $(echo --run update:production)')" \
+  "interpreter (node/bun/deno)"
+assert_deny "an expansion in bun's verb slot with the OTA script present" \
+  "$(jsonc 'bun $(echo run update:production)')" \
+  "interpreter (node/bun/deno)"
+assert_deny "an expansion in deno's verb slot with the OTA script present" \
+  "$(jsonc 'deno $(echo task update:production)')" \
+  "interpreter (node/bun/deno)"
+assert_deny "a backtick substitution in the verb slot is the same route" \
+  "$(jsonc 'node `echo --run update:production`')" \
+  "interpreter (node/bun/deno)"
+assert_allow "an ordinary expansion after an interpreter stays allowed" \
+  "$(jsonc 'node $SCRIPT')"
+assert_allow "a command substitution resolving a tool path stays allowed" \
+  "$(jsonc 'node $(which tsx)')"
+assert_allow "an expansion with an UNGATED script name stays allowed" \
+  "$(jsonc 'node $(echo --run build)')"
+assert_allow "deno running an expansion-supplied module stays allowed" \
+  "$(jsonc 'deno run ${MOD}')"
+
+# ROUND 9: this arm was the only one of its family spelled case-SENSITIVE, and `/opt/homebrew/bin/
+# NODE` resolves on a case-insensitive filesystem, so the uppercase spelling really execs node.
+assert_deny "an uppercase interpreter is still an interpreter" \
+  "$(jsonc 'NODE $(echo --run update:production)')" \
+  "interpreter (node/bun/deno)"
+# THE ROW THAT MATTERS MOST. `gh pr merge` is reached through _OUT_POS_PREFIX_LP, which this
+# change widens, and the merge clause is GRANT-shaped -- an empty clause cut DENIES. If the
+# chain widening ever reaches the count/clause pair wrong, this repo's own sanctioned /todo
+# automerge stops working and the guard gets switched off rather than fixed.
+assert_allow "the sanctioned /todo automerge is still allowed through the widened launcher prefix" \
+  "$(jsonc 'gh pr merge --auto --squash --delete-branch 42')"
+
+# ---------- the monotonicity invariant, asserted rather than remembered ----------
+# _OUT_OPT_QUAL_CH is the chain-widened qualifier and _OUT_OPT_QUAL is the narrow original. The
+# split is NOT stylistic: widening is monotone on a BOOLEAN read and is NOT monotone on a COUNT
+# or an EXTRACTION, where a longer match absorbs what would have started a second one, so the
+# occurrence count can FALL while the guard gets strictly wider. The `grep -oE` extractors and
+# the _ALREADY_HANDLED exclusion that pairs with them therefore keep the narrow constant. This
+# is the one property a future edit is most likely to break by "tidying up" the two into one.
+_chain_in_extractors=$(grep -nE 'grep -oE' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -c '_OUT_OPT_QUAL_CH')
+if [ "$_chain_in_extractors" = "0" ]; then
+  echo "PASS: no grep -oE extractor uses the chain-widened qualifier (widening stays off the non-monotone consumers)"; PASS=$((PASS+1))
+else
+  echo "FAIL: $_chain_in_extractors grep -oE extractor(s) reference _OUT_OPT_QUAL_CH -- widening an EXTRACTION is not monotone, the occurrence count can fall while the guard widens"; FAIL=$((FAIL+1))
+fi
+# NON-VACUITY: the grep above would also print 0 if the extractors stopped existing, or if the
+# constant were renamed. Prove the narrow constant is still on those same lines.
+_narrow_in_extractors=$(grep -nE 'grep -oE' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -c '\${_OUT_OPT_QUAL}')
+if [ "$_narrow_in_extractors" -gt 0 ]; then
+  echo "PASS: the grep -oE extractors still carry the NARROW qualifier (the check above is live, not vacuous)"; PASS=$((PASS+1))
+else
+  echo "FAIL: no grep -oE extractor references \${_OUT_OPT_QUAL} -- the monotonicity check above is vacuous"; FAIL=$((FAIL+1))
+fi
+# POSITIVE CONTROL: and prove the chain constant is actually WIRED somewhere, so a passing pair
+# above cannot mean the widening was silently dropped.
+_chain_in_booleans=$(grep -nE 'grep -Eq' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -c '_OUT_OPT_QUAL_CH')
+if [ "$_chain_in_booleans" -gt 0 ]; then
+  echo "PASS: the chain-widened qualifier IS wired into boolean deny sites (the widening was not dropped)"; PASS=$((PASS+1))
+else
+  echo "FAIL: _OUT_OPT_QUAL_CH is referenced by no boolean grep -Eq site -- the chain widening is dead code"; FAIL=$((FAIL+1))
+fi
+
+# ---------- ROUND 9: over-denial controls for the interior slot ----------
+# The interior gap sits inside EVERYDAY npm/pnpm/yarn/bun invocations, so a widening here is
+# the one most likely to deny ordinary work. Measured 0 new over-denials across 26 ordinary
+# commands; these pin the ones a developer types hourly.
+assert_allow "an interior flag on an UNGATED npm subcommand stays allowed" \
+  "$(jsonc 'npm -s install')"
+assert_allow "a long-form interior flag on an ungated npm script stays allowed" \
+  "$(jsonc 'npm --loglevel=silent run build')"
+assert_allow "a workspace flag before an ungated npm script stays allowed" \
+  "$(jsonc 'npm -w pkg run build')"
+assert_allow "the launcher phrase with an interior flag and an UNGATED target stays allowed" \
+  "$(jsonc 'npm -s exec tsc --noEmit')"
+assert_allow "pnpm install with an interior flag stays allowed" \
+  "$(jsonc 'pnpm -s install')"
+assert_allow "the sanctioned automerge is still allowed in its bare spelling" \
+  "$(jsonc 'gh pr merge 42 --auto --squash --delete-branch')"
+
+# (The "+2 over-denial controls" tail of the 841 -> 851 sentence lived here, orphaned from its
+# own paragraph by a later insertion; it has been returned to that paragraph above.)
+# 916 -> 930 (2026-09-17, security round 9): +14, DERIVED from the rows below -- 8 for the
+# interior-launcher-gap bypass (one per launcher form plus the two flag-with-value spellings
+# and the GAP-1 check that claimed to deny unconditionally), and 6 over-denial controls,
+# because this gap sits inside everyday npm/pnpm invocations and a widening here is the one
+# most likely to deny ordinary work.
+# 901 -> 916 (2026-09-16, security round 7): +15, DERIVED from the rows below -- 9 for the
+# wrapper-flag bypass, 2 for the decoy route that fixing it opens (coupled, same change),
+# and 4 over-denial controls, including the carve-out row that caught round 6's token-match bug.
+# 888 -> 901 (2026-09-16, security round 6): +13, DERIVED from the rows below -- 6 for the
+# path/launcher qualifier of the COMMAND at the three anchors with no _LP sibling, 4 for the
+# decoy---auto-in-the-prefix REGRESSION round 5 introduced, and 3 that pin the sanctioned
+# automerge still ALLOWing behind each prefix form, because that is the side of this change that
+# would break a live pipeline rather than merely annoy.
+# 865 -> 888 (2026-09-16, security round 5): +23, DERIVED from the rows below rather than
+# guessed -- 7 for the command-position anchors round 4 left behind, 7 for the privilege prefix
+# (both the bare and the flagged spelling, because closing only the bare one was the same
+# half-closed axis), 2 for ambiguity counting surviving the widening, and 7 over-denial controls.
+# 851 -> 865 (2026-09-16, security round 2): +14. Five rows for the path-qualified wrapper in
+# front of a bare gated binary, four for npm's abbreviation closure (deref falls through to
+# abbrev, so the accepted set is 11 run tokens and 3 exec tokens, not the 4 and 2 in the alias
+# table), four over-denial controls because both widenings touch everyday spellings, and one
+# pin of _OUT_WRAPPER_WORD's definition line.
+# Set immediately before the total pin so a process death anywhere in the assertions above is
+# still caught as a TRUNCATED run rather than reported as success.
+# 930 -> 968 (2026-09-17, MERGE with origin/main @ #982/#983): +38, and NOTHING in this
+# branch added them. Both sides of the merge added assertions to the same file: this
+# branch took the pin 784 -> 930 (+146 across rounds 1-9) while main took it 784 -> 822
+# (+38 via the brace-LIST work). The assertion BLOCKS merged cleanly; each side's PIN
+# counted only its own additions, so the merged pin was low by exactly the other side's
+# delta. 784 + 146 + 38 = 968, and the run measured 968 -- the arithmetic is stated here
+# because it RECONCILES, not because it was used to set the number.
+# The dangerous sibling of this is the case where both sides happen to write the SAME
+# pin value, git reports no conflict, and the stale-low total lands silently. See
+# docs/solutions/code-quality/a-clean-merge-leaves-a-stale-count-pin-2026-09-14.md.
+_PIN_RAN=1
+# 968 -> 975 (2026-09-17, expansion x glued-redirect composition): +7. Three rows for the
+# composition itself (substitution, quoted substitution, and a plain parameter expansion --
+# the defect is not specific to `$(...)`), two single-axis controls pinned beside them so the
+# gain reads as their PRODUCT rather than as either axis, and two allow-side rows because
+# widening a trailing boundary is the direction that invents denials.
+# --- STRUCTURAL: no detector may hand-spell a closer class that _OUT_POS_SUFFIX provides.
+# Three separate live bypasses came from exactly this: an arm closing with `([[:space:]]|$)`
+# cannot see a GLUED `<`/`>`, while `_OUT_POS_SUFFIX` spells `[);&|`{}<>]` and can. Fixing one
+# arm and leaving its siblings is this file's most repeated mistake, so the invariant is
+# asserted rather than remembered.
+# COUNTS OCCURRENCES with `grep -o | wc -l`, never `grep -c` (which counts LINES and would read
+# two on one line as one) and never `grep -m1`. COMMENT LINES ARE EXCLUDED deliberately: this
+# file's header quotes these fragments verbatim when explaining the defect, and a check that
+# counted prose would force the explanation to be deleted to stay green.
+# WIDENED 2026-09-22: the literal grep saw only `([[:space:]]|$)`, so the field-flag closer
+# `([[:space:]]|=|$)` -- the same defect with one extra alternative -- reported PASS on the very
+# line this check was written to catch. The pattern now admits ONE extra alternative between the
+# space class and `$` (anything without `|` or `)`), which still cannot match the exported
+# `_OUT_POS_SUFFIX` definition itself (its middle alternative is a bracket expression containing
+# both). Widened FIRST and watched go red on that line before the closer was fixed:
+# todos/archive/P1-2026-09-18-trailing-comment-disarms-grant-shaped-negated-predicates.md.
+_closer_hits=$(grep -nE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' "$HOOK" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' | wc -l | tr -d ' ')
+if [ "$_closer_hits" = "0" ]; then
+  echo "PASS: no code line hand-spells a closer class that _OUT_POS_SUFFIX already provides"; PASS=$((PASS+1))
+else
+  echo "FAIL: $_closer_hits code-line closer class(es) hand-spelled as ([[:space:]]|\$) or a one-alternative variant such as ([[:space:]]|=|\$) instead of \${_OUT_POS_SUFFIX} -- a glued < or > escapes them"; FAIL=$((FAIL+1))
+fi
+# NON-VACUITY, because a structural grep that matches nothing passes for the wrong reason just
+# as readily as one that matches nothing for the right one. The same pipeline over the file's
+# COMMENT lines must still find the fragment, proving the pattern itself is live.
+_closer_prose=$(grep -nE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' "$HOOK" | grep -E '^[0-9]+:[[:space:]]*#' | grep -oE '\(\[\[:space:\]\]\|([^|)]+\|)?\$\)' | wc -l | tr -d ' ')
+if [ "$_closer_prose" -gt 0 ]; then
+  echo "PASS: the closer-class pattern still matches this file's own prose (the check is live, not vacuous)"; PASS=$((PASS+1))
+else
+  echo "FAIL: the closer-class pattern matches nothing anywhere -- the structural check above is vacuous"; FAIL=$((FAIL+1))
+fi
+
+# 975 -> 977 (2026-09-17, closer-class sweep): +2 structural rows. #991 fixed ONE hand-written
+# `([[:space:]]|$)` closer; the sibling todo's criterion is that leaving the others is this
+# file's most repeated mistake, so the two remaining code-line instances (both `grep -oE`
+# extractors feeding an *_ALREADY_HANDLED exclusion that already uses _OUT_POS_SUFFIX) moved
+# too. The invariant is now asserted, with a non-vacuity row proving the pattern still matches
+# the file's own prose so a passing zero cannot mean the grep simply stopped working.
+# 977 -> 985 (2026-09-17, review round 1 on #992): +8 BEHAVIOURAL rows, 3 range + 5 list, that
+# run the guard against the exact constructions whose verdict the closer widening flips. The
+# structural row above is a regression tripwire; these are the evidence the widening was
+# correct. Each was measured on origin/main before it was written, and each family needed a
+# DIFFERENT carrier to reach its arm (a launcher for range, a prior segment for list) -- which
+# is why the obvious "same row with the other brace spelling" would have pinned nothing.
+# 1022 -> 1104 (2026-09-17, rounds 2-11 of the same PR): +82 — the workspace-scope closure and
+# everything the review rounds pinned: the workspace deny/allow block, the degraded-path
+# nojq/nolib/noawk rows for the crude mirror's accepted over-denial, and four assert_deny rows
+# that exist to redden if anyone re-attempts the rejected post-`run` repair. CHAINED rather than
+# overwritten, mirroring repro-outward-cli-corpus.sh's EXPECTED_ROWS convention. An earlier
+# revision left this narrative at "+37" while the pin below read 1104: the PIN is enforced by
+# the suite failing, the SENTENCE beside it is not. A number with a gate stays right on its own;
+# a sentence quoting that number does not, which is why this chain has to be extended by hand
+# every time the pin moves.
+# 985 -> 1022 (2026-09-17, launcher grammar): +37 rows = 19 deny + 15 over-denial controls + 3
+# structural. The deny rows are the five shapes the todo measured, plus their compositions with
+# the already-closed prefix axis and with the expansion-token axis. The controls are weighted
+# deliberately: this widening lands on npm/pnpm/yarn/npx, and over-denial is the failure that
+# gets a guard switched off rather than fixed. The 3 structural rows pin the BOOLEAN-vs-
+# EXTRACTION split that the whole design rests on, with a non-vacuity row and a positive control
+# so a passing pair cannot mean the widening was silently dropped.
+# 1167 (main, rounds 1-9) + 18 (this branch's gh-api implicit-POST rows, 1104 -> 1122 against
+# its own pre-#993 base) = 1185 on the merged tree. The two sets are disjoint, and this is the
+# MEASURED total from the merged run, not the sum -- the sum is only how it was predicted.
+# 1185 -> 1201 (2026-09-22, non-argv text in the implicit-POST arm): +16 = 4 deny rows for the
+# comment/redirect-operand decoys, 2 deny controls (benign comment, quoted hash), 2 allow
+# controls (explicit read + comment, interior redirect), 1 accepted-over-denial row stating the
+# boundary of the cut, 3 glued-redirect field-closer denies with 1 deny + 1 allow control, and
+# the value-slot decoy pinned KNOWN-WRONG beside its control.
+# 1201 -> 1207 (2026-09-22, security review round 1): +6 = 3 manufactured-method rows the
+# unanchored blank flipped main-DENY -> head-ALLOW, 2 controls (a longer flag glued to a redirect,
+# a word-initial operator with a glued operand), and the anchor's cost pinned KNOWN-WRONG.
+EXPECTED_TOTAL=1207
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

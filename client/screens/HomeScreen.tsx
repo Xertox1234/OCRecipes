@@ -21,9 +21,9 @@ import Animated, {
   FadeInDown,
   useAnimatedRef,
   measure,
-  runOnUI,
   scrollTo,
 } from "react-native-reanimated";
+import { scheduleOnUI } from "react-native-worklets";
 import { Feather } from "@expo/vector-icons";
 import { BottomSheetModal, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
@@ -54,6 +54,8 @@ import { useHomeActions } from "@/hooks/useHomeActions";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
+import { usePremiumContext } from "@/context/PremiumContext";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
 import { useTheme } from "@/hooks/useTheme";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
@@ -87,7 +89,12 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<HomeScreenNavigationProp>();
-  const haptics = useHaptics();
+  // Destructure rather than depend on the whole useHaptics() return —
+  // although useHaptics() now memoizes it (see useHaptics.ts), depending on
+  // the specific method each callback actually calls is the primary fix
+  // (docs/rules/hooks.md) and keeps these four callbacks' deps minimal.
+  const { impact: hapticImpact, notification: hapticNotification } =
+    useHaptics();
   const { reducedMotion } = useAccessibility();
   const { user } = useAuthContext();
   const { theme } = useTheme();
@@ -122,6 +129,23 @@ export default function HomeScreen() {
   const isPremium = user?.subscriptionTier === "premium";
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  // Quick Log reads the server-resolved, expiry-aware feature flag: the raw
+  // tier above still says "premium" after a subscription lapses, and the
+  // server refuses that account's parse. It stays unlocked until the
+  // subscription has loaded, so a premium user never sees the lock flash
+  // (the server still enforces the gate).
+  const canQuickLog = usePremiumFeature("textFoodParsing");
+  const { isPremiumResolved } = usePremiumContext();
+  const quickLogLocked = isPremiumResolved && !canQuickLog;
+  const isActionLocked = useCallback(
+    (action: HomeAction) => {
+      if (!action.premium) return false;
+      if (action.id === "quick-log") return quickLogLocked;
+      return !isPremium;
+    },
+    [isPremium, quickLogLocked],
+  );
+
   // BottomSheetModal must be declared directly in this screen component —
   // declaring it inside an imported child component silently breaks
   // .present(). Presented imperatively in the press handler (the
@@ -134,6 +158,17 @@ export default function HomeScreen() {
     onSheetChange: handleImportSheetChange,
     onSheetAnimate: handleImportSheetAnimate,
   } = useSheetBackHandler(importSheetRef);
+
+  // Android TalkBack background focus trap (iOS already trapped via
+  // accessibilityViewIsModal on the sheet's own content root, set inside
+  // ImportRecipeSheetContent). Opened synchronously alongside .present() in
+  // handleActionPress; released only once BottomSheetModal's own onDismiss
+  // confirms the sheet has fully closed (post close-animation, the same
+  // asymmetric bias useSheetBackHandler uses) — never released early.
+  const [isImportSheetOpen, setIsImportSheetOpen] = useState(false);
+  const handleImportSheetClosed = useCallback(() => {
+    setIsImportSheetOpen(false);
+  }, []);
 
   const renderImportSheetBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -211,9 +246,11 @@ export default function HomeScreen() {
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const searchRowRef = useAnimatedRef<Animated.View>();
   const generateRowRef = useAnimatedRef<Animated.View>();
+  const quickLogRowRef = useAnimatedRef<Animated.View>();
   const drawerRowRefs: Record<string, typeof searchRowRef> = {
     "search-recipes": searchRowRef,
     "generate-recipe": generateRowRef,
+    "quick-log": quickLogRowRef,
   };
 
   const [openDrawerId, setOpenDrawerId] = useState<string | null>(null);
@@ -231,25 +268,32 @@ export default function HomeScreen() {
       queryKey: ["/api/carousel"],
     });
     void queryClient.invalidateQueries({ queryKey: ["/api/curated-recipes"] });
-    void refetch().then(() => haptics.impact());
-  }, [queryClient, refetch, haptics]);
+    void refetch().then(() => hapticImpact());
+  }, [queryClient, refetch, hapticImpact]);
 
   const handleActionPress = useCallback(
     (action: HomeAction) => {
-      if (action.premium && !isPremium) {
-        haptics.notification(Haptics.NotificationFeedbackType.Warning);
+      if (isActionLocked(action)) {
+        hapticNotification(Haptics.NotificationFeedbackType.Warning);
         setShowUpgradeModal(true);
         return;
       }
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      hapticImpact(Haptics.ImpactFeedbackStyle.Light);
       recordAction(action.id);
       if (action.id === "import-recipe") {
         importSheetRef.current?.present();
+        setIsImportSheetOpen(true);
         return;
       }
       navigateAction(action, navigation);
     },
-    [isPremium, haptics, recordAction, navigation],
+    [
+      isActionLocked,
+      hapticNotification,
+      hapticImpact,
+      recordAction,
+      navigation,
+    ],
   );
 
   const glideRowToTop = useCallback(
@@ -258,7 +302,7 @@ export default function HomeScreen() {
       if (!rowRef) return;
       const currentY = scrollY.value;
       const animated = !reducedMotion;
-      runOnUI(() => {
+      scheduleOnUI(() => {
         "worklet";
         const m = measure(rowRef);
         if (m === null) return;
@@ -268,7 +312,7 @@ export default function HomeScreen() {
           glideToTopOffset(currentY, m.pageY, collapsedBarHeight),
           animated,
         );
-      })();
+      });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- animated refs + shared value are stable
     [collapsedBarHeight, reducedMotion],
@@ -282,12 +326,12 @@ export default function HomeScreen() {
     (action: HomeAction) => {
       // Premium gate reimplemented here (inline path bypasses handleActionPress)
       const opening = openDrawerId !== action.id;
-      if (opening && action.premium && !isPremium) {
-        haptics.notification(Haptics.NotificationFeedbackType.Warning);
+      if (opening && isActionLocked(action)) {
+        hapticNotification(Haptics.NotificationFeedbackType.Warning);
         setShowUpgradeModal(true);
         return;
       }
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      hapticImpact(Haptics.ImpactFeedbackStyle.Light);
       // Any tap supersedes a pending drawer-switch reopen — cancel it first so a
       // fast re-tap during the collapse window (which sees openDrawerId already
       // null → the non-switch branch below) can't be clobbered by the stale timer.
@@ -314,7 +358,14 @@ export default function HomeScreen() {
         if (next) glideRowToTop(next);
       }
     },
-    [openDrawerId, isPremium, haptics, glideRowToTop, reducedMotion],
+    [
+      openDrawerId,
+      isActionLocked,
+      hapticNotification,
+      hapticImpact,
+      glideRowToTop,
+      reducedMotion,
+    ],
   );
 
   useFocusEffect(
@@ -330,20 +381,47 @@ export default function HomeScreen() {
     }, []),
   );
 
+  // The subscription check can resolve AFTER a free/lapsed user has already
+  // opened the Quick Log row (isPremiumResolved arrives late). Without this,
+  // the header repaints locked but the body stays open with a live input,
+  // and the next tap closes the drawer instead of showing the upgrade flow.
+  useEffect(() => {
+    if (quickLogLocked && openDrawerId === "quick-log") setOpenDrawerId(null);
+  }, [quickLogLocked, openDrawerId]);
+
   useEffect(() => {
     const uid = user?.id != null ? String(user.id) : null;
     void initRecentSearchesCache(uid);
   }, [user?.id]);
 
+  const closeDrawer = useCallback(() => setOpenDrawerId(null), []);
+  // Parsed results land under the input; glide the row up so they and Log All
+  // are on screen rather than below the fold.
+  const handleQuickLogResults = useCallback(
+    () => glideRowToTop("quick-log"),
+    [glideRowToTop],
+  );
+
   const renderInlineAction = (action: HomeAction) => {
-    if (action.id === "quick-log") {
-      return <QuickLogDrawer key={action.id} action={action} />;
-    }
     const rowRef = drawerRowRefs[action.id];
-    const isLocked = !!action.premium && !isPremium;
+    const isLocked = isActionLocked(action);
     const isOpen = openDrawerId === action.id;
-    // HomeInlineDrawer is a presentational shell (no ref); wrap here so measure()
+    // The drawer shells are presentational (no ref); wrap here so measure()
     // can locate this row for glide-to-top.
+    if (action.id === "quick-log") {
+      return (
+        <Animated.View key={action.id} ref={rowRef}>
+          <QuickLogDrawer
+            action={action}
+            isOpen={isOpen}
+            onToggle={() => handleDrawerToggle(action)}
+            onClose={closeDrawer}
+            isLocked={isLocked}
+            onResultsShown={handleQuickLogResults}
+          />
+        </Animated.View>
+      );
+    }
     return (
       <Animated.View key={action.id} ref={rowRef}>
         <HomeInlineDrawer
@@ -375,13 +453,13 @@ export default function HomeScreen() {
   const budgetErrored = budgetIsError && !budget;
 
   const handleCalorieTap = useCallback(() => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    hapticImpact(Haptics.ImpactFeedbackStyle.Light);
     if (budgetErrored) {
       void refetch();
       return;
     }
     navigation.navigate("DailyNutritionDetail");
-  }, [haptics, navigation, budgetErrored, refetch]);
+  }, [hapticImpact, navigation, budgetErrored, refetch]);
 
   const calorieText = budget
     ? `${Math.round(budget.foodCalories).toLocaleString()} / ${Math.round(budget.calorieGoal).toLocaleString()} cal`
@@ -393,6 +471,7 @@ export default function HomeScreen() {
     <>
       {/* Collapsed summary bar (visible when scrolled) */}
       <Animated.View
+        testID="home-collapsed-bar"
         style={[
           styles.collapsedBar,
           collapsedBarAnimatedStyle,
@@ -406,8 +485,18 @@ export default function HomeScreen() {
         // pointerEvents="none" does NOT remove the bar from the a11y tree —
         // hide it explicitly or screen readers focus an invisible button.
         accessibilityElementsHidden={!isBarVisible}
+        // This bar is a SIBLING of the ScrollView below (not a descendant),
+        // so the ScrollView's own Android trap (isImportSheetOpen further
+        // down) does not cover it — it needs the same isImportSheetOpen
+        // condition composed in directly. Found in review (2026-09-23):
+        // the bar's own isBarVisible-driven exclusion is independent of
+        // sheet state, so a TalkBack user could reach this Pressable behind
+        // an open sheet whenever the bar happens to be visible (the
+        // "import-recipe" action is in a CollapsibleSection far down the
+        // page, so isBarVisible is very likely already true by the time
+        // this sheet opens in practice).
         importantForAccessibility={
-          isBarVisible ? "auto" : "no-hide-descendants"
+          isBarVisible && !isImportSheetOpen ? "auto" : "no-hide-descendants"
         }
       >
         <Pressable
@@ -435,12 +524,21 @@ export default function HomeScreen() {
       </Animated.View>
 
       <Animated.ScrollView
+        testID="home-scroll"
         ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={scrollContentContainerStyle}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
+        // Android TalkBack background focus trap while the import sheet is
+        // open — see docs/solutions/conventions/
+        // in-screen-overlay-needs-android-focus-trap-2026-06-22.md. iOS is
+        // already trapped separately via accessibilityViewIsModal on the
+        // sheet's own content root, so no accessibilityElementsHidden here.
+        importantForAccessibility={
+          isImportSheetOpen ? "no-hide-descendants" : "auto"
+        }
         onScroll={scrollHandler}
         onScrollBeginDrag={() => {
           if (switchTimerRef.current) {
@@ -521,7 +619,7 @@ export default function HomeScreen() {
                     label={action.label}
                     subtitle={action.subtitle}
                     onPress={() => handleActionPress(action)}
-                    isLocked={action.premium && !isPremium}
+                    isLocked={isActionLocked(action)}
                   />
                 ),
               )}
@@ -546,6 +644,7 @@ export default function HomeScreen() {
         handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onChange={handleImportSheetChange}
         onAnimate={handleImportSheetAnimate}
+        onDismiss={handleImportSheetClosed}
         // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
         // "Bottom Sheet" on the DraggableView that WRAPS these children. On
         // new-arch Fabric that makes the wrapper an accessibility LEAF

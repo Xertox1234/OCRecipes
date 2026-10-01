@@ -127,6 +127,22 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     const cameraRef = useRef<VisionCameraRef>(null);
     const device = useCameraDevice(facing);
 
+    // Hard latch (no re-arm), one per failure class, once per mount — unlike
+    // useCameraFocusAndZoom's re-arming latch, these are rare session-level
+    // failures reported for release/OTA-build visibility
+    // (js-rendered-feedback-not-evidence-native-call-succeeded-2026-07-25.md),
+    // not a high-frequency gesture callback where re-arming matters.
+    const captureFailureReportedRef = useRef(false);
+    const cameraErrorReportedRef = useRef(false);
+    // Interruptions latch PER REASON: iOS forwards every
+    // AVCaptureSession interruption, and a shared latch would let the first
+    // (often routine) reason hide a later, diagnostic one for the whole mount.
+    const reportedInterruptionReasonsRef = useRef(new Set<string>());
+    // True from a reported start until its end: each reported interruption
+    // gets exactly one end report, and a background interruption arriving
+    // mid-episode doesn't swallow it.
+    const awaitingInterruptionEndRef = useRef(false);
+
     const { reducedMotion } = useAccessibility();
     const { focusPoint, zoomLabel, tapGesture, pinchGesture } =
       useCameraFocusAndZoom({ cameraRef, device });
@@ -179,7 +195,11 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
             {},
           );
           return { uri: `file://${photoFile.filePath}` };
-        } catch {
+        } catch (error) {
+          if (!captureFailureReportedRef.current) {
+            captureFailureReportedRef.current = true;
+            logger.error("[CameraView] takePicture failed", error);
+          }
           return null;
         }
       },
@@ -210,7 +230,26 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
               device.hasTorch ? (enableTorch ? "on" : "off") : undefined
             }
             onError={(error) => {
-              logger.warn("[CameraView] Camera error:", error.message);
+              if (cameraErrorReportedRef.current) return;
+              cameraErrorReportedRef.current = true;
+              logger.error("[CameraView] Camera error", error);
+            }}
+            onInterruptionStarted={(reason) => {
+              // Backgrounding the app mid-scan fires this reason; it is
+              // routine, not a failure, so it never reaches error tracking.
+              if (reason === "video-device-not-available-in-background") return;
+              const reported = reportedInterruptionReasonsRef.current;
+              if (reported.has(reason)) return;
+              reported.add(reason);
+              awaitingInterruptionEndRef.current = true;
+              logger.error(
+                `[CameraView] Camera session interrupted (${reason})`,
+              );
+            }}
+            onInterruptionEnded={() => {
+              if (!awaitingInterruptionEndRef.current) return;
+              awaitingInterruptionEndRef.current = false;
+              logger.error("[CameraView] Camera session interruption ended");
             }}
           />
           <FocusRing point={focusPoint} reducedMotion={reducedMotion} />

@@ -23,6 +23,8 @@ Binding for the repo's own tooling — `.claude/hooks/**`, `.claude/skills/**`, 
 - Hooks fail open and silent: `exit 0` on unparseable input or a missing field; never block a tool call on an infrastructure error. Side-effecting telemetry needs an env kill switch, and every self-test must set it (`PATTERN_INJECT_NO_LOG=1`) so tests never write the shared lab DB.
 - Run hook self-tests via `scripts/run-hook-tests.sh` — never re-implement its loop. It strips the git env (`env -u GIT_DIR ...`); an inherited absolute `GIT_DIR` overrides `git -C <tmp>` and mutates the real repo.
 - A gate test needs a two-sided negative control: assert the gate FIRES on a bad payload, not only that it passes a good one. If mutating the code under test leaves the suite green, the test is a decoration — fix the claim rather than adding a second decoration.
+- **The outward-CLI guard corpus (`corpus-detect` + `repro-outward-cli-corpus.sh`) is relevance-gated, not push-gated:** every `.claude/hooks/**` edit still triggers it; every push to `main` runs it (unless the workflow's `paths-ignore` skips that push entirely); other PRs skip it. Detect diffs with `--no-renames` — a move out of the hooks dir must still list its old path. It runs sharded (`--shard I/N`) — only re-pin from a completed `--aggregate` run over the shard union (or a local no-arg run), never from one shard's totals. A nightly unsharded run is the drift backstop.
+- **A required-check gate keys on `corpus-detect`'s output, never on bare `skipped`** — `skipped` covers both "not relevant" and "aggregate never completed"; only the former should pass. See `.github/workflows/ci.yml`'s job comments for the full shape.
 
 ## Knowledge-base plumbing
 
@@ -31,3 +33,13 @@ Binding for the repo's own tooling — `.claude/hooks/**`, `.claude/skills/**`, 
 - `tags` and `applies_to` are a two-part precondition: retrieval selects by `tags` matching the file's routed domain FIRST, then partitions by `applies_to`. A glob whose paths never route to one of the solution's own tags is inert however precise it is. Check with `npx tsx scripts/lib/path-domains.ts <path>`.
 - `applies_to` is matched with bash `[[ ]]`, which has no globstar; the hook also tries the `**/`-elided form, so `dir/**/*.ext` matches both `dir/file.ext` and `dir/sub/file.ext`.
 - Edits to `.claude/agents/*.md` and `.claude/skills/**` take effect on session reload, not on save — never claim a behavior change works without verifying it in a fresh session.
+
+## Checkpoints (session coordination v2)
+
+- Before every Agent dispatch and every command-position `git checkout/restore/reset/stash/clean/switch` (not `/usr/bin/git …` — see `docs/harness-residuals.md`), `.claude/hooks/checkpoint.sh` snapshots each dirty worktree to `refs/checkpoints/<sid8>/<worktree>` (local only, 14-day retention). It never touches HEAD, the index, or files.
+- Recover lost uncommitted work: `bash scripts/checkpoint.sh list`, then `git restore --source=<ref> --worktree -- <path>`.
+
+## Collision block (session coordination v2)
+
+- Editing a file another live session touched in the last 15 min is blocked once. Every holder of the file is judged (up to 5, at most 3 checked live per edit), not the first one listed. The block names the most recent live editor to the model, which must ask the user; the retry goes through (once per file/holder/agent per 15 min, so two live holders mean two blocks). A sibling subagent only gets a warning.
+- `SKIP_COLLISION_BLOCK=1` turns the block into a warning.

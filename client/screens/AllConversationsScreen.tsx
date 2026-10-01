@@ -14,17 +14,25 @@ import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useToast } from "@/context/ToastContext";
+import { usePremiumContext } from "@/context/PremiumContext";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import {
   useChatConversations,
   useDeleteConversation,
   usePinConversation,
   type ChatConversation,
 } from "@/hooks/useChat";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import {
+  REFRESH_ON_FOCUS_SETTLE_MS,
+  useRefreshOnFocus,
+} from "@/hooks/useRefreshOnFocus";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { AllConversationsNavigationProp } from "@/types/navigation";
 import { safeGoBack } from "@/navigation/safeGoBack";
 
 const MAX_PINNED = 3;
+
+type ChatSegment = "coach" | "recipe";
 
 function formatRelativeDate(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -41,6 +49,11 @@ export default function AllConversationsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<AllConversationsNavigationProp>();
 
+  const { isLoading: isPremiumLoading } = usePremiumContext();
+  const isCoachPro = usePremiumFeature("coachPro");
+  const showCoachPro = isCoachPro || isPremiumLoading;
+
+  const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -49,12 +62,30 @@ export default function AllConversationsScreen() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const { data: conversations = [], isLoading } = useChatConversations(
-    "coach",
-    {
-      search: debouncedSearch || undefined,
-    },
-  );
+  const {
+    data: conversations = [],
+    isLoading,
+    refetch,
+  } = useChatConversations(activeSegment, {
+    search: debouncedSearch || undefined,
+  });
+  // This screen can stay mounted under a pushed chat screen (Chat, RecipeChat).
+  // A reply that finishes after the user left marks the conversation list
+  // stale with `refetchType: "none"` (#1060/#1065) — that only refetches once
+  // a query observer mounts, so pick it up on refocus instead of waiting for
+  // a manual pull-to-refresh. `refetch` is stable across `activeSegment`
+  // switches (react-query keeps the same observer instance for this
+  // component's lifetime — see ChatListScreen.tsx), so whichever tab is
+  // active when the screen refocuses is the one that gets refreshed.
+  const refetchOnFocus = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+  // settleMs: the refocus usually lands in the same transition as the abort
+  // that invalidated the coach list with `refetchType: "none"` — re-read once
+  // the server's post-disconnect write has settled (see the constant's
+  // comment). Sized for the coach path only; the recipe-tab generation path
+  // is a known, pre-existing residual (documented on the constant).
+  useRefreshOnFocus(refetchOnFocus, { settleMs: REFRESH_ON_FOCUS_SETTLE_MS });
   const pinConversation = usePinConversation();
   const deleteConversation = useDeleteConversation();
 
@@ -118,7 +149,32 @@ export default function AllConversationsScreen() {
         key={conv.id}
         style={[styles.row, { borderBottomColor: theme.border }]}
         onPress={() => {
-          navigation.navigate("CoachPro", { selectedConversationId: conv.id });
+          if (activeSegment === "recipe") {
+            navigation.navigate("RecipeChat", { conversationId: conv.id });
+          } else {
+            // This is a root-stack screen; CoachPro lives only in the Coach
+            // tab's nested ChatStack. A bare navigate("CoachPro") is never
+            // handled (navigationInChildEnabled is off), so name the path.
+            // `pop: true` returns to the EXISTING Main route below this modal;
+            // without it the root StackRouter pushes a second Main on top.
+            // Free-tier rows open the plain Chat screen (as ChatListScreen
+            // does). While premium status loads, keep CoachPro so a Coach Pro
+            // user is never routed to Chat (CoachProScreen assumes access
+            // while loading too).
+            navigation.navigate(
+              "Main",
+              {
+                screen: "CoachTab",
+                params: showCoachPro
+                  ? {
+                      screen: "CoachPro",
+                      params: { selectedConversationId: conv.id },
+                    }
+                  : { screen: "Chat", params: { conversationId: conv.id } },
+              },
+              { pop: true },
+            );
+          }
         }}
         accessibilityRole="button"
         accessibilityLabel={`Open conversation: ${conv.title}`}
@@ -128,7 +184,10 @@ export default function AllConversationsScreen() {
             numberOfLines={1}
             style={[styles.rowTitle, { color: theme.text }]}
           >
-            {conv.title || "Coach conversation"}
+            {conv.title ||
+              (activeSegment === "recipe"
+                ? "Recipe chat"
+                : "Coach conversation")}
           </Text>
           <Text style={[styles.rowMeta, { color: theme.textSecondary }]}>
             {formatRelativeDate(conv.updatedAt)}
@@ -167,7 +226,14 @@ export default function AllConversationsScreen() {
         </View>
       </Pressable>
     ),
-    [handleDelete, handleTogglePin, navigation, theme],
+    [
+      activeSegment,
+      handleDelete,
+      handleTogglePin,
+      navigation,
+      showCoachPro,
+      theme,
+    ],
   );
 
   return (
@@ -197,6 +263,48 @@ export default function AllConversationsScreen() {
         >
           <Feather name="x" size={24} color={theme.text} accessible={false} />
         </Pressable>
+      </View>
+
+      <View
+        style={[
+          styles.segmentContainer,
+          { backgroundColor: withOpacity(theme.text, 0.06) },
+        ]}
+        accessibilityRole="tablist"
+      >
+        {(["coach", "recipe"] as const).map((segment) => {
+          const isActive = activeSegment === segment;
+          return (
+            <Pressable
+              key={segment}
+              onPress={() => setActiveSegment(segment)}
+              style={[
+                styles.segmentTab,
+                isActive && [
+                  styles.segmentTabActive,
+                  { backgroundColor: theme.backgroundRoot },
+                ],
+              ]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={
+                segment === "coach" ? "Coach chats" : "Recipe chats"
+              }
+            >
+              <Text
+                style={[
+                  styles.segmentLabel,
+                  {
+                    color: isActive ? theme.text : theme.textSecondary,
+                    fontWeight: isActive ? "600" : "400",
+                  },
+                ]}
+              >
+                {segment === "coach" ? "Coach" : "Recipes"}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <View
@@ -272,6 +380,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerTitle: { fontSize: 17, fontWeight: "600" },
+  segmentContainer: {
+    flexDirection: "row",
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    padding: 3,
+  },
+  segmentTab: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.xs,
+  },
+  segmentTabActive: {
+    shadowColor: "#000", // hardcoded — iOS shadow requires literal black
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  segmentLabel: { fontSize: 13 },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",

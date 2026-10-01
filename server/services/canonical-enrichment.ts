@@ -83,11 +83,14 @@ const UNIT_NORMALIZATION_MAP: Record<string, string> = {
 
 function normalizeUnit(unit: string): string {
   const lower = unit.toLowerCase().trim();
-  return (
-    UNIT_NORMALIZATION_MAP[lower] ??
-    UNIT_NORMALIZATION_MAP[lower.replace(/s$/, "")] ??
-    unit
-  );
+  if (Object.hasOwn(UNIT_NORMALIZATION_MAP, lower)) {
+    return UNIT_NORMALIZATION_MAP[lower];
+  }
+  const singular = lower.replace(/s$/, "");
+  if (Object.hasOwn(UNIT_NORMALIZATION_MAP, singular)) {
+    return UNIT_NORMALIZATION_MAP[singular];
+  }
+  return unit;
 }
 
 function normalizeIngredients(
@@ -137,7 +140,8 @@ async function generateSingleImage(
     try {
       const buffer = await generateImage({ prompt, model: RUNWARE_MODEL_HQ });
       if (buffer) {
-        return await saveImageBuffer(buffer);
+        // Runware returns JPEG (no outputFormat requested) — label it to match.
+        return await saveImageBuffer(buffer, "jpg");
       }
       log.warn(
         { variant },

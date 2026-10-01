@@ -23,7 +23,7 @@
  * signals stay complementary: mutation finds untested branches in the example
  * suite, properties find untested input classes here.
  *
- * Seed pinning: vitest.config.ts sets `retry: 2` to absorb CPU-contention
+ * Seed pinning: vitest.config.mts sets `retry: 2` to absorb CPU-contention
  * flakes. An UNSEEDED property that finds a real counterexample would re-run
  * with a fresh random seed on retry and could pass — masking a genuine bug as
  * a flake. A pinned seed makes any failure deterministic across all three

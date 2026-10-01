@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 //
 // Net-new coverage for the cookbook cover experience. The two behaviours worth
-// pinning are (a) the screen can always be left — it is reachable from Home as
-// the only route in the Plan stack, where goBack() is a no-op — and (b) a
+// pinning are (a) the screen can always be left, and leaving REMOVES it — it
+// is reachable from Home as the only route in the Plan stack, where goBack()
+// bubbles to the tab navigator and leaves the form behind — and (b) a
 // cover failure after the cookbook row is committed must not read as "creation
 // failed".
 import React from "react";
@@ -16,6 +17,8 @@ const {
   mockNavigate,
   mockGoBack,
   mockCanGoBack,
+  mockPopTo,
+  mockGetState,
   mockSetOptions,
   mockSetParams,
   mockParentNavigate,
@@ -33,6 +36,8 @@ const {
   mockNavigate: vi.fn(),
   mockGoBack: vi.fn(),
   mockCanGoBack: vi.fn(),
+  mockPopTo: vi.fn(),
+  mockGetState: vi.fn(),
   mockSetOptions: vi.fn(),
   mockSetParams: vi.fn(),
   mockParentNavigate: vi.fn(),
@@ -53,6 +58,8 @@ vi.mock("@react-navigation/native", () => ({
     navigate: mockNavigate,
     goBack: mockGoBack,
     canGoBack: mockCanGoBack,
+    popTo: mockPopTo,
+    getState: mockGetState,
     setOptions: mockSetOptions,
     setParams: mockSetParams,
     dispatch: vi.fn(),
@@ -123,8 +130,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockRouteParams.mockReturnValue(undefined);
   // Default: pushed onto an existing stack. The one-route case is opted into
-  // per test.
+  // per test. canGoBack() stays true throughout — it answers for PARENT
+  // navigators too (the tab router can always go back to Home), which is
+  // exactly why the screen must not branch on it.
   mockCanGoBack.mockReturnValue(true);
+  mockGetState.mockReturnValue(stackState(2));
   mockCookbookDetail.mockReturnValue(idleDetail);
   mockPremiumFeature.mockReturnValue(true);
   mockCreate.mockResolvedValue({ id: 7, name: "Weeknight Dinners" });
@@ -135,6 +145,16 @@ beforeEach(() => {
     mockAnnounce,
   );
 });
+
+/** A Plan-stack state with `n` routes (1-3), CookbookCreate on top. */
+function stackState(n: number) {
+  const beneath = [
+    { key: "home-1", name: "MealPlanHome" },
+    { key: "list-1", name: "CookbookList" },
+  ].slice(0, n - 1);
+  const routes = [...beneath, { key: "create-1", name: "CookbookCreate" }];
+  return { index: routes.length - 1, routes };
+}
 
 /** Pull the headerLeft element the screen registered via setOptions. */
 function renderHeaderLeft() {
@@ -162,45 +182,77 @@ describe("CookbookCreateScreen — leaving the screen", () => {
     expect(options.headerLeft).toBeTypeOf("function");
   });
 
-  it("goes back when there is a route beneath", () => {
-    mockCanGoBack.mockReturnValue(true);
-    renderComponent(<CookbookCreateScreen />);
-    renderComponent(renderHeaderLeft());
+  // canGoBack() is true in every cell below: it bubbles to the tab router,
+  // which can always go back to Home. Branching on it sent the one-route
+  // case's goBack() to the TAB navigator — Home was shown but this route was
+  // never removed, so the form reappeared on every return to Plan.
 
-    fireEvent.click(screen.getByLabelText("Close without saving"));
-
-    expect(mockGoBack).toHaveBeenCalled();
-    expect(mockParentNavigate).not.toHaveBeenCalled();
-  });
-
-  it("redirects to Home when this is the only route in the stack", () => {
-    // Reached via a nested navigate from Home, this screen is the only route
-    // in the Plan stack — goBack() would be a no-op and strand the user.
-    mockCanGoBack.mockReturnValue(false);
+  it("from Home, as the only route: pops to MealPlanHome, then shows Home", () => {
+    mockGetState.mockReturnValue(stackState(1));
     mockRouteParams.mockReturnValue({ fromHome: true });
     renderComponent(<CookbookCreateScreen />);
     renderComponent(renderHeaderLeft());
 
     fireEvent.click(screen.getByLabelText("Close without saving"));
 
+    expect(mockPopTo).toHaveBeenCalledWith("MealPlanHome");
     expect(mockParentNavigate).toHaveBeenCalledWith("HomeTab");
     expect(mockGoBack).not.toHaveBeenCalled();
   });
 
-  it("still escapes on a SECOND visit, after fromHome has been cleared", () => {
-    // redirectToHomeTab clears `fromHome`, so the screen sits in the Plan
-    // stack without it. Returning via the Plan tab lands here again with the
-    // same one-route stack — a `fromHome`-keyed check would fall through to a
-    // no-op goBack() and re-create the dead end.
-    mockCanGoBack.mockReturnValue(false);
-    mockRouteParams.mockReturnValue(undefined);
+  it("from Home, with a route beneath: pops to MealPlanHome, then shows Home", () => {
+    // A goBack() here is intercepted by useFromHomeBackRedirect, which shows
+    // Home but leaves the form mounted on top of the Plan stack.
+    mockGetState.mockReturnValue(stackState(2));
+    mockRouteParams.mockReturnValue({ fromHome: true });
     renderComponent(<CookbookCreateScreen />);
     renderComponent(renderHeaderLeft());
 
     fireEvent.click(screen.getByLabelText("Close without saving"));
 
+    expect(mockPopTo).toHaveBeenCalledWith("MealPlanHome");
     expect(mockParentNavigate).toHaveBeenCalledWith("HomeTab");
     expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it("from Home, over a deeper Plan stack: still pops to MealPlanHome", () => {
+    // Accepted trade-off: popTo also drops a CookbookList the user had open
+    // in Plan. A plain pop() would be a back action, which
+    // useFromHomeBackRedirect intercepts — leaving the form mounted again.
+    mockGetState.mockReturnValue(stackState(3));
+    mockRouteParams.mockReturnValue({ fromHome: true });
+    renderComponent(<CookbookCreateScreen />);
+    renderComponent(renderHeaderLeft());
+
+    fireEvent.click(screen.getByLabelText("Close without saving"));
+
+    expect(mockPopTo).toHaveBeenCalledWith("MealPlanHome");
+    expect(mockParentNavigate).toHaveBeenCalledWith("HomeTab");
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it("within Plan, with a route beneath: goes back", () => {
+    mockGetState.mockReturnValue(stackState(3));
+    renderComponent(<CookbookCreateScreen />);
+    renderComponent(renderHeaderLeft());
+
+    fireEvent.click(screen.getByLabelText("Close without saving"));
+
+    expect(mockGoBack).toHaveBeenCalled();
+    expect(mockPopTo).not.toHaveBeenCalled();
+    expect(mockParentNavigate).not.toHaveBeenCalled();
+  });
+
+  it("within Plan, as the only route: pops to MealPlanHome and stays in Plan", () => {
+    mockGetState.mockReturnValue(stackState(1));
+    renderComponent(<CookbookCreateScreen />);
+    renderComponent(renderHeaderLeft());
+
+    fireEvent.click(screen.getByLabelText("Close without saving"));
+
+    expect(mockPopTo).toHaveBeenCalledWith("MealPlanHome");
+    expect(mockGoBack).not.toHaveBeenCalled();
+    expect(mockParentNavigate).not.toHaveBeenCalled();
   });
 });
 

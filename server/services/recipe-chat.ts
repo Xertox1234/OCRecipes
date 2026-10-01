@@ -189,6 +189,7 @@ function buildSystemPrompt(
     "- Write 5-12 concise instruction steps",
     "- Include accurate prep + cook time in timeEstimate",
     "- Tag with applicable diet tags: vegetarian, vegan, gluten-free, dairy-free, low-carb, high-protein, quick, kid-friendly",
+    "- Never write markdown images (`![alt](url)`) or markdown links (`[text](url)`) in your reply — the chat renderer does not display them: images are dropped and links lose their URL.",
     "",
   ];
 
@@ -246,6 +247,7 @@ export function buildRemixSystemPrompt(
     "- Adjust quantities proportionally when swapping ingredients",
     "- Update dietTags to reflect the changes (e.g., add 'dairy-free' if dairy was removed)",
     "- Give the remix a new title that reflects the changes (e.g., 'Dairy-Free Chicken Alfredo')",
+    "- Never write markdown images (`![alt](url)`) or markdown links (`[text](url)`) in your reply — the chat renderer does not display them: images are dropped and links lose their URL.",
     "",
     "ORIGINAL RECIPE TO MODIFY:",
     "```json",

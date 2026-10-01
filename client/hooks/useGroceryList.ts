@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, type MutationErrorMeta } from "@/lib/query-client";
 import type { GroceryList, GroceryListItem } from "@shared/schema";
 
 type GroceryListWithItems = GroceryList & { items: GroceryListItem[] };
@@ -28,7 +28,13 @@ export function useGroceryListDetail(listId: number) {
   });
 }
 
-export function useCreateGroceryList() {
+/**
+ * `meta` is threaded (not hardcoded): GroceryListPickerModal already shows
+ * an Alert on failure and should opt out, but GroceryListsScreen's
+ * `handleGenerate` has no error handling at all — the global net should
+ * still cover it.
+ */
+export function useCreateGroceryList(meta?: MutationErrorMeta) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -49,6 +55,7 @@ export function useCreateGroceryList() {
         queryKey: ["/api/meal-plan/grocery-lists"],
       });
     },
+    meta,
   });
 }
 
@@ -112,7 +119,13 @@ export function useToggleGroceryItem() {
   });
 }
 
-export function useAddManualGroceryItem() {
+/**
+ * `meta` is threaded (not hardcoded): GroceryListPickerModal already shows
+ * an Alert on failure and should opt out, but GroceryListScreen's
+ * `handleAddItem` has no error handling at all — the global net should
+ * still cover it.
+ */
+export function useAddManualGroceryItem(meta?: MutationErrorMeta) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -141,6 +154,7 @@ export function useAddManualGroceryItem() {
         queryKey: ["/api/meal-plan/grocery-lists", listId],
       });
     },
+    meta,
   });
 }
 

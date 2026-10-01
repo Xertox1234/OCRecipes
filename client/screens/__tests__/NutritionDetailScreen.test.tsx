@@ -4,12 +4,12 @@
 // Trans Fat / Cholesterol / Caffeine rows (Task 11, Smart Scan Universal
 // Nutrition Flags v1). The screen has no prior render test — this file
 // mocks useNutritionLookup (the screen's sole data source) plus
-// @react-navigation/native, and pins the route to an `itemId` lookup so the
-// serving-controls / verification-badge / manual-search / flags branches
-// (each gated on `!itemId` or a non-empty array) stay out of the render
-// tree — only the Additional Nutrients card is exercised.
+// @react-navigation/native, and pins the route to an image-entry lookup (no
+// `barcode`) so the serving-controls / verification-badge / manual-search /
+// flags branches (each gated on a barcode or a non-empty array) stay out of
+// the render tree — only the Additional Nutrients card is exercised.
 import React from "react";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
@@ -19,21 +19,30 @@ import { buildNutritionDetailParams } from "../scan-screen-utils";
 import { Spacing } from "@/constants/theme";
 import type { ScanPhase } from "@/camera/types/scan-phase";
 
-/** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`, no
- * `itemId`); every other suite relies on the `itemId` default below.
+/** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`);
+ * every other suite relies on the image-entry default below. The default used
+ * to carry `itemId: 42`, whose branch was removed 2026-09-17 — `imageUri` is
+ * the surviving entry mode that reaches this screen without a barcode, so
+ * every barcode-gated suppression this file depends on is unchanged.
  * `mockNavigate` is hoisted (not a fresh `vi.fn()` per `useNavigation()` call)
  * so a test can assert against a stable reference — see the verification-panel
  * CTA test below. */
 const { mockUseNutritionLookup, mockRoute, mockNavigate } = vi.hoisted(() => ({
   mockUseNutritionLookup: vi.fn(),
-  mockRoute: { params: { itemId: 42 } as Record<string, unknown> },
+  // Inline literal, not a const: `vi.hoisted` runs before module-level
+  // bindings are initialised, so a reference here would be a TDZ error.
+  mockRoute: {
+    params: { imageUri: "file:///manual.jpg" } as Record<string, unknown>,
+  },
   mockNavigate: vi.fn(),
 }));
 
-const ITEM_ID_ROUTE_PARAMS: Record<string, unknown> = { itemId: 42 };
+const IMAGE_ROUTE_PARAMS: Record<string, unknown> = {
+  imageUri: "file:///manual.jpg",
+};
 
 afterEach(() => {
-  mockRoute.params = ITEM_ID_ROUTE_PARAMS;
+  mockRoute.params = IMAGE_ROUTE_PARAMS;
   mockNavigate.mockClear();
 });
 
@@ -90,9 +99,9 @@ function baseHookReturn(
     setServingQuantity: vi.fn(),
     servingSizeGrams: null,
     setServingSizeGrams: vi.fn(),
-    // The band source (slice 2c). `null` / `null` is the SAVED-ITEM shape and
-    // the scan path's pre-lookup shape: no per-100g payload, no derived
-    // beverage flag, so every band resolves `unknown` and no row is painted.
+    // The band source (slice 2c). `null` / `null` is the scan/image path's
+    // pre-lookup shape: no per-100g payload, no derived beverage flag, so
+    // every band resolves `unknown` and no row is painted.
     // Suites that need a real band supply both explicitly.
     validatedData: null,
     isBeverage: null,
@@ -116,8 +125,8 @@ function baseHookReturn(
     handleManualSearch: vi.fn(),
     addToLogMutation: { isPending: false },
     handleAddToLog: vi.fn(),
-    // Required even though this file pins the route to `itemId` (which closes
-    // the log-button block): the screen reads `logGate.kind` in a top-level
+    // Required even though this suite never asserts on the log button: the
+    // screen reads `logGate.kind` in a top-level
     // useEffect dep array, so omitting it is a TypeError, not a falsy no-op
     // like the notice fields above.
     logGate: { kind: "open" },
@@ -159,7 +168,7 @@ function validatedWithServing(
  * - Rows are read through their `accessibilityLabel`, not their visible label.
  *   The summary card's promoted standout uses `standoutCopy`, whose
  *   `unknown` + `hasValue` branch is the bare capitalised nutrient word — the
- *   dominant saved-item state — so "Saturated fat" matches the standout AND
+ *   dominant unresolved-basis state — so "Saturated fat" matches the standout AND
  *   the row label, and a text query would throw on two matches.
  * - An absent nutrient no longer omits its row; it renders "Not recorded".
  *   That is `NutritionPanel`'s deliberate contract (see its docblock): a
@@ -557,8 +566,8 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
  * exists to deliver is that "Add to Today" is NOT reachable in one tap while
  * gated, and that only holds at this layer.
  *
- * These use a scan-flow route (`barcode`, no `itemId`), which is the only route
- * shape where the log button renders at all.
+ * These use a scan-flow route (`barcode`), the only route shape where the log
+ * button's GATED copy can be exercised end to end.
  */
 describe("NutritionDetailScreen — log gate (Task 6)", () => {
   // Derived, not hand-copied: a change to the button copy must not leave this
@@ -689,19 +698,6 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
     } finally {
       announceSpy.mockRestore();
     }
-  });
-
-  // D4 fix (Task 8): the CTA navigated to Scan with mode: "label" — asking
-  // for the nutrition-label photo that step 2 of the main flow already
-  // collects. Uses renderScanRoute (barcode route, no itemId) because the
-  // verification section only renders under `!itemId && barcode &&
-  // nutrition`; the default itemId route would keep this text out of the
-  // tree regardless of whether the CTA still existed, making the assertion
-  // vacuous.
-  it("does not render the obsolete Help verify this product CTA", () => {
-    const { queryByText } = renderScanRoute({ kind: "open" });
-
-    expect(queryByText("Help verify this product")).toBeNull();
   });
 });
 
@@ -868,13 +864,34 @@ describe("NutritionDetailScreen — loading branch (2b characterisation)", () =>
     return renderComponent(<NutritionDetailScreen />);
   }
 
-  it("renders the skeleton and announces Loading", () => {
+  // P3-2026-09-23 (L12): this screen is a `presentation: "modal"` route
+  // (RootStackNavigator), so the "Loading" announce must be delayed past the
+  // modal-present focus shift rather than firing synchronously on mount —
+  // see docs/solutions/conventions/on-open-announce-must-delay-past-modal-present-focus-shift-2026-06-25.md.
+  // Fake timers are scoped to this describe only; other describes in this
+  // file spy on the same announce function without them.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  it("does not announce Loading synchronously, then announces it after the modal-present delay", () => {
     const announceSpy = vi.spyOn(
       RN.AccessibilityInfo,
       "announceForAccessibility",
     );
     try {
       const { queryByText } = renderLoading();
+
+      // Not yet — an immediate announce races the OS's own present
+      // focus-shift and can be swallowed on iOS.
+      expect(announceSpy).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(500);
 
       expect(announceSpy).toHaveBeenCalledWith("Loading");
       // Negative control: the loading branch returns EARLY, so no main-branch
@@ -885,23 +902,56 @@ describe("NutritionDetailScreen — loading branch (2b characterisation)", () =>
       announceSpy.mockRestore();
     }
   });
+
+  it("cancels the pending Loading announce if the skeleton unmounts before the delay elapses", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const { unmount } = renderLoading();
+      unmount();
+      vi.advanceTimersByTime(500);
+
+      expect(announceSpy).not.toHaveBeenCalled();
+    } finally {
+      announceSpy.mockRestore();
+    }
+  });
 });
 
 // NutritionDetailScreen — modal focus containment (2b characterisation):
-// deliberately NOT a test. `accessibilityViewIsModal` reaches the DOM only
-// through mockComponent's `...rest` spread and is not one of the props the
-// mock special-cases, so — like the `accessible` boolean prop documented in
+// deliberately NOT a test. Written when `accessibilityViewIsModal` reached
+// the DOM only through mockComponent's `...rest` spread and was not one of
+// the props the mock special-cases, so — like the `accessible` boolean prop
+// documented in
 // docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md —
-// it never appears as an attribute on the rendered DOM node for either
-// branch. Empirically confirmed: `container.querySelectorAll("[accessibilityviewismodal]")`
+// it never appeared as an attribute on the rendered DOM node for either
+// branch. Empirically confirmed at the time: `container.querySelectorAll("[accessibilityviewismodal]")`
 // returned 0 on BOTH the main branch and the loading branch, so an assertion
-// of `.length === 1` could never fail and would pass vacuously regardless of
-// whether the screen (or an extracted component in Tasks 2-6) keeps the
-// prop. `accessibilityViewIsModal` on both
+// of `.length === 1` could never fail and would pass vacuously.
+// UPDATE (2026-09-20): `mockComponent` now maps `accessibilityViewIsModal`
+// to `aria-modal="true"` (see `test/mocks/react-native.ts`'s `ariaModalProps`
+// and the same jsdom solution doc's Exceptions section) — a direct assertion
+// via `container.querySelector('[aria-modal="true"]')` is possible for a
+// future pass on this file, though `accessibilityViewIsModal` on both
 // `<ThemedView style={styles.container} accessibilityViewIsModal>` tags in
-// NutritionDetailScreen.tsx — one per branch (loading and main) — is
-// therefore a diff-review obligation, not a test — verify on device with
-// VoiceOver per docs/rules/accessibility.md instead.
+// NutritionDetailScreen.tsx — one per branch (loading and main) — remains
+// untested here today; verify on device with VoiceOver per
+// docs/rules/accessibility.md in the meantime.
+
+// NutritionDetailScreen — manual-search decorative icons (P3-2026-09-23, L12):
+// deliberately NOT a test. The `search` icon in the manual-search header and
+// the `arrow-right` icon inside the labeled search button both got
+// `accessible={false}` per docs/rules/accessibility.md. Per
+// docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md,
+// `accessible` never reaches the rendered DOM in this harness for either
+// boolean value, and neither icon ever carried its own `accessibilityLabel`
+// (there is no label-absence delta a test could pin — it would pass
+// identically before and after the fix). Same precedent as
+// `todos/archive/2026-06-03-coach-pro-bookmark-icon-accessible-false.md`,
+// which shipped the identical fix with no matching jsdom test. Verify on
+// device with VoiceOver/TalkBack per docs/rules/accessibility.md.
 
 describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
   function renderHero(nutrition: Record<string, unknown>) {
@@ -1063,6 +1113,47 @@ describe("NutritionDetailScreen — verification panel (2b characterisation)", (
       verifyBarcode: "06772408",
     });
   });
+
+  // The label-verify CTA is how the app reaches POST /api/verification/submit
+  // (LabelAnalysis's verification mode). The other two routes into Scan drop
+  // verifyBarcode: the Coach's navigate (coach-blocks' screenParamSchemas) and
+  // deep links (linking.ts). #736 removed it as redundant with the
+  // barcode flow's step 2, but step 2 never submits a verification, so no
+  // product's verification count could advance.
+  it.each(["unverified", "single_verified"])(
+    "offers the label-verify CTA for a %s product",
+    (verificationLevel) => {
+      const { queryByText } = renderVerification({
+        verificationLevel,
+        hasFrontLabelData: false,
+      });
+
+      expect(queryByText("Help verify this product")).toBeTruthy();
+    },
+  );
+
+  it("withholds the label-verify CTA for a verified product", () => {
+    const { queryByText } = renderVerification({
+      verificationLevel: "verified",
+      hasFrontLabelData: false,
+    });
+
+    expect(queryByText("Help verify this product")).toBeNull();
+  });
+
+  it("opens the label scan with the barcode when the label-verify CTA is pressed", () => {
+    const { getByText } = renderVerification({
+      verificationLevel: "unverified",
+      hasFrontLabelData: false,
+    });
+
+    fireEvent.click(getByText("Help verify this product"));
+
+    expect(mockNavigate).toHaveBeenCalledWith("Scan", {
+      mode: "label",
+      verifyBarcode: "06772408",
+    });
+  });
 });
 
 /**
@@ -1110,15 +1201,15 @@ describe("NutritionDetailScreen — nutrition panel wiring (slice 2c)", () => {
     isServingDataTrusted: true,
   };
 
-  it("renders the saved-item sugar row UNBANDED — no indicator, no tag", () => {
-    // Saved-item path: `validatedData` is null and `nutrition` IS the
+  it("renders an unbanded sugar row when the serving string carries no metric quantity — no indicator, no tag", () => {
+    // Image-entry path: `validatedData` is null and `nutrition` IS the
     // per-serving source, but "1 bottle" carries no metric quantity, so
     // `resolveBasis` returns `unknown` and 39 g of sugar gets no colour. A
     // fabricated denominator here would be a confident false claim.
     //
     // Asserting on the indicator and the value rather than the row label: a
     // label-only assertion passes in every row state.
-    mockRoute.params = { itemId: 42 };
+    mockRoute.params = IMAGE_ROUTE_PARAMS;
     mockUseNutritionLookup.mockReturnValue(
       baseHookReturn({
         productName: "Mystery Drink",
@@ -1449,15 +1540,6 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
     return renderComponent(<NutritionDetailScreen />);
   }
 
-  function renderSavedItem(overrides: Record<string, unknown> = {}) {
-    mockRoute.params = { itemId: 42 };
-    mockUseNutritionLookup.mockReturnValue({
-      ...baseHookReturn({ productName: "Cherry Coke", calories: 39 }),
-      ...overrides,
-    });
-    return renderComponent(<NutritionDetailScreen />);
-  }
-
   /**
    * React keeps every prop it was handed on the host node's fiber, including
    * ones it declined to wire up (`onLayout`) or to recognise
@@ -1652,22 +1734,6 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
     ).toBeTruthy();
   });
 
-  // Constraint 25: the saved-item view keeps its existing omissions. All three
-  // notice inputs are supplied, so a dropped `!itemId` gate goes red here
-  // rather than passing because the fixture had nothing to show.
-  it("renders no notices at all on the saved-item path", () => {
-    const { queryByText } = renderSavedItem({
-      labelReadNotice: LABEL_BODY,
-      correctionNotice: CORRECTION_BODY,
-      isPer100g: true,
-    });
-
-    expect(queryByText(LABEL_BODY)).toBeNull();
-    expect(queryByText(CORRECTION_BODY)).toBeNull();
-    expect(queryByText(PER_100G_BODY)).toBeNull();
-    expect(queryByText("Label not used")).toBeNull();
-  });
-
   /**
    * `error` renders through `InlineError`, not as a `NoticeStack` row
    * (Constraint 23): error messages require `assertive`, and the notices
@@ -1695,14 +1761,20 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
       // but `correctionNotice` and `showPer100gInfo` survive, so `NoticeStack`
       // still announces and collides with `InlineError` in the same commit —
       // TWO utterances, which on iOS means the first is cut off.
-      // Reachable in production, not just constructible: nothing in
-      // `useNutritionLookup` resets `correctionNotice` between lookups (there is
-      // no `setCorrectionNotice(null)` in the file) and `isPer100g` is not
-      // re-armed at the top of `fetchBarcodeData`, so a label RETAKE carries a
-      // stale correction into a lookup that errors.
-      // Pinned so that fixing it — resetting both per lookup, which lives in
-      // `useNutritionLookup` and is on this slice's do-not-touch list — turns
-      // this RED and has to be updated deliberately rather than silently.
+      //
+      // CLOSED as a production path (P2-2026-09-23-correction-notice-not-reset-
+      // per-lookup): `useNutritionLookup.ts`'s per-lookup reset block now calls
+      // `setCorrectionNotice(null)` and `setIsPer100g(false)` at the top of
+      // `fetchBarcodeData`, so a label RETAKE can no longer carry a stale
+      // correction or a stale per-100g flag into a lookup that errors — pinned
+      // by `client/hooks/__tests__/useNutritionLookup.test.ts`. This screen has
+      // no gate of its own on the combination, though, so the fixture below
+      // still constructs it directly and still exercises real defense-in-depth
+      // behavior (what the screen does IF handed this combination), not a
+      // reachable production state. The fix lives entirely in the hook, and
+      // this test never touches the hook (`renderScan` supplies the fixture
+      // props directly) — so it stays green, unchanged, both before and after
+      // the fix.
       // Literal rather than a `noticeAnnouncementKey` call, for the same reason
       // given on the open-gate test above.
       expect(announce.mock.calls.map((c) => c[0])).toEqual([
@@ -1747,10 +1819,14 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
    * no utterance is issued at all. That is what this test pins: one call, and
    * it is the error's.
    *
-   * It does NOT close the collision class. `correctionNotice` and
-   * `showPer100gInfo` are not gated on `error`, so either surviving alongside
-   * a fresh error still produces two announces in one commit — see the
-   * "routes error through InlineError" test above, which pins that residual.
+   * It does NOT close the collision class at the SCREEN level: this screen
+   * still has no gate of its own on `correctionNotice`/`showPer100gInfo`
+   * surviving alongside a fresh `error` — see the "routes error through
+   * InlineError" test above. That combination is no longer reachable in
+   * PRODUCTION, though (CLOSED, P2-2026-09-23-correction-notice-not-reset-per-
+   * lookup): `useNutritionLookup.ts` now resets both per lookup, so this is
+   * defense-in-depth coverage of a fixture the hook itself can no longer
+   * produce, not a live gap.
    */
   it("suppresses the label notice while an error is showing", () => {
     const announce = vi
@@ -1824,29 +1900,16 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
   });
 
   /**
-   * The other half of "counted once": with no bar to own it, the inset has to
-   * stay on the ScrollView or the saved-item view loses its home-indicator
-   * clearance. Same reason the loading branch keeps it.
-   */
-  it("keeps insets.bottom on the ScrollView where no bar renders", () => {
-    const { container } = renderSavedItem();
-
-    expect(scrollPaddingBottom(container)).toBe(
-      SAFE_AREA_BOTTOM + Spacing["3xl"],
-    );
-  });
-
-  /**
    * Constraint 8: the bar must render INSIDE the `accessibilityViewIsModal`
    * root, or it falls outside the modal's iOS accessibility scope.
    *
-   * Asserted structurally, because `accessibilityViewIsModal` never reaches
-   * the DOM in this harness (React declines the unrecognised prop) — see the
-   * standing note above the product-hero suite. What IS assertable is the
-   * shape the constraint requires: the modal root has exactly two children,
-   * the ScrollView and then the bar, so the bar is an absolutely-positioned
-   * sibling AFTER the scroller and inside the same root. The prop itself
-   * stays a diff-review obligation.
+   * Asserted structurally rather than via the prop directly (this predates
+   * `mockComponent`'s 2026-09-20 `aria-modal` mapping — see the standing note
+   * above the product-hero suite for the update). What IS assertable here:
+   * the modal root has exactly two children, the ScrollView and then the bar,
+   * so the bar is an absolutely-positioned sibling AFTER the scroller and
+   * inside the same root. A future pass could additionally assert both via
+   * `[aria-modal="true"]`.
    */
   it("mounts the sticky bar inside the modal root, after the ScrollView", () => {
     const { container, getByTestId } = renderScan();
@@ -1856,15 +1919,5 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
     expect(root!.children).toHaveLength(2);
     expect(root!.children[0]).toBe(scrollViewOf(container));
     expect(root!.children[1]).toBe(getByTestId("log-action-bar"));
-  });
-
-  // Constraint 25 again: no log button on the saved-item path. The root drops
-  // back to a lone ScrollView.
-  it("renders no sticky bar on the saved-item path", () => {
-    const { container, queryByTestId, queryByText } = renderSavedItem();
-
-    expect(queryByTestId("log-action-bar")).toBeNull();
-    expect(queryByText("Add to Today")).toBeNull();
-    expect(container.firstElementChild!.children).toHaveLength(1);
   });
 });

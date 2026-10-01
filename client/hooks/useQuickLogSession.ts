@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { Keyboard } from "react-native";
 import {
   useMutation,
   useQuery,
@@ -10,6 +11,8 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { useParseFoodText, type ParsedFoodItem } from "@/hooks/useFoodParse";
 import { apiRequest } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { enqueue } from "@/lib/offline-queue";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import type { ScannedItem } from "@shared/schema";
@@ -20,6 +23,10 @@ export type { ParsedFoodItem };
 
 export const MAX_LOG_ITEMS = 10;
 
+/** Shown when a parse succeeds but finds no food (see parseEmpty). */
+export const EMPTY_PARSE_MESSAGE =
+  "Couldn't find any food in that. Try something like \u201c2 eggs and toast\u201d.";
+
 export interface LogSummary {
   itemCount: number;
   totalCalories: number;
@@ -29,6 +36,15 @@ export interface LogSummary {
 interface UseQuickLogSessionOptions {
   onLogSuccess?: (summary: LogSummary) => void;
   isOpen?: boolean;
+}
+
+// A free-tier 403 (PREMIUM_REQUIRED) is not a parse failure — retrying can
+// never succeed, so say what is actually wrong. Shared by both parse paths.
+function parseErrorMessage(err: unknown): string {
+  if (err instanceof ApiError && err.code === ErrorCode.PREMIUM_REQUIRED) {
+    return "Quick Log is a premium feature. Upgrade to log food by text or voice.";
+  }
+  return "Failed to parse food text. Please try again.";
 }
 
 interface PartialLogError extends Error {
@@ -49,7 +65,20 @@ export function useQuickLogSession({
 
   const [inputText, setInputText] = useState("");
   const [parsedItems, setParsedItems] = useState<ParsedFoodItem[]>([]);
+  // Bumped alongside every successful parse that sets `parsedItems` (both
+  // the auto-voice-parse and handleTextSubmit onSuccess paths below) — a
+  // per-parse signal consumers can key an announce effect on. Never reset by
+  // reset(): `parsedItems.length > 0` alone can't distinguish "the first
+  // parse" from "a later parse that replaced the list without passing back
+  // through empty", so a discriminator-keyed guard silently misses the
+  // replace. See docs/solutions/logic-errors/imperative-announce-must-be-
+  // content-keyed-not-variant-keyed-2026-06-24.md, "Second manifestation".
+  const [parseGeneration, setParseGeneration] = useState(0);
   const [parseError, setParseError] = useState<string | null>(null);
+  // A successful parse that found no food. Kept apart from parseError: the
+  // request worked, so "try again" would be wrong, and without a signal the
+  // UI looks unchanged after submit.
+  const [parseEmpty, setParseEmpty] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [capWarning, setCapWarning] = useState<string | null>(null);
 
@@ -61,9 +90,12 @@ export function useQuickLogSession({
   // without this the effect re-parses on every mutation settle (isParsing toggle).
   const autoParsedTranscriptRef = useRef<string | null>(null);
 
-  // Bumped on reset() to invalidate any parse still in flight. A parse that
-  // resolves after the session was cleared must not repopulate dismissed items
-  // or fire a haptic for an abandoned session (TanStack v5 has no mutation cancel).
+  // Bumped on reset() to invalidate any parse or log submit still in flight.
+  // A parse or logAllMutation result that resolves after the session was
+  // cleared must not repopulate dismissed items, write a stale error banner,
+  // or fire a haptic for an abandoned session (TanStack v5 has no mutation
+  // cancel). logAllMutation captures the epoch via onMutate's context since
+  // its callbacks are defined at the hook level, not per mutate() call.
   const sessionEpochRef = useRef(0);
 
   // Mirror of logAllMutation.isPending so the zero-dep removeItem callback can
@@ -106,6 +138,7 @@ export function useQuickLogSession({
       autoParsedTranscriptRef.current = transcript;
       setInputText(transcript);
       setParseError(null);
+      setParseEmpty(false);
       const epoch = sessionEpochRef.current;
       parseFoodTextMutate(transcript, {
         onSuccess: (data) => {
@@ -113,12 +146,14 @@ export function useQuickLogSession({
           setParsedItems(
             data.items.map((item) => ({ ...item, sourceType: "voice" })),
           );
+          setParseEmpty(data.items.length === 0);
+          setParseGeneration((g) => g + 1);
           haptics.notification(Haptics.NotificationFeedbackType.Success);
         },
-        onError: () => {
+        onError: (err) => {
           if (sessionEpochRef.current !== epoch) return;
           haptics.notification(Haptics.NotificationFeedbackType.Error);
-          setParseError("Failed to parse food text. Please try again.");
+          setParseError(parseErrorMessage(err));
         },
       });
     }
@@ -127,6 +162,7 @@ export function useQuickLogSession({
   const handleTextSubmit = useCallback(() => {
     if (!inputText.trim() || isParsing) return;
     setParseError(null);
+    setParseEmpty(false);
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     const source = pendingSourceRef.current;
     pendingSourceRef.current = "text";
@@ -137,12 +173,14 @@ export function useQuickLogSession({
         setParsedItems(
           data.items.map((item) => ({ ...item, sourceType: source })),
         );
+        setParseEmpty(data.items.length === 0);
+        setParseGeneration((g) => g + 1);
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       },
-      onError: () => {
+      onError: (err) => {
         if (sessionEpochRef.current !== epoch) return;
         haptics.notification(Haptics.NotificationFeedbackType.Error);
-        setParseError("Failed to parse food text. Please try again.");
+        setParseError(parseErrorMessage(err));
       },
     });
   }, [inputText, isParsing, haptics, parseFoodTextMutate]);
@@ -167,6 +205,9 @@ export function useQuickLogSession({
     (text: string) => {
       pendingSourceRef.current = "chip";
       setInputText(text);
+      // The last parse's outcome no longer describes this input.
+      setParseEmpty(false);
+      setParseError(null);
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     },
     [haptics],
@@ -175,7 +216,8 @@ export function useQuickLogSession({
   const logAllMutation = useMutation<
     ScannedItemResponse[] | undefined,
     PartialLogError,
-    ParsedFoodItem[]
+    ParsedFoodItem[],
+    { epoch: number }
   >({
     // "always" so mutationFn RUNS while offline and the branch below can enqueue
     // each item durably. With the default "online", an offline submit pauses the
@@ -244,18 +286,12 @@ export function useQuickLogSession({
         (r) => (r as PromiseFulfilledResult<ScannedItemResponse>).value,
       );
     },
-    onSuccess: (data, items) => {
-      const loggedItems = items.slice(0, MAX_LOG_ITEMS);
-      const summary: LogSummary = {
-        itemCount: loggedItems.length,
-        totalCalories: loggedItems.reduce(
-          (sum, item) => sum + (item.calories ?? 0),
-          0,
-        ),
-        firstName: loggedItems[0]?.name ?? "Food",
-      };
+    onMutate: () => ({ epoch: sessionEpochRef.current }),
+    onSuccess: (data, items, context) => {
       if (data !== undefined) {
-        // Online success — invalidate so the UI refreshes with server data
+        // Online success — invalidate so the UI refreshes with server data.
+        // Unconditional: a real write happened, so cached data is stale
+        // regardless of whether this session has since been reset.
         void queryClient.invalidateQueries({
           queryKey: QUERY_KEYS.dailySummary,
         });
@@ -265,34 +301,66 @@ export function useQuickLogSession({
         void queryClient.invalidateQueries({
           queryKey: QUERY_KEYS.frequentItems,
         });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/daily-budget"],
+        });
       }
       // Offline path: drain will invalidate after replay — no invalidation here
+
+      // A submit that resolves after the session was reset must not touch a
+      // dismissed session's UI state (see sessionEpochRef doc comment).
+      if (context !== undefined && context.epoch !== sessionEpochRef.current) {
+        return;
+      }
+
+      const loggedItems = items.slice(0, MAX_LOG_ITEMS);
+      const summary: LogSummary = {
+        itemCount: loggedItems.length,
+        totalCalories: loggedItems.reduce(
+          (sum, item) => sum + (item.calories ?? 0),
+          0,
+        ),
+        firstName: loggedItems[0]?.name ?? "Food",
+      };
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       setParsedItems([]);
       setInputText("");
       setSubmitError(null);
       onLogSuccessRef.current?.(summary);
     },
-    onError: (error, items) => {
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
+    onError: (error, items, context) => {
       // Keep only the items that failed so a retry won't re-submit already-persisted ones.
       // Index stability holds because parsedItems is frozen while the mutation is in-flight.
       const failedIndices = error.failedIndices ?? [];
+      if (failedIndices.length > 0 && failedIndices.length < items.length) {
+        // Some items persisted — refresh stale queries. Unconditional: real
+        // server-side writes happened, so cached data is stale regardless of
+        // whether this session has since been reset.
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.dailySummary,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.scannedItems,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.frequentItems,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/daily-budget"],
+        });
+      }
+
+      // A submit that resolves after the session was reset must not
+      // repopulate items or write a stale error banner into a dismissed
+      // session (see sessionEpochRef doc comment).
+      if (context !== undefined && context.epoch !== sessionEpochRef.current) {
+        return;
+      }
+
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       if (failedIndices.length > 0) {
         const failedSet = new Set(failedIndices);
         setParsedItems((prev) => prev.filter((_, i) => failedSet.has(i)));
-        if (failedIndices.length < items.length) {
-          // Some items persisted — refresh stale queries
-          void queryClient.invalidateQueries({
-            queryKey: QUERY_KEYS.dailySummary,
-          });
-          void queryClient.invalidateQueries({
-            queryKey: QUERY_KEYS.scannedItems,
-          });
-          void queryClient.invalidateQueries({
-            queryKey: QUERY_KEYS.frequentItems,
-          });
-        }
       }
       const cappedCount = Math.min(items.length, MAX_LOG_ITEMS);
       const allFailed =
@@ -303,6 +371,10 @@ export function useQuickLogSession({
           : "Some items failed to log. Please try again.",
       );
     },
+    // The onError above already sets a visible submitError for any
+    // generic failure — both consumers (QuickLogScreen, QuickLogDrawer)
+    // surface it via toast/InlineError.
+    meta: { silentError: true },
   });
 
   const { data: frequentItems } = useQuery({
@@ -338,10 +410,15 @@ export function useQuickLogSession({
 
   const reset = useCallback(() => {
     if (isListening) stopListening();
+    // Every close path (switching drawers, leaving the tab, a successful
+    // log) funnels through this one reset() — dismiss here so none of them
+    // leave the keyboard up over the collapsed/locked row.
+    Keyboard.dismiss();
     sessionEpochRef.current += 1;
     setInputText("");
     setParsedItems([]);
     setParseError(null);
+    setParseEmpty(false);
     setSubmitError(null);
     setCapWarning(null);
   }, [isListening, stopListening]);
@@ -353,7 +430,9 @@ export function useQuickLogSession({
     volume,
     isParsing,
     parsedItems,
+    parseGeneration,
     parseError,
+    parseEmpty,
     submitError,
     capWarning,
     isSubmitting: logAllMutation.isPending,

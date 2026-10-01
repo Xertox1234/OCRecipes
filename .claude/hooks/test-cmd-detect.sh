@@ -1819,7 +1819,7 @@ van 'a hex escape with no digits renders as TWO characters' "a\$'\\x'b" 'axxb'
 #       todos/archive/P0-2026-09-13-repo-retarget-flag-in-root-position-defeats-both-merge-guards.md
 #   (B) A redirect in the same slot did the same thing (`gh 2>/dev/null pr
 #       merge 42`) — P1 mechanism (b), the shared-library half of
-#       todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md
+#       todos/archive/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md
 #   (C) cmd_gh_pr_ref's `--repo`/`-R` refusal scans $full_match, whose greedy
 #       tail BACKTRACKS off a trailing flag to end at the ref token. So
 #       `gh pr merge 42 --repo other/org` resolved ref 42 and the gate then

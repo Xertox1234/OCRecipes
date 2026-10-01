@@ -1,18 +1,17 @@
 import type { Express, Response } from "express";
+import { z } from "zod";
+import type { MealPlanRecipe } from "@shared/schema";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { isUniqueViolation } from "../lib/db-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import {
-  parseUserAllergies,
-  type AllergenId,
-} from "@shared/constants/allergens";
 import { inferMealTypes } from "../services/meal-type-inference";
 import {
   searchCatalogRecipes,
   getCatalogRecipeDetail,
   CatalogQuotaError,
+  buildIntolerancesParam,
 } from "../services/recipe-catalog";
 import { mealPlanRateLimit } from "./_rate-limiters";
 import {
@@ -23,32 +22,20 @@ import {
 } from "./_helpers";
 import { catalogSearchSchema } from "@shared/schemas/recipe";
 
-/**
- * Maps OCRecipes allergen IDs to Spoonacular intolerance parameter values.
- * See: https://spoonacular.com/food-api/docs#Intolerances
- */
-const SPOONACULAR_INTOLERANCE_MAP: Partial<Record<AllergenId, string>> = {
-  peanuts: "peanut",
-  tree_nuts: "tree nut",
-  milk: "dairy",
-  eggs: "egg",
-  wheat: "wheat",
-  soy: "soy",
-  fish: "seafood",
-  shellfish: "shellfish",
-  sesame: "sesame",
-};
+const catalogSaveBodySchema = z.object({
+  addToSavedItems: z.boolean().optional(),
+});
 
-function buildIntolerancesParam(allergies: unknown): string | undefined {
-  const parsed = parseUserAllergies(allergies);
-  if (parsed.length === 0) return undefined;
-  const values: string[] = [];
-  for (const allergy of parsed) {
-    const spoonacularValue =
-      SPOONACULAR_INTOLERANCE_MAP[allergy.name as AllergenId];
-    if (spoonacularValue) values.push(spoonacularValue);
-  }
-  return values.length > 0 ? values.join(",") : undefined;
+function mealPlanSavedItemLink(recipe: MealPlanRecipe) {
+  const minutes = (recipe.prepTimeMinutes ?? 0) + (recipe.cookTimeMinutes ?? 0);
+  return {
+    recipeId: recipe.id,
+    recipeType: "mealPlan" as const,
+    title: recipe.title,
+    description: recipe.description,
+    difficulty: recipe.difficulty,
+    timeEstimate: minutes > 0 ? `${minutes} min` : null,
+  };
 }
 
 export function register(app: Express): void {
@@ -184,13 +171,38 @@ export function register(app: Express): void {
           return;
         }
 
-        // Dedup: check if already saved
+        const body = catalogSaveBodySchema.safeParse(req.body ?? {});
+        if (!body.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(body.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        // The preview's Save asks for a Saved Items row (user ruling
+        // 2026-09-29); Coach's meal-plan slot saves without asking.
+        const respond = async (status: number, recipe: MealPlanRecipe) => {
+          if (!body.data.addToSavedItems) {
+            res.status(status).json(recipe);
+            return;
+          }
+          const savedItemStatus = await storage.saveRecipeToSavedItems(
+            req.userId,
+            mealPlanSavedItemLink(recipe),
+          );
+          res.status(status).json({ ...recipe, savedItemStatus });
+        };
+
+        // Dedup: check if already saved. Still links, so a recipe saved
+        // before Saved Items linking shipped gets its row on the next tap.
         const existing = await storage.findMealPlanRecipeByExternalId(
           req.userId,
           String(id),
         );
         if (existing) {
-          res.json(existing);
+          await respond(200, existing);
           return;
         }
 
@@ -236,7 +248,7 @@ export function register(app: Express): void {
           detail.ingredients,
         );
 
-        res.status(201).json(saved);
+        await respond(201, saved);
       } catch (error) {
         if (error instanceof CatalogQuotaError) {
           sendError(res, 402, error.message, ErrorCode.CATALOG_QUOTA_EXCEEDED);

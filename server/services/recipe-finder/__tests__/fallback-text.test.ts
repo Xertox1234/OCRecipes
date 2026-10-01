@@ -1,0 +1,103 @@
+import { describe, it, expect } from "vitest";
+import { finderFallbackText } from "../fallback-text";
+import type {
+  RecipeResultsBlock,
+  RecipeQuestionsBlock,
+} from "@shared/schemas/recipe-finder";
+
+const flow = {
+  flowId: "00000000-0000-4000-8000-000000000000",
+  stage: "results" as const,
+  request: "x",
+  query: { q: "x" },
+  round: 0 as const,
+  shownIds: [],
+};
+const list: RecipeResultsBlock = {
+  type: "recipe_results",
+  source: "community",
+  notice: null,
+  flow,
+  actions: ["search_online", "generate", "none_of_these"],
+  items: [
+    {
+      id: 1,
+      source: "community",
+      title: "Mediterranean Quinoa Salad",
+      imageUrl: null,
+      readyInMinutes: 20,
+      calories: 350,
+    },
+    {
+      id: 2,
+      source: "community",
+      title: "Greek Bowl",
+      imageUrl: null,
+      readyInMinutes: null,
+      calories: null,
+    },
+  ],
+};
+
+describe("finderFallbackText", () => {
+  it("lists community recipes and tells an old client what to type", () => {
+    expect(finderFallbackText(list)).toBe(
+      'Here are 2 community recipes:\n1. Mediterranean Quinoa Salad (20 min · 350 cal)\n2. Greek Bowl\n\nReply "generate" to create a new recipe, or "none of these" to narrow it down.',
+    );
+  });
+
+  it("round 1 'none of these' promises a recipe instead of questions", () => {
+    expect(
+      finderFallbackText({ ...list, flow: { ...flow, round: 1 } }),
+    ).toContain('"none of these" to create one instead');
+  });
+
+  it("no community matches", () => {
+    expect(
+      finderFallbackText({ ...list, items: [], notice: "no_matches" }),
+    ).toMatch(/^No community recipes matched\./);
+  });
+
+  it("Spoonacular unavailable never reads as 'no results'", () => {
+    const text = finderFallbackText({
+      ...list,
+      source: "spoonacular",
+      items: [],
+      notice: "unavailable",
+      actions: ["generate", "none_of_these"],
+    });
+    expect(text).toMatch(
+      /^Spoonacular isn't available right now\. Try Generate or a community pick\./,
+    );
+    expect(text).not.toMatch(/no matches|no results/i);
+  });
+
+  it("generate limit", () => {
+    expect(
+      finderFallbackText({
+        ...list,
+        items: [],
+        notice: "generate_limit",
+        actions: ["search_online"],
+      }),
+    ).toBe(
+      "You've reached today's limit for generated recipes. Community and Spoonacular searches still work.",
+    );
+  });
+
+  it("questions with options", () => {
+    const q: RecipeQuestionsBlock = {
+      type: "recipe_questions",
+      flow: { ...flow, stage: "clarifying" },
+      questions: [
+        {
+          question: "How much time do you have?",
+          options: ["Under 20 minutes", "An hour or more"],
+        },
+      ],
+    };
+    expect(finderFallbackText(q)).toBe(
+      'A few quick questions:\n1. How much time do you have? (Under 20 minutes / An hour or more)\n\nReply with your answers, or "generate" to create a recipe now.',
+    );
+  });
+});

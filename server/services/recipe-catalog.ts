@@ -10,6 +10,10 @@ import {
 } from "@shared/types/recipe-catalog";
 import { createServiceLogger, toError } from "../lib/logger";
 import { cachedFetch } from "./dev-api-cache";
+import {
+  parseUserAllergies,
+  type AllergenId,
+} from "@shared/constants/allergens";
 
 const log = createServiceLogger("recipe-catalog");
 
@@ -206,10 +210,17 @@ function mapToMealPlanRecipe(
 
 // ── Exported API Functions ───────────────────────────────────────────
 
+/**
+ * `strict` (recipe finder only) throws where the default returns an empty
+ * list — a missing key or a reply that is not a search result — so a caller
+ * can tell "unavailable" from "no results".
+ */
 export async function searchCatalogRecipes(
   params: CatalogSearchParams,
+  opts: { strict?: boolean } = {},
 ): Promise<CatalogSearchResponse> {
   if (!SPOONACULAR_API_KEY) {
+    if (opts.strict) throw new Error("Spoonacular API key not configured");
     return { results: [], offset: 0, number: 0, totalResults: 0 };
   }
 
@@ -246,6 +257,7 @@ export async function searchCatalogRecipes(
       { zodErrors: parsed.error.flatten() },
       "Spoonacular search parse error",
     );
+    if (opts.strict) throw new Error("Spoonacular search parse error");
     return { results: [], offset: 0, number: 0, totalResults: 0 };
   }
 
@@ -345,3 +357,32 @@ export async function getSpoonacularSubstitutes(
 
 // Re-export for testing
 export { findNutrient, mapToMealPlanRecipe, recipeDetailSchema };
+
+/**
+ * Maps OCRecipes allergen IDs to Spoonacular intolerance parameter values.
+ * See: https://spoonacular.com/food-api/docs#Intolerances
+ * (Moved from server/routes/recipe-catalog.ts so the recipe finder shares it.)
+ */
+const SPOONACULAR_INTOLERANCE_MAP: Partial<Record<AllergenId, string>> = {
+  peanuts: "peanut",
+  tree_nuts: "tree nut",
+  milk: "dairy",
+  eggs: "egg",
+  wheat: "wheat",
+  soy: "soy",
+  fish: "seafood",
+  shellfish: "shellfish",
+  sesame: "sesame",
+};
+
+export function buildIntolerancesParam(allergies: unknown): string | undefined {
+  const parsed = parseUserAllergies(allergies);
+  if (parsed.length === 0) return undefined;
+  const values: string[] = [];
+  for (const allergy of parsed) {
+    const spoonacularValue =
+      SPOONACULAR_INTOLERANCE_MAP[allergy.name as AllergenId];
+    if (spoonacularValue) values.push(spoonacularValue);
+  }
+  return values.length > 0 ? values.join(",") : undefined;
+}

@@ -80,6 +80,12 @@ describe("normalizeDifficulty", () => {
     expect(normalizeDifficulty(null)).toBeNull();
     expect(normalizeDifficulty(undefined)).toBeNull();
   });
+  // Same shape as normalizeUnit's prototype-member test: `MAP[key] ?? null`
+  // would return the inherited Object function / Object.prototype here.
+  it("returns null for prototype member names, not a map hit", () => {
+    expect(normalizeDifficulty("constructor")).toBeNull();
+    expect(normalizeDifficulty("__proto__")).toBeNull();
+  });
 });
 
 describe("normalizeInstructions", () => {
@@ -146,6 +152,16 @@ describe("normalizeUnit", () => {
   it("returns empty string for null/undefined", () => {
     expect(normalizeUnit(null)).toBe("");
     expect(normalizeUnit(undefined)).toBe("");
+  });
+  // `MAP[key] ?? fallback` would return an inherited Object.prototype member
+  // for "constructor"/"__proto__" — those are the only two Object.prototype
+  // member names that survive .toLowerCase() (every other one, e.g.
+  // "toString", "hasOwnProperty", has an uppercase letter), so this pair is
+  // exhaustive, not a sample. The guard must be own-property only
+  // (Object.hasOwn).
+  it("treats prototype member names as plain unknown units, not map hits", () => {
+    expect(normalizeUnit("constructor")).toBe("constructor");
+    expect(normalizeUnit("__proto__")).toBe("__proto__");
   });
 });
 

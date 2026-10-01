@@ -48,10 +48,12 @@ export function GroceryListPickerModal({
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const { data: lists, isLoading, isError } = useGroceryLists();
+  // Both mutations' onError below already shows an Alert — opt out so the
+  // global net doesn't double it.
   const { mutate: createListMutate, isPending: isCreating } =
-    useCreateGroceryList();
+    useCreateGroceryList({ silentError: true });
   const { mutate: addItemMutate, isPending: isAdding } =
-    useAddManualGroceryItem();
+    useAddManualGroceryItem({ silentError: true });
 
   const [showNewListInput, setShowNewListInput] = useState(false);
   const [newListTitle, setNewListTitle] = useState("");

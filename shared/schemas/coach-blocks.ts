@@ -1,6 +1,10 @@
 // shared/schemas/coach-blocks.ts
 import { z } from "zod";
 import { mealPlanDaySchema, type MealPlanDay } from "./meal-plan";
+import {
+  recipeResultsBlockSchema,
+  recipeQuestionsBlockSchema,
+} from "./recipe-finder";
 
 // ── Action types for cards ──────────────────────────────────────────
 
@@ -74,7 +78,10 @@ const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   // stricter than an unlisted one, which safeParse always tolerated.
   FeaturedRecipeDetail: z.object({
     recipeId: z.number(),
-    recipeType: z.enum(["community", "mealPlan"]).optional().catch(undefined),
+    recipeType: z
+      .enum(["community", "mealPlan", "catalog"])
+      .optional()
+      .catch(undefined),
     type: z.enum(["community", "mealPlan"]).optional().catch(undefined),
   }),
   // initialMessage/remixSourceRecipeId/remixSourceRecipeTitle: real,
@@ -89,6 +96,17 @@ const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
     initialMessage: z.string().optional().catch(undefined),
     remixSourceRecipeId: z.number().optional().catch(undefined),
     remixSourceRecipeTitle: z.string().optional().catch(undefined),
+  }),
+  // `verifyBarcode` is deliberately NOT listed, so it is stripped: ScanScreen
+  // forwards it into FrontLabelConfirm and LabelAnalysis's verification
+  // submit, and a Coach-chosen barcode would credit the user's label photo to
+  // a product the model picked. Deep links drop it too (client/navigation/
+  // linking.ts), so it only comes from in-app navigation: NutritionDetail's
+  // CTAs set it, and LabelAnalysis's front-label CTA and FrontLabelConfirm's
+  // Retake forward that same barcode.
+  Scan: z.object({
+    mode: z.enum(["label", "front-label"]).optional().catch(undefined),
+    returnAfterLog: z.boolean().optional().catch(undefined),
   }),
   // `.strict()` — unlike the entries above (which STRIP unknown keys), an
   // unknown or misspelled field here is REJECTED. This screen's whole defect
@@ -272,6 +290,9 @@ export const mealPlanCardSchema = z.object({
 
 // ── Discriminated union of all blocks ───────────────────────────────
 
+// recipe_results / recipe_questions are SERVER-BUILT (recipe finder, R6):
+// registered here so filterValidBlocks keeps them, but the model may never
+// author one — server/services/coach-blocks.ts drops them from model output.
 export const coachBlockSchema = z.discriminatedUnion("type", [
   actionCardSchema,
   suggestionListSchema,
@@ -280,6 +301,8 @@ export const coachBlockSchema = z.discriminatedUnion("type", [
   quickRepliesSchema,
   recipeCardSchema,
   mealPlanCardSchema,
+  recipeResultsBlockSchema,
+  recipeQuestionsBlockSchema,
 ]);
 
 export type CoachBlock = z.infer<typeof coachBlockSchema>;
@@ -290,6 +313,7 @@ export type CommitmentCard = z.infer<typeof commitmentCardSchema>;
 export type QuickReplies = z.infer<typeof quickRepliesSchema>;
 export type RecipeCard = z.infer<typeof recipeCardSchema>;
 export type MealPlanCard = z.infer<typeof mealPlanCardSchema>;
+export type { RecipeResultsBlock, RecipeQuestionsBlock } from "./recipe-finder";
 /**
  * Re-exported from `@shared/schemas/meal-plan` for backward compatibility.
  * New code should import `MealPlanDay` directly from `@shared/types/meal-plan`

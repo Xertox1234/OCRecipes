@@ -11,7 +11,10 @@ import {
   mealPlanItems,
   mealPlanRecipes,
 } from "@shared/schema";
-import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
+import {
+  type CreateSavedItemInput,
+  type SavedRecipeLinkStatus,
+} from "@shared/schemas/saved-items";
 import { TIER_FEATURES } from "@shared/types/premium";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, lte, sql, isNull, inArray } from "drizzle-orm";
@@ -565,6 +568,63 @@ export async function createSavedItem(
       .returning();
 
     return item;
+  });
+}
+
+/**
+ * Put a recipe the user just saved (catalog or chat Save) into Saved Items as
+ * a row linked to it. Idempotent per (user, recipeType, recipeId): an
+ * already-linked recipe reads "exists" and never counts against the cap.
+ * Same lock + cap as createSavedItem.
+ */
+export async function saveRecipeToSavedItems(
+  userId: string,
+  link: {
+    recipeId: number;
+    recipeType: "mealPlan" | "community";
+    title: string;
+    description?: string | null;
+    difficulty?: string | null;
+    timeEstimate?: string | null;
+  },
+): Promise<SavedRecipeLinkStatus> {
+  const effectiveTier = await getEffectiveTierForUser(userId);
+  const limit = TIER_FEATURES[effectiveTier].maxSavedItems;
+
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))`,
+    );
+
+    const [existing] = await tx
+      .select({ id: savedItems.id })
+      .from(savedItems)
+      .where(
+        and(
+          eq(savedItems.userId, userId),
+          eq(savedItems.recipeType, link.recipeType),
+          eq(savedItems.recipeId, link.recipeId),
+        ),
+      );
+    if (existing) return "exists";
+
+    const countResult = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(savedItems)
+      .where(eq(savedItems.userId, userId));
+    if ((countResult[0]?.count ?? 0) >= limit) return "limit_reached";
+
+    await tx.insert(savedItems).values({
+      userId,
+      type: "recipe",
+      title: link.title.slice(0, 200),
+      description: link.description ?? null,
+      difficulty: link.difficulty ?? null,
+      timeEstimate: link.timeEstimate ?? null,
+      recipeId: link.recipeId,
+      recipeType: link.recipeType,
+    });
+    return "linked";
   });
 }
 

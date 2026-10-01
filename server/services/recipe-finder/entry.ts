@@ -1,0 +1,170 @@
+// server/services/recipe-finder/entry.ts
+// When does a message enter the finder? (spec §3.3, §4 "Typed input")
+import type { ChatMessage } from "@shared/schema";
+import {
+  finderBlockSchema,
+  type FinderAction,
+  type FinderBlock,
+} from "@shared/schemas/recipe-finder";
+import { recipeChatMetadataSchema } from "@shared/schemas/recipe-chat";
+import type { CoachIntent } from "../coach-intent-classifier";
+import type { FinderInput } from "./transition";
+
+export function finderBlockFromMetadata(metadata: unknown): FinderBlock | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const m = metadata as Record<string, unknown>;
+  const direct = finderBlockSchema.safeParse(m.finder);
+  if (direct.success) return direct.data;
+  if (Array.isArray(m.blocks)) {
+    for (const b of m.blocks) {
+      const parsed = finderBlockSchema.safeParse(b);
+      if (parsed.success) return parsed.data;
+    }
+  }
+  return null;
+}
+
+function latestAssistant(history: ChatMessage[]): ChatMessage | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === "assistant") return history[i];
+  }
+  return undefined;
+}
+
+/** Only the most recent assistant message's flow is live (§4). */
+export function getLatestFinderBlock(
+  history: ChatMessage[],
+): FinderBlock | null {
+  const last = latestAssistant(history);
+  return last ? finderBlockFromMetadata(last.metadata) : null;
+}
+
+export function isActionCurrent(
+  latest: FinderBlock | null,
+  action: FinderAction,
+): boolean {
+  return latest !== null && latest.flow.flowId === action.flowId;
+}
+
+export function getLatestRecipe(
+  history: ChatMessage[],
+  opts: { latestOnly: boolean },
+): { title: string; messageId: number } | null {
+  const candidates = opts.latestOnly
+    ? [latestAssistant(history)].filter((m): m is ChatMessage => !!m)
+    : [...history].reverse().filter((m) => m.role === "assistant");
+  for (const m of candidates) {
+    const parsed = recipeChatMetadataSchema.safeParse(m.metadata);
+    if (parsed.success) {
+      return { title: parsed.data.recipe.title, messageId: m.id };
+    }
+  }
+  return null;
+}
+
+const GENERATE_PHRASES = new Set([
+  "generate",
+  "generate one",
+  "generate it",
+  "generate recipe",
+  "generate a recipe",
+]);
+const NONE_PHRASES = new Set([
+  "none of these",
+  "none of those",
+  "none of them",
+]);
+
+export function normalizeCommand(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^["'“”‘’]+/, "")
+    .replace(/["'“”‘’.!?,]+$/, "")
+    .trim();
+}
+
+/**
+ * §9 item 7 old-client guard: exact short phrases act as the button. "none
+ * of these" only in the results stage — in the clarifying stage free text is
+ * an answer, and "none" is a legitimate one.
+ */
+export function matchTypedFinderCommand(
+  text: string,
+  stage: FinderBlock["type"],
+): "generate" | "none_of_these" | null {
+  const t = normalizeCommand(text);
+  if (GENERATE_PHRASES.has(t)) return "generate";
+  if (stage === "recipe_results" && NONE_PHRASES.has(t)) {
+    return "none_of_these";
+  }
+  return null;
+}
+
+export type RecipeChefEntry =
+  | { kind: "finder"; input: FinderInput }
+  | { kind: "classify"; recipeTitle: string }
+  | { kind: "legacy" };
+
+/** `history` is the conversation BEFORE this turn's user row is inserted. */
+export function decideRecipeChefEntry(
+  history: ChatMessage[],
+  text: string,
+): RecipeChefEntry {
+  const latest = getLatestFinderBlock(history);
+  if (latest) {
+    return {
+      kind: "finder",
+      input: {
+        kind: "typed",
+        text,
+        command: matchTypedFinderCommand(text, latest.type),
+      },
+    };
+  }
+  const card = getLatestRecipe(history, { latestOnly: false });
+  if (card) return { kind: "classify", recipeTitle: card.title };
+  if (!history.some((m) => m.role === "user")) {
+    return { kind: "finder", input: { kind: "start", text } };
+  }
+  return { kind: "legacy" };
+}
+
+export type CoachFinderEntry =
+  | { kind: "finder"; input: FinderInput }
+  | { kind: "classify"; recipeTitle: string }
+  | { kind: "none" };
+
+/**
+ * `history` INCLUDES this turn's user row (Coach inserts it first). Coach runs
+ * classifyTurn only while the generated card is the LATEST assistant message:
+ * a Coach conversation moves on to other topics, and classifyTurn's
+ * new_request fallback must never turn "how am I doing?" into a recipe list.
+ */
+export function decideCoachFinderEntry(
+  history: ChatMessage[],
+  text: string,
+  intent: CoachIntent,
+  action?: FinderAction,
+): CoachFinderEntry {
+  if (action) return { kind: "finder", input: { kind: "action", action } };
+  if (intent === "safety_refusal") return { kind: "none" };
+  const latest = getLatestFinderBlock(history);
+  if (latest) {
+    return {
+      kind: "finder",
+      input: {
+        kind: "typed",
+        text,
+        command: matchTypedFinderCommand(text, latest.type),
+      },
+    };
+  }
+  const card = getLatestRecipe(history, { latestOnly: true });
+  if (card) return { kind: "classify", recipeTitle: card.title };
+  if (intent === "recipe_request") {
+    return { kind: "finder", input: { kind: "start", text } };
+  }
+  return { kind: "none" };
+}

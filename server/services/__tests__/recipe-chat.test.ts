@@ -5,6 +5,7 @@ import {
   recipeChatMetadataSchema,
   RECIPE_SUGGESTION_CHIPS,
   generateRecipeChatResponse,
+  buildRemixSystemPrompt,
 } from "../recipe-chat";
 import type { ChatMessage } from "@shared/schema";
 
@@ -480,5 +481,50 @@ describe("generateRecipeChatResponse — prompt injection sanitization (M1)", ()
 
     expect(systemMsg?.content).toBe(`[SANITIZED:${injectionPayload}]`);
     expect(assistantMsg?.content).toBe(`[SANITIZED:${assistantContent}]`);
+  });
+});
+
+describe("system prompts forbid markdown images/links", () => {
+  const forbidsMarkdownImagesAndLinks =
+    "Never write markdown images (`![alt](url)`) or markdown links (`[text](url)`) in your reply — the chat renderer does not display them: images are dropped and links lose their URL.";
+
+  it("buildSystemPrompt (chat flow) includes the forbid-markdown-images/links instruction", async () => {
+    vi.mocked(openai.chat.completions.create).mockResolvedValueOnce(
+      (async function* () {
+        yield {
+          choices: [{ delta: { content: "No recipe" }, finish_reason: "stop" }],
+        };
+      })() as any,
+    );
+    vi.mocked(generateRecipeImage).mockResolvedValue(null);
+
+    const gen = generateRecipeChatResponse(
+      [{ role: "user", content: "make me a recipe" }],
+      null,
+    );
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _chunk of gen) {
+      /* drain */
+    }
+
+    const callArgs = vi.mocked(openai.chat.completions.create).mock
+      .calls[0][0] as any;
+    const systemPromptContent = callArgs.messages[0].content as string;
+
+    expect(systemPromptContent).toContain(forbidsMarkdownImagesAndLinks);
+  });
+
+  it("buildRemixSystemPrompt (remix flow) includes the forbid-markdown-images/links instruction", () => {
+    const prompt = buildRemixSystemPrompt(
+      {
+        title: "Pasta",
+        ingredients: [{ name: "pasta", quantity: "200", unit: "g" }],
+        instructions: ["Boil water", "Cook pasta"],
+        dietTags: ["vegetarian"],
+      },
+      null,
+    );
+
+    expect(prompt).toContain(forbidsMarkdownImagesAndLinks);
   });
 });

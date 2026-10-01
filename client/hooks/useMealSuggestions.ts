@@ -11,5 +11,8 @@ export function useMealSuggestions() {
       const res = await apiRequest("POST", "/api/meal-plan/suggest", params);
       return res.json();
     },
+    // Its one call site (MealSuggestionsModal) already shows an inline
+    // error + retry, driven by `mutation.isError`.
+    meta: { silentError: true },
   });
 }

@@ -133,6 +133,13 @@ describe("SimpleEntrySheet", () => {
     expect(defaultProps.onDismiss).toHaveBeenCalledTimes(1);
   });
 
+  it("passes accessibilityViewIsModal on the sheet's content root (traps VoiceOver focus behind the sheet; jsdom cannot verify the native trap itself, only that the prop is passed)", () => {
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
+    expect(
+      screen.getByText("Quick add to Lunch").closest('[aria-modal="true"]'),
+    ).not.toBeNull();
+  });
+
   it("calls parse, create recipe, and add item on submit", async () => {
     mockParseFoodText.mockResolvedValue({
       items: [

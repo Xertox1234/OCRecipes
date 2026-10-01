@@ -97,7 +97,7 @@ confirm the corpus contains at least one row you expect to be positive.
 ## Related Files
 
 - `scripts/todo-automerge-guard.sh` — the path classifier whose reorder this defect nearly shipped
-- `todos/P1-2026-09-13-agent-and-skill-markdown-skips-the-review-gate-entirely.md` — carries the full-corpus table and records the sampling failure rather than only its corrected number
+- `todos/archive/P1-2026-09-13-agent-and-skill-markdown-skips-the-review-gate-entirely.md` — carries the full-corpus table and records the sampling failure rather than only its corrected number
 
 ## See Also
 

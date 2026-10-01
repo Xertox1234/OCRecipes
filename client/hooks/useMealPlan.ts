@@ -60,6 +60,10 @@ export function useAddMealPlanItem() {
     onSuccess: () => {
       invalidateMealPlanItems(queryClient);
     },
+    // Every call site (MealPlanHomeScreen, RecipeBrowserScreen, WizardShell,
+    // CoachChat, QuickAddSheet, SimpleEntrySheet) already toasts/alerts on
+    // failure via a try/catch around mutateAsync.
+    meta: { silentError: true },
   });
 }
 
@@ -77,6 +81,8 @@ export function useRemoveMealPlanItem() {
     onSuccess: () => {
       invalidateMealPlanItems(queryClient);
     },
+    // Its one call site (MealPlanHomeScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }
 
@@ -101,7 +107,10 @@ export function useConfirmMealPlanItem() {
     onSuccess: () => {
       invalidateMealPlanItems(queryClient);
       void queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
     },
+    // Its one call site (MealPlanHomeScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }
 
@@ -118,5 +127,7 @@ export function useReorderMealPlanItems() {
     onSuccess: () => {
       invalidateMealPlanItems(queryClient);
     },
+    // Its one call site (MealPlanHomeScreen) already toasts on failure.
+    meta: { silentError: true },
   });
 }

@@ -107,3 +107,110 @@ describe("DELETE /api/coach/notebook/:id", () => {
     expect(res.status).toBe(404);
   });
 });
+
+// A follow-up date is a CALENDAR DAY, and the reminder reads
+// `lte(followUpDate, now)`, so the stored instant must be local midnight in
+// the user's zone, the same basis the chat-extraction writer uses. Expected
+// instants are literals, not `civilDateToInstant(...)`: comparing the helper
+// to itself cannot fail. 2026-09-05 is PDT (UTC-7) in Los Angeles and JST
+// (UTC+9) in Tokyo.
+describe("notebook followUpDate anchoring", () => {
+  it("POST anchors at local midnight for a UTC-negative zone", async () => {
+    vi.mocked(storage.createNotebookEntry).mockResolvedValue(
+      createMockCoachNotebookEntry(),
+    );
+    const res = await request(app)
+      .post("/api/coach/notebook")
+      .set("Authorization", "Bearer valid-token")
+      .set("X-Timezone", "America/Los_Angeles")
+      .send({
+        type: "commitment",
+        content: "Check in",
+        followUpDate: "2026-09-05",
+      });
+    expect(res.status).toBe(201);
+    expect(
+      vi.mocked(storage.createNotebookEntry).mock.calls[0][0].followUpDate,
+    ).toEqual(new Date("2026-09-05T07:00:00.000Z"));
+  });
+
+  it("POST anchors at local midnight for a UTC-positive zone", async () => {
+    vi.mocked(storage.createNotebookEntry).mockResolvedValue(
+      createMockCoachNotebookEntry(),
+    );
+    const res = await request(app)
+      .post("/api/coach/notebook")
+      .set("Authorization", "Bearer valid-token")
+      .set("X-Timezone", "Asia/Tokyo")
+      .send({
+        type: "commitment",
+        content: "Check in",
+        followUpDate: "2026-09-05",
+      });
+    expect(res.status).toBe(201);
+    expect(
+      vi.mocked(storage.createNotebookEntry).mock.calls[0][0].followUpDate,
+    ).toEqual(new Date("2026-09-04T15:00:00.000Z"));
+  });
+
+  it("POST falls back to UTC midnight when X-Timezone is absent", async () => {
+    vi.mocked(storage.createNotebookEntry).mockResolvedValue(
+      createMockCoachNotebookEntry(),
+    );
+    await request(app)
+      .post("/api/coach/notebook")
+      .set("Authorization", "Bearer valid-token")
+      .send({
+        type: "commitment",
+        content: "Check in",
+        followUpDate: "2026-09-05",
+      });
+    expect(
+      vi.mocked(storage.createNotebookEntry).mock.calls[0][0].followUpDate,
+    ).toEqual(new Date("2026-09-05T00:00:00.000Z"));
+  });
+
+  it("PATCH anchors at local midnight for a UTC-negative zone", async () => {
+    vi.mocked(storage.updateNotebookEntry).mockResolvedValue(
+      createMockCoachNotebookEntry(),
+    );
+    const res = await request(app)
+      .patch("/api/coach/notebook/1")
+      .set("Authorization", "Bearer valid-token")
+      .set("X-Timezone", "America/Los_Angeles")
+      .send({ followUpDate: "2026-09-05" });
+    expect(res.status).toBe(200);
+    expect(
+      vi.mocked(storage.updateNotebookEntry).mock.calls[0][2].followUpDate,
+    ).toEqual(new Date("2026-09-05T07:00:00.000Z"));
+  });
+
+  it("PATCH anchors at local midnight for a UTC-positive zone", async () => {
+    vi.mocked(storage.updateNotebookEntry).mockResolvedValue(
+      createMockCoachNotebookEntry(),
+    );
+    const res = await request(app)
+      .patch("/api/coach/notebook/1")
+      .set("Authorization", "Bearer valid-token")
+      .set("X-Timezone", "Asia/Tokyo")
+      .send({ followUpDate: "2026-09-05" });
+    expect(res.status).toBe(200);
+    expect(
+      vi.mocked(storage.updateNotebookEntry).mock.calls[0][2].followUpDate,
+    ).toEqual(new Date("2026-09-04T15:00:00.000Z"));
+  });
+
+  it("PATCH with followUpDate null still clears it", async () => {
+    vi.mocked(storage.updateNotebookEntry).mockResolvedValue(
+      createMockCoachNotebookEntry(),
+    );
+    await request(app)
+      .patch("/api/coach/notebook/1")
+      .set("Authorization", "Bearer valid-token")
+      .set("X-Timezone", "Asia/Tokyo")
+      .send({ followUpDate: null });
+    expect(
+      vi.mocked(storage.updateNotebookEntry).mock.calls[0][2].followUpDate,
+    ).toBeNull();
+  });
+});

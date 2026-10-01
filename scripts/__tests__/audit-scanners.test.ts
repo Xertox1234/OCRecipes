@@ -265,6 +265,19 @@ describe("sweepFileLengths", () => {
     expect(findings[0].files).toContain("server/big.ts");
     expect(findings[0].description).toContain(String(FILE_LENGTH_THRESHOLD));
   });
+
+  it("orders findings by line count descending so a per-tool cap keeps the biggest files, not the alphabetically-first ones", () => {
+    const findings = sweepFileLengths([
+      { path: "client/aFile.ts", lines: FILE_LENGTH_THRESHOLD + 10 },
+      { path: "client/zBigFile.ts", lines: FILE_LENGTH_THRESHOLD + 1000 },
+      { path: "client/mMidFile.ts", lines: FILE_LENGTH_THRESHOLD + 100 },
+    ]);
+    expect(findings.map((f) => f.files)).toEqual([
+      "client/zBigFile.ts",
+      "client/mMidFile.ts",
+      "client/aFile.ts",
+    ]);
+  });
 });
 
 describe("capFindings", () => {
@@ -300,6 +313,55 @@ describe("capFindings", () => {
     ];
     const { kept } = capFindings(findings);
     expect(kept.some((f) => f.severity === "Critical")).toBe(true);
+  });
+
+  it("returns the dropped findings themselves as `hidden`, so a caller can list what the cap hid", () => {
+    const many: ScannerFinding[] = Array.from({ length: 25 }, (_, i) => ({
+      tool: "file-length",
+      severity: "Low",
+      description: `finding ${i}`,
+      files: `f${i}.ts`,
+      verification: "re-run: npx tsx scripts/audit-scanners.ts <scope>",
+    }));
+    const { kept, dropped, hidden } = capFindings(many);
+    expect(hidden).toHaveLength(dropped);
+    const keptFiles = new Set(kept.map((f) => f.files));
+    for (const f of hidden) {
+      expect(keptFiles.has(f.files)).toBe(false);
+    }
+  });
+});
+
+// Each stage above is tested in isolation. capFindings' isolated tests stay
+// green even if it stops preserving the order of same-severity ties, which
+// would silently undo sweepFileLengths' biggest-first ranking — only the
+// composed pipeline, which is what an audit consumes, catches that.
+describe("capFindings(sweepFileLengths(...)) — rank before cap", () => {
+  it("keeps the MAX_FINDINGS_PER_TOOL largest files, not the alphabetically-first ones", () => {
+    const total = 44;
+    // 17 is coprime with 44, so i*17 % 44 is a permutation of 0..43: sizes are
+    // shuffled relative to the alphabetical order of the file names.
+    const entries = Array.from({ length: total }, (_, i) => ({
+      path: `client/file-${String(i).padStart(2, "0")}.tsx`,
+      lines: FILE_LENGTH_THRESHOLD + 1 + ((i * 17) % total) * 10,
+    }));
+    const expectedKept = [...entries]
+      .sort((a, b) => b.lines - a.lines)
+      .slice(0, MAX_FINDINGS_PER_TOOL)
+      .map((e) => e.path);
+    const alphabeticalKept = entries
+      .slice(0, MAX_FINDINGS_PER_TOOL)
+      .map((e) => e.path);
+    // Regime guards: the cap must actually engage, and an insertion-order
+    // (alphabetical) cap must pick a different set, or this test can't fail.
+    expect(total).toBeGreaterThan(MAX_FINDINGS_PER_TOOL);
+    expect(new Set(alphabeticalKept)).not.toEqual(new Set(expectedKept));
+
+    const { kept, hidden } = capFindings(sweepFileLengths(entries));
+
+    expect(kept.map((f) => f.files)).toEqual(expectedKept);
+    expect(hidden).toHaveLength(total - MAX_FINDINGS_PER_TOOL);
+    expect(hidden.some((f) => expectedKept.includes(f.files))).toBe(false);
   });
 });
 

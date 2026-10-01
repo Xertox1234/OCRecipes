@@ -3,7 +3,7 @@
  * `fc.assert(...)` / `fc.check(...)` calls.
  *
  * See docs/solutions/conventions/fast-check-property-tests-pin-seed-not-in-mutation-testinclude-2026-07-12.md —
- * `vitest.config.ts` sets `retry: 2` to absorb CPU-contention flakes. An
+ * `vitest.config.mts` sets `retry: 2` to absorb CPU-contention flakes. An
  * UNSEEDED property that finds a genuine counterexample can pass on retry
  * with a fresh random seed, silently absorbing a real bug as a flake. A
  * pinned seed makes any failure reproduce identically across all retry
@@ -25,7 +25,7 @@ import { join, sep } from "node:path";
 
 // Directories that never contain first-party TypeScript source: dependency
 // trees, VCS internals, this harness's own worktrees, native/build output.
-// A conservative superset of vitest.config.ts's `test.exclude` (the repo's
+// A conservative superset of vitest.config.mts's `test.exclude` (the repo's
 // authoritative list of what Vitest itself skips) — deliberately broader,
 // since a directory this walker misses fails OPEN (a property test hiding
 // there is silently never checked), while an extra excluded directory only

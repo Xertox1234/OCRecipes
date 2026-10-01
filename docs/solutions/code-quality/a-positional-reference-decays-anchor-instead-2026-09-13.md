@@ -151,7 +151,7 @@ which is precisely where a range that stops early will miss them.
 
 ## Related Files
 
-- `todos/P1-2026-09-07-outward-cli-path-wrapper.md` — the decision record; both the excluded-retraction citation and its correction are recorded in place
+- `todos/archive/P1-2026-09-07-outward-cli-path-wrapper.md` — the decision record; both the excluded-retraction citation and its correction are recorded in place
 - `todos/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md` — where the `AC4` ordinal drifted twice and was replaced with a phrase anchor
 - `.claude/hooks/guard-outward-cli.sh` — the `DOCUMENTED RESIDUALS` block whose entries carry in-place `CLOSED` corrections below the original claim
 

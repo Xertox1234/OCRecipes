@@ -24,6 +24,10 @@ import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useCoachContext } from "@/hooks/useCoachContext";
 import {
+  REFRESH_ON_FOCUS_SETTLE_MS,
+  useRefreshOnFocus,
+} from "@/hooks/useRefreshOnFocus";
+import {
   useChatConversations,
   useCreateConversation,
   useNotebookEntries,
@@ -34,12 +38,17 @@ import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePremiumContext } from "@/context/PremiumContext";
 import CoachDashboard from "@/components/coach/CoachDashboard";
 import CoachChat from "@/components/coach/CoachChat";
-import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
+import {
+  SkeletonBox,
+  SkeletonLoadingRegion,
+  SkeletonProvider,
+} from "@/components/SkeletonLoader";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import { logger } from "@/lib/logger";
 import type { CoachChatNavigationProp } from "@/types/navigation";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
+import { useDelayedLoadingAnnouncement } from "@/hooks/useDelayedLoadingAnnouncement";
 
 export default function CoachProScreen() {
   const { theme } = useTheme();
@@ -56,13 +65,41 @@ export default function CoachProScreen() {
     isError: isContextError,
     refetch: refetchContext,
   } = useCoachContext(contextEnabled);
-  const createConversation = useCreateConversation();
+  // Tell screen-reader users the coach context is loading. Delayed 500ms to
+  // match the modal-safe pattern (docs/solutions/conventions/on-open-announce-
+  // must-delay-past-modal-present-focus-shift-2026-06-25.md) — harmless on
+  // this non-modal route, kept for consistency with the other skeleton
+  // screens fixed alongside this one.
+  useDelayedLoadingAnnouncement(isContextLoading);
+  // CoachChat's own catch (handleSend) shows a visible streamingError on a
+  // creation failure — opt out so the global net doesn't double it.
+  const { mutateAsync: createConversation } = useCreateConversation({
+    silentError: true,
+  });
   const [conversationId, setConversationId] = useState<number | null>(null);
   const {
     data: coachConversations = [],
     isError: conversationsError,
     refetch: refetchConversations,
   } = useChatConversations("coach");
+  // This screen is the Coach tab's persistent stack root, so the thread bar
+  // below never remounts. Its reachable stale trigger: dismissing the Ask
+  // Coach overlay (CoachOverlayContent, hosted by the root-stack
+  // `fullScreenModal` CoachChat route — this screen is blurred while it is up)
+  // mid-answer invalidates the `["/api/chat/conversations"]` prefix with
+  // `refetchType: "none"`, which matches this `{ type: "coach" }` key but only
+  // refetches on an observer mount. Pick it up on refocus instead; the hook's
+  // settle-margin follow-up covers the refocus landing in the same transition
+  // as that dismissal, before the server's post-disconnect write.
+  const refetchConversationsOnFocus = useCallback(() => {
+    void refetchConversations();
+  }, [refetchConversations]);
+  // settleMs: the refocus usually lands in the same transition as the abort
+  // that invalidated this list with `refetchType: "none"` — re-read once the
+  // server's post-disconnect write has settled (see the constant's comment).
+  useRefreshOnFocus(refetchConversationsOnFocus, {
+    settleMs: REFRESH_ON_FOCUS_SETTLE_MS,
+  });
   const warmUpHook = useCoachWarmUp(conversationId);
   const navigation = useNavigation<CoachChatNavigationProp>();
   const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();
@@ -92,16 +129,24 @@ export default function CoachProScreen() {
     [pinnedConversations, unpinnedConversations],
   );
 
+  // Set by the New chip: the user asked for an empty draft, so the first-load
+  // auto-select below must not put a thread back (it re-runs whenever the id
+  // returns to null, and the thread list can also arrive after New is tapped).
+  // Cleared when a thread is picked or the draft's first message creates one.
+  const [isNewDraft, setIsNewDraft] = useState(false);
+
   useEffect(() => {
-    if (conversationId || threadBarConversations.length === 0) return;
+    if (conversationId || isNewDraft || threadBarConversations.length === 0)
+      return;
     setConversationId(threadBarConversations[0].id);
-  }, [conversationId, threadBarConversations]);
+  }, [conversationId, isNewDraft, threadBarConversations]);
 
   // Apply a conversation selected from AllConversationsScreen (navigation param pattern
   // replaces the non-serializable onSelect callback that was previously passed as a route param).
   useEffect(() => {
     const selectedId = route.params?.selectedConversationId;
     if (selectedId !== undefined) {
+      setIsNewDraft(false);
       setConversationId(selectedId);
       navigation.setParams({ selectedConversationId: undefined });
     }
@@ -132,8 +177,9 @@ export default function CoachProScreen() {
   }, [notebookEntries, isEntriesLoading, cancelStaleReminders]);
 
   const handleCreateConversation = useCallback(async () => {
-    const result = await createConversation.mutateAsync({ type: "coach" });
+    const result = await createConversation({ type: "coach" });
     setConversationId(result.id);
+    setIsNewDraft(false);
     return result.id;
   }, [createConversation]);
 
@@ -154,10 +200,9 @@ export default function CoachProScreen() {
     >
       {isContextLoading && (
         <SkeletonProvider>
-          <View
+          <SkeletonLoadingRegion
             style={styles.loadingContainer}
-            accessibilityLabel="Loading..."
-            accessibilityElementsHidden
+            testID="coach-pro-loading-skeleton"
           >
             <SkeletonBox
               width="60%"
@@ -176,7 +221,7 @@ export default function CoachProScreen() {
               borderRadius={BorderRadius.xs}
               style={{ marginTop: Spacing.sm }}
             />
-          </View>
+          </SkeletonLoadingRegion>
         </SkeletonProvider>
       )}
       {isContextError && (
@@ -220,7 +265,10 @@ export default function CoachProScreen() {
       )}
       <View style={[styles.threadBar, { borderBottomColor: theme.border }]}>
         <Pressable
-          onPress={() => setConversationId(null)}
+          onPress={() => {
+            setIsNewDraft(true);
+            setConversationId(null);
+          }}
           style={({ pressed }) => [
             styles.newThreadButton,
             {
@@ -268,7 +316,10 @@ export default function CoachProScreen() {
             return (
               <Pressable
                 key={conversation.id}
-                onPress={() => setConversationId(conversation.id)}
+                onPress={() => {
+                  setIsNewDraft(false);
+                  setConversationId(conversation.id);
+                }}
                 style={[
                   styles.threadChip,
                   {

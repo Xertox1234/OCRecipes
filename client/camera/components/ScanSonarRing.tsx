@@ -6,8 +6,8 @@ import Animated, {
   useSharedValue,
   withTiming,
   useAnimatedProps,
-  runOnJS,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -27,7 +27,7 @@ export function ScanSonarRing({ cx, cy, onComplete }: Props) {
   useEffect(() => {
     r.value = withTiming(80, { duration: 400 });
     opacity.value = withTiming(0, { duration: 400 }, (finished) => {
-      if (finished) runOnJS(onCompleteRef.current)();
+      if (finished) scheduleOnRN(onCompleteRef.current);
     });
     return () => {
       cancelAnimation(r);

@@ -22,8 +22,11 @@ interface HomeInlineDrawerProps {
   label: string;
   isOpen: boolean;
   onToggle: () => void;
-  maxHeight: number;
+  maxHeight?: number;
   isLocked?: boolean;
+  /** Optional tint for the expanded body — lets a caller (e.g. QuickLogDrawer)
+   * preserve its own body background without duplicating the shell. */
+  bodyBackgroundColor?: string;
   children: React.ReactNode;
 }
 
@@ -34,6 +37,7 @@ export function HomeInlineDrawer({
   onToggle,
   maxHeight,
   isLocked,
+  bodyBackgroundColor,
   children,
 }: HomeInlineDrawerProps) {
   const { theme } = useTheme();
@@ -73,9 +77,16 @@ export function HomeInlineDrawer({
         onPress={onToggle}
         style={styles.header}
         accessibilityRole="button"
-        accessibilityLabel={label}
-        accessibilityState={{ expanded: isOpen }}
-        accessibilityHint={`Double tap to ${isOpen ? "collapse" : "expand"} ${label}`}
+        // The lock icon is accessible={false}; say it in the label instead
+        // (PhotoIntentScreen's locked-option wording). A locked row opens the
+        // upgrade prompt, never the drawer, so it must not hint "expand".
+        accessibilityLabel={isLocked ? `${label}, premium feature` : label}
+        accessibilityState={isLocked ? undefined : { expanded: isOpen }}
+        accessibilityHint={
+          isLocked
+            ? "Opens the upgrade screen"
+            : `Double tap to ${isOpen ? "collapse" : "expand"} ${label}`
+        }
       >
         <View
           style={[
@@ -114,7 +125,12 @@ export function HomeInlineDrawer({
 
       <Animated.View style={[animatedStyle, styles.clip]}>
         <View
-          style={styles.body}
+          style={[
+            styles.body,
+            bodyBackgroundColor
+              ? { backgroundColor: bodyBackgroundColor }
+              : null,
+          ]}
           onLayout={onContentLayout}
           importantForAccessibility={isOpen ? "yes" : "no-hide-descendants"}
           aria-hidden={!isOpen}

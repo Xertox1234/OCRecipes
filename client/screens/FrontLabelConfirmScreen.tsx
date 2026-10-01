@@ -16,6 +16,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { deleteAsync } from "expo-file-system/legacy";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -86,6 +87,19 @@ export default function FrontLabelConfirmScreen() {
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   const { imageUri, barcode, data: initialData } = route.params;
+
+  // Delete the captured temp photo once this flow ends. Unmount only — never
+  // useFocusEffect: both real exits (the confirm-success pop(2) below and
+  // Retake's goBack()) are true unmounts, and nothing keeps this screen
+  // mounted-but-blurred, unlike LabelAnalysisScreen's front-label-CTA case.
+  // uploadFrontLabelPhoto's own cleanup only removes ITS internally
+  // compressed copy, never the original imageUri this screen was handed —
+  // see docs/solutions/design-patterns/compress-upload-cleanup-for-image-uploads-2026-05-13.md.
+  useEffect(() => {
+    return () => {
+      deleteAsync(imageUri, { idempotent: true }).catch(() => {});
+    };
+  }, [imageUri]);
 
   const [sessionId, setSessionId] = useState<string | null>(
     route.params.sessionId,
@@ -167,6 +181,8 @@ export default function FrontLabelConfirmScreen() {
         AccessibilityInfo.announceForAccessibility(message);
       }
     },
+    // The onError above already sets a visible confirmError on failure.
+    meta: { silentError: true },
   });
 
   const handleConfirm = useCallback(() => {
@@ -177,8 +193,14 @@ export default function FrontLabelConfirmScreen() {
 
   const handleRetake = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    navigation.replace("Scan", { mode: "front-label", verifyBarcode: barcode });
-  }, [navigation, barcode, haptics]);
+    // goBack (not replace/navigate) — the Scan(front-label) instance that
+    // pushed this screen is already directly beneath it on the stack, and it
+    // re-arms its camera on refocus (ScanScreen's isFocused effect). Popping
+    // back to it keeps the stack shape the eventual success pop(2) expects;
+    // replace() or navigate() would each insert an extra level, making pop(2)
+    // land short (on a live camera, or on this now-stale screen).
+    navigation.goBack();
+  }, [navigation, haptics]);
 
   const hasAnyData =
     data.brand || data.productName || data.netWeight || data.claims.length > 0;

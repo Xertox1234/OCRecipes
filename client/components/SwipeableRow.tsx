@@ -8,8 +8,8 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   useAnimatedReaction,
-  runOnJS,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -208,7 +208,7 @@ function useSwipeThresholdHaptic(
       );
       hasFiredThreshold.value = nextFired;
       if (shouldFireHaptic) {
-        runOnJS(triggerThresholdHaptic)();
+        scheduleOnRN(triggerThresholdHaptic);
       }
     },
     [direction, triggerThresholdHaptic],

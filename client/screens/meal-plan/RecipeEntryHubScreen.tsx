@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, View, ScrollView, Pressable, Text } from "react-native";
 import Animated, {
   useSharedValue,
@@ -167,6 +167,17 @@ export default function RecipeEntryHubScreen() {
     onSheetAnimate: handleSheetAnimate,
   } = useSheetBackHandler(importSheetRef);
 
+  // Android TalkBack background focus trap (iOS already trapped via
+  // accessibilityViewIsModal on the sheet's own content root, set inside
+  // ImportRecipeSheetContent). Opened synchronously alongside .present() in
+  // handleCardPress; released only once BottomSheetModal's own onDismiss
+  // confirms the sheet has fully closed (post close-animation), the same
+  // asymmetric bias useSheetBackHandler uses — never released early.
+  const [isImportSheetOpen, setIsImportSheetOpen] = useState(false);
+  const handleImportSheetClosed = useCallback(() => {
+    setIsImportSheetOpen(false);
+  }, []);
+
   const renderSheetBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
@@ -243,6 +254,7 @@ export default function RecipeEntryHubScreen() {
         break;
       case "import":
         importSheetRef.current?.present();
+        setIsImportSheetOpen(true);
         break;
       case "browse":
         navigation.navigate("RecipeBrowser", {});
@@ -253,6 +265,7 @@ export default function RecipeEntryHubScreen() {
   return (
     <>
       <ScrollView
+        testID="recipe-entry-hub-scroll"
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
         contentContainerStyle={[
           styles.content,
@@ -262,6 +275,14 @@ export default function RecipeEntryHubScreen() {
           },
         ]}
         showsVerticalScrollIndicator={false}
+        // Android TalkBack background focus trap while the import sheet is
+        // open — see docs/solutions/conventions/
+        // in-screen-overlay-needs-android-focus-trap-2026-06-22.md. iOS is
+        // already trapped separately via accessibilityViewIsModal on the
+        // sheet's own content root, so no accessibilityElementsHidden here.
+        importantForAccessibility={
+          isImportSheetOpen ? "no-hide-descendants" : "auto"
+        }
       >
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
           How would you like to start?
@@ -283,6 +304,7 @@ export default function RecipeEntryHubScreen() {
         handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onChange={handleSheetChange}
         onAnimate={handleSheetAnimate}
+        onDismiss={handleImportSheetClosed}
         // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
         // "Bottom Sheet" on the DraggableView that WRAPS these children. On
         // new-arch Fabric that makes the wrapper an accessibility LEAF

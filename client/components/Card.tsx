@@ -7,6 +7,7 @@ import {
   StyleProp,
   Image,
   ImageSourcePropType,
+  type ViewProps,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -53,6 +54,18 @@ interface CardProps {
   accessibilityLabel?: string;
   /** Accessibility hint */
   accessibilityHint?: string;
+  /**
+   * Forwarded to the card's root. Lets a host screen hide this card's
+   * subtree from screen readers (e.g. while a `useConfirmationModal` sheet
+   * is presented via its `behindContentA11yProps`) without an extra wrapper
+   * `View`. No-op on Android (see `importantForAccessibility`).
+   */
+  accessibilityElementsHidden?: ViewProps["accessibilityElementsHidden"];
+  /**
+   * Forwarded to the card's root. Android counterpart to
+   * `accessibilityElementsHidden` — no-op on iOS.
+   */
+  importantForAccessibility?: ViewProps["importantForAccessibility"];
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -70,6 +83,8 @@ export function Card({
   style,
   accessibilityLabel,
   accessibilityHint,
+  accessibilityElementsHidden,
+  importantForAccessibility,
 }: CardProps) {
   const { theme, isDark } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -177,6 +192,8 @@ export function Card({
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
+        accessibilityElementsHidden={accessibilityElementsHidden}
+        importantForAccessibility={importantForAccessibility}
         style={[cardStyles, animatedStyle]}
       >
         {content}
@@ -184,7 +201,15 @@ export function Card({
     );
   }
 
-  return <View style={cardStyles}>{content}</View>;
+  return (
+    <View
+      style={cardStyles}
+      accessibilityElementsHidden={accessibilityElementsHidden}
+      importantForAccessibility={importantForAccessibility}
+    >
+      {content}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

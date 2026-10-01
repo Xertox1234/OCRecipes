@@ -35,16 +35,36 @@ const CACHE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 10_000;
 
 // Zod schema for API Ninjas nutrition response validation.
-// Free tier returns some fields as "Only available for premium subscribers."
-// so we coerce strings to 0 for those fields.
+//
+// Free tier gates calories and protein behind a non-numeric string
+// ("Only available for premium subscribers.") instead of a real value.
+// `coerceNumber` intentionally maps that string (and any other non-numeric
+// value) to `0` for fields where `0` is the module's "incomplete" sentinel —
+// `fetchNutritionFromSources`/`lookupNutrition`/`batchNutritionLookup` all
+// gate on `calories > 0`, so this is a documented interface, not a leak
+// (docs/solutions/conventions/sentinel-with-readers-is-a-contract-not-a-fabricated-default-2026-08-10.md).
+// Never reject the parse over a gated string — that would fail every
+// free-tier API Ninjas response outright (the retraction that doc records).
+//
+// That sentinel can't tell a gated `calories`/`protein_g` apart from a
+// genuine numeric 0 (a real 0-kcal food — water, black coffee, diet soda —
+// reaching API Ninjas as a last resort): both parse to `0` and look
+// identical in the returned NutritionData. `numericOrGated` keeps the gated
+// string as `null` instead, so `lookupAPINinjas` can refuse the whole
+// result rather than return a food that looks like a real 0-kcal match
+// (todo P2-2026-09-27).
 const coerceNumber = z
   .union([z.number(), z.string()])
   .transform((v) => (typeof v === "number" ? v : 0));
 
+const numericOrGated = z
+  .union([z.number(), z.string()])
+  .transform((v) => (typeof v === "number" ? v : null));
+
 const apiNinjasItemSchema = z.object({
   name: z.string(),
-  calories: coerceNumber,
-  protein_g: coerceNumber,
+  calories: numericOrGated,
+  protein_g: numericOrGated,
   carbohydrates_total_g: coerceNumber,
   fat_total_g: coerceNumber,
   fiber_g: coerceNumber.optional().default(0),
@@ -61,9 +81,18 @@ const usdaFoodSchema = z.object({
   // Tolerate a missing/null description: the array is parsed as a whole but a
   // bad sibling food must not fail the page; readers fall back to "Unknown".
   description: z.string().nullish(),
+  // "Foundation" | "SR Legacy" | "Survey (FNDDS)" | "Branded" — read by
+  // lookupUSDA's candidate filter (todo P2-2026-09-27) to decide whether a
+  // stricter head-match check applies. Absent/malformed degrades to
+  // undefined rather than failing the sibling food, matching this schema's
+  // existing tolerance for optional fields.
+  dataType: z.string().nullish(),
   foodNutrients: z.array(
     z.object({
       nutrientName: z.string(),
+      // A malformed unit degrades to undefined (read as kcal for energy)
+      // instead of failing the whole `foods` array.
+      unitName: z.string().nullish().catch(undefined),
       // USDA returns `value: null` for no-data nutrients; `.default(0)` only
       // fires on `undefined`, so coerce null→0 (replicates the prior `|| 0`)
       // — otherwise one sibling food with a null value fails the whole page.
@@ -235,8 +264,14 @@ async function writeNutritionCache(
 
 /**
  * Lookup nutrition data from API Ninjas (last-resort fallback).
- * Note: free tier does NOT include calories or protein — those fields
- * will be 0. Only useful as a fallback for carbs/fat/fiber/sugar/sodium.
+ *
+ * The free tier gates calories and protein behind a non-numeric string —
+ * `numericOrGated` parses that as `null`, distinct from a genuine numeric 0.
+ * A gated value can't be trusted as the food's actual energy or protein, so
+ * a result with either field gated is refused entirely (see the `null` check
+ * below) rather than returned as a food that looks like a real 0-kcal or
+ * 0 g-protein match; the caller treats it the same as "not found" (todo
+ * P2-2026-09-27).
  */
 async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
   const apiKey = process.env.API_NINJAS_KEY;
@@ -268,8 +303,14 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
     }
 
     const item = parsed.data[0];
-    // If calories came back as 0 (premium-gated), this result is incomplete
-    // but still useful for macro breakdown
+    if (item.calories === null || item.protein_g === null) {
+      log.info(
+        { query },
+        "API Ninjas: calories or protein premium-gated — refusing result",
+      );
+      return null;
+    }
+
     return {
       name: item.name,
       calories: item.calories,
@@ -352,6 +393,11 @@ async function ensureCNFFoods(): Promise<void> {
       if (enParsed.success && frParsed.success) {
         cnfFoodsEN = enParsed.data;
         cnfFoodsFR = frParsed.data;
+        // Precompute each description's tokens once here, right after load,
+        // instead of on first query — see `tokenizeDescription`.
+        for (const food of [...cnfFoodsEN, ...cnfFoodsFR]) {
+          tokenizeDescription(food.food_description.toLowerCase());
+        }
         log.info(
           { enCount: cnfFoodsEN.length, frCount: cnfFoodsFR.length },
           "CNF food lists loaded",
@@ -371,10 +417,260 @@ async function ensureCNFFoods(): Promise<void> {
 }
 
 /**
+ * Split text into lowercase whole words (letters, digits, "%"), dropping
+ * one-letter words. Matching is by whole word: a substring test let "raw" match
+ * "strawberry", "butter" match "butterfish" and "pap" match "paprika". CNF's
+ * Canadian spelling "yogourt" is folded to "yogurt" so either spelling matches.
+ */
+function matchWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/yogourt/g, "yogurt")
+    .split(/[^\p{L}\p{N}%]+/u)
+    .filter((w) => w.length > 1 || /\d/.test(w));
+}
+
+/**
+ * Serving units and sizes. Photo analysis ("<quantity> <name>") and cooking
+ * sessions ("<quantity> <unit> <name>") prefix the query with these, and CNF
+ * names never contain them, so that prefix must not count against the
+ * every-word rule.
+ */
+const QUANTITY_UNITS = new Set([
+  "cup",
+  "cups",
+  "tbsp",
+  "tablespoon",
+  "tablespoons",
+  "tsp",
+  "teaspoon",
+  "teaspoons",
+  "oz",
+  "ounce",
+  "ounces",
+  "lb",
+  "lbs",
+  "pound",
+  "pounds",
+  "gram",
+  "grams",
+  "kg",
+  "mg",
+  "ml",
+  "liter",
+  "liters",
+  "litre",
+  "litres",
+  "slice",
+  "slices",
+  "piece",
+  "pieces",
+  "serving",
+  "servings",
+  "can",
+  "cans",
+  "bottle",
+  "bottles",
+  "glass",
+  "glasses",
+  "bowl",
+  "bowls",
+  "handful",
+  "handfuls",
+  "small",
+  "medium",
+  "large",
+  "pinch",
+  "pinches",
+  "dash",
+  "dashes",
+  "stalk",
+  "stalks",
+  "sprig",
+  "sprigs",
+  "bunch",
+  "bunches",
+  "head",
+  "heads",
+  "ear",
+  "ears",
+  "wedge",
+  "wedges",
+  "sheet",
+  "sheets",
+  "stick",
+  "sticks",
+  "container",
+  "containers",
+  "envelope",
+  "envelopes",
+]);
+
+/**
+ * A bare number or number+unit token ("2", "12oz", "200g"), never "2%".
+ * No decimal branch: `matchWords` already splits "1.5"/"1,5" into "1" and
+ * "5" on the non-letter/digit separator, so a word reaching this function
+ * never contains "." or ",".
+ */
+function isNumberWord(word: string): boolean {
+  const m = /^\d+([a-z]*)$/.exec(word);
+  return (
+    m !== null && (m[1] === "" || m[1] === "g" || QUANTITY_UNITS.has(m[1]))
+  );
+}
+
+/**
+ * Drop the leading quantity run ("1 cup", "2 large", "12oz", "1/2 cup") the
+ * callers prepend. Only a run that STARTS with a number is dropped, and only up
+ * to the first other word, so a unit word inside a food's own name stays:
+ * "small white beans", "reese's pieces", "cup noodles". Residuals: "1 cup
+ * noodles" loses "cup" (a joined string can't tell a unit from a name word),
+ * and a quantity with no number ("a handful of almonds") is not stripped, so
+ * it misses CNF and falls through to USDA.
+ */
+function withoutLeadingQuantity(words: string[]): string[] {
+  if (words.length === 0 || !isNumberWord(words[0])) return words;
+  let i = 0;
+  while (
+    i < words.length &&
+    (isNumberWord(words[i]) || QUANTITY_UNITS.has(words[i]))
+  ) {
+    i++;
+  }
+  return words.slice(i);
+}
+
+/** 1 for the exact word, 0.8 for its singular/plural, 0 otherwise. */
+function wordMatch(words: Set<string>, word: string): number {
+  if (words.has(word)) return 1;
+  const variants = [word + "s", word + "es"];
+  if (word.endsWith("s")) variants.push(word.slice(0, -1));
+  if (word.endsWith("es")) variants.push(word.slice(0, -2));
+  if (word.endsWith("ies")) variants.push(word.slice(0, -3) + "y");
+  if (word.endsWith("y")) variants.push(word.slice(0, -1) + "ies");
+  return variants.some((v) => words.has(v)) ? 0.8 : 0;
+}
+
+/** Whether `words` begins with every word of `prefix`, in order. */
+function startsWithWords(words: string[], prefix: string[]): boolean {
+  return (
+    prefix.length > 0 &&
+    prefix.length <= words.length &&
+    prefix.every((w, i) => wordMatch(new Set([words[i]]), w) > 0)
+  );
+}
+
+const DEHYDRATED_WORDS = new Set([
+  "dry",
+  "dried",
+  "powder",
+  "dehydrated",
+  "flour",
+]);
+
+/**
+ * Whether the description is a dried, powdered or flour form the query did
+ * not name. Four CNF spellings are not dehydrated products and do not count:
+ * - a comma part that is only "dry": a grain or legume's raw state
+ *   ("Grains, quinoa, dry", "Soybeans, dry, raw"), unlike "Milk, dry whole";
+ * - "dry roasted": a roasting method ("Nuts, pecans, dry roasted"), whose
+ *   sibling is "oil roasted";
+ * - a comma part that is only "dried" on a Nuts or Seeds row: the plain
+ *   shelled nut ("Nuts, pecans, dried"), which has no fresh form;
+ * - a comma part that is only "dried" on a Spices row: the dried herb is the
+ *   retail default ("Spices, thyme, dried" for bare "thyme"), unlike a
+ *   Nuts/Seeds row, CNF also lists a "fresh" sibling for some spices
+ *   (dill weed, rosemary, thyme, spearmint). Exempting the penalty restores
+ *   a tie between the two rows, broken by list order (both score equally),
+ *   not by a preference for "dried" — CNF happens to list "dried" first for
+ *   dill weed/rosemary/thyme (so bare "thyme" resolves to dried, matching
+ *   the pre-#1126 behaviour) and "fresh" first for spearmint (so bare
+ *   "spearmint" still resolves to fresh). This is the same tie the scorer
+ *   had before the dehydrated-form penalty was added; it is not a scored
+ *   preference for "dried" and would change if CNF ever reordered its list.
+ */
+function isUnaskedDehydratedForm(
+  parts: string[],
+  partWordsList: string[][],
+  qWords: string[],
+): boolean {
+  const exemptHead =
+    parts[0] === "nuts" || parts[0] === "seeds" || parts[0] === "spices";
+  return partWordsList.some((words) => {
+    const soleWord = words.length === 1;
+    return words.some(
+      (w) =>
+        DEHYDRATED_WORDS.has(w) &&
+        !qWords.includes(w) &&
+        !(w === "dry" && (soleWord || words.includes("roasted"))) &&
+        !(w === "dried" && soleWord && exemptHead),
+    );
+  });
+}
+
+/**
+ * Tokens derived from a CNF description, memoized per description string so
+ * a query batch (`fuzzyMatchCNF` scores every query against the whole CNF
+ * list) tokenizes each description at most once instead of on every query.
+ * `ensureCNFFoods` warms this eagerly right after a successful load; a test
+ * that passes an ad-hoc food list not loaded through `ensureCNFFoods` still
+ * gets correct (if lazily computed) tokens via the cache-miss path.
+ */
+interface DescriptionTokens {
+  dWords: Set<string>;
+  parts: string[];
+  partWordsList: string[][];
+}
+const descriptionTokenCache = new Map<string, DescriptionTokens>();
+
+function tokenizeDescription(d: string): DescriptionTokens {
+  const cached = descriptionTokenCache.get(d);
+  if (cached) return cached;
+  const parts = d.split(",").map((p) => p.trim());
+  const tokens: DescriptionTokens = {
+    dWords: new Set(matchWords(d)),
+    parts,
+    partWordsList: parts.map((p) => matchWords(p)),
+  };
+  descriptionTokenCache.set(d, tokens);
+  return tokens;
+}
+
+/**
  * Score how well a query matches a CNF food description.
- * CNF descriptions use "Category, food, qualifier" format, e.g.:
- *   "Sweets, sugars, granulated" or "Confiseries, sucre, granulé"
+ * CNF descriptions use "Head, qualifier, qualifier" format, where the head is
+ * either the food itself ("Egg, chicken, whole, raw", "Banana, raw") or a
+ * category ("Grains, rice, white", "Sweets, sugars, granulated").
  * Returns 0 for no match, higher = better.
+ *
+ * Every query word must appear in the description (whole word, or its
+ * singular/plural): a half match returns 0, so the lookup falls through to
+ * USDA instead of settling on "Guava, strawberry, raw" for "almonds, raw".
+ * A comma part that IS the query ranks above one that merely starts with it,
+ * and the head part gets a small edge, so "egg" ranks the "Egg, chicken, …"
+ * rows over "Bagel, egg" and "Egg Benedict".
+ *
+ * A dried, powdered or flour form the query didn't name loses a point, which
+ * breaks a near tie: "milk" picks "Milk, fluid, …" over "Milk, dry whole".
+ *
+ * Measured on the 67-query gold set (`server/services/__tests__/fixtures/
+ * cnf-gold-set.json`) against the real EN list (2026-09-27): right food 52,
+ * wrong 11, no match 4. The base 51 queries alone are 43 / 4 / 4, unchanged
+ * from before this file's fixes; before the dehydrated-form penalty (#1126)
+ * they were 41 / 6 / 4, and the previous substring scorer got 12 / 37 / 2.
+ * Residuals on the real list, none fixed (see the gold set for the measured
+ * before/after of each): bare "egg" picks "Egg, chicken, yolk, cooked";
+ * "rice" and bare "taco"/"tacos" pick a short dish name over CNF's longer
+ * canonical row (the head-part edge and the parts-count penalty favour the
+ * shorter description); "cocoa", "currant"/"currants" and "cherries" keep
+ * losing to a processed or plural-spelled sibling even after the
+ * dehydrated-form penalty (the penalty pushes the wrong direction for cocoa
+ * and currant, whose common form IS processed/dried, and "cherries" loses
+ * on the 0.8 plural-word-match discount, not the penalty). "thyme",
+ * "rosemary" and "dill weed" are fixed — see `isUnaskedDehydratedForm`'s
+ * Spices exemption. Open Food Facts product names with brand or form words
+ * ("Hot Chocolate K-Cup Pods") fail the every-word rule, so barcode CNF
+ * cross-validation fires less often for them than a plain CNF/CNF query.
  */
 function scoreCNFMatch(query: string, description: string): number {
   const q = query.toLowerCase().trim();
@@ -383,59 +679,46 @@ function scoreCNFMatch(query: string, description: string): number {
   // Exact match is best
   if (d === q) return 100;
 
-  // Split description into comma-separated parts (category, name, qualifier)
-  const parts = d.split(",").map((p) => p.trim());
-  const qWords = q.split(/[\s,]+/).filter((w) => w.length > 1);
+  const qWords = withoutLeadingQuantity(matchWords(q));
   if (qWords.length === 0) return 0;
 
-  // Check word matches across the whole description
-  let matched = 0;
-  for (const word of qWords) {
-    if (d.includes(word)) {
-      matched++;
-    } else if (word.endsWith("s") && d.includes(word.slice(0, -1))) {
-      matched += 0.8;
-    } else if (!word.endsWith("s") && d.includes(word + "s")) {
-      matched += 0.8;
-    }
-  }
+  const { dWords, parts, partWordsList } = tokenizeDescription(d);
+  const wordScores = qWords.map((w) => wordMatch(dWords, w));
+  if (wordScores.some((s) => s === 0)) return 0;
 
-  if (matched === 0) return 0;
+  // Base score from how exactly the query words matched (plural = 0.8)
+  let score = (wordScores.reduce((a, b) => a + b, 0) / qWords.length) * 10;
 
-  // Base score from ratio of matched words
-  let score = (matched / qWords.length) * 10;
-
-  // Bonus: query matches a specific comma-separated part (not the category prefix).
-  // Parts[1+] are the actual food name — matching those is much more relevant.
-  for (let i = 1; i < parts.length; i++) {
-    const part = parts[i];
-    // Check if the query closely matches this part.
-    // Only accept q.startsWith(part) when the part covers most of the query
-    // (avoids "white sugars" falsely matching part "white" in "Beans, white, raw").
+  // Bonus for a comma part that is, starts with, or contains the query.
+  for (let i = 0; i < parts.length; i++) {
+    const partWords = partWordsList[i];
+    const headEdge = i === 0 ? 1 : 0;
     if (
-      part === q ||
-      part.startsWith(q) ||
-      (q.startsWith(part) && part.length >= q.length * 0.6)
+      partWords.length === qWords.length &&
+      startsWithWords(partWords, qWords)
     ) {
-      score += 8; // Strong bonus for matching the food name part
+      score += 10 + headEdge;
       break;
     }
-    // Check if all query words appear in this part
-    const partMatchCount = qWords.filter((w) => part.includes(w)).length;
+    if (
+      startsWithWords(partWords, qWords) ||
+      startsWithWords(qWords, partWords)
+    ) {
+      score += 8 + headEdge;
+      break;
+    }
+    const partSet = new Set(partWords);
+    const partMatchCount = qWords.filter((w) => wordMatch(partSet, w)).length;
     if (partMatchCount === qWords.length) {
-      score += 6;
+      score += 6 + headEdge;
       break;
-    } else if (partMatchCount > 0) {
-      score += partMatchCount * 2;
     }
+    score += partMatchCount * 2;
   }
 
-  // Bonus for matching the category (parts[0])
-  const category = parts[0] || "";
-  const catMatchCount = qWords.filter((w) => category.includes(w)).length;
-  if (catMatchCount > 0) {
-    score += catMatchCount * 1;
-  }
+  // A dehydrated form shares its head with the fresh food, and its shorter
+  // name would win the length tie-break ("milk" → "Milk, dry whole").
+  if (isUnaskedDehydratedForm(parts, partWordsList, qWords)) score -= 1;
 
   // Penalty for very long descriptions (less specific/relevant)
   score -= d.length / 100;
@@ -450,7 +733,7 @@ function scoreCNFMatch(query: string, description: string): number {
  * Fuzzy-match a search term against a list of CNF foods.
  * Returns the best match above a minimum threshold, or null.
  */
-function fuzzyMatchCNF(query: string, foods: CNFFood[]): CNFFood | null {
+export function fuzzyMatchCNF(query: string, foods: CNFFood[]): CNFFood | null {
   if (!query || query.trim().length === 0) return null;
 
   let best: CNFFood | null = null;
@@ -464,9 +747,9 @@ function fuzzyMatchCNF(query: string, foods: CNFFood[]): CNFFood | null {
     }
   }
 
-  // Require a minimum score to avoid false positives.
-  // Score ~7 = only half the query words matched → too ambiguous.
-  // Score ~10 = all words matched with some part relevance → good.
+  // A partial word match already scored 0 in scoreCNFMatch. The floor for an
+  // accepted row is 8: every word matched only via its singular/plural (0.8
+  // each) with no comma-part bonus.
   return bestScore >= 8 ? best : null;
 }
 
@@ -553,14 +836,44 @@ if (USDA_API_KEY === "DEMO_KEY") {
   log.warn("USDA_API_KEY not set — using DEMO_KEY with 40 requests/hour limit");
 }
 
+type UsdaNutrient = {
+  nutrientName: string;
+  unitName?: string | null;
+  value: number;
+};
+
+const KJ_PER_KCAL = 4.184;
+
+/**
+ * Energy in kcal. SR Legacy foods list both a kJ and a kcal entry, in either
+ * order (kJ first for "Quinoa, cooked": Energy 503 kJ, then 120 KCAL, live
+ * 2026-09-27), so the first "Energy" match could store kJ as calories. Read
+ * the kcal entry; convert a kJ-only energy; read an entry without a unit as
+ * kcal. A Foundation food with only the two Atwater kcal entries gets the
+ * first one USDA lists (General Factors in every sample), by array order, not
+ * by a nutritional choice.
+ */
+function usdaKcal(nutrients: UsdaNutrient[]): number {
+  const energy = nutrients.filter((n) =>
+    n.nutrientName.toLowerCase().includes("energy"),
+  );
+  const unit = (n: UsdaNutrient) => n.unitName?.toLowerCase();
+  const kcal =
+    energy.find((n) => unit(n) === "kcal") ?? energy.find((n) => !unit(n));
+  if (kcal) return kcal.value;
+  const kj = energy.find((n) => unit(n) === "kj");
+  return kj ? Math.round(kj.value / KJ_PER_KCAL) : 0;
+}
+
 /**
  * Map a parsed USDA food (search or branded-UPC shape) to NutritionData.
- * Both USDA endpoints return the same `{ nutrientName, value }` nutrient shape,
- * and the Zod schema already coerces a null `value` to 0, so no `|| 0` is needed.
+ * Both USDA endpoints return the same `{ nutrientName, unitName, value }`
+ * nutrient shape, and the Zod schema already coerces a null `value` to 0, so
+ * no `|| 0` is needed.
  */
 function mapUsdaFoodToNutrition(food: {
   description?: string | null;
-  foodNutrients: { nutrientName: string; value: number }[];
+  foodNutrients: UsdaNutrient[];
 }): NutritionData {
   const findNutrient = (names: string[]) =>
     findNutrientValue(
@@ -572,7 +885,7 @@ function mapUsdaFoodToNutrition(food: {
 
   return {
     name: food.description || "Unknown",
-    calories: findNutrient(["Energy"]),
+    calories: usdaKcal(food.foodNutrients),
     protein: findNutrient(["Protein"]),
     carbs: findNutrient(["Carbohydrate"]),
     fat: findNutrient(["Total lipid", "Fat"]),
@@ -585,13 +898,56 @@ function mapUsdaFoodToNutrition(food: {
 }
 
 /**
- * Lookup nutrition data from USDA FoodData Central (fallback)
+ * Whether every word of the query (whole word, singular/plural tolerant)
+ * appears somewhere in a USDA candidate's description. A partial match — the
+ * description missing even one query word — is rejected, the same rule
+ * `scoreCNFMatch` applies to CNF (`server/services/nutrition-lookup.ts`).
+ */
+function usdaCoversQuery(description: string, qWords: string[]): boolean {
+  const dWords = new Set(matchWords(description));
+  return qWords.every((w) => wordMatch(dWords, w) > 0);
+}
+
+/**
+ * Whether a description's head — its first comma-separated part, or the
+ * whole description when it has no comma — is word-for-word the query: every
+ * query word is in the head and every head word is in the query (plural
+ * tolerant). Neither side may carry a content word the other lacks.
+ */
+function usdaHeadMatchesQuery(description: string, qWords: string[]): boolean {
+  const headWords = matchWords(description.split(",")[0]);
+  const headSet = new Set(headWords);
+  const qSet = new Set(qWords);
+  return (
+    qWords.every((w) => wordMatch(headSet, w) > 0) &&
+    headWords.every((w) => wordMatch(qSet, w) > 0)
+  );
+}
+
+/**
+ * Lookup nutrition data from USDA FoodData Central (fallback).
+ *
+ * Takes the first of up to 5 candidates (USDA's own relevance order) whose
+ * description covers every query word. A `Branded` candidate additionally
+ * must have the query as its exact head: a branded product's description is
+ * a specific product name, and some products rank #1 for a query merely
+ * because they share one of its words — "BAMBI, YO DORO WAFERS WITH
+ * HAZELNUTS" for "doro wat", "GYOZA DIPPING SAUCE, GYOZA" for "gyoza" (a
+ * trailing keyword-echo comma-part that satisfies plain word coverage even
+ * though the product itself is unrelated). A generic (government reference:
+ * Foundation/SR Legacy/Survey (FNDDS)) description is taxonomic and
+ * legitimately carries extra qualifier words after the head — "Injera,
+ * Ethiopian bread", "Biryani with vegetables", "Soup, pho, with meat" — so
+ * the head-exact check is not applied there; it would wrongly reject them.
+ * Measured live against the todo's full query set (todo P2-2026-09-27):
+ * zero regressions among 15 previously-USDA-sourced queries, and both
+ * "doro wat" and "gyoza" no longer resolve to the wrong branded row.
  */
 async function lookupUSDA(query: string): Promise<NutritionData | null> {
   try {
     const response = await cachedFetch(
       "usda",
-      `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=1&api_key=${USDA_API_KEY}`,
+      `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=5&api_key=${USDA_API_KEY}`,
       { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
 
@@ -606,7 +962,21 @@ async function lookupUSDA(query: string): Promise<NutritionData | null> {
       return null;
     }
 
-    return mapUsdaFoodToNutrition(parsed.data.foods[0]);
+    const qWords = withoutLeadingQuantity(matchWords(query));
+    // A degenerate query with no real words (rare — e.g. a bare quantity)
+    // can't be word-matched; fall back to USDA's own top hit as before.
+    if (qWords.length === 0) {
+      return mapUsdaFoodToNutrition(parsed.data.foods[0]);
+    }
+
+    const match = parsed.data.foods.find(
+      (food) =>
+        usdaCoversQuery(food.description ?? "", qWords) &&
+        (food.dataType !== "Branded" ||
+          usdaHeadMatchesQuery(food.description ?? "", qWords)),
+    );
+
+    return match ? mapUsdaFoodToNutrition(match) : null;
   } catch (error) {
     log.error({ err: toError(error) }, "USDA lookup error");
     return null;
@@ -717,27 +1087,37 @@ export async function lookupUSDAByUPC(code: string): Promise<{
  * and a redundant cache write (batch writes once after this returns).
  *
  * CNF 0-calorie results fall through to USDA, matching the original guard at
- * the write site. USDA and API Ninjas results are returned as-is; callers
- * apply the `calories > 0` write guard themselves.
+ * the write site. USDA results are returned as-is; API Ninjas returns `null`
+ * when its calories or protein are premium-gated (see `lookupAPINinjas`), otherwise
+ * as-is. Callers apply the `calories > 0` write guard themselves for
+ * whatever non-null result comes back.
+ *
+ * The query is looked up as typed first. A cultural food's standardized name
+ * ("injera" → "fermented flatbread") is tried only when CNF and USDA both find
+ * nothing: replacing the query up front looked up "buttermilk pancakes" as
+ * "yogurt drink", and injera as "Crackers, flatbread" (412 kcal) although USDA
+ * lists "Injera, Ethiopian bread" (93 kcal).
  */
 async function fetchNutritionFromSources(
   query: string,
 ): Promise<NutritionData | null> {
-  // Resolve cultural food names to standardized lookup terms
   const standardizedQuery = getStandardizedFoodName(query);
-  const effectiveQuery =
-    standardizedQuery !== query ? standardizedQuery : query;
+  const queries =
+    standardizedQuery !== query ? [query, standardizedQuery] : [query];
 
-  // Primary: Canadian Nutrient File (bilingual, supports French product names)
-  const cnfResult = await lookupCNF(effectiveQuery);
-  if (cnfResult && cnfResult.calories > 0) return cnfResult;
+  for (const q of queries) {
+    // Primary: Canadian Nutrient File (bilingual, supports French product names)
+    const cnfResult = await lookupCNF(q);
+    if (cnfResult && cnfResult.calories > 0) return cnfResult;
 
-  // Secondary: USDA FoodData Central (reliable government data)
-  const usdaResult = await lookupUSDA(effectiveQuery);
-  if (usdaResult) return usdaResult;
+    // Secondary: USDA FoodData Central (reliable government data)
+    const usdaResult = await lookupUSDA(q);
+    if (usdaResult) return usdaResult;
+  }
 
-  // Last-resort fallback: API Ninjas
-  return lookupAPINinjas(effectiveQuery);
+  // Last-resort fallback: API Ninjas, with the query as typed — it parses
+  // natural language, and the standardized names are vaguer search terms.
+  return lookupAPINinjas(query);
 }
 
 /**
@@ -873,4 +1253,5 @@ export function _resetCNFCacheForTesting(): void {
   cnfFoodsEN = null;
   cnfFoodsFR = null;
   cnfFetchPromise = null;
+  descriptionTokenCache.clear();
 }

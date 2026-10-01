@@ -68,8 +68,15 @@ type NutritionDetailRoute = RouteProp<RootStackParamList, "NutritionDetail">;
 const SKELETON_PANEL_ROW_WIDTHS = [70, 92, 64, 76, 58, 84];
 
 function NutritionDetailSkeleton() {
+  // This screen is a `presentation: "modal"` route (RootStackNavigator), so
+  // firing the announce on the same tick it mounts races the OS's own
+  // present focus-shift and can be swallowed on iOS. Delay past it per
+  // docs/solutions/conventions/on-open-announce-must-delay-past-modal-present-focus-shift-2026-06-25.md.
   React.useEffect(() => {
-    AccessibilityInfo.announceForAccessibility("Loading");
+    const timer = setTimeout(() => {
+      AccessibilityInfo.announceForAccessibility("Loading");
+    }, 500);
+    return () => clearTimeout(timer);
   }, []);
 
   return (
@@ -192,14 +199,8 @@ export default function NutritionDetailScreen() {
   const navigation = useNavigation<NutritionDetailScreenNavigationProp>();
   const route = useRoute<NutritionDetailRoute>();
 
-  const {
-    barcode,
-    imageUri,
-    itemId,
-    ocrText,
-    nutritionImageUri,
-    frontImageUri,
-  } = route.params || {};
+  const { barcode, imageUri, ocrText, nutritionImageUri, frontImageUri } =
+    route.params || {};
 
   // Offline transitions are announced by the always-mounted global OfflineBanner
   // (client/components/OfflineBanner.tsx) — iOS via announceForAccessibility,
@@ -242,7 +243,7 @@ export default function NutritionDetailScreen() {
     chooseSource,
     dbNutrition,
     logGate,
-  } = useNutritionLookup({ barcode, imageUri, itemId, ocrText });
+  } = useNutritionLookup({ barcode, imageUri, ocrText });
 
   // The sticky log bar's MEASURED height, reported through its `onLayout` and
   // spent as the ScrollView's bottom padding. Measured rather than a constant
@@ -253,13 +254,7 @@ export default function NutritionDetailScreen() {
   // along with the button it gates; see that component for the reset rationale.
   const [barHeight, setBarHeight] = useState(0);
 
-  // The saved-item view renders no log bar (`!itemId`, Constraint 25), so on
-  // that path nothing else claims the bottom inset and the ScrollView must
-  // keep it. Read below, and by the bar's own gate.
-  const showLogBar = !itemId;
-
-  const showServingControls =
-    !itemId && !!barcode && nutrition?.calories !== undefined;
+  const showServingControls = !!barcode && nutrition?.calories !== undefined;
   // Derived from the SAME serving state that scales the displayed values, so
   // the hero caption can never desync from the numbers it describes.
   const servingContextLabel = getServingContextLabel({
@@ -282,7 +277,6 @@ export default function NutritionDetailScreen() {
   // user picks a bigger portion. `buildPanelRows` owns that choice; see its
   // module docblock.
   const { rows, bands } = buildPanelRows({
-    itemId,
     validatedData,
     nutrition,
     isBeverage,
@@ -299,9 +293,10 @@ export default function NutritionDetailScreen() {
             {
               paddingTop: headerContentInset,
               // `insets.bottom` here, and the bar's measured height on the main
-              // branch below — the two differ because this branch renders NO
-              // `LogActionBar`, so nothing else is claiming the home-indicator
-              // clearance. The inset is owned by exactly one node per branch.
+              // branch below — the two differ because this loading branch
+              // renders NO `LogActionBar`, so nothing else is claiming the
+              // home-indicator clearance. The inset is owned by exactly one
+              // node per branch.
               paddingBottom: insets.bottom + Spacing["3xl"],
             },
           ]}
@@ -320,14 +315,12 @@ export default function NutritionDetailScreen() {
           styles.content,
           {
             paddingTop: headerContentInset,
-            // `insets.bottom` is counted EXACTLY ONCE. When the sticky bar
-            // renders it owns the inset (`LogActionBar` adds it to its own
-            // `paddingBottom`), so the scroller pads by the bar's measured
-            // height instead — adding both would double-count and leave a
-            // dead band under the last row. When no bar renders (saved item),
-            // the scroller keeps the inset itself.
-            paddingBottom:
-              (showLogBar ? barHeight : insets.bottom) + Spacing["3xl"],
+            // `insets.bottom` is counted EXACTLY ONCE. The sticky bar always
+            // renders on this branch and owns the inset (`LogActionBar` adds it
+            // to its own `paddingBottom`), so the scroller pads by the bar's
+            // measured height instead — adding both would double-count and
+            // leave a dead band under the last row.
+            paddingBottom: barHeight + Spacing["3xl"],
           },
         ]}
         showsVerticalScrollIndicator={false}
@@ -373,62 +366,68 @@ export default function NutritionDetailScreen() {
             Nothing mutes its announcer, deliberately — not even while the log
             gate is unmet. The gated screen IS the screen carrying "Label not
             used" (`deriveLogGate` gates on a label that could not be used;
-            `useNutritionLookup.ts:382` sets the notice on the same failure), so
+            `useNutritionLookup.ts` (`setLabelReadNotice`) sets the notice on the same failure), so
             muting there would switch the announcer off exactly where it earns
             its keep. There is nothing to collide with: the acknowledge
             announcement fires from a click handler that re-renders only
             `LogActionBar`, later in time and in a different commit. */}
-        {!itemId ? (
-          <NoticeStack
-            // Suppressed when the lookup itself failed, for two reasons that
-            // share one trigger. Content: the notice says "so these values come
-            // from the product database", and NO path that sets `error` leaves
-            // real database values in `nutrition` — the placeholder differs by
-            // path (`Unknown Product`, `Product Not Found`, or `null` on the
-            // saved-item and no-scan-data exits), but none of them carries
-            // macros, so the sentence is false wherever `error` is set.
-            //
-            // Accepted tradeoff: on the one RECOVERABLE error state, the notice
-            // can blink. A `notInDatabase` 404 opens the manual-search card
-            // without setting `error`, so the notice shows; a failed search then
-            // sets one and it vanishes, and a successful search clears it and
-            // the notice returns — now truthfully qualifying values that exist.
-            // The flicker is the honest reading of each state in turn.
-            // Announcement — this gate removes ONE of three contributors, and
-            // does NOT close the same-commit-collision class. Said precisely,
-            // because the earlier wording here overstated it:
-            //
-            // When this gate empties the stack entirely, `NoticeStack` opts out
-            // at the SOURCE rather than losing a race: `noticeAnnouncementKey`
-            // returns null for an empty list and the effect guards on that
-            // before calling `announceForAccessibility`, so no utterance is
-            // issued to be silenced.
-            //
-            // But `correctionNotice` and `showPer100gInfo` below are NOT gated
-            // on `error`. When either survives alongside a newly-set `error`,
-            // `NoticeStack` still announces and DOES collide with
-            // `InlineError`. That is reachable, not theoretical: nothing in
-            // `useNutritionLookup` ever resets `correctionNotice` (there is no
-            // `setCorrectionNotice(null)` in the file) and `isPer100g` is not
-            // re-armed at the top of `fetchBarcodeData` the way
-            // `labelReadNotice`/`validatedData`/`isBeverage` are — so a label
-            // RETAKE can carry a stale correction into a lookup that errors.
-            // The `lastAnnouncedRef` guard does not absorb it either:
-            // suppressing one contributor makes the composed key SHORTER, not
-            // absent, so it no longer matches the stored key.
-            //
-            // Resetting those two per-lookup is the real fix and is out of this
-            // slice's scope (`useNutritionLookup.ts` is on its do-not-touch
-            // list). Do not read this gate as having closed it.
-            //
-            // Historical note: the hook's own duplicate announcer for these
-            // notices was deleted in `c87fb790`, two commits before this range.
-            labelReadNotice={error ? null : labelReadNotice}
-            correctionNotice={correctionNotice}
-            showPer100gInfo={isPer100g}
-            reducedMotion={reducedMotion}
-          />
-        ) : null}
+        <NoticeStack
+          // Suppressed when the lookup itself failed, for two reasons that
+          // share one trigger. Content: the notice says "so these values come
+          // from the product database", and NO path that sets `error` leaves
+          // real database values in `nutrition` — the placeholder differs by
+          // path (`Unknown Product`, `Product Not Found`, or `null` on the
+          // no-scan-data exit), but none of them carries
+          // macros, so the sentence is false wherever `error` is set.
+          //
+          // Accepted tradeoff: on the one RECOVERABLE error state, the notice
+          // can blink. A `notInDatabase` 404 opens the manual-search card
+          // without setting `error`, so the notice shows; a failed search then
+          // sets one and it vanishes, and a successful search clears it and
+          // the notice returns — now truthfully qualifying values that exist.
+          // The flicker is the honest reading of each state in turn.
+          // Announcement — this gate removes ONE of three contributors, and
+          // does NOT close the same-commit-collision class. Said precisely,
+          // because the earlier wording here overstated it:
+          //
+          // When this gate empties the stack entirely, `NoticeStack` opts out
+          // at the SOURCE rather than losing a race: `noticeAnnouncementKey`
+          // returns null for an empty list and the effect guards on that
+          // before calling `announceForAccessibility`, so no utterance is
+          // issued to be silenced.
+          //
+          // `correctionNotice` and `showPer100gInfo` below are still NOT
+          // gated on `error` here — this screen has no logic preventing the
+          // two from surviving alongside a newly-set `error`, which would
+          // make `NoticeStack` announce and collide with `InlineError` in the
+          // same commit. The `lastAnnouncedRef` guard does not absorb it
+          // either: suppressing one contributor makes the composed key
+          // SHORTER, not absent, so it no longer matches the stored key.
+          //
+          // CLOSED (P2-2026-09-23-correction-notice-not-reset-per-lookup):
+          // that combination is no longer reachable in production.
+          // `useNutritionLookup.ts`'s per-lookup reset block now calls
+          // `setCorrectionNotice(null)` and `setIsPer100g(false)` at the top
+          // of `fetchBarcodeData`, alongside `labelReadNotice`/
+          // `validatedData`/`isBeverage` — so a label RETAKE can no longer
+          // carry a stale correction or a stale per-100g flag into a lookup
+          // that errors. Pinned by
+          // `client/hooks/__tests__/useNutritionLookup.test.ts` ("resets
+          // correctionNotice to null…" / "resets isPer100g to false…").
+          // `NutritionDetailScreen.test.tsx`'s "routes error through
+          // InlineError" test still characterizes what this screen would DO
+          // if handed that combination directly (it has no gate of its own —
+          // the fix lives entirely in the hook), which is why this comment
+          // and that fixture-driven test remain, now marked as
+          // defense-in-depth rather than a live production path.
+          //
+          // Historical note: the hook's own duplicate announcer for these
+          // notices was deleted in `c87fb790`, two commits before this range.
+          labelReadNotice={error ? null : labelReadNotice}
+          correctionNotice={correctionNotice}
+          showPer100gInfo={isPer100g}
+          reducedMotion={reducedMotion}
+        />
 
         {/* ── Serving size & quantity controls ── */}
         {showServingControls ? (
@@ -449,16 +448,22 @@ export default function NutritionDetailScreen() {
         {/* The canonical error surface: `assertive`, not the `polite` this
             block used to carry — an error is not an advisory notice and must
             interrupt. `InlineError` renders nothing for a null message, so no
-            ternary here, and it is deliberately NOT `!itemId`-gated: a saved
-            item can fail to load too, and that was already true before this
-            change. Style is spacing only, replacing the deleted
+            ternary here, and it is deliberately ungated: every entry mode can
+            fail to load. Style is spacing only, replacing the deleted
             `warningContainer`'s bottom margin. */}
         <InlineError message={error} style={styles.errorSpacing} />
 
         {showManualSearch ? (
           <Card elevation={1} style={styles.manualSearchCard}>
             <View style={styles.manualSearchHeader}>
-              <Feather name="search" size={20} color={theme.link} />
+              {/* Decorative icon — the heading text beside it already conveys
+                  the meaning; hide it per docs/rules/accessibility.md. */}
+              <Feather
+                name="search"
+                size={20}
+                color={theme.link}
+                accessible={false}
+              />
               <View style={{ flex: 1, marginLeft: Spacing.sm }}>
                 <ThemedText
                   type="body"
@@ -508,10 +513,14 @@ export default function NutritionDetailScreen() {
                 {isSearching ? (
                   <ActivityIndicator size="small" color={theme.buttonText} />
                 ) : (
+                  // Decorative — the Pressable's own accessibilityLabel above
+                  // already conveys the action; hide the icon per
+                  // docs/rules/accessibility.md.
                   <Feather
                     name="arrow-right"
                     size={20}
                     color={theme.buttonText}
+                    accessible={false}
                   />
                 )}
               </Pressable>
@@ -531,9 +540,9 @@ export default function NutritionDetailScreen() {
           protein={nutrition?.protein}
           carbs={nutrition?.carbs}
           fat={nutrition?.fat}
-          // Only the scan flow populates the serving state this caption is
-          // derived from — saved items store already-scaled totals, so a
-          // "Per …" claim there would misdescribe the numbers.
+          // Only the barcode flow populates the serving state this caption is
+          // derived from; the manual/image entry mode has no serving basis, so
+          // a "Per …" claim there would misdescribe the numbers.
           servingContextLabel={
             showServingControls ? servingContextLabel : undefined
           }
@@ -572,13 +581,19 @@ export default function NutritionDetailScreen() {
         ) : null}
 
         {/* Verification badge + CTA */}
-        {!itemId && barcode && nutrition && (
+        {barcode && nutrition && (
           <VerificationPanel
             verificationLevel={verificationLevel}
             hasFrontLabelData={hasFrontLabelData}
             onAddProductDetails={() =>
               navigation.navigate("Scan", {
                 mode: "front-label",
+                verifyBarcode: barcode,
+              })
+            }
+            onVerifyLabel={() =>
+              navigation.navigate("Scan", {
+                mode: "label",
                 verifyBarcode: barcode,
               })
             }
@@ -614,17 +629,15 @@ export default function NutritionDetailScreen() {
           reach it (Constraint 8). It reports its measured height back so the
           scroller can clear it — the bar occludes real content otherwise, at
           whichever of its three heights it is currently rendering. */}
-      {showLogBar ? (
-        <LogActionBar
-          logGate={logGate}
-          productName={nutrition?.productName}
-          isOffline={isOffline}
-          offlineLabel={offlineLabel}
-          isPending={addToLogMutation.isPending}
-          onAddToLog={handleAddToLog}
-          onLayout={setBarHeight}
-        />
-      ) : null}
+      <LogActionBar
+        logGate={logGate}
+        productName={nutrition?.productName}
+        isOffline={isOffline}
+        offlineLabel={offlineLabel}
+        isPending={addToLogMutation.isPending}
+        onAddToLog={handleAddToLog}
+        onLayout={setBarHeight}
+      />
     </ThemedView>
   );
 }

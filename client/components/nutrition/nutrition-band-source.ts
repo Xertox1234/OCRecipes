@@ -26,22 +26,20 @@
  * invariant to the serving controls — `recalculateNutrition` never calls
  * `setValidatedData` — so together they are the only safe scan-path source.
  *
- * ── WHY THE SAVED-ITEM PATH IS DIFFERENT ──────────────────────────────────
- * There `validatedData` is null (the `existingItem` effect calls only
- * `setNutrition`), and `showServingControls` is gated on `!itemId`, so nothing
- * can scale `nutrition` — it IS the per-serving source. That safety is a
- * property of this branch, asserted by tests here, rather than an accident of
- * which components happen to render.
+ * A second, `itemId`-keyed saved-item branch lived here until 2026-09-17. It
+ * read `nutrition` directly as the un-scaled per-serving source. It was removed
+ * with the route arm that was its only caller — `ItemDetailScreen` is the
+ * saved-item screen and does not use this module. See
+ * `todos/archive/P2-2026-08-16-nutritiondetail-itemid-branch-has-no-producer.md`.
  *
  * ── THE PER-PORTION OVERRIDE, AND WHAT IT DOES NOT COST ───────────────────
  * An earlier version of this module passed no `portionGrams` to `concernBand`,
  * on the reasoning that the FSA per-portion HIGH override needs a portion
  * weight and a portion weight moves with the user's serving choice. The first
  * half is true; the second is not, for the weight this module uses. The
- * PRODUCT's declared portion — `validatedData.servingInfo.grams` on the scan
- * path, the stored serving string on the saved-item path — sits in exactly the
- * same serving-control-invariant place the values and the scale already come
- * from.
+ * PRODUCT's declared portion — `validatedData.servingInfo.grams` — sits in
+ * exactly the same serving-control-invariant place the values and the scale
+ * already come from.
  *
  * That invariance was re-checked against the hook rather than inherited from
  * this docblock's earlier wording, because it is now load-bearing for a band
@@ -63,16 +61,9 @@
  *     which tracks displayability, which the serving controls do rewrite.
  *     Don't band what the screen cannot show.
  *
- * TRUST DIFFERS BY PATH, deliberately. The scan path gates the override on
- * `isServingDataTrusted`, mirroring the server (`server/routes/nutrition.ts`
- * passes `perServing` only when trusted), so an ESTIMATED serving feeds the
- * override on neither side. The saved-item path has no such flag and accepts
- * the stored serving as declared — safe for a structural reason worth knowing
- * because it is fragile: a corrected serving is stored as `~355g (estimated)`,
- * which `parseServingBasis` cannot parse (the `~` defeats its token anchor, and
- * `(estimated)` holds no digits), so the basis is already `unknown` and the row
- * is unbanded entirely. Stripping that cosmetic `~` would silently start
- * banding estimated servings off an invented denominator.
+ * TRUST IS GATED. The override is gated on `isServingDataTrusted`, mirroring
+ * the server (`server/routes/nutrition.ts` passes `perServing` only when
+ * trusted), so an ESTIMATED serving feeds the override on neither side.
  */
 import {
   resolveBasis,
@@ -81,7 +72,6 @@ import {
   type Basis,
   type NutrientBands,
 } from "@shared/lib/nutrition-bands";
-import { parseServingBasis } from "@shared/lib/label-serving";
 import type { NutritionData } from "@/hooks/useNutritionLookup";
 import type {
   ValidatedNutrition,
@@ -94,8 +84,6 @@ import {
 } from "./NutritionPanel-utils";
 
 export interface BandSourceInput {
-  /** `undefined` = scan path, a number = saved-item path. */
-  itemId: number | undefined;
   validatedData: ValidatedNutrition | null;
   nutrition: NutritionData | null;
   isBeverage: boolean | null;
@@ -114,52 +102,28 @@ export interface BandSource {
 }
 
 export function selectBandSource(input: BandSourceInput): BandSource {
-  if (input.itemId === undefined) {
-    // Scan path. `nutrition` may be serving-scaled at any moment — including
-    // its OWN `servingSize` field, which `recalculateNutrition` overwrites to
-    // `${grams}g` on the gram branch. So the serving STRING fed to
-    // `resolveBasis` must also come from `validatedData`, not from
-    // `nutrition.servingSize` — `servingInfo.displayLabel` is the product's
-    // original serving text and is never touched by the serving controls.
-    if (!input.validatedData) {
-      return { values: {}, basis: { kind: "unknown" }, portionGrams: null };
-    }
-    return {
-      values: input.validatedData.per100g,
-      basis: resolveBasis({
-        valuesArePer100: true,
-        servingSize: input.validatedData.servingInfo.displayLabel,
-        isBeverage: input.isBeverage,
-      }),
-      // Gated on trust to mirror the server, which passes `perServing` to
-      // `evaluateUniversalFlags` only when `isServingDataTrusted`. An
-      // estimated portion must escalate a band on neither side.
-      portionGrams: input.validatedData.isServingDataTrusted
-        ? input.validatedData.servingInfo.grams
-        : null,
-    };
-  }
-
-  // Saved-item path. No serving control renders, so `nutrition` — including
-  // its `servingSize` field — is the un-scaled per-serving source, and
-  // resolveBasis back-calculates from the stored serving string — never from
-  // a `|| 100` default.
-  if (!input.nutrition) {
+  // `nutrition` may be serving-scaled at any moment — including its OWN
+  // `servingSize` field, which `recalculateNutrition` overwrites to
+  // `${grams}g` on the gram branch. So the serving STRING fed to
+  // `resolveBasis` must also come from `validatedData`, not from
+  // `nutrition.servingSize` — `servingInfo.displayLabel` is the product's
+  // original serving text and is never touched by the serving controls.
+  if (!input.validatedData) {
     return { values: {}, basis: { kind: "unknown" }, portionGrams: null };
   }
   return {
-    values: input.nutrition,
+    values: input.validatedData.per100g,
     basis: resolveBasis({
-      valuesArePer100: false,
-      servingSize: input.nutrition.servingSize,
+      valuesArePer100: true,
+      servingSize: input.validatedData.servingInfo.displayLabel,
       isBeverage: input.isBeverage,
     }),
-    // The SAME string `resolveBasis` derives `factor` from, through the same
-    // parser — so the portion weight and the per-100 denominator can never
-    // describe different portions. No trust flag exists on this path; see the
-    // module docblock for why the stored serving is safe to take as declared.
-    portionGrams:
-      parseServingBasis(input.nutrition.servingSize)?.quantity ?? null,
+    // Gated on trust to mirror the server, which passes `perServing` to
+    // `evaluateUniversalFlags` only when `isServingDataTrusted`. An
+    // estimated portion must escalate a band on neither side.
+    portionGrams: input.validatedData.isServingDataTrusted
+      ? input.validatedData.servingInfo.grams
+      : null,
   };
 }
 
@@ -199,8 +163,8 @@ export interface PanelData {
  * display state) — two different objects on the scan path, and NOT symmetric
  * on every path. The primary server path builds them from each other
  * (`barcode-lookup.ts`: `perServing = scaleNutrients(per100g, scale)`;
- * `label-override.ts` merges both halves), and the saved-item path reads one
- * object for both. But the CLIENT-SIDE direct-OFF fallback (server
+ * `label-override.ts` merges both halves). But the CLIENT-SIDE direct-OFF
+ * fallback (server
  * unreachable / 5xx) assembles them from independent OFF fields:
  * `validateAndNormalizeNutrition`'s trusted branch returns
  * `perServing: existingPerServing`, built field-by-field from the `*_serving`
@@ -231,9 +195,9 @@ export interface PanelData {
  *     different one — appears alongside the value it judges.
  *
  * That is the contract, not a leak in it: don't band what the screen cannot
- * show, and do band it once the screen can. On the primary, label and
- * saved-item paths the two sources are already symmetric, so this is a no-op
- * there and nothing appears or disappears at all.
+ * show, and do band it once the screen can. On the primary and label paths the
+ * two sources are already symmetric, so this is a no-op there and nothing
+ * appears or disappears at all.
  */
 export function buildPanelRows(input: BandSourceInput): PanelData {
   const source = selectBandSource(input);

@@ -61,6 +61,33 @@ describe("RecipeCard", () => {
     expect(screen.getByText("Lemon Herb Chicken")).toBeTruthy();
   });
 
+  // A null image (generation failed or timed out) is final: the card shows
+  // the no-image placeholder, not a loading skeleton that never resolves.
+  it("shows the no-image placeholder when the recipe has no image and none is loading", () => {
+    const { container } = renderComponent(<RecipeCard recipe={recipe} />);
+    expect(screen.getByText("image")).toBeTruthy();
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("shows neither the image nor the placeholder while the image is loading", () => {
+    const { container } = renderComponent(
+      <RecipeCard recipe={{ ...recipe, imageUrl: undefined }} isImageLoading />,
+    );
+    expect(screen.queryByText("image")).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("shows the recipe image when it has one", () => {
+    const { container } = renderComponent(
+      <RecipeCard
+        recipe={{ ...recipe, imageUrl: "https://cdn.example.com/r.jpg" }}
+      />,
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(
+      "https://cdn.example.com/r.jpg",
+    );
+  });
+
   it("triggers haptics via useHaptics (not raw expo-haptics) when expanding ingredients", () => {
     renderComponent(<RecipeCard recipe={recipe} />);
     fireEvent.click(
@@ -90,5 +117,82 @@ describe("RecipeCard", () => {
     expect(mockImpact).toHaveBeenCalledTimes(1);
     expect(rawImpactAsync).not.toHaveBeenCalled();
     expect(onSave).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("RecipeCard — favourite heart", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("shows a heart beside Save that calls onFavourite", () => {
+    const onFavourite = vi.fn();
+    renderComponent(
+      <RecipeCard recipe={recipe} onSave={vi.fn()} onFavourite={onFavourite} />,
+    );
+
+    const heart = screen.getByLabelText("Add Lemon Herb Chicken to favourites");
+    expect(heart.getAttribute("aria-selected")).toBe("false");
+    fireEvent.click(heart);
+    expect(onFavourite).toHaveBeenCalledTimes(1);
+    expect(mockImpact).toHaveBeenCalled();
+  });
+
+  it("a favourited recipe reads as selected and offers removal", () => {
+    renderComponent(
+      <RecipeCard
+        recipe={recipe}
+        onSave={vi.fn()}
+        isSaved
+        isFavourited
+        onFavourite={vi.fn()}
+      />,
+    );
+
+    const heart = screen.getByLabelText(
+      "Remove Lemon Herb Chicken from favourites",
+    );
+    expect(heart.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("no heart without onFavourite (e.g. a streaming card)", () => {
+    renderComponent(<RecipeCard recipe={recipe} onSave={vi.fn()} />);
+    expect(
+      screen.queryByLabelText("Add Lemon Herb Chicken to favourites"),
+    ).toBeNull();
+  });
+
+  it("the heart waits while the recipe is saving", () => {
+    const onFavourite = vi.fn();
+    renderComponent(
+      <RecipeCard
+        recipe={recipe}
+        onSave={vi.fn()}
+        isSaving
+        onFavourite={onFavourite}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByLabelText("Add Lemon Herb Chicken to favourites"),
+    );
+    expect(onFavourite).not.toHaveBeenCalled();
+  });
+});
+
+// docs/rules/accessibility.md: never `accessible` on a card wrapper with an
+// interactive child — iOS collapses the subtree into one node and VoiceOver
+// (and Maestro) can't reach Save, the heart or the section toggles. jsdom
+// can't see that collapse (React drops the boolean `accessible` attribute),
+// so the reachability half was measured on the iOS simulator; this pins
+// where the card's summary moved to.
+describe("RecipeCard — accessibility tree", () => {
+  it("the title is a header that carries the recipe summary", () => {
+    renderComponent(<RecipeCard recipe={recipe} />);
+    expect(
+      screen.getByRole("header", {
+        name: "Recipe: Lemon Herb Chicken. Easy, 30 min, 4 servings",
+      }),
+    ).toBeDefined();
   });
 });

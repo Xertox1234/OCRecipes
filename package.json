@@ -15,7 +15,7 @@
     "server:prod": "NODE_ENV=production node server_dist/index.js",
     "predb:push": "tsx scripts/check-timestamptz-migration.ts",
     "db:push": "drizzle-kit push",
-    "lint": "ESLINT_NO_TYPE_AWARE= npx expo lint",
+    "lint": "ESLINT_NO_TYPE_AWARE= npx expo lint && node scripts/check-react-compiler-bailouts.js",
     "lint:fix": "npx expo lint --fix",
     "lint:suppress": "ESLINT_NO_TYPE_AWARE= eslint . --suppress-rule @typescript-eslint/no-floating-promises --suppress-rule @typescript-eslint/no-misused-promises --suppress-rule @typescript-eslint/await-thenable --suppress-rule @typescript-eslint/require-await --suppress-rule @typescript-eslint/no-implied-eval --suppress-rule @typescript-eslint/prefer-promise-reject-errors",
     "lint:suppress:prune": "ESLINT_NO_TYPE_AWARE= eslint . --prune-suppressions",
@@ -29,8 +29,8 @@
     "build:domain-map": "tsx scripts/build-domain-map.ts .claude/hooks/lib/domain-map.sh",
     "build:domain-map:check": "tsx scripts/build-domain-map.ts --check .claude/hooks/lib/domain-map.sh",
     "build:generated:check": "npm run build:copilot-instructions:check && npm run build:domain-map:check",
-    "check:format": "prettier --check \"**/*.{js,ts,tsx,css,json}\"",
-    "format": "prettier --write \"**/*.{js,ts,tsx,css,json}\"",
+    "check:format": "prettier --check \"**/*.{js,ts,tsx,mts,css,json}\"",
+    "format": "prettier --write \"**/*.{js,ts,tsx,mts,css,json}\"",
     "test": "vitest",
     "test:run": "vitest run",
     "test:unit": "vitest run --exclude 'server/storage/__tests__/**'",
@@ -82,6 +82,7 @@
     "@react-native-community/netinfo": "11.4.1",
     "@react-native-community/slider": "^5.2.0",
     "@react-navigation/bottom-tabs": "^7.4.0",
+    "@react-navigation/core": "^7.13.5",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
     "@react-navigation/native-stack": "^7.3.16",
@@ -111,7 +112,6 @@
     "expo-image-picker": "~17.0.11",
     "expo-linear-gradient": "~15.0.8",
     "expo-linking": "~8.0.8",
-    "expo-modules-core": "^3.0.29",
     "expo-notifications": "^55.0.14",
     "expo-server-sdk": "^6.1.0",
     "expo-speech": "~14.0.8",
@@ -128,7 +128,7 @@
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
     "minisearch": "^7.2.0",
-    "multer": "^2.2.0",
+    "multer": "^2.4.0",
     "node-cron": "^4.2.1",
     "openai": "^6.39.0",
     "p-limit": "^7.3.0",
@@ -157,6 +157,9 @@
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
+    "@babel/core": "^7.29.7",
+    "@babel/plugin-syntax-jsx": "^7.28.6",
+    "@babel/preset-typescript": "^7.28.5",
     "@expo/ngrok": "^4.1.3",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
@@ -172,8 +175,9 @@
     "@types/react": "~19.1.0",
     "@types/react-dom": "^19.1.11",
     "@types/supertest": "^6.0.3",
-    "@vitest/coverage-v8": "^4.1.7",
+    "@vitest/coverage-v8": "^4.1.11",
     "babel-plugin-module-resolver": "^5.0.3",
+    "babel-plugin-react-compiler": "1.0.0",
     "drizzle-kit": "^0.31.4",
     "esbuild": "^0.28.0",
     "eslint": "^9.25.0",
@@ -185,37 +189,45 @@
     "husky": "^9.1.7",
     "jsdom": "^28.1.0",
     "lint-staged": "^16.4.0",
-    "msw": "^2.14.6",
     "patch-package": "^8.0.1",
     "pino-pretty": "^13.1.3",
     "prettier": "3.6.2",
     "react-dom": "^19.1.0",
-    "sharp": "^0.35.0",
+    "sharp": "^0.35.4",
     "supertest": "^7.2.2",
     "ts-morph": "^28.0.0",
     "typescript": "~5.9.2",
     "typescript-eslint": "^8.59.4",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.11"
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "expo-notifications",
+        "expo-application"
+      ]
+    }
   },
   "overrides": {
     "body-parser": "^2.3.0",
     "brace-expansion@^1.0.0": "^1.1.18",
     "brace-expansion@^2.0.0": "^2.1.4",
     "brace-expansion@^5.0.0": "^5.0.9",
-    "fast-uri": "^3.1.7",
+    "decode-uri-component": "^0.5.0",
+    "fast-uri": "^3.1.8",
     "form-data": "^4.0.6",
-    "ip-address": "^10.4.0",
-    "js-yaml@^3.0.0": "^3.15.1",
-    "js-yaml@^4.0.0": "^4.3.1",
+    "ip-address": "^10.7.2",
+    "js-yaml@^3.0.0": "^3.15.2",
+    "js-yaml@^4.0.0": "^4.3.2",
     "nanoid": "^3.3.18",
     "postcss": "^8.5.25",
     "qs": "^6.16.0",
     "shell-quote": "^1.9.0",
     "tar": "^7.5.19",
-    "undici": "^7.29.0"
+    "undici": "^7.30.0"
   },
   "lint-staged": {
-    "*.{ts,tsx}": [
+    "*.{ts,tsx,mts}": [
       "env ESLINT_NO_TYPE_AWARE=1 eslint --fix",
       "prettier --write"
     ],
@@ -238,6 +250,9 @@
     ],
     "docs/rules/*.md": [
       "node scripts/check-rules-file-size.js"
+    ],
+    "{.claude/hooks/**/*.sh,todos/**/*.md}": [
+      "node scripts/check-claim-staleness.js"
     ],
     "*.{js,md}": [
       "prettier --write"

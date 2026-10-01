@@ -85,4 +85,11 @@ describe("AddItemMenuSheet", () => {
     fireEvent.click(screen.getByLabelText("Simple entry"));
     expect(defaultProps.onSimpleEntry).toHaveBeenCalledTimes(1);
   });
+
+  it("passes accessibilityViewIsModal on the sheet's content root (traps VoiceOver focus behind the sheet; jsdom cannot verify the native trap itself, only that the prop is passed)", () => {
+    renderComponent(<AddItemMenuSheetContent {...defaultProps} />);
+    expect(
+      screen.getByText("Add to Breakfast").closest('[aria-modal="true"]'),
+    ).not.toBeNull();
+  });
 });

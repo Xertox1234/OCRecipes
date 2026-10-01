@@ -6,7 +6,7 @@ module: client
 tags: [android, emulator, adb, uiautomator, verification, backhandler, testing, accessibility, talkback]
 applies_to: [client/**/*.tsx, client/hooks/**/*.ts]
 created: '2026-07-12'
-last_updated: '2026-08-04'
+last_updated: '2026-09-24'
 ---
 
 # Drive and verify on-device Android UI behavior via adb + uiautomator (tap/back-press timing, not TalkBack)
@@ -119,6 +119,42 @@ fixes against `MealPlanHomeScreen`):
    `accessible={true}` wrapper collapses its subtree on iOS but **not** on Android, so a 3-badge
    group is 4 stops on Android against 1 on iOS).
 
+   **This does NOT generalize to every `accessible={true}` wrapper — check the shape, not the
+   prop (added 2026-09-24, todo `verify-android-talkback-flag-badge-reading`).** The "3-badge
+   group is 4 stops" finding above was for **sibling badges, each independently `accessible`** —
+   Android keeps every explicit a11y element focusable regardless of nesting, so N siblings stay
+   N stops. A *single* `accessible={true}` container whose children are plain, non-interactive
+   content (a `Text`/icon glyph with no `accessible`/`Pressable` of its own) is a different shape:
+   verified via `--compressed` dump on two real flag-badge components
+   (`client/screens/ScanScreen.tsx` `confirmFlagBadge`, `client/camera/components/ProductChip.tsx`
+   `topFlag`) that the container renders as a single `focusable="true"` node carrying the
+   composed `content-desc`, with every child `focusable="false"` — one TalkBack stop, not several.
+   The discriminator is the **grouping test**: a row/badge is one stop iff it is a single
+   `focusable="true"` node carrying the composed label, with its inner content `focusable="false"`
+   — true for a plain-content wrapper, false for a wrapper containing its own independently
+   `accessible` children. Do not assume double-read from `accessible={true}` alone; dump the
+   actual shape.
+
+10. **When auth/onboarding/navigation/camera blocks reaching the live screen, swap a throwaway
+    harness in at the ROOT, not the target screen (added 2026-09-24).** The existing
+    "override the component's prop directly in the parent screen" technique (see the companion
+    TalkBack solution below) assumes the target screen itself is reachable. When it is not —
+    e.g. the login flow's test account is stale/broken and debugging auth is out of scope, or
+    onboarding/camera stand between the app root and the screen under test — go one level higher
+    instead of debugging the blocker: temporarily swap a small harness component in for
+    `RootStackNavigator` inside `client/App.tsx` (keep `NavigationContainer` and the surrounding
+    providers — `ThemeProvider`, `SafeAreaProvider`, etc. — so hooks like `useTheme()` still
+    resolve), and mount the real component(s) under test directly with forced props. This
+    bypasses every screen in between with zero risk of touching auth state. Two caveats:
+    - Only a component you mount **directly** (e.g. `<ProductChip phase={fixture} .../>`) is
+      evidence about its own subtree. A **verbatim JSX copy** pasted into the harness (used when
+      the target markup is inline in a large screen file rather than its own component) is
+      evidence about that copied subtree only — it says nothing about the original screen's
+      surrounding tree, ancestor containers, or `importantForAccessibility` wiring, which must be
+      reasoned about separately from the source file.
+    - Revert both the `App.tsx` swap and the throwaway harness file **before** committing —
+      `git status`/`git diff --stat` should show a clean tree apart from the actual deliverable.
+
 ## Exceptions
 
 - **A tab-root screen with no stack-pop target can make a back-press race UN-diagnosable via
@@ -141,6 +177,9 @@ fixes against `MealPlanHomeScreen`):
 
 - `client/hooks/useSheetBackHandler.ts` — the hook this session's verification targeted.
 - `client/screens/meal-plan/MealPlanHomeScreen.tsx` — the screen hosting the sheets under test.
+- `client/screens/ScanScreen.tsx` — `confirmFlagBadge` (2026-09-24 grouping-shape verification).
+- `client/camera/components/ProductChip.tsx` — `topFlag` (2026-09-24 grouping-shape verification).
+- `client/App.tsx` — the root-level harness swap point (item 10).
 
 ## See Also
 

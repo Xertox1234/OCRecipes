@@ -8,11 +8,84 @@
 # "lived in a session scratchpad and are NOT durable". This file is the
 # replacement: regenerate the matrix by running it.
 #
-# Usage: bash .claude/hooks/repro-outward-cli-corpus.sh
+# Usage (three modes; exit codes and pin semantics are identical in all of them):
+#
+#   bash .claude/hooks/repro-outward-cli-corpus.sh
+#       FULL run, unsharded: evaluate every row, print the table, check the pin.
+#       Exit 0 pin-pass / 1 pin-fail. The nightly backstop and local runs use this.
+#
+#   bash .claude/hooks/repro-outward-cli-corpus.sh --shard I/N --out PATH
+#       Build the FULL ROWS array (every definition-time FATAL still runs), then
+#       evaluate only rows whose 0-based index k satisfies k % N == I-1 (I is
+#       1-based, 1..N) and write one record per evaluated row to PATH. NO pins run
+#       here -- a per-shard total is meaningless. Exit 0 once PATH is written;
+#       non-zero on bad args or a definition-time FATAL.
+#
+#   bash .claude/hooks/repro-outward-cli-corpus.sh --aggregate DIR
+#       Read every regular file directly under DIR (non-recursive, any name),
+#       rebuild ROWS (definitions only, no guard calls) for the canonical id set,
+#       assert the records cover that set EXACTLY ONCE, re-derive every piece of
+#       union state the pin consumes from the records, and fall into the SAME pin
+#       block the full run uses. Exit 0 pin-pass / 1 pin-fail or integrity fail.
+#       DIR must hold shard records ONLY: any other regular file in it (a
+#       .DS_Store, a log) is read as records and fails the aggregate closed.
+#
+# Record format (one line per row, fields separated by 0x1f, the unit separator):
+#   k  id  expected  precise  nojq  nolib  noawk  fingerprint  full-reason
+# COMMAND is never written: some commands contain newlines, which would break the
+# one-line-per-row invariant the aggregate's duplicate/missing checks depend on.
+# The full reason is LAST so `read` hands it everything after the eighth separator
+# -- it is guard output that can echo analysed command text -- and `reason()`
+# already folds its newlines to spaces. fingerprint/full-reason are empty on a row
+# whose precise verdict is ALLOW.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$HERE/guard-outward-cli.sh"
+
+# ---- mode selection (before anything else, so bad args fail fast) ----------
+MODE=full; SHARD_I=; SHARD_N=; SHARD_OUT=; AGG_DIR=
+_usage_fail() {
+  echo "repro-outward-cli-corpus: $1" >&2
+  echo "usage: $0 [--shard I/N --out PATH | --aggregate DIR]" >&2
+  exit 2
+}
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --shard)
+      [ "$#" -ge 2 ] || _usage_fail "--shard needs I/N"
+      MODE=shard
+      case "$2" in
+        */*) SHARD_I=${2%%/*}; SHARD_N=${2#*/} ;;
+        *) _usage_fail "--shard wants I/N, got '$2'" ;;
+      esac
+      shift 2 ;;
+    --out)
+      [ "$#" -ge 2 ] || _usage_fail "--out needs a path"
+      SHARD_OUT=$2; shift 2 ;;
+    --aggregate)
+      [ "$#" -ge 2 ] || _usage_fail "--aggregate needs a directory"
+      MODE=aggregate; AGG_DIR=$2; shift 2 ;;
+    *) _usage_fail "unknown argument '$1'" ;;
+  esac
+done
+if [ "$MODE" = shard ]; then
+  case "$SHARD_I" in ''|*[!0-9]*) _usage_fail "shard index '$SHARD_I' is not a positive integer" ;; esac
+  case "$SHARD_N" in ''|*[!0-9]*) _usage_fail "shard count '$SHARD_N' is not a positive integer" ;; esac
+  # Base-10 explicitly: a leading zero would otherwise be read as octal.
+  SHARD_I=$((10#$SHARD_I)); SHARD_N=$((10#$SHARD_N))
+  [ "$SHARD_N" -ge 1 ] || _usage_fail "shard count must be >= 1, got $SHARD_N"
+  { [ "$SHARD_I" -ge 1 ] && [ "$SHARD_I" -le "$SHARD_N" ]; } \
+    || _usage_fail "shard index must be in 1..$SHARD_N, got $SHARD_I"
+  [ -n "$SHARD_OUT" ] || _usage_fail "--shard requires --out PATH"
+  [ -z "$AGG_DIR" ] || _usage_fail "--shard and --aggregate are exclusive"
+elif [ "$MODE" = aggregate ]; then
+  [ -z "$SHARD_OUT" ] || _usage_fail "--out is only valid with --shard"
+  [ -z "$SHARD_I$SHARD_N" ] || _usage_fail "--shard and --aggregate are exclusive"
+  [ -d "$AGG_DIR" ] || _usage_fail "--aggregate: '$AGG_DIR' is not a directory"
+elif [ -n "$SHARD_OUT" ]; then
+  _usage_fail "--out is only valid with --shard"
+fi
 
 # ---- degraded-path fixtures (same shape as test-guard-outward-cli.sh) -------
 NOJQ_BIN=$(mktemp -d)
@@ -318,14 +391,26 @@ add ghrootv-selfrepo DENY 'gh -t x pr merge 42 -R Xertox1234/OCRecipes'
 #       wide  ->  [gh -a api -c x;gh api ]  COUNT=1  -> silently ALLOWED
 #
 # `gh api` is the ONLY single-token gh needle in the guard; the two-token families
-# (`pr merge`, `pr create|comment`, `release ...`, `repo ...`) are structurally immune,
-# because each globals arm carries at most ONE optional value slot -- a needle's FIRST token can
-# be eaten as a value (` -a pr` matches) but its SECOND can then neither open a fresh arm nor be
-# consumed, so no single match absorbs a whole second occurrence. An earlier draft said "the
-# second token is not a dash token and so can never be a flag's value", which is backwards: a
-# non-dash token is exactly what qualifies AS a value. That is
-# why this axis varies only the api family -- a deliberate scope, not a hand-picked subset,
-# and the reason is stated so the next reader can check it rather than trust it.
+# (`pr merge`, `pr create|comment`, `release ...`, `repo ...`) are structurally immune
+# TO THIS COLLAPSE, because each globals arm carries at most ONE optional value slot -- a
+# needle's FIRST token can be eaten as a value (` -a pr` matches) but its SECOND can then
+# neither open a fresh arm nor be consumed, so no single match absorbs a whole second
+# occurrence. An earlier draft said "the second token is not a dash token and so can never be
+# a flag's value", which is backwards: a non-dash token is exactly what qualifies AS a value.
+# That is why this axis varies only the api family -- a deliberate scope, not a hand-picked
+# subset, and the reason is stated so the next reader can check it rather than trust it.
+#
+# THE IMMUNITY IS SCOPED TO THIS ONE MECHANISM, NOT TO EVERY COLLAPSE THE SEPARATOR CAN
+# CAUSE, and a later finding corrected an earlier draft of this file that read "cannot
+# collapse" as "is counted correctly". `_OUT_SEP` interpolates the shared `_CMD_REDIR`, whose
+# target class admits `(`, so a process substitution PRECEDING the verb (`gh -a -c
+# <(gh pr merge 7) pr merge 42`) also collapses the two-token families' count to 1 -- proved
+# unfixable via occurrence counting (the outer, really-executing verb has no separate "gh" of
+# its own to anchor a second match once the nested invocation's "gh" completes its own), and
+# left open as a documented, denied-for-a-different-reason residual. See
+# docs/solutions/logic-errors/widening-is-monotone-on-a-boolean-read-not-on-a-count-2026-09-14.md
+# and the TRIPWIRE rows in test-guard-outward-cli.sh (search "TRIPWIRE: a hidden second pr
+# merge").
 #
 # EXPECTED=DENY on the AMBIGUITY reason, not the method reason. The `-X`/`--method` check is
 # not a sufficient compensating control: real `gh` sends POST when `-f` fields are present, so
@@ -373,9 +458,30 @@ done
 add apicolfp-read    ALLOW 'gh api repos/o/r'
 add apicolfp-rootflag ALLOW 'gh -t x api repos/o/r'
 # PRE-EXISTING and pinned as ALLOW so the rows above are not misread as closing it: a
-# SINGLE-command field mutation is allowed on main too. It belongs to
-# todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md.
-add apicolfp-oneshot ALLOW 'gh api -f a=b /repos/o/r/merges'
+# SINGLE-command field mutation is allowed on main too.
+#
+# REPOINTED 2026-09-17. This previously named
+# todos/P2-2026-09-12-merge-review-guard-does-not-model-the-gh-api-merge-route.md as the
+# owner. That todo is archived `status: done`, is about merge-review-guard.sh rather than
+# this guard, and its own text asserted this form was not a live bypass -- false for the
+# field-based spelling, and now retracted inline in that file. Owner is
+# todos/archive/P1-2026-09-16-gh-api-field-mutation-passes-both-merge-guards.md.
+#
+# The discriminator is the ABSENT EXPLICIT METHOD, not the endpoint and not the row's
+# collapse shape: `gh` infers POST from the presence of -f/-F/--field/--raw-field, so this
+# spelling is a POST that never says so and the method check never sees a method token to
+# match. The sibling pin in test-guard-outward-cli.sh carries the same correction.
+# EXPECTATION CHANGED 2026-09-18 (gh-api-field-mutation): ALLOW -> DENY. A field parameter
+# with no method flag is a POST per gh api.go:329-330, so this is a mutation, not a false
+# positive. THAT CITATION IS THE WHOLE JUSTIFICATION. The three degraded paths also already
+# denied it (p=ALLOW j=DENY l=DENY a=DENY before, p=DENY on all four after), but that is
+# CORROBORATION, NOT EVIDENCE: every `gh api` row in this neighbourhood reads j=DENY l=DENY
+# a=DENY, including `c2-fp-getf` and `c2-readonly`, which correctly stay ALLOW. Degraded
+# agreement is a property of the row's SHAPE and says nothing about its verdict. Do not
+# reuse it as a standalone argument for moving a `want` -- that is the one edit that can
+# hide an over-denial, so it needs the strongest reason available, not the handiest.
+# The `fp` in the id is kept so the move stays visible.
+add apicolfp-oneshot DENY  'gh api -f a=b /repos/o/r/merges'
 
 add ghrootvfp-list ALLOW 'gh -t x pr list'
 add ghrootvfp-view ALLOW 'gh -Z somevalue pr view 42'
@@ -820,8 +926,10 @@ add "fautoog-multi" DENY 'gh pr merge 42 --auto>log ; gh pr merge 7'
 #               different way. Tracked at
 #               todos/archive/P2-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
 #               NOT the whole case-arm axis: a case arm inside a BARE PAREN
-#               SUBSHELL still allows on every path, tracked at
-#               todos/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
+#               SUBSHELL still allows on every path -- measured by
+#               toolvcaseparen-*/verbvcaseparen-*/flagvcaseparen-* below (the
+#               vcasebrace mechanism is the control that isolates it), see
+#               todos/archive/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
 # vcomment: a `(` inside a shell COMMENT. Inert to bash (a comment runs to
 # end-of-line), so the substitution's real closer is the `)` on the NEXT line --
 # but a paren-counting scanner counts it and the level never closes. This
@@ -836,12 +944,29 @@ add "fautoog-multi" DENY 'gh pr merge 42 --auto>log ; gh pr merge 7'
 # separator and the decoy `esac` closes casedepth one arm early. PRE-EXISTING
 # (ALLOW on the parent commit too, before the case-arm fix landed) -- see
 # guard-outward-cli.sh's DOCUMENTED RESIDUALS entry for the full account.
+# vcaseparen / vcasebrace (added 2026-09-14, a SEPARATE composition found in
+# the same post-implementation review as vcasecomment, filed as its own todo):
+# a case arm wrapped in a BARE-PAREN SUBSHELL. The subshell's own `(` takes the
+# paren-depth credit lib/cmd-detect.sh's per-level counter (`parens[d]`)
+# tracks; the case arm's own unmatched `)` (its pattern's `a)`) is then read as
+# an ordinary paren-closer and spends that credit, so when the subshell's REAL
+# closing `)` arrives, `parens[d]==0` AND `casedepth[d]==0` both hold and it is
+# misread as the OUTER $(...)'s own closer -- one paren too early. PRE-EXISTING
+# (ALLOW on the parent commit and on main too). vcasebrace is the CONTROL that
+# isolates the mechanism: swap the subshell for a BRACE GROUP, which does not
+# consume `parens[d]`, and the identical live invocation is caught -- measured
+# DENY at all three splice positions (tool/verb/flag), including
+# flagvcasebrace-ghadmin, which denies for the SAME pre-existing "no REAL
+# --auto" reason flagvcasearm-ghadmin/flagvcasecomment-ghadmin already
+# document, not because this mechanism is closed there -- read its ATTRIBUTION,
+# not its verdict. See guard-outward-cli.sh's DOCUMENTED RESIDUALS entry for
+# the full account.
 TOOL_MECHS=('$()' '${UNSET}' '``' '$(: $(:))' '$(: "x)y")' "\$(: 'a)b')" \
             "\$(: '\"' \"a)b\" )" '$( (:) )' '$(case x in a) : ;; esac)' \
             "\$(: # (
 )" '$((:)|(:))' '$(case x in a) : ;; #x;esac
-b) : ;; esac)')
-TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep vcasecomment)
+b) : ;; esac)' '$( ( case x in a) : ;; esac ) )' '$({ case x in a) : ;; esac; })')
+TOOL_MIDS=(vsub vvar vbt vnest vdqclose vsqclose vmixq vbareparen vcasearm vcomment varithsep vcasecomment vcaseparen vcasebrace)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
   for m in "${!TOOL_MECHS[@]}"; do
@@ -874,23 +999,55 @@ done
 #                        Note this is a RANGE sharing a token with the binary
 #                        or verb, NOT the already-documented `merge{1..3}`
 #                        form that follows an intact verb (that one DENIES).
+#               r4brlist `{d,d}`    brace LIST (comma form) -- a THIRD,
+#                        independent expansion mechanism from r4brange (no
+#                        `..`), added 2026-09-16
+#                        (todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md).
+#                        A DUPLICATE-alternative list (`{d,d}`, same char both
+#                        sides) is used here rather than a distinguishable pair
+#                        (`{d,x}`) so the generated row reconstructs the SAME
+#                        single split character as its r4brange sibling row --
+#                        the guard's own token never evaluates which
+#                        alternative bash would pick, so a duplicate list is
+#                        exactly as detectable as a distinguishing one; the
+#                        todo's own illustrative constructions (`up{d,x}ate`
+#                        etc.) are pinned separately as named `assert_deny`
+#                        rows in test-guard-outward-cli.sh, not hand-listed
+#                        here.
 #
-# 56 ROWS (4 mechanisms x 2 positions x 7 families), ALL EXPECTED-DENY. They are real,
-# reproduced bypasses, pre-existing (they allow on `main` too). The rows exist so
-# the gap is measured on every run instead of living in a review transcript.
-# Verb-position rows additionally INVERT this file's usual asymmetry: precise
-# ALLOWs while all three degraded paths DENY.
+# 70 ROWS ((r4spec + r4dig + r4ansic + r4brange + r4brlist) x 2 positions x 7
+# families), ALL EXPECTED-DENY. NOT EXHAUSTIVE over this file's own position
+# dimension, which has THREE members, not two: FLAG position IS generated for
+# other mechanisms here (flagvarithsep-*, flagvbareparen-*, flagvcasearm-*,
+# flagvcasecomment-*) but NOT for this family. The omission is disclosed, not
+# incidental -- see guard-outward-cli.sh's BRACE LIST residual entry,
+# FLAG-position paragraph, for the measured construction it leaves unmodelled,
+# and note that the un-generated member is precisely the one that measures
+# ALLOW, so the gap is invisible on every run of this corpus. They are real, reproduced bypasses (the
+# r4brlist-tool-* additions are pre-existing, like every r4brange-tool-*
+# sibling -- they allow on `main` too). The rows exist so the gap is measured
+# on every run instead of living in a review transcript. Verb-position rows
+# additionally INVERT this file's usual asymmetry: precise ALLOWs while all
+# three degraded paths DENY.
 #
-# UPDATED 2026-09-14: "deliberately NOT closed" no longer describes all 56, and
-# hasn't since an earlier PR closed r4spec/r4dig/r4ansic-tool-* (21) and
-# r4spec/r4dig/r4ansic-verb-* (21) — see the FULL ATTRIBUTION note above ("60
-# CLOSED"). Of the 14 that were still open after that (r4brange-tool-*,
-# r4brange-verb-*, 7 each), r4brange-verb-* closed 2026-09-14 too — see the
-# "r4brange-verb-* CLOSED 2026-09-14" entry in NOTE6 above for the fix and its
-# verification. So of the original 56: 49 now closed, 7 (r4brange-tool-* only)
-# remain per the guard's DOCUMENTED RESIDUALS entry.
+# UPDATED 2026-09-14: "deliberately NOT closed" no longer describes all 56 of
+# the original four mechanisms, and hasn't since an earlier PR closed
+# r4spec/r4dig/r4ansic-tool-* (21) and r4spec/r4dig/r4ansic-verb-* (21) — see
+# the FULL ATTRIBUTION note above ("60 CLOSED"). Of the 14 that were still
+# open after that (r4brange-tool-*, r4brange-verb-*, 7 each), r4brange-verb-*
+# closed 2026-09-14 too — see the "r4brange-verb-* CLOSED 2026-09-14" entry in
+# NOTE6 above for the fix and its verification. So of the original 56: 49 now
+# closed, 7 (r4brange-tool-* only) remain per the guard's DOCUMENTED
+# RESIDUALS entry.
+#
+# UPDATED 2026-09-16: +14 r4brlist rows (a fifth mechanism, same 2-position x
+# 7-family shape). r4brlist-verb-* (7) CLOSED on arrival (the guard's
+# VERB-position brace-LIST narrow deny). r4brlist-tool-* (7) remain GAP by
+# design, the identical TOOL-position bound as r4brange-tool-* and for the
+# identical reason (see the guard's DOCUMENTED RESIDUALS entry for this
+# mechanism).
 R4_INS_MECHS=('$!' '$1');       R4_INS_IDS=(r4spec r4dig)
-R4_RSP_IDS=(r4ansic r4brange)
+R4_RSP_IDS=(r4ansic r4brange r4brlist)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
   # split point 1: TOOL position, immediately after the binary's first char.
@@ -911,10 +1068,56 @@ for i in "${!FAM_IDS[@]}"; do
       case "$mid" in
         r4ansic)  sp="\$'\\x$(printf '%02x' "'$c")'" ;;
         r4brange) sp="{$c..$c}" ;;
+        r4brlist) sp="{$c,$c}" ;;
       esac
       add "$mid-$pos-$id" DENY "${pre}${sp}${post}"
     done
   done
+done
+
+# axis: r4brlist-nested residual (2026-09-16,
+# todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md). A
+# range NESTED inside a list alternative (`up{d,{a..z}}ate`) does not match
+# `_OUT_BR_LIST_TOKEN` at all -- its item class excludes `{`/`}`, so a nested
+# span is invisible to this mechanism's own token, not merely unclosed by the
+# TOOL-position fast-path bound the way r4brlist-tool-*/r4brange-tool-* are.
+# Generated from the SAME family/split-point construction as the r4brlist-verb
+# rows above (reusing $vhead/$vtail/$vrest from the last loop iteration would
+# be wrong -- regenerated per family here), one row per family, EXPECT=DENY.
+#
+# MEASURED, NOT SYMMETRIC ACROSS PATHS: precise ALLOWs (a GAP by design, same
+# convention as r4brange-tool-*), but all THREE degraded paths DENY --
+# discovered running this axis, not derived from reading the token. The
+# degraded mirror's pre-existing brace-RANGE alternative in
+# `crude_smells_outward` sits behind a brace-depth-UNAWARE gap (`[^;&|]*`), so
+# the inner `{a..z}` span alone satisfies that alternative independent of the
+# outer list -- an accidental side effect of a mechanism that already shipped,
+# not of this axis's own list alternative. See guard-outward-cli.sh's
+# DOCUMENTED RESIDUALS entry for this mechanism (search "NESTED form").
+for i in "${!FAM_IDS[@]}"; do
+  id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
+  lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
+  vhead="${lead}${lw:0:$h}"; vtail="${lw:$h}"; vrest=${cmd#"$vp"}
+  c=${vtail:0:1}
+  add "r4brlist-nested-$id" DENY "${vhead}{${c},{a..z}}${vtail:1}${vrest}"
+done
+
+# axis: r4brlist-nested-list residual (2026-09-16, code-reviewer SUGGESTION on
+# this same todo's review round). The range-inside-list example above is ONE
+# member of the "nested brace excluded by the item class" defect, not the
+# whole class -- a LIST nested inside a LIST (`up{d,{x,y}}ate`) hits the
+# identical `{`/`}`-exclusion gap in `_OUT_BR_LIST_TOKEN`'s item class, and is
+# measured on its own rather than assumed to generalise from the range
+# sibling (see guard-outward-cli.sh's DOCUMENTED RESIDUALS entry, "NESTED
+# form", and its cite of
+# docs/solutions/logic-errors/one-form-property-asserted-of-whole-syntax-class-2026-09-06.md).
+# Same family/split-point construction, EXPECT=DENY, GAP on precise only.
+for i in "${!FAM_IDS[@]}"; do
+  id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
+  lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
+  vhead="${lead}${lw:0:$h}"; vtail="${lw:$h}"; vrest=${cmd#"$vp"}
+  c=${vtail:0:1}
+  add "r4brlist-nested-list-$id" DENY "${vhead}{${c},{x,y}}${vtail:1}${vrest}"
 done
 
 # axis: r4brange-verb DECOY combination (2026-09-14, found by code-reviewer
@@ -1061,8 +1264,8 @@ done
 #                does not travel forward.
 SPAN2_MECHS=('$( (:) )' '$(case x in a) : ;; esac)' "\$(: # (
 )" '$((:)|(:))' '$(case x in a) : ;; #x;esac
-b) : ;; esac)')
-SPAN2_IDS=(vbareparen vcasearm vcomment varithsep vcasecomment)
+b) : ;; esac)' '$( ( case x in a) : ;; esac ) )' '$({ case x in a) : ;; esac; })')
+SPAN2_IDS=(vbareparen vcasearm vcomment varithsep vcasecomment vcaseparen vcasebrace)
 for i in "${!FAM_IDS[@]}"; do
   id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
   lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
@@ -1207,8 +1410,28 @@ add c2-fp-paginate   ALLOW 'gh api --paginate repos/o/r/issues'
 add c2-fp-jq         ALLOW 'gh api repos/o/r --jq ".[] | .name"'
 add c2-fp-getf       ALLOW 'gh api repos/o/r -X GET -f name=value'
 add c2-fp-header     ALLOW 'gh api repos/o/r -H "Accept: application/vnd.github+json"'
-add c2-fp-methodology ALLOW 'gh api repos/o/r -f notes=$X --methodology=custom'
-add c2-fp-backtick   ALLOW 'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here'
+# EXPECTATION CHANGED 2026-09-18 (gh-api-field-mutation): ALLOW -> DENY. A field parameter
+# with no method flag is a POST per gh api.go:329-330, so this is a mutation, not a false
+# positive. THAT CITATION IS THE WHOLE JUSTIFICATION. The three degraded paths also already
+# denied it (p=ALLOW j=DENY l=DENY a=DENY before, p=DENY on all four after), but that is
+# CORROBORATION, NOT EVIDENCE: every `gh api` row in this neighbourhood reads j=DENY l=DENY
+# a=DENY, including `c2-fp-getf` and `c2-readonly`, which correctly stay ALLOW. Degraded
+# agreement is a property of the row's SHAPE and says nothing about its verdict. Do not
+# reuse it as a standalone argument for moving a `want` -- that is the one edit that can
+# hide an over-denial, so it needs the strongest reason available, not the handiest.
+# The `fp` in the id is kept so the move stays visible.
+add c2-fp-methodology DENY  'gh api repos/o/r -f notes=$X --methodology=custom'
+# EXPECTATION CHANGED 2026-09-18 (gh-api-field-mutation): ALLOW -> DENY. A field parameter
+# with no method flag is a POST per gh api.go:329-330, so this is a mutation, not a false
+# positive. THAT CITATION IS THE WHOLE JUSTIFICATION. The three degraded paths also already
+# denied it (p=ALLOW j=DENY l=DENY a=DENY before, p=DENY on all four after), but that is
+# CORROBORATION, NOT EVIDENCE: every `gh api` row in this neighbourhood reads j=DENY l=DENY
+# a=DENY, including `c2-fp-getf` and `c2-readonly`, which correctly stay ALLOW. Degraded
+# agreement is a property of the row's SHAPE and says nothing about its verdict. Do not
+# reuse it as a standalone argument for moving a `want` -- that is the one edit that can
+# hide an over-denial, so it needs the strongest reason available, not the handiest.
+# The `fp` in the id is kept so the move stays visible.
+add c2-fp-backtick   DENY  'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here'
 add c2-tension-bt    DENY  'gh api repos/o/r -X GET -f note=see `code` here'
 # UNHANDLED GAP, CONFIRMED LIVE (guard-outward-cli.sh's own DOCUMENTED
 # RESIDUALS header has the full writeup) -- an ANSI-C hex-escape inside
@@ -1586,9 +1809,611 @@ add fp-automerge     ALLOW 'gh pr merge 42 --auto'
 add fp-ghcreate      ALLOW 'gh pr create --title x --body y'   # this repo's own sanctioned PR-creation shape (no --repo)
 add fp-ghcreate-pref ALLOW '2>/dev/null gh pr create --title x --body y'   # same, + leading redirect (finding B axis); see NOTE4
 
-printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' \
-  ID EXPECT PRECISE NOJQ NOLIB NOAWK NOTE
-printf '%s\n' '-------------------+--------+---------+--------+--------+--------+------'
+# axis: LAUNCHER-FAMILY / PATH-QUALIFIED INVOCATION (2026-09-16, todos/archive/
+# P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md).
+# GENERATED from its dimensions -- launcher form x path form x binary+verb
+# target -- via three arrays and a nested loop, not hand-listed. Reuses four
+# of this file's own FAM_IDS targets (easupd/npmpub/railup/ghmerge) and
+# reproduces the PR #952 security reviewer's own 13-launcher-form (12 measured
+# forms + the launcher-free baseline) x 4-path-form (3 measured forms + the
+# path-free baseline) grid structure verbatim -- the SAME grid the todo's own
+# Background section quotes as 208 rows, ALLOW 204/208 pre-fix -- so this is a
+# reproduction of the corpus that motivated the fix, not a new one invented
+# for this PR.
+LP_TARGET_IDS=(easupd npmpub railup ghmerge)
+LP_TARGET_CMDS=(
+  'eas update --branch preview'
+  'npm publish'
+  'railway up'
+  'gh pr merge 42'
+)
+LP_LAUNCHER_IDS=(none npx npxy npxyes npmexec npmexecdd npmx bunx bunx2 bunrun pnpmdlx pnpmexec yarndlx yarnexec)
+LP_LAUNCHERS=(
+  '' 'npx ' 'npx -y ' 'npx --yes ' 'npm exec ' 'npm exec -- ' 'npm x ' 'bunx ' 'bun x ' 'bun run ' 'pnpm dlx ' 'pnpm exec ' 'yarn dlx ' 'yarn exec '
+)
+LP_PATH_IDS=(none abs dotbin dotdot)
+LP_PATHS=(
+  '' '/opt/homebrew/bin/' './node_modules/.bin/' '../'
+)
+LP_ROWS_BEFORE=${#ROWS[@]}
+for _lp_ti in "${!LP_TARGET_IDS[@]}"; do
+  _lp_tgt=${LP_TARGET_IDS[$_lp_ti]}; _lp_cmd=${LP_TARGET_CMDS[$_lp_ti]}
+  for _lp_li in "${!LP_LAUNCHER_IDS[@]}"; do
+    _lp_lid=${LP_LAUNCHER_IDS[$_lp_li]}; _lp_launcher=${LP_LAUNCHERS[$_lp_li]}
+    for _lp_pi in "${!LP_PATH_IDS[@]}"; do
+      _lp_pid=${LP_PATH_IDS[$_lp_pi]}; _lp_path=${LP_PATHS[$_lp_pi]}
+      add "lp-$_lp_tgt-$_lp_lid-$_lp_pid" DENY "${_lp_launcher}${_lp_path}${_lp_cmd}"
+      # COMPOSITION ORDER is its own dimension. Emitting only launcher-then-path made this
+      # grid structurally incapable of expressing a path-qualified LAUNCHER, so the
+      # unchanged precise-gap pin read as evidence of closure while measuring exactly the
+      # list the fix enumerated -- true and vacuous. A path-qualified launcher was a live
+      # ALLOW that this grid could not have caught at any pin value. Skipped when either
+      # component is empty, where these orders collapse onto the row above.
+      if [ -n "$_lp_launcher" ] && [ -n "$_lp_path" ]; then
+        add "lp-$_lp_tgt-$_lp_lid-$_lp_pid-pre"  DENY "${_lp_path}${_lp_launcher}${_lp_cmd}"
+        add "lp-$_lp_tgt-$_lp_lid-$_lp_pid-both" DENY "${_lp_path}${_lp_launcher}${_lp_path}${_lp_cmd}"
+      fi
+    done
+  done
+done
+LP_ROWS_GENERATED=$(( ${#ROWS[@]} - LP_ROWS_BEFORE ))
+# 4 targets x 13 launcher forms x 4 path forms = 208, asserted against the
+# array length the loop actually produced -- a corpus "generated" by a loop
+# that silently iterated fewer times than its stated dimensions is exactly the
+# sampled-vs-generated failure
+# docs/solutions/code-quality/a-sampled-corpus-described-as-generated-2026-09-13.md
+# documents, applied to a nested-loop generator instead of a `head`-piped one.
+# 4 targets x 14 launchers x 4 paths = 224 base rows, plus the two composition orders, which
+# are emitted only where BOTH the launcher and the path are non-empty:
+# 4 x 13 x 3 x 2 = 312. Total 536.
+if [ "$LP_ROWS_GENERATED" -ne 536 ]; then
+  echo "FATAL: launcher/path axis generated $LP_ROWS_GENERATED rows, expected 4 x 14 x 4 + 4 x 13 x 3 x 2 = 536 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# axis: LAUNCHER CHAIN (how MANY launcher words, and what may sit between one and its target)
+#
+# The axis above varies WHICH launcher and WHICH path. It cannot express a SECOND launcher, a
+# wrapper word after the launcher, or a launcher that takes an argument before its target --
+# because the grammar it was written against admitted exactly one launcher word, in one
+# position, immediately followed by the gated target. Five measured shapes stepped outside
+# those three assumptions and reached the real CLI, and a grid that varies one launcher at a
+# time is structurally incapable of containing any of them: the same failure mode round 4's
+# unchanged pins had, restated one axis later.
+#
+# CARDINALITY IS DELIBERATELY SMALL. The chain could be crossed with all 14 launcher forms and
+# both composition orders, which would take this file past 7000 rows and turn a ~17 minute
+# required check into hours. Four chain FORMS, each representing one of the grammar assumptions
+# that broke, is enough to make a regression move a number.
+#
+# THE `lnchr` FORM IS THE BUILT-IN CONTROL, not padding: it is a single plain launcher, which
+# the axis above already covers. Measured 2026-09-17 against the pre-fix tree (2aecda69), its
+# 16 `noint` rows DENY before AND after, while all 112 other rows flip ALLOW -> DENY. A run in
+# which those 16 also flip means the pre-fix baseline was not what it claimed to be.
+LP_CH_TARGET_IDS=(easupd npmpub railup ghmerge)
+LP_CH_TARGET_CMDS=(
+  'eas update --branch preview'
+  'npm publish'
+  'railway up'
+  'gh pr merge 42'
+)
+# One form per broken assumption: two hops; a launcher taking an argument; a bare package-manager
+# dispatch with no exec verb at all; and the already-covered single launcher as the control.
+# `wsscope` and `wsforeach` were added by the round-1 security review of the PR that created
+# this axis: `yarn workspace <ws> <cmd>` and `yarn workspaces foreach exec <cmd>` were ALLOW on
+# main AND on that PR's first revision, which is the same argument-taking class as
+# `npm explore` -- the axis existed and simply had no row for them. They are chain FORMS here
+# for the same reason `explore` is: the scope selector sits between the manager and the target.
+# `wsscope2` and `yarnrun` were added by the round-2 review of THIS PR, and the pattern is the
+# same one a third time: the axis existed, the forms were absent, and both were silent ALLOWs on
+# main. `yarn workspace <ws> X` re-dispatches X through yarn's own top level, so a SECOND
+# `workspace <ws2>` carries no fresh `yarn` literal for the launcher repetition to catch; and
+# yarn's `run` falls back to node_modules/.bin, so `yarn run <gated> <verb>` reaches the same
+# sink as `yarn <gated> <verb>` (npm's and pnpm's `run` are script-only and are deliberately NOT
+# chain forms). Hand-written pins for these live in test-guard-outward-cli.sh, but a hand-written
+# list reproduces the blind spot that hid them; generating them here is what makes a future
+# widening that reopens the class fail the required check instead of passing it.
+# `wsrun` followed in round 3, and its arrival is the argument for the axis rather than against
+# it: `yarn workspaces run <cmd>` is yarn CLASSIC's forwarding spelling of the same selector
+# berry spells `workspaces foreach <cmd>`, it was ALLOW on main and on both earlier revisions of
+# this branch, and no hand-written list had it. The scope arm now carries the forwarding
+# PROPERTY -- exactly `run` and `foreach`, because `info`/`list`/`focus` forward nothing -- so a
+# fourth spelling would have to be a new yarn feature rather than one more overlooked row.
+# `interp` is round 4 and a DIFFERENT class, added here for the same reason rather than a
+# related one: running a gated CLI through `node`/`bun`/`deno` reaches the same sink as running
+# it, but the interpreter was admitted only in front of two literal package-directory
+# substrings. The installed shim is a symlink INTO that package whose own path carries no such
+# substring, so `node /opt/homebrew/bin/eas update` was ALLOW on main and on every earlier
+# revision of this branch while its interpreter-less twin denied. Crossing this chain form with
+# the existing path axis is exactly what generates that shape; the ungated controls for it are
+# ALLOW rows and live in test-guard-outward-cli.sh.
+LP_CH_CHAIN_IDS=(stack explore barepm lnchr wsscope wsforeach wsscope2 yarnrun wsrun interp)
+LP_CH_CHAINS=(
+  'npx pnpm dlx ' 'npm explore some-pkg -- ' 'pnpm ' 'npx '
+  'yarn workspace api ' 'yarn workspaces foreach exec '
+  'yarn workspace api workspace foo ' 'yarn run ' 'yarn workspaces run '
+  'node '
+)
+# The wrapper word that may sit BETWEEN the chain and its target. `env` is in _OUT_WRAPPER_WORD,
+# which _OUT_POS_PREFIX_W has always admitted in COMMAND position -- the defect was that it was
+# never admitted AFTER a launcher.
+LP_CH_INTER_IDS=(noint env)
+LP_CH_INTERS=('' 'env ')
+LP_CH_PATH_IDS=(none abs dotbin dotdot)
+LP_CH_PATHS=(
+  '' '/opt/homebrew/bin/' './node_modules/.bin/' '../'
+)
+LP_CH_ROWS_BEFORE=${#ROWS[@]}
+for _ch_ti in "${!LP_CH_TARGET_IDS[@]}"; do
+  _ch_tgt=${LP_CH_TARGET_IDS[$_ch_ti]}; _ch_cmd=${LP_CH_TARGET_CMDS[$_ch_ti]}
+  for _ch_ci in "${!LP_CH_CHAIN_IDS[@]}"; do
+    _ch_cid=${LP_CH_CHAIN_IDS[$_ch_ci]}; _ch_chain=${LP_CH_CHAINS[$_ch_ci]}
+    for _ch_pi in "${!LP_CH_PATH_IDS[@]}"; do
+      _ch_pid=${LP_CH_PATH_IDS[$_ch_pi]}; _ch_path=${LP_CH_PATHS[$_ch_pi]}
+      for _ch_ii in "${!LP_CH_INTER_IDS[@]}"; do
+        _ch_iid=${LP_CH_INTER_IDS[$_ch_ii]}; _ch_inter=${LP_CH_INTERS[$_ch_ii]}
+        add "lpch-$_ch_tgt-$_ch_cid-$_ch_pid-$_ch_iid" DENY "${_ch_chain}${_ch_inter}${_ch_path}${_ch_cmd}"
+      done
+    done
+  done
+done
+LP_CH_ROWS_GENERATED=$(( ${#ROWS[@]} - LP_CH_ROWS_BEFORE ))
+# 4 targets x 10 chain forms x 4 path forms x 2 inter forms = 320, asserted against the array
+# length the loop actually produced. No composition-order variants here: the chain forms already
+# carry their own internal ordering, and adding the order dimension on top would quadruple the
+# required check's runtime for a spelling the axis above already measures.
+if [ "$LP_CH_ROWS_GENERATED" -ne 320 ]; then
+  echo "FATAL: launcher-chain axis generated $LP_CH_ROWS_GENERATED rows, expected 4 x 10 x 4 x 2 = 320 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# axis: COMMAND-POSITION PREFIX (wrapper / privilege word, optionally path-qualified)
+#
+# Round 4 closed a path-qualified wrapper in front of a bare gated binary and moved NOT ONE of
+# this file's four pins -- because no row here put a wrapper word in command position, so the
+# grid could not express the shape. An unchanged pin beside a security fix reads as confirmation
+# and was blindness, the identical failure the composition-order dimension above was added for
+# one round earlier. Round 5's review then measured SEVEN more anchors still bypassed by the same
+# one-token pair. This dimension exists so that a future prefix regression moves a number here.
+#
+# Composed against the ANCHOR FAMILY, not against the launcher grid: six of those seven bypasses
+# were at gh / expansion-token / brace-range anchors, which LP_TARGET_CMDS never reaches.
+PFX_IDS=(none bare path priv privflag privpath corepack stacked)
+PFX_FORMS=(
+  '' 'env ' '/usr/bin/env ' 'sudo ' 'sudo -E ' '/usr/bin/sudo -E ' 'corepack ' 'sudo /usr/bin/env '
+)
+# One payload per command-position deny DECISION, not per gated binary -- applying the prefix
+# per binary rather than per decision is precisely what round 4 got wrong.
+PFX_TARGET_IDS=(easupd npmpub railup ghadmin ghapimut ghcrossrepo expansion brange lambig lnch)
+PFX_TARGETS=(
+  'eas update --branch preview'
+  'npm publish'
+  'railway up'
+  'gh pr merge 42 --admin'
+  'gh api --method DELETE /repos/o/r'
+  'gh pr create --repo evil/repo --title x'
+  'eas ${V} --branch production'
+  'gh pr me{r..r}ge 42'
+  "npx -c 'eas update --branch production'"
+  'npx eas update --branch preview'
+)
+# Ungated work every developer types. The prefix widening must not reach these: over-denial is
+# the failure that gets a guard switched off rather than fixed.
+PFX_ALLOW_IDS=(node npmscript ghread automerge)
+PFX_ALLOWS=(
+  'node scripts/build.js'
+  'npm run build'
+  'gh pr list'
+  # The sanctioned /todo automerge. This is the one control here whose regression would break a
+  # live pipeline rather than merely annoy: the gh pr merge clause cut is GRANT-shaped, so an
+  # empty clause reads as "no --auto seen" and DENIES. It belongs on the prefix grid because
+  # round 6 found a decoy --auto absorbed INTO a privilege prefix granting the merge -- the
+  # inverse failure, at the same site.
+  'gh pr merge 42 --auto --squash --delete-branch'
+)
+PFX_ROWS_BEFORE=${#ROWS[@]}
+for _pfx_i in "${!PFX_IDS[@]}"; do
+  _pfx_id=${PFX_IDS[$_pfx_i]}; _pfx=${PFX_FORMS[$_pfx_i]}
+  for _pt_i in "${!PFX_TARGET_IDS[@]}"; do
+    add "pfx-$_pfx_id-${PFX_TARGET_IDS[$_pt_i]}" DENY "${_pfx}${PFX_TARGETS[$_pt_i]}"
+  done
+  for _pa_i in "${!PFX_ALLOW_IDS[@]}"; do
+    add "pfxok-$_pfx_id-${PFX_ALLOW_IDS[$_pa_i]}" ALLOW "${_pfx}${PFX_ALLOWS[$_pa_i]}"
+  done
+done
+PFX_ROWS_GENERATED=$(( ${#ROWS[@]} - PFX_ROWS_BEFORE ))
+# 8 prefix forms x (10 deny payloads + 4 allow controls) = 112. Asserted against what the loop
+# actually produced, never against the arithmetic alone -- same discipline as the LP axis below.
+if [ "$PFX_ROWS_GENERATED" -ne 112 ]; then
+  echo "FATAL: prefix axis generated $PFX_ROWS_GENERATED rows, expected 8 x (10 + 4) = 112 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# axis: PATH/LAUNCHER QUALIFIER OF THE COMMAND (round 6, 2026-09-16)
+#
+# Round 5 made the command-position PREFIX an axis, but `(path)?` sat in front of a wrapper or
+# privilege WORD only -- the bare-path arm lives in _OUT_POS_PREFIX_LP. (ROUND 11: the merge with
+# main's brace-LIST work added a FOURTH anchor in this category which was NOT converted and is
+# disclosed in the guard's residuals header; PFX_TARGETS and QL_TARGETS carry a brace-RANGE
+# payload and no brace-LIST one, so neither pin can move for it. Derive the category with grep.)
+# The three anchors with no
+# _LP sibling (the expansion-token narrow deny, the brace-range narrow deny, and the
+# ambiguous-flag launcher check) therefore never saw a path or launcher qualifying the COMMAND,
+# and the round-5 prefix dimension above could not express it either -- so six live bypasses sat
+# behind pins that could not have moved for them. All six measured ALLOW on origin/main too.
+QL_IDS=(bare path npx npxpath pathnpx)
+QL_FORMS=(
+  '' '/opt/homebrew/bin/' 'npx ' 'npx /opt/homebrew/bin/' '/opt/homebrew/bin/npx '
+)
+QL_TARGET_IDS=(expansion brange)
+QL_TARGETS=(
+  'eas ${V} --branch production'
+  'eas upd{a..z}te --branch production'
+)
+# The ambiguous-flag launcher already spells its own launcher, so it varies over PATHS only --
+# a launcher in front of a launcher is the LAUNCHER-GRAMMAR axis, carried by the follow-up todo.
+QL_AMBIG_IDS=(bare abs dotbin)
+QL_AMBIG_PATHS=('' '/opt/homebrew/bin/' './node_modules/.bin/')
+# A decoy --auto absorbed into the privilege prefix must not grant the merge. Round 5 introduced
+# this one: _OUT_PRIV_WORD appends _OUT_FLAG_RUN, which absorbs any dash token, and that text
+# landed inside the CLAUSE the grant check reads.
+QL_DECOY_IDS=(sudo sudoflag sudopath corepack)
+QL_DECOY_FORMS=('sudo --auto ' 'sudo -E --auto ' '/usr/bin/sudo --auto ' 'corepack --auto ')
+QL_ROWS_BEFORE=${#ROWS[@]}
+for _ql_i in "${!QL_IDS[@]}"; do
+  for _qt_i in "${!QL_TARGET_IDS[@]}"; do
+    add "ql-${QL_IDS[$_ql_i]}-${QL_TARGET_IDS[$_qt_i]}" DENY "${QL_FORMS[$_ql_i]}${QL_TARGETS[$_qt_i]}"
+  done
+done
+for _qa_i in "${!QL_AMBIG_IDS[@]}"; do
+  add "ql-ambig-${QL_AMBIG_IDS[$_qa_i]}" DENY "${QL_AMBIG_PATHS[$_qa_i]}npx -c 'eas update --branch production'"
+done
+for _qd_i in "${!QL_DECOY_IDS[@]}"; do
+  add "ql-decoy-${QL_DECOY_IDS[$_qd_i]}" DENY "${QL_DECOY_FORMS[$_qd_i]}gh pr merge 1"
+done
+QL_ROWS_GENERATED=$(( ${#ROWS[@]} - QL_ROWS_BEFORE ))
+# 5 qualifier forms x 2 narrow-deny targets = 10, plus 3 ambiguous-flag path forms, plus 4 decoy
+# rows = 17. Asserted against what the loops actually produced, never the arithmetic alone.
+if [ "$QL_ROWS_GENERATED" -ne 17 ]; then
+  echo "FATAL: command-qualifier axis generated $QL_ROWS_GENERATED rows, expected 5 x 2 + 3 + 4 = 17 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# axis: A FLAG ON THE WRAPPER WORD (round 7, 2026-09-16)
+#
+# _OUT_POS_PREFIX_W absorbed flags after a PRIVILEGE word but not after a WRAPPER word, so one
+# real option -- `env -u`, `env -i`, `nohup --`, `command -p`, `exec -a` -- terminated the prefix
+# and every command-position anchor missed. No row here varied a wrapper word's FLAGS, so the
+# prefix dimension added in round 5 could not have caught it either.
+WF_IDS=(bare envu envi nohupdd commandp execa)
+WF_FORMS=(
+  '' 'env -u FOO ' 'env -i ' 'nohup -- ' 'command -p ' 'exec -a x '
+)
+WF_TARGET_IDS=(easupd railup npmpub ghadmin)
+WF_TARGETS=(
+  'eas update --branch preview'
+  'railway up'
+  'npm publish'
+  'gh pr merge 42 --admin'
+)
+# Ungated work behind the same flagged wrappers. Over-denial here would hit everyday commands.
+WF_ALLOW_IDS=(npminstall node)
+WF_ALLOWS=('npm install' 'node scripts/build.js')
+WF_ROWS_BEFORE=${#ROWS[@]}
+for _wf_i in "${!WF_IDS[@]}"; do
+  for _wt_i in "${!WF_TARGET_IDS[@]}"; do
+    add "wf-${WF_IDS[$_wf_i]}-${WF_TARGET_IDS[$_wt_i]}" DENY "${WF_FORMS[$_wf_i]}${WF_TARGETS[$_wt_i]}"
+  done
+  for _wa_i in "${!WF_ALLOW_IDS[@]}"; do
+    add "wfok-${WF_IDS[$_wf_i]}-${WF_ALLOW_IDS[$_wa_i]}" ALLOW "${WF_FORMS[$_wf_i]}${WF_ALLOWS[$_wa_i]}"
+  done
+done
+# A decoy --auto riding in on the now-absorbed wrapper flags, plus the assignment-VALUE route.
+add "wf-decoy-envauto"   DENY 'env --auto gh pr merge 1'
+add "wf-decoy-envuauto"  DENY 'env -u FOO --auto gh pr merge 1'
+add "wf-decoy-assignval" DENY 'GH_CONFIG_DIR=/etc/gh sudo --auto gh pr merge 1'
+WF_ROWS_GENERATED=$(( ${#ROWS[@]} - WF_ROWS_BEFORE ))
+# 6 wrapper forms x (4 deny targets + 2 allow controls) = 36, plus 3 decoy rows = 39.
+if [ "$WF_ROWS_GENERATED" -ne 39 ]; then
+  echo "FATAL: wrapper-flag axis generated $WF_ROWS_GENERATED rows, expected 6 x (4 + 2) + 3 = 39 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# axis: A FLAG INSIDE THE LAUNCHER PHRASE (round 9, 2026-09-17)
+#
+# `_OUT_LAUNCHER` absorbed flags AFTER the complete launcher phrase but not BETWEEN its two
+# words, so `npm -s exec <gated>` skipped every `_OUT_POS_PREFIX_LP`-gated check while
+# `npm exec -s <gated>` denied. One token, one word to the left. Every row here was ALLOW on
+# origin/main as well, so this axis records a pre-existing gap closing, not a regression.
+#
+# The dimension that was missing is the FLAG's POSITION RELATIVE TO THE LAUNCHER'S OWN WORDS.
+# The round-2 rows varied the flag AFTER the phrase, and the round-7 wrapper-flag axis varied
+# flags on a WRAPPER word -- neither could express a flag INSIDE a two-word launcher, which is
+# why the single pinned row for this slot sat ALLOW for seven rounds and read as intentional.
+IF_IDS=(npmexec npmx bunrun bunx pnpmdlx pnpmexec yarndlx yarnexec)
+IF_HEADS=(npm npm bun bun pnpm pnpm yarn yarn)
+IF_VERBS=(exec x run x dlx exec dlx exec)
+# The empty form is this dimension's own control: it must deny for the same reason as the
+# flagged forms, or the row proves nothing about the flag.
+IF_FLAG_IDS=(none s loglevel workspace)
+IF_FLAGS=('' '-s ' '--loglevel=silent ' '-w pkg ')
+# Both sinks, deliberately. Every previous record of this slot used an OTA only, so the
+# admin-merge sink -- the one that made the sibling TRAILING slot a must-fix -- was invisible.
+IF_SINK_IDS=(easupd ghadmin)
+IF_SINKS=('eas update --branch preview' 'gh pr merge 42 --admin')
+# Ungated work behind the identical launcher phrases. This gap sits inside everyday
+# npm/pnpm/yarn invocations, so over-denial here would be felt hourly.
+IF_ALLOW_IDS=(tsc)
+IF_ALLOWS=('tsc --noEmit')
+IF_ROWS_BEFORE=${#ROWS[@]}
+for _if_i in "${!IF_IDS[@]}"; do
+  for _if_f in "${!IF_FLAG_IDS[@]}"; do
+    for _if_s in "${!IF_SINK_IDS[@]}"; do
+      add "if-${IF_IDS[$_if_i]}-${IF_FLAG_IDS[$_if_f]}-${IF_SINK_IDS[$_if_s]}" DENY \
+        "${IF_HEADS[$_if_i]} ${IF_FLAGS[$_if_f]}${IF_VERBS[$_if_i]} ${IF_SINKS[$_if_s]}"
+    done
+    for _if_a in "${!IF_ALLOW_IDS[@]}"; do
+      add "ifok-${IF_IDS[$_if_i]}-${IF_FLAG_IDS[$_if_f]}-${IF_ALLOW_IDS[$_if_a]}" ALLOW \
+        "${IF_HEADS[$_if_i]} ${IF_FLAGS[$_if_f]}${IF_VERBS[$_if_i]} ${IF_ALLOWS[$_if_a]}"
+    done
+  done
+done
+IF_ROWS_GENERATED=$(( ${#ROWS[@]} - IF_ROWS_BEFORE ))
+# 8 launcher forms x 4 flag forms x (2 deny sinks + 1 allow control) = 96.
+if [ "$IF_ROWS_GENERATED" -ne 96 ]; then
+  echo "FATAL: interior-flag axis generated $IF_ROWS_GENERATED rows, expected 8 x 4 x (2 + 1) = 96 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+# The round-7 wrapper flag-run brought a VALUE slot that can absorb a real command word, so a
+# gated name appearing as an ARGUMENT after a flagged wrapper now denies. Narrow, and in the
+# safe direction, but pinned here so the accuracy cost is visible in the corpus rather than
+# discovered by a user with ALLOW_OUTWARD_CLI=1.
+add "wf-valueslot-grep" DENY 'env -i grep eas update docs/'
+
+# axis: PACKAGE SPELLING (`eas-cli`, `@railway/cli`) on the launcher axis --
+# npm/npx resolve a PACKAGE name, not necessarily the binary name; `eas-cli`'s
+# own package.json declares bin:{"eas":"./bin/run"}, so npx/npm-exec reach the
+# identical real CLI under either spelling. Both measured ALLOW pre-fix.
+add lp-pkg-eascli-npx       DENY  'npx eas-cli update --branch preview'
+add lp-pkg-eascli-npmexec   DENY  'npm exec eas-cli update --branch preview'
+add lp-pkg-railwaycli-npx   DENY  'npx @railway/cli up'
+# Carve-out on the READ-ONLY VERB, never the package token -- an earlier
+# revision of the source todo pinned a "eas-cli --version-shaped read-onlys
+# stay allowed" carve-out that, implemented literally, would exempt the whole
+# package spelling and leave `npx eas-cli update` open. These two prove the
+# carve-out lands on the verb.
+add lp-pkg-eascli-version   ALLOW 'npx eas-cli --version'
+add lp-pkg-eascli-listcolon ALLOW 'npx eas-cli update:list'
+
+# axis: FALSE-POSITIVE SWEEP on the newly-widened surface -- widening a
+# command-position anchor is the direction that invents denials.
+add lp-fp-npxtsc        ALLOW 'npx tsc'
+add lp-fp-npxprettier   ALLOW 'npx prettier --write'
+add lp-fp-npmexecvitest ALLOW 'npm exec vitest'
+add lp-fp-abspath-git   ALLOW '/usr/bin/git status'
+add lp-fp-pathro        ALLOW './node_modules/.bin/eas --version'
+add lp-fp-prose         ALLOW 'git commit -m "chore: mentions npx eas update and /usr/bin/gh pr merge"'
+add lp-fp-quotedpath    ALLOW 'git commit -m "see docs/eas update"'
+
+# axis: gh FAMILY -- deliberate blanket over-denial via launcher/path,
+# including a shape that carries a bare-position carve-out flag (--auto with
+# no --admin/--repo). The paired bare-form control proves the carve-out
+# itself is untouched -- only the launcher/path route around it is closed.
+add lp-ghmerge-auto-npx  DENY  'npx gh pr merge 42 --auto'
+add lp-ghmerge-auto-bare ALLOW 'gh pr merge 42 --auto'
+add lp-ghapi-npmexec     DENY  'npm exec gh api repos/o/r -X POST'
+
+# axis: DENY-SITE COVERAGE (2026-09-16). The main LP grid above only exercises
+# the four FAM targets it shares with the rest of this file (easupd/npmpub/
+# railup/ghmerge) -- six of the ten new deny() sites in guard-outward-cli.sh
+# have no OTHER corpus row reaching them at all, so _pin_sites (see "guard
+# deny-emit sites" in the pin block) would flag them as checks a future
+# deletion could remove invisibly. One row per site, launcher-routed, matching
+# the same discipline as the rest of this axis.
+add lp-site-easbuild     DENY 'npx eas build --platform ios --auto-submit'
+add lp-site-easupdcolon  DENY 'npx eas update:delete abc123'
+add lp-site-easchannel   DENY 'npx eas channel:create foo'
+add lp-site-npmrunota    DENY '/usr/local/bin/npm run update:preview'
+add lp-site-railvar      DENY 'npx railway variable set FOO=bar'
+add lp-site-railsvcdel   DENY 'npx railway service delete foo'
+
+# axis: DENY-SITE COVERAGE (2026-09-18, round-8 security review). The interpreter
+# co-occurrence check has no other corpus row: every OTHER interpreter row in this file
+# supplies a LITERAL verb, and this check fires only when the verb slot is an EXPANSION and
+# `update:(preview|production)` co-occurs. Without this row `_pin_sites` would flag it as a
+# check a future deletion could remove invisibly -- which is exactly what it did on the first
+# run after the check was added, and is why the row is here rather than the count re-pinned.
+# Single-quoted so the `$( )` is inert text: the corpus feeds command STRINGS, it never runs them.
+add lp-site-interpexp    DENY 'node $(echo --run update:production)'
+
+# axis: AMBIGUOUS-TARGET LAUNCHER FLAGS (2026-09-16, round-2 security review of
+# this PR). --package/-p (npx/npm exec's own --package/-p invocation form) and
+# -c/--call (whose argument sits inside a quoted string this guard's own
+# quote-blanking already treats as prose) both put the real target where no
+# literal-binary-name check above can see it. Measured ALLOW pre-fix:
+# `npx --package=eas-cli -- eas update --branch preview`, `npm exec
+# --package=eas-cli -- eas update --branch preview`, `npx --package=eas-cli -c
+# 'eas update --branch preview'`. GENERATED from the two dimensions the new
+# _OUT_LAUNCHER_AMBIG_FLAG check actually keys on: 3 launcher forms (one per
+# structural shape in _OUT_LAUNCHER -- a bare word, a two-word `$_OUT_SEP`
+# pair, a bare word again) x 8 flag-forms (4 flag spellings x glued-'='/
+# spaced-separator, the check's own two-branch grammar) = 24, NOT crossed
+# against all 12 launcher forms -- the launcher dimension is already generated
+# and asserted at 208 rows by the LP grid above, and _OUT_LAUNCHER contributes
+# no per-launcher logic to this check, so re-crossing it here would vary
+# magnitude, not a dimension the mechanism keys on.
+LP_AF_LAUNCHER_IDS=(npx npmexec bunx)
+LP_AF_LAUNCHERS=('npx ' 'npm exec ' 'bunx ')
+LP_AF_FLAG_IDS=(pkgeq pkgsp peq psp calleq callsp ceq csp)
+LP_AF_FLAGS=(
+  '--package=eas-cli -- eas update --branch preview'
+  '--package eas-cli -- eas update --branch preview'
+  '-p=eas-cli -- eas update --branch preview'
+  '-p eas-cli -- eas update --branch preview'
+  "--call='eas update --branch preview'"
+  "--call 'eas update --branch preview'"
+  "-c='eas update --branch preview'"
+  "-c 'eas update --branch preview'"
+)
+LP_AF_ROWS_BEFORE=${#ROWS[@]}
+for _af_li in "${!LP_AF_LAUNCHER_IDS[@]}"; do
+  _af_lid=${LP_AF_LAUNCHER_IDS[$_af_li]}; _af_launcher=${LP_AF_LAUNCHERS[$_af_li]}
+  for _af_fi in "${!LP_AF_FLAG_IDS[@]}"; do
+    _af_fid=${LP_AF_FLAG_IDS[$_af_fi]}; _af_flag=${LP_AF_FLAGS[$_af_fi]}
+    add "lp-af-$_af_lid-$_af_fid" DENY "${_af_launcher}${_af_flag}"
+  done
+done
+LP_AF_ROWS_GENERATED=$(( ${#ROWS[@]} - LP_AF_ROWS_BEFORE ))
+if [ "$LP_AF_ROWS_GENERATED" -ne 24 ]; then
+  echo "FATAL: ambiguous-flag axis generated $LP_AF_ROWS_GENERATED rows, expected 3 x 8 = 24 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+
+# axis: VERSION-PIN SPELLING (2026-09-16, round-2 security review). `<pkg>@
+# <version>` (npx's own --help synopsis form, e.g. `npx @railway/cli@latest
+# up`) sits with NO separator between the binary token and `@version`, so it
+# was invisible to every one of the 10 launcher-family/path-qualified checks
+# without an explicit optional suffix. Measured ALLOW pre-fix: `npx
+# @railway/cli@latest up`. DENY-SITE COVERAGE style (same precedent as the
+# axis above this one): one version-pinned row per modified grep clause, all
+# 10 (the `(yarn|pnpm)` bare-script alternative on the `||` line of the
+# npm-run-OTA check got the splice too, not just the 9 primary clauses).
+add lp-verpin-easupd     DENY 'npx eas-cli@5.0.0 update --branch preview'
+add lp-verpin-easupdcolon DENY 'npx eas@latest update:delete abc123'
+add lp-verpin-easchannel DENY 'npx eas-cli@latest channel:delete foo'
+add lp-verpin-easbuild   DENY 'npx eas@latest build --auto-submit'
+add lp-verpin-railup     DENY 'npx @railway/cli@latest up'
+add lp-verpin-railvar    DENY 'npx railway@latest variable set FOO=bar'
+add lp-verpin-railsvcdel DENY 'npx @railway/cli@latest service delete foo'
+add lp-verpin-npmpub     DENY 'npx npm@10 publish'
+add lp-verpin-npmrunota  DENY 'npx npm@10 run update:preview'
+add lp-verpin-yarnbare   DENY 'npx yarn@latest update:preview'
+# 11th row, ADDED 2026-09-16 (round-2 review's own findings, second pass):
+# the `gh` clause was the one of the original ten GAP-3 clauses that missed
+# the `_OUT_PKG_VERSION_PIN` splice -- `npx gh@latest pr merge 42 --auto`
+# measured ALLOW pre-fix, reaching an unreviewed admin merge.
+add lp-verpin-ghmerge    DENY 'npx gh@latest pr merge 42 --auto'
+
+# axis: PACKAGE-DIRECTORY PATH INVOCATION (2026-09-16, round-2 security
+# review). eas-cli's own package.json declares bin: {"eas": "./bin/run"} --
+# the real installed script's TERMINAL path component is "run", never
+# "eas"/"eas-cli", so a direct path invocation of that real file never
+# matched the literal-binary-name path check above. `node`/other interpreters
+# were also never in the launcher enumeration. Measured ALLOW pre-fix: `node
+# ./node_modules/eas-cli/bin/run update --branch preview` AND the bare
+# `./node_modules/eas-cli/bin/run update --branch preview` (no interpreter at
+# all). GENERATED: 2 packages x 4 interpreter forms (none/node/bun/deno,
+# _OUT_INTERP_WORD's own enumeration) = 8, all DENY. Two explicit ALLOW
+# controls prove the check is VERB-gated, not blanket-path-gated (a read-only
+# invocation of the same real script stays allowed).
+LP_PD_TARGET_IDS=(eascli railwaycli)
+LP_PD_PATHS=(
+  './node_modules/eas-cli/bin/run update --branch preview'
+  './node_modules/@railway/cli/bin/run up'
+)
+LP_PD_INTERP_IDS=(none node bun deno)
+LP_PD_INTERPS=('' 'node ' 'bun ' 'deno ')
+LP_PD_ROWS_BEFORE=${#ROWS[@]}
+for _pd_ti in "${!LP_PD_TARGET_IDS[@]}"; do
+  _pd_tid=${LP_PD_TARGET_IDS[$_pd_ti]}; _pd_path=${LP_PD_PATHS[$_pd_ti]}
+  for _pd_ii in "${!LP_PD_INTERP_IDS[@]}"; do
+    _pd_iid=${LP_PD_INTERP_IDS[$_pd_ii]}; _pd_interp=${LP_PD_INTERPS[$_pd_ii]}
+    add "lp-pd-$_pd_tid-$_pd_iid" DENY "${_pd_interp}${_pd_path}"
+  done
+done
+LP_PD_ROWS_GENERATED=$(( ${#ROWS[@]} - LP_PD_ROWS_BEFORE ))
+if [ "$LP_PD_ROWS_GENERATED" -ne 8 ]; then
+  echo "FATAL: package-directory path axis generated $LP_PD_ROWS_GENERATED rows, expected 2 x 4 = 8 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+add lp-pd-eascli-ro      ALLOW './node_modules/eas-cli/bin/run --version'
+add lp-pd-railwaycli-ro  ALLOW './node_modules/@railway/cli/bin/run --help'
+
+# axis: LAUNCHER FLAG-RUN GENERALIZATION (2026-09-16, round-2 security
+# review). `_OUT_LAUNCHER` originally modeled flag tolerance as a CLOSED
+# per-launcher enumeration (npx: -y/--yes only; npm exec: optional -- only;
+# every other launcher: none), so ANY other real flag between the launcher
+# phrase and the binary defeated every _OUT_POS_PREFIX_LP-gated check,
+# INCLUDING the gh-family blanket-deny. Measured ALLOW pre-fix: `npm exec
+# --yes eas update`, `npm exec -y eas update`, `bunx --bun eas update`, `npx
+# -q eas update`, and -- reaching an unreviewed, branch-protection-bypassing
+# admin merge -- `npx -q gh pr merge 42 --auto`. GENERATED from the two
+# dimensions the fix (a general `_OUT_FLAG_RUN` absorber) actually keys on:
+# ALL 12 launcher forms (proving the absorber is reachable through every
+# `_OUT_LAUNCHER` alternation branch, not a sample of them) x 2 flag shapes
+# (a bare boolean flag, and a value-taking flag with a space-separated value
+# -- `_OUT_FLAG_RUN`'s own two-branch grammar) = 24. This is also this PR's
+# answer to the code-reviewer's WARNING that the original 208-row LP grid's
+# LP_LAUNCHERS array has no flag dimension: rather than fold a flag axis into
+# that grid (which would cascade its own 208-row pin for no benefit -- the
+# grid's job is launcher x path x target coverage, not flag coverage), the
+# flag dimension gets its own axis here, crossed against the same 12
+# launcher forms.
+LP_LFLAG_LAUNCHER_IDS=("${LP_LAUNCHER_IDS[@]:1}")
+LP_LFLAGS_LAUNCHERS=("${LP_LAUNCHERS[@]:1}")
+LP_LFLAG_FORM_IDS=(bool value)
+LP_LFLAG_FORMS=('-q ' '--loglevel error ')
+LP_LFLAG_ROWS_BEFORE=${#ROWS[@]}
+for _lf_li in "${!LP_LFLAG_LAUNCHER_IDS[@]}"; do
+  _lf_lid=${LP_LFLAG_LAUNCHER_IDS[$_lf_li]}; _lf_launcher=${LP_LFLAGS_LAUNCHERS[$_lf_li]}
+  for _lf_fi in "${!LP_LFLAG_FORM_IDS[@]}"; do
+    _lf_fid=${LP_LFLAG_FORM_IDS[$_lf_fi]}; _lf_flag=${LP_LFLAG_FORMS[$_lf_fi]}
+    add "lp-lflag-$_lf_lid-$_lf_fid" DENY "${_lf_launcher}${_lf_flag}eas update --branch preview"
+  done
+done
+LP_LFLAG_ROWS_GENERATED=$(( ${#ROWS[@]} - LP_LFLAG_ROWS_BEFORE ))
+if [ "$LP_LFLAG_ROWS_GENERATED" -ne 26 ]; then
+  echo "FATAL: launcher flag-run axis generated $LP_LFLAG_ROWS_GENERATED rows, expected 13 x 2 = 26 -- a dimension silently iterated short" >&2
+  exit 1
+fi
+# The specific CRITICAL scenario found by review: an unrecognized flag on npx
+# reaching the gh-family blanket-deny, not just the eas/railway/npm checks
+# the generated grid above already covers.
+add lp-lflag-ghmerge     DENY  'npx -q gh pr merge 42 --auto'
+# FALSE-POSITIVE CONTROL: an unrecognized flag on a launcher, targeting an
+# UNRELATED (non-gated) binary, stays allowed -- the widening is scoped to
+# the flag SLOT, not a blanket "any flag denies" rule.
+add lp-lflag-fp-tsc      ALLOW 'npx -q tsc --noEmit'
+# ROUND-9 CLOSED. This row was pinned ALLOW for seven rounds as a DOCUMENTED RESIDUAL,
+# with the note that "a future accidental fix of this slot is a visible pin change, not
+# a silent one". Round 9's fix was not accidental, and this is that visible change: the
+# row now DENIES on all four paths, so it also leaves the all-path dirty manifest it used
+# to sit in as p=ALLOW j=DENY l=DENY a=DENY. Kept at its original id rather than renamed,
+# so the manifest diff reads as one row changing verdict instead of one leaving and
+# another arriving. The guard header's claim that no bypass had been measured through
+# this slot was contradicted by THIS LINE for seven rounds.
+add lp-lflag-residual-interior DENY 'npm --loglevel=silent exec eas update --branch preview'
+
+# axis: FAST-PATH NEEDLE-LIST GAP (2026-09-16, round-2 review's own findings,
+# second pass). `cmd_fastpath_has`'s needle list gated EVERY launcher-family
+# check (incl. GAP-1's "denies UNCONDITIONALLY" claim) behind
+# eas/railway/npm/yarn/gh -- `npx`/`bunx`/`bun x`/`bun run` are launcher
+# WORDS, not gated binary names, so a command naming neither the launcher's
+# own needle nor a gated binary anywhere in its text never reached the slow
+# path at all. Measured ALLOW pre-fix: `npx --package=my-tool -c '...'`,
+# `npx -p my-tool -- update --branch preview`. Also: a discriminating row for
+# GAP-1's `--package`/`-p` arm specifically -- the round-2 `_OUT_LAUNCHER`
+# flag-run widening made the earlier `lp-af-*`/`lp-verpin-*` `--package`/`-p`
+# rows redundant with check #1 (they now deny via "reached through a
+# launcher", not GAP-1's own message), so this row uses an apparently-ungated
+# verb (`tsc --version`) behind `--package` to force GAP-1's OWN branch,
+# matching test-guard-outward-cli.sh's identical discriminating assertion.
+add lp-fpneedle-callnoNeedle DENY "npx --package=my-tool -c 'update --branch preview'"
+add lp-fpneedle-pkgnoNeedle  DENY 'npx -p my-tool -- update --branch preview'
+add lp-gap1-discriminating   DENY 'npx --package=eas-cli -- tsc --version'
+
+_table_header() {
+  printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' \
+    ID EXPECT PRECISE NOJQ NOLIB NOAWK NOTE
+  printf '%s\n' '-------------------+--------+---------+--------+--------+--------+------'
+}
+# The aggregate prints its header after its integrity denominator, not here.
+[ "$MODE" = aggregate ] || _table_header
 
 GAPS=0
 ALLGAPS=0
@@ -1613,17 +2438,25 @@ IDS=(); EXPS=(); CMDS=(); PS=(); JS=(); LS=(); AS=()
 # 356" beats sixteen `+` lines), not by covering a case membership misses. See that
 # block.
 PRECISE_GAP_IDS=(); ALLPATH_DIRTY_IDS=(); DENY_ATTRIB=(); DENY_FP=(); DENY_FULL=()
-for row in "${ROWS[@]}"; do
-  # Parameter expansion, NOT awk: awk is line-oriented, so a row whose COMMAND
-  # contains a newline had only its first line extracted. That silently excluded
-  # every multi-line construction from this corpus -- including a `#` comment
-  # inside a substitution, which needs a newline to terminate and which was a
-  # live DENY->ALLOW regression no row here could see (2026-09-06 security
-  # review). Parameter expansion is newline-safe and needs no subprocess.
-  id=${row%% @@ *}; _rest=${row#* @@ }
-  exp=${_rest%% @@ *}; cmd=${_rest#* @@ }
-  p=$(decide precise "$cmd"); j=$(decide nojq "$cmd")
-  l=$(decide nolib "$cmd");   a=$(decide noawk "$cmd")
+# The per-row work is split in two so the shard and aggregate modes run the SAME
+# code the full run does, not a second copy of it:
+#   _eval_row       -- the only part that calls the guard (sets p j l a _rf _fpv)
+#   _accumulate_row -- folds one evaluated row into the union state the pin reads
+#                      and prints its table line (reads id exp cmd p j l a _rf _fpv)
+# The full run calls both per row; a shard calls both for its slice and writes a
+# record; the aggregate calls only _accumulate_row, from the records.
+_eval_row() {  # $1=command
+  p=$(decide precise "$1"); j=$(decide nojq "$1")
+  l=$(decide nolib "$1");   a=$(decide noawk "$1")
+  _rf=; _fpv=
+  # The precise-DENY reason is captured HERE, from the same command, so a shard
+  # record carries it; see the WHY comment in _accumulate_row for what it is for.
+  if [ "$p" = DENY ]; then
+    _rf=$(reason precise "$1"); _fpv=$(_fp "$_rf")
+  fi
+}
+
+_accumulate_row() {
   if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); PRECISE_GAP_IDS+=("$id"); fi
   if [ "$p" != "$exp" ] || [ "$j" != "$exp" ] || [ "$l" != "$exp" ] || [ "$a" != "$exp" ]; then
     ALLGAPS=$((ALLGAPS+1)); ALLPATH_DIRTY_IDS+=("$id p=$p j=$j l=$l a=$a")
@@ -1645,17 +2478,151 @@ for row in "${ROWS[@]}"; do
   # with a diff that looks identical on both sides. An earlier revision of this
   # comment claimed "both sides of the comparison are produced by this one line",
   # which was simply not true of the pinned side.
+  #
+  # _rf/_fpv were set by _eval_row (full run, shard) or from a record (aggregate).
   if [ "$p" = DENY ]; then
-    _rf=$(reason precise "$cmd"); _fpv=$(_fp "$_rf")
     DENY_FULL+=("$_rf"); DENY_FP+=("$_fpv")
     DENY_ATTRIB+=("$(printf '%-18s : %s' "$id" "$_fpv")")
   fi
   IDS+=("$id"); EXPS+=("$exp"); CMDS+=("$cmd"); PS+=("$p"); JS+=("$j"); LS+=("$l"); AS+=("$a")
   printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' "$id" "$exp" "$p" "$j" "$l" "$a" "$note"
-done
+}
+
+_split_row() {  # $1=row -> id exp cmd
+  # Parameter expansion, NOT awk: awk is line-oriented, so a row whose COMMAND
+  # contains a newline had only its first line extracted. That silently excluded
+  # every multi-line construction from this corpus -- including a `#` comment
+  # inside a substitution, which needs a newline to terminate and which was a
+  # live DENY->ALLOW regression no row here could see (2026-09-06 security
+  # review). Parameter expansion is newline-safe and needs no subprocess.
+  id=${1%% @@ *}; _rest=${1#* @@ }
+  exp=${_rest%% @@ *}; cmd=${_rest#* @@ }
+}
+
+US=$'\x1f'
+if [ "$MODE" = full ]; then
+  for row in "${ROWS[@]}"; do
+    _split_row "$row"
+    _eval_row "$cmd"
+    _accumulate_row
+  done
+  ROWS_ACTUAL=${#ROWS[@]}
+
+elif [ "$MODE" = shard ]; then
+  # Written to a temp file beside PATH and renamed at the end, so a killed shard
+  # leaves no file at PATH rather than a truncated one. (A leftover temp file in the
+  # aggregate dir fails closed there: its ids duplicate the rerun's.)
+  _shard_tmp="$SHARD_OUT.partial.$$"
+  : > "$_shard_tmp" || { echo "FATAL: cannot write shard output $_shard_tmp" >&2; exit 1; }
+  _shard_k=0; _shard_n=0
+  for row in "${ROWS[@]}"; do
+    if [ $((_shard_k % SHARD_N)) -eq $((SHARD_I - 1)) ]; then
+      _split_row "$row"
+      _eval_row "$cmd"
+      _accumulate_row
+      printf '%s\n' "$_shard_k$US$id$US$exp$US$p$US$j$US$l$US$a$US$_fpv$US$_rf" >> "$_shard_tmp" \
+        || { echo "FATAL: write to $_shard_tmp failed at row $_shard_k" >&2; rm -f "$_shard_tmp"; exit 1; }
+      _shard_n=$((_shard_n + 1))
+    fi
+    _shard_k=$((_shard_k + 1))
+  done
+  mv -f "$_shard_tmp" "$SHARD_OUT" || { echo "FATAL: cannot move shard output to $SHARD_OUT" >&2; exit 1; }
+  echo ""
+  echo "shard $SHARD_I/$SHARD_N: evaluated $_shard_n of ${#ROWS[@]} rows -> $SHARD_OUT (no pins in shard mode; run --aggregate over every shard's file)"
+  exit 0
+
+else  # aggregate
+  NROWS=${#ROWS[@]}
+  AGG_FILES=0; AGG_RECS=0; AGG_BAD=0; AGG_BAD_MSGS=""; AGG_DUP_IDX=""; REC_IDS=""
+  REC_SEEN=(); R_P=(); R_J=(); R_L=(); R_A=(); R_FP=(); R_RF=()
+  shopt -s nullglob
+  _agg_files=("$AGG_DIR"/* "$AGG_DIR"/.[!.]* "$AGG_DIR"/..?*)
+  shopt -u nullglob
+  _agg_bad() { AGG_BAD=$((AGG_BAD + 1)); [ "$AGG_BAD" -le 20 ] && AGG_BAD_MSGS="$AGG_BAD_MSGS    $1"$'\n'; }
+  if [ "${#_agg_files[@]}" -gt 0 ]; then
+    for f in "${_agg_files[@]}"; do
+      [ -f "$f" ] || continue
+      AGG_FILES=$((AGG_FILES + 1))
+      # `|| [ -n "$k" ]` keeps a final line that lacks its newline.
+      while IFS="$US" read -r k rid rexp rp rj rl ra rfp rrf || [ -n "$k" ]; do
+        AGG_RECS=$((AGG_RECS + 1))
+        REC_IDS="$REC_IDS$rid"$'\n'
+        case "$k" in ''|*[!0-9]*) _agg_bad "$f: record $AGG_RECS has a non-numeric index '$k'"; continue ;; esac
+        k=$((10#$k))
+        if [ "$k" -ge "$NROWS" ]; then _agg_bad "$f: index $k is out of range (rows=$NROWS)"; continue; fi
+        _split_row "${ROWS[$k]}"
+        if [ "$rid" != "$id" ] || [ "$rexp" != "$exp" ]; then
+          _agg_bad "$f: index $k is '$rid' want $rexp, but this script's row $k is '$id' want $exp -- a shard from a different corpus revision"
+          continue
+        fi
+        for _v in "$rp" "$rj" "$rl" "$ra"; do
+          case "$_v" in ALLOW|DENY) ;; *) _agg_bad "$f: $rid has verdict '$_v'"; continue 2 ;; esac
+        done
+        if [ "$rp" = DENY ]; then
+          { [ -n "$rfp" ] && [ -n "$rrf" ]; } || { _agg_bad "$f: $rid is a precise DENY with no fingerprint/reason"; continue; }
+        else
+          { [ -z "$rfp" ] && [ -z "$rrf" ]; } || { _agg_bad "$f: $rid is a precise ALLOW carrying a reason"; continue; }
+        fi
+        if [ -n "${REC_SEEN[$k]:-}" ]; then AGG_DUP_IDX="$AGG_DUP_IDX    $rid ($f)"$'\n'; continue; fi
+        REC_SEEN[$k]=1
+        R_P[$k]=$rp; R_J[$k]=$rj; R_L[$k]=$rl; R_A[$k]=$ra; R_FP[$k]=$rfp; R_RF[$k]=$rrf
+      done < "$f"
+    done
+  fi
+
+  # The canonical id set comes from the REBUILT ROWS, never from the records.
+  _canon_ids=""
+  for row in "${ROWS[@]}"; do _canon_ids="$_canon_ids${row%% @@ *}"$'\n'; done
+  _rec_sorted=$(printf '%s' "$REC_IDS" | grep -v '^$' | LC_ALL=C sort -u)
+  _canon_sorted=$(printf '%s' "$_canon_ids" | LC_ALL=C sort -u)
+  AGG_DISTINCT=$(grep -c . <<< "$_rec_sorted")
+  AGG_MISSING=$(LC_ALL=C comm -23 <(printf '%s\n' "$_canon_sorted") <(printf '%s\n' "$_rec_sorted") | grep -v '^$')
+  AGG_UNEXPECTED=$(LC_ALL=C comm -13 <(printf '%s\n' "$_canon_sorted") <(printf '%s\n' "$_rec_sorted") | grep -v '^$')
+
+  # The denominator, printed EVERY run -- a clean aggregate means nothing without it.
+  echo "aggregate: files read=$AGG_FILES  records read=$AGG_RECS  distinct ids=$AGG_DISTINCT  rebuilt rows=$NROWS  (dir: $AGG_DIR)"
+  AGG_FAIL=0
+  if [ "$AGG_FILES" -eq 0 ]; then
+    echo "FAIL: aggregate: no regular files under $AGG_DIR -- there is nothing to aggregate"; AGG_FAIL=1
+  fi
+  if [ "$AGG_BAD" -gt 0 ]; then
+    echo "FAIL: aggregate: $AGG_BAD malformed or mismatched record(s) (first 20):"; printf '%s' "$AGG_BAD_MSGS"; AGG_FAIL=1
+  fi
+  if [ -n "$AGG_DUP_IDX" ]; then
+    echo "FAIL: aggregate: rows recorded MORE THAN ONCE (a duplicated or overlapping shard file):"; printf '%s' "$AGG_DUP_IDX"; AGG_FAIL=1
+  fi
+  if [ "$AGG_RECS" -ne "$AGG_DISTINCT" ]; then
+    echo "FAIL: aggregate: $AGG_RECS records but $AGG_DISTINCT distinct ids -- every row must be recorded exactly once"; AGG_FAIL=1
+  fi
+  if [ -n "$AGG_MISSING" ]; then
+    echo "FAIL: aggregate: $(grep -c . <<< "$AGG_MISSING") row id(s) in the corpus but in NO shard record (a dropped slice reads as green without this):"
+    sed 's/^/    -/' <<< "$AGG_MISSING"; AGG_FAIL=1
+  fi
+  if [ -n "$AGG_UNEXPECTED" ]; then
+    echo "FAIL: aggregate: $(grep -c . <<< "$AGG_UNEXPECTED") record id(s) that are NOT rows of this corpus:"
+    sed 's/^/    +/' <<< "$AGG_UNEXPECTED"; AGG_FAIL=1
+  fi
+  [ "$AGG_FAIL" -eq 0 ] || exit 1
+
+  # Fold the records into the union state in CANONICAL row order, so the table
+  # below reads exactly as a full run's does. COMMAND is not in a record, so
+  # CMDS holds empty strings; only the print-only degraded-reason section reads it.
+  _table_header
+  _k=0
+  while [ "$_k" -lt "$NROWS" ]; do
+    _split_row "${ROWS[$_k]}"; cmd=
+    p=${R_P[$_k]}; j=${R_J[$_k]}; l=${R_L[$_k]}; a=${R_A[$_k]}
+    _rf=${R_RF[$_k]}; _fpv=${R_FP[$_k]}
+    _accumulate_row
+    _k=$((_k + 1))
+  done
+  # The `rows` pin reads the RECORD count, never ${#ROWS[@]}: the rebuilt array
+  # is the same size whether or not any shard ran.
+  ROWS_ACTUAL=$AGG_RECS
+fi
 
 echo ""
-echo "rows=${#ROWS[@]}  precise-path gaps=$GAPS  all-path gaps=$ALLGAPS"
+echo "rows=$ROWS_ACTUAL  precise-path gaps=$GAPS  all-path gaps=$ALLGAPS"
 echo ""
 echo "=== precise-clean, degraded-dirty (hidden from precise-path gaps; invisible in a summary count) ==="
 HIDDEN=0
@@ -1665,13 +2632,18 @@ for i in "${!IDS[@]}"; do
     printf '%-18s : want %-5s  precise=%-5s nojq=%-5s nolib=%-5s noawk=%-5s\n' "$id" "$exp" "$p" "$j" "$l" "$a"
     # attribution on the degraded columns too -- a DENY there is no more
     # evidence the intended check fired than a DENY on precise is.
+    # Needs COMMAND and re-invokes the guard, so a full run only: an aggregate's
+    # records carry no command (see the note printed after this section).
+    if [ "$MODE" = full ]; then
     [ "$j" = DENY ] && printf '%-18s   nojq  reason: %s\n'  '' "$(reason nojq "$cmd")"
     [ "$l" = DENY ] && printf '%-18s   nolib reason: %s\n'  '' "$(reason nolib "$cmd")"
     [ "$a" = DENY ] && printf '%-18s   noawk reason: %s\n'  '' "$(reason noawk "$cmd")"
+    fi
     HIDDEN=$((HIDDEN+1))
   fi
 done
 [ "$HIDDEN" -eq 0 ] && echo "(none)"
+[ "$MODE" = aggregate ] && echo "(aggregate mode: degraded-path deny REASONS are omitted -- unpinned, and they need the command text a shard record does not carry; the unsharded nightly run prints them)"
 echo ""
 echo "=== deny-reason attribution (which check actually fired) ==="
 # Printed from what the main loop captured. Same lines, same order, 448 fewer
@@ -2113,18 +3085,138 @@ fi
 # All three manifests below were REGENERATED FROM THE RUN, not hand-merged. Hand-merging
 # them is how an earlier resolution in this same file silently dropped flagvcasearm-*
 # and produced a 21-member pin that still looked plausible.
-EXPECTED_ROWS=876
+# BUMPED 2026-09-16
+# (todos/archive/P1-2026-09-13-launcher-family-and-absolute-path-defeat-the-outward-cli-guard.md):
+# 876 -> 1105, +229. GENERATED, not hand-listed: 208 from the launcher-form
+# (13, incl. the launcher-free baseline) x path-form (4, incl. the path-free
+# baseline) x binary+verb target (4) grid -- LP_ROWS_GENERATED is asserted
+# == 208 before this pin is even reached, so a short-iterating generator
+# fails loudly rather than silently shrinking this count -- + 5
+# package-spelling (eas-cli/@railway/cli) rows + 7 false-positive-sweep rows
+# + 3 gh-family rows + 6 DENY-SITE COVERAGE rows for launcher-only checks
+# the main grid's four shared targets do not reach (search the DENY-SITE
+# COVERAGE axis comment above for the list). 208+5+7+3+6 = 229. MEASURED,
+# NOT COMPUTED: the run on this tree reported `rows=1105`.
+#
+# BUMPED 2026-09-16 (same todo, round-2 security review, two review passes):
+# 1105 -> 1180, +75. GENERATED, not hand-listed, each with its own
+# short-iteration FATAL guard: 24 ambiguous-launcher-flag rows (3 launcher
+# forms x 8 flag-forms), 10 package-directory-path rows (2 packages x 4
+# interpreter forms, incl. 2 explicit read-only-verb ALLOW controls), 24
+# launcher-flag-run-generalization rows (12 launcher forms x 2 flag shapes).
+# Explicit (DENY-SITE COVERAGE style, not generated): 11 version-pin rows
+# (one per modified grep clause, incl. the gh clause added in the second
+# review pass), 1 flag-run gh-family scenario, 1 flag-run false-positive
+# control, 1 documented-residual control, 2 fast-path-needle-gap rows, 1
+# GAP-1 --package/-p discriminating row. 24+10+24+11+1+1+1+2+1 = 75.
+# MEASURED, NOT COMPUTED: the run on this tree reported `rows=1180`.
+# 1180 -> 1510 (2026-09-16): +330 from the composition-order dimension added to the
+# launcher/path grid (path-before-launcher and path-on-both-sides) plus the npm x
+# launcher. Regenerated from the run that measured them, never hand-computed.
+# 1775 -> 1839 (2026-09-17, MERGE with origin/main @ #982/#983): +64, none of them written by this branch. Both sides of the merge added
+# rows to this generator and each bumped only its OWN pin, so the merged pin was low by
+# exactly the other side's delta. Measured on the merged tree and reconciled against the
+# common ancestor af0e27b2 (876 rows; this branch +899, main +64): this branch's delta and main's delta are strictly
+# ADDITIVE here, which is the evidence that the two efforts compose rather than overlap --
+# had they double-counted or cancelled, the sum would not land on the measurement.
+# 1678 -> 1775 (2026-09-17, round 9): +97 -- 96 from the INTERIOR-FLAG axis (8 launcher forms x
+# 4 flag forms, the empty spelling being the dimension's own control, x (2 deny sinks + 1
+# over-denial control)) plus 1 row pinning the round-7 value-slot accuracy cost. The axis has
+# its own short-iteration FATAL guard asserting the 96.
+# The dimension nobody had varied is the FLAG'S POSITION RELATIVE TO THE LAUNCHER'S OWN
+# WORDS. Round 2 varied the flag AFTER the complete launcher phrase; round 7 varied flags on
+# a WRAPPER word. Neither could express a flag INSIDE a two-word launcher, so the single row
+# that did cover this slot (lp-lflag-residual-interior) sat pinned ALLOW for seven rounds and
+# read as intentional rather than as the measured bypass it was. Three axes in a row have now
+# been found this way: the grid can only disagree with you about shapes it can spell.
+# 1639 -> 1678 (2026-09-16, round 7): +39 from the WRAPPER-FLAG axis -- 6 wrapper forms
+# (the bare spelling as the dimension's own control, plus five flagged spellings) x (4 deny
+# targets + 2 over-denial controls) = 36, plus 3 decoy rows, with its own short-iteration
+# FATAL guard asserting the 39. No row in this file previously varied a wrapper word's
+# FLAGS -- only its PATH qualification -- so neither the round-5 prefix dimension nor the
+# round-6 command-qualifier axis could have moved a pin for the nine bypasses round 7 found.
+# That is the same blindness one dimension over, for the third round running: the axis a
+# round adds is chosen from the shapes that round happened to think of, and the next sibling
+# is composed from the same pieces varied along an axis nobody enumerated.
+# 1614 -> 1639 (2026-09-16, round 6): +25. The COMMAND-QUALIFIER axis contributes 17 (5
+# qualifier forms x 2 narrow-deny targets, 3 ambiguous-flag path forms, 4 decoy rows), and the
+# sanctioned automerge joining PFX_ALLOWS contributes 8 (one per prefix form). The round-5
+# prefix dimension path-qualified the wrapper/privilege WORD only, so none of the six bypasses
+# round 6 found could have moved a pin here -- the same blindness one dimension over.
+# 1510 -> 1614 (2026-09-16, round 5): +104 from the COMMAND-POSITION PREFIX dimension
+# (8 prefix forms x 10 deny payloads = 80, plus 24 over-denial controls = 104), composed
+# against the anchor FAMILY rather than the launcher grid. Its own short-iteration FATAL
+# guard asserts the 104. Why it exists: round 4's wrapper fix closed four reachable bypasses
+# and moved NOT ONE pin in this file, because no row put a wrapper word in command
+# position -- the unchanged pins read as confirmation and were blindness. Round 5's
+# review then found seven more anchors still bypassed, six of them at gh /
+# expansion-token / brace-range checks the launcher grid never reaches.
+# 1839 -> 1967 (2026-09-17): +128 launcher-CHAIN rows. See that axis for why its cardinality is
+# deliberately small and why the `lnchr` form is a control rather than padding.
+# 1967 -> 2031 (2026-09-17, round 2): +64, the two yarn workspace-scope chain forms the round-1
+# security review found ALLOW. RUNTIME IS THE BINDING CONSTRAINT HERE, not row count. The
+# 1967-row revision was KILLED at the corpus job's `timeout-minutes: 20`, which GitHub reports
+# as `cancelled`, NOT `failure` -- a required check died and nothing in the PR's output said so.
+# The cap is 30 as of the same change. Do NOT derive a CI-to-local ratio from that killed job's
+# 20m16s: that is when it was stopped, not when it would have finished, and an earlier revision
+# of this note did exactly that. Completed measurements at 2031 rows: 17m25s in CI, 15m53s and
+# 17m31s locally -- a BIGGER corpus finished faster in CI than the smaller one managed before
+# being killed, so runner variance dominates the row-count effect. Before adding an axis,
+# measure a COMPLETED CI run.
+# 2031 -> 2095 (2026-09-18, round 3): +64, the repeated workspace hop (`wsscope2`) and yarn's
+# `run` step (`yarnrun`) -- two chain forms the round-2 review found ALLOW on this branch AND on
+# main. They are generated here rather than pinned by hand because a hand-listed corpus
+# reproduces the blind spot that hid them; that is now three reviews running in which this axis
+# existed and simply had no row for the form. Runtime, which is the constraint this note cares
+# about: the 2095-row run completed locally in 16m29s, against 16m03s for the 2031-row run
+# immediately before it on the same box -- so the axis cost ~26s, not minutes. The 30m cap has
+# headroom, but per the paragraph above the CI number is the one that binds; check it.
+# 2095 -> 2127 (2026-09-18, round 3): +32, the `wsrun` chain form -- yarn CLASSIC's
+# `workspaces run <cmd>`, the forwarding spelling berry writes as `workspaces foreach <cmd>`.
+# ALLOW on main and on both earlier revisions of this branch; the third member of this class
+# found by review rather than by the grammar. The scope arm now carries the forwarding PROPERTY
+# (`run`|`foreach` and nothing else, because info/list/focus forward nothing), so a fourth
+# spelling would take a new yarn feature rather than another overlooked row. Runtime at 2127
+# rows: 16m50s locally, against 16m29s at 2095 and 16m03s at 2031 on the same box -- ~21s per
+# axis addition, still far inside the 30m cap, and still the CI number that binds.
+# 2127 -> 2159 (2026-09-18, round 4): +32, the `interp` chain form. A DIFFERENT class from the
+# three scope/launcher members above: running a gated CLI through `node`/`bun`/`deno` reaches the
+# same sink as running it, but the interpreter was admitted only in front of two literal
+# package-directory substrings, and the INSTALLED shim is a symlink into that package whose own
+# path carries no such substring -- so `node /opt/homebrew/bin/eas update` was ALLOW on main and
+# on every earlier revision of this branch. Crossing this chain form with the existing path axis
+# is what generates the shape. Runtime at 2159 rows: 16m46s locally, against 16m50s at 2127,
+# 16m29s at 2095 and 16m03s at 2031 on the same box -- four axis additions have cost ~45s in
+# total, and the 30m cap still has headroom; the CI number remains the one that binds.
+# 2159 -> 2160 (2026-09-18, round 8): +1, the `lp-site-interpexp` DENY-SITE COVERAGE row for the
+# interpreter/expansion co-occurrence check. Added because the run REFUSED the check without it:
+# `_pin_sites` reported "the guard can emit a deny NO corpus row reaches", which is the state in
+# which a future deletion of that check is invisible to every other check in this pin. The row,
+# not the count, is the fix -- the failure text says so explicitly.
+EXPECTED_ROWS=2160
 
 # One line per precise-path DENY, `id : <first 72 chars of the deny reason>`.
-# 761 of the 876 rows deny on the precise path; the other 115 are ALLOW there: 91
-# rows EXPECTED to allow, plus the 24 precise-path gaps. Those 91 span NINETEEN id
+# 787 of the 940 rows deny on the precise path; the other 153 are ALLOW there: 91
+# rows EXPECTED to allow, plus the 62 precise-path gaps. Those 91 span NINETEEN id
 # families -- fp-* (16), ghrootv-* (16), c2-* (9), c1g-* (7), fautodigfp-* (6),
 # sitefp-* (5), vft-* (5), flagadjfp-* (4), apicolfp-* (3), decoyfp-* (3),
 # ghrootfp-* (3), ghrootvfp-* (3), c9-* (2), fautocutsp-* (2), fautogrant-* (2),
 # siterailfp-* (2), plus the singletons co-nested-brace, fautobrace-pre and
 # fautodigctrl-bb. COUNTED, not recalled: select every row whose EXPECTED and
-# PRECISE verdicts are both ALLOW, group on the id prefix. 91 + 24 = 115 and
-# 876 - 761 = 115, so the decomposition closes.
+# PRECISE verdicts are both ALLOW, group on the id prefix. 91 + 62 = 153 and
+# 940 - 787 = 153, so the decomposition closes. The 91 is UNCHANGED by BOTH
+# the 2026-09-16 brace-LIST bump and the 2026-09-17 case-arm-in-bare-paren
+# bump, and that is MEASURED rather than assumed. Brace-LIST: rows +28,
+# deny-attrib +7, precise-gaps +21, and 7 + 21 = 28. Case-arm-in-bare-paren:
+# rows +36, deny-attrib +19, precise-gaps +17, and 19 + 17 = 36. Every added
+# row on both sides landed in the deny-attrib or gap bucket and none entered
+# this one, which is why 91 survives two merges untouched.
+#
+# The 940/787/62/324 values were RE-DERIVED FROM A RUN after merging main,
+# never arithmetic on the two branches' pins. That distinction is load-bearing
+# here: precise-gaps went 24 -> 45 on one side and 24 -> 41 on the other, so no
+# sum, max or average of the two sides is correct, and hand-resolving that
+# conflict would have produced a plausible wrong number.
 #
 # THIS PARAGRAPH WAS ITSELF THE SIXTH STALE COPY, and it went stale in the way this
 # file keeps documenting one level down. It read "646 of the 739 ... 69 ... SIXTEEN
@@ -2227,10 +3319,126 @@ EXPECTED_ROWS=876
 # only the first seven are ALLOW on all four. An earlier revision on the branch
 # said all of them were "ALLOW on all four paths" -- one FORM's property asserted
 # of the whole CLASS, the defect that branch's own solution doc is named after.
-EXPECTED_DENY_ATTRIB_ROWS=761
+# BUMPED 2026-09-16, same todo: 761 -> 980, +219. Every new DENY-expected row
+# (208 grid + 3 package-spelling-deny + 2 gh-family-deny + 6 deny-site-coverage
+# = 219) denies on the precise path with ZERO new precise-path gaps -- see
+# EXPECTED_PRECISE_GAPS below, unchanged at 24. MEASURED: the run reported
+# `deny-reason attribution rows is 980`. The manifest below is the run's own
+# printed attribution section, pasted verbatim, not hand-derived.
+# BUMPED 2026-09-16, same todo, round-2 security review (both passes): 980 ->
+# 1051, +71. 71 of the 75 new rows (see EXPECTED_ROWS above) deny on the
+# precise path -- the 4 that don't are the 4 new ALLOW controls (2
+# read-only-verb pkgdir controls, 1 flag-run false-positive control, 1
+# documented-residual control). ZERO new precise-path gaps -- EXPECTED_PRECISE_GAPS
+# stays unchanged at 24 (verified: no membership drift either, not just the
+# count). Also several PRE-EXISTING precise-path DENY rows (`r1`/`r2`-shaped:
+# a launcher combined with --package/-p landing directly on a literal gated
+# binary name, e.g. `npx --package=eas-cli -- eas update`) now attribute to a
+# DIFFERENT check than before this round -- the round-2 `_OUT_LAUNCHER`
+# flag-run widening lets the earlier, more general per-binary check
+# (`_OUT_POS_PREFIX_LP` + literal binary name) match these rows directly, and
+# `deny()` exits on the first match, which is textually earlier in the file
+# than GAP-1's own check. This is a verdict-preserving REROUTE (the row still
+# denies), not a new gap -- the same class test-guard-outward-cli.sh's own
+# `lp-af-*`-adjacent assertions were corrected for (see that file's "via
+# check #1, redundant launcher-axis coverage" comment) -- captured here
+# because the attribution list is exactly what exists to surface a reroute
+# like this. MEASURED: the run reported `deny-reason attribution rows is
+# 1051`. The manifest below is the run's own printed attribution section,
+# pasted verbatim, not hand-derived.
+# 1051 -> 1381 (2026-09-16): every one of the 330 new rows denies and is attributed,
+# so the attribution total moves by exactly the row delta. precise-path gaps stayed
+# at 24 across the same run -- and that 24 now MEANS something, because the grid can
+# finally express a path-qualified launcher. It could not before, which is why the
+# previous unchanged 24 was true and vacuous.
+# 1725 -> 1789 (2026-09-17, round 2): +64, the two yarn workspace-scope chain forms, every one
+# of which denies -- 32 `wsscope` and 32 `wsforeach` ids, ZERO removals, and no id in both
+# lists. The round-1 security review measured those shapes reaching the OTA sink on main AND on
+# this branch's first revision, so this is a gap the axis could express and simply had no row
+# for; the fix is _OUT_WS_SCOPE in the guard, not a new corpus dimension. Gap pins re-derived
+# from the same run and unchanged AGAIN at 62 / 358, with no membership drift in either
+# manifest. The manifest below is the run's own printed attribution section, pasted verbatim.
+# 1597 -> 1725 (2026-09-17): +128, the launcher-CHAIN axis in full -- every one of its rows
+# denies, so the attribution total moves by exactly the row delta and EXPECTED_ROWS moves by the
+# same 128. There are no over-denial controls in this axis to open a gap between the two numbers;
+# its control is the `lnchr` chain FORM, whose 16 `noint` rows deny on the pre-fix tree as well,
+# so they are part of the +128 without being evidence of anything the chain closed. The run
+# printed 128 additions and ZERO removals, and no id appeared in both lists -- so nothing closed,
+# and no pre-existing row kept its verdict while rerouting to a different check. That second
+# reading is the one this manifest exists to separate from a bare moving total, and it is the
+# specific risk of widening a command-position anchor: a wider _OUT_POS_PREFIX_LP could have
+# swallowed rows previously denied by a later, more specific check without moving any verdict.
+# The other two pins were RE-DERIVED from the same run rather than assumed: precise-path gaps
+# held at 62 and all-path gaps at 358, both with zero membership drift -- the 128 new rows deny
+# on the precise path AND on all three degraded paths, so they add no gap on any of them.
+# The manifest below is the run's own printed attribution section, pasted verbatim, not
+# hand-derived.
+# 1571 -> 1597 (2026-09-17, MERGE with origin/main): +26, all from main's brace-LIST rows.
+# The attribution MANIFEST was rebuilt wholesale from the merged run's own printed section
+# rather than merged textually: resolving that conflict by UNION produced a deliberate
+# SUPERSET (every id either side had ever pinned), which the run then trimmed to the 1597
+# it actually produces. A union is the safe direction to resolve a manifest conflict in --
+# it can only over-list, and over-listing fails loudly as 'in the pin, not produced by this
+# run', whereas under-listing would silently stop asserting a row.
+# 1505 -> 1571 (2026-09-17, round 9): +66, DERIVED and then confirmed against the run -- 8 launcher
+# forms x 4 flag forms x 2 deny sinks = 64 from the new axis, plus the value-slot row, plus
+# ONE row that was already here: lp-lflag-residual-interior flipped ALLOW -> DENY, so it joins
+# the attribution list without changing the row count. The other 32 new rows (8 x 4 ungated
+# payloads) are over-denial controls and are never attributed, which is why this moves by 66
+# while EXPECTED_ROWS moves by 97.
+# 1478 -> 1505 (2026-09-16, round 7): +27 of the 39 new rows, DERIVED from the dimension and
+# confirmed against the run: 6 wrapper forms x 4 deny targets = 24, plus the 3 decoy rows.
+# The other 12 (6 forms x 2 ungated payloads) are over-denial controls that must keep
+# ALLOWing, so they are never attributed -- which is why this moves by 27 while
+# EXPECTED_ROWS moves by 39. The run printed 27 additions and ZERO removals: nothing closed,
+# and no row kept its verdict while rerouting to a different check. That second reading is
+# the one the per-ID lists exist to separate from a bare moving total.
+# 1461 -> 1478 (2026-09-16, round 6): +17, exactly the command-qualifier axis -- every one of
+# its rows denies. The 8 automerge rows added in the same round are ALLOW controls, so they are
+# not attributed, which is why this moves by 17 while EXPECTED_ROWS moves by 25.
+# 1381 -> 1461 (2026-09-16, round 5): +80, NOT the full +104 row delta -- 24 of the new
+# prefix rows are over-denial controls that must keep ALLOWing (ungated work behind the
+# same prefixes), so only the 80 deny payloads are attributed. The gap between 104 and 80
+# is the point: a prefix axis that denied all 104 would be over-denial, which is the
+# failure that gets a guard switched off rather than fixed.
+# precise-path gaps held at 24 and all-path gaps at 306 across this change, with ZERO
+# membership drift in either manifest -- the 104 new rows agree on all four paths.
+# 1789 -> 1853 (2026-09-18, round 3): +64, the FULL row delta this time. Unlike rounds 5 and 6
+# above, the two new chain forms carry no ALLOW controls, so every generated row denies and
+# attribution moves exactly with EXPECTED_ROWS. Both gap totals HELD -- precise 62, all-path 358,
+# no membership drift -- which is the load-bearing part: closing the repeated-hop and yarn-run
+# classes opened no new residual on any of the four path forms. The over-denial controls for
+# these two forms live in test-guard-outward-cli.sh (npm/pnpm `run` must stay ALLOW, and an
+# ungated sink behind two hops must still run), because they are ALLOW rows and this axis
+# generates DENY payloads only.
+# 1853 -> 1885 (2026-09-18, round 3): +32, again the FULL row delta -- every `wsrun` row denies
+# and none is an ALLOW control, so attribution moves exactly with EXPECTED_ROWS for the second
+# consecutive bump. Both gap totals HELD again at 62 precise / 358 all-path with no membership
+# drift, so closing the third spelling opened no residual on any path form. Its over-denial
+# controls (`yarn workspaces run build`, `workspaces list`, `workspaces info` -- the
+# non-forwarding subcommands) are ALLOW rows and so live in test-guard-outward-cli.sh, since
+# this axis generates DENY payloads only.
+# 1885 -> 1917 (2026-09-18, round 4): +32, the full row delta for the THIRD consecutive bump --
+# every `interp` row denies and none is an ALLOW control, so attribution moves exactly with
+# EXPECTED_ROWS again. Both gap totals HELD at 62 precise / 358 all-path with no membership
+# drift, so closing the interpreter class opened no residual on any path form. Its over-denial
+# controls (`node <path>/tsc`, `node scripts/seed.js`, `node --version` -- an interpreter in
+# front of an UNGATED terminal name) are ALLOW rows and so live in test-guard-outward-cli.sh,
+# since this axis generates DENY payloads only.
+# 1917 -> 1918 (2026-09-18, round 8): +1, the same coverage row; it denies on the precise path
+# and is attributed to the new check.
+# 1918 -> 1921 (2026-09-18, MERGE of main into batch-d): +3, the same three rows, now attributing to
+# the new implicit-POST deny. 3 added, 0 removed, and NO id in both lists -- so nothing closed
+# and no pre-existing row kept its verdict while rerouting to a different check. The manifest
+# below is the run's own printed attribution section, pasted verbatim.
+# THE `1789 -> 1792` THIS BRANCH ORIGINALLY WROTE WAS AGAINST ITS OWN PRE-#993 BASE. Main
+# carried the pin to 1918 over rounds 3/4/8; the +3 is orthogonal to those rounds (different
+# rows, different check), so it re-applies additively. MEASURED on the merged tree, not derived.
+EXPECTED_DENY_ATTRIB_ROWS=1921
 
-# 7 + 17 = 24. This is the SAME decomposition as the "FULL ATTRIBUTION of the
-# remaining precise-path gaps" note further down, and the two must stay equal:
+# 7 + 17 + 21 + 17 = 62. This is the SAME decomposition as the "FULL ATTRIBUTION of
+# the remaining precise-path gaps" note further down, and the two must stay
+# equal:
 #   7   r4brange-tool-* (7) -- brace range glued to the BINARY name itself,
 #       no sigil. CLOSED 2026-09-14 for the sibling r4brange-verb-* (7, the
 #       range glued to the VERB instead) -- see guard-outward-cli.sh's
@@ -2242,11 +3450,30 @@ EXPECTED_DENY_ATTRIB_ROWS=761
 #       forbids widening the fast path's sigil class to reach it).
 #   17  toolvcasearm-* (7) + verbvcasearm-* (7) + flagvcasearm-* (3 of 4)
 #       -- `case` arm `)` with no matching opener.
-# Both buckets are DELIBERATE, documented residuals with open todos, not
+#   21  r4brlist-tool-* (7) + r4brlist-nested-* (7) + r4brlist-nested-list-*
+#       (7) -- brace LIST glued to the BINARY name, and any brace construct
+#       (range OR list) nested inside a list alternative. Added 2026-09-16.
+#       TOOL-position stays open for the same fast-path reason as its RANGE
+#       sibling above; the nested forms stay open because
+#       `_OUT_BR_LIST_TOKEN`'s item class excludes `{`/`}`, so a nested span
+#       does not match the outer list token at all. See guard-outward-cli.sh's
+#       DOCUMENTED RESIDUALS entry (search "BRACE LIST expansion") for the
+#       full per-position bound.
+#   17  toolvcaseparen-* (7) + verbvcaseparen-* (7) + flagvcaseparen-* (3 of 4)
+#       -- a `case` arm nested inside a BARE-PAREN subshell steals the scanner's
+#       paren credit, so `parens[d]==0 && casedepth[d]==0` both spuriously hold
+#       and the outer `$(...)` closes one paren early. Added 2026-09-17.
+#       MEASUREMENT-ONLY by design: this todo's Scope Contract forbade a new
+#       scanner, and closing it needs `casedepth` tracking to survive a
+#       bare-paren subshell boundary -- a change to how `parens[d]` and
+#       `casedepth` interact, which must keep the blind pass case-blind so the
+#       union is preserved. See guard-outward-cli.sh's DOCUMENTED RESIDUALS
+#       entry for the model-B construction bound.
+# All four buckets are DELIBERATE, documented residuals with open todos, not
 # failures. Pinning 0 here would make this gate permanently red, and a
 # permanently red gate gets disabled -- which is how the corpus ended up
 # unguarded in the first place.
-EXPECTED_PRECISE_GAPS=24
+EXPECTED_PRECISE_GAPS=62
 
 # PRE-EXISTING STALENESS, found incidentally while bumping this pin for the
 # brace-range fix (2026-09-14) and left AS FOUND rather than silently
@@ -2293,12 +3520,91 @@ EXPECTED_PRECISE_GAPS=24
 # Attributing a gap to the narrowest mechanism you just touched is how this file
 # keeps producing residual lists that read as complete. Measure the sibling
 # shape before you name the cause.
-EXPECTED_ALLPATH_GAPS=279
+# BUMPED 2026-09-16, same todo: 279 -> 285, +6. The fix lives entirely on the
+# PRECISE path (see guard-outward-cli.sh's launcher/path-axis header comment
+# for why it is a separate, additive layer rather than a widening of the
+# degraded-path fallbacks too) -- most of the 219 new DENY rows already agree
+# with the degraded crude-smell fallback by coincidence (the dangerous
+# substrings are still present in the text, just not in strict command
+# position), so only 6 rows newly disagree: 3 false-positive ALLOW rows the
+# crude fallback over-denies (a launcher/path phrase inside ordinary prose)
+# and 3 package-spelling DENY rows the crude fallback under-denies (it has no
+# notion of "eas-cli"/"@railway/cli" as gated words). MEASURED: the run
+# reported `all-path gaps is 285`. The manifest below is the prior 279-line
+# pin plus these 6, LC_ALL=C sorted -- not hand-merged.
+# BUMPED 2026-09-16, same todo, round-2 security review (both passes): 285 ->
+# 306, +21. All 21 of the round-2 additions' new checks live on the PRECISE
+# path only (same reasoning as the +6 bump above), so every new row that
+# denies via a NEW round-2 check (lp-fpneedle-*, lp-gap1-discriminating,
+# lp-pd-*, lp-verpin-*) newly disagrees with the degraded crude-smell
+# fallback -- 20 precise-DENY rows the fallback under-denies (no notion of
+# --package/-c/-p, a version-pin suffix, or a package-directory path
+# segment), plus 1 precise-ALLOW row (lp-lflag-residual-interior) the
+# fallback over-denies the OTHER direction (p=ALLOW j=DENY l=DENY a=DENY --
+# the degraded crude-smell test still recognizes "npm"/"exec"/"eas"/"update"
+# as substrings regardless of the interior flag this precise check
+# deliberately leaves unwidened, so it denies where the precise path,
+# correctly, does not). The 24 ambiguous-flag (lp-af-*) and 24
+# flag-run-generalization (lp-lflag-*, minus the residual row above) rows do
+# NOT newly disagree -- their DENY reasons still contain enough of the
+# original gated-word text for the crude fallback to already catch them by
+# coincidence, the same "most new DENY rows already agree by coincidence"
+# pattern the +6 bump above describes. MEASURED: the run reported `all-path
+# gaps is 306`. The manifest below is the prior 285-line pin plus these 21,
+# LC_ALL=C sorted -- not hand-merged.
+# 313 -> 358 (2026-09-17, MERGE with origin/main): +45, all from main's brace-LIST rows,
+# whose degraded (nojq/nolib/noawk) fallbacks cannot evaluate a brace list and so disagree
+# with the precise path exactly as the launcher rows already do. Not a new class of gap.
+# 314 -> 313 (2026-09-17, round 9): -1, a manifest LEAVING rather than joining, which is rare
+# enough here to name. lp-lflag-residual-interior measured p=ALLOW j=DENY l=DENY a=DENY: the
+# precise path allowed the interior-flag bypass while the three degraded fallbacks denied it
+# by the crude text match they use instead. Closing the bypass makes the precise path agree
+# with them, so the row denies on all four paths and drops out of the dirty manifest. A
+# degraded-path DISAGREEMENT that disappears because the precise path got STRICTER is the
+# healthy direction; the same count moving because the degraded paths got looser would not be,
+# and only the per-path tuple tells the two apart.
+# 314 -> 314 (2026-09-16, round 7): +0, and the ZERO is the informative part. All 39
+# wrapper-flag rows agree on all four paths (p=/j=/l=/a=), so none joined the degraded-path
+# manifest: the flag absorption happens in _OUT_POS_PREFIX_W, which every path shares, rather
+# than in a jq- or awk-dependent branch that only the precise path can evaluate. Verified as
+# ZERO MEMBERSHIP DRIFT in the run, not merely as an unchanged total -- an unchanged count
+# can hide an equal number of rows joining and leaving, which is the failure the per-ID
+# lists were added to catch.
+# 306 -> 314 (2026-09-16, round 6): +8, and every one is a `pfxok-*-automerge` row measuring
+# p=ALLOW j=DENY l=DENY a=DENY. The precise path honours the --auto carve-out; the degraded
+# (nojq/nolib/noawk) fallbacks cannot see it and deny. That is the SAME documented degraded-path
+# residual the launcher rows already carry, not a new gap -- verified by reading the 8 added
+# manifest tuples rather than inferring from the count.
+# 358 -> 359 (2026-09-18, round 8): +1, `lp-site-interpexp` at p=DENY j=ALLOW l=ALLOW a=ALLOW.
+# NAMED, not absorbed: the new check is PRECISE-PATH ONLY. On the degraded paths the crude smell
+# test is what fails closed, and it keys on GATED BINARY NAMES -- this command carries none, only
+# `node` and the script name, so the crude test does not recognise it. That is the same root fact
+# as the fastpath needle added in round 7 (the runner word is not a needle; the script name is),
+# and it is a precedented tuple rather than a new weakness class: `lp-verpin-easupd`,
+# `lp-verpin-easupdcolon` and `lp-verpin-easchannel` already sit in this pin with the IDENTICAL
+# four-path shape. Extending the crude smell test to the script name would close it on all four
+# paths, but that test is shared and fail-closed, so it is a change with its own blast radius and
+# its own round -- not something to slip in beside a pin bump.
+# 359 -> 356 (2026-09-18, MERGE of main into batch-d): -3, and a DECREASE here is the unusual
+# direction so it is worth stating why. The three rows are `apicolfp-oneshot`,
+# `c2-fp-methodology` and `c2-fp-backtick`, whose expected verdict moved ALLOW -> DENY because a
+# field parameter with no method flag is a POST (gh api.go:329-330). They read
+# `p=ALLOW j=DENY l=DENY a=DENY` before and DENY on all four paths after: the DEGRADED paths were
+# already denying them, and the precise path now agrees with its own fail-closed mirror, so the
+# rows stop being "dirty" at all. 3 removed, 0 added -- no pre-existing row moved.
+# BOTH MOVES SURVIVE THE MERGE AND THEY POINT OPPOSITE WAYS: main's round-8 +1 added
+# `lp-site-interpexp`; this branch's -3 removed `apicolfp-oneshot`, `c2-fp-methodology` and
+# `c2-fp-backtick`. Disjoint ids, so 359 + 0 - 3 = 356. The MEMBERSHIP pin below is what
+# actually proves that -- a net total could hold while rows swapped.
+EXPECTED_ALLPATH_GAPS=356
 
 EXPECTED_PRECISE_GAP_IDS=$(cat <<'PIN_PRECISE_EOF'
 flagvcasecomment-easbld
 flagvcasecomment-ghapi
 flagvcasecomment-ghcomment
+flagvcaseparen-easbld
+flagvcaseparen-ghapi
+flagvcaseparen-ghcomment
 r4brange-tool-easbld
 r4brange-tool-easupd
 r4brange-tool-ghapi
@@ -2306,6 +3612,27 @@ r4brange-tool-ghcomment
 r4brange-tool-ghmerge
 r4brange-tool-npmpub
 r4brange-tool-railup
+r4brlist-nested-easbld
+r4brlist-nested-easupd
+r4brlist-nested-ghapi
+r4brlist-nested-ghcomment
+r4brlist-nested-ghmerge
+r4brlist-nested-list-easbld
+r4brlist-nested-list-easupd
+r4brlist-nested-list-ghapi
+r4brlist-nested-list-ghcomment
+r4brlist-nested-list-ghmerge
+r4brlist-nested-list-npmpub
+r4brlist-nested-list-railup
+r4brlist-nested-npmpub
+r4brlist-nested-railup
+r4brlist-tool-easbld
+r4brlist-tool-easupd
+r4brlist-tool-ghapi
+r4brlist-tool-ghcomment
+r4brlist-tool-ghmerge
+r4brlist-tool-npmpub
+r4brlist-tool-railup
 toolvcasecomment-easbld
 toolvcasecomment-easupd
 toolvcasecomment-ghapi
@@ -2313,6 +3640,13 @@ toolvcasecomment-ghcomment
 toolvcasecomment-ghmerge
 toolvcasecomment-npmpub
 toolvcasecomment-railup
+toolvcaseparen-easbld
+toolvcaseparen-easupd
+toolvcaseparen-ghapi
+toolvcaseparen-ghcomment
+toolvcaseparen-ghmerge
+toolvcaseparen-npmpub
+toolvcaseparen-railup
 verbvcasecomment-easbld
 verbvcasecomment-easupd
 verbvcasecomment-ghapi
@@ -2320,11 +3654,17 @@ verbvcasecomment-ghcomment
 verbvcasecomment-ghmerge
 verbvcasecomment-npmpub
 verbvcasecomment-railup
+verbvcaseparen-easbld
+verbvcaseparen-easupd
+verbvcaseparen-ghapi
+verbvcaseparen-ghcomment
+verbvcaseparen-ghmerge
+verbvcaseparen-npmpub
+verbvcaseparen-railup
 PIN_PRECISE_EOF
 )
 
 EXPECTED_ALLPATH_DIRTY_IDS=$(cat <<'PIN_ALLPATH_EOF'
-apicolfp-oneshot p=ALLOW j=DENY l=DENY a=DENY
 apicolfp-read p=ALLOW j=DENY l=DENY a=DENY
 c1g-allargs-3dash p=ALLOW j=DENY l=DENY a=DENY
 c1g-arrelem-3dash p=ALLOW j=DENY l=DENY a=DENY
@@ -2334,11 +3674,9 @@ c1g-excl-status p=ALLOW j=DENY l=DENY a=DENY
 c1g-ind-3dash p=ALLOW j=DENY l=DENY a=DENY
 c1g-pos1-3dash p=ALLOW j=DENY l=DENY a=DENY
 c2-dynpath p=ALLOW j=DENY l=DENY a=DENY
-c2-fp-backtick p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-getf p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-header p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-jq p=ALLOW j=DENY l=DENY a=DENY
-c2-fp-methodology p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-paginate p=ALLOW j=DENY l=DENY a=DENY
 c2-fp-user p=ALLOW j=DENY l=DENY a=DENY
 c2-readonly p=ALLOW j=DENY l=DENY a=DENY
@@ -2408,6 +3746,9 @@ flagadjsp-yarncwd p=DENY j=ALLOW l=ALLOW a=ALLOW
 flagvcasecomment-easbld p=ALLOW j=DENY l=DENY a=DENY
 flagvcasecomment-ghapi p=ALLOW j=DENY l=DENY a=DENY
 flagvcasecomment-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+flagvcaseparen-easbld p=ALLOW j=DENY l=DENY a=DENY
+flagvcaseparen-ghapi p=ALLOW j=DENY l=DENY a=DENY
+flagvcaseparen-ghcomment p=ALLOW j=DENY l=DENY a=DENY
 fp-automerge p=ALLOW j=DENY l=DENY a=DENY
 fp-c2-noflag p=ALLOW j=DENY l=DENY a=DENY
 fp-easread p=ALLOW j=DENY l=DENY a=DENY
@@ -2499,8 +3840,42 @@ intrtoolsp-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
 intrtoolsp-railsvc p=DENY j=ALLOW l=ALLOW a=ALLOW
 intrtoolsp-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 intrtoolsp-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-fp-prose p=ALLOW j=DENY l=DENY a=DENY
+lp-fp-quotedpath p=ALLOW j=DENY l=DENY a=DENY
+lp-fpneedle-callnoNeedle p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-fpneedle-pkgnoNeedle p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-gap1-discriminating p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-ghmerge-auto-bare p=ALLOW j=DENY l=DENY a=DENY
+lp-pd-eascli-bun p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-eascli-deno p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-eascli-node p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-eascli-none p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-railwaycli-bun p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-railwaycli-deno p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-railwaycli-node p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pd-railwaycli-none p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pkg-eascli-npmexec p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pkg-eascli-npx p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-pkg-railwaycli-npx p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-easbuild p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-easchannel p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-easupdcolon p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-railsvcdel p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-railvar p=DENY j=ALLOW l=ALLOW a=ALLOW
+lp-verpin-yarnbare p=DENY j=ALLOW l=ALLOW a=ALLOW
 nssufx-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 nssufx-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+pfxok-bare-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-corepack-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-none-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-path-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-priv-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-privflag-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-privpath-automerge p=ALLOW j=DENY l=DENY a=DENY
+pfxok-stacked-automerge p=ALLOW j=DENY l=DENY a=DENY
 r4ansic-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4ansic-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
@@ -2515,6 +3890,27 @@ r4brange-tool-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4brange-tool-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-nested-easbld p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-easupd p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-ghapi p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-easbld p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-easupd p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-ghapi p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-npmpub p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-list-railup p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-npmpub p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-nested-railup p=ALLOW j=DENY l=DENY a=DENY
+r4brlist-tool-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+r4brlist-tool-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 r4dig-tool-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
@@ -2553,6 +3949,13 @@ toolvcasearm-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvcasearm-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvcasearm-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvcasearm-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-ghcomment p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-ghmerge p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-npmpub p=DENY j=ALLOW l=ALLOW a=ALLOW
+toolvcasebrace-railup p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvcasecomment-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvcasecomment-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvcasecomment-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
@@ -2560,6 +3963,13 @@ toolvcasecomment-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvcasecomment-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvcasecomment-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvcasecomment-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-easbld p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-easupd p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-ghapi p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-ghcomment p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-ghmerge p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-npmpub p=ALLOW j=ALLOW l=ALLOW a=ALLOW
+toolvcaseparen-railup p=ALLOW j=ALLOW l=ALLOW a=ALLOW
 toolvdqclose-easbld p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvdqclose-easupd p=DENY j=ALLOW l=ALLOW a=ALLOW
 toolvdqclose-ghapi p=DENY j=ALLOW l=ALLOW a=ALLOW
@@ -2598,11 +4008,19 @@ verbvcasecomment-ghcomment p=ALLOW j=DENY l=DENY a=DENY
 verbvcasecomment-ghmerge p=ALLOW j=DENY l=DENY a=DENY
 verbvcasecomment-npmpub p=ALLOW j=DENY l=DENY a=DENY
 verbvcasecomment-railup p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-easbld p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-easupd p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-ghapi p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-ghcomment p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-ghmerge p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-npmpub p=ALLOW j=DENY l=DENY a=DENY
+verbvcaseparen-railup p=ALLOW j=DENY l=DENY a=DENY
 vft-app p=ALLOW j=DENY l=DENY a=DENY
 vft-bang p=ALLOW j=DENY l=DENY a=DENY
 vft-fd p=ALLOW j=DENY l=DENY a=DENY
 vft-gt p=ALLOW j=DENY l=DENY a=DENY
 vft-in p=ALLOW j=DENY l=DENY a=DENY
+lp-site-interpexp p=DENY j=ALLOW l=ALLOW a=ALLOW
 PIN_ALLPATH_EOF
 )
 
@@ -2621,767 +4039,1927 @@ PIN_ALLPATH_EOF
 # cmd-detect bare-paren fix in dd45ef3e. A heredoc in a plain function body is
 # never scanned that way. Do not "simplify" this back.
 _pin_expected_attrib() { cat <<'PIN_ATTRIB_EOF'
-apicollapse-shortc-amp-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-amp-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-amp-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-bang-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-bang-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-bang-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-brace-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-brace-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-brace-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-btick-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-btick-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-btick-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-paren-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-paren-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-paren-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-pipe-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-pipe-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-pipe-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-psubin-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-psubin-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-psubin-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-psubout-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-psubout-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-psubout-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-semi-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortc-semi-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+lit-easupd         : command-position 'eas update/publish/submit' publishes an OTA update or
+sufx-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+pref-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+vsub-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+vvar-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
+lit-easbld         : command-position 'eas build --auto-submit' submits the finished binary t
+sufx-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+pref-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+vsub-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+vvar-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
+lit-npmpub         : command-position 'npm publish' pushes a package to the registry.
+sufx-npmpub        : command-position 'npm publish' pushes a package to the registry.
+pref-npmpub        : command-position 'npm publish' pushes a package to the registry.
+vsub-npmpub        : command-position 'npm publish' pushes a package to the registry.
+vvar-npmpub        : command-position 'npm publish' pushes a package to the registry.
+lit-railup         : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+sufx-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pref-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+vsub-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+vvar-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+lit-ghmerge        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+sufx-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pref-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vsub-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vvar-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+lit-ghcomment      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+sufx-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pref-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+vsub-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+vvar-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+lit-ghapi          : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+sufx-ghapi         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pref-ghapi         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+vsub-ghapi         : command-position 'gh api' with a method flag (-X/--method) whose value i
+vvar-ghapi         : command-position 'gh api' with a method flag (-X/--method) whose value i
+nssufx-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+nsvsub-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+nsvvar-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+nssufx-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+nsvsub-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+nsvvar-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-Rsep-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghroot-reposep-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghroot-repoeq-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghroot-Rglued-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghroot-Rsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-reposep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-repoeq-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-Rglued-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-Rsep-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-reposep-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-repoeq-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-Rglued-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghroot-Rsep-ghapi  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghroot-reposep-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghroot-repoeq-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghroot-Rglued-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghroot-selfrepo    : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghroot-vs-auto     : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghrootv-subject-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-body-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-authoremail-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-bodyfile-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-matchhead-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-unknownshort-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-unknownlong-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-noarg-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ghrootv-subject-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-body-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-authoremail-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-bodyfile-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-matchhead-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-unknownshort-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-unknownlong-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-noarg-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+ghrootv-subject-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-body-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-authoremail-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-bodyfile-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-matchhead-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-unknownshort-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-unknownlong-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-noarg-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-subject-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-body-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-authoremail-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-bodyfile-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-matchhead-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-unknownshort-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-unknownlong-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-noarg-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+ghrootv-retarget   : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+ghrootv-selfrepo   : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
 apicollapse-shortc-semi-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-amp-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-amp-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-amp-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-bang-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-bang-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-bang-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-brace-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-brace-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-brace-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-btick-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-btick-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-btick-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-paren-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-paren-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-paren-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-pipe-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-pipe-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-pipe-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-psubin-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-psubin-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-psubin-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-psubout-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-psubout-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-psubout-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-semi-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-shortt-semi-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-semi-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-semi-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-amp-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-amp-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-amp-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-pipe-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-pipe-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-pipe-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-paren-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-paren-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-paren-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-brace-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-brace-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-brace-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-bang-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-bang-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-bang-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubin-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubin-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubin-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubout-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubout-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-psubout-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-btick-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-btick-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortc-btick-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
 apicollapse-shortt-semi-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-amp-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-amp-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-amp-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-bang-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-bang-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-bang-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-brace-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-brace-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-brace-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-btick-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-btick-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-btick-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-paren-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-paren-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-paren-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-pipe-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-pipe-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-pipe-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-psubin-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-psubin-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-psubin-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-psubout-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-psubout-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-psubout-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-semi-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
-apicollapse-unknown-semi-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-semi-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-semi-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-amp-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-amp-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-amp-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-pipe-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-pipe-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-pipe-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-paren-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-paren-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-paren-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-brace-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-brace-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-brace-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-bang-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-bang-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-bang-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubin-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubin-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubin-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubout-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubout-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-psubout-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-btick-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-btick-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-shortt-btick-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
 apicollapse-unknown-semi-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
-c1-create-colon    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c1-repo-colon      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c1-repo-lit        : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c1-repo-short      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c1-submit-bare     : command-position 'eas build --auto-submit' submits the finished binary t
-c1-submit-colon    : command-position 'eas build --auto-submit' submits the finished binary t
+apicollapse-unknown-semi-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-semi-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-amp-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-amp-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-amp-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-pipe-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-pipe-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-pipe-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-paren-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-paren-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-paren-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-brace-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-brace-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-brace-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-bang-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-bang-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-bang-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubin-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubin-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubin-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubout-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubout-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-psubout-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-btick-read : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-btick-mut : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicollapse-unknown-btick-method : more than one command-position 'gh api' occurrence — ambiguous, cannot
+apicolfp-oneshot   : command-position 'gh api' with a field parameter (-f/-F/--field/--raw-fi
+intrtoolglue-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+intrtoolsp-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+intrtoolfd-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+intrtoolglue-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+intrtoolsp-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+intrtoolfd-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+intrtoolglue-npmpub : command-position 'npm publish' pushes a package to the registry.
+intrtoolsp-npmpub  : command-position 'npm publish' pushes a package to the registry.
+intrtoolfd-npmpub  : command-position 'npm publish' pushes a package to the registry.
+intrtoolglue-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+intrtoolsp-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+intrtoolfd-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+intrtoolglue-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrnsglue-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrtoolsp-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrnssp-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrtoolfd-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrnsfd-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+intrtoolglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrnsglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrtoolsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrnssp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrtoolfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrnsfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+intrtoolglue-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+intrtoolsp-ghapi   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+intrtoolfd-ghapi   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+intrtoolglue-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsglue-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolsp-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnssp-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolfd-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsfd-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolglue-ghrepo : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsglue-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolsp-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnssp-ghrepo    : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolfd-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrnsfd-ghrepo    : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
+intrtoolglue-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrnsglue-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrtoolsp-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrnssp-railvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrtoolfd-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrnsfd-railvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
+intrtoolglue-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrnsglue-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrtoolsp-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrnssp-railsvc   : command-position 'railway service/environment delete' deletes a live Rai
+intrtoolfd-railsvc : command-position 'railway service/environment delete' deletes a live Rai
+intrnsfd-railsvc   : command-position 'railway service/environment delete' deletes a live Rai
+decoytoolplain-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynsplain-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolglue-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynsglue-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolsp-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynssp-ghmerge  : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolfd-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoynsfd-ghmerge  : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+decoytoolplain-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsplain-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynssp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolplain-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsplain-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolsp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynssp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoytoolfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+decoynsfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjglue-npmlog : command-position 'npm run update:preview/update:production' (and the yar
+flagadjsp-npmlog   : command-position 'npm run update:preview/update:production' (and the yar
+flagadjfd-npmlog   : command-position 'npm run update:preview/update:production' (and the yar
+flagadjglue-yarncwd : command-position 'npm run update:preview/update:production' (and the yar
+flagadjsp-yarncwd  : command-position 'npm run update:preview/update:production' (and the yar
+flagadjfd-yarncwd  : command-position 'npm run update:preview/update:production' (and the yar
+flagadjglue-ghapix : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjsp-ghapix   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjfd-ghapix   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjglue-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjsp-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjfd-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+flagadjglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjsp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagadjctrl-boolean : command-position 'npm run update:preview/update:production' (and the yar
+fautogt-trail      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautogt-lead       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautogt-tool       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautogt-ns         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautofd-trail      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautofd-lead       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautofd-tool       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautofd-ns         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoapp-trail     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoapp-lead      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoapp-tool      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoapp-ns        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoamp-trail     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoamp-lead      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoamp-tool      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoamp-ns        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoampl-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoampl-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoampl-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoampl-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoclob-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoclob-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoclob-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoclob-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautobang-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautobang-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautobang-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautobang-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfd-trail     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfd-lead      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfd-tool      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfd-ns        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfddig-trail  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfddig-lead   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfddig-tool   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautonfddig-ns     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoin-trail      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoin-lead       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoin-tool       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoin-ns         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fauto-cooccur      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoctrl-glued    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautoglue-b        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautosp-b          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautofd-b          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautoglue-bodyfile : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautosp-bodyfile   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautofd-bodyfile   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautoglue-t        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautosp-t          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+mautofd-t          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautojoin-sp       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautojoin-glue     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautojoin-off      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vft-amp            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vft-clob           : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+vft-vmask          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautodig-one       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautodig-multi     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautodig-zero      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautocut-fddup     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautocut-clob      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoog-admin      : command-position 'gh pr merge --admin' uses administrator privileges to
+fautoog-repo       : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+fautoog-sigil      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+fautoog-multi      : more than one command-position 'gh pr merge' occurrence — ambiguous, c
+toolvsub-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvvar-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvbt-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvnest-easupd   : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvdqclose-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvsqclose-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvmixq-easupd   : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvbareparen-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvcasearm-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvcomment-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvarithsep-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvcasebrace-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+toolvsub-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+toolvvar-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+toolvbt-easbld     : command-position 'eas build --auto-submit' submits the finished binary t
+toolvnest-easbld   : command-position 'eas build --auto-submit' submits the finished binary t
+toolvdqclose-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvsqclose-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvmixq-easbld   : command-position 'eas build --auto-submit' submits the finished binary t
+toolvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvcasearm-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvcasebrace-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+toolvsub-npmpub    : command-position 'npm publish' pushes a package to the registry.
+toolvvar-npmpub    : command-position 'npm publish' pushes a package to the registry.
+toolvbt-npmpub     : command-position 'npm publish' pushes a package to the registry.
+toolvnest-npmpub   : command-position 'npm publish' pushes a package to the registry.
+toolvdqclose-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvsqclose-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvmixq-npmpub   : command-position 'npm publish' pushes a package to the registry.
+toolvbareparen-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvcasearm-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvcomment-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvarithsep-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvcasebrace-npmpub : command-position 'npm publish' pushes a package to the registry.
+toolvsub-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvvar-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvbt-railup     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvnest-railup   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvdqclose-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvsqclose-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvmixq-railup   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvbareparen-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvcasearm-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvcomment-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvarithsep-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvcasebrace-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+toolvsub-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvvar-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvbt-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvnest-ghmerge  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvdqclose-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvsqclose-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvmixq-ghmerge  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvbareparen-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvcasearm-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvcomment-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvarithsep-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvcasebrace-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+toolvsub-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvvar-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvbt-ghcomment  : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvnest-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvdqclose-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvsqclose-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvmixq-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvcasearm-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvcasebrace-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+toolvsub-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvvar-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvbt-ghapi      : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvnest-ghapi    : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvdqclose-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvsqclose-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvmixq-ghapi    : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvcasearm-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+toolvcasebrace-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4spec-tool-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4spec-verb-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4dig-tool-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+r4dig-verb-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+r4ansic-tool-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4ansic-verb-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+r4brange-verb-easupd : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brlist-verb-easupd : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4spec-tool-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4spec-verb-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4dig-tool-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+r4dig-verb-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
+r4ansic-tool-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4ansic-verb-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+r4brange-verb-easbld : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brlist-verb-easbld : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4spec-tool-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4spec-verb-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4dig-tool-npmpub  : command-position 'npm publish' pushes a package to the registry.
+r4dig-verb-npmpub  : command-position 'npm publish' pushes a package to the registry.
+r4ansic-tool-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4ansic-verb-npmpub : command-position 'npm publish' pushes a package to the registry.
+r4brange-verb-npmpub : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brlist-verb-npmpub : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4spec-tool-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4spec-verb-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4dig-tool-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4dig-verb-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4ansic-tool-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4ansic-verb-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+r4brange-verb-railup : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brlist-verb-railup : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4spec-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4spec-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4dig-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4dig-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4ansic-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4ansic-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+r4brange-verb-ghmerge : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brlist-verb-ghmerge : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4spec-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4spec-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4dig-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4dig-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4ansic-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4ansic-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+r4brange-verb-ghcomment : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brlist-verb-ghcomment : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4spec-tool-ghapi  : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4spec-verb-ghapi  : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4dig-tool-ghapi   : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4dig-verb-ghapi   : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4ansic-tool-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4ansic-verb-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+r4brange-verb-ghapi : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brlist-verb-ghapi : an outward-facing CLI's verb or binary is glued to a brace LIST ({a,b}),
+r4brange-verb-decoy-after-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easupd-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easupd-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-easbld-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-easbld-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-npmpub-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-npmpub-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-railup-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-railup-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghmerge-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghmerge-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghcomment-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghcomment-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-after-ghapi-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-decoy-before-ghapi-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-after-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+r4brange-verb-genuine-before-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+verbvbareparen-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvcasearm-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvcomment-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvarithsep-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvcasebrace-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+verbvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvcasearm-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvcasebrace-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+verbvbareparen-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvcasearm-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvcomment-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvarithsep-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvcasebrace-npmpub : command-position 'npm publish' pushes a package to the registry.
+verbvbareparen-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvcasearm-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvcomment-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvarithsep-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvcasebrace-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+verbvbareparen-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvcasearm-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvcomment-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvarithsep-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvcasebrace-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+verbvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvcasearm-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvcasebrace-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+verbvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvcasearm-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+verbvcasebrace-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+cap-199-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+cap-200-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+cap-250-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+cap-250-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+trailclose-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+trailclose-ctl     : command-position 'eas update/publish/submit' publishes an OTA update or
+trailclose-ghmrg   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvsub-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+flagvvar-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
+flagvbt-easbld     : command-position 'eas build --auto-submit' submits the finished binary t
+flagvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvcasearm-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvcasebrace-easbld : command-position 'eas build --auto-submit' submits the finished binary t
+flagvsub-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvvar-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvbt-ghcomment  : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvcasearm-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvcasebrace-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+flagvsub-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvvar-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvbt-ghapi      : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvcasearm-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvcasebrace-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
+flagvsub-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvvar-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvbt-ghadmin    : command-position 'gh pr merge --admin' uses administrator privileges to
+flagvbareparen-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcasearm-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcomment-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvarithsep-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcasecomment-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcaseparen-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+flagvcasebrace-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 c1-submit-lit      : command-position 'eas build --auto-submit' submits the finished binary t
+c1-submit-colon    : command-position 'eas build --auto-submit' submits the finished binary t
+c1-submit-bare     : command-position 'eas build --auto-submit' submits the finished binary t
 c1-submit-plus     : command-position 'eas build --auto-submit' submits the finished binary t
+c1-repo-lit        : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1-repo-colon      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1-repo-short      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1-create-colon    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 c1-threedash       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-c1g-allargs-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c1g-allargstar     : command-position 'eas build --auto-submit' submits the finished binary t
-c1g-arrat-lit      : command-position 'eas build --auto-submit' submits the finished binary t
-c1g-arrelem-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c1g-arrstar-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c1g-bangkeys-lit   : command-position 'eas build --auto-submit' submits the finished binary t
-c1g-barebang-lit   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c1g-ind-lit        : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c1g-inddig-lit     : command-position 'eas build --auto-submit' submits the finished binary t
 c1g-pos1-lit       : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
 c1g-pos10-lit      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c2-ansic-hex       : command-position 'gh api' with a method flag (-X/--method) whose value i
-c2-backtick        : command-position 'gh api' with a method flag (-X/--method) whose value i
+c1g-ind-lit        : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-inddig-lit     : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-arrelem-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-arrat-lit      : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-arrstar-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-bangkeys-lit   : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-allargs-lit    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c1g-allargstar     : command-position 'eas build --auto-submit' submits the finished binary t
+c1g-barebang-lit   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c2-lit             : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c2-expand          : command-position 'gh api' with a method flag (-X/--method) whose value i
 c2-dynamic         : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-glued           : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-tension         : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-backtick        : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-fp-methodology  : command-position 'gh api' with a field parameter (-f/-F/--field/--raw-fi
+c2-fp-backtick     : command-position 'gh api' with a field parameter (-f/-F/--field/--raw-fi
+c2-tension-bt      : command-position 'gh api' with a method flag (-X/--method) whose value i
+c2-ansic-hex       : command-position 'gh api' with a method flag (-X/--method) whose value i
+ghapi-redir-trail  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c2-empty-proof-expand : command-position 'gh api' with a method flag (-X/--method) whose value i
 c2-empty-proof-lit : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c2-expand          : command-position 'gh api' with a method flag (-X/--method) whose value i
-c2-glued           : command-position 'gh api' with a method flag (-X/--method) whose value i
-c2-lit             : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c2-tension         : command-position 'gh api' with a method flag (-X/--method) whose value i
-c2-tension-bt      : command-position 'gh api' with a method flag (-X/--method) whose value i
-c9-after-api       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-after-comment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-after-create    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-after-merge     : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-c9-afterapp-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-afterfd-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-afterfd1-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-afterfdapp-api  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-bang-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-bang-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-bangboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-both-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-both-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-bothapp-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-clob-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-clob-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-clob-create     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-clob-merge      : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
 c9-clobapp-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-clobboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-clobbothapp-api : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-clobfd-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-crude-eas       : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-crude-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-c9-dig-eas         : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-dig-easamp      : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-dig-easclob     : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-dig-ghadmin     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-c9-dig-ghapi       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-dig-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-dig-method      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-dig-npm         : command-position 'npm publish' pushes a package to the registry.
-c9-dig-railway     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-c9-dig-railwayvar  : command-position 'railway variable/vars/var set/delete' mutates a live s
+c9-clob-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-clob-create     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-clob-merge      : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
+c9-bang-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-bangboth-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-bang-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-both-api        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-bothapp-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-both-comment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-after-api       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterapp-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfd-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfd1-api    : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-afterfdapp-api  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-after-comment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-after-create    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-after-merge     : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
 c9-nfd-api         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-nfdapp-api      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-nfdboth-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-nfdclob-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-nfdboth-api     : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-ws-eas          : command-position 'eas update/publish/submit' publishes an OTA update or
 c9-ws-easamp       : command-position 'eas update/publish/submit' publishes an OTA update or
 c9-ws-easclob      : command-position 'eas update/publish/submit' publishes an OTA update or
-c9-ws-ghadmin      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-c9-ws-ghapi        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-c9-ws-ghcomment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-c9-ws-method       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
 c9-ws-npm          : command-position 'npm publish' pushes a package to the registry.
 c9-ws-railway      : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
 c9-ws-railwayvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
-cap-199-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-cap-200-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-cap-250-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
-cap-250-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-co-c2-halfA        : command-position 'gh api' with a method flag (-X/--method) whose value i
-co-c2-halfB        : command-position 'gh api' with a method flag (-X/--method) whose value i
-co-c2-predA        : command-position 'gh api' with a method flag (-X/--method) whose value i
-co-c2-predB        : command-position 'gh api' with a method flag (-X/--method) whose value i
-co-c2-toolsplit    : command-position 'gh api' with a method flag (-X/--method) whose value i
-co-c2-toolsub      : command-position 'gh api' with a method flag (-X/--method) whose value i
-co-ind-pref        : command-position 'eas build --auto-submit' submits the finished binary t
-co-mask-c1         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-co-pos-create      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-co-pref-dollar     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-co-pref-multi      : more than one command-position 'gh pr merge' occurrence — ambiguous, c
-co-pref-sufx       : command-position 'eas update/publish/submit' publishes an OTA update or
-co-redir-mask      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-co-sigil-c1        : command-position 'eas build --auto-submit' submits the finished binary t
-co-two-api         : more than one command-position 'gh api' occurrence — ambiguous, cannot
-co-two-api-c2      : more than one command-position 'gh api' occurrence — ambiguous, cannot
-decoynsfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoynsfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoynsfd-ghmerge  : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-decoynsglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoynsglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoynsglue-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-decoynsplain-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoynsplain-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoynsplain-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-decoynssp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoynssp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoynssp-ghmerge  : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-decoytoolfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoytoolfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoytoolfd-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-decoytoolglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoytoolglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoytoolglue-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-decoytoolplain-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoytoolplain-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoytoolplain-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-decoytoolsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoytoolsp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-decoytoolsp-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-fauto-cooccur      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoamp-lead      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoamp-ns        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoamp-tool      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoamp-trail     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoampl-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoampl-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoampl-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoampl-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoapp-lead      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoapp-ns        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoapp-tool      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoapp-trail     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautobang-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautobang-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautobang-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautobang-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoclob-lead     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoclob-ns       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoclob-tool     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoclob-trail    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoctrl-glued    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautocut-clob      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautocut-fddup     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautodig-multi     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautodig-one       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautodig-zero      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautofd-lead       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautofd-ns         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautofd-tool       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautofd-trail      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautogt-lead       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautogt-ns         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautogt-tool       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautogt-trail      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoin-lead       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoin-ns         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoin-tool       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoin-trail      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautojoin-glue     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautojoin-off      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautojoin-sp       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautonfd-lead      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautonfd-ns        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautonfd-tool      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautonfd-trail     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautonfddig-lead   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautonfddig-ns     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautonfddig-tool   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautonfddig-trail  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-fautoog-admin      : command-position 'gh pr merge --admin' uses administrator privileges to
-fautoog-multi      : more than one command-position 'gh pr merge' occurrence — ambiguous, c
-fautoog-repo       : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-fautoog-sigil      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-flagadjctrl-boolean : command-position 'npm run update:preview/update:production' (and the yar
-flagadjfd-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-flagadjfd-ghapix   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-flagadjfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagadjfd-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagadjfd-npmlog   : command-position 'npm run update:preview/update:production' (and the yar
-flagadjfd-yarncwd  : command-position 'npm run update:preview/update:production' (and the yar
-flagadjglue-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-flagadjglue-ghapix : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-flagadjglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagadjglue-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagadjglue-npmlog : command-position 'npm run update:preview/update:production' (and the yar
-flagadjglue-yarncwd : command-position 'npm run update:preview/update:production' (and the yar
-flagadjsp-ghapimeth : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-flagadjsp-ghapix   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-flagadjsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagadjsp-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagadjsp-npmlog   : command-position 'npm run update:preview/update:production' (and the yar
-flagadjsp-yarncwd  : command-position 'npm run update:preview/update:production' (and the yar
-flagvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-flagvarithsep-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-flagvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-flagvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-flagvbareparen-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-flagvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-flagvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagvbt-easbld     : command-position 'eas build --auto-submit' submits the finished binary t
-flagvbt-ghadmin    : command-position 'gh pr merge --admin' uses administrator privileges to
-flagvbt-ghapi      : command-position 'gh api' with a method flag (-X/--method) whose value i
-flagvbt-ghcomment  : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagvcasearm-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-flagvcasearm-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-flagvcasearm-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-flagvcasearm-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagvcasecomment-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-flagvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-flagvcomment-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-flagvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-flagvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagvsub-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
-flagvsub-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-flagvsub-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
-flagvsub-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-flagvvar-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
-flagvvar-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-flagvvar-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
-flagvvar-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghapi-redir-trail  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghroot-Rglued-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghroot-Rglued-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghroot-Rglued-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghroot-Rglued-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-ghroot-Rsep-ghapi  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghroot-Rsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghroot-Rsep-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghroot-Rsep-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-ghroot-repoeq-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghroot-repoeq-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghroot-repoeq-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghroot-repoeq-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-ghroot-reposep-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghroot-reposep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghroot-reposep-ghcreate : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghroot-reposep-ghmerge : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-ghroot-selfrepo    : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-ghroot-vs-auto     : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-ghrootv-authoremail-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghrootv-authoremail-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-authoremail-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-authoremail-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-ghrootv-body-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghrootv-body-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-body-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-body-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-ghrootv-bodyfile-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghrootv-bodyfile-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-bodyfile-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-bodyfile-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-ghrootv-matchhead-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghrootv-matchhead-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-matchhead-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-matchhead-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-ghrootv-noarg-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghrootv-noarg-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-noarg-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-noarg-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-ghrootv-retarget   : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-ghrootv-selfrepo   : 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with
-ghrootv-subject-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghrootv-subject-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-subject-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-subject-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-ghrootv-unknownlong-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghrootv-unknownlong-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-unknownlong-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-unknownlong-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-ghrootv-unknownshort-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-ghrootv-unknownshort-ghcommentR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-unknownshort-ghcreateR : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-ghrootv-unknownshort-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-intrnsfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-intrnsfd-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-intrnsfd-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrnsfd-ghrepo    : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrnsfd-railsvc   : command-position 'railway service/environment delete' deletes a live Rai
-intrnsfd-railvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
-intrnsglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-intrnsglue-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-intrnsglue-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrnsglue-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrnsglue-railsvc : command-position 'railway service/environment delete' deletes a live Rai
-intrnsglue-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
-intrnssp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-intrnssp-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-intrnssp-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrnssp-ghrepo    : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrnssp-railsvc   : command-position 'railway service/environment delete' deletes a live Rai
-intrnssp-railvar   : command-position 'railway variable/vars/var set/delete' mutates a live s
-intrtoolfd-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
-intrtoolfd-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
-intrtoolfd-ghapi   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-intrtoolfd-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-intrtoolfd-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-intrtoolfd-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrtoolfd-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrtoolfd-npmpub  : command-position 'npm publish' pushes a package to the registry.
-intrtoolfd-railsvc : command-position 'railway service/environment delete' deletes a live Rai
-intrtoolfd-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-intrtoolfd-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
-intrtoolglue-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-intrtoolglue-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-intrtoolglue-ghapi : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-intrtoolglue-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-intrtoolglue-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-intrtoolglue-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrtoolglue-ghrepo : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrtoolglue-npmpub : command-position 'npm publish' pushes a package to the registry.
-intrtoolglue-railsvc : command-position 'railway service/environment delete' deletes a live Rai
-intrtoolglue-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-intrtoolglue-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
-intrtoolsp-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
-intrtoolsp-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
-intrtoolsp-ghapi   : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-intrtoolsp-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-intrtoolsp-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-intrtoolsp-ghrelease : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrtoolsp-ghrepo  : command-position mutating 'gh pr/release/repo' subcommand. Read-only for
-intrtoolsp-npmpub  : command-position 'npm publish' pushes a package to the registry.
-intrtoolsp-railsvc : command-position 'railway service/environment delete' deletes a live Rai
-intrtoolsp-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-intrtoolsp-railvar : command-position 'railway variable/vars/var set/delete' mutates a live s
-lit-easbld         : command-position 'eas build --auto-submit' submits the finished binary t
-lit-easupd         : command-position 'eas update/publish/submit' publishes an OTA update or
-lit-ghapi          : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-lit-ghcomment      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-lit-ghmerge        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-lit-npmpub         : command-position 'npm publish' pushes a package to the registry.
-lit-railup         : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-mautofd-b          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-mautofd-bodyfile   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-mautofd-t          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-mautoglue-b        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-mautoglue-bodyfile : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-mautoglue-t        : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-mautosp-b          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-mautosp-bodyfile   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-mautosp-t          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c9-ws-ghadmin      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c9-ws-ghcomment    : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-ws-ghapi        : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-ws-method       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-dig-eas         : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-easamp      : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-easclob     : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-dig-npm         : command-position 'npm publish' pushes a package to the registry.
+c9-dig-railway     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+c9-dig-railwayvar  : command-position 'railway variable/vars/var set/delete' mutates a live s
+c9-dig-ghadmin     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+c9-dig-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+c9-dig-ghapi       : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-dig-method      : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+c9-crude-eas       : command-position 'eas update/publish/submit' publishes an OTA update or
+c9-crude-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 mid-backtick       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-mid-eas            : command-position 'eas update/publish/submit' publishes an OTA update or
 mid-sub            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
 mid-var            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-nssufx-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-nssufx-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-nsvsub-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-nsvsub-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-nsvvar-ghcomment   : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-nsvvar-ghmerge     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-pref-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
-pref-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
-pref-ghapi         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-pref-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-pref-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-pref-npmpub        : command-position 'npm publish' pushes a package to the registry.
-pref-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-r4ansic-tool-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-r4ansic-tool-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-r4ansic-tool-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-r4ansic-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-r4ansic-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-r4ansic-tool-npmpub : command-position 'npm publish' pushes a package to the registry.
-r4ansic-tool-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-r4ansic-verb-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-r4ansic-verb-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-r4ansic-verb-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-r4ansic-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-r4ansic-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-r4ansic-verb-npmpub : command-position 'npm publish' pushes a package to the registry.
-r4ansic-verb-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-r4brange-verb-decoy-after-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-easbld-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-easupd-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghapi-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghcomment-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-ghmerge-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-npmpub-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-after-railup-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-easbld-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-easupd-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghapi-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghcomment-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-ghmerge-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-npmpub-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-decoy-before-railup-3 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-easbld : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-easupd : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-after-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-easbld-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-easbld-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-easbld-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-easupd-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-easupd-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-easupd-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-ghapi-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-ghapi-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-ghapi-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-ghcomment-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-ghcomment-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-ghcomment-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-ghmerge-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-ghmerge-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-ghmerge-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-npmpub-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-npmpub-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-npmpub-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-railup-0 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-railup-1 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-genuine-before-railup-2 : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-ghapi : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-ghcomment : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-ghmerge : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-npmpub : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4brange-verb-railup : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
-r4dig-tool-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
-r4dig-tool-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
-r4dig-tool-ghapi   : command-position 'gh api' with a method flag (-X/--method) whose value i
-r4dig-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-r4dig-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-r4dig-tool-npmpub  : command-position 'npm publish' pushes a package to the registry.
-r4dig-tool-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-r4dig-verb-easbld  : command-position 'eas build --auto-submit' submits the finished binary t
-r4dig-verb-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
-r4dig-verb-ghapi   : command-position 'gh api' with a method flag (-X/--method) whose value i
-r4dig-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-r4dig-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-r4dig-verb-npmpub  : command-position 'npm publish' pushes a package to the registry.
-r4dig-verb-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-r4spec-tool-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-r4spec-tool-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-r4spec-tool-ghapi  : command-position 'gh api' with a method flag (-X/--method) whose value i
-r4spec-tool-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-r4spec-tool-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-r4spec-tool-npmpub : command-position 'npm publish' pushes a package to the registry.
-r4spec-tool-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-r4spec-verb-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-r4spec-verb-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-r4spec-verb-ghapi  : command-position 'gh api' with a method flag (-X/--method) whose value i
-r4spec-verb-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-r4spec-verb-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-r4spec-verb-npmpub : command-position 'npm publish' pushes a package to the registry.
-r4spec-verb-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-sitebranch-create  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
-sitebranch-delete  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
-sitebranch-edit    : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
-sitebranch-rename  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
-sitechannel-create : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
-sitechannel-delete : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
-sitechannel-edit   : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
-sitechannel-rename : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
-sitedup-ghcomment  : more than one command-position 'gh pr create/comment' occurrence — amb
-sitedup-ghcreate   : more than one command-position 'gh pr create/comment' occurrence — amb
-siteeasverb-publish : command-position 'eas update/publish/submit' publishes an OTA update or
-siteeasverb-submit : command-position 'eas update/publish/submit' publishes an OTA update or
-siteeasverb-update : command-position 'eas update/publish/submit' publishes an OTA update or
-siterailsvc-environment : command-position 'railway service/environment delete' deletes a live Rai
-siterailsvc-service : command-position 'railway service/environment delete' deletes a live Rai
-siterailvardelete  : command-position 'railway variable/vars/var set/delete' mutates a live s
-siterailvarset-var : command-position 'railway variable/vars/var set/delete' mutates a live s
-siterailvarset-variable : command-position 'railway variable/vars/var set/delete' mutates a live s
-siterailvarset-variables : command-position 'railway variable/vars/var set/delete' mutates a live s
-siterailvarset-vars : command-position 'railway variable/vars/var set/delete' mutates a live s
-siterailverb-delete : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-siterailverb-deploy : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-siterailverb-down  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-siterailverb-redeploy : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-siterailverb-remove : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-siterailverb-restart : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-siterailverb-rm    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-siterailverb-run   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-siterailverb-up    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+mid-eas            : command-position 'eas update/publish/submit' publishes an OTA update or
+syn-default        : an outward-facing CLI is named in command position but the verb is not l
+syn-nocolon        : an outward-facing CLI is named in command position but the verb is not l
+syn-indirect       : an outward-facing CLI is named in command position but the verb is not l
+syn-cmdsub         : an outward-facing CLI is named in command position but the verb is not l
+syn-binary         : an outward-facing CLI is named in command position but the verb is not l
+co-pref-sufx       : command-position 'eas update/publish/submit' publishes an OTA update or
+co-sigil-c1        : command-position 'eas build --auto-submit' submits the finished binary t
+co-mask-c1         : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+co-redir-mask      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+co-pref-multi      : more than one command-position 'gh pr merge' occurrence — ambiguous, c
+co-pref-dollar     : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+co-two-api         : more than one command-position 'gh api' occurrence — ambiguous, cannot
+co-ind-pref        : command-position 'eas build --auto-submit' submits the finished binary t
+co-pos-create      : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+co-c2-predB        : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-predA        : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-two-api-c2      : more than one command-position 'gh api' occurrence — ambiguous, cannot
+co-c2-toolsplit    : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-toolsub      : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-halfA        : command-position 'gh api' with a method flag (-X/--method) whose value i
+co-c2-halfB        : command-position 'gh api' with a method flag (-X/--method) whose value i
 siteupd-delete     : command-position 'eas update:delete/edit/republish/revert-update-rollout
 siteupd-edit       : command-position 'eas update:delete/edit/republish/revert-update-rollout
 siteupd-republish  : command-position 'eas update:delete/edit/republish/revert-update-rollout
 siteupd-revert-update-rollout : command-position 'eas update:delete/edit/republish/revert-update-rollout
 siteupd-roll-back-to-embedded : command-position 'eas update:delete/edit/republish/revert-update-rollout
 siteupd-rollback   : command-position 'eas update:delete/edit/republish/revert-update-rollout
-sufx-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
-sufx-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
-sufx-ghapi         : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
-sufx-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-sufx-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-sufx-npmpub        : command-position 'npm publish' pushes a package to the registry.
-sufx-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-syn-binary         : an outward-facing CLI is named in command position but the verb is not l
-syn-cmdsub         : an outward-facing CLI is named in command position but the verb is not l
-syn-default        : an outward-facing CLI is named in command position but the verb is not l
-syn-indirect       : an outward-facing CLI is named in command position but the verb is not l
-syn-nocolon        : an outward-facing CLI is named in command position but the verb is not l
-toolvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-toolvarithsep-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-toolvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-toolvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-toolvarithsep-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-toolvarithsep-npmpub : command-position 'npm publish' pushes a package to the registry.
-toolvarithsep-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-toolvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-toolvbareparen-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-toolvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-toolvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-toolvbareparen-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-toolvbareparen-npmpub : command-position 'npm publish' pushes a package to the registry.
-toolvbareparen-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-toolvbt-easbld     : command-position 'eas build --auto-submit' submits the finished binary t
-toolvbt-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
-toolvbt-ghapi      : command-position 'gh api' with a method flag (-X/--method) whose value i
-toolvbt-ghcomment  : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-toolvbt-ghmerge    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-toolvbt-npmpub     : command-position 'npm publish' pushes a package to the registry.
-toolvbt-railup     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-toolvcasearm-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-toolvcasearm-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-toolvcasearm-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-toolvcasearm-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-toolvcasearm-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-toolvcasearm-npmpub : command-position 'npm publish' pushes a package to the registry.
-toolvcasearm-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-toolvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-toolvcomment-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-toolvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-toolvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-toolvcomment-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-toolvcomment-npmpub : command-position 'npm publish' pushes a package to the registry.
-toolvcomment-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-toolvdqclose-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-toolvdqclose-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-toolvdqclose-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-toolvdqclose-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-toolvdqclose-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-toolvdqclose-npmpub : command-position 'npm publish' pushes a package to the registry.
-toolvdqclose-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-toolvmixq-easbld   : command-position 'eas build --auto-submit' submits the finished binary t
-toolvmixq-easupd   : command-position 'eas update/publish/submit' publishes an OTA update or
-toolvmixq-ghapi    : command-position 'gh api' with a method flag (-X/--method) whose value i
-toolvmixq-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-toolvmixq-ghmerge  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-toolvmixq-npmpub   : command-position 'npm publish' pushes a package to the registry.
-toolvmixq-railup   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-toolvnest-easbld   : command-position 'eas build --auto-submit' submits the finished binary t
-toolvnest-easupd   : command-position 'eas update/publish/submit' publishes an OTA update or
-toolvnest-ghapi    : command-position 'gh api' with a method flag (-X/--method) whose value i
-toolvnest-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-toolvnest-ghmerge  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-toolvnest-npmpub   : command-position 'npm publish' pushes a package to the registry.
-toolvnest-railup   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-toolvsqclose-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-toolvsqclose-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-toolvsqclose-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-toolvsqclose-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-toolvsqclose-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-toolvsqclose-npmpub : command-position 'npm publish' pushes a package to the registry.
-toolvsqclose-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-toolvsub-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
-toolvsub-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
-toolvsub-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
-toolvsub-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-toolvsub-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-toolvsub-npmpub    : command-position 'npm publish' pushes a package to the registry.
-toolvsub-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-toolvvar-easbld    : command-position 'eas build --auto-submit' submits the finished binary t
-toolvvar-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
-toolvvar-ghapi     : command-position 'gh api' with a method flag (-X/--method) whose value i
-toolvvar-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-toolvvar-ghmerge   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-toolvvar-npmpub    : command-position 'npm publish' pushes a package to the registry.
-toolvvar-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-trailclose-ctl     : command-position 'eas update/publish/submit' publishes an OTA update or
-trailclose-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
-trailclose-ghmrg   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-verbvarithsep-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-verbvarithsep-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-verbvarithsep-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-verbvarithsep-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-verbvarithsep-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-verbvarithsep-npmpub : command-position 'npm publish' pushes a package to the registry.
-verbvarithsep-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-verbvbareparen-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-verbvbareparen-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-verbvbareparen-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-verbvbareparen-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-verbvbareparen-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-verbvbareparen-npmpub : command-position 'npm publish' pushes a package to the registry.
-verbvbareparen-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-verbvcasearm-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-verbvcasearm-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-verbvcasearm-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-verbvcasearm-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-verbvcasearm-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-verbvcasearm-npmpub : command-position 'npm publish' pushes a package to the registry.
-verbvcasearm-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-verbvcomment-easbld : command-position 'eas build --auto-submit' submits the finished binary t
-verbvcomment-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
-verbvcomment-ghapi : command-position 'gh api' with a method flag (-X/--method) whose value i
-verbvcomment-ghcomment : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-verbvcomment-ghmerge : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-verbvcomment-npmpub : command-position 'npm publish' pushes a package to the registry.
-verbvcomment-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-vft-amp            : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-vft-clob           : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-vft-vmask          : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-vsub-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
-vsub-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
-vsub-ghapi         : command-position 'gh api' with a method flag (-X/--method) whose value i
-vsub-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-vsub-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-vsub-npmpub        : command-position 'npm publish' pushes a package to the registry.
-vsub-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
-vvar-easbld        : command-position 'eas build --auto-submit' submits the finished binary t
-vvar-easupd        : command-position 'eas update/publish/submit' publishes an OTA update or
-vvar-ghapi         : command-position 'gh api' with a method flag (-X/--method) whose value i
-vvar-ghcomment     : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
-vvar-ghmerge       : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
-vvar-npmpub        : command-position 'npm publish' pushes a package to the registry.
-vvar-railup        : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+sitechannel-create : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitechannel-edit   : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitechannel-delete : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitechannel-rename : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitebranch-create  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitebranch-edit    : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitebranch-delete  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitebranch-rename  : command-position 'eas channel:/branch: create/edit/delete/rename' repoin
+sitedup-ghcreate   : more than one command-position 'gh pr create/comment' occurrence — amb
+sitedup-ghcomment  : more than one command-position 'gh pr create/comment' occurrence — amb
+siterailverb-up    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-deploy : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-redeploy : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-restart : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-down  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-delete : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-remove : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-rm    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siterailverb-run   : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+siteeasverb-update : command-position 'eas update/publish/submit' publishes an OTA update or
+siteeasverb-publish : command-position 'eas update/publish/submit' publishes an OTA update or
+siteeasverb-submit : command-position 'eas update/publish/submit' publishes an OTA update or
+siterailvarset-variable : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvarset-variables : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvarset-vars : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvarset-var : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailvardelete  : command-position 'railway variable/vars/var set/delete' mutates a live s
+siterailsvc-service : command-position 'railway service/environment delete' deletes a live Rai
+siterailsvc-environment : command-position 'railway service/environment delete' deletes a live Rai
+lp-easupd-none-none : command-position 'eas update/publish/submit' publishes an OTA update or
+lp-easupd-none-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-none-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-none-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-abs  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npx-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxy-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npxyes-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexec-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmexecdd-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-npmx-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunx2-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-bunrun-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmdlx-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-pnpmexec-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarndlx-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-none : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-abs : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-abs-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-abs-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-dotbin : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-dotbin-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-dotbin-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-dotdot : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-dotdot-pre : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-easupd-yarnexec-dotdot-both : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-npmpub-none-none : command-position 'npm publish' pushes a package to the registry.
+lp-npmpub-none-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-none-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-none-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-abs  : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npx-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxy-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npxyes-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexec-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmexecdd-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-npmx-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunx2-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-bunrun-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmdlx-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-pnpmexec-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarndlx-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-none : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-abs : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-abs-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-abs-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-dotbin : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-dotbin-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-dotbin-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-dotdot : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-dotdot-pre : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-npmpub-yarnexec-dotdot-both : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-railup-none-none : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+lp-railup-none-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-none-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-none-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-abs  : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npx-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxy-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npxyes-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexec-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmexecdd-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-npmx-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunx2-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-bunrun-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmdlx-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-pnpmexec-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarndlx-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-none : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-abs : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-abs-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-abs-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-dotbin : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-dotbin-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-dotbin-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-dotdot : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-dotdot-pre : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-railup-yarnexec-dotdot-both : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-ghmerge-none-none : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+lp-ghmerge-none-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-none-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-none-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npx-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxy-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npxyes-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexec-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmexecdd-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-npmx-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunx2-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-bunrun-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmdlx-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-pnpmexec-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarndlx-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-none : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-abs : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-abs-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-abs-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-dotbin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-dotbin-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-dotbin-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-dotdot : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-dotdot-pre : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghmerge-yarnexec-dotdot-both : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-easupd-stack-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-stack-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-stack-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-stack-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-stack-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-stack-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-stack-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-stack-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-explore-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-explore-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-explore-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-explore-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-explore-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-explore-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-explore-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-explore-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-barepm-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-barepm-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-barepm-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-barepm-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-barepm-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-barepm-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-barepm-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-barepm-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-lnchr-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-lnchr-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-lnchr-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-lnchr-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-lnchr-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-lnchr-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-lnchr-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-lnchr-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsforeach-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsscope2-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-yarnrun-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-wsrun-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-none-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-none-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-abs-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-abs-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-dotbin-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-dotbin-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-dotdot-noint : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-easupd-interp-dotdot-env : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lpch-npmpub-stack-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-stack-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-stack-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-stack-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-stack-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-stack-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-stack-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-stack-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-explore-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-explore-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-explore-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-explore-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-explore-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-explore-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-explore-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-explore-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-barepm-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-barepm-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-barepm-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-barepm-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-barepm-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-barepm-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-barepm-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-barepm-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-lnchr-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-lnchr-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-lnchr-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-lnchr-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-lnchr-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-lnchr-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-lnchr-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-lnchr-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsforeach-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsscope2-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-yarnrun-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-wsrun-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-none-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-none-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-abs-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-abs-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-dotbin-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-dotbin-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-dotdot-noint : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-npmpub-interp-dotdot-env : 'npm publish' reached through a launcher or a path-qualified invocation.
+lpch-railup-stack-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-stack-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-stack-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-stack-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-stack-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-stack-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-stack-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-stack-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-explore-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-explore-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-explore-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-explore-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-explore-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-explore-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-explore-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-explore-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-barepm-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-barepm-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-barepm-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-barepm-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-barepm-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-barepm-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-barepm-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-barepm-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-lnchr-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-lnchr-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-lnchr-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-lnchr-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-lnchr-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-lnchr-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-lnchr-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-lnchr-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsforeach-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsscope2-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-yarnrun-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-wsrun-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-none-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-none-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-abs-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-abs-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-dotbin-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-dotbin-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-dotdot-noint : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-railup-interp-dotdot-env : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lpch-ghmerge-stack-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-stack-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-stack-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-stack-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-stack-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-stack-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-stack-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-stack-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-explore-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-explore-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-explore-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-explore-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-explore-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-explore-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-explore-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-explore-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-barepm-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-barepm-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-barepm-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-barepm-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-barepm-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-barepm-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-barepm-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-barepm-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-lnchr-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-lnchr-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-lnchr-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-lnchr-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-lnchr-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-lnchr-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-lnchr-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-lnchr-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsforeach-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsscope2-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-yarnrun-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-wsrun-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-none-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-none-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-abs-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-abs-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-dotbin-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-dotbin-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-dotdot-noint : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lpch-ghmerge-interp-dotdot-env : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+pfx-none-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-none-npmpub    : command-position 'npm publish' pushes a package to the registry.
+pfx-none-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-none-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-none-ghapimut  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-none-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-none-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-none-brange    : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-none-lambig    : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-none-lnch      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+pfx-bare-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-bare-npmpub    : command-position 'npm publish' pushes a package to the registry.
+pfx-bare-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-bare-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-bare-ghapimut  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-bare-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-bare-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-bare-brange    : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-bare-lambig    : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-bare-lnch      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+pfx-path-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-path-npmpub    : command-position 'npm publish' pushes a package to the registry.
+pfx-path-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-path-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-path-ghapimut  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-path-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-path-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-path-brange    : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-path-lambig    : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-path-lnch      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+pfx-priv-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-priv-npmpub    : command-position 'npm publish' pushes a package to the registry.
+pfx-priv-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-priv-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-priv-ghapimut  : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-priv-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-priv-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-priv-brange    : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-priv-lambig    : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-priv-lnch      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+pfx-privflag-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-privflag-npmpub : command-position 'npm publish' pushes a package to the registry.
+pfx-privflag-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-privflag-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-privflag-ghapimut : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-privflag-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-privflag-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-privflag-brange : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-privflag-lambig : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-privflag-lnch  : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-privpath-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-privpath-npmpub : command-position 'npm publish' pushes a package to the registry.
+pfx-privpath-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-privpath-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-privpath-ghapimut : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-privpath-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-privpath-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-privpath-brange : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-privpath-lambig : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-privpath-lnch  : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-corepack-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-corepack-npmpub : command-position 'npm publish' pushes a package to the registry.
+pfx-corepack-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-corepack-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-corepack-ghapimut : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-corepack-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-corepack-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-corepack-brange : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-corepack-lambig : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-corepack-lnch  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+pfx-stacked-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+pfx-stacked-npmpub : command-position 'npm publish' pushes a package to the registry.
+pfx-stacked-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+pfx-stacked-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+pfx-stacked-ghapimut : command-position 'gh api' with a mutating HTTP method (-X/--method POST/
+pfx-stacked-ghcrossrepo : 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repos
+pfx-stacked-expansion : an outward-facing CLI is named in command position but the verb is not l
+pfx-stacked-brange : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+pfx-stacked-lambig : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+pfx-stacked-lnch   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+ql-bare-expansion  : an outward-facing CLI is named in command position but the verb is not l
+ql-bare-brange     : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+ql-path-expansion  : an outward-facing CLI is named in command position but the verb is not l
+ql-path-brange     : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+ql-npx-expansion   : an outward-facing CLI is named in command position but the verb is not l
+ql-npx-brange      : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+ql-npxpath-expansion : an outward-facing CLI is named in command position but the verb is not l
+ql-npxpath-brange  : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+ql-pathnpx-expansion : an outward-facing CLI is named in command position but the verb is not l
+ql-pathnpx-brange  : an outward-facing CLI's verb or binary is glued to a brace RANGE ({X..Y}
+ql-ambig-bare      : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+ql-ambig-abs       : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+ql-ambig-dotbin    : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+ql-decoy-sudo      : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ql-decoy-sudoflag  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ql-decoy-sudopath  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+ql-decoy-corepack  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-bare-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-bare-railup     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-bare-npmpub     : command-position 'npm publish' pushes a package to the registry.
+wf-bare-ghadmin    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-envu-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-envu-railup     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-envu-npmpub     : command-position 'npm publish' pushes a package to the registry.
+wf-envu-ghadmin    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-envi-easupd     : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-envi-railup     : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-envi-npmpub     : command-position 'npm publish' pushes a package to the registry.
+wf-envi-ghadmin    : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-nohupdd-easupd  : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-nohupdd-railup  : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-nohupdd-npmpub  : command-position 'npm publish' pushes a package to the registry.
+wf-nohupdd-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-commandp-easupd : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-commandp-railup : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-commandp-npmpub : command-position 'npm publish' pushes a package to the registry.
+wf-commandp-ghadmin : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-execa-easupd    : command-position 'eas update/publish/submit' publishes an OTA update or
+wf-execa-railup    : command-position 'railway up/deploy/redeploy/restart/down/delete/remove/
+wf-execa-npmpub    : command-position 'npm publish' pushes a package to the registry.
+wf-execa-ghadmin   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-decoy-envauto   : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-decoy-envuauto  : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+wf-decoy-assignval : command-position 'gh pr merge' without a REAL --auto flag merges a PR im
+if-npmexec-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmexec-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmexec-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmexec-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmexec-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmexec-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmexec-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmexec-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmx-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmx-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmx-s-easupd   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmx-s-ghadmin  : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmx-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmx-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-npmx-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-npmx-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunrun-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunrun-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunrun-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunrun-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunrun-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunrun-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunrun-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunrun-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunx-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunx-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunx-s-easupd   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunx-s-ghadmin  : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunx-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunx-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-bunx-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-bunx-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmdlx-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmdlx-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmdlx-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmdlx-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmdlx-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmdlx-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmdlx-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmdlx-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmexec-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmexec-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmexec-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmexec-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmexec-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmexec-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-pnpmexec-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-pnpmexec-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarndlx-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarndlx-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarndlx-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarndlx-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarndlx-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarndlx-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarndlx-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarndlx-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarnexec-none-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarnexec-none-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarnexec-s-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarnexec-s-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarnexec-loglevel-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarnexec-loglevel-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+if-yarnexec-workspace-easupd : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+if-yarnexec-workspace-ghadmin : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+wf-valueslot-grep  : command-position 'eas update/publish/submit' publishes an OTA update or
+lp-pkg-eascli-npx  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-pkg-eascli-npmexec : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-pkg-railwaycli-npx : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-ghmerge-auto-npx : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-ghapi-npmexec   : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-site-easbuild   : 'eas build --auto-submit' reached through a launcher or a path-qualified
+lp-site-easupdcolon : 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-emb
+lp-site-easchannel : 'eas channel:/branch: create/edit/delete/rename' reached through a launc
+lp-site-npmrunota  : 'npm run update:preview/update:production' (and the yarn/pnpm bare-scrip
+lp-site-railvar    : 'railway variable/vars/var set/delete' reached through a launcher or a p
+lp-site-railsvcdel : 'railway service/environment delete' reached through a launcher or a pat
+lp-site-interpexp  : an interpreter (node/bun/deno) sits in command position with an EXPANSIO
+lp-af-npx-pkgeq    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npx-pkgsp    : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npx-peq      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npx-psp      : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npx-calleq   : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npx-callsp   : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npx-ceq      : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npx-csp      : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npmexec-pkgeq : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npmexec-pkgsp : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npmexec-peq  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npmexec-psp  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-npmexec-calleq : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npmexec-callsp : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npmexec-ceq  : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-npmexec-csp  : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-bunx-pkgeq   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-bunx-pkgsp   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-bunx-peq     : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-bunx-psp     : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-af-bunx-calleq  : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-bunx-callsp  : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-bunx-ceq     : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-af-bunx-csp     : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-verpin-easupd   : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-verpin-easupdcolon : 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-emb
+lp-verpin-easchannel : 'eas channel:/branch: create/edit/delete/rename' reached through a launc
+lp-verpin-easbuild : 'eas build --auto-submit' reached through a launcher or a path-qualified
+lp-verpin-railup   : 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' reached t
+lp-verpin-railvar  : 'railway variable/vars/var set/delete' reached through a launcher or a p
+lp-verpin-railsvcdel : 'railway service/environment delete' reached through a launcher or a pat
+lp-verpin-npmpub   : 'npm publish' reached through a launcher or a path-qualified invocation.
+lp-verpin-npmrunota : 'npm run update:preview/update:production' (and the yarn/pnpm bare-scrip
+lp-verpin-yarnbare : 'npm run update:preview/update:production' (and the yarn/pnpm bare-scrip
+lp-verpin-ghmerge  : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-pd-eascli-none  : a direct path invocation of a script INSIDE the eas-cli npm package dire
+lp-pd-eascli-node  : a direct path invocation of a script INSIDE the eas-cli npm package dire
+lp-pd-eascli-bun   : a direct path invocation of a script INSIDE the eas-cli npm package dire
+lp-pd-eascli-deno  : a direct path invocation of a script INSIDE the eas-cli npm package dire
+lp-pd-railwaycli-none : a direct path invocation of a script INSIDE the @railway/cli npm package
+lp-pd-railwaycli-node : a direct path invocation of a script INSIDE the @railway/cli npm package
+lp-pd-railwaycli-bun : a direct path invocation of a script INSIDE the @railway/cli npm package
+lp-pd-railwaycli-deno : a direct path invocation of a script INSIDE the @railway/cli npm package
+lp-lflag-npx-bool  : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npx-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npxy-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npxy-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npxyes-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npxyes-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmexec-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmexec-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmexecdd-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmexecdd-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmx-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-npmx-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunx-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunx-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunx2-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunx2-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunrun-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-bunrun-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-pnpmdlx-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-pnpmdlx-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-pnpmexec-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-pnpmexec-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-yarndlx-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-yarndlx-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-yarnexec-bool : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-yarnexec-value : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-lflag-ghmerge   : a gated 'gh' subcommand reached through a launcher or a path-qualified i
+lp-lflag-residual-interior : 'eas update/publish/submit' reached through a launcher (npx/npm exec/bun
+lp-fpneedle-callnoNeedle : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-fpneedle-pkgnoNeedle : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
+lp-gap1-discriminating : a launcher (npx/npm exec/bunx/bun x|run/pnpm dlx|exec/yarn dlx|exec) com
 PIN_ATTRIB_EOF
 }
 EXPECTED_DENY_ATTRIB=$(_pin_expected_attrib)
@@ -3475,7 +6053,39 @@ PIN_EXEMPT_EOF
 # on a claim of coverage elsewhere, leaves the site covered NOWHERE -- and a justification
 # naming coverage that does not exist is worse than none, because it stops the next reader
 # looking. Verify the rows exist before trusting this paragraph.
-EXPECTED_EMIT_SITES=28
+# BUMPED 2026-09-16, same todo: 28 -> 38, +10 for the ten new deny() call
+# sites in guard-outward-cli.sh's launcher-family/path-qualified-invocation
+# section. All ten are now reachable: four are already reached by the main
+# LP grid's four shared FAM targets, and the other six -- which initially had
+# NO corpus row at all -- are covered by the new DENY-SITE COVERAGE axis
+# above. MEASURED: the run reported `guard deny-emit sites is 38`, with no
+# remaining "guard can emit a deny no corpus row reaches" line.
+# BUMPED 2026-09-16, same todo, round-2 security review, first pass: 38 -> 41,
+# +3 for the three new deny() call sites GAP-1/GAP-2a/GAP-2b add (the
+# ambiguous-flag fail-closed check, and the two eas-cli/@railway/cli
+# package-directory path checks). The round-2 second pass (fast-path
+# needle-list fix, the gh clause's version-pin splice) added ZERO new
+# deny() call sites -- both fixes widen what TEXT reaches an EXISTING check,
+# not a new check. MEASURED: the run reported `guard deny-emit sites is 41`,
+# with no remaining "guard can emit a deny no corpus row reaches" line --
+# every one of the three new sites, including GAP-1's, is confirmed
+# reachable.
+# 41 -> 42 (2026-09-17, MERGE with origin/main): +1, main's brace-LIST narrow-deny
+# site. Ancestor af0e27b2 had 28; this branch added 13 and main added 1, and the
+# merged tree MEASURES 42 -- additive, like every other pin in this merge.
+# 42 -> 43 (2026-09-18, round 8): the interpreter/expansion co-occurrence check. Its coverage
+# row is `lp-site-interpexp` in the DENY-SITE COVERAGE axis above -- added, not exempted,
+# because command text CAN reach it.
+# 43 -> 44 (2026-09-18, MERGE of main into batch-d): +1, THIS BRANCH'S gh-api implicit-POST
+# check. READ THIS BEFORE TRUSTING ANY MERGE OF THIS FILE: main and batch-d EACH took this pin
+# 42 -> 43, for DIFFERENT deny sites (main round 8's interpreter/expansion check; this branch's
+# implicit-POST arm). Git's 3-way merge saw base=42, ours=43, theirs=43, called it agreement and
+# merged the LINE with no conflict marker at all -- only the comment above it conflicted. The
+# merged guard emits 44. A pin both sides moved to the same number is invisible to the merge and
+# visible only to a run; this one is MEASURED. Coverage for the new site is the three
+# `apicolfp-oneshot`/`c2-fp-*` rows whose want moved ALLOW -> DENY, which are generated rows, so
+# `_pin_sites` reaches it without a new DENY-SITE COVERAGE entry.
+EXPECTED_EMIT_SITES=44
 
 PIN_FAIL=0
 
@@ -3589,7 +6199,7 @@ PRECISE_DENY_COUNT=$(printf '%s\n' "${PS[@]}" | grep -c '^DENY$')
 
 echo ""
 echo "=== pin ==="
-_pin_count "rows"              "$EXPECTED_ROWS"         "${#ROWS[@]}"
+_pin_count "rows"              "$EXPECTED_ROWS"         "$ROWS_ACTUAL"
 _pin_count "precise-path gaps" "$EXPECTED_PRECISE_GAPS" "$GAPS"
 _pin_count "all-path gaps"     "$EXPECTED_ALLPATH_GAPS" "$ALLGAPS"
 _pin_members "precise-path gap" "$EXPECTED_PRECISE_GAP_IDS"   "$ACTUAL_PRECISE_GAP_IDS"
@@ -3945,7 +6555,12 @@ exit 0
 # FULL ATTRIBUTION of the remaining precise-path gaps. Was 14 + 17 + 2 = 33;
 # the `2` bucket closed on 2026-09-07, so it became 14 + 17 = 31. The `14`
 # bucket itself halved on 2026-09-14 (r4brange-verb-* closed, see below), so
-# it is now 7 + 17 = 24. Each remaining row has an OPEN todo — none is a
+# it became 7 + 17 = 24; the 2026-09-16 brace-LIST addition then contributed a
+# third bucket of 21 (r4brlist-tool-* 7, r4brlist-nested-* 7,
+# r4brlist-nested-list-* 7), and the 2026-09-17 case-arm-in-bare-paren addition
+# a fourth of 17 (toolvcaseparen-* 7, verbvcaseparen-* 7, flagvcaseparen-* 3 of
+# 4), so it is now 7 + 17 + 21 + 17 = 62. Each remaining row
+# has an OPEN todo — none is a
 # defect this change introduced, and every one allows on `main` too:
 #
 #    7  (was 14) r4brange-tool-*. A brace RANGE carries no `$` and no backtick
@@ -3977,6 +6592,23 @@ exit 0
 #       that spelling reaches the --admin check instead. The
 #       construct does NOT break the `--auto` spelling -- it is spliced into
 #       --admin and --auto stays byte-intact. Same rule as co-mask-c1.
+#
+#   21  r4brlist-tool-* (7), r4brlist-nested-* (7), r4brlist-nested-list-* (7)
+#       — brace LIST glued to the BINARY name, plus any brace construct (range
+#       OR list) nested inside a list alternative. Added 2026-09-16.
+#       TOOL-position stays open for the same fast-path reason as the
+#       r4brange-tool-* bucket above; the nested forms stay open because
+#       `_OUT_BR_LIST_TOKEN`'s item class excludes `{`/`}`, so a nested span
+#       never matches the outer list token at all. Tracked at
+#       todos/archive/P2-2026-09-14-brace-list-expansion-reconstructs-a-gated-verb.md
+#
+#   17  toolvcaseparen-* (7), verbvcaseparen-* (7), flagvcaseparen-* (3 of 4)
+#       — a `case` arm inside a BARE-PAREN subshell steals the scanner's paren
+#       credit, so both counters spuriously read zero and the enclosing
+#       `$(...)` closes one paren early. Added 2026-09-17, MEASUREMENT-ONLY:
+#       closing it needs `casedepth` to survive a bare-paren boundary, which
+#       this todo's Scope Contract forbade as a new scanner. Tracked at
+#       todos/archive/P2-2026-09-14-case-arm-in-bare-paren-subshell-steals-the-paren-credit.md
 #
 #    0  (was 2) nssufx-ghmerge and nssufx-ghcomment — an INTERIOR redirect, a
 #       different mechanism with its own entry below and its own todo. CLOSED

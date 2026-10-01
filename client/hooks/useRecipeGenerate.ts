@@ -10,5 +10,8 @@ export function useRecipeGenerate() {
       });
       return res.json();
     },
+    // Its one call site (RecipeAIGenerateScreen) already shows an inline
+    // error, driven by `mutation.isError`.
+    meta: { silentError: true },
   });
 }

@@ -7,6 +7,7 @@ import {
   structureRecipeFromText,
   classifyAndAnalyze,
   getPromptForIntent,
+  refineAnalysis,
 } from "../photo-analysis";
 import { openai } from "../../lib/openai";
 import { createMockChatCompletion } from "../../__tests__/factories";
@@ -578,9 +579,22 @@ describe("getPromptForIntent", () => {
     expect(getPromptForIntent("identify").maxTokens).toBe(300);
     expect(getPromptForIntent("recipe").maxTokens).toBe(300);
     expect(getPromptForIntent("label").maxTokens).toBe(800);
-    expect(getPromptForIntent("log").maxTokens).toBe(500);
-    expect(getPromptForIntent("calories").maxTokens).toBe(500);
+    // A multi-food answer ran 500 tokens and truncated to invalid JSON (live
+    // burger photo, 2026-09-27), so logging gets more room.
+    expect(getPromptForIntent("log").maxTokens).toBe(1000);
+    expect(getPromptForIntent("calories").maxTokens).toBe(1000);
   });
+
+  it.each(['"grams"', '"lookupName"'])(
+    "asks for %s only where nutrition is looked up",
+    (field) => {
+      expect(getPromptForIntent("log").prompt).toContain(field);
+      expect(getPromptForIntent("calories").prompt).toContain(field);
+      // Control: identify and recipe do not look nutrition up
+      expect(getPromptForIntent("identify").prompt).not.toContain(field);
+      expect(getPromptForIntent("recipe").prompt).not.toContain(field);
+    },
+  );
 
   it("throws for the menu intent — menus are parsed by analyzeMenuPhoto, not the logging pipeline", () => {
     expect(() => getPromptForIntent("menu")).toThrow(
@@ -622,6 +636,75 @@ describe("photo-analysis failure propagation", () => {
         "Photo analysis returned invalid data",
       );
     });
+
+    function foodWithGrams(grams: unknown) {
+      return {
+        foods: [
+          {
+            name: "steamed white rice",
+            quantity: "1 cup",
+            confidence: 0.9,
+            needsClarification: false,
+            grams,
+          },
+        ],
+        overallConfidence: 0.9,
+        followUpQuestions: [],
+      };
+    }
+
+    it("keeps the model's gram estimate", async () => {
+      mockVisionResponse(foodWithGrams(160));
+
+      const result = await analyzePhoto("base64data", "log");
+
+      expect(result.foods[0].grams).toBe(160);
+    });
+
+    it("keeps the model's database-style lookup name, trimmed", async () => {
+      mockVisionResponse({
+        ...foodWithGrams(160),
+        foods: [
+          {
+            ...foodWithGrams(160).foods[0],
+            lookupName: "  rice, white, long-grain, cooked ",
+          },
+        ],
+      });
+
+      const result = await analyzePhoto("base64data", "log");
+
+      expect(result.foods[0].lookupName).toBe(
+        "rice, white, long-grain, cooked",
+      );
+    });
+
+    it.each([[123], [""], ["   "], ["x".repeat(101)]])(
+      "drops an invalid lookup name (%j) without failing the analysis",
+      async (lookupName) => {
+        mockVisionResponse({
+          ...foodWithGrams(160),
+          foods: [{ ...foodWithGrams(160).foods[0], lookupName }],
+        });
+
+        const result = await analyzePhoto("base64data", "log");
+
+        expect(result.foods[0].grams).toBe(160);
+        expect(result.foods[0].lookupName).toBeUndefined();
+      },
+    );
+
+    it.each([["160"], [-5], [0], [9000], [null]])(
+      "drops an invalid gram estimate (%j) without failing the analysis",
+      async (grams) => {
+        mockVisionResponse(foodWithGrams(grams));
+
+        const result = await analyzePhoto("base64data", "log");
+
+        expect(result.foods[0].name).toBe("steamed white rice");
+        expect(result.foods[0].grams).toBeUndefined();
+      },
+    );
 
     it("returns a valid empty result without throwing (no food in frame)", async () => {
       mockVisionResponse({
@@ -839,5 +922,42 @@ describe("photo-analysis failure propagation", () => {
       expect(result.contentType).toBe("non_food");
       expect(result.analysisResult).toBeNull();
     });
+  });
+});
+
+describe("refineAnalysis", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("asks for and keeps the gram estimate of the refined foods", async () => {
+    mockVisionResponse({
+      foods: [
+        {
+          name: "brown rice",
+          quantity: "1 cup",
+          confidence: 0.95,
+          needsClarification: false,
+          grams: 195,
+          lookupName: "rice, brown, long-grain, cooked",
+        },
+      ],
+      overallConfidence: 0.95,
+      followUpQuestions: [],
+    });
+
+    const result = await refineAnalysis(
+      { foods: [], overallConfidence: 0.5, followUpQuestions: [] },
+      "Which rice?",
+      "brown",
+    );
+
+    expect(result.foods[0].grams).toBe(195);
+    expect(result.foods[0].lookupName).toBe("rice, brown, long-grain, cooked");
+    const request = mockCreate.mock.calls[0][0];
+    expect(request.messages[0].content).toContain('"grams"');
+    expect(request.messages[0].content).toContain('"lookupName"');
+    // It returns the whole food list, so it gets the same room as logging.
+    expect(request.max_completion_tokens).toBe(1000);
   });
 });

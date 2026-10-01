@@ -4,18 +4,18 @@
  *
  * Reads coverage/coverage-final.json (Istanbul v8 format produced by
  * `npm run test:coverage`), computes actual line/statement/function/branch
- * percentages, and compares them to the thresholds in vitest.config.ts.
+ * percentages, and compares them to the thresholds in vitest.config.mts.
  *
  * Proposed thresholds are floor(actual) - buffer, where buffer defaults to 4
- * (matching the established gap in vitest.config.ts). A threshold is only
+ * (matching the established gap in vitest.config.mts). A threshold is only
  * raised, never lowered: proposed = max(current, floor(actual) - buffer).
  *
  * Usage:
  *   tsx scripts/coverage-ratchet.ts                    # print report
- *   tsx scripts/coverage-ratchet.ts --apply            # update vitest.config.ts
+ *   tsx scripts/coverage-ratchet.ts --apply            # update vitest.config.mts
  *   tsx scripts/coverage-ratchet.ts --buffer 3         # tighter buffer
  *   tsx scripts/coverage-ratchet.ts --coverage-file coverage/coverage-final.json
- *   tsx scripts/coverage-ratchet.ts --config-file vitest.config.ts
+ *   tsx scripts/coverage-ratchet.ts --config-file vitest.config.mts
  *
  * Exit codes:
  *   0  all metrics are at or above their thresholds (coverage is passing)
@@ -152,9 +152,9 @@ export function computeTotals(data: CoverageFinal): Totals {
   };
 }
 
-// ─── vitest.config.ts threshold parsing and patching ─────────────────────────
+// ─── vitest.config.mts threshold parsing and patching ─────────────────────────
 
-const DEFAULT_CONFIG = path.resolve(scriptDir, "../vitest.config.ts");
+const DEFAULT_CONFIG = path.resolve(scriptDir, "../vitest.config.mts");
 
 /**
  * Matches one complete, self-delimited string/template literal OR one line
@@ -367,7 +367,7 @@ const HELP_TEXT = [
   "Usage: tsx scripts/coverage-ratchet.ts [options]",
   "",
   "Options:",
-  "  --apply                  Update vitest.config.ts with proposed thresholds",
+  "  --apply                  Update vitest.config.mts with proposed thresholds",
   "  --buffer N               Buffer below actual (default: 4)",
   "  --coverage-file PATH     Path to coverage-final.json",
   "  --config-file PATH       Path to the vitest config to read/patch",
@@ -553,14 +553,14 @@ export function main(args: string[]): number {
       yellow("Proposed thresholds are higher than current.") +
         " Run with " +
         bold("--apply") +
-        " to update vitest.config.ts.",
+        " to update vitest.config.mts.",
     );
   } else {
     applyThresholds(proposed, configFile);
-    console.log(green("✓ vitest.config.ts updated with proposed thresholds."));
+    console.log(green("✓ vitest.config.mts updated with proposed thresholds."));
     console.log(
       dim(
-        "Remember to update the baseline comment in vitest.config.ts " +
+        "Remember to update the baseline comment in vitest.config.mts " +
           "with today's date and measured values.",
       ),
     );

@@ -41,8 +41,8 @@ vi.mock("@/hooks/useSafeTabBarHeight", () => ({
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn() }),
-  useRoute: () => ({ params: undefined }),
+  useNavigation: () => ({ navigate: vi.fn(), setOptions: vi.fn() }),
+  useRoute: () => ({ name: "GroceryLists", params: undefined }),
   usePreventRemove: () => {},
   useIsFocused: () => true,
 }));

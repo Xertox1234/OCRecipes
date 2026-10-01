@@ -14,8 +14,8 @@
 # switches the gate off, which costs the same coverage more slowly. So each deny below
 # names a CAUSE and a FIX, and the three stage-3 denials are deliberately three distinct
 # messages — "no record", "wrong scope" and "unresolved findings" have different causes
-# and different remedies, and a reviewer who found only WARNINGs writes no record at all
-# (review-stamp-writer.sh residual 3), so "no record" must never read as "you never
+# and different remedies, and a reviewer who found only WARNINGs writes no record unless it
+# ends "No blocking findings." (review-stamp-writer.sh residual 3), so "no record" must never read as "you never
 # reviewed".
 set -uo pipefail
 
@@ -167,7 +167,7 @@ case "$TOOL" in
         deny "Blocked: this command mentions more than one \`gh pr\` write subcommand, so merge-review-guard cannot tell which one executes or which PR it targets. Split it into one \`gh pr\` call per command and re-run. $BYPASS"
       fi
       # AN EXTRACTOR MISS IS INDISTINGUISHABLE FROM "NOT A MERGE" HERE, AND THAT IS A
-      # KNOWN, MEASURED GAP - see todos/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
+      # KNOWN, MEASURED GAP - see todos/archive/P1-2026-09-12-merge-review-guard-extractor-miss-is-a-silent-allow.md.
       # cmd_gh_pr_write_subcommand signals REFUSE with rc 1 (handled above) but signals
       # "I could not see it" with the SAME empty string and rc 0 it uses for "there is no
       # merge here", so every rendering it cannot parse arrives at this line as "".
@@ -293,6 +293,12 @@ case "$TOOL" in
         # docs/solutions/conventions/one-axis-at-a-time-corpus-misses-co-occurrence-checks-2026-09-01.md).
         #
         # STILL OPEN, named rather than silently missed (security review, 2026-09-14):
+        # PARTLY CLOSED 2026-09-18 (#995): the REST field-parameter half (`-f merge_method=squash`
+        # with no method flag) and the `--input body.json` half below are now DENIED by the
+        # implicit-POST arm below, the `MRG_API_FIELD && ! MRG_API_ANYMETHOD` conjunct (a field
+        # flag or --input, and no -X/--method anywhere). Only the graphql-mutation-body shape remains open. The text below is kept
+        # as the record of each shape and of the settlement against gh's source -- read its
+        # "silent ALLOW" claims as PRE-#995 measurements, not the current tree.
         # `gh api --help` documents that the method defaults to POST, not GET, whenever
         # ANY `-f`/`-F`/`--raw-field`/`--field` is present, with no `-X`/`--method` token
         # anywhere in the text — so a call relying on that implicit POST reaches neither
@@ -321,7 +327,7 @@ case "$TOOL" in
         # `RequestInputFile` IS `--input` (api.go:301) and `RequestMethodPassed` is
         # `c.Flags().Changed("method")` (api.go:236). So `--input` alone flips the default
         # to POST exactly like a field parameter — it is a confirmed mutating shape, not an
-        # unverified one, and todos/P1-2026-09-07-outward-cli-path-wrapper.md:387 already
+        # unverified one, and todos/archive/P1-2026-09-07-outward-cli-path-wrapper.md:387 already
         # classifies it that way for the same reason.
         #
         # What remains genuinely open is narrower and worth stating precisely so nobody
@@ -331,9 +337,11 @@ case "$TOOL" in
         # this guard exists to prevent.
         #
         # Confirmed zero-delta from main:
-        # guard-outward-cli.sh (untouched by this change) allows the graphql construction
-        # too, so this gate did not remove coverage that existed. Already named, not yet
-        # closed, at todos/P1-2026-09-07-outward-cli-path-wrapper.md:387 ("gh api graphql,
+        # guard-outward-cli.sh allowed the graphql construction too when this was written, so
+        # this gate did not remove coverage that existed. As of #995 that guard carries the same
+        # implicit-POST arm and DENIES the bare graphql form; the ALLOW_OUTWARD_CLI=1-prefixed
+        # form still passes both guards, which is the residual its arm names. Already named, not yet
+        # closed, at todos/archive/P1-2026-09-07-outward-cli-path-wrapper.md:387 ("gh api graphql,
         # which is a different shape"). Closing it needs either widening this conjunct to
         # `-f`/`-F` presence (mirroring the unreadable-value arm below) plus a SEPARATE
         # graphql-mutation-body detector — a different scope than this todo's stated REST
@@ -356,6 +364,19 @@ case "$TOOL" in
         # lowercase `x` placeholder cmd_words inserts for characters deleted from a quoted
         # span, so a quoted value merely containing enough letters could forge a match.
         MRG_API_M='([Pp][Oo][Ss][Tt]|[Pp][Uu][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])'
+        # gh's IMPLICIT POST. api.go:329-330 makes the method POST when NO method flag was
+        # passed AND there is at least one field parameter or an --input file. Both halves
+        # are needed: `-X GET ... -f a=b` is a GET in gh and must stay ALLOW here, so this
+        # arm is anchored on the ABSENCE of a method token exactly as gh anchors on
+        # `!opts.RequestMethodPassed`. Short flags are matched without a value because gh
+        # accepts `-f k=v` and `--field=k=v` alike and the VALUE is irrelevant to the method.
+        # THE LONG-FLAG CLOSER IS ${_CMD_POS_SUFFIX} PLUS `=`, not a hand-spelled
+        # `([[:space:]]|=|$)` (closed 2026-09-22): a redirect glued to the flag (`--field>o k=v`)
+        # put `>` where that class expected whitespace, the field went unseen, and this arm
+        # stood down with no decoy token at all -- argv identical to the spaced form. The closer
+        # lint in test-merge-review-guard.sh was blind to the `|=|` variant and was widened first.
+        MRG_API_FIELD="(^|[[:space:]])(-[fF]|(--field|--raw-field|--input)(=|${_CMD_POS_SUFFIX}))"
+        MRG_API_ANYMETHOD='(^|[[:space:]])(-X|--method([^-A-Za-z0-9]|$))'
         set +o pipefail
         MRG_API_WORDS=$(cmd_words_deep "$CMD")
         MRG_API_CLAUSES=$(printf '%s' "$MRG_API_WORDS" | grep -ioE "$MRG_API_CUT")
@@ -363,6 +384,45 @@ case "$TOOL" in
         MRG_API_HIT=""
         while IFS= read -r MRG_API_CLAUSE; do
           [ -n "$MRG_API_CLAUSE" ] || continue
+          # THE ENDPOINT CHECK IS main's SUBSTRING TEST, ON PURPOSE, AND THIS IS THE RECORD OF WHY.
+          # This branch replaced `pulls.*merge` with an anchored path pattern, because the
+          # implicit-POST arm below made field-only calls reach this check for the first time and
+          # a field VALUE quoting the endpoint (`-f body='see pulls/42/merge …'` on an issues
+          # endpoint) was then classified a merge -- an over-denial this branch itself introduced.
+          # The precise pattern went through FOUR review rounds and FIVE fail-open shapes, every
+          # one main DENY / branch ALLOW, i.e. an unreviewed PR merge the gate on main would have
+          # stopped:
+          #   1. an enumerated segment class `[A-Za-z0-9._{}-]` excluded `$` and `:`, so
+          #      `repos/$OWNER/$REPO/…` and a full `https://` endpoint fell through;
+          #   2. a `?query`-only tail missed `#fragment`;
+          #   3. a `[?#]` tail, defended as EXHAUSTIVE over RFC 3986, was still false: this
+          #      predicate reads the `cmd_words_deep` rendering, not a URI, and a `#` inside a
+          #      QUOTED span becomes the placeholder character (60 of 144 generated rows, 48 quoted);
+          #   4. `merge/?` hand-counted the trailing slashes, so `merge//` escaped;
+          #   5. an unconstrained tail still required exactly one segment between `pulls/` and
+          #      `/merge`, so `pulls//42/merge` and `pulls/42//merge` escaped -- found by READING
+          #      the regex after four rounds of measurement, which is what settled it.
+          # Every "precise" spelling is an allowlist of shapes inside a DENY predicate, and every
+          # shape its author did not enumerate is an ALLOW. The substring test has no segments to
+          # get wrong and cannot regress against itself, so it is what stays.
+          #
+          # THE COST, ACCEPTED AND PINNED IN test-merge-review-guard.sh: three prose spellings deny
+          # that the anchored pattern allowed -- a field value quoting the endpoint, and
+          # `-f title=merge cleanup` on the pulls list. They deny, which is the direction a merge
+          # gate should err in; the bypass exists; and this repo's PR comments go through the
+          # GitHub MCP tools, not field-carrying api calls. The RIGHT discriminator is not path
+          # shape at all but ARGV POSITION -- an endpoint is a positional token, a field value
+          # follows -f/-F/--field -- and that is parser work with its own review, filed as
+          # todos/archive/P3-2026-09-18-gh-api-endpoint-check-should-key-on-argv-position.md.
+          # DO NOT RE-NARROW THIS LINE WITHOUT THAT POSITIONAL MODEL IN HAND.
+          #
+          # Kept from the anchored version because it is true of EVERY closer in this file:
+          # the ENDPOINT and METHOD closers since #992, and `MRG_API_FIELD`'s long-flag closer
+          # since 2026-09-22 (it hand-spelled `([[:space:]]|=|$)` until then, a glued redirect
+          # escaped it, and the closer lint was blind to that one-alternative variant).
+          # THE CLOSER IS ${_CMD_POS_SUFFIX}, NOT A HAND-SPELLED `([[:space:]]|$)`. A redirect
+          # operator terminates a word without whitespace, so a hand-spelled closer skips a glued
+          # `>`; #992 swept these. Do not re-spell one.
           printf '%s' "$MRG_API_CLAUSE" | grep -qiE 'pulls.*merge' || continue
           # Two ways this clause proves a mutating method: the value is a recognized
           # literal (glued `-XPUT`, or separated by whitespace/redirect/`=`), OR a
@@ -373,9 +433,32 @@ case "$TOOL" in
           # 2026-09-14): `gh api -X "$(echo PUT)" repos/o/r/pulls/938/merge` renders the
           # value as the cmd_words placeholder text, not the literal "PUT", so the literal
           # match alone missed it — this second arm is what catches it.
+          # THE NEGATED CONJUNCT READS ARGV, NOT THE CLAUSE (closed 2026-09-22). The clause keeps
+          # an unquoted trailing comment and every redirect OPERAND, neither of which reaches
+          # argv, so `-f k=v # -X GET` and `-f k=v > -X` made `! MRG_API_ANYMETHOD` false and the
+          # implicit-POST arm stood down -- measured ALLOW at 8ff7cfd2 with the benign-comment
+          # control denying. A comment starts at an unquoted word start and cmd_words has
+          # already rendered a QUOTED `#` as the placeholder, so `[[:space:]]#` is the comment
+          # boundary of this rendering; operands are blanked with the SAME `_CMD_REDIR` grammar
+          # MRG_SEP is built from, ANCHORED at a word start. Only the NEGATED conjunct reads the
+          # cut view: the positive field test and the mutating-method literal above keep the
+          # full clause, so relative to main this can only ADD denials -- the cut removes a
+          # SUFFIX at a space and the blank replaces a WORD-INITIAL match with a space, so
+          # neither can alter the token before it. The anchor is load-bearing: `_CMD_REDIR`'s
+          # fd-digit prefix is right for the additive presence checks it serves and wrong for a
+          # subtractive use -- unanchored it ate the trailing digit of `--method2>x` and
+          # manufactured `--method ` (main DENY -> head ALLOW, caught in review). Its cost, an
+          # operator glued to the word with a spaced operand (`k=v> -X`), stays the ALLOW it is
+          # on main and is pinned KNOWN-WRONG. An uncuttable comment inside a substitution
+          # truncates the view and DENIES -- cannot verify -> deny. guard-outward-cli.sh carries
+          # this pipeline byte-for-byte.
+          MRG_API_ARGV=$(printf '%s' "$MRG_API_CLAUSE" | sed -E 's/[[:space:]]#.*$//')
+          [ -n "${_CMD_REDIR:-}" ] && MRG_API_ARGV=$(printf '%s' "$MRG_API_ARGV" | sed -E "s/(^|[[:space:]])${_CMD_REDIR}/\1 /g")
           if printf '%s' "$MRG_API_CLAUSE" | grep -Eq "(^|[[:space:]])(-X${MRG_API_M}${_CMD_POS_SUFFIX}|(-X|--method)(${MRG_SEP}|=)${MRG_API_M}${_CMD_POS_SUFFIX})" \
              || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq '(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)' \
-                  && printf '%s' "$MRG_API_CLAUSE" | grep -qE '[$`]'; }; then
+                  && printf '%s' "$MRG_API_CLAUSE" | grep -qE '[$`]'; } \
+             || { printf '%s' "$MRG_API_CLAUSE" | grep -Eq "$MRG_API_FIELD" \
+                  && ! printf '%s' "$MRG_API_ARGV" | grep -Eq "$MRG_API_ANYMETHOD"; }; then
             MRG_API_HIT=1
             break
           fi
@@ -579,7 +662,7 @@ declare -F review_stamp_dir >/dev/null \
 DIR=$(review_stamp_dir "$HEAD_SHA")
 RECORDS=$(find "$DIR" -maxdepth 1 -name '*.json' 2>/dev/null | sort)
 [ -n "$RECORDS" ] \
-  || deny "Blocked: PR #$PR changes risk-classified files and no review record exists for head ${HEAD_SHA:0:7}. This is NOT proof that no review ran — a reviewer whose findings were all WARNING or SUGGESTION writes no record at all, and a review that reported a DIFFERENT SHA files its record under that SHA instead (an abbreviated one is refused outright by the writer, so it writes nothing). Dispatch the reviewer roster (docs/AI_WORKFLOW.md) against this exact commit; its report must carry a full 40-character REVIEWED-SHA and a REVIEWED-FILES block covering the PR's changed files. $BYPASS"
+  || deny "Blocked: PR #$PR changes risk-classified files and no review record exists for head ${HEAD_SHA:0:7}. This is NOT proof that no review ran — a reviewer whose findings were all WARNING or SUGGESTION writes no record unless its last line is exactly 'No blocking findings.' (which records 'advisory' and passes); a review delivered through a hand-back whose short WRAPPER LINE names one of the three severity tags is read as an objection and writes nothing either, even when the report itself is clean (review-stamp-writer.sh residual 6 — so if you are re-dispatching after a review that WAS clean, tell the reviewer to keep that wrapper free of those words or the re-dispatch reproduces this denial); and a review that reported a DIFFERENT SHA files its record under that SHA instead (an abbreviated one is refused outright by the writer, so it writes nothing). Dispatch the reviewer roster (docs/AI_WORKFLOW.md) against this exact commit; its report must carry a full 40-character REVIEWED-SHA and a REVIEWED-FILES block covering the PR's changed files. $BYPASS"
 
 # WANT_DIGEST must use the SAME formula review-stamp-writer.sh uses — sorted, de-duplicated
 # file list, one per line, `shasum`, first 16 hex characters — or every record mismatches
@@ -657,7 +740,8 @@ while IFS= read -r rec; do
   VERDICT=$(jq -r '.verdict // empty' "$rec" 2>/dev/null)
   NLEFT=$(jq -r '(.unresolved // []) | length' "$rec" 2>/dev/null)
   case "$NLEFT" in ''|*[!0-9]*) NLEFT=1 ;; esac   # unparseable ⇒ treat as unresolved
-  if [ "$VERDICT" != "clean" ] || [ "$NLEFT" -ne 0 ]; then
+  # `advisory` = WARNING/SUGGESTION-only, findings filed rather than fixed (2026-09-22 ruling).
+  if { [ "$VERDICT" != "clean" ] && [ "$VERDICT" != "advisory" ]; } || [ "$NLEFT" -ne 0 ]; then
     WHO=$(jq -r '.agent_type // "a reviewer"' "$rec" 2>/dev/null)
     FIRST=$(jq -r '(.unresolved // []) | if length > 0 then (.[0] | tostring) else "" end' "$rec" 2>/dev/null)
     [ -n "$FIRST" ] || FIRST="(no detail recorded)"

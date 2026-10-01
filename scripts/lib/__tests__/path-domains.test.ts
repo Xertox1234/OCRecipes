@@ -157,6 +157,9 @@ describe("rulesDomainsForPath", () => {
     ["evals/runner.ts", ["ai-prompting", "testing"]],
     [".github/workflows/ci.yml", ["architecture", "testing"]],
     ["vitest.config.ts", ["testing", "typescript"]],
+    // Real current filename post-#1039 (.mts rename) — regression coverage that the
+    // config-file matcher's any-extension basename match still classifies it correctly.
+    ["vitest.config.mts", ["testing", "typescript"]],
     ["eslint.config.js", ["testing", "typescript"]],
     // --- package manifests (human decision) ---
     ["package.json", ["architecture"]],

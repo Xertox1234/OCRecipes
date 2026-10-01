@@ -8,8 +8,13 @@
       "@/*": ["./client/*"],
       "@shared/*": ["./shared/*"]
     },
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals"],
+    // Needed for the explicit ".mts" specifiers in vitest.config.mts's own import graph
+    // (Vite's native config loader requires the extension; TS refuses it without this
+    // flag). Safe under `noEmit` (inherited from expo/tsconfig.base.json) — nothing in
+    // this repo emits via `tsc`; server:build uses esbuild directly.
+    "allowImportingTsExtensions": true
   },
-  "include": ["**/*.ts", "**/*.tsx"],
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mts"],
   "exclude": ["node_modules", "build", "dist"]
 }
