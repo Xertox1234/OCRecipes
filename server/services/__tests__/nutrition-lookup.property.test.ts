@@ -216,8 +216,8 @@ describe("nutrition-lookup metamorphic properties", () => {
         const result = await lookupNutrition(item);
         seen.add(item);
         const hosts = hostsFetched();
-        const hitUsda = hosts.includes("api.nal.usda.gov");
-        const hitNinjas = hosts.includes("api.api-ninjas.com");
+        const hitUsda = hosts.some((h) => h === "api.nal.usda.gov");
+        const hitNinjas = hosts.some((h) => h === "api.api-ninjas.com");
         if (item === "sugar") {
           expect(result?.calories).toBe(387);
           expect(hitUsda).toBe(false);
