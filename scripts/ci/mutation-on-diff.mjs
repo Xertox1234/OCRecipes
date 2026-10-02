@@ -344,7 +344,7 @@ export function parseArgs(argv) {
   const selectOnly = argv.includes("--select-only");
   const rest = argv.filter((a) => a !== "--select-only");
   const [listFile] = rest;
-  if (rest.length !== 1 || listFile.startsWith("--")) return null;
+  if (rest.length !== 1 || !listFile || listFile.startsWith("--")) return null;
   return { selectOnly, listFile };
 }
 

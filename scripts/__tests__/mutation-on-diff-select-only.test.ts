@@ -66,7 +66,11 @@ describe("parseArgs", () => {
 
   it("rejects a missing list file, an unknown flag and extra arguments", () => {
     expect(parseArgs([])).toBeNull();
+    expect(parseArgs([""])).toBeNull();
     expect(parseArgs(["--select-only"])).toBeNull();
+    // A lone unknown flag leaves exactly one argument, so only the "--" check
+    // rejects it; with a list file beside it the count rejects it first.
+    expect(parseArgs(["--select-onyl"])).toBeNull();
     expect(parseArgs(["--select-onyl", "list.txt"])).toBeNull();
     expect(parseArgs(["a.txt", "b.txt"])).toBeNull();
   });
@@ -169,9 +173,9 @@ describe("mutation-on-diff.mjs on a tree with no node_modules", () => {
       delete env.GITHUB_STEP_SUMMARY;
     }
     const res = spawnSync(
-      "node",
+      process.execPath,
       [path.join(tree.root, "scripts", "ci", "mutation-on-diff.mjs"), ...args],
-      { cwd: tree.root, env, encoding: "utf8" },
+      { cwd: tree.root, env, encoding: "utf8", timeout: 30_000 },
     );
     return {
       status: res.status,
@@ -194,7 +198,8 @@ describe("mutation-on-diff.mjs on a tree with no node_modules", () => {
     const r = run(tree, ["--select-only", tree.list]);
     expect(r.status).toBe(0);
     expect(r.output).toBe("run=false\n");
-    expect(r.summary).toContain(NO_ELIGIBLE);
+    // Once: the summary is this step's, and the full run is skipped after it.
+    expect(r.summary.split(NO_ELIGIBLE)).toHaveLength(2);
     expect(r.summary).toContain(
       "- Untested changed modules (no co-located test): server/lib/untested.ts",
     );
@@ -274,7 +279,13 @@ describe("mutation-on-diff.mjs on a tree with no node_modules", () => {
 
   it("exits 2 with a usage line for a missing list file or an unknown flag", () => {
     const tree = makeTree([], []);
-    for (const args of [[], ["--select-only"], ["--select-onyl", tree.list]]) {
+    for (const args of [
+      [],
+      [""],
+      ["--select-only"],
+      ["--select-onyl"],
+      ["--select-onyl", tree.list],
+    ]) {
       const r = run(tree, args);
       expect(r.status).toBe(2);
       expect(r.stderr).toContain(
@@ -283,15 +294,36 @@ describe("mutation-on-diff.mjs on a tree with no node_modules", () => {
       expect(r.output).toBe("");
     }
   });
+
+  it("fails loudly, with no run= line, when the list file cannot be read", () => {
+    // A missing list means the Detect step failed; saying run=false here would
+    // skip the job green over a PR nobody looked at.
+    const tree = makeTree([], []);
+    const r = run(tree, [
+      "--select-only",
+      path.join(tree.root, "no-such-list.txt"),
+    ]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("ENOENT");
+    expect(r.output).toBe("");
+    expect(r.summary).toBe("");
+  });
 });
 
 describe("mutation-on-diff.yml", () => {
-  it("installs only when the select step did not say run=false", () => {
+  it("gates the install steps on the select step and skips only on an explicit false", () => {
     const workflow = readFileSync(WORKFLOW, "utf8");
     // Skip on an explicit false, never on a missing output: a typo'd step id
     // then installs and runs as before instead of skipping every PR.
     expect(workflow).toMatch(
       /- name: Install dependencies\n\s+if: steps\.select\.outputs\.run != 'false'\n\s+run: npm ci\n/,
     );
+    // One gate per step that needs the install: setup-node, install, run and
+    // upload. A step gated the other way would install and then skip its work
+    // on a missing output, which is the silent skip the polarity prevents.
+    expect(
+      workflow.match(/if: steps\.select\.outputs\.run != 'false'/g),
+    ).toHaveLength(4);
+    expect(workflow).not.toContain("outputs.run == 'true'");
   });
 });
