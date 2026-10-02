@@ -7,8 +7,9 @@ import {
   act,
   waitFor,
 } from "@testing-library/react";
-// @react-navigation/core re-exports the pure router package and loads under
-// Node (see linking.test.ts); @react-navigation/native does not.
+// @react-navigation/core re-exports the pure router package (CommonActions,
+// StackRouter) and is the declared dependency; native re-exports it unchanged
+// and also loads in this harness since #1214, but imports far more.
 import { CommonActions, StackRouter } from "@react-navigation/core";
 import { renderComponent } from "../../../test/utils/render-component";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
@@ -112,8 +113,9 @@ vi.mock("@/hooks/usePendingReminders", () => ({
 }));
 
 // The real ToastContext pulls in Toast.tsx (Reanimated, gesture handler); the
-// real navigationRef pulls in @react-navigation/native, which the node env
-// cannot load. Both are consumed by the "Coach replied" bridge below.
+// real navigationRef is never ready without a mounted NavigationContainer, so
+// the mock stands in to record the bridge's navigate call. Both are consumed
+// by the "Coach replied" bridge below.
 vi.mock("@/context/ToastContext", () => ({ useToast: () => mockToast }));
 vi.mock("@/navigation/navigationRef", () => ({
   navigationRef: mockNavigationRef,

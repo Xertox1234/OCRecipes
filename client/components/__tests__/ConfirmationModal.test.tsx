@@ -23,10 +23,10 @@ function TestHarness({ options }: { options: ConfirmOptions }) {
         Open
       </button>
       {/* Stands in for a host screen's own content — spreads
-          behindContentA11yProps the same way the 3 real callers that apply
-          it to a plain View/Pressable do (5 more apply it to a FlatList/
-          SectionList, 1 to an Animated.View; see the describe block below
-          for why this harness can't stand in for those). */}
+          behindContentA11yProps onto a plain View, as most real call sites
+          do (8 caller screens hold 23 spread sites in all; since #1225 the
+          FlatList/SectionList/Animated.View mocks route the pair too — see
+          the describe block below for the per-element tally). */}
       <View testID="host-content" {...behindContentA11yProps}>
         <Text>Host screen content</Text>
       </View>
