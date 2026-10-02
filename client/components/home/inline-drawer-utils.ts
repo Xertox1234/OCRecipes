@@ -17,6 +17,29 @@ export function glideToTopOffset(
   return Math.max(0, currentScrollY + (rowPageY - collapsedBarHeight));
 }
 
+/** Bottom padding for the Home scroll content. `basePadding` is the always-on
+ *  tab-bar + FAB clearance. While an inline drawer is open and a keyboard height
+ *  is known, the content needs at least that much room under it: iOS lays the
+ *  keyboard over the page without shrinking the scroll view, so on a short page
+ *  there is otherwise no scroll range left to lift the drawer's input above it.
+ *  The keyboard covers the tab bar and FAB, so their clearance is not stacked on
+ *  top of it - the larger of the two wins.
+ *
+ *  Keyed on drawer state, deliberately NOT on the keyboard being up: dropping the
+ *  padding when the keyboard hides shrinks the content beneath a lifted scroll
+ *  offset and the scroll view snaps the page back in a single frame.
+ *
+ *  Runs on the JS thread only (render), so it carries no "worklet" directive. */
+export function scrollBottomPadding(
+  basePadding: number,
+  keyboardHeight: number,
+  hasOpenDrawer: boolean,
+  gap: number,
+): number {
+  if (!hasOpenDrawer || keyboardHeight <= 0) return basePadding;
+  return Math.max(basePadding, keyboardHeight + gap);
+}
+
 /** Single-open accordion transition. Tapping the open drawer closes it; tapping
  *  a different one switches (isSwitch=true so the caller can sequence the
  *  collapse before the new open). */

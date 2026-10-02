@@ -1,9 +1,9 @@
 ---
 title: "Home: the keyboard covers an inline drawer's input when the page is short"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-10-01
 assignee:
 labels: [deferred, react-native, ux]
 github_issue:
@@ -37,12 +37,12 @@ because it affects every Home inline drawer, not just Quick Log.
 
 ## Acceptance Criteria
 
-- [ ] With a short Home page (most sections collapsed), opening Quick Log or Search Recipes
+- [x] With a short Home page (most sections collapsed), opening Quick Log or Search Recipes
       and focusing its input keeps the input and its buttons above the keyboard (simulator
       screenshot as evidence).
-- [ ] Long pages keep today's behavior: the row glides to just under the collapsed header.
-- [ ] No layout jump when the keyboard hides.
-- [ ] A test covers whatever pure logic the fix adds (e.g. the extra bottom inset while the
+- [x] Long pages keep today's behavior: the row glides to just under the collapsed header.
+- [x] No layout jump when the keyboard hides.
+- [x] A test covers whatever pure logic the fix adds (e.g. the extra bottom inset while the
       keyboard is up); the scroll itself is verified on the simulator.
 
 ## Implementation Notes
@@ -74,3 +74,26 @@ because it affects every Home inline drawer, not just Quick Log.
 ### 2026-09-26
 
 - Filed while verifying the Quick Log fixes on the simulator.
+
+### 2026-10-01
+
+- Implemented by the todo executor. The Home scroll content is padded by the last keyboard height
+  while an inline drawer is open (`scrollBottomPadding` in
+  `client/components/home/inline-drawer-utils.ts`), and the glide re-runs after each keyboard show
+  and when a drawer opens with a keyboard height already known. The padding is kept when the
+  keyboard hides and only reset when the drawer closes.
+- The Implementation Notes said "while the keyboard is up, pad…"; AC #3 wins. On the iPhone 17 Pro
+  simulator both a padding that follows the keyboard and a `KeyboardAvoidingView` wrap snapped the
+  page back in a single frame on hide (see
+  `docs/solutions/logic-errors/scroll-inset-that-follows-the-ios-keyboard-snaps-the-page-back-on-hide-2026-10-01.md`).
+- Evidence for AC #1 and #3 came from synthesized `keyboardWillShow` / `keyboardWillHide`
+  notifications (keyboard height assumed 336), because the simulator had a hardware keyboard
+  attached and never rendered the soft keyboard (see
+  `docs/solutions/best-practices/synthesize-ios-keyboard-events-over-cdp-when-the-sim-has-a-hardware-keyboard-2026-10-01.md`).
+  A real-keyboard pass is still advisable. Android was not run.
+- Out of contract: `client/screens/__tests__/HomeScreen.render-item-stability.test.tsx` gained an
+  inert `Keyboard` stub in its `react-native` factory, because the new listener crashes that
+  render without it (the shared react-native mock exports no `Keyboard`).
+- Known, not fixed: every keyboard show anywhere in the app re-renders Home once (it stays mounted
+  behind other tabs), and closing a drawer now returns the page to the top in one step where it
+  used to move about 7pt.

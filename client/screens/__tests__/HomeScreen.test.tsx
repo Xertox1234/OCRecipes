@@ -23,22 +23,44 @@
 // BeveragePickerSheet.test.tsx) — the shared test/mocks/gorhom-bottom-sheet.ts
 // mock reflects the `accessible` prop onto a `data-accessible` DOM attribute.
 import React from "react";
+import { Platform } from "react-native";
+import { scrollTo } from "react-native-reanimated";
 import { screen, fireEvent, act } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import HomeScreen from "../HomeScreen";
 import { QuickLogDrawer } from "@/components/home/QuickLogDrawer";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { glideToTopOffset } from "@/components/home/inline-drawer-utils";
+import { Spacing, FAB_CLEARANCE } from "@/constants/theme";
 
 // Defaults to false (every existing test relies on the collapsed bar being
 // hidden). The Android-trap-covers-the-collapsed-bar block below is the only
 // one that flips it, to prove the bar stays excluded from the Android a11y
 // tree even while VISIBLE, if the import sheet is also open.
-const { isBarVisibleHolder, authHolder, premiumHolder } = vi.hoisted(() => ({
+const {
+  isBarVisibleHolder,
+  authHolder,
+  premiumHolder,
+  measureHolder,
+  scrollViewProps,
+  keyboardListeners,
+} = vi.hoisted(() => ({
   isBarVisibleHolder: { value: false },
   // Quick Log lock cells: the raw tier (what HomeScreen used to compare) and
   // the server-resolved features (what the gate must read) vary separately.
   authHolder: { user: null as { subscriptionTier: string } | null },
   premiumHolder: { textFoodParsing: false, isPremiumResolved: true },
+  // What the reanimated mock's measure() reports. null = "not laid out", which
+  // makes the glide bail before scrollTo; the keyboard-inset block sets a row.
+  measureHolder: { value: null as { pageY: number } | null },
+  // The props HomeScreen last passed Animated.ScrollView — jsdom cannot read a
+  // contentContainerStyle object back off the DOM, so the double records them.
+  scrollViewProps: { current: null as Record<string, unknown> | null },
+  // Every live Keyboard.addListener subscription (removed ones are spliced out).
+  keyboardListeners: [] as {
+    event: string;
+    handler: (e: unknown) => void;
+  }[],
 }));
 
 // The shared test/mocks/react-native-reanimated.ts mock's `Animated` namespace
@@ -55,15 +77,42 @@ vi.mock("react-native-reanimated", async () => {
   return {
     ...actual,
     // Opening an inline drawer glides its row (measure + scrollTo on the UI
-    // thread); jsdom has no layout, so measure reports "not laid out".
-    measure: () => null,
+    // thread); jsdom has no layout, so measure reports "not laid out" unless a
+    // test sets measureHolder.
+    measure: () => measureHolder.value,
     scrollTo: vi.fn(),
     default: {
       ...actual.default,
-      ScrollView: actual.default.View,
+      // Same plain-div renderer as before, but recording the props HomeScreen
+      // passes (see scrollViewProps).
+      ScrollView: (props: Record<string, unknown>) => {
+        scrollViewProps.current = props;
+        return React.createElement(actual.default.View, props);
+      },
     },
   };
 });
+
+// The shared react-native mock has no Keyboard (same gap QuickLogDrawer.test.tsx
+// documents). HomeScreen subscribes to keyboard-show events; record them so a
+// test can fire one. It has no RefreshControl either — harmless until a factory
+// mock exists, because vitest then throws on ANY missing export that is read.
+vi.mock("react-native", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  RefreshControl: () => null,
+  Keyboard: {
+    addListener: (event: string, handler: (e: unknown) => void) => {
+      const entry = { event, handler };
+      keyboardListeners.push(entry);
+      return {
+        remove: () => {
+          const i = keyboardListeners.indexOf(entry);
+          if (i >= 0) keyboardListeners.splice(i, 1);
+        },
+      };
+    },
+  },
+}));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
@@ -395,5 +444,211 @@ describe("HomeScreen — Quick Log lock", () => {
     rerender(<HomeScreen />);
     expect(quickLogProps().isLocked).toBe(true);
     expect(quickLogProps().isOpen).toBe(false);
+  });
+});
+
+// Short Home page + inline drawer: iOS lays the keyboard over the page without
+// shrinking the scroll view, so an open drawer's input needs scroll RANGE to be
+// lifted above it. HomeScreen pads the content by the last keyboard height while
+// a drawer is open and re-runs the glide once a keyboard shows. The padding is
+// deliberately NOT removed when the keyboard hides: that shrinks the content
+// beneath a lifted offset and the page snaps back in a single frame (observed
+// on the iOS simulator — todos/archive/P2-2026-09-26-home-keyboard-covers-
+// inline-drawer-input.md). The pure sizing rule is tested in
+// inline-drawer-utils.test.ts; this block pins that HomeScreen is WIRED to it
+// (docs/solutions/conventions/pure-utils-extraction-tests-dont-prove-wiring-
+// 2026-07-14.md).
+describe("HomeScreen — keyboard inset for inline drawers", () => {
+  const TAB_BAR_HEIGHT = 49; // the @react-navigation/bottom-tabs mock above
+  const BASE_PADDING = TAB_BAR_HEIGHT + Spacing.xl + FAB_CLEARANCE;
+  const KEYBOARD = 336;
+  // insets.top is 0 in the safe-area mock, so the collapsed bar is just
+  // HOME_HEADER_COLLAPSED tall.
+  const COLLAPSED_BAR = 44;
+
+  const quickLogProps = () => vi.mocked(QuickLogDrawer).mock.calls.at(-1)![0];
+  const paddingBottom = () =>
+    (
+      scrollViewProps.current!.contentContainerStyle as {
+        paddingBottom: number;
+      }
+    ).paddingBottom;
+  /** Fire every live keyboard listener whose event name ends in `suffix`. */
+  const fireKeyboard = (suffix: "Show" | "Hide", height = KEYBOARD) =>
+    act(() => {
+      for (const { event, handler } of [...keyboardListeners]) {
+        if (event.endsWith(suffix)) handler({ endCoordinates: { height } });
+      }
+    });
+  const openQuickLog = () => act(() => quickLogProps().onToggle());
+
+  beforeEach(() => {
+    vi.mocked(QuickLogDrawer).mockClear();
+    // mockReset, not mockClear: the glide-ordering tests below install a
+    // scrollTo implementation, and clear() would let it leak into the next test.
+    vi.mocked(scrollTo).mockReset();
+    measureHolder.value = null;
+    scrollViewProps.current = null;
+    authHolder.user = { subscriptionTier: "premium" };
+    premiumHolder.textFoodParsing = true;
+    premiumHolder.isPremiumResolved = true;
+  });
+  afterEach(() => {
+    measureHolder.value = null;
+    Platform.OS = "ios";
+  });
+
+  it("starts at the base bottom padding (tab bar + FAB clearance)", () => {
+    renderComponent(<HomeScreen />);
+    expect(paddingBottom()).toBe(BASE_PADDING);
+  });
+
+  it("pads the scroll content by the keyboard height plus a gap once it shows while a drawer is open", () => {
+    renderComponent(<HomeScreen />);
+    openQuickLog();
+    fireKeyboard("Show");
+    expect(paddingBottom()).toBe(KEYBOARD + Spacing.lg);
+  });
+
+  it("keeps that padding when the keyboard hides — dropping it would snap the page back (no layout jump)", () => {
+    renderComponent(<HomeScreen />);
+    openQuickLog();
+    fireKeyboard("Show");
+    const padded = paddingBottom();
+    // Denominator: the padding really did grow, so "unchanged" below is a
+    // statement about the hide, not a vacuous equality.
+    expect(padded).toBeGreaterThan(BASE_PADDING);
+
+    fireKeyboard("Hide");
+
+    expect(paddingBottom()).toBe(padded);
+  });
+
+  it("returns to the base padding once the drawer closes", () => {
+    renderComponent(<HomeScreen />);
+    openQuickLog();
+    fireKeyboard("Show");
+    expect(paddingBottom()).toBeGreaterThan(BASE_PADDING);
+
+    act(() => quickLogProps().onClose());
+
+    expect(paddingBottom()).toBe(BASE_PADDING);
+  });
+
+  it("does not pad for a keyboard that shows while no drawer is open (e.g. the import sheet's input)", () => {
+    measureHolder.value = { pageY: 600 };
+    renderComponent(<HomeScreen />);
+    fireKeyboard("Show");
+    expect(paddingBottom()).toBe(BASE_PADDING);
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("applies a keyboard height it already saw as soon as a drawer opens", () => {
+    renderComponent(<HomeScreen />);
+    fireKeyboard("Show");
+    expect(paddingBottom()).toBe(BASE_PADDING);
+
+    openQuickLog();
+
+    expect(paddingBottom()).toBe(KEYBOARD + Spacing.lg);
+  });
+
+  it("re-runs the glide once the keyboard shows, now that the padding has made room", () => {
+    measureHolder.value = { pageY: 600 };
+    renderComponent(<HomeScreen />);
+    openQuickLog(); // opening glides once, before any keyboard exists
+    vi.mocked(scrollTo).mockClear();
+    // Read the padding AT THE MOMENT scrollTo fires. On a device a glide issued
+    // before React renders the grown padding is clamped by the old content
+    // height, which is why the glide follows the commit in an effect instead of
+    // running from the keyboard listener.
+    const paddingAtGlide: number[] = [];
+    vi.mocked(scrollTo).mockImplementation(() => {
+      paddingAtGlide.push(paddingBottom());
+    });
+
+    fireKeyboard("Show");
+
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith(
+      expect.anything(),
+      0,
+      glideToTopOffset(0, 600, COLLAPSED_BAR),
+      expect.any(Boolean),
+    );
+    expect(paddingAtGlide).toEqual([KEYBOARD + Spacing.lg]);
+  });
+
+  it("glides again on every keyboard show, even at an unchanged keyboard height", () => {
+    measureHolder.value = { pageY: 600 };
+    renderComponent(<HomeScreen />);
+    openQuickLog();
+    vi.mocked(scrollTo).mockClear();
+
+    fireKeyboard("Show");
+    fireKeyboard("Show");
+
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+  });
+
+  // The keyboard can already be up when a drawer opens (a drawer's text input
+  // keeps focus after it collapses, and a header tap does not dismiss), so no
+  // new show event will arrive to trigger the glide above. The open handler's
+  // own glide runs BEFORE the render that applies the remembered padding, so a
+  // second glide has to follow that commit.
+  it("glides again once the remembered padding commits when a drawer opens with a keyboard height already known", () => {
+    measureHolder.value = { pageY: 600 };
+    renderComponent(<HomeScreen />);
+    fireKeyboard("Show"); // no drawer open: nothing to glide, padding stays at base
+    expect(scrollTo).not.toHaveBeenCalled();
+    const paddingAtGlide: number[] = [];
+    vi.mocked(scrollTo).mockImplementation(() => {
+      paddingAtGlide.push(paddingBottom());
+    });
+
+    openQuickLog();
+
+    // [the open handler's own glide, before the padding commits; the one that
+    // follows the commit]
+    expect(paddingAtGlide).toEqual([BASE_PADDING, KEYBOARD + Spacing.lg]);
+  });
+
+  it("does not glide when the drawer closes and the padding drops back (no open drawer left to lift)", () => {
+    measureHolder.value = { pageY: 600 };
+    renderComponent(<HomeScreen />);
+    openQuickLog();
+    fireKeyboard("Show");
+    expect(paddingBottom()).toBe(KEYBOARD + Spacing.lg);
+    vi.mocked(scrollTo).mockClear();
+
+    act(() => quickLogProps().onClose());
+
+    // The padding did change, so a padding-keyed glide is the thing under test.
+    expect(paddingBottom()).toBe(BASE_PADDING);
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("listens for keyboardWillShow on iOS", () => {
+    renderComponent(<HomeScreen />);
+    const events = keyboardListeners.map((l) => l.event);
+    expect(events).toContain("keyboardWillShow");
+    expect(events).not.toContain("keyboardDidShow");
+  });
+
+  it("listens for keyboardDidShow on Android, which has no will-events", () => {
+    Platform.OS = "android";
+    renderComponent(<HomeScreen />);
+    const events = keyboardListeners.map((l) => l.event);
+    expect(events).toContain("keyboardDidShow");
+    expect(events).not.toContain("keyboardWillShow");
+  });
+
+  it("removes its keyboard listener on unmount", () => {
+    const { unmount } = renderComponent(<HomeScreen />);
+    expect(keyboardListeners.length).toBeGreaterThan(0);
+
+    unmount();
+
+    expect(keyboardListeners).toHaveLength(0);
   });
 });

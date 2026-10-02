@@ -6,6 +6,8 @@ import React, {
   useState,
 } from "react";
 import {
+  Keyboard,
+  Platform,
   RefreshControl,
   StyleSheet,
   View,
@@ -32,6 +34,7 @@ import { collapseTimingConfig } from "@/constants/animations";
 import {
   glideToTopOffset,
   nextOpenDrawer,
+  scrollBottomPadding,
 } from "@/components/home/inline-drawer-utils";
 import { HomeInlineDrawer } from "@/components/home/HomeInlineDrawer";
 import { DailySummaryHeader } from "@/components/home/DailySummaryHeader";
@@ -254,13 +257,47 @@ export default function HomeScreen() {
   };
 
   const [openDrawerId, setOpenDrawerId] = useState<string | null>(null);
+  const hasOpenDrawer = openDrawerId !== null;
+
+  // The last keyboard height a keyboard-show reported, and how many shows there
+  // have been. iOS lays the keyboard over the page without shrinking this scroll
+  // view, so on a short page there is no scroll range left to lift an open
+  // drawer's input above it: the content is padded by that height while a
+  // drawer is open (scrollBottomPadding). It is NOT cleared when the keyboard
+  // hides — removing the padding shrinks the content beneath the lifted offset
+  // and the page snaps back in one frame. `shows` counts events instead of
+  // comparing heights because a second show at the same height still needs its
+  // own glide. iOS reports the show before the animation starts, so the lift
+  // runs alongside it; Android only has the did-event.
+  const [keyboard, setKeyboard] = useState({ height: 0, shows: 0 });
+  useEffect(() => {
+    const subscription = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (event) =>
+        setKeyboard((prev) => ({
+          height:
+            event.endCoordinates.height > 0
+              ? event.endCoordinates.height
+              : prev.height,
+          shows: prev.shows + 1,
+        })),
+    );
+    return () => subscription.remove();
+  }, []);
+
+  const bottomPadding = scrollBottomPadding(
+    tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+    keyboard.height,
+    hasOpenDrawer,
+    Spacing.lg,
+  );
 
   const scrollContentContainerStyle = useMemo(
     () => ({
       paddingTop: insets.top + Spacing.lg,
-      paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+      paddingBottom: bottomPadding,
     }),
-    [insets.top, tabBarHeight],
+    [insets.top, bottomPadding],
   );
 
   const handleRefresh = useCallback(() => {
@@ -317,6 +354,27 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- animated refs + shared value are stable
     [collapsedBarHeight, reducedMotion],
   );
+
+  // Mirror of openDrawerId for the keyboard effect below. Declared first: effects
+  // in one component run in declaration order.
+  const openDrawerIdRef = useRef(openDrawerId);
+  useEffect(() => {
+    openDrawerIdRef.current = openDrawerId;
+  }, [openDrawerId]);
+
+  // The content padding has just grown (this render committed it), so the open
+  // drawer's row can scroll further than the glide that ran when the drawer
+  // opened — on a short page that one barely moved. Glide again now. Two things
+  // grow it: a keyboard show (keyed on the show count, see `keyboard`), and a
+  // drawer opening while a keyboard height is already known — the keyboard is
+  // often still up then (a collapsed drawer's input keeps focus), so no new show
+  // event arrives, and the open handler's own glide ran before this padding did.
+  // A drawer closing also changes the padding, but then the ref is null: no glide.
+  useEffect(() => {
+    if (keyboard.shows === 0) return;
+    const drawerId = openDrawerIdRef.current;
+    if (drawerId !== null) glideRowToTop(drawerId);
+  }, [keyboard.shows, bottomPadding, glideRowToTop]);
 
   // Pending drawer-switch timer (collapse-then-open). Held in a ref so a user
   // drag or screen blur during the collapse window can cancel the reopen.

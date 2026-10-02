@@ -259,7 +259,11 @@ vi.mock("react-native", async (importOriginal) => {
     refreshControlProps.current = props;
     return null;
   };
-  return { ...actual, RefreshControl };
+  // HomeScreen subscribes to keyboard-show events, and the shared react-native
+  // mock exports no Keyboard (vitest throws on reading any export a factory mock
+  // lacks). Inert here: this test is about callback identity, not the keyboard.
+  const Keyboard = { addListener: () => ({ remove: () => {} }) };
+  return { ...actual, RefreshControl, Keyboard };
 });
 
 describe("HomeScreen — haptics-dependent callback identity stability across an unrelated re-render (M3)", () => {
