@@ -35,6 +35,9 @@ vi.mock("@react-navigation/native", () => ({
     replace: mockReplace,
   }),
   useRoute: () => mockRoute,
+  // LabelAnalysisScreen registers a focus effect (front-label CTA reconcile);
+  // its behavior is covered in LabelAnalysisScreen.verification.test.tsx.
+  useFocusEffect: () => {},
 }));
 
 vi.mock("@react-navigation/elements", () => ({
