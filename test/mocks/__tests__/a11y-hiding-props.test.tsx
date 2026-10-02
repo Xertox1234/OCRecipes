@@ -191,11 +191,12 @@ describe.each(ANIMATED)(
   },
 );
 
-// CollapsibleSection's clip container sets BOTH a literal `aria-hidden` and the
-// pair, in lockstep. The translated value is spread AFTER the literal one (as
-// every other mapped attribute in `mapA11yProps` is), so when the pair says
-// "hidden" it wins over a literal `aria-hidden={false}`, and a literal that
-// agrees with the pair simply passes through.
+// CollapsibleSection's clip container sets a literal `aria-hidden` beside
+// `importantForAccessibility`, in lockstep. The translated value is spread
+// AFTER the literal one (as every other mapped attribute in `mapA11yProps`
+// is), so when the pair says "hidden" it wins over a literal
+// `aria-hidden={false}`, and a literal that agrees with the pair simply passes
+// through. The rows below also cover both props set, a superset of that case.
 describe("Animated.View — a literal aria-hidden next to the pair", () => {
   type LiteralProps = HidingProps & { "aria-hidden"?: boolean };
   const LITERAL_CASES: [

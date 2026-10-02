@@ -133,24 +133,24 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
   accessibility-actions-bearing one carries that prop. This is also the
   legitimate reason category the `inline-vi-mock-globally-aliased-modules`
   doc's numbered list was missing — see its item 5.
-- **Executed 2026-10-02 (reanimated + list mocks drop the hiding pair):** the last two mock
-  families that did not translate the pair now do, through the same `ariaHiddenProps` helper
-  (imported from `./react-native`, the reuse pattern `test/mocks/gorhom-bottom-sheet.ts` and
-  `test/mocks/expo-vector-icons.ts` already follow). `mapA11yProps()` in
-  `test/mocks/react-native-reanimated.ts` now consumes both props for `Animated.View` /
-  `Animated.Text`; before, `importantForAccessibility` reached the DOM node as a raw
-  lowercased attribute plus a React unknown-prop warning, and `accessibilityElementsHidden`
-  was dropped with a warning. `createFlatListMock` (so `FlatList` and `BottomSheetFlatList`)
-  and the hand-written `SectionList` in `test/mocks/react-native.ts` now apply it to their
-  root element; before, they destructured a fixed prop list and dropped both props silently.
-  They still do NOT spread `...rest` — that would hand `refreshControl`,
+- **Executed 2026-10-02 (reanimated + list mocks drop the hiding pair):** closes the two
+  families the 2026-08-17 entry above left open. They now translate the pair through the same
+  `ariaHiddenProps` helper (imported from `./react-native`, the reuse pattern
+  `test/mocks/gorhom-bottom-sheet.ts` and `test/mocks/expo-vector-icons.ts` already follow).
+  `mapA11yProps()` in `test/mocks/react-native-reanimated.ts` now consumes both props for
+  `Animated.View` / `Animated.Text`; before, `importantForAccessibility` reached the DOM node
+  as a raw lowercased attribute plus a React unknown-prop warning, and
+  `accessibilityElementsHidden` was dropped with a warning. `createFlatListMock` (so `FlatList`
+  and `BottomSheetFlatList`) and the hand-written `SectionList` in `test/mocks/react-native.ts`
+  now apply it to their root element; before, they destructured a fixed prop list and dropped
+  both props silently. They still do NOT spread `...rest` — that would hand `refreshControl`,
   `contentContainerStyle` and every `on*` handler to the DOM element. Hiding on those
   components is now assertable like on plain RN primitives (a role count, or
   `getAttribute("aria-hidden")`), including from a screen test that renders a list while
-  `useConfirmationModal()`'s `behindContentA11yProps` is live. Three things to know:
-  - A raw `importantforaccessibility` read-back on a reanimated element no longer works —
-    the attribute is consumed. Read `aria-hidden` instead (the TalkBack background-trap tests
-    in `client/screens/__tests__/HomeScreen.test.tsx` were rewritten that way).
+  `useConfirmationModal()`'s `behindContentA11yProps` is live. Four things to know:
+  - A raw `importantforaccessibility` read-back on a reanimated element no longer works — the
+    attribute is consumed. Read `aria-hidden` for tree membership, or capture the props the
+    screen passes at the mock boundary when the exact per-platform value matters (below).
   - `importantForAccessibility="no"` is still deliberately never mapped: it excludes only the
     node itself, not its subtree (`client/components/TextInput.tsx`'s `Animated.Text` sets
     it), so such an element renders no `aria-hidden`.
@@ -160,12 +160,22 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
     literal one, so "hidden" from either side wins and a literal that agrees simply passes
     through. In production, React Native 0.81's `View.js` derives
     `importantForAccessibility="no-hide-descendants"` from `aria-hidden === true`.
+  - Other mock exports still pass the pair through untranslated: `Image`, `TextInput`,
+    `Modal`, `ActivityIndicator`, `TouchableOpacity` and `Switch` in
+    `test/mocks/react-native.ts`, and the `expo-image`, `expo-blur` and
+    `expo-linear-gradient` mocks (read from the mock sources on 2026-10-02; the svg, screens
+    and gesture-handler mocks were not checked). Route the pair through `ariaHiddenProps` the
+    way the mocks above do before asserting `aria-hidden` on one of them.
 
-  The OR scope limit in the 2026-09-23 entry above applies unchanged to every family here:
-  a passing `aria-hidden` read-back proves AT LEAST ONE hiding prop is set, not which
-  platform is covered. HomeScreen's collapsed bar, which sets both props while it is not
-  visible, is the worked example in `HomeScreen.test.tsx`. The contract tests — one block per
-  family, with single-prop rows that were mutation-checked — are
+  The OR scope limit in the 2026-09-23 entry above applies unchanged to every family here: a
+  passing `aria-hidden` read-back proves AT LEAST ONE hiding prop is set, not which platform
+  is covered — a regression that moves the Android lever onto the iOS-only
+  `accessibilityElementsHidden` keeps `aria-hidden` set. When the exact value matters, use the
+  mock-boundary prop capture from the 2026-09-25 entry:
+  `client/screens/__tests__/HomeScreen.test.tsx`'s TalkBack background-trap tests pin
+  `importantForAccessibility` exactly that way (its local reanimated double records the props
+  passed to `Animated.ScrollView` and to the collapsed bar's `Animated.View`). The contract
+  tests — one block per family, with single-prop rows that were mutation-checked — are
   `test/mocks/__tests__/a11y-hiding-props.test.tsx`.
 
 ## Related Files
@@ -175,7 +185,7 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
 - `test/mocks/expo-vector-icons.ts` — icon mock now reuses `ariaHiddenProps` from `react-native.ts` (2026-09-23), making icon hiding assertable
 - `test/mocks/react-native-reanimated.ts` — `mapA11yProps()` routes `accessibilityElementsHidden`/`importantForAccessibility` through `ariaHiddenProps` (imported from `test/mocks/react-native.ts`) for `Animated.View`/`Animated.Text` (2026-10-02)
 - `test/mocks/__tests__/a11y-hiding-props.test.tsx` — contract test for the reanimated and list families: hidden, not-hidden and single-prop rows, no raw attribute leak, a literal `aria-hidden` beside the pair
-- `client/screens/__tests__/HomeScreen.test.tsx` — the Android TalkBack background-trap tests read `aria-hidden` through the reanimated mock; the worked example of the OR scope limit (the collapsed bar sets both props while it is not visible)
+- `client/screens/__tests__/HomeScreen.test.tsx` — the Android TalkBack background-trap tests pin the exact `importantForAccessibility` the screen passes (props captured by the file's local reanimated double), because an `aria-hidden` read-back ORs the pair and cannot isolate the Android lever; the worked example of the mock-boundary capture applied to the reanimated mock
 - Note on this doc's `applies_to`: the three `test/mocks/*` entries are currently INERT — `scripts/lib/path-domains.ts` routes `test/mocks/` to no domain (`npx tsx scripts/lib/path-domains.ts test/mocks/react-native-reanimated.ts` prints nothing), and retrieval selects by routed domain before `applies_to` is consulted. (`inject-patterns.sh` does fall back to the `typescript` domain for an unrouted `.ts` file, but this doc has no `typescript` tag, so that fallback doesn't reach it either.) They take effect only if a `test/mocks/` routing rule is added or this doc gains a `typescript` tag; until then this doc is injected on edits to the `client/**/__tests__` files only
 - `client/components/meal-plan/AddItemMenuSheet.tsx`, `SimpleEntrySheet.tsx`, `QuickAddSheet.tsx` — the `accessibilityViewIsModal` fix under test (2026-09-20); `QuickAddSheet.tsx` is also the exemplar for converting a Fragment-rooted sheet to a single content-root `View` when no existing root exists
 - `client/components/__tests__/Toast.test.tsx` — exemplar test for icon hiding assertion using `container.querySelector('[data-icon="check-circle"]').getAttribute("aria-hidden") === "true"` (2026-09-23)
