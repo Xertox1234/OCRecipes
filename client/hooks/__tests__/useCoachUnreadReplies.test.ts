@@ -99,10 +99,12 @@ describe("viewing a conversation", () => {
     ).toBeUndefined();
   });
 
-  // The screen re-points at another conversation (a toast tap while on a chat):
-  // React runs the old effect's cleanup before the new effect, but a navigator
-  // can also emit the old screen's blur after the new one's focus. Either
-  // order must leave the NEW conversation recorded.
+  // Two orders must both leave the NEW conversation recorded. One ChatScreen
+  // re-pointed at another conversation (a toast tap while on a chat) runs its
+  // old cleanup, then the new callback. But when a second Chat route is pushed
+  // over the first, the NEW screen's callback runs in its own mount effect
+  // BEFORE the old screen's cleanup (which waits for the blur event), so the
+  // old leave arrives last and must not clear what the new screen just set.
   it("an old conversation's leave does not clobber a newer view", () => {
     const { queryClient } = createQueryWrapper();
     const leaveFirst = viewCoachConversation(queryClient, 5);
@@ -201,6 +203,32 @@ describe("cache lifetime", () => {
 
     expect(getUnreadCoachReplyIds(queryClient)).toEqual([5]);
     expect(getViewedCoachConversation(queryClient)).toBe(8);
+  });
+});
+
+describe("logout", () => {
+  // Every local auth teardown path (logout / expireSession / deleteAccount)
+  // calls queryClient.clear() — the whole reason both pieces of state live in
+  // the query cache instead of a module-level variable.
+  it("queryClient.clear() wipes the unread marks and the conversation on screen", () => {
+    const { queryClient } = createQueryWrapper();
+    markCoachReplyUnread(queryClient, 5);
+    viewCoachConversation(queryClient, 8);
+
+    queryClient.clear();
+
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+    expect(getViewedCoachConversation(queryClient)).toBeNull();
+  });
+
+  it("a tab bar mounted for the next session starts with no dot", () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    markCoachReplyUnread(queryClient, 5);
+    queryClient.clear();
+
+    const { result } = renderHook(() => useHasUnreadCoachReply(), { wrapper });
+
+    expect(result.current).toBe(false);
   });
 });
 

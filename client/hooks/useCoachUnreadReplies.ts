@@ -18,7 +18,9 @@ import { skipToken, useQuery, type QueryClient } from "@tanstack/react-query";
 // local auth teardown path, so nothing here can outlive a logout (see
 // docs/solutions/design-patterns/query-cache-as-ephemeral-client-store-2026-09-29.md
 // and docs/solutions/conventions/clear-query-cache-on-auth-teardown-2026-05-30.md).
-// That doc's two gotchas apply to both keys:
+// A reply still streaming at logout is stopped from writing a mark after the
+// clear by `useSendMessage`, which only reports a reply to the session (token)
+// that sent it. That doc's two gotchas apply to both keys:
 //  - nothing but the tab-bar badge observes them, so `gcTime` is pinned to
 //    `Infinity` before the first write (an unobserved entry's gc timer is
 //    scheduled once and never rescheduled by later writes);
@@ -139,7 +141,10 @@ export function subscribeToCoachReplyReady(
  * A Coach reply finished streaming. If the user is NOT on that conversation's
  * chat screen, record the unread mark (red dot) and tell subscribers (toast).
  * Call only from a reply that actually completed — never for an aborted,
- * errored or cut-off stream, which is not a reply the user is waiting on.
+ * errored or cut-off stream, which is not a reply the user is waiting on —
+ * and only for a reply that belongs to the CURRENT session: this has no notion
+ * of sessions, so `useSendMessage` checks the token the send went out with
+ * before calling it.
  */
 export function noteCoachReplyFinished(
   queryClient: QueryClient,

@@ -931,6 +931,74 @@ describe("useSendMessage — Coach reply ready (notifyWhenAway)", () => {
     unsubscribe();
   });
 
+  // The stream is deliberately NOT aborted on leave (#1183) or on sign-out, so
+  // a reply can finish after logout has cleared the cache — and after another
+  // account signed in. The token a send went out with identifies its session
+  // (set only at login/register; every teardown nulls it BEFORE the query
+  // cache is cleared), so only that session may record or announce its reply.
+  // The "popped back" test above is the positive control: same token, records.
+  describe("a reply that outlives the session that sent it", () => {
+    async function popBackThenFinishAfter(
+      queryClient: ReturnType<typeof createQueryWrapper>["queryClient"],
+      wrapper: ReturnType<typeof createQueryWrapper>["wrapper"],
+      signOut: () => void,
+    ) {
+      const leave = viewCoachConversation(queryClient, 5);
+      const { result, unmount } = renderHook(
+        () => useSendMessage(5, { notifyWhenAway: true }),
+        { wrapper },
+      );
+      const { xhr, done } = await startSend(result);
+      leave?.();
+      unmount();
+      signOut();
+      await finish(xhr, done);
+    }
+
+    it("records nothing after sign-out: the token is gone and the cache is cleared", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const { listener, unsubscribe } = listen();
+
+      await popBackThenFinishAfter(queryClient, wrapper, () => {
+        mockTokenStorage.get.mockResolvedValue(null);
+        queryClient.clear();
+      });
+
+      expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    it("records nothing when a different account signed in before it landed", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const { listener, unsubscribe } = listen();
+
+      await popBackThenFinishAfter(queryClient, wrapper, () => {
+        mockTokenStorage.get.mockResolvedValue("the-next-account's-token");
+        queryClient.clear();
+      });
+
+      expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    // Which session this is cannot be told: stay quiet rather than risk a mark
+    // for a conversation the current user does not own.
+    it("records nothing when the token cannot be read at that moment", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const { listener, unsubscribe } = listen();
+
+      await popBackThenFinishAfter(queryClient, wrapper, () => {
+        mockTokenStorage.get.mockRejectedValue(new Error("storage"));
+      });
+
+      expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+  });
+
   describe("only a reply that actually completed counts", () => {
     it("an aborted stream records nothing", async () => {
       const { wrapper, queryClient } = createQueryWrapper();

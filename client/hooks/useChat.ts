@@ -509,8 +509,28 @@ export function useSendMessage(
               // is not a reply the user is waiting on. Placed after the
               // refresh so the conversation is already marked stale by the
               // time anyone acts on the toast.
+              //
+              // Only the session that sent the message may record or announce
+              // its reply. The stream is deliberately not aborted on leave
+              // (#1183) or on sign-out, so it can finish after logout has
+              // cleared the query cache, or after another account signed in.
+              // The token this send went out with identifies its session: it
+              // is written only at login/register and every teardown nulls it
+              // before the cache is cleared, so a late `done` sees a different
+              // token (or none) and stays quiet instead of re-creating a mark
+              // for a conversation the current user may not own.
               if (notifyWhenAway) {
-                noteCoachReplyFinished(queryClient, effectiveId);
+                void tokenStorage.get().then(
+                  (current) => {
+                    if (current === token) {
+                      noteCoachReplyFinished(queryClient, effectiveId);
+                    }
+                  },
+                  () => {
+                    // Unreadable token: the session can't be told apart, so
+                    // stay quiet rather than risk a mark for someone else.
+                  },
+                );
               }
             }
             // Server-sent application error — surface via requestError instead
