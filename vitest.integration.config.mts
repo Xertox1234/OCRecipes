@@ -20,7 +20,7 @@ export default defineConfig({
     ...baseConfig.test,
     include: ["test/integration/**/*.itest.ts"],
     // Keep globalSetup (leaked-test-data safety net) and retry (CPU-contention
-    // flake absorption) from the base config — unlike vitest.mutation.config.ts,
+    // flake absorption) from the base config — unlike vitest.mutation.config.mts,
     // this suite genuinely talks to Postgres and benefits from both.
   },
 });

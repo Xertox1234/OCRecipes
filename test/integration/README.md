@@ -20,7 +20,7 @@ was chosen as the first route group.
 npm run test:integration:http
 ```
 
-This runs `vitest run --config vitest.integration.config.ts`, which scopes
+This runs `vitest run --config vitest.integration.config.mts`, which scopes
 discovery to `test/integration/**/*.itest.ts` only. It needs a real,
 reachable Postgres (the same `DATABASE_URL` your other tests use — see
 `docs/DEV_SETUP.md` / `npm run db:push`).
@@ -102,7 +102,7 @@ carries ever being able to block a merge.
    (pass-through) — never `storage` or `middleware/auth`.
 3. Build the app with `express()` + `express.json()` + the group's real
    `register()` export, exactly like `auth-routes.itest.ts`.
-4. No changes are needed to `vitest.integration.config.ts` — its `include`
+4. No changes are needed to `vitest.integration.config.mts` — its `include`
    glob already covers the whole directory.
 5. `.itest.ts` files share one Vitest "forks" worker per file, so module-level
    state (e.g. `tokenVersionCache` in `server/middleware/auth.ts`) persists
