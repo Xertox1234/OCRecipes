@@ -26,6 +26,17 @@ created: 2026-10-02
    spawn test (all 7) in `scripts/__tests__/mutation-on-diff-select-only.test.ts` fail.
 4. Make the select step and the real run share **one** derivation of the selection, so
    the step that decides to skip cannot disagree with the run that would have found work.
+5. When a text test pins a self-scoping gate's wiring (nothing in CI runs `actionlint`),
+   pin **both halves**: the consumers (`id:`, each `if:` comparison and its count) AND
+   the producer lines that write the output (`echo "run=true" >> "$GITHUB_OUTPUT"` and
+   `echo "run=false" >> …`, exactly one each). A typo in what the producer writes
+   (`run=ture`, `ruin=false`) makes every comparison false, so the job passes having run
+   nothing, while every consumer pin still passes. Measured 2026-10-02 on the two required
+   mutation gates: the one-line mutants `run=ture` and `ruin=false` passed the four
+   original tests (two per gate) in `scripts/__tests__/mutation-required-gates.test.ts`
+   and failed only the producer pin. A reviewer's 26-mutant sweep (2 gates × 13 mutations) found all 16
+   output-line mutants caught only by that pin; the 2 survivors were `true`/`false`
+   polarity swaps, which a text pin cannot tell from intent.
 
 ## Smell patterns
 
@@ -33,13 +44,15 @@ created: 2026-10-02
   mis-typed, or when the select script writes no output)
 - A setup-node / `npm ci` step that sits before the check and runs unconditionally,
   installing dependencies for a diff the job then finds empty
+- A text test of a gate that pins the `if:` conditions but not the `echo "run=…"` lines
+  that feed them
 
 ## Why
 
 - `actionlint` (installed locally; CI does not run it) rejects a typo'd step id and a
   forward reference to a later step, e.g. `property "selct" is not defined in object type
   {select: ...}` (measured 2026-10-02 on a scratch workflow). It catches a wrong id before
-  push, but nothing in CI does.
+  push, but CI does not run it; the text pins in rule 5 are the CI-side substitute.
 - `.github/workflows/mutation-non-excluded.yml` and `.github/workflows/mutation-goal-safety.yml`
   gate on `== 'true'`. They are safe because their Detect step writes `run=true` or
   `run=false` in both branches and fails loud on a git error; the polarity is a local choice.
@@ -84,7 +97,9 @@ an explicit go-ahead), gate on `== 'true'` instead.
 - `.github/workflows/mutation-on-diff.yml`
 - `scripts/ci/mutation-on-diff.mjs`
 - `scripts/__tests__/mutation-on-diff-select-only.test.ts`
+- `scripts/__tests__/mutation-required-gates.test.ts`
 - `.github/workflows/mutation-non-excluded.yml`
+- `.github/workflows/mutation-goal-safety.yml`
 
 ## See Also
 
