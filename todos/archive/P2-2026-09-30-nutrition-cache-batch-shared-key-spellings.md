@@ -1,9 +1,9 @@
 ---
 title: "getNutritionCacheBatch gives a cache hit to only the first spelling of a shared cache key"
-status: backlog
+status: done
 priority: medium
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-01
 assignee:
 labels: [deferred, database]
 github_issue:
@@ -33,9 +33,9 @@ so this is cost and consistency, not wrong nutrition.
 
 ## Acceptance Criteria
 
-- [ ] Every item whose normalised key has a live cache row gets that row, not only the first.
-- [ ] A unit test in the storage cache tests covers two spellings of one key in one batch.
-- [ ] R1's header in `nutrition-lookup.property.test.ts` drops the "does not hold there today"
+- [x] Every item whose normalised key has a live cache row gets that row, not only the first.
+- [x] A unit test in the storage cache tests covers two spellings of one key in one batch.
+- [x] R1's header in `nutrition-lookup.property.test.ts` drops the "does not hold there today"
       sentence and the todo pointer once fixed (optionally: add a warm-cache variant of R1).
 
 ## Implementation Notes
@@ -63,3 +63,15 @@ Iterate the items instead of the rows: build `Map<queryKey, entry>` from `cached
 ### 2026-09-30
 
 - Initial creation (Lane B final review finding; auto-filed as medium).
+
+### 2026-10-01
+
+- Fixed in `server/storage/cache.ts`: `getNutritionCacheBatch` builds a `Map<queryKey, row>` from the
+  cached rows and resolves per item, so every spelling that normalises to a live key gets the row
+  (the old `indexOf` loop served only the first). The select chain is unchanged.
+- Tests in `server/storage/__tests__/cache.test.ts`: three spellings of one key, and a mixed batch
+  (a distinct key, a never-cached key, an expired row). Both failed on the old loop (1 of 3 and
+  2 of 3 expected keys came back) and pass now.
+- R1 header in `nutrition-lookup.property.test.ts`: dropped the "does not hold there today"
+  sentence and the todo pointer. The optional warm-cache R1 variant was not added: it needs a
+  key-aware db mock and re-measured REGIME counts, and the storage test covers the warm path.
