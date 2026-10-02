@@ -28,7 +28,6 @@ import CookSessionReviewScreen from "@/screens/CookSessionReviewScreen";
 import SubstitutionResultScreen from "@/screens/SubstitutionResultScreen";
 import ReceiptMealPlanScreen from "@/screens/meal-plan/ReceiptMealPlanScreen";
 import OnboardingNavigator from "@/navigation/OnboardingNavigator";
-import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";

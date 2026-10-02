@@ -90,6 +90,7 @@ async function toolNamesSent(): Promise<string[]> {
   vi.mocked(openai.chat.completions.create).mockResolvedValue(
     createMockStream([{ content: "hi" }, { finish_reason: "stop" }]) as any,
   );
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   for await (const _chunk of generateCoachProResponse(
     [{ role: "user", content: "hi" }],
     CONTEXT,

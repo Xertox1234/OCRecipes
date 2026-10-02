@@ -1,9 +1,14 @@
 {
   "extends": "./tsconfig.json",
+  // A child `exclude` REPLACES the parent's (it does not merge), so the gitignored docs/
+  // scratch dirs excluded in tsconfig.json must be repeated here.
   "exclude": [
     "node_modules",
     "build",
     "dist",
+    "docs/audits",
+    "docs/superpowers",
+    "docs/research",
     "**/__tests__/**",
     "**/*.test.ts",
     "**/*.test.tsx",
