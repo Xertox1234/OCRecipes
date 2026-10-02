@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-// @react-navigation/core is a hard dependency of @react-navigation/native;
-// importing native itself pulls React Native sources the node env cannot load.
+// @react-navigation/core is the declared dependency (package.json) that owns
+// getStateFromPath; native re-exports it unchanged and also loads here since
+// #1214, but would pull its whole NavigationContainer graph for one function.
 import { getStateFromPath } from "@react-navigation/core";
 
 // linking.ts now imports react-native's `Linking` for getInitialURL/subscribe.

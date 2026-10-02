@@ -155,11 +155,11 @@ vi.mock("@/camera/hooks/useCameraPermissions", () => ({
 }));
 // A bare factory (not `importOriginal`) — ScanScreen only consumes
 // useNavigation/useIsFocused/useRoute as values plus the type-only RouteProp
-// (erased at runtime), so no other real export is needed. `importOriginal`
-// was tried first per the brief's draft but pulls in @react-navigation/native's
-// full transitive dependency graph, which this jsdom pipeline cannot parse
-// (`SyntaxError: Unexpected token 'typeof'` from deep inside a dependency) —
-// reproduced in isolation outside ScanScreen, so it is not specific to this file.
+// (erased at runtime), so no other real export is needed. History: before
+// #1214 inlined @react-navigation/* in vitest.config.mts (server.deps.inline),
+// `importOriginal` failed here with `SyntaxError: Unexpected token 'typeof'`
+// from deep inside native's transitive graph; the real package now loads under
+// jsdom, but the bare factory stays because nothing more is needed.
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => mockNavigationObject,
   useIsFocused: () => mockIsFocused.value,

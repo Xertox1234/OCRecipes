@@ -55,9 +55,8 @@ vi.mock("@react-navigation/native", () => ({
   },
 }));
 
-// The shared FlatList mock (test/mocks/react-native.ts) only destructures
-// data/renderItem/keyExtractor/ListEmptyComponent/ListHeaderComponent/
-// ListFooterComponent/testID — it never reads or renders `refreshControl`,
+// The shared FlatList mock (test/mocks/react-native.ts) destructures a fixed
+// prop list with no `...rest` — it never reads or renders `refreshControl`,
 // so a <RefreshControl> passed via that prop is constructed but never
 // reconciled and its own mock component never executes (see
 // docs/solutions/conventions/refresh-control-onrefresh-unreachable-under-

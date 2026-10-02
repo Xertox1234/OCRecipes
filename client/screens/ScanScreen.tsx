@@ -318,7 +318,6 @@ export default function ScanScreen() {
       );
     }, 700);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- depends on haptics.notification, not haptics: see the note in the array below
   }, [
     scanPhase,
     navigation,
@@ -326,13 +325,13 @@ export default function ScanScreen() {
     reducedMotion,
     returnAfterLog,
     releaseTempUri,
-    // `haptics` itself is a NEW object every render (useHaptics returns an
-    // object literal) — depending on it directly would re-run this effect on
-    // every unrelated ScanScreen re-render and abort the in-flight
-    // returnAfterLog fetch via the cleanup's controller.abort(). Depend on
-    // the specific useCallback-memoized function instead, which is stable
-    // across renders unless `reducedMotion` (already a dep above) changes.
-    haptics.notification,
+    // `haptics` is useMemo-stable (client/hooks/useHaptics.ts keys it on
+    // [impact, notification, selection, reducedMotion], each useCallback'd on
+    // [reducedMotion]), so it changes identity only when `reducedMotion`
+    // (already a dep above) does. Listing the whole object therefore cannot
+    // re-run this effect — and abort the in-flight returnAfterLog fetch via
+    // the cleanup's controller.abort() — on an unrelated ScanScreen re-render.
+    haptics,
   ]);
 
   // Navigating away to edit (onEditStep2/onEditStep3) sets isFocused false,

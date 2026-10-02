@@ -139,7 +139,7 @@ vi.mock("react-native", async (importOriginal) => {
 });
 
 // Wraps the shared BottomSheetModal mock (test/mocks/gorhom-bottom-sheet.ts,
-// aliased in vitest.config.ts) only to capture its imperative handle into
+// aliased in vitest.config.mts) only to capture its imperative handle into
 // capturedFilterSheetRef above, forwarding the ref through unchanged so
 // production's own filterSheetRef.current?.present() still works.
 vi.mock("@gorhom/bottom-sheet", async (importOriginal) => {

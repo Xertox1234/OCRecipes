@@ -1,11 +1,11 @@
 import type { LinkingOptions } from "@react-navigation/native";
 // Import the real parser from @react-navigation/core, NOT @react-navigation/native:
-// native's index also re-exports NavigationContainer/Link/etc., whose module graph
-// pulls in React Native sources the Vitest node env can't load (the same reason
-// client/navigation/__tests__/linking.test.ts imports getStateFromPath from
-// @react-navigation/core instead of @react-navigation/native). @react-navigation/core
-// is the identical function native re-exports unchanged, and is already a resolved
-// transitive dep the test file relies on.
+// core is the declared dependency (package.json) that owns getStateFromPath, and
+// native re-exports the identical function unchanged. Importing from native would
+// also load in the Vitest harness (since #1214 inlined @react-navigation/* in
+// vitest.config.mts) but would pull native's whole NavigationContainer/Link module
+// graph for one function. client/navigation/__tests__/linking.test.ts imports from
+// core for the same reason.
 import { getStateFromPath as getStateFromPathDefault } from "@react-navigation/core";
 import { Linking } from "react-native";
 import * as Notifications from "expo-notifications";

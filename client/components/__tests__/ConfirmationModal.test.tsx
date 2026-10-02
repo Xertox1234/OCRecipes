@@ -196,29 +196,16 @@ describe("ConfirmationModal", () => {
     // for element types whose mock routes through ariaHiddenProps. Counted
     // per SITE, not per screen — the 8 caller screens hold 23 spread sites:
     //
-    //   observable here (17): View 11, Pressable 4, ThemedText 1, ScrollView 1
-    //   NOT observable  (6): FlatList 4, SectionList 1, Animated.View 1
+    //   observable here (23): View 11, Pressable 4, ThemedText 1, ScrollView 1,
+    //                         FlatList 4, SectionList 1, Animated.View 1
     //
-    // (Per-screen is the wrong unit: ChatListScreen spreads onto 2 Views AND
-    // a FlatList, so no screen is wholly "covered" or wholly "uncovered".)
-    //
-    // Why those 6 are invisible: test/mocks/react-native.ts's
-    // createFlatListMock destructures a fixed prop list with no `...rest`, so
-    // both accessibility props are dropped before reaching the DOM; and
-    // test/mocks/react-native-reanimated.ts's mapA11yProps does not
-    // destructure them at all, so on Animated.View they land in ...domSafe and
-    // reach the DOM as raw unmapped attributes rather than aria-hidden.
-    // ScrollView is NOT in this bucket — it mocks via mockComponent and does
-    // route through ariaHiddenProps.
-    //
-    // So a spread removed or misplaced at one of those 6 sites would NOT be
-    // caught by any test in this repo today. Production behavior IS still
-    // correct there, verified in RN source rather than assumed: FlatList
-    // spreads ...restProps into VirtualizedList, which builds
-    // scrollProps = {...this.props} and renders <ScrollView {...props} />;
-    // SectionList follows the identical shape. The gap is in the MOCKS, not
-    // in RN. Closing it means editing the two shared mock files, which is
-    // outside this todo's Scope Contract.
+    // All 23 translate at the mock level since #1225: createFlatListMock
+    // (FlatList, BottomSheetFlatList), the hand-written SectionList and the
+    // reanimated mock's mapA11yProps route the pair through ariaHiddenProps
+    // too, pinned by the contract test at
+    // test/mocks/__tests__/a11y-hiding-props.test.tsx. "Observable" means a
+    // test CAN see the flip, not that one does: whether each site has a
+    // screen-level assertion was not audited.
     it("does not hide the host screen's content before the sheet is presented", () => {
       renderComponent(<TestHarness options={defaultOptions} />);
       const hostContent = screen.getByTestId("host-content");

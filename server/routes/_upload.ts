@@ -30,6 +30,7 @@ import multer from "multer";
 const MULTIPART_LIMITS = {
   fieldArrayIndexLimit: 0,
   fieldNestingDepth: 0,
+  // Pinned as MAX_NON_FILE_FIELDS in client/lib/__tests__/photo-upload.test.ts.
   fields: 1,
   files: 3,
 } as const;

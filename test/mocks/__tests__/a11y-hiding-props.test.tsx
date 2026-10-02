@@ -245,3 +245,28 @@ describe("Animated.View — a literal aria-hidden next to the pair", () => {
     );
   });
 });
+
+// `accessibilityViewIsModal` → `aria-modal`, via the shared `ariaModalProps`
+// helper `mockComponent` already uses. Reanimated only: ProductChip's overlay
+// is the one production Animated.View that sets it, and the old `...domSafe`
+// passthrough let it reach the div raw (a React unknown-prop warning, never
+// assertable). Paired with an unset case, per rule 1a above.
+describe("Animated.View — accessibilityViewIsModal", () => {
+  it("maps accessibilityViewIsModal to aria-modal", () => {
+    renderComponent(
+      <Animated.View testID="subject" accessibilityViewIsModal />,
+    );
+
+    expect(screen.getByTestId("subject").getAttribute("aria-modal")).toBe(
+      "true",
+    );
+  });
+
+  it("sets no aria-modal when the prop is unset", () => {
+    renderComponent(<Animated.View testID="subject" />);
+
+    expect(screen.getByTestId("subject").hasAttribute("aria-modal")).toBe(
+      false,
+    );
+  });
+});
