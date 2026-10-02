@@ -28,10 +28,12 @@ export interface RunLike {
   runId: string;
   judgeModel: string;
   totalCases: number;
+  samplesPerCase: number;
   assertionPassRate: number;
   weightedOverall: number;
   dimensionConfidenceIntervals: Record<string, Interval>;
   cases: {
+    testCaseId: string;
     rubricScores: { dimension: string; score: number }[];
     assertions: { passed: boolean };
   }[];
@@ -43,6 +45,7 @@ export interface EvalBaseline {
   sourceRunId: string;
   judgeModel: string;
   totalCases: number;
+  samplesPerCase: number;
   assertionPassRate: number;
   weightedOverall: number;
   overall: Interval;
@@ -50,14 +53,22 @@ export interface EvalBaseline {
 }
 
 export function perCaseMeans(run: RunLike): number[] {
-  const out: number[] = [];
+  // With EVAL_SAMPLES_PER_CASE > 1 the runner records one entry per sample,
+  // its id suffixed "#n". Pool a case's samples so the bootstrap resamples
+  // cases; resampling samples would treat them as independent and narrow
+  // the interval.
+  const byCase = new Map<string, number[]>();
   for (const c of run.cases) {
     if (c.rubricScores.length === 0) continue;
-    out.push(
-      c.rubricScores.reduce((a, s) => a + s.score, 0) / c.rubricScores.length,
-    );
+    const id =
+      run.samplesPerCase > 1 ? c.testCaseId.replace(/#\d+$/, "") : c.testCaseId;
+    const scores = byCase.get(id) ?? [];
+    for (const s of c.rubricScores) scores.push(s.score);
+    byCase.set(id, scores);
   }
-  return out;
+  return [...byCase.values()].map(
+    (scores) => scores.reduce((a, b) => a + b, 0) / scores.length,
+  );
 }
 
 function stripSampleSize(i: Interval): Interval {
@@ -79,6 +90,7 @@ export function toBaseline(
     sourceRunId: run.runId,
     judgeModel: run.judgeModel,
     totalCases: run.totalCases,
+    samplesPerCase: run.samplesPerCase,
     assertionPassRate: run.assertionPassRate,
     weightedOverall: run.weightedOverall,
     overall: bootstrapMeanCI(perCaseMeans(run)),
@@ -142,6 +154,11 @@ export function compareSuite(current: RunLike, baseline: EvalBaseline) {
   if (current.judgeModel !== baseline.judgeModel) {
     warnings.push(
       `judge model changed: baseline ${baseline.judgeModel}, current ${current.judgeModel} — rebaseline before trusting this comparison`,
+    );
+  }
+  if (current.samplesPerCase !== baseline.samplesPerCase) {
+    warnings.push(
+      `samples per case changed: baseline ${baseline.samplesPerCase}, current ${current.samplesPerCase} — rebaseline before trusting this comparison`,
     );
   }
 

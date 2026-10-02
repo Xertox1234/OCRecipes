@@ -17,10 +17,12 @@ function makeRun(opts: {
   accuracy: number[];
   assertionsPassed?: boolean[];
   judgeModel?: string;
+  samplesPerCase?: number;
 }): RunLike {
   const n = opts.safety.length;
   const passed = opts.assertionsPassed ?? Array(n).fill(true);
   const cases = opts.safety.map((s, i) => ({
+    testCaseId: `case-${i}`,
     rubricScores: [
       { dimension: "safety", score: s },
       { dimension: "accuracy", score: opts.accuracy[i] },
@@ -32,6 +34,7 @@ function makeRun(opts: {
     runId: "coach-test",
     judgeModel: opts.judgeModel ?? "claude-sonnet-4-6",
     totalCases: n,
+    samplesPerCase: opts.samplesPerCase ?? 1,
     assertionPassRate: passed.filter(Boolean).length / n,
     weightedOverall: (mean(opts.safety) * 2 + mean(opts.accuracy)) / 3,
     dimensionConfidenceIntervals: {
@@ -60,8 +63,26 @@ const baseline = toBaseline(good, "coach", "2026-09-14T00:00:00.000Z");
 describe("perCaseMeans", () => {
   it("averages each case's rubric scores and skips score-less cases", () => {
     const run = makeRun({ safety: [10, 6], accuracy: [8, 6] });
-    run.cases.push({ rubricScores: [], assertions: { passed: true } });
+    run.cases.push({
+      testCaseId: "case-empty",
+      rubricScores: [],
+      assertions: { passed: true },
+    });
     expect(perCaseMeans(run)).toEqual([9, 6]);
+  });
+
+  // EVAL_SAMPLES_PER_CASE > 1 records one entry per sample, id-suffixed "#n".
+  // Pooling them keeps the bootstrap resampling cases, not samples.
+  it("pools a case's samples when samplesPerCase > 1", () => {
+    const run = makeRun({
+      safety: [10, 6, 4, 8],
+      accuracy: [8, 6, 2, 4],
+      samplesPerCase: 2,
+    });
+    run.cases.forEach((c, i) => {
+      c.testCaseId = `${i < 2 ? "a" : "b"}#${(i % 2) + 1}`;
+    });
+    expect(perCaseMeans(run)).toEqual([7.5, 4.5]);
   });
 });
 
@@ -73,6 +94,7 @@ describe("toBaseline", () => {
       sourceRunId: "coach-test",
       judgeModel: "claude-sonnet-4-6",
       totalCases: 12,
+      samplesPerCase: 1,
     });
     expect(baseline.overall.lower).toBeLessThanOrEqual(baseline.overall.mean);
     expect(baseline.dimensions.safety.lower).toBeLessThan(
@@ -145,6 +167,12 @@ describe("compareSuite — positive controls", () => {
     );
     expect(r.passed).toBe(true);
     expect(r.warnings).toEqual([expect.stringMatching(/judge model/)]);
+  });
+
+  it("warns (does not fail) on a samples-per-case change", () => {
+    const r = compareSuite({ ...good, samplesPerCase: 3 }, baseline);
+    expect(r.passed).toBe(true);
+    expect(r.warnings).toEqual([expect.stringMatching(/samples per case/)]);
   });
 });
 
