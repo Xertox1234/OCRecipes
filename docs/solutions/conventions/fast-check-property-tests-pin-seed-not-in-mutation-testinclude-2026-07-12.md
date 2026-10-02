@@ -4,9 +4,9 @@ track: knowledge
 category: conventions
 tags: [testing, property-based, fast-check, vitest, mutation-testing, flakiness]
 module: shared
-applies_to: ['**/__tests__/**/*.property.test.ts']
+applies_to: ['**/__tests__/**/*.property.test.ts', 'stryker*.mjs', 'scripts/mutation-explore.mjs', 'scripts/ci/mutation-on-diff.mjs']
 created: 2026-07-12
-last_updated: 2026-07-12
+last_updated: 2026-10-01
 ---
 
 # fast-check property tests: pin the seed, keep them out of Stryker testInclude
@@ -38,6 +38,8 @@ Property-based tests are a powerful complement to example-based mutation testing
 - **`fc.string({ unit: 'grapheme' })`** — the general full-Unicode content arbitrary in `chat-history-truncate.property.test.ts` (replaces the removed `fc.fullUnicodeString()`); the CJK/supplementary-plane exactness properties use custom codepoint-range units via `fc.string({ unit: fc.integer({ min, max }).map((cp) => String.fromCodePoint(cp)) })`.
 
 - **`stryker.targets.mjs`** — no property test file appears in any target's `testInclude`. The mutation gate runs only `chat-history-truncate.test.ts` (the example suite), while `chat-history-truncate.property.test.ts` runs in the regular vitest glob.
+
+- **Lane F, the advisory mutation-on-diff job (`scripts/ci/mutation-on-diff.mjs`)**, follows the same rule (user ruling 2026-10-01). It passes `mutation:explore` only the co-located `<name>.test.ts`, never a glob that picks up `<name>.property.test.ts`. A Lane F score is the baseline a later registration would get, and registration scores the example suite alone. The opposite was briefly shipped in #1204: a `<name>{,.*}.test.ts` glob lifted recipe-normalization from 66.7% to 68.9%. That overstated the registration baseline and was reverted. The rule's old `applies_to` (only `*.property.test.ts`) never injected it while the mutation harness was being edited, so it now also covers the Stryker configs, `scripts/mutation-explore.mjs` and the Lane F script.
 
 ## Exceptions
 

@@ -4,8 +4,9 @@ track: knowledge
 category: best-practices
 module: server
 tags: [mutation-testing, stryker, vitest, testing, expo, react-native, ci]
-applies_to: [stryker.conf.mjs, stryker.targets.mjs, vitest.mutation.config.ts]
+applies_to: [stryker.conf.mjs, stryker.targets.mjs, stryker.explore.conf.mjs, vitest.mutation.config.ts, scripts/ci/mutation-on-diff.mjs]
 created: '2026-06-05'
+last_updated: 2026-10-01
 ---
 
 # Stryker + Vitest 4 mutation-testing harness (Expo/RN repo gotchas)
@@ -94,6 +95,31 @@ export default defineConfig({ ...baseConfig,
 `DATABASE_URL= MUTATION_TARGET=verification-consensus npm run test:mutation`.
 `test/global-teardown.ts` no-ops when `DATABASE_URL` is unset, and the scoped
 `include` keeps storage tests out.
+
+## Reading the JSON report (measured on Stryker 9.6.1, 2026-10-01)
+
+Explore mode writes the standard mutation-report JSON when `STRYKER_EXPLORE_JSON=1`. The
+path is `STRYKER_EXPLORE_JSON_FILE`, default `reports/mutation/explore.json` (gitignored).
+`scripts/ci/mutation-on-diff.mjs` (Lane F) reads it. What a consumer can rely on:
+
+- **`files` keys are repo-relative paths** (`server/lib/macro-gap-context.ts`), not
+  `.stryker-tmp` sandbox paths, so they join directly to `git diff --name-only` output.
+- **`files[path].source` holds the full module source.** `location.start`/`end` are
+  **1-based lines and 1-based columns, with the end column exclusive** (`"UTC"` spans
+  columns 56–61). So the original code is `source` sliced line by line with
+  `[start.column-1, end.column-1)`.
+- **`Ignored` mutants (`// Stryker disable`) appear in the report** with that status. A
+  count of all mutants therefore exceeds killed + survived + no-coverage. Score =
+  (Killed + Timeout) / (Killed + Timeout + Survived + NoCoverage); Ignored and the error
+  statuses are left out.
+- **In the clear-text table, `total` and `covered` are score percentages** under the
+  "% Mutation score" header, not mutant counts. Compare counts against `# killed`,
+  `# survived`, `# no cov` and `# errors`.
+- `jsonReporter.fileName` goes through `path.resolve`, so absolute paths work, and the
+  reporter creates the parent directory.
+- With `coverageAnalysis: "perTest"` each mutant has `coveredBy`/`killedBy` test ids,
+  mapped to names by `testFiles`. See
+  [pick-mutation-replay-assertion-from-stryker-report-2026-10-01.md](pick-mutation-replay-assertion-from-stryker-report-2026-10-01.md).
 
 ## Exceptions
 
