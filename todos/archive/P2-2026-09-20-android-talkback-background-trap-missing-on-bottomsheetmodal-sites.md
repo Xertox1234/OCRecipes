@@ -80,7 +80,8 @@ Native `Modal`, not `@gorhom/bottom-sheet`.
       `client/components/BeveragePickerSheet.tsx`, is **deferred**: its actual behind-content is not
       itself but its host screen, `client/screens/PhotoAnalysisScreen.tsx` (confirmed via
       `grep -rn "<BeverageSheet" client` — the sheet is rendered there via
-      `useBeverageSheet()`/`usePhotoAnalysis()`, neither of which this screen imports). Wiring an
+      `useBeverageSheet()`/`usePhotoAnalysis()`; the screen imports `usePhotoAnalysis` directly and
+      reaches `useBeverageSheet` only through it). Wiring an
       `isOpen` signal for that site would require touching `client/hooks/useBeverageSheet.ts`,
       `client/hooks/usePhotoAnalysis.ts`, and `client/screens/PhotoAnalysisScreen.tsx` — none of
       which this todo's own Scope Contract lists (it named `BeveragePickerSheet.tsx` as the site, not
@@ -204,10 +205,25 @@ Native `Modal`, not `@gorhom/bottom-sheet`.
   `describe` block asserting the bar stays hidden (`no-hide-descendants`) in that cell,
   TDD-verified as discriminating: mutating the bar's `importantForAccessibility` expression from
   `isBarVisible && !isImportSheetOpen` to the XOR form `isBarVisible !== isImportSheetOpen` turned
-  only the new test red (8 of the other 9 tests in the file, including the three pre-existing
+  only the new test red (the other 8 tests in the file, including the three pre-existing
   cells in this block, stayed green) — proof the cell was genuinely unpinned before, not that some
   unrelated test happened to be sensitive. Also retitled the `isBarVisible=false`/sheet-closed test,
   whose title said "hidden while visible" but whose body actually sets
   `isBarVisibleHolder.value = false`, to match its body. All four truth-table cells are now pinned
   by name in `docs/solutions/logic-errors/background-trap-on-scrollview-misses-sibling-with-independent-visibility-2026-09-23.md`'s
   Related Files section.
+
+### 2026-10-01
+
+- Corrected two inaccuracies in the entries above, found by PR #1038's final-head review (filed as
+  `todos/archive/P3-2026-09-24-talkback-trap-comment-and-doc-accuracy.md`). Both were edited in
+  place; the old wording is quoted here so the change is not silent.
+  - AC #1's site-8 deferral said the sheet is rendered in `PhotoAnalysisScreen.tsx` via
+    `useBeverageSheet()`/`usePhotoAnalysis()`, "neither of which this screen imports". That was wrong
+    for `usePhotoAnalysis`: `PhotoAnalysisScreen.tsx` imports it directly and takes `BeverageSheet`
+    from its return value. Only `useBeverageSheet` is indirect, because `usePhotoAnalysis` is what
+    calls it.
+  - The 2026-09-24 entry said the XOR mutation left "8 of the other 9 tests in the file" green.
+    `client/screens/__tests__/HomeScreen.test.tsx` had 9 tests in total at the #1038 merge
+    (`850a4016`), the new one included, so the others number 8 and all of them stayed green. The 9 is
+    the count at that merge, not a standing property of the file.

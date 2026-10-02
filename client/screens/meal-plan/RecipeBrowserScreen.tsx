@@ -370,11 +370,12 @@ export default function RecipeBrowserScreen() {
   } = useSheetBackHandler(filterSheetRef);
 
   // Android TalkBack background focus trap (iOS already trapped via
-  // accessibilityViewIsModal on the screen's own root View below). Opened
-  // synchronously alongside .present() where the filter icon is pressed;
-  // released only once BottomSheetModal's own onDismiss confirms the sheet
-  // has fully closed (post close-animation, the same asymmetric bias
-  // useSheetBackHandler uses) — never released early.
+  // accessibilityViewIsModal on the filter sheet's own content root — the
+  // BottomSheetView inside the BottomSheetModal below). Opened synchronously
+  // alongside .present() where the filter icon is pressed; released only once
+  // BottomSheetModal's own onDismiss confirms the sheet has fully closed
+  // (post close-animation, the same asymmetric bias useSheetBackHandler
+  // uses) — never released early.
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const handleFilterSheetClosed = useCallback(() => {
     setIsFilterSheetOpen(false);
