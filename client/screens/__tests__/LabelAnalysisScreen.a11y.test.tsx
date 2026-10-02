@@ -457,7 +457,9 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
         // The denominator: the banner this announce speaks is on screen.
         const bannerText = await screen.findByText(banner);
 
-        expect(announce).toHaveBeenCalledWith(`Ready to log. ${banner}`);
+        await waitFor(() =>
+          expect(announce).toHaveBeenCalledWith(`Ready to log. ${banner}`),
+        );
         // Exactly once: sessionId and labelData land in the same commit, so a
         // separate banner announce would collide with "Ready to log" on iOS
         // (docs/solutions/logic-errors/
@@ -465,10 +467,12 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
         expect(announce).toHaveBeenCalledTimes(1);
 
         // The imperative announce is the banner's SOLE announcer: a live region
-        // here would double-speak it on Android.
-        const bannerNode = bannerText.parentElement!;
-        expect(bannerNode.getAttribute("aria-live")).toBeNull();
-        expect(bannerNode.getAttribute("role")).toBeNull();
+        // or role on the banner's container OR its text would double-speak it
+        // on Android.
+        for (const node of [bannerText, bannerText.parentElement!]) {
+          expect(node.getAttribute("aria-live")).toBeNull();
+          expect(node.getAttribute("role")).toBeNull();
+        }
 
         // The banner stays the only warning surface: no error view, no alert.
         // (These pass without the fix too — they pin the removed dead branch
@@ -498,8 +502,10 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
 
       await screen.findByText(LOW_CONFIDENCE_BANNER);
 
-      expect(announce).toHaveBeenCalledWith(
-        `Ready to log. ${LOW_CONFIDENCE_BANNER}`,
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith(
+          `Ready to log. ${LOW_CONFIDENCE_BANNER}`,
+        ),
       );
       expect(announce).toHaveBeenCalledTimes(1);
     });
@@ -523,8 +529,10 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
 
       await screen.findByText(LOW_CONFIDENCE_BANNER);
 
-      expect(announce).toHaveBeenCalledWith(
-        `Ready to submit verification. ${LOW_CONFIDENCE_BANNER}`,
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith(
+          `Ready to submit verification. ${LOW_CONFIDENCE_BANNER}`,
+        ),
       );
       expect(announce).toHaveBeenCalledTimes(1);
     });
@@ -540,7 +548,9 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
       // The ready state rendered: the denominator for the absences below.
       await screen.findByText("Log 250 cal");
 
-      expect(announce).toHaveBeenCalledWith("Ready to log");
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith("Ready to log"),
+      );
       expect(announce).toHaveBeenCalledTimes(1);
       expect(screen.queryByText(LOW_CONFIDENCE_BANNER)).toBeNull();
       expect(screen.queryByText(MEDIUM_CONFIDENCE_BANNER)).toBeNull();
@@ -569,8 +579,10 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
 
       // sessionId, the AI labelData (hence the banner) and showUpdatedToast all
       // land in ONE commit; three separate announces would collide on iOS.
-      expect(announce).toHaveBeenCalledWith(
-        `Updated with AI analysis. Ready to log. ${LOW_CONFIDENCE_BANNER}`,
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith(
+          `Updated with AI analysis. Ready to log. ${LOW_CONFIDENCE_BANNER}`,
+        ),
       );
       expect(announce).toHaveBeenCalledTimes(1);
     });
