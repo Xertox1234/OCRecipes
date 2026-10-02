@@ -25,7 +25,7 @@ created: 2026-10-02
 
 4. **Fixture basenames must differ per extension.** TypeScript's `include` keeps `probe.ts` and silently drops `probe.tsx` in the same directory, so the `.tsx` never enters the program and that half of the probe passes for the wrong reason. Assert the denominator, not only the exit code: how many fixtures `tsc --listFilesOnly` listed (8 before, 2 after) and how many files ESLint linted (12 before, 3 after under `docs/`; 1460 before, 1451 after for the whole repo). Run ESLint probes with `ESLINT_NO_TYPE_AWARE=` set to the empty string, which keeps the type-aware block ON exactly as `npm run lint` does.
 
-5. Probing through `expo lint`: it prints a two-line `env: load .env` preamble to STDOUT before any JSON (strip it with `tail -n +3`), it caches by default (pass `--no-cache` to rule out a stale hit), and a single explicitly named ignored file prints a "File ignored because of a matching ignore pattern" warning instead of staying silent, so probe a directory.
+5. Probing through `expo lint`: put ESLint-only flags (`--format json`) after `--` — one placed before `--` makes the arg parser throw `BAD_ARGS` (`Unexpected: --format`) before the env load and the lint run. By convention keep expo's own flags (`--no-cache`, `--fix`, `--quiet`) before `--`; placed after it they are forwarded to ESLint, which also accepts them. It prints a two-line `env: load .env` / `env: export` preamble to STDOUT before the JSON only when a `.env` is loaded and at least one of its variables was not already exported — nothing on a fresh clone, in CI or in an `Agent` worktree (no `.env`), when every key is already exported, or under `EXPO_NO_DOTENV=1` — so `tail -n +3` would swallow the single JSON line there and `jq length` would print nothing with exit 0; keep the first line that starts with `[` instead (`grep -m1 '^\['`). It caches by default (pass `--no-cache` to rule out a stale hit), and a single explicitly named ignored file prints a "File ignored because of a matching ignore pattern" warning instead of staying silent, so probe a directory.
 
 ## Why
 
@@ -82,8 +82,9 @@ The denominator commands (in a session where a hook rewrites commands, run them 
 npx tsc --noEmit --listFilesOnly | grep -c zz-probe
 # files ESLint linted under docs/: 12 before the fix, 3 after (the control's)
 ESLINT_NO_TYPE_AWARE= npx eslint -f json docs | jq length
-# the same through the wrapper, stripping its two-line stdout preamble
-ESLINT_NO_TYPE_AWARE= npx expo lint docs -- --no-cache --format json | tail -n +3 | jq length
+# the same through the wrapper: its own flags before `--`, ESLint's after; keep
+# only the JSON line (the env preamble is two lines or absent, never one)
+ESLINT_NO_TYPE_AWARE= npx expo lint docs --no-cache -- --format json | grep -m1 '^\[' | jq length
 ```
 
 ## Exceptions

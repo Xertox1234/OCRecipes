@@ -5,9 +5,9 @@ category: runtime-errors
 tags: [vitest, vite, testing, react-native, flow, transform, oxc, esbuild, react-native-svg, react-navigation, externalization, deps-inline]
 module: client
 applies_to: [vitest.config.mts, test/mocks/**/*.ts]
-symptoms: ["A jsdom render test throws SyntaxError: Unexpected token typeof at TRANSFORM time, before any test body runs (Test Files 1 failed, no tests) — no test in the file even started executing.", "The error message names no failing file, and grepping the test file itself (or its obvious first-party dependencies) for typeof finds nothing suspicious.", "The exact same failure reproduces identically whether Vitest uses its oxc transform or falls back to esbuild (oxc: false in vitest.config.ts) — ruling out a parser-specific bug.", "vi.mock()-ing the suspected offending import specifier does NOT fix it — the failure persists even when every module that imports the real package is fully mocked.", "The failure is new on a component/screen that has never had a render test before, even though its individual dependencies (imported and asserted on in isolation) each parse fine on their own.", "Importing @react-navigation/native or @react-navigation/bottom-tabs — directly, or through a screen or hook that uses them — throws it; nothing is logged after the test file under DEBUG=vite:transform."]
+symptoms: ["A jsdom render test throws SyntaxError: Unexpected token typeof at TRANSFORM time, before any test body runs (Test Files 1 failed, no tests) — no test in the file even started executing.", "The error message names no failing file, and grepping the test file itself (or its obvious first-party dependencies) for typeof finds nothing suspicious.", "The exact same failure reproduces identically whether Vitest uses its oxc transform or falls back to esbuild (oxc: false in vitest.config.mts) — ruling out a parser-specific bug.", "vi.mock()-ing the suspected offending import specifier does NOT fix it — the failure persists even when every module that imports the real package is fully mocked.", "The failure is new on a component/screen that has never had a render test before, even though its individual dependencies (imported and asserted on in isolation) each parse fine on their own.", "Before #1214's test.server.deps.inline entry, importing @react-navigation/native or @react-navigation/bottom-tabs — directly, or through a screen or hook that used them — threw it; under DEBUG=vite:transform the externalized package never appeared in the log, while first-party modules could still transform after the test file."]
 created: 2026-07-12
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 severity: medium
 ---
 
@@ -52,7 +52,7 @@ module-resolution layer once the test body executes. By the time a
 `vi.mock("react-native-svg", ...)` call would intercept the import, the scan
 phase has already tried — and failed — to parse the real package's Flow
 files. The only thing that prevents the scanner from ever reaching the real
-file is a `vitest.config.ts`-level `resolve.alias`, which redirects
+file is a `vitest.config.mts`-level `resolve.alias`, which redirects
 resolution *before* the scan walks that path at all.
 
 This is the exact same class of problem this project's `test/mocks/
@@ -68,14 +68,14 @@ diagnostic steps below apply if one ever does.
 
 ## Solution
 
-Add a `resolve.alias` entry in `vitest.config.ts` for the offending
+Add a `resolve.alias` entry in `vitest.config.mts` for the offending
 specifier, pointing at a new `test/mocks/<package>.ts` mock file that maps
 the package's exported components to their DOM/SVG element equivalents
 (mirroring `test/mocks/react-native.ts`'s `mockComponent` pattern) —
 **not** a per-test-file `vi.mock()`, which cannot intercept the scan phase.
 
 ```ts
-// vitest.config.ts
+// vitest.config.mts
 resolve: {
   alias: {
     "react-native-svg": path.resolve(__dirname, "./test/mocks/react-native-svg.ts"),
@@ -129,7 +129,7 @@ export default Svg;
   real module at runtime — it does not stop Vitest's dependency scanner
   from trying to parse it. A package that ships Flow-syntax internals (or
   otherwise unparseable source) reachable from ANY statically-imported file
-  in the graph needs a `vitest.config.ts` alias, full stop.
+  in the graph needs a `vitest.config.mts` alias, full stop.
 - **Confirmed 2026-08-29**: the predicted `react-native-screens` occurrence
   materialized (surfaced while investigating a code-review SUGGESTION for
   PR #873 that wanted a real, unmocked `@react-navigation/native` +
@@ -177,10 +177,11 @@ export default Svg;
   the culprit is an EXTERNALIZED package (ESM under a nested `"type":"module"`, or
   plain CJS) whose own `import "react-native"` skipped `resolve.alias`. A factory
   `vi.mock` of that package still works — 55 test files mock
-  `@react-navigation/native` that way while the real package can't import — so
-  the "scan phase" explanation under "Why `vi.mock()` doesn't fix it" above is not
-  what happens for an externalized package. (For the `react-native-svg` case the
-  same externalization fits the symptoms; that was not re-measured.) Pick one: a
+  `@react-navigation/native` that way while the real package could not import
+  before the `test.server.deps.inline` entry (#1214) — so the "scan phase"
+  explanation under "Why `vi.mock()` doesn't fix it" above is not what happens
+  for an externalized package. (For the `react-native-svg` case the same
+  externalization fits the symptoms; that was not re-measured.) Pick one: a
   factory `vi.mock` per test, an alias to an inert stub (the real package is never
   loaded), or `test.server.deps.inline` (lets the alias reach it).
 - **Same family, different message — `expo-notifications`.** Importing it, or

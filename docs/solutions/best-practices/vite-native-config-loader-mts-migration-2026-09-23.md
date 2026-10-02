@@ -141,8 +141,9 @@ sibling configs
     The two required mutation gates (`.github/workflows/mutation-goal-safety.yml`,
     `.github/workflows/mutation-non-excluded.yml`) decide whether to run Stryker by
     `grep -qE`-ing `git diff --name-only` against an ERE that names the harness
-    config with escaped dots (`vitest\.mutation\.config\.ts`), so a literal
-    `git grep vitest.mutation.config.ts` finds nothing there. Sweep with
+    config with escaped dots (`vitest\.mutation\.config\.mts` since the rename,
+    `vitest\.mutation\.config\.ts` before it), so a literal
+    `git grep vitest.mutation.config.mts` finds nothing there. Sweep with
     `git grep -nP 'vitest\\?\.(integration|mutation)\\?\.config\\?\.ts'` (`-P`: under
     `-E`, `\b` silently matches nothing on this git) and update the regex in the same
     change. Do not read the rename PR's own green as proof it was updated:
@@ -206,10 +207,12 @@ unmigrated sibling still finds this doc) and `vitest.*.config.mts`.
   files the first todo renamed
 - `vitest.integration.config.mts`, `vitest.mutation.config.mts` — the two
   sibling configs the follow-up todo renamed
-- `stryker.conf.mjs`, `stryker.explore.conf.mjs`,
-  `.github/workflows/mutation-goal-safety.yml`,
-  `.github/workflows/mutation-non-excluded.yml` — consumers that name
-  `vitest.mutation.config.mts` literally (item 10)
+- `stryker.conf.mjs`, `stryker.explore.conf.mjs` — the two consumers that
+  name `vitest.mutation.config.mts` literally (`configFile:`)
+- `.github/workflows/mutation-goal-safety.yml`,
+  `.github/workflows/mutation-non-excluded.yml` — the two required gates that
+  carry the full filename only inside an escaped-dot ERE
+  (`vitest\.mutation\.config\.mts`), which a literal grep cannot find (item 10)
 - `scripts/lib/path-domains.ts` — the routing source behind item 11
 - `tsconfig.json`, `tsconfig.check.json`, `eslint.config.js`,
   `scripts/preflight.sh`, `scripts/coverage-ratchet.ts`,

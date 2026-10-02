@@ -6,7 +6,7 @@ module: client
 severity: medium
 tags: [tanstack-query, netinfo, react-native, testing, vitest, online-manager, focus-manager, app-state]
 symptoms: [All queries in unrelated tests time out after importing query-client.ts, onlineManager goes offline as soon as the module is loaded in a Vitest worker, Test suites that don't touch NetInfo suddenly fail with Query is 'paused']
-applies_to: [client/lib/query-client.ts, test/mocks/**/*.ts, vitest.config.ts]
+applies_to: [client/lib/query-client.ts, test/mocks/**/*.ts, vitest.config.mts]
 created: '2026-05-31'
 last_updated: '2026-05-31'
 ---
@@ -56,7 +56,7 @@ Even though `vi.mock` is hoisted, in some Vitest configurations or complex modul
 
 ### ✅ Correct: Vitest resolve.alias with a no-op stub
 
-**vitest.config.ts**
+**vitest.config.mts**
 ```ts
 import { defineConfig } from 'vitest/config';
 
@@ -208,7 +208,7 @@ focusManager.setEventListener((handleFocus) => {
 - `client/lib/query-client.ts` – Where `NetInfo.addEventListener` is wired to `onlineManager.setEventListener` and where `focusManager.setEventListener` is wired to `AppState.addEventListener`.
 - `test/mocks/react-native-community-netinfo.ts` – The no‑op stub used by the Vitest alias.
 - `test/mocks/react-native.ts` – The AppState mock that safely handles the focusManager wiring.
-- `vitest.config.ts` – Contains the `resolve.alias` entry.
+- `vitest.config.mts` – Contains the `resolve.alias` entry.
 
 ## See Also
 

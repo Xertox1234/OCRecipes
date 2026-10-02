@@ -14,6 +14,8 @@ created: '2026-05-13'
 
 When you deliberately use a derived value (like `array.length`) instead of the array itself in a `useEffect` dependency, document WHY in a comment above the effect to prevent "fixes" that break the intended behavior. If you suppress `react-hooks/exhaustive-deps`, always explain WHY in a comment above the `useEffect`.
 
+**React Compiler caveat:** an `eslint-disable` or `eslint-disable-next-line` of `react-hooks/exhaustive-deps` or `react-hooks/rules-of-hooks` (as in both examples below) makes React Compiler skip the whole enclosing component or hook, not just the effect. Before suppressing, prefer an honest dependency when one exists, such as a memo-stable object (e.g. the memoized `useHaptics()` result rather than one of its methods). In a file not already in `scripts/react-compiler-bailout-baseline.json` (one that currently compiles), that bailout fails CI: `npm run lint`, CI's Lint step, ends with the bailout ratchet `scripts/check-react-compiler-bailouts.js`, which fails on any bailout missing from the baseline.
+
 ## Examples
 
 ```typescript

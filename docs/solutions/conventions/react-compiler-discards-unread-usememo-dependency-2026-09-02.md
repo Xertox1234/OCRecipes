@@ -69,7 +69,7 @@ if ($[1] !== isPlanSheetOpen) { t2 = [isPlanSheetOpen]; $[1] = isPlanSheetOpen; 
 useEffect(t1, t2); // real, correctly-tracked deps array, preserved by the compiler
 ```
 
-Vitest does not run `babel-plugin-react-compiler` (`vitest.config.ts` uses
+Vitest does not run `babel-plugin-react-compiler` (`vitest.config.mts` uses
 `esbuild: { jsx: "automatic" }` with no Babel/compiler plugin in the test
 transform), so a `useMemo(fn, [unreadTrigger])` "fix" passes green under the test
 suite — real React's `useMemo` honors the literal array — while the actual

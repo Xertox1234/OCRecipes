@@ -12,7 +12,7 @@ created: '2026-05-16'
 
 Every mock singleton exported from a `test/mocks/*.ts` file (e.g., `expo-haptics.ts`, `react-native-reanimated.ts`) must be reset **by name** using `.mockReset()` inside the global `beforeEach` in `test/setup.ts`. This ensures that any `mockImplementation`, `mockReturnValue`, or `mockResolvedValueOnce` overrides applied in one test do not leak to subsequent tests in the same worker file.
 
-Do **not** rely on `vi.clearAllMocks()` alone (it clears call history only) and **do not** enable the `mockReset: true` global option in `vitest.config.ts` (it breaks `vi.mock()` factory defaults).
+Do **not** rely on `vi.clearAllMocks()` alone (it clears call history only) and **do not** enable the `mockReset: true` global option in `vitest.config.mts` (it breaks `vi.mock()` factory defaults).
 
 ## Why
 
@@ -22,7 +22,7 @@ The `test/mocks/` modules export singletons created with `vi.fn(/* optional defa
 - `vi.restoreAllMocks()` restores the original implementation of `vi.fn()` (but not `vi.spyOn`-style mocks).
 - `mockReset()` restores the function to its initial state, including the constructor-argument default (the `impl` passed to `vi.fn(impl)`). This is exactly what we need.
 
-Using the Vitest-recommended global `mockReset: true` in `vitest.config.ts` sounds appealing but is **dangerous**: it also resets the defaults defined inside `vi.mock()` factory bodies (e.g., `vi.fn().mockResolvedValue(...)`), which have **no constructor-arg default**. This inadvertently broke 72 tests across 21 files in this repo. Therefore we scope the reset to our named singletons only.
+Using the Vitest-recommended global `mockReset: true` in `vitest.config.mts` sounds appealing but is **dangerous**: it also resets the defaults defined inside `vi.mock()` factory bodies (e.g., `vi.fn().mockResolvedValue(...)`), which have **no constructor-arg default**. This inadvertently broke 72 tests across 21 files in this repo. Therefore we scope the reset to our named singletons only.
 
 Per-file `restoreAllMocks()` in `afterEach` is still required for tests using `vi.spyOn()` because `mockReset` does not uninstall a spy.
 
@@ -62,7 +62,7 @@ beforeEach(() => {
 });
 ```
 
-### ❌ Wrong: enabling `mockReset: true` in `vitest.config.ts`
+### ❌ Wrong: enabling `mockReset: true` in `vitest.config.mts`
 
 ```ts
 export default defineConfig({
@@ -77,7 +77,7 @@ export default defineConfig({
 - `test/setup.ts`
 - `test/mocks/expo-haptics.ts`
 - `test/mocks/react-native-reanimated.ts`
-- `vitest.config.ts`
+- `vitest.config.mts`
 
 ## See Also
 

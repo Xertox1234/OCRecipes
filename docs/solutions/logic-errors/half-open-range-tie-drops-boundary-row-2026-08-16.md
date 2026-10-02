@@ -35,7 +35,7 @@ the window."
 - Reproduces reliably under the **full, unfiltered** test file (`npx vitest run <file>`,
   not `<file> -t "<name>"`) because sibling tests warm up connections/imports first, making
   later tests fast enough to trigger the millisecond tie.
-- Vitest's project-wide `retry: N` (see `vitest.config.ts`, added for a *different*,
+- Vitest's project-wide `retry: N` (see `vitest.config.mts`, added for a *different*,
   CPU-contention flake class) silently absorbs this failure too — **always use `--retry 0`**
   when investigating a suspected boundary-tie flake, or the race self-heals on retry and you
   never see it.
@@ -61,7 +61,7 @@ via tests, but the underlying predicate is buggy independent of tests.
 
 1. **Reproduce with `--retry 0` on the full, unfiltered test file first** — never trust an
    isolated `-t`-filtered run's pass rate; it can be systematically slower and never trigger
-   the race. If the project has a global `retry:` in `vitest.config.ts`, it will hide this
+   the race. If the project has a global `retry:` in `vitest.config.mts`, it will hide this
    class of bug from a default `npm run test:run`.
 2. **Print the actual timestamps from a failing run** before touching the predicate — insert
    temporary instrumentation that logs the row's stored timestamp and the query's bound
@@ -113,7 +113,7 @@ via tests, but the underlying predicate is buggy independent of tests.
   ("counts a log written at exactly the `to` boundary").
 - `server/services/coach-pro-chat.ts` — the single production caller (`today = new Date()`
   shared by both `getMostEatenFoods` and `getDailyLogsInRange` calls in the same `Promise.all`).
-- `vitest.config.ts` — the project-wide `retry: 2` that silently absorbs this flake class
+- `vitest.config.mts` — the project-wide `retry: 2` that silently absorbs this flake class
   unless investigated with `--retry 0`.
 
 ## See Also

@@ -56,8 +56,13 @@ and Profile > Cookbooks > cookbook:
 | `headerBackButtonDisplayMode: "minimal"`  | chevron only   | `MealPlanHome` (raw) | not measured       |
 | `headerBackTitle: "Back"` (after)         | `< Back`       | `Back`          | `Back`, `Back`          |
 
-A per-screen `headerBackTitle` cannot label the PREVIOUS screen: it is read from the
-pushed screen's own config and labels that screen's back button.
+A per-screen `headerBackTitle` can name the previous screen: it is read from the
+pushed screen's own config and labels that screen's back button, which goes back
+there. The catch is that it must name the screen below, which is not fixed: the same
+screens are registered in the Plan, Coach and Profile stacks, some with a different
+screen below them in each (CookbookList is pushed from MealPlanHome, CoachPro and
+Profile), so each stack needs its own label, and a screen reached from several
+screens in one stack (RecipeCreate) has no single right label.
 
 ## Solution
 
@@ -68,20 +73,29 @@ headerBackTitle: "Back",
 ```
 
 It overrides `backButtonTitle` for every pushed screen, including ones added later
-and ones whose parent has a hidden header. It keeps `backTitleVisible: true`, so
-screens with an active `usePreventRemove` keep their existing menu-hidden custom back
-item and only get the new text (source-read; on RecipeCreate the label and VoiceOver
-text were checked on the simulator, the hidden menu was not). Android ignores it
-(iOS and web only).
+and ones whose parent has a hidden header. It does not change `backTitleVisible`:
+that is unset on the normal path (react-native-screens defaults it to true) and
+explicitly `true` where the back-button menu is disabled, which native-stack does on
+screens with an active `usePreventRemove`, so those screens keep their existing
+menu-hidden custom back item and only get the new text (source-read; on RecipeCreate
+the label and VoiceOver text were checked on the simulator, the hidden menu was not).
+Android ignores it (iOS and web only).
 
 Checked on the Plan, Profile and Coach stacks. The Coach case has a header-hidden parent:
 `xcrun simctl openurl booted ocrecipes://chat/1` pushes Chat over CoachPro, and its back
 button reads `< Back` with VoiceOver label `Back`.
 
 For real names instead of a generic label ("< Grocery Lists"), set `title:` beside each
-function `headerTitle`. That feeds both `navitem.title` and `backButtonTitle`, so it
-fixes all three surfaces, but it is one edit per screen and a new screen without it
-leaks again.
+function `headerTitle` and on each header-hidden parent, and remove the shared
+`headerBackTitle` from `useScreenOptions` in the same change: react-native-screens
+prefers a non-blank `headerBackTitle` over the previous screen's title, so while it is
+set the `title:` edits leave every back button and history-menu entry at "Back".
+Once it is gone, `title` feeds both `navitem.title` and `backButtonTitle` and fixes
+all three surfaces, but it is one edit per screen and a new screen without it leaks
+again. UIKit may still shorten a long back title to "Back", or hide it, when the bar
+is short of space (except on `usePreventRemove` screens, whose custom back item
+overrides that), so a full name is not guaranteed on narrow devices. Decision (user
+ruling 2026-10-02): keep the shared "Back"; this per-screen upgrade is optional.
 
 ## Prevention
 

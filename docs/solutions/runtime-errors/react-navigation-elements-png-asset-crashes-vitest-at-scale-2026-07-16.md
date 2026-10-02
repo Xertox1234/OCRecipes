@@ -19,13 +19,13 @@ The failure is scale-dependent: it did not reproduce in isolation, in a small ha
 
 ## Root Cause
 
-`@react-navigation/elements` ships a `.png` asset as part of its module graph. Every other native/asset-bearing dependency in this project (`react-native-svg`, `react-native-reanimated`, `react-native-gesture-handler`, `@expo/vector-icons`, `@gorhom/bottom-sheet`, `expo-haptics`, `@sentry/react-native`, `expo-blur`, `expo-linear-gradient`, `@react-native-community/netinfo`) is aliased in `vitest.config.ts` to a hand-written mock under `test/mocks/` — `@react-navigation/elements` was the one gap in that convention.
+`@react-navigation/elements` ships a `.png` asset as part of its module graph. Every other native/asset-bearing dependency in this project (`react-native-svg`, `react-native-reanimated`, `react-native-gesture-handler`, `@expo/vector-icons`, `@gorhom/bottom-sheet`, `expo-haptics`, `@sentry/react-native`, `expo-blur`, `expo-linear-gradient`, `@react-native-community/netinfo`) is aliased in `vitest.config.mts` to a hand-written mock under `test/mocks/` — `@react-navigation/elements` was the one gap in that convention.
 
 The blamed test file (`ChatScreen.test.tsx` here) is very likely an innocent bystander, not the trigger: Vitest attributes a shared-module-runner crash to whichever file happens to be mid-collection when it fires. The actual trigger is almost certainly a *different* file in the same shard that imports `@react-navigation/elements` for real (unmocked) and hits the asset at the wrong moment in Vite's dependency-optimization lifecycle. It didn't reproduce at small scale not because of file *count* per se, but because the specific real importer that triggers it wasn't co-located with the blamed file in any of the smaller local scenarios tried.
 
 ## Solution
 
-Alias `@react-navigation/elements` to a mock in `vitest.config.ts`'s `resolve.alias`, matching every sibling native package:
+Alias `@react-navigation/elements` to a mock in `vitest.config.mts`'s `resolve.alias`, matching every sibling native package:
 
 ```ts
 "@react-navigation/elements": path.resolve(
@@ -48,7 +48,7 @@ When adding a new `react-native`/`@react-navigation/*`/Expo package to real sour
 
 ## Related Files
 
-- `vitest.config.ts` — `resolve.alias` block
+- `vitest.config.mts` — `resolve.alias` block
 - `test/mocks/react-navigation-elements.ts`
 - `client/hooks/useHeaderContentInset.ts` — the project's own real consumer of `useHeaderHeight`
 

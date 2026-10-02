@@ -20,7 +20,7 @@ sends malformed telemetry to sentry.io with no project association and may throw
 at runtime.
 
 In the Vitest test environment, prevent native module resolution by adding a
-`resolve.alias` entry in `vitest.config.ts` that maps `@sentry/react-native` to
+`resolve.alias` entry in `vitest.config.mts` that maps `@sentry/react-native` to
 `test/mocks/sentry-react-native.ts` (a file of `vi.fn()` stubs). This is the
 same pattern used for `expo-haptics`, `react-native-reanimated`, etc.
 
@@ -86,7 +86,7 @@ export const logger = {
 ```
 
 ```typescript
-// vitest.config.ts — alias prevents @sentry/react-native native entry loading
+// vitest.config.mts — alias prevents @sentry/react-native native entry loading
 resolve: {
   alias: {
     "@sentry/react-native": path.resolve(
@@ -114,7 +114,7 @@ export const wrap = vi.fn((component: unknown) => component);
 - `client/lib/logger.ts` — leveled logger; uses `reportError` for prod errors
 - `client/lib/query-client.ts` — `QueryCache.onError` calls `reportError`
 - `client/App.tsx` — calls `initReporter()` at startup; passes `onError` to ErrorBoundary
-- `vitest.config.ts` — `@sentry/react-native` alias
+- `vitest.config.mts` — `@sentry/react-native` alias
 - `test/mocks/sentry-react-native.ts` — vi.fn() stubs
 
 ## See Also

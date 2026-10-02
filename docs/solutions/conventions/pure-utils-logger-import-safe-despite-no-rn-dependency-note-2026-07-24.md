@@ -21,7 +21,7 @@ says something like "no React or RN dependencies." That docstring is about
 test the file without the RN render harness), not a ban on importing
 `@/lib/logger`. `logger` itself has zero React/RN imports; its only
 non-trivial dependency is `@/lib/reporter` → `@sentry/react-native`, which is
-globally aliased to a mock in `vitest.config.ts` (the same mock every test in
+globally aliased to a mock in `vitest.config.mts` (the same mock every test in
 the suite already relies on) and is `__DEV__`-gated no-op in production for
 `.info`/`.warn` (only `.error` forwards to Sentry). Importing it does not pull
 in React Native at test time and does not add any risk the file's testability
@@ -102,7 +102,7 @@ warnSpy.mockRestore();
 - `client/screens/nutrition-detail-flags-utils.ts` — the defensive `partitionScanFlags` branch this rule was extracted from
 - `client/screens/scan-screen-utils.ts` — pre-existing precedent for `logger.warn`/`logger.error` in a pure `*-utils.ts` file
 - `client/lib/logger.ts` — the structured logger itself (no React/RN imports)
-- `client/lib/reporter.ts` — `logger`'s only non-trivial dependency (`@sentry/react-native`), globally mocked in `vitest.config.ts`
+- `client/lib/reporter.ts` — `logger`'s only non-trivial dependency (`@sentry/react-native`), globally mocked in `vitest.config.mts`
 
 ## See Also
 

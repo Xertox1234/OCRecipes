@@ -138,6 +138,11 @@ the stack case because `reset` replaces the stack wholesale.
   alone with no other code) — this project has no existing precedent for rendering real (as
   opposed to mocked) React Navigation in a jsdom test, and none of the existing navigator test
   files (`ChatListScreen.test.tsx`, `MainTabNavigator.test.tsx`, etc.) attempt it.
+  **Update (2026-10-02):** that import failure was the externalization bypass fixed in #1214
+  (`server.deps.inline` for `@react-navigation/*` in `vitest.config.mts`), so a real-navigator
+  integration test is now feasible in principle (`@react-navigation/bottom-tabs` is aliased to a
+  stub, so a real tab navigator still cannot render; native-stack is untested) — no test renders
+  one yet.
 - **Static guard (2026-10-01):** `scripts/__tests__/navigation-route-reachability.test.ts` reads
   the navigator files and each registered screen's own source, and requires every literal
   `navigate/push/replace("X")` to name a route registered in that screen's navigator or an

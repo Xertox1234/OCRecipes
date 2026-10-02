@@ -5,9 +5,9 @@ category: conventions
 module: shared
 tags: [inject-patterns, applies_to, glob, bash, pattern-matching, harness, tooling, sp2]
 symptoms: [Reimplementing the applies_to matcher with picomatch/minimatch globstar instead of the hook's own two-test rule, A reimplemented matcher disagrees with the hook on whether `client/**/*.tsx` matches `client/Foo.tsx`, An applies_to glob that looks obviously correct never promotes its solution]
-applies_to: [.claude/hooks/inject-patterns.sh, .claude/hooks/**/*.sh, scripts/**/*.ts]
+applies_to: [.claude/hooks/inject-patterns.sh, .claude/hooks/**/*.sh, scripts/**/*.ts, .claude/agents/**/*.md]
 created: '2026-06-13'
-last_updated: '2026-08-06'
+last_updated: '2026-10-02'
 ---
 
 # Mirror inject-patterns.sh applies_to matching exactly — bash glob semantics PLUS the `**/`-elision compensation

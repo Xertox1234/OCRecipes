@@ -83,7 +83,7 @@ difference in the specific test being run.
 
 ## Related Files
 
-- `vitest.config.ts` — the esbuild transform configuration with no
+- `vitest.config.mts` — the esbuild transform configuration with no
   type-checking plugin
 - `client/screens/ScanScreen.tsx` — the prop-interface change (removed
   `onAddNutritionPhoto`/`onAddFrontPhoto`, added `screenReaderEnabled`)
