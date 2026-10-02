@@ -41,7 +41,15 @@ Mechanism, all in `scripts/lib/path-domains.ts`:
 Edits, in TDD order:
 
 1. `scripts/lib/__tests__/path-domains.test.ts`: add the two `cases` rows after `:163` (keep the `// --- package manifests` comment at `:164` below them) and the two `PARITY_CORPUS` entries after `:330`. Run `npx vitest run scripts/lib/__tests__/path-domains.test.ts`: the two new `it.each(cases)` rows (`:244-246`) fail with `[]`; the two parity rows pass trivially today because both compiled forms miss, and become the regression pin once the rule exists.
-2. `scripts/lib/path-domains.ts:282`: `basenames: ["vitest.config", "vitest.mutation.config", "vitest.integration.config", "eslint.config"]`, and `:285`: `description: "\`vitest.config._\`, \`vitest.mutation.config._\`, \`vitest.integration.config._\`, \`eslint.config._\`"`. Order within the list has no matching effect; keep the vitest basenames adjacent so the generated line reads naturally. Re-run the test file: green.
+2. `scripts/lib/path-domains.ts:282` and `:285` become exactly (each pattern ends in `.*`, as the current `:285` value does):
+
+   ```ts
+   basenames: ["vitest.config", "vitest.mutation.config", "vitest.integration.config", "eslint.config"],
+   description: "`vitest.config.*`, `vitest.mutation.config.*`, `vitest.integration.config.*`, `eslint.config.*`",
+   ```
+
+   Order within the list has no matching effect; keep the vitest basenames adjacent so the generated line reads naturally. Re-run the test file: green.
+
 3. `npm run build:domain-map`, then `npm run build:copilot-instructions` (`package.json` scripts: `build:domain-map` = `tsx scripts/build-domain-map.ts .claude/hooks/lib/domain-map.sh`; `build:copilot-instructions` = `tsx scripts/build-copilot-instructions.ts .github/copilot-instructions.md`). Then `npm run build:generated:check` (both `--check` modes) must exit 0. Both checks were green at ec26b972, so any hunk beyond the one line / one row described in the acceptance criteria means something else drifted: stop and look before committing.
 4. Commit all four files in one commit; put `git diff main -- .claude/hooks/lib/domain-map.sh .github/copilot-instructions.md` verbatim in the PR body under its own heading.
 
