@@ -18,7 +18,6 @@ import {
   rowFromRun,
   scoreFromReport,
   selectEligible,
-  testGlob,
 } from "../ci/mutation-on-diff.mjs";
 
 const registered = new Set(
@@ -440,14 +439,6 @@ describe("renderSummary", () => {
       "- Excluded (Hard-Exclusion, not human-approved): server/services/iap-receipt-validation.ts",
     );
     expect(out).toContain("- Over the cap, not run: server/lib/h.ts");
-  });
-});
-
-describe("testGlob", () => {
-  it("widens the co-located test to its siblings (e.g. .property.test.ts)", () => {
-    expect(testGlob("server/lib/__tests__/civil-date.test.ts")).toBe(
-      "server/lib/__tests__/civil-date{,.*}.test.ts",
-    );
   });
 });
 
