@@ -7,6 +7,7 @@ tags: [ios-simulator, verify-ui, xcodebuildmcp, metro, expo-dev-client, react-na
 applies_to: [.claude/skills/verify-ui/**]
 symptoms: [app shows only the native launch image indefinitely, snapshot_ui returns a full but stale accessibility tree, taps appear to succeed but nothing renders, process is alive but nothing draws, no redbox and no crash report]
 created: '2026-08-13'
+last_updated: '2026-10-01'
 ---
 
 # A frozen iOS Simulator is usually a torn-down RN surface, not a hang
@@ -127,6 +128,20 @@ looking at a slow load, not a teardown.
 - **Environment-specific.** Observed once, on iOS 26.5 / iPhone 17 against a locally built
   dev-client binary. The signature and the recovery are the durable parts; the trigger may not
   generalise.
+- **Counter-case — the surface can be alive behind a native splash that never hid.** Seen
+  2026-10-01 loading a worktree's Metro into the dev client via the
+  `ocrecipes://expo-development-client/?url=…` deep link: screenshots stayed on the launch image for
+  15+ minutes and the runtime log carried the three destructor lines (the dev launcher's own
+  instance being replaced writes them too), yet the app was running. Metro's
+  `curl localhost:<port>/json/list` listed a live `React Native Bridgeless` Hermes target, the
+  accessibility tree changed in response to taps, and calling
+  `globalThis.expo.modules.ExpoSplashScreen.hideAsync()` through CDP (see
+  [synthesize iOS keyboard events over CDP](synthesize-ios-keyboard-events-over-cdp-when-the-sim-has-a-hardware-keyboard-2026-10-01.md)
+  for the connection recipe) immediately revealed the real screen in the state those taps had
+  produced. So check `/json/list` before concluding the surface is torn down: a live target means
+  dismiss the splash, not restart Metro. The client never calls `SplashScreen.hideAsync()` (no
+  references under `client/`); why the auto-hide did not fire on this launch path is **not
+  established**.
 - **Cheaper escape hatch.** For a pure client-UI change, publishing to the `preview` EAS channel and
   checking on a physical device tests against the live backend and bypasses Metro, `.env`, and the
   LAN IP entirely. Do not let simulator debugging become a prerequisite for shipping UI work.
@@ -140,6 +155,8 @@ looking at a slow load, not a teardown.
 
 ## See Also
 
+- [Synthesize iOS keyboard events over CDP](synthesize-ios-keyboard-events-over-cdp-when-the-sim-has-a-hardware-keyboard-2026-10-01.md)
+  — the CDP connection recipe, and what a worktree Metro run looks like end to end
 - `docs/solutions/best-practices/xcodebuildmcp-ui-automation-enable-stale-server-recovery-2026-06-23.md`
   — a different stale-thing failure in the same loop: the MCP server rather than the app
 - `docs/solutions/logic-errors/two-features-reverting-at-once-implicates-one-stale-process-2026-07-28.md`
