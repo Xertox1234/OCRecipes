@@ -301,6 +301,11 @@ export function createFlatListMock(displayName: string) {
         ListHeaderComponent,
         ListFooterComponent,
         testID,
+        // The hiding pair is the only thing read beyond the fixed list. Never
+        // spread `...rest` here: it would put refreshControl,
+        // contentContainerStyle and every on* handler on the DOM node.
+        accessibilityElementsHidden,
+        importantForAccessibility,
       },
       ref,
     ) => {
@@ -308,7 +313,14 @@ export function createFlatListMock(displayName: string) {
       const empty = items.length === 0 && ListEmptyComponent;
       return React.createElement(
         "div",
-        { ref, "data-testid": testID },
+        {
+          ref,
+          "data-testid": testID,
+          ...ariaHiddenProps(
+            accessibilityElementsHidden,
+            importantForAccessibility,
+          ),
+        },
         ListHeaderComponent
           ? typeof ListHeaderComponent === "function"
             ? React.createElement(
@@ -458,13 +470,29 @@ export const SafeAreaView = mockComponent("div", "SafeAreaView");
 
 export const SectionList = React.forwardRef<unknown, Record<string, unknown>>(
   (
-    { sections, renderItem, renderSectionHeader, keyExtractor, testID },
+    {
+      sections,
+      renderItem,
+      renderSectionHeader,
+      keyExtractor,
+      testID,
+      // Same two-prop carve-out as createFlatListMock — no `...rest`.
+      accessibilityElementsHidden,
+      importantForAccessibility,
+    },
     ref,
   ) => {
     const sectionArr = Array.isArray(sections) ? sections : [];
     return React.createElement(
       "div",
-      { ref, "data-testid": testID },
+      {
+        ref,
+        "data-testid": testID,
+        ...ariaHiddenProps(
+          accessibilityElementsHidden,
+          importantForAccessibility,
+        ),
+      },
       sectionArr.map(
         (section: { title?: string; data: unknown[] }, sIdx: number) =>
           React.createElement(
