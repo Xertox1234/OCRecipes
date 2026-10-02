@@ -7,6 +7,7 @@ module: client
 applies_to: ["client/**/*.tsx"]
 symptoms: ["On iOS/VoiceOver one of two pieces of content that appear together is never spoken (product name announced but the safety badge that appeared with it is silent, or vice-versa)", "Non-deterministic across runs — sometimes the first announcement wins, sometimes the second", "Android/TalkBack announces both correctly (badge has its own accessibilityLiveRegion), so the bug looks iOS-only"]
 created: 2026-07-21
+last_updated: 2026-10-01
 severity: medium
 ---
 
@@ -92,6 +93,26 @@ Key points:
   (a bare "the combined string was announced" assertion passes even if the split
   path also fired a second time).
 
+### Second adopter: a rendered banner folded into an existing merged announce
+
+`client/screens/LabelAnalysisScreen.tsx` already merged "Updated with AI
+analysis" + "Ready to log" into one effect. Its low/medium confidence banner
+appears in the SAME commit as the AI data, so the banner's text joined that
+utterance (`parts.push`) rather than getting an effect of its own:
+
+- Compute the banner copy ONCE in render (`confidenceBannerMessage`) and use it
+  for both the JSX and the announce, so the spoken and the visible text cannot
+  drift.
+- The banner has **no edge of its own**: it is appended only when one of the
+  existing edges fires, so it can never be a second same-commit announce. That
+  holds only while the banner's source state (`labelData`) is written in the
+  same commit as the edge state (`sessionId`) — say so in the code comment,
+  because a later writer would not be re-announced.
+- Append it **last** when its copy already ends in a period (`join(". ")` would
+  double it, and the caution is then the last thing heard before the user
+  acts). Keep the announce ungated on both platforms: the banner carries no live
+  region, and adding one would double-speak it on Android.
+
 ## Prevention
 
 - Before adding a second imperative `announceForAccessibility` to a component,
@@ -102,6 +123,13 @@ Key points:
   fold them the same way.
 - A regression test that only asserts the presence of a string is insufficient —
   assert the announce call **count** to lock exclusivity.
+- When a test pins "no live region / no role" to justify an ungated announce,
+  check **every node of the surface** — the text node AND its container. The
+  jsdom `View`/`Text` mocks map `accessibilityLiveRegion` / `accessibilityRole`
+  to `aria-live` / `role` on whichever node carries the prop, so a
+  container-only pin stays green when a live region is added to the text node
+  (the Android double-speak the pin exists to prevent). Measured by mutation in
+  the `LabelAnalysisScreen` review.
 
 ## Related Files
 
@@ -109,6 +137,10 @@ Key points:
   effect (the fix).
 - `client/screens/ScanScreen.tsx` — the confirm-card announce effect that already
   folded name+flag into one utterance (the reference pattern).
+- `client/screens/LabelAnalysisScreen.tsx` — the merged toast + ready +
+  confidence-banner effect (second adopter).
+- `client/screens/__tests__/LabelAnalysisScreen.a11y.test.tsx` — the
+  exact-string, exactly-once and both-node live-region pins.
 
 ## See Also
 

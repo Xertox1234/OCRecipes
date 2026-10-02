@@ -5,6 +5,7 @@ import * as RN from "react-native";
 import { FadeInUp } from "react-native-reanimated";
 import { renderComponent } from "../../../test/utils/render-component";
 import LabelAnalysisScreen from "../LabelAnalysisScreen";
+import { parseNutritionFromOCR } from "@/lib/nutrition-ocr-parser";
 
 const {
   mockGoBack,
@@ -120,6 +121,39 @@ const AI_REPLACEMENT_LABEL_DATA = {
   ...DEFAULT_LABEL_DATA,
   calories: 400,
   confidence: 0.95,
+};
+
+// The confidence banner's visible copy. LabelAnalysisScreen renders it for the
+// low and medium tiers only (getConfidenceTier: < 0.5 low, < 0.8 medium,
+// otherwise high and no banner).
+const LOW_CONFIDENCE_BANNER =
+  "Low confidence — review carefully before logging.";
+const MEDIUM_CONFIDENCE_BANNER =
+  "Some values may be inaccurate. Review before logging.";
+
+// LOCAL_OCR_TEXT minus its protein, sugars and fiber lines: still clears the
+// screen's 0.6 instant-preview gate, but parses to 7 of 10 fields (confidence
+// 0.7, the MEDIUM tier), so a banner is already up before the AI answers. The
+// test that uses it asserts that parse as a precondition.
+const MEDIUM_LOCAL_OCR_TEXT = `Nutrition Facts
+Serving Size 1 cup (228g)
+Servings Per Container 2
+Calories 250
+Total Fat 12g
+  Saturated Fat 3g
+  Trans Fat 0g
+Cholesterol 30mg
+Sodium 470mg
+Total Carbohydrate 31g`;
+
+// Within 10% of MEDIUM_LOCAL_OCR_TEXT on every core field shouldReplaceWithAI
+// compares (protein is skipped: the local parse has none), so the AI "confirms"
+// the preview and the screen keeps showing the LOCAL parse.
+const AI_CONFIRMING_LABEL_DATA = {
+  ...DEFAULT_LABEL_DATA,
+  totalFat: 12,
+  sodium: 470,
+  totalCarbs: 31,
 };
 
 describe("LabelAnalysisScreen — accessibility announcements", () => {
@@ -388,6 +422,216 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
       await waitFor(() =>
         expect(announce).toHaveBeenCalledWith("Ready to log"),
       );
+      expect(screen.queryByText("Updated with AI analysis")).toBeNull();
+    });
+  });
+
+  describe("confidence banner", () => {
+    const originalOS = RN.Platform.OS;
+
+    // Restore in afterEach, not at the end of a test body: vitest runs with
+    // retry: 2, so a failed attempt would otherwise leak its OS into the retry.
+    afterEach(() => {
+      RN.Platform.OS = originalOS;
+    });
+
+    // 0.2 is the input the removed dead `confidence < 0.3` setError used to
+    // fire for; 0.4 is low tier but OUTSIDE that branch; 0.65 is medium.
+    it.each([
+      { confidence: 0.2, banner: LOW_CONFIDENCE_BANNER },
+      { confidence: 0.4, banner: LOW_CONFIDENCE_BANNER },
+      { confidence: 0.65, banner: MEDIUM_CONFIDENCE_BANNER },
+    ])(
+      "announces the banner once, merged into the ready-to-log announce, for an AI result at confidence $confidence",
+      async ({ confidence, banner }) => {
+        const announce = vi
+          .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
+          .mockImplementation(() => {});
+        mockUpload.mockResolvedValue({
+          sessionId: "session-1",
+          labelData: { ...DEFAULT_LABEL_DATA, confidence },
+        });
+
+        const { rerender } = renderComponent(<LabelAnalysisScreen />);
+
+        // The denominator: the banner this announce speaks is on screen.
+        const bannerText = await screen.findByText(banner);
+
+        await waitFor(() =>
+          expect(announce).toHaveBeenCalledWith(`Ready to log. ${banner}`),
+        );
+        // Exactly once: sessionId and labelData land in the same commit, so a
+        // separate banner announce would collide with "Ready to log" on iOS
+        // (docs/solutions/logic-errors/
+        // two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md).
+        expect(announce).toHaveBeenCalledTimes(1);
+
+        // The imperative announce is the banner's SOLE announcer: a live region
+        // or role on the banner's container OR its text would double-speak it
+        // on Android.
+        for (const node of [bannerText, bannerText.parentElement!]) {
+          expect(node.getAttribute("aria-live")).toBeNull();
+          expect(node.getAttribute("role")).toBeNull();
+        }
+
+        // The banner stays the only warning surface: no error view, no alert.
+        // (These pass without the fix too — they pin the removed dead branch
+        // staying removed, they are not its red test.)
+        expect(screen.queryByRole("alert")).toBeNull();
+        expect(
+          screen.queryByText(/Could not read the label clearly/),
+        ).toBeNull();
+
+        // An unrelated re-render does not repeat it.
+        rerender(<LabelAnalysisScreen />);
+        expect(announce).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it("announces the banner on Android too (the announce is ungated — the banner has no live region to cover it)", async () => {
+      RN.Platform.OS = "android";
+      const announce = vi
+        .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
+        .mockImplementation(() => {});
+      mockUpload.mockResolvedValue({
+        sessionId: "session-1",
+        labelData: { ...DEFAULT_LABEL_DATA, confidence: 0.2 },
+      });
+
+      renderComponent(<LabelAnalysisScreen />);
+
+      await screen.findByText(LOW_CONFIDENCE_BANNER);
+
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith(
+          `Ready to log. ${LOW_CONFIDENCE_BANNER}`,
+        ),
+      );
+      expect(announce).toHaveBeenCalledTimes(1);
+    });
+
+    it("announces the banner after the verification-mode ready text", async () => {
+      mockRoute.params = {
+        imageUri: IMAGE_URI,
+        barcode: BARCODE,
+        verificationMode: true,
+        verifyBarcode: BARCODE,
+      };
+      const announce = vi
+        .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
+        .mockImplementation(() => {});
+      mockUpload.mockResolvedValue({
+        sessionId: "session-1",
+        labelData: { ...DEFAULT_LABEL_DATA, confidence: 0.2 },
+      });
+
+      renderComponent(<LabelAnalysisScreen />);
+
+      await screen.findByText(LOW_CONFIDENCE_BANNER);
+
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith(
+          `Ready to submit verification. ${LOW_CONFIDENCE_BANNER}`,
+        ),
+      );
+      expect(announce).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves the announcement unchanged for a high-confidence result (no banner)", async () => {
+      const announce = vi
+        .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
+        .mockImplementation(() => {});
+      // DEFAULT_LABEL_DATA is confidence 0.9 — the high tier.
+
+      renderComponent(<LabelAnalysisScreen />);
+
+      // The ready state rendered: the denominator for the absences below.
+      await screen.findByText("Log 250 cal");
+
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith("Ready to log"),
+      );
+      expect(announce).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText(LOW_CONFIDENCE_BANNER)).toBeNull();
+      expect(screen.queryByText(MEDIUM_CONFIDENCE_BANNER)).toBeNull();
+    });
+
+    it("folds the banner into the SAME single announce as the AI-update toast and ready-to-log (same-commit iOS collision guard)", async () => {
+      mockRoute.params = {
+        imageUri: IMAGE_URI,
+        barcode: BARCODE,
+        localOCRText: LOCAL_OCR_TEXT,
+      };
+      // 0.4: a low-tier value OUTSIDE the old dead `< 0.3` branch — every low
+      // score gets the banner, not just the very lowest.
+      mockUpload.mockResolvedValue({
+        sessionId: "session-1",
+        labelData: { ...AI_REPLACEMENT_LABEL_DATA, confidence: 0.4 },
+      });
+      const announce = vi
+        .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
+        .mockImplementation(() => {});
+
+      renderComponent(<LabelAnalysisScreen />);
+
+      await screen.findByText("Updated with AI analysis");
+      await screen.findByText(LOW_CONFIDENCE_BANNER);
+
+      // sessionId, the AI labelData (hence the banner) and showUpdatedToast all
+      // land in ONE commit; three separate announces would collide on iOS.
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith(
+          `Updated with AI analysis. Ready to log. ${LOW_CONFIDENCE_BANNER}`,
+        ),
+      );
+      expect(announce).toHaveBeenCalledTimes(1);
+    });
+
+    it("announces the banner on a medium-confidence LOCAL preview the AI confirmed — silent until the ready edge, no 'Updated' toast", async () => {
+      // Precondition: the fixture really is a medium-tier local preview (>= 0.6
+      // so the screen shows it, < 0.8 so it carries a banner).
+      const localConfidence = parseNutritionFromOCR(
+        MEDIUM_LOCAL_OCR_TEXT,
+      ).confidence;
+      expect(localConfidence).toBeGreaterThanOrEqual(0.6);
+      expect(localConfidence).toBeLessThan(0.8);
+
+      mockRoute.params = {
+        imageUri: IMAGE_URI,
+        barcode: BARCODE,
+        localOCRText: MEDIUM_LOCAL_OCR_TEXT,
+      };
+      // Hold the AI answer so the pre-session state can be observed.
+      let resolveUpload!: (value: unknown) => void;
+      mockUpload.mockReturnValue(
+        new Promise((resolve) => {
+          resolveUpload = resolve;
+        }),
+      );
+      const announce = vi
+        .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
+        .mockImplementation(() => {});
+
+      renderComponent(<LabelAnalysisScreen />);
+
+      // The local preview's banner is up from first paint, before any AI answer
+      // (the denominator) — and nothing is spoken for it yet.
+      await screen.findByText(MEDIUM_CONFIDENCE_BANNER);
+      expect(announce).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveUpload({
+          sessionId: "session-1",
+          labelData: AI_CONFIRMING_LABEL_DATA,
+        });
+      });
+
+      // The AI agreed, so the LOCAL parse stays on screen with its banner, and
+      // the ready edge speaks what is showing.
+      expect(announce).toHaveBeenCalledWith(
+        `Ready to log. ${MEDIUM_CONFIDENCE_BANNER}`,
+      );
+      expect(announce).toHaveBeenCalledTimes(1);
       expect(screen.queryByText("Updated with AI analysis")).toBeNull();
     });
   });
