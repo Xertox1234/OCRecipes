@@ -1,6 +1,6 @@
 ---
 title: 'LabelAnalysisScreen can still show "Scan Front Label" after the front label was saved'
-status: in-progress
+status: done
 priority: low
 created: 2026-09-24
 updated: 2026-09-24
@@ -54,3 +54,10 @@ advisor and code-reviewer as a suggestion; left out of that PR's scope.
 ### 2026-09-24
 
 - Filed from PR #1036's deferred warning.
+
+### 2026-10-01
+
+- Implemented: `FrontLabelConfirmScreen`'s confirm `onSuccess` now writes a per-barcode "saved" signal to the query cache (`["__frontLabelSaved", barcode]`, `gcTime` pinned to `Infinity` via `setQueryDefaults` per `docs/rules/hooks.md`) BEFORE `pop(2)`. `LabelAnalysisScreen` reads it in a `useFocusEffect` and clears `verificationResult.canScanFrontLabel`, so the "Scan Front Label" CTA no longer comes back after a successful save. The key helper `frontLabelSavedKey` is exported from `FrontLabelConfirmScreen.tsx` (screen-to-screen import precedent: `RecipeTextImportScreen`) and kept out of `QUERY_KEYS`, whose first elements `App.tsx` persists.
+- Why a cache signal and nothing else: the server flag is per user and barcode and cannot be re-read. A second `POST /api/verification/submit` from the same user returns 409, and the only GET (`/api/verification/:barcode`) reports product-level `hasFrontLabelData`, not the per-user flag.
+- Tests: `LabelAnalysisScreen.verification.test.tsx` renders both real screens under one query client. Save then refocus hides the CTA (red before the fix). Controls: a refocus with no save keeps it, a save for a different barcode keeps it, and the signal's `gcTime` is pinned. The two other `LabelAnalysisScreen` suites gained a no-op `useFocusEffect` in their `@react-navigation/native` mock (out of contract, needed for AC 1: the screen now imports it and their narrow mock factory would throw on every render).
+- Reviewed clean by `code-reviewer` + `mobile-reviewer` (no findings); both ran mutation checks showing each half of the fix (writer, reader, per-barcode scoping, gc pin) is covered by a test that fails without it.
