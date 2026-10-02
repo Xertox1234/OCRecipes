@@ -1,6 +1,8 @@
 ---
 title: "Eval runner's per-dimension confidence intervals bootstrap samples, not cases"
-status: backlog
+status: blocked
+blocked_reason: "Parked with Lane C of the advanced-testing plan (user 2026-10-01); the user resumes Lane C Tasks 4-5 and this todo by hand"
+human_led: true
 priority: low
 created: 2026-10-01
 updated: 2026-10-01
