@@ -6,7 +6,7 @@ module: client
 tags: [react-native, navigation, deep-linking, validation, notifications, expo-notifications]
 applies_to: [client/navigation/linking.ts, client/navigation/__tests__/**, client/screens/ChatScreen.tsx]
 created: '2026-05-13'
-last_updated: '2026-09-25'
+last_updated: '2026-10-02'
 ---
 
 # Deep linking configuration with parseIntOrZero boundary validation
@@ -215,7 +215,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
 };
 ```
 
-Import the default parser from `@react-navigation/core`, **not** `@react-navigation/native` — the same reason the test file avoids `native` (above): `native`'s index also re-exports `NavigationContainer`/`Link`/etc., whose module graph pulls in React Native sources the Vitest node env can't load. `core` is the identical function `native` re-exports unchanged (`@react-navigation/native/lib/module/index.js`: `export * from '@react-navigation/core'`), and is declared in `package.json` (do not rely on it as a hoisted transitive of `native`: a nested copy would break every deep link with no install/type/lint signal).
+Import the default parser from `@react-navigation/core`, **not** `@react-navigation/native` — `core` is the declared dependency (`package.json`) that exports the function, and it is the identical function `native` re-exports unchanged (`@react-navigation/native/lib/module/index.js`: `export * from '@react-navigation/core'`). This is about importing from the package that declares the function, not a test-environment workaround: the real `native` package has imported in both the node and jsdom test envs since #1214 added the `server.deps.inline` entry for `@react-navigation/*` to `vitest.config.mts` (before that, `native`'s own `import "react-native"` bypassed the test alias and failed with `SyntaxError: Unexpected token 'typeof'`). Do not rely on `core` as a hoisted transitive of `native`: a nested copy would break every deep link with no install/type/lint signal.
 
 **Catch `URIError` in the same override.** The default parser runs `decodeURIComponent` on path params with no try/catch, so a malformed escape (`nutrition/%C0`, `recipe/%ZZ`, a trailing `%`) throws `URIError: URI malformed` — and `useLinking.native.js`'s subscribe listener calls `getStateFromURL(url)` outside its own `try`, so on a live tap the throw is uncaught (a likely release-build crash; not verified on a device). The length cap does not help: these links are tiny. Return `undefined` for a `URIError` (the link is ignored, like an over-cap one) and rethrow anything else so a real config bug still surfaces. Found in #1090's security review; reproduced against the installed `@react-navigation/core`.
 
@@ -225,11 +225,11 @@ Pick the cap by measuring the app's real longest link (the verify-email token, ~
 
 ## Testing
 
-Test `getInitialURL`/`subscribe` by calling the exported functions directly — do not mount `NavigationContainer` (same avoidance `client/navigation/__tests__/linking.test.ts` already uses for `getStateFromPath`, importing from `@react-navigation/core` instead of `@react-navigation/native` to avoid pulling in React Native sources the node env can't load). Mocking gotchas:
+Test `getInitialURL`/`subscribe` by calling the exported functions directly — do not mount `NavigationContainer` (`client/navigation/__tests__/linking.test.ts` already tests `getStateFromPath` this way; it imports the parser from `@react-navigation/core` rather than `@react-navigation/native` because `core` is the declared dependency exporting the identical function, not because `native` cannot load — the real package has imported in both test envs since #1214's `server.deps.inline` entry). Mocking gotchas:
 
 - The globally-aliased `react-native` mock (`test/mocks/react-native.ts`) only exports `Linking.openURL`/`openSettings` — no `getInitialURL`/`addEventListener`. Override locally per `docs/solutions/conventions/inline-vi-mock-globally-aliased-modules-2026-05-13.md` item 3 ("missing exports"): `vi.mock("react-native", async (importOriginal) => ({ ...(await importOriginal()), Linking: { ...actual.Linking, getInitialURL: vi.fn(), addEventListener: vi.fn() } }))`.
-- `expo-notifications` has no global alias; mock it inline per-file (`getLastNotificationResponse`, `clearLastNotificationResponse`, `addNotificationResponseReceivedListener`), matching `client/lib/__tests__/notifications.test.ts`'s existing shape.
-- If the module under test imports `navigationRef` (for the `isReady()` gate above), mock `../navigationRef` too — its runtime import chain otherwise pulls in `@react-navigation/native`.
+- `expo-notifications` **is** globally aliased to the inert stub `test/mocks/expo-notifications.ts` (since #1214: `getLastNotificationResponse` returns `null`, the listener is a no-op), so merely importing it needs no per-file mock. To assert on or control those calls (`getLastNotificationResponse`, `clearLastNotificationResponse`, `addNotificationResponseReceivedListener`), keep an inline `vi.mock("expo-notifications", factory)` — `linking.test.ts` does, matching `client/lib/__tests__/notifications.test.ts`'s existing shape.
+- If the module under test imports `navigationRef` (for the `isReady()` gate above), mock `../navigationRef` too — to control `isReady()`, not because the real ref cannot load (its `@react-navigation/native` import has worked since #1214): with no `NavigationContainer` mounted, the real `createNavigationContainerRef` returns `false` from `isReady()` (`current == null`), so the deliver-now branch would be unreachable. `linking.test.ts` mocks it as `{ navigationRef: { isReady: () => mockIsReady() } }`.
 
 ## Related Files
 

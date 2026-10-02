@@ -49,8 +49,23 @@ useFocusEffect(
   ),
 );
 
-// useSendMessage, in the data.done branch only:
-if (notifyWhenAway) noteCoachReplyFinished(queryClient, effectiveId);
+// useSendMessage: the token the send goes out with identifies its session ...
+const token = await tokenStorage.get();
+// ... and, in the data.done branch only, the reply is reported to that session
+// alone (Rule 5) — never unguarded:
+if (notifyWhenAway) {
+  void tokenStorage.get().then(
+    (current) => {
+      if (current === token) {
+        noteCoachReplyFinished(queryClient, effectiveId);
+      }
+    },
+    () => {
+      // Unreadable token: the session can't be told apart, so stay quiet
+      // rather than risk a mark for someone else.
+    },
+  );
+}
 
 // MainTabNavigator: one dot for a reminder or an unread reply, and the signal
 // for screen readers lives in the tab's own label.

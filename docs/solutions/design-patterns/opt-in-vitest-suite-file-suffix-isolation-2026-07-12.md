@@ -23,7 +23,7 @@ when the changed files are ones the new suite imports.
 
 The naive approach is: keep the new files named `*.test.ts` (so the default
 `include: ["**/*.test.ts"]` glob matches them), then add an `exclude` entry
-for their directory to the base `vitest.config.ts` so `test:run` skips them,
+for their directory to the base `vitest.config.mts` so `test:run` skips them,
 and spread the base config into a new dedicated config
 (`vitest.<tier>.config.mts`, mirroring `vitest.mutation.config.mts`) that
 overrides `include` to target only the new directory.
@@ -53,7 +53,7 @@ is `["**/*.test.ts", "**/*.test.tsx"]`. `"itest.ts"` does not end in the
 literal substring `".test.ts"` (there is no `.` immediately before
 `test.ts`), so the glob genuinely cannot match it, structurally, at every
 consumer of the base config — `vitest`, `vitest run`, `vitest related`, and
-any other tool that just resolves the base `vitest.config.ts`. Zero
+any other tool that just resolves the base `vitest.config.mts`. Zero
 `exclude` entries are needed on either side:
 
 - The base config needs no new `exclude` entry — the suffix already

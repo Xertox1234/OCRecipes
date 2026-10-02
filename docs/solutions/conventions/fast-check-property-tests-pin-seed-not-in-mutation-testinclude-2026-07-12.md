@@ -15,7 +15,7 @@ last_updated: 2026-10-01
 
 When adding property-based tests with fast-check to a pure numeric module:
 
-1. **PIN THE SEED**: every `fc.assert` call must pass a pinned seed (e.g. `{ seed: 20260712, numRuns: 100 }`). Reason: `vitest.config.ts` sets `retry: 2` to absorb CPU-contention flakes; an UNSEEDED property that finds a real counterexample re-runs with a fresh random seed on retry and can pass — masking a genuine bug as an absorbed flake. With a pinned seed a failure reproduces identically on all 3 attempts (verified during implementation: a deliberately-wrong invariant failed all 3 retries with the same shrunk counterexample).
+1. **PIN THE SEED**: every `fc.assert` call must pass a pinned seed (e.g. `{ seed: 20260712, numRuns: 100 }`). Reason: `vitest.config.mts` sets `retry: 2` to absorb CPU-contention flakes; an UNSEEDED property that finds a real counterexample re-runs with a fresh random seed on retry and can pass — masking a genuine bug as an absorbed flake. With a pinned seed a failure reproduces identically on all 3 attempts (verified during implementation: a deliberately-wrong invariant failed all 3 retries with the same shrunk counterexample).
 
 2. **STAY OUT OF STRYKER testInclude**: do not add `*.property.test.ts` files to a target's `testInclude` in `stryker.targets.mjs`. The registry deliberately scopes each mutation run to the module's dedicated example unit test to measure THAT test's trustworthiness in isolation; folding 100-run properties into the mutant loop multiplies per-mutant runtime and worsens nondeterministic timeout classification. The signals are complementary: mutation finds untested branches in the example suite, properties find untested input classes.
 
@@ -49,7 +49,7 @@ Property-based tests are a powerful complement to example-based mutation testing
 
 - `server/lib/__tests__/chat-history-truncate.property.test.ts` — first property suite, canonical example
 - `server/lib/chat-history-truncate.ts` — module under test
-- `vitest.config.ts` — the `retry: 2` setting
+- `vitest.config.mts` — the `retry: 2` setting
 - `stryker.targets.mjs` — the `testInclude` registry
 - `scripts/__tests__/fast-check-property-seed-guard.test.ts` — automated grep-based guard test
   enforcing Rule item 1 (seed pinning) across every `**/__tests__/**/*.property.test.ts` file,

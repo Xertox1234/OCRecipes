@@ -6,7 +6,7 @@ module: client
 tags: [testing, vitest, mocks, jsdom, alias, expo, context-providers]
 applies_to: [client/**/__tests__/**/*.test.ts, client/**/__tests__/**/*.test.tsx]
 created: '2026-06-01'
-last_updated: '2026-06-01'
+last_updated: '2026-10-02'
 ---
 
 # vi.mock path must resolve to the same module ID as the production import
@@ -36,15 +36,17 @@ vi.mock("@/context/AuthContext", () => ({
 
 Vitest resolves both the production `./AuthContext` import and the test's
 `@/context/AuthContext` mock to the same file ID (the `@/` -> `client` alias is in
-`vitest.config.ts`), so the mock applies.
+`vitest.config.mts`), so the mock applies.
 
 ## Why
 
 A mismatched mock path fails **silently** — there is no "mock not found" error.
-The real collaborator loads instead, dragging its whole import graph in. Under
-the jsdom test environment that graph (AuthContext -> `@/lib/query-client` ->
-`@react-native-community/netinfo` / `@sentry/react-native` -> `expo`) hits Expo's
-async-require entry, which runs only when `typeof window !== "undefined"`:
+The real collaborator loads instead, dragging its whole import graph in. When
+that graph reaches the bare `expo` entry under the jsdom test environment (e.g.
+`client/components/ErrorFallback.tsx` imports `reloadAppAsync` from `expo`,
+which has no alias in `vitest.config.mts`), it hits Expo's async-require entry,
+which runs only when `__DEV__ && typeof window !== "undefined"` (`test/setup.ts`
+sets `__DEV__ = true`):
 
 ```
 Error: Cannot find module './setupFastRefresh'
@@ -61,7 +63,12 @@ the same ID the production code imports, not to chase the Expo error.
   sibling module the SUT imports with a relative `./X` path.
 - Symptom to recognize: a jsdom suite fails to load (0 tests) with the Expo
   `setupFastRefresh` / `async-require/setup.ts` error, even though you "mocked"
-  the dependency that pulls in the native graph.
+  the dependency that pulls in the native graph. When the real graph does NOT
+  reach `expo`, a mismatched mock is fully silent: the real module loads and the
+  test may pass — the `@/context/AuthContext` case since #1214 aliased
+  `expo-notifications` (its route to `expo`) to a stub. To verify a mock
+  applied, export a `vi.fn()` from the factory, import it via the `@/` alias,
+  and assert `vi.isMockFunction(...)` — `false` means the real module loaded.
 
 ## Examples
 
@@ -80,7 +87,7 @@ the same ID the production code imports, not to chase the Expo error.
 - `client/context/__tests__/OnboardingContext.test.ts`
 - `client/context/__tests__/ThemeContext.test.ts`
 - `client/context/PremiumContext.tsx`
-- `vitest.config.ts`
+- `vitest.config.mts`
 
 ## See Also
 

@@ -53,11 +53,11 @@ Each of these cost a debug cycle to discover; configure them up front.
 
 5. **The Vitest runner forces coverage off and ignores `coverageAnalysis`.** Per
    the vitest-runner docs it sets `coverage: { enabled: false }` (non-overridable),
-   so the `coverage.thresholds` inherited from `vitest.config.ts` are **never
+   so the `coverage.thresholds` inherited from `vitest.config.mts` are **never
    evaluated** during the dry run, and `coverageAnalysis` is always `perTest`
    regardless of config. Don't waste time defending against a threshold failure.
 
-Plus one DX footgun: add `.stryker-tmp` to `vitest.config.ts`'s `test.exclude`, or a
+Plus one DX footgun: add `.stryker-tmp` to `vitest.config.mts`'s `test.exclude`, or a
 local `test:run` after `test:mutation` discovers the sandbox's copied `*.test.ts`
 and spuriously fails.
 

@@ -6,7 +6,7 @@ tags: [testing, react-native, mocking]
 module: client
 applies_to: ["**/__tests__/*.test.tsx"]
 created: '2026-09-25'
-last_updated: '2026-09-25'
+last_updated: '2026-10-02'
 ---
 
 # RefreshControl's onRefresh is unreachable under the shared ScrollView mock unless locally overridden
@@ -55,7 +55,7 @@ vi.mock("react-native", async (importOriginal) => {
 
 Then in the test: render the screen, assert `refreshControlProps.current?.onRefresh` is a function (a guard against the override silently not firing), and invoke it directly inside `act(async () => { await refreshControlProps.current?.onRefresh?.(); })`.
 
-**FlatList variant.** `test/mocks/react-native.ts`'s `FlatList` mock (`createFlatListMock`) has the same practical effect for a different reason: it's a hand-written component (not a bare `mockComponent`) that explicitly destructures only `data`/`renderItem`/`keyExtractor`/`ListEmptyComponent`/`ListHeaderComponent`/`ListFooterComponent`/`testID` and builds its own children from those — it never reads `props.refreshControl` or `props.children` at all. Delegating to the mock's own `FlatList` for children doesn't work here (unlike ScrollView, passing `refreshControl` as a `React.createElement(..., children)` argument does nothing, since the component ignores its `children` prop entirely); render `refreshControl` as a sibling instead:
+**FlatList variant.** `test/mocks/react-native.ts`'s `FlatList` mock (`createFlatListMock`) has the same practical effect for a different reason: it's a hand-written component (not a bare `mockComponent`) that explicitly destructures a fixed prop list with no `...rest` and renders only what it builds from that list — it never reads `props.refreshControl` or `props.children` at all. Delegating to the mock's own `FlatList` for children doesn't work here (unlike ScrollView, passing `refreshControl` as a `React.createElement(..., children)` argument does nothing, since the component ignores its `children` prop entirely); render `refreshControl` as a sibling instead:
 
 ```typescript
 const FlatList = ({ refreshControl, ...rest }: {

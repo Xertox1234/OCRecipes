@@ -7,7 +7,7 @@ tags: [accessibility, gorhom-bottom-sheet, bottom-sheet, voiceover, react-native
 symptoms: [VoiceOver can swipe out of an open bottom sheet into the screen content behind it, accessibilityViewIsModal present on a BottomSheetModal element with no effect]
 applies_to: [client/screens/**/*.tsx, client/components/**/*.tsx]
 created: '2026-07-02'
-last_updated: '2026-09-23'
+last_updated: '2026-10-02'
 ---
 
 # accessibilityViewIsModal must go on the sheet's content View, not on BottomSheetModal
@@ -37,7 +37,7 @@ Found in the PR #485 review: both new import-sheet hosts (and all four pre-exist
 </View>
 ```
 
-Fixing the shared content component repairs every host at once — `ImportRecipeSheetContent` (PR #485) is the precedent, `RecipeBrowserScreen.tsx`'s `<BottomSheetView accessibilityViewIsModal>` (~line 1004) the pre-existing working example.
+Fixing the shared content component repairs every host at once — `ImportRecipeSheetContent` (PR #485) is the precedent, `RecipeBrowserScreen.tsx`'s `<BottomSheetView accessibilityViewIsModal>` the pre-existing working example.
 
 ### When the sheet has no existing single content root (2026-09-20)
 

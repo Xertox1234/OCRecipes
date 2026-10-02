@@ -43,7 +43,7 @@ Before concluding "transient," every stable-state explanation was checked and ru
 
 With all five levers unchanged yet the crash gone, the most plausible explanation is **transient resource contention** from concurrent heavy processes on the machine at the exact moment of the original run (this crash was first observed *during* a multi-agent skill-validation session — i.e., while other worktrees/processes were plausibly running concurrently) — not a persistent defect in tracked config, dependencies, or Node version.
 
-This is a **different phenomenon** from the CPU-contention flakiness already documented for the full test-run (`retry: 2` in `vitest.config.ts`, resolved 2026-05-23): that one is a probabilistic **per-test** flake under full-suite parallel load, reliably reproducible and absorbed by retries. This one is a hard **collection-time crash** on a single targeted file — not reproducible even once on a clean re-run.
+This is a **different phenomenon** from the CPU-contention flakiness already documented for the full test-run (`retry: 2` in `vitest.config.mts`, resolved 2026-05-23): that one is a probabilistic **per-test** flake under full-suite parallel load, reliably reproducible and absorbed by retries. This one is a hard **collection-time crash** on a single targeted file — not reproducible even once on a clean re-run.
 
 ## Solution
 
@@ -62,7 +62,7 @@ There is no code fix — the crash could not be reproduced, so there is nothing 
 ## Related Files
 
 - `test/setup.ts` — the file the vite `node:module` externalization warning names.
-- `vitest.config.ts` — global `environment: "node"`; RN component tests opt into jsdom via a per-file `// @vitest-environment jsdom` pragma.
+- `vitest.config.mts` — global `environment: "node"`; RN component tests opt into jsdom via a per-file `// @vitest-environment jsdom` pragma.
 - `todos/archive/P2-2026-07-15-local-vitest-rn-component-crash.md` — the investigation this entry was extracted from.
 
 ## See Also

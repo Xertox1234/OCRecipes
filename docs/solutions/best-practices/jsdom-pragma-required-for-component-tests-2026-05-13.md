@@ -16,7 +16,7 @@ Every `.test.tsx` file under `client/components/**/__tests__/` MUST declare the 
 
 ## Why
 
-`vitest.config.ts` runs in the `node` environment by default. Component tests that render via `@testing-library/react` need DOM globals (`document`, `window`, etc.). Without the pragma, DOM APIs are `undefined` — tests either pass spuriously (assertions never reach the DOM) or fail with confusing `ReferenceError: document is not defined`.
+`vitest.config.mts` runs in the `node` environment by default. Component tests that render via `@testing-library/react` need DOM globals (`document`, `window`, etc.). Without the pragma, DOM APIs are `undefined` — tests either pass spuriously (assertions never reach the DOM) or fail with confusing `ReferenceError: document is not defined`.
 
 The config used to set this implicitly via `environmentMatchGlobs`, but that option was removed (audit 2026-05-11 L1). The pragma is now the only mechanism.
 
@@ -39,7 +39,7 @@ The JSDoc form is also accepted:
 ## Related Files
 
 - `scripts/check-jsdom-pragma.js`
-- `vitest.config.ts`
+- `vitest.config.mts`
 
 ## See Also
 

@@ -107,7 +107,7 @@ fixtures were built. The instinct to adjust the assertion is wrong here — the 
 **`process.env` mutation inside a hook does work.** Verified on Node 24 inside a Vitest worker:
 assigning `process.env.TZ` at runtime updates `getTimezoneOffset()`, `toISOString()`,
 `toLocaleDateString()` and `Intl` resolution, even after `Date` has already been used, and
-`delete process.env.TZ` restores the system zone. `vitest.config.ts` uses `pool: "forks"`, so the
+`delete process.env.TZ` restores the system zone. `vitest.config.mts` uses `pool: "forks"`, so the
 mutation is process-local and cannot leak into another test file. So the hook is the right place
 for the pin — the bug is only ever the fixture's birthplace.
 
@@ -127,7 +127,7 @@ leaving it implicit.
   assertion
 - `client/screens/meal-plan/__tests__/MealPlanHomeScreen.test.tsx` — the same pin combined with
   `vi.useFakeTimers({ toFake: ["Date"] })`
-- `vitest.config.ts` — `pool: "forks"`, which is what makes per-file `process.env` pinning safe
+- `vitest.config.mts` — `pool: "forks"`, which is what makes per-file `process.env` pinning safe
 
 ## See Also
 

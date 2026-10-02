@@ -144,7 +144,7 @@ original defect survive, and it caught the *fix's own regression guard* too:
 - The natural assertion — "the picker's `iso` equals what the planner computes for this instant"
   — is satisfied by **both** bases under UTC, because local midnight and the raw instant fall on
   the same UTC day there. **UTC is the unique zone with that property.**
-- CI runs UTC (no `TZ` in `vitest.config.ts`, `test/setup.ts`, or the workflows; GitHub-hosted
+- CI runs UTC (no `TZ` in `vitest.config.mts`, `test/setup.ts`, or the workflows; GitHub-hosted
   runners default to UTC), so the guard is silent in the one environment that runs unattended.
 
 Pin **any non-UTC zone** for that test file — the offset's *sign* is irrelevant, despite how

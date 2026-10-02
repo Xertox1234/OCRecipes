@@ -29,7 +29,7 @@ The shared `tsconfig` includes the DOM lib, so the global `URL` resolves to the 
 
 ## Solution
 
-In a test or script that needs a project path, anchor on `process.cwd()` instead of `import.meta.url`. Vitest runs anchored at the project root (it resolves `cwd` to the directory containing `vitest.config.ts`), and repo scripts (e.g. `scripts/coverage-ratchet.ts`) already rely on this:
+In a test or script that needs a project path, anchor on `process.cwd()` instead of `import.meta.url`. Vitest runs anchored at the project root (it resolves `cwd` to the directory containing `vitest.config.mts`), and repo scripts (e.g. `scripts/coverage-ratchet.ts`) already rely on this:
 
 ```ts
 // ✗ Fails tsc under the DOM-lib tsconfig:

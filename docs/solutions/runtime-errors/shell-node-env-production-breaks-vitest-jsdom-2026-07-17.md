@@ -56,7 +56,7 @@ Two independent hardenings (either alone fixes its own layer; both applied):
 1. `test/setup.ts` — resolve the builtin at runtime, invisible to static
    analysis: `const { createRequire } = process.getBuiltinModule("node:module")`
    (Node ≥22.3).
-2. `vitest.config.ts` — normalize the mode at config load, before any
+2. `vitest.config.mts` — normalize the mode at config load, before any
    transform: `if (process.env.NODE_ENV === "production") process.env.NODE_ENV = "test";`
    Tests never legitimately transform under production conditions (the DB
    guard in setup.ts refuses production databases outright).
@@ -73,5 +73,5 @@ Two independent hardenings (either alone fixes its own layer; both applied):
 ## Related Files
 
 - `test/setup.ts` — runtime builtin resolution.
-- `vitest.config.ts` — NODE_ENV normalization guard.
+- `vitest.config.mts` — NODE_ENV normalization guard.
 - `docs/solutions/runtime-errors/vitest-collection-crash-transient-contention-2026-07-16.md` — superseded diagnosis of the same signature.

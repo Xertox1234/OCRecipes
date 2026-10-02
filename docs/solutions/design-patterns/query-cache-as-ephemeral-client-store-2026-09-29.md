@@ -4,9 +4,9 @@ track: knowledge
 category: design-patterns
 tags: [tanstack-query, client-state, query-client, lifecycle, react-native]
 module: client
-applies_to: [client/hooks/**/*.ts]
+applies_to: [client/hooks/**/*.ts, client/screens/FrontLabelConfirmScreen.tsx, client/screens/LabelAnalysisScreen.tsx]
 created: '2026-09-29'
-last_updated: '2026-10-01'
+last_updated: '2026-10-02'
 ---
 
 # Store ephemeral, session-scoped client state in the TanStack Query cache instead of a module-level singleton
@@ -114,6 +114,9 @@ queryClient.setQueryData(PENDING_KEY, remainingEntries); // {} when empty — NO
   through `useQuery({ queryFn: skipToken, select })`, the viewed-conversation marker is not
 - `client/hooks/__tests__/useCoachUnreadReplies.test.ts` — gcTime survival for both keys, the
   `[]` / `null` clears, `queryClient.clear()`, and the macrotask flush the observer needs
+- `client/screens/FrontLabelConfirmScreen.tsx` — the one screen-level instance: the save's
+  `onSuccess` pins `frontLabelSavedKey` (`setQueryDefaults`, `gcTime: Infinity`) and writes it
+  before `pop(2)`; `client/screens/LabelAnalysisScreen.tsx` reads it back in its `useFocusEffect`
 
 ## See Also
 

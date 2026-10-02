@@ -137,7 +137,7 @@ production-only) implements the real controls:
   middleware — new capture sinks need the `handleRouteError` chokepoint,
   not just an error-middleware hook.
 - Test-suite cost: `@sentry/node` costs ~500ms to import (OTel tree);
-  `vitest.config.ts` aliases it to `test/mocks/sentry-node.ts` so the
+  `vitest.config.mts` aliases it to `test/mocks/sentry-node.ts` so the
   `_helpers.ts → error-reporter` import doesn't tax every route test. This
   alias operates at the bundler (`resolve.alias`) level, BEFORE Vitest's
   mock layer runs — `vi.unmock`/`vi.importActual` cannot recover the real
