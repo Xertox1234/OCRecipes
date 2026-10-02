@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
 import { runAssertions, runStructuralAssertions } from "../assertions";
+import { bootstrapMeanCI, mulberry32 } from "./bootstrap";
 import { persistResults } from "./eval-results-store";
 import { judgeGeneric, DEFAULT_JUDGE_MODEL } from "./judge-generic";
 import type {
@@ -12,6 +13,8 @@ import type {
   RubricDimension,
   DimensionConfidenceInterval,
 } from "../types";
+
+export { bootstrapMeanCI, mulberry32 };
 
 const DEFAULT_WORD_LIMIT_WARNING = 150;
 
@@ -41,47 +44,6 @@ export interface SuiteConfig {
 
   /** Format the test case as a readable 3-5 line summary for the judge */
   formatInput: (testCase: EvalTestCase) => string;
-}
-
-// ─── Bootstrap CI ─────────────────────────────────────────────────────────────
-
-const BOOTSTRAP_ITERATIONS = 1000;
-const BOOTSTRAP_SEED = 42;
-
-export function mulberry32(seed: number): () => number {
-  let t = seed >>> 0;
-  return function (): number {
-    t = (t + 0x6d2b79f5) >>> 0;
-    let r = Math.imul(t ^ (t >>> 15), 1 | t);
-    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
-    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function bootstrapMeanCI(values: number[]): {
-  mean: number;
-  lower: number;
-  upper: number;
-} {
-  if (values.length === 0) return { mean: 0, lower: 0, upper: 0 };
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  if (values.length < 2) return { mean, lower: mean, upper: mean };
-
-  const rng = mulberry32(BOOTSTRAP_SEED);
-  const means: number[] = [];
-  for (let i = 0; i < BOOTSTRAP_ITERATIONS; i++) {
-    let sum = 0;
-    for (let j = 0; j < values.length; j++) {
-      sum += values[Math.floor(rng() * values.length)];
-    }
-    means.push(sum / values.length);
-  }
-  means.sort((a, b) => a - b);
-  return {
-    mean,
-    lower: means[Math.floor(BOOTSTRAP_ITERATIONS * 0.025)],
-    upper: means[Math.floor(BOOTSTRAP_ITERATIONS * 0.975)],
-  };
 }
 
 // ─── Case evaluation ──────────────────────────────────────────────────────────
