@@ -1,6 +1,6 @@
 ---
 title: "HistoryScreen and useHistoryData can't be imported in the jsdom test harness — the screen has never had a test"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-26
 updated: 2026-09-26

@@ -102,6 +102,16 @@ export default defineConfig({
     reporters: process.env.CI
       ? ["default"]
       : ["default", new FlakeLedgerReporter()],
+    // Vitest externalizes node_modules packages and loads them with Node's
+    // native loader, so a package's own `import "react-native"` bypasses the
+    // `react-native` alias below and lands on the REAL entry, whose Flow
+    // `import typeof` syntax throws `SyntaxError: Unexpected token 'typeof'`
+    // before any test runs. Inlining makes Vite process the package, so the
+    // alias applies — that is what makes the real @react-navigation/native
+    // importable here.
+    // (bottom-tabs and elements also import react-native but are aliased to
+    // stubs below.)
+    server: { deps: { inline: [/node_modules\/@react-navigation\//] } },
     setupFiles: ["./test/setup.ts"],
     globalSetup: ["./test/global-teardown.ts"],
   },
@@ -152,6 +162,14 @@ export default defineConfig({
         import.meta.dirname,
         "./test/mocks/react-navigation-elements.ts",
       ),
+      // Inlining the real bottom-tabs gets past the react-native bypass above but
+      // then fails at import: it dereferences RN's `Easing`, which the
+      // DOM-rendering react-native mock doesn't export. HistoryScreen reads its
+      // BottomTabBarHeightContext outside any navigator.
+      "@react-navigation/bottom-tabs": path.resolve(
+        import.meta.dirname,
+        "./test/mocks/react-navigation-bottom-tabs.ts",
+      ),
       "@gorhom/bottom-sheet": path.resolve(
         import.meta.dirname,
         "./test/mocks/gorhom-bottom-sheet.ts",
@@ -159,6 +177,14 @@ export default defineConfig({
       "expo-haptics": path.resolve(
         import.meta.dirname,
         "./test/mocks/expo-haptics.ts",
+      ),
+      // Importing the real package loads expo's dev-only async-require setup,
+      // whose native `require("./setupFastRefresh")` can't resolve a `.ts`
+      // sibling (`Cannot find module './setupFastRefresh'`). Reached via
+      // @/lib/push-token-registration <- useAuth <- AuthContext <- PremiumContext.
+      "expo-notifications": path.resolve(
+        import.meta.dirname,
+        "./test/mocks/expo-notifications.ts",
       ),
       "@sentry/react-native": path.resolve(
         import.meta.dirname,
