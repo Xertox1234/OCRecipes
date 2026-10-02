@@ -13,7 +13,7 @@ import {
   useRoute,
   type RouteProp,
 } from "@react-navigation/native";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { deleteAsync } from "expo-file-system/legacy";
@@ -44,6 +44,19 @@ type NavigationProp = NativeStackNavigationProp<
   "FrontLabelConfirm"
 >;
 type ScreenRoute = RouteProp<RootStackParamList, "FrontLabelConfirm">;
+
+// Cross-screen signal that a product's front label was saved. LabelAnalysis
+// keeps its verification result — and with it the "Scan Front Label" CTA —
+// mounted underneath this screen, and nothing else is shared between the two,
+// so the save is published to the query cache for LabelAnalysis to read when
+// it regains focus. A `__`-prefixed sentinel, not an API path: no query ever
+// fetches it, and App.tsx's persisted-key allowlist keeps it in memory. See
+// docs/solutions/design-patterns/query-cache-as-ephemeral-client-store-2026-09-29.md.
+const FRONT_LABEL_SAVED_KEY = ["__frontLabelSaved"] as const;
+
+/** Query-cache key recording that `barcode`'s front label was saved. */
+export const frontLabelSavedKey = (barcode: string) =>
+  [...FRONT_LABEL_SAVED_KEY, barcode] as const;
 
 /**
  * Code-specific user-safe copy for known front-label `ApiError` codes.
@@ -86,6 +99,7 @@ export default function FrontLabelConfirmScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
   const { imageUri, barcode, data: initialData } = route.params;
 
   // Delete the captured temp photo once this flow ends. Unmount only — never
@@ -162,6 +176,12 @@ export default function FrontLabelConfirmScreen() {
   const confirmMutation = useMutation({
     mutationFn: () => confirmFrontLabel(sessionId!, barcode),
     onSuccess: () => {
+      // Publish the save BEFORE pop(2): LabelAnalysis's focus effect reads it
+      // the moment pop(2) returns focus there. No query observes this key, so
+      // pin its gcTime before the first write — the default 5 minutes would
+      // drop it early (docs/rules/hooks.md, ephemeral query-cache state).
+      queryClient.setQueryDefaults(FRONT_LABEL_SAVED_KEY, { gcTime: Infinity });
+      queryClient.setQueryData<boolean>(frontLabelSavedKey(barcode), true);
       haptics.notification(
         getConfidenceHapticType(getConfidenceTier(data.confidence)),
       );

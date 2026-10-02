@@ -15,7 +15,12 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+  RouteProp,
+} from "@react-navigation/native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -57,6 +62,7 @@ import {
   shouldReplaceWithAI,
   getLogButtonPresentation,
 } from "./label-analysis-utils";
+import { frontLabelSavedKey } from "./FrontLabelConfirmScreen";
 
 type LabelAnalysisNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -325,6 +331,29 @@ export default function LabelAnalysisScreen() {
     lastAnnouncedVerificationRef.current = verificationMessage;
     AccessibilityInfo.announceForAccessibility(verificationMessage);
   }, [verificationMessage]);
+
+  // `canScanFrontLabel` is a snapshot of the verify response, and the server
+  // can't refresh it: re-submitting the verification 409s. The front-label flow
+  // (the CTA below -> Scan -> FrontLabelConfirm) pop(2)s back to this screen,
+  // which stays mounted underneath it, and FrontLabelConfirm records the save
+  // in the query cache first — so on regaining focus, read that and drop the
+  // now-stale CTA. A separate concern from the temp-photo cleanup above, which
+  // must stay unmount-only. Idempotent, and its deps are stable, so a refire
+  // while focused is harmless (docs/solutions/conventions/usefocuseffect-refires-on-callback-identity-change-while-focused-2026-09-25.md).
+  useFocusEffect(
+    useCallback(() => {
+      if (!verifyBarcode) return;
+      if (
+        queryClient.getQueryData<boolean>(frontLabelSavedKey(verifyBarcode)) !==
+        true
+      ) {
+        return;
+      }
+      setVerificationResult((prev) =>
+        prev?.canScanFrontLabel ? { ...prev, canScanFrontLabel: false } : prev,
+      );
+    }, [queryClient, verifyBarcode]),
+  );
 
   const { mutate: verifyLog, isPending: isVerifying } = useMutation({
     mutationFn: async () => {

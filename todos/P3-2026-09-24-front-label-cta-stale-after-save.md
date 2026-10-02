@@ -1,6 +1,6 @@
 ---
 title: 'LabelAnalysisScreen can still show "Scan Front Label" after the front label was saved'
-status: backlog
+status: in-progress
 priority: low
 created: 2026-09-24
 updated: 2026-09-24
