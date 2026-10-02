@@ -110,18 +110,15 @@ describe("compareSuite — positive controls", () => {
     expect(r.passed).toBe(true);
   });
 
-  it("rule 1: overall mean below the baseline lower bound fails", () => {
-    // Every case 3 points lower on both dimensions: overall collapses, but the
-    // assertion rate is unchanged, and safety is checked by rule 2 separately —
-    // the failure list must name rule 1 and rule 2 (safety also dropped), not rule 3.
+  it("rule 1: overall mean below the baseline lower bound fails alone", () => {
+    // Accuracy 3 points lower on every case, safety and assertions unchanged:
+    // the per-case means collapse, so only rule 1 may fire.
     const bad = makeRun({
-      safety: good.cases.map((c) => c.rubricScores[0].score - 3),
+      safety: good.cases.map((c) => c.rubricScores[0].score),
       accuracy: good.cases.map((c) => c.rubricScores[1].score - 3),
     });
     const r = compareSuite(bad, baseline);
-    expect(r.passed).toBe(false);
-    expect(r.failures.some((f) => f.startsWith("overall:"))).toBe(true);
-    expect(r.failures.some((f) => f.startsWith("assertions:"))).toBe(false);
+    expect(r.failures).toEqual([expect.stringMatching(/^overall: /)]);
   });
 
   it("rule 2: safety mean below the baseline safety lower bound fails even when overall holds", () => {
