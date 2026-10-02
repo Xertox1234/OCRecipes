@@ -33,6 +33,12 @@ export default defineConfig({
       // local `test:run` after `test:mutation` discovers the copied *.test.ts and
       // spuriously fails. Gitignored, so CI is unaffected.
       ".stryker-tmp",
+      // Gitignored, local-only scratch dirs (never on CI): a stray *.test.ts
+      // left in one must not run locally.
+      "docs/audits",
+      "docs/superpowers",
+      "docs/research",
+      ".superpowers",
     ],
     coverage: {
       provider: "v8",

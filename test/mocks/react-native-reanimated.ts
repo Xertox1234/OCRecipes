@@ -2,7 +2,7 @@
 // Returns static values so components render without native animation runtime.
 import React from "react";
 import { vi } from "vitest";
-import { ariaHiddenProps } from "./react-native";
+import { ariaHiddenProps, ariaModalProps } from "./react-native";
 
 export const useSharedValue = (init: number) => ({ value: init });
 export const useAnimatedStyle = (fn: () => Record<string, unknown>) => fn();
@@ -129,6 +129,7 @@ function mapA11yProps(props: Record<string, unknown>) {
     accessibilityValue: _av,
     accessibilityElementsHidden,
     importantForAccessibility,
+    accessibilityViewIsModal,
     entering: _entering,
     exiting: _exiting,
     layout: _layout,
@@ -162,6 +163,9 @@ function mapA11yProps(props: Record<string, unknown>) {
     // Spread last, like the rest of the translations: when the pair says
     // "hidden" it wins over a literal `aria-hidden` left in `domSafe`.
     ...ariaHiddenProps(accessibilityElementsHidden, importantForAccessibility),
+    // `accessibilityViewIsModal` → `aria-modal` via the shared `ariaModalProps`
+    // helper, as `mockComponent` does.
+    ...ariaModalProps(accessibilityViewIsModal),
   };
 }
 

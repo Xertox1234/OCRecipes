@@ -195,8 +195,10 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
       // iOS half: InlineError's internal Platform.OS === "ios" gated
       // announceForAccessibility (Platform.OS defaults to "ios" in this
       // harness's react-native mock).
-      expect(announce).toHaveBeenCalledWith(
-        "Couldn't read this label. Try again with better lighting.",
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith(
+          "Couldn't read this label. Try again with better lighting.",
+        ),
       );
       // Exactly once: a second same-commit announce would collide on iOS.
       expect(announce).toHaveBeenCalledTimes(1);
@@ -251,10 +253,12 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
       });
 
       await screen.findByText("Thanks for verifying! (2/3 confirmations)");
-      const matchCalls = announce.mock.calls.filter(
-        (call) => call[0] === "Thanks for verifying! (2/3 confirmations)",
-      );
-      expect(matchCalls.length).toBe(1);
+      await waitFor(() => {
+        const matchCalls = announce.mock.calls.filter(
+          (call) => call[0] === "Thanks for verifying! (2/3 confirmations)",
+        );
+        expect(matchCalls.length).toBe(1);
+      });
 
       // Decorative check-circle icon is hidden from the a11y tree (mapped to
       // aria-hidden via test/mocks/expo-vector-icons.ts's ariaHiddenProps).
@@ -286,8 +290,10 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
       await screen.findByText(
         "Values differ from other scans. We've recorded your data.",
       );
-      expect(announce).toHaveBeenCalledWith(
-        "Values differ from other scans. We've recorded your data.",
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith(
+          "Values differ from other scans. We've recorded your data.",
+        ),
       );
 
       const icon = container.querySelector('[data-icon="info"]');
@@ -377,8 +383,10 @@ describe("LabelAnalysisScreen — accessibility announcements", () => {
       // one gets dropped (docs/solutions/logic-errors/
       // two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md).
       // The fix folds them into a single combined utterance.
-      expect(announce).toHaveBeenCalledWith(
-        "Updated with AI analysis. Ready to log",
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith(
+          "Updated with AI analysis. Ready to log",
+        ),
       );
       expect(announce).toHaveBeenCalledTimes(1);
 

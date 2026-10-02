@@ -93,7 +93,8 @@ describe("multipart field-name limits", () => {
   it("rejects a second non-file field beyond the `fields` limit", async () => {
     // No real client ever sends two non-file fields in one request (see the
     // control above); this proves the `fields: 1` cap itself, independent of
-    // which field names are used.
+    // which field names are used. The client pins the same cap as
+    // MAX_NON_FILE_FIELDS in client/lib/__tests__/photo-upload.test.ts.
     const res = await request(
       appWith(createImageUpload(1024 * 1024).single("photo")),
     )

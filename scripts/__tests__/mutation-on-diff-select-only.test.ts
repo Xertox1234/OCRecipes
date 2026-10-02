@@ -326,4 +326,14 @@ describe("mutation-on-diff.yml", () => {
     ).toHaveLength(4);
     expect(workflow).not.toContain("outputs.run == 'true'");
   });
+
+  it("keeps the select step the gates read: its name, id and the --select-only flag", () => {
+    const workflow = readFileSync(WORKFLOW, "utf8");
+    // Without the flag the script does the full run before npm ci and sets
+    // no output; under another id the gates read none. Either way nothing
+    // skips, silently, on every PR with no eligible module.
+    expect(workflow).toMatch(
+      /- name: Select eligible modules\n\s+id: select\n\s+run: node scripts\/ci\/mutation-on-diff\.mjs --select-only "\$RUNNER_TEMP\/changed-files\.txt"\n/,
+    );
+  });
 });
