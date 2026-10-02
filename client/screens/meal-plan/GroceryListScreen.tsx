@@ -532,7 +532,13 @@ export default function GroceryListScreen() {
             title="No items yet"
             description="Generate a shopping list from your meal plan in one tap, or add items yourself."
             actionLabel="Build from Meal Plan"
-            onAction={() => navigation.navigate("MealPlanHome")}
+            onAction={() =>
+              // Tab-qualified: this screen is also registered in the Profile
+              // stack, where a bare "MealPlanHome" resolves nowhere.
+              navigation
+                .getParent()
+                ?.navigate("MealPlanTab", { screen: "MealPlanHome" })
+            }
             secondaryLabel="or add items manually"
             onSecondaryAction={() => addItemRef.current?.focus()}
           />
