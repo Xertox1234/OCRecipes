@@ -6,6 +6,7 @@ module: shared
 tags: [harness, architecture, testing, ci, github-actions, e2big]
 applies_to: [".github/workflows/**/*.yml", "scripts/ci/**", "scripts/**/*.mjs"]
 created: 2026-10-01
+last_updated: 2026-10-02
 ---
 
 # Pass a repo-derived list to a CI script as a file, never an env var
@@ -51,8 +52,10 @@ A value derived from `git ls-files` or `git diff --name-only` is not.
 
 ## Examples
 
-- `.github/workflows/mutation-on-diff.yml` with `scripts/ci/mutation-on-diff.mjs`, which reads
-  `process.argv[2]` and exits 2 with a usage line when it is missing.
+- `.github/workflows/mutation-on-diff.yml` with `scripts/ci/mutation-on-diff.mjs`, which takes
+  the list file as its one positional argument (after an optional `--select-only`) and exits 2
+  with a usage line when it is missing. Its `run=true|false` step output is bounded by
+  construction, so it is not the kind of value this rule is about.
 
 ## Related Files
 
