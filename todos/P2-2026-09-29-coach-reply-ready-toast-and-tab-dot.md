@@ -1,6 +1,6 @@
 ---
 title: "Coach reply ready: toast + red dot on the Coach tab when a reply finishes after the user left the chat"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-29
 updated: 2026-09-29

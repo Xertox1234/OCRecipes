@@ -16,7 +16,12 @@ import {
   ActivityIndicator,
   AccessibilityInfo,
 } from "react-native";
-import { useRoute, useNavigation } from "@react-navigation/native";
+import {
+  useRoute,
+  useNavigation,
+  useFocusEffect,
+} from "@react-navigation/native";
+import { useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Animated, {
@@ -41,6 +46,7 @@ import {
 } from "@/hooks/useChat";
 import { usePendingAssistantBridge } from "@/hooks/usePendingAssistantBridge";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
+import { viewCoachConversation } from "@/hooks/useCoachUnreadReplies";
 import {
   Spacing,
   FontFamily,
@@ -287,6 +293,7 @@ export default function ChatScreen() {
   const isMalformedId = conversationId !== null && !(conversationId > 0);
   const validConversationId = isMalformedId ? null : conversationId;
 
+  const queryClient = useQueryClient();
   const { data: messages, isLoading } = useChatMessages(validConversationId);
   const {
     sendMessage,
@@ -294,7 +301,22 @@ export default function ChatScreen() {
     isStreaming,
     streamError,
     requestError,
-  } = useSendMessage(validConversationId);
+  } = useSendMessage(validConversationId, { notifyWhenAway: true });
+  // Report which conversation is on screen so a reply that finishes while the
+  // user is elsewhere can be flagged unread (Coach tab dot + toast). FOCUS is
+  // the signal, not unmount: a bottom-tab screen stays MOUNTED when its tab
+  // loses focus, so an unmount-only signal would miss a tab switch — while
+  // after a pop-back the reply keeps running (#1183) and finishes unseen too.
+  // The callback re-runs when `validConversationId` changes (the new-chat flow
+  // gets its id from setParams after the first send creates the conversation)
+  // and its cleanup runs on blur and on unmount. Opening the conversation also
+  // clears its unread mark.
+  useFocusEffect(
+    useCallback(
+      () => viewCoachConversation(queryClient, validConversationId),
+      [queryClient, validConversationId],
+    ),
+  );
   // handleSend's own catch below already toasts on a creation failure —
   // opt out so the global net doesn't double it.
   const createConversation = useCreateConversation({ silentError: true });

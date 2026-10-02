@@ -18,9 +18,15 @@ import ChatStackNavigator from "@/navigation/ChatStackNavigator";
 import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import { ScanFAB } from "@/components/ScanFAB";
 import { ThemedText } from "@/components/ThemedText";
+import { useToast } from "@/context/ToastContext";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { usePendingReminders } from "@/hooks/usePendingReminders";
+import {
+  subscribeToCoachReplyReady,
+  useHasUnreadCoachReply,
+} from "@/hooks/useCoachUnreadReplies";
+import { navigationRef } from "@/navigation/navigationRef";
 import {
   FontFamily,
   TAB_BAR_HEIGHT,
@@ -78,10 +84,65 @@ function AnimatedTabIcon({
   );
 }
 
+/**
+ * Open a Coach conversation from anywhere, including from under a root modal.
+ * `navigationRef` sits outside every navigator, so the route is spelled out
+ * (Main → CoachTab → Chat): a bare `navigate("Chat")` is silently dropped
+ * because Chat is not on the outward path from the root. `pop: true` returns
+ * to the EXISTING Main (dismissing any root modal above it) — without it a tap
+ * while a modal is open pushes a second Main. See
+ * docs/solutions/logic-errors/bare-navigate-cannot-descend-into-an-unrelated-nested-navigator-2026-09-29.md.
+ */
+function openCoachConversation(conversationId: number): void {
+  if (!navigationRef.isReady()) return;
+  navigationRef.navigate(
+    "Main",
+    {
+      screen: "CoachTab",
+      params: { screen: "Chat", params: { conversationId } },
+    },
+    { pop: true },
+  );
+}
+
+/**
+ * Turns "a Coach reply landed while you were elsewhere" into a toast whose
+ * action opens that conversation. The reply finishes inside a streaming XHR
+ * callback outside the React tree (`useSendMessage`), so it publishes to a
+ * module-level emitter and this component, inside the toast provider, listens
+ * — the bridge pattern from
+ * docs/solutions/design-patterns/module-level-emitter-bridge-out-of-tree-to-toast-2026-05-28.md.
+ * It lives in the tab navigator rather than beside the app-wide bridges in
+ * App.tsx because a reply only matters inside the signed-in tree: this unmounts
+ * on logout, so the subscription goes with it. The unread dot is the durable
+ * signal — a toast is one replaceable slot and any other toast displaces it.
+ *
+ * Renders nothing.
+ */
+function CoachReplyToastBridge(): null {
+  const toast = useToast();
+
+  useEffect(
+    () =>
+      subscribeToCoachReplyReady((conversationId) => {
+        toast.info("Coach replied — tap to open", {
+          action: {
+            label: "Open",
+            onPress: () => openCoachConversation(conversationId),
+          },
+        });
+      }),
+    [toast],
+  );
+
+  return null;
+}
+
 export default function MainTabNavigator() {
   const { theme, isDark } = useTheme();
   const { reducedMotion } = useAccessibility();
   const { hasPending } = usePendingReminders();
+  const hasUnreadCoachReply = useHasUnreadCoachReply();
   const [menuOpen, setMenuOpen] = useState(false);
   const openMenu = useCallback(() => setMenuOpen(true), []);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -194,7 +255,14 @@ export default function MainTabNavigator() {
             component={ChatStackNavigator}
             options={{
               title: "Coach",
-              tabBarAccessibilityLabel: "Coach",
+              // The dot below is purely visual, so an unread reply is carried
+              // by the tab's own label for VoiceOver/TalkBack. "Coach" stays
+              // the prefix so the accessible name still contains the visible
+              // label (WCAG 2.5.3). The reminders dot has never had a spoken
+              // label and keeps none.
+              tabBarAccessibilityLabel: hasUnreadCoachReply
+                ? "Coach, new reply"
+                : "Coach",
               tabBarButtonTestID: "tab-coach",
               tabBarIcon: ({ color, size, focused }) => (
                 <View style={styles.iconWrapper}>
@@ -204,8 +272,13 @@ export default function MainTabNavigator() {
                     color={color}
                     focused={focused}
                   />
-                  {hasPending && (
+                  {/* ONE dot for either signal: a pending reminder or an
+                      unread Coach reply. */}
+                  {(hasPending || hasUnreadCoachReply) && (
                     <View
+                      testID="coach-tab-dot"
+                      accessible={false}
+                      importantForAccessibility="no"
                       style={[
                         styles.dot,
                         { borderColor: theme.backgroundDefault },
@@ -235,6 +308,7 @@ export default function MainTabNavigator() {
           />
         </Tab.Navigator>
       </View>
+      <CoachReplyToastBridge />
       <ScanFAB menuOpen={menuOpen} onOpen={openMenu} onClose={closeMenu} />
     </View>
   );
