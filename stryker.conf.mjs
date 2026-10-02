@@ -8,7 +8,7 @@ const target = resolveTarget(targetName);
 assertAllowedTarget(targetName, target);
 const { mutate, testInclude } = target;
 
-// Hand the resolved test-discovery glob to vitest.mutation.config.ts. Stryker
+// Hand the resolved test-discovery glob to vitest.mutation.config.mts. Stryker
 // evaluates this config in the main process before spawning runner workers, which
 // inherit process.env — so the Vitest config (loaded in a worker) reads it. The
 // registry stays the single source of truth: targets are defined exactly once.
@@ -19,7 +19,7 @@ const config = {
   packageManager: "npm",
   testRunner: "vitest",
   vitest: {
-    configFile: "vitest.mutation.config.ts",
+    configFile: "vitest.mutation.config.mts",
   },
   coverageAnalysis: "perTest",
   // Stryker sandboxes by COPYING the project. Exclude gitignored native/build dirs:

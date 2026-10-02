@@ -28,7 +28,7 @@ process.env.STRYKER_VITEST_INCLUDE = JSON.stringify([test]);
 export default {
   packageManager: "npm",
   testRunner: "vitest",
-  vitest: { configFile: "vitest.mutation.config.ts" },
+  vitest: { configFile: "vitest.mutation.config.mts" },
   coverageAnalysis: "perTest",
   // `.claude` + `docs` excluded so Stryker's sandbox copy skips the post-checkout
   // `docs/solutions` directory symlink (ENOTSUP) — see stryker.conf.mjs for the full note.

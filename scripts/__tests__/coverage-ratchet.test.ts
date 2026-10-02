@@ -24,7 +24,7 @@ function makeTmpDir(): string {
 }
 
 /**
- * A config file mimicking the real vitest.config.ts thresholds block.
+ * A config file mimicking the real vitest.config.mts thresholds block.
  * `before` is inserted ABOVE the block — used to plant decoy `lines: NN`
  * matches that the old whole-file regexes latched onto.
  */
@@ -372,7 +372,7 @@ describe("coverage-ratchet", () => {
     });
 
     it("does not throw on a brace-containing string literal above the block (out of scope)", () => {
-      // Mirrors the real vitest.config.ts: `coverage.include` (a sibling of
+      // Mirrors the real vitest.config.mts: `coverage.include` (a sibling of
       // `thresholds`) uses a brace-expansion glob string. The check must be
       // scoped to the located thresholds block only, or this would throw on
       // the repo's own real config.
@@ -468,7 +468,7 @@ describe("coverage-ratchet", () => {
 
     it("patches correctly through a BALANCED brace-expansion glob key", () => {
       // The write half of the read test above. `--apply` REWRITES the real
-      // vitest.config.ts, so re-permitting this input class is only safe if
+      // vitest.config.mts, so re-permitting this input class is only safe if
       // the patch path is correct on it too — the balanced pair must keep
       // maskNestedObjects aligned so the first `lines:` match in the mask is
       // the FLAT one and the length-preserving indices still splice right.

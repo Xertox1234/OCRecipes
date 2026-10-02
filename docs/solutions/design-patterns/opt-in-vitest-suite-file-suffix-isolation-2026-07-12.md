@@ -4,8 +4,9 @@ track: knowledge
 category: design-patterns
 module: server
 tags: [testing, vitest, integration-tests, ci, preflight]
-applies_to: [vitest.*.config.ts, test/**/*.itest.ts]
+applies_to: [vitest.*.config.mts, test/**/*.itest.ts]
 created: '2026-07-12'
+last_updated: '2026-10-02'
 ---
 
 # Isolate an opt-in vitest suite via file-suffix, not exclude config
@@ -24,7 +25,7 @@ The naive approach is: keep the new files named `*.test.ts` (so the default
 `include: ["**/*.test.ts"]` glob matches them), then add an `exclude` entry
 for their directory to the base `vitest.config.ts` so `test:run` skips them,
 and spread the base config into a new dedicated config
-(`vitest.<tier>.config.ts`, mirroring `vitest.mutation.config.ts`) that
+(`vitest.<tier>.config.mts`, mirroring `vitest.mutation.config.mts`) that
 overrides `include` to target only the new directory.
 
 This has an inheritance trap: the dedicated config spreads
@@ -58,14 +59,14 @@ any other tool that just resolves the base `vitest.config.ts`. Zero
 - The base config needs no new `exclude` entry — the suffix already
   prevents a match.
 - The dedicated config (spread-override pattern, per
-  `vitest.mutation.config.ts`) needs no `exclude` override either — since
+  `vitest.mutation.config.mts`) needs no `exclude` override either — since
   the base config's `exclude` was never touched, there is nothing to
   inherit and defeat.
 
 ```typescript
-// vitest.integration.config.ts — spread base, override ONLY include
+// vitest.integration.config.mts — spread base, override ONLY include
 import { defineConfig } from "vitest/config";
-import baseConfig from "./vitest.config";
+import baseConfig from "./vitest.config.mts";
 
 export default defineConfig({
   ...baseConfig,
@@ -91,8 +92,8 @@ npx vitest related --run <a file the new suite imports>   # expect: the
 
 ## Examples
 
-`vitest.integration.config.ts` + `test/integration/*.itest.ts` (a real-DB
-HTTP integration suite) vs. `vitest.mutation.config.ts` + Stryker's
+`vitest.integration.config.mts` + `test/integration/*.itest.ts` (a real-DB
+HTTP integration suite) vs. `vitest.mutation.config.mts` + Stryker's
 env-driven `include` (which achieves isolation differently — it scopes
 `include` to a single target file per mutation run, and explicitly drops
 `globalSetup`/`retry`, but does NOT need the suffix trick because Stryker
@@ -109,10 +110,10 @@ change to either config.
 
 ## Related Files
 
-- `vitest.integration.config.ts` — the dedicated config
+- `vitest.integration.config.mts` — the dedicated config
 - `test/integration/auth-routes.itest.ts` — the first suite using this
   pattern
-- `vitest.mutation.config.ts` — the sibling spread-override pattern for
+- `vitest.mutation.config.mts` — the sibling spread-override pattern for
   Stryker
 
 ## See Also

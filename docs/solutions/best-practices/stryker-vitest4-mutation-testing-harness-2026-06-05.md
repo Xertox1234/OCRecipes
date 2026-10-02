@@ -4,9 +4,9 @@ track: knowledge
 category: best-practices
 module: server
 tags: [mutation-testing, stryker, vitest, testing, expo, react-native, ci]
-applies_to: [stryker.conf.mjs, stryker.targets.mjs, stryker.explore.conf.mjs, vitest.mutation.config.ts, scripts/ci/mutation-on-diff.mjs]
+applies_to: [stryker.conf.mjs, stryker.targets.mjs, stryker.explore.conf.mjs, vitest.mutation.config.mts, scripts/ci/mutation-on-diff.mjs]
 created: '2026-06-05'
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 ---
 
 # Stryker + Vitest 4 mutation-testing harness (Expo/RN repo gotchas)
@@ -30,10 +30,10 @@ Each of these cost a debug cycle to discover; configure them up front.
    coverage) runs *whatever Vitest discovers* — without scoping, that boots all
    ~386 test files **plus the real-Postgres storage integration tests**, needing
    `DATABASE_URL` and tripping the `retry:2` flake. Fix: a dedicated
-   `vitest.mutation.config.ts` that overrides `include` to ONLY the target's unit
+   `vitest.mutation.config.mts` that overrides `include` to ONLY the target's unit
    test (see env-handoff below).
 
-2. **`mergeConfig()` concatenates arrays.** Building `vitest.mutation.config.ts`
+2. **`mergeConfig()` concatenates arrays.** Building `vitest.mutation.config.mts`
    with `mergeConfig(base, {test:{include:[...]}})` *keeps* the base whole-suite
    globs and appends — defeating the scoping. Use **object spread** and override
    `include` explicitly.
@@ -76,15 +76,15 @@ import { resolveTarget } from "./stryker.targets.mjs";
 const targetName = process.env.MUTATION_TARGET ?? "macro-gap-context";
 const { mutate, testInclude } = resolveTarget(targetName);
 process.env.STRYKER_VITEST_INCLUDE = JSON.stringify(testInclude); // handoff
-export default { testRunner: "vitest", vitest: { configFile: "vitest.mutation.config.ts" },
+export default { testRunner: "vitest", vitest: { configFile: "vitest.mutation.config.mts" },
   coverageAnalysis: "perTest", ignorePatterns: ["ios","android",".expo","server_dist","coverage"],
   disableTypeChecks: false, mutate, /* incremental, reporters, tempDirName */ };
 ```
 
 ```ts
-// vitest.mutation.config.ts — object spread, NOT mergeConfig
+// vitest.mutation.config.mts — object spread, NOT mergeConfig
 import { defineConfig } from "vitest/config";
-import baseConfig from "./vitest.config";
+import baseConfig from "./vitest.config.mts";
 const env = process.env.STRYKER_VITEST_INCLUDE;
 const include: string[] = env ? (JSON.parse(env) as string[]) : [];
 export default defineConfig({ ...baseConfig,
@@ -130,7 +130,7 @@ path is `STRYKER_EXPLORE_JSON_FILE`, default `reports/mutation/explore.json` (gi
 
 ## Related Files
 
-- `stryker.conf.mjs`, `stryker.targets.mjs`, `vitest.mutation.config.ts`
+- `stryker.conf.mjs`, `stryker.targets.mjs`, `vitest.mutation.config.mts`
 - `.github/workflows/mutation.yml` (manual `workflow_dispatch`; DB-free; off the PR gate)
 - `docs/mutation-testing/baselines.md` (tracked scores), `docs/mutation-testing/README.md`
 

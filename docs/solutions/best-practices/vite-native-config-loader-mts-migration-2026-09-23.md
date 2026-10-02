@@ -4,7 +4,7 @@ track: knowledge
 category: best-practices
 module: shared
 tags: [vitest, vite, testing, typescript, esm, eslint, tsconfig, tooling]
-applies_to: ['vitest.config.mts', 'vitest.*.config.ts']
+applies_to: ['vitest.config.mts', 'vitest.*.config.ts', 'vitest.*.config.mts']
 created: '2026-09-23'
 ---
 
@@ -131,11 +131,13 @@ A config file some OTHER tool loads by `require()`/CJS resolution (not Vite's
 `loadConfigFromFile`) should stay `.ts`/`.cjs` — the `.mts` rename is specific
 to Vite/Vitest's own config loader compat check, not a blanket "ESM is
 better" rule. `vitest.integration.config.ts` and `vitest.mutation.config.ts`
-were deliberately left as `.ts` in the todo this doc documents (only their
-`import … from "./vitest.config"` specifier needed the `.mts` extension) —
-each will independently print the same `esm-syntax-in-cjs` warning until
-someone renames it too; that is tracked as a `DEFERRED_WARNINGS` item, not
-silently "fixed" by proxy.
+were deliberately left as `.ts` in the first todo this doc documents (only
+their `import … from "./vitest.config"` specifier needed the `.mts`
+extension), so each independently printed the same `esm-syntax-in-cjs`
+warning. They were renamed to `.mts` afterwards
+(`todos/archive/P3-2026-09-24-vitest-sibling-configs-native-loader-warning.md`),
+which is why `applies_to` carries both `vitest.*.config.ts` (a future
+unmigrated sibling still finds this doc) and `vitest.*.config.mts`.
 
 ## Related Files
 
