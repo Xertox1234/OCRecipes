@@ -11,10 +11,12 @@
 //
 // `@react-navigation/bottom-tabs`, `@react-navigation/elements`,
 // `react-native-safe-area-context` and `react-native-reanimated` are globally
-// aliased (vitest.config.mts) — only the screen's data hook and its two modal
-// children need a local mock. UpgradeModal is stubbed the way ScanScreen.test.tsx
-// does: it pulls in @/lib/iap's runtime `require("./mock-iap")`, which Vite's
-// module graph can't resolve, and it has its own tests.
+// aliased (vitest.config.mts), so only the screen's data hook and its two modal
+// children get a local mock. UpgradeModal has to be stubbed (the way
+// ScanScreen.test.tsx does): it pulls in @/lib/iap's runtime
+// `require("./mock-iap")`, which Vite's module graph can't resolve, and it has
+// its own tests. GroceryListPickerModal imports fine; it is stubbed only to keep
+// its own list query out of these tests.
 import React from "react";
 import { screen } from "@testing-library/react";
 import * as RN from "react-native";
