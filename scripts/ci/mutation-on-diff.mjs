@@ -300,16 +300,6 @@ export function renderSummary(rows, meta) {
 }
 
 /**
- * The vitest include pattern for a module's tests: the co-located
- * `<name>.test.ts` plus siblings such as `<name>.property.test.ts`.
- *
- * @param {string} test
- */
-export function testGlob(test) {
-  return test.replace(/\.test\.ts$/, "{,.*}.test.ts");
-}
-
-/**
  * Turn one explore run into a summary row. Any sign the harness did not
  * finish (spawn failed, non-zero exit, no report, unreadable report) is an
  * error row, never a score.
@@ -374,7 +364,10 @@ function main() {
     console.log(`::group::mutation:explore ${file}`);
     const run = spawnSync(
       "npm",
-      ["run", "--silent", "mutation:explore", "--", file, testGlob(test)],
+      // Only the co-located example test, never sibling .property.test.ts
+      // files: a Lane F score is the baseline a later registration would
+      // get (docs/solutions/conventions/fast-check-property-tests-pin-seed-not-in-mutation-testinclude-2026-07-12.md).
+      ["run", "--silent", "mutation:explore", "--", file, test],
       {
         stdio: "inherit",
         env: {
