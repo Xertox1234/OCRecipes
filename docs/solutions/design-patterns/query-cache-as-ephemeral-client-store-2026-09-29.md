@@ -6,6 +6,7 @@ tags: [tanstack-query, client-state, query-client, lifecycle, react-native]
 module: client
 applies_to: [client/hooks/**/*.ts]
 created: '2026-09-29'
+last_updated: '2026-10-01'
 ---
 
 # Store ephemeral, session-scoped client state in the TanStack Query cache instead of a module-level singleton
@@ -84,9 +85,24 @@ queryClient.setQueryData(PENDING_KEY, remainingEntries); // {} when empty — NO
   insufficient — check `client/App.tsx`'s `PersistQueryClientProvider`/`shouldDehydrateQuery`
   allowlist; a sentinel key like this should stay OUT of that allowlist (in-memory-only) unless
   the value is meant to survive a cold start too.
-- For state a component DOES want to read reactively via `useQuery` (not just poke at from
-  elsewhere), just use a real `useQuery(key, ...)` — the gcTime gotcha only bites keys nothing
-  ever subscribes to.
+- For state a component DOES want to read reactively, observe it with `useQuery`. A cache-only key
+  has no fetcher, so give the observer `queryFn: skipToken`, `gcTime: Infinity` and a `select` that
+  returns a primitive (`useHasUnreadCoachReply` in `client/hooks/useCoachUnreadReplies.ts`).
+  `skipToken` beats `enabled: false`: it also overrides the app-wide default `queryFn`, so not
+  even an explicit `refetch()` becomes an API call keyed on the sentinel, and a client with no
+  default `queryFn` (every test wrapper) logs no dev error per render. The gcTime gotcha only
+  bites keys nothing subscribes to, but keep pinning in the writers: the first write can precede
+  the observer. Three behaviours to know (measured against `@tanstack/react-query` 5.101.0;
+  re-measure after an upgrade):
+  - Observer notifications are batched onto a macrotask, so a test must `waitFor` (or flush one
+    macrotask inside `act`) before asserting on the hook's output.
+  - `queryClient.clear()` leaves a MOUNTED observer's `data` stale until its host re-renders,
+    and a write after `clear()` is not delivered to it. Moot when the host unmounts at logout
+    (the tab navigator does); it matters for a host that survives teardown.
+  - An unfiltered `resetQueries()` / `removeQueries()` wipes the sentinel; an unfiltered
+    `invalidateQueries()` leaves it alone. No client code calls either today.
+  The whole pattern built on this is in
+  [away-detection-focus-marker-and-unread-marks-in-query-cache-2026-10-01.md](away-detection-focus-marker-and-unread-marks-in-query-cache-2026-10-01.md).
 
 ## Related Files
 
@@ -94,8 +110,13 @@ queryClient.setQueryData(PENDING_KEY, remainingEntries); // {} when empty — NO
   `PENDING_RECIPE_TURNS_KEY`
 - `client/hooks/__tests__/useChat.test.ts` — the gcTime-survival and setQueryData-clear regression
   tests
+- `client/hooks/useCoachUnreadReplies.ts` — a second sentinel pair; the unread marks are observed
+  through `useQuery({ queryFn: skipToken, select })`, the viewed-conversation marker is not
+- `client/hooks/__tests__/useCoachUnreadReplies.test.ts` — gcTime survival for both keys, the
+  `[]` / `null` clears, `queryClient.clear()`, and the macrotask flush the observer needs
 
 ## See Also
 
 - [Clear the TanStack Query cache on every local auth teardown](../conventions/clear-query-cache-on-auth-teardown-2026-05-30.md)
 - [Global mutable client singletons holding user data](global-mutable-client-singleton-lifecycle-2026-06-19.md)
+- [Tell the user a result landed while they were away](away-detection-focus-marker-and-unread-marks-in-query-cache-2026-10-01.md) — the focus-tracked marker plus unread marks built on this store
