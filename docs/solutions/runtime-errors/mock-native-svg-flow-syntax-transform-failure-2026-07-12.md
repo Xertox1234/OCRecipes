@@ -2,10 +2,12 @@
 title: "A component that transitively imports react-native-svg (or another package shipping Flow-syntax internals) fails render tests with a misleading 'Unexpected token typeof'"
 track: bug
 category: runtime-errors
-tags: [vitest, vite, testing, react-native, flow, transform, oxc, esbuild, react-native-svg]
+tags: [vitest, vite, testing, react-native, flow, transform, oxc, esbuild, react-native-svg, react-navigation, externalization, deps-inline]
 module: client
-symptoms: ["A jsdom render test throws SyntaxError: Unexpected token typeof at TRANSFORM time, before any test body runs (Test Files 1 failed, no tests) — no test in the file even started executing.", "The error message names no failing file, and grepping the test file itself (or its obvious first-party dependencies) for typeof finds nothing suspicious.", "The exact same failure reproduces identically whether Vitest uses its oxc transform or falls back to esbuild (oxc: false in vitest.config.ts) — ruling out a parser-specific bug.", "vi.mock()-ing the suspected offending import specifier does NOT fix it — the failure persists even when every module that imports the real package is fully mocked.", "The failure is new on a component/screen that has never had a render test before, even though its individual dependencies (imported and asserted on in isolation) each parse fine on their own."]
+applies_to: [vitest.config.mts, test/mocks/**/*.ts]
+symptoms: ["A jsdom render test throws SyntaxError: Unexpected token typeof at TRANSFORM time, before any test body runs (Test Files 1 failed, no tests) — no test in the file even started executing.", "The error message names no failing file, and grepping the test file itself (or its obvious first-party dependencies) for typeof finds nothing suspicious.", "The exact same failure reproduces identically whether Vitest uses its oxc transform or falls back to esbuild (oxc: false in vitest.config.ts) — ruling out a parser-specific bug.", "vi.mock()-ing the suspected offending import specifier does NOT fix it — the failure persists even when every module that imports the real package is fully mocked.", "The failure is new on a component/screen that has never had a render test before, even though its individual dependencies (imported and asserted on in isolation) each parse fine on their own.", "Importing @react-navigation/native or @react-navigation/bottom-tabs — directly, or through a screen or hook that uses them — throws it; nothing is logged after the test file under DEBUG=vite:transform."]
 created: 2026-07-12
+last_updated: 2026-10-01
 severity: medium
 ---
 
@@ -139,48 +141,64 @@ export default Svg;
   `Unexpected "typeof"` at `react-native/index.js:27`.
   **This alias alone is necessary but NOT sufficient** to import
   `@react-navigation/native` in this test environment — see the next bullet.
-- **New, still-open gap found in the same investigation**: even with the
-  `react-native-screens` alias in place, `import { NavigationContainer }
-  from "@react-navigation/native"` still fails the same way inside real
-  Vitest runs. Bisected one layer with an `esbuild` CLI bundle that applies
-  this project's actual `vitest.config.ts` aliases via an `onResolve` plugin
-  (more accurate than a bare `esbuild` CLI call, which doesn't see any
-  alias): that reproduction surfaced a SEPARATE, unrelated gap — `test/
-  mocks/react-native.ts` was missing an `I18nManager` export that
-  `NavigationContainer.js` imports directly. Added a minimal `I18nManager`
-  mock (`isRTL: false` + the usual constants/methods) — full test suite
-  stays green (8170/8170, unchanged). **Even after both fixes, a live
-  `npx vitest run` of a file importing `@react-navigation/native` still
-  throws the identical `Unexpected token 'typeof'`, while the
-  alias-aware `esbuild` CLI bundle of the same import reports `BUILD OK`.**
-  This means Vitest's actual dependency-scan/pre-bundle phase (not a plain
-  `esbuild` bundle, even one replaying the same aliases) is hitting a THIRD,
-  still-unidentified import somewhere in `@react-navigation/native`'s or
-  `@react-navigation/core`'s graph — `vitest --clearCache` and manually
-  removing `node_modules/.vite` both ruled out a stale-cache explanation.
-  **Not resolved.** A follow-up review pass (2026-08-29) ran the
-  `DEBUG="vite:transform"` diagnostic named below and got one real datum:
-  the log's last entry before the crash is the test file itself — nothing
-  transforms after it. The crash therefore never reaches Vite's normal
-  transform pipeline at all; whatever the third gap is, it happens earlier,
-  somewhere in Vitest's module-loading/dependency-scan step. (A plausible-
-  looking SSR-externalization hypothesis was checked and ruled out in the
-  same pass — `@react-navigation/native`'s `package.json` `main` points at
-  `import`/`export`-syntax source with no `"type": "module"`, so a plain
-  CJS `require()` load would fail with `Unexpected token 'export'`, not
-  `'typeof'`.) The next person to pick this up should start from "before
-  the transform pipeline, in module resolution/scanning" rather than
-  re-deriving that narrowing — reach for `DEBUG="vite:deps"` or instrument
-  Vitest's optimizer directly, rather than continuing to rely on the
-  `esbuild`-CLI-plus-aliases technique, which has now been shown to
-  under-report what Vitest's real pipeline hits.
+- **Resolved 2026-10-01: the "third, still-unidentified import" is
+  externalization, not the dependency scan.** (What 2026-08-29 left open: with the
+  `react-native-screens` alias and the `I18nManager` export in place, a live
+  Vitest run importing `@react-navigation/native` still threw the identical error,
+  while an alias-aware `esbuild` bundle of the same import reported `BUILD OK`,
+  and the last `DEBUG="vite:transform"` entry was the test file itself.)
+  `@react-navigation/native` and `@react-navigation/bottom-tabs` ship only ESM
+  under `lib/module/`, and that directory has its own `package.json` of
+  `{"type":"module"}`. Vitest's
+  `isValidNodeImport` therefore externalizes them and Node's native loader runs
+  them, so their own `import ... from "react-native"` is resolved by Node, never
+  by Vite: `resolve.alias` cannot see it, and Node parses the REAL
+  `react-native/index.js` (`import typeof * as … from './index.js.flow'`) and
+  throws. `node -e "require('react-native')"` prints the identical
+  `SyntaxError: Unexpected token 'typeof'`. That explains both observations: an
+  external is never transformed, so nothing logs after the test file under
+  `DEBUG="vite:transform"`, and an alias-aware `esbuild` bundle (it applies the
+  aliases to every module) reports `BUILD OK` while the live Vitest run does
+  not. The SSR-externalization hypothesis the 2026-08-29 pass "ruled out" was
+  refuted from the wrong file: it read the top-level `package.json` (no
+  `"type"`), not `lib/module/package.json`.
+  **Fix:** `test.server.deps.inline: [/node_modules\/@react-navigation\//]` in
+  `vitest.config.mts` makes Vite process these packages, so the `react-native`
+  alias applies, and `@react-navigation/native` then imports cleanly. The real
+  `@react-navigation/bottom-tabs` still fails at import on `Easing.in(...)` (its
+  `TransitionSpecs.tsx`; `test/mocks/react-native.ts` exports no `Easing`), so it
+  is aliased to the inert `test/mocks/react-navigation-bottom-tabs.ts` instead —
+  an alias wins over inlining. The full suite stayed green (604 files). A string
+  entry in `inline` is a SUBSTRING match with no trailing slash
+  (`id.includes("/node_modules/" + entry)`), so `"@react-navigation/native"` also
+  inlines `native-stack`; use a RegExp ending in `\/`.
+- **Triage an unattributed `typeof` SyntaxError by asking who loads
+  `react-native`.** If `node -e "require('react-native')"` reproduces the message,
+  the culprit is an EXTERNALIZED package (ESM under a nested `"type":"module"`, or
+  plain CJS) whose own `import "react-native"` skipped `resolve.alias`. A factory
+  `vi.mock` of that package still works — 55 test files mock
+  `@react-navigation/native` that way while the real package can't import — so
+  the "scan phase" explanation under "Why `vi.mock()` doesn't fix it" above is not
+  what happens for an externalized package. (For the `react-native-svg` case the
+  same externalization fits the symptoms; that was not re-measured.) Pick one: a
+  factory `vi.mock` per test, an alias to an inert stub (the real package is never
+  loaded), or `test.server.deps.inline` (lets the alias reach it).
+- **Same family, different message — `expo-notifications`.** Importing it, or
+  anything that does (`@/lib/push-token-registration` -> `useAuth` ->
+  `AuthContext` -> `PremiumContext` -> `useHistoryData`), fails with
+  `Cannot find module './setupFastRefresh'`: `expo-notifications` -> `expo` ->
+  `winter/runtime.ts` -> `async-require/setup.ts`, whose dev-only native
+  `require('./setupFastRefresh')` can't resolve a `.ts` sibling. Alias the package
+  you import (`test/mocks/expo-notifications.ts`); aliasing bare `expo` alone
+  doesn't help, because `expo-modules-core` on its own throws `Cannot read
+  properties of undefined (reading 'EventEmitter')` in this harness.
 
 ## Related Files
 
 - `test/mocks/react-native-svg.ts` — the new mock added for this fix.
-- `vitest.config.ts` — the new `react-native-svg` alias, alongside the
+- `vitest.config.mts` (named `vitest.config.ts` when this was written) — the new `react-native-svg` alias, alongside the
   existing `react-native` / `react-native-reanimated` /
-  `react-native-safe-area-context` / `@gorhom/bottom-sheet` aliases that
+  `react-native-safe-area-context` / @gorhom/bottom-sheet aliases that
   solve the identical problem for their respective packages.
 - `test/mocks/react-native-reanimated.ts` — also gained a missing
   `useAnimatedProps` export in the same change (a separate, unrelated gap:
@@ -188,10 +206,10 @@ export default Svg;
   existing `useAnimatedStyle` mock shape).
 - `test/mocks/react-native-screens.ts` — added 2026-08-29, confirming the
   predicted occurrence (see Prevention). Covers the exports consumed by
-  `@react-navigation/native-stack` and `@react-navigation/bottom-tabs`.
+  @react-navigation/native-stack and @react-navigation/bottom-tabs.
 - `test/mocks/react-native.ts` — gained a missing `I18nManager` export in the
   same 2026-08-29 change, a separate gap found one layer deeper in
-  `@react-navigation/native`'s own `NavigationContainer.js`.
+  @react-navigation/native's own `NavigationContainer.js`.
 - `client/components/CalorieRing.tsx` — the first-ever consumer to surface
   this, via its `import Svg, { Circle, Defs, LinearGradient, Stop } from
   "react-native-svg"`.
@@ -200,8 +218,11 @@ export default Svg;
 - `test/mocks/react-native.ts` — the original instance of this exact
   problem class, for the `react-native` package itself (see its header
   comment).
+- `test/mocks/react-navigation-bottom-tabs.ts`, `test/mocks/expo-notifications.ts` — the inert stubs added 2026-10-01 for the externalization and `setupFastRefresh` cases above; `vitest.config.mts` also gained `test.server.deps.inline` for the @react-navigation packages.
+- `client/screens/__tests__/HistoryScreen.test.tsx` — its "real data-path imports load" describe pins these three harness changes (reverting any one turns a test red).
 
 ## See Also
 
 - [../conventions/rn-component-render-test-jsdom-pattern-2026-05-16.md](../conventions/rn-component-render-test-jsdom-pattern-2026-05-16.md) — the jsdom + `@testing-library/react` render-test convention this fix keeps intact.
+- [../design-patterns/vitest-alias-mocks-native-libraries-2026-05-13.md](../design-patterns/vitest-alias-mocks-native-libraries-2026-05-13.md) — the alias-stub pattern, and its externalized-package gotcha.
 - [bottomsheetmodal-in-child-component-silently-fails-to-present-2026-07-02.md](bottomsheetmodal-in-child-component-silently-fails-to-present-2026-07-02.md) — a different gorhom/native-module gotcha in the same general "native library doesn't behave the way jsdom testing expects" space.
