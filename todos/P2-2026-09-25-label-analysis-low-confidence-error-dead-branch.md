@@ -1,6 +1,6 @@
 ---
 title: "LabelAnalysisScreen: dead low-confidence setError, and the confidence banner is never announced"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-25
 updated: 2026-09-25

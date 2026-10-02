@@ -96,23 +96,48 @@ export default function LabelAnalysisScreen() {
   const prevSessionIdRef = useRef<string | null>(null);
   const prevShowUpdatedToastRef = useRef(false);
 
-  // Announce the Verifying → Ready transition, and any "Updated with AI
-  // analysis" upgrade, for screen readers. Merged into ONE effect/utterance
-  // rather than two separate announcers because both can land in the SAME
-  // React commit: the upload effect below calls setSessionId(...) and (when
-  // the AI photo materially disagrees with the local OCR preview)
-  // setShowUpdatedToast(true) synchronously, one after another, with no
-  // `await` between them — React batches that into a single commit, and
-  // iOS's `UIAccessibility.post(.announcement, ...)` does not queue two
-  // posts in the same tick (it silently drops one). See
+  // The confidence banner's copy, computed once and reused for both the
+  // rendered banner below and the merged announcer's utterance — the two can
+  // never drift out of sync (same shape as `verificationMessage`). Only the
+  // low and medium tiers show a banner; a high-confidence result is silent.
+  const confidenceTier = labelData
+    ? getConfidenceTier(labelData.confidence)
+    : null;
+  const confidenceBannerMessage =
+    confidenceTier === "low"
+      ? "Low confidence — review carefully before logging."
+      : confidenceTier === "medium"
+        ? "Some values may be inaccurate. Review before logging."
+        : null;
+
+  // Announce the Verifying → Ready transition, any "Updated with AI
+  // analysis" upgrade, and the confidence banner showing alongside them, for
+  // screen readers. Merged into ONE effect/utterance rather than separate
+  // announcers because all of it can land in the SAME React commit: the upload
+  // effect below calls setSessionId(...), setLabelData(...) (which puts an AI
+  // result's banner on screen) and (when the AI photo materially disagrees
+  // with the local OCR preview) setShowUpdatedToast(true) synchronously, one
+  // after another, with no `await` between them — React batches that into a
+  // single commit, and iOS's `UIAccessibility.post(.announcement, ...)` does
+  // not queue two posts in the same tick (it silently drops one). See
   // docs/solutions/logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md.
-  // Announced on BOTH platforms, ungated — neither the log button nor the
-  // toast carries an accessibilityLiveRegion, so per the project's
-  // announce-vs-live-region convention (docs/rules/accessibility.md) this
-  // imperative call is the sole announcer for both transitions on both
-  // platforms (see ProductChip.tsx for the same no-live-region shape).
+  // Announced on BOTH platforms, ungated — none of the log button, the toast
+  // or the confidence banner carries an accessibilityLiveRegion, so per the
+  // project's announce-vs-live-region convention (docs/rules/accessibility.md)
+  // this imperative call is the sole announcer for all three on both
+  // platforms (see ProductChip.tsx for the same no-live-region shape). Do not
+  // give the banner a live region: it would double-speak on Android.
   // Edge-guarded via prev-value refs so each half fires once, never on mount
   // or on an unrelated re-render.
+  // The banner has no edge of its own: it is spoken only when one of the other
+  // two fires, so it can never become a second same-commit announce. That
+  // holds because labelData is written only by the local-preview effect below
+  // (at mount, before any session) and by the upload success path, in the same
+  // commit as sessionId — a later path that changed labelData after the
+  // session landed would NOT be re-announced. What is spoken is whatever
+  // banner is showing at that edge, so when the AI merely confirms a
+  // medium-tier local preview (labelData stays the local parse) that banner is
+  // spoken then too, matching what a sighted user sees.
   useEffect(() => {
     const sessionArrived = !!sessionId && !prevSessionIdRef.current;
     const toastAppeared = showUpdatedToast && !prevShowUpdatedToastRef.current;
@@ -129,8 +154,18 @@ export default function LabelAnalysisScreen() {
           : "Ready to log",
       );
     }
+    // Last: both banner strings already end in ".", so any earlier slot would
+    // make join(". ") double the period — and the caution is then the final
+    // thing heard before the user acts.
+    if (confidenceBannerMessage) parts.push(confidenceBannerMessage);
     AccessibilityInfo.announceForAccessibility(parts.join(". "));
-  }, [sessionId, showUpdatedToast, verificationMode, verifyBarcode]);
+  }, [
+    sessionId,
+    showUpdatedToast,
+    verificationMode,
+    verifyBarcode,
+    confidenceBannerMessage,
+  ]);
 
   // Parse local OCR data for instant preview (if available)
   useEffect(() => {
@@ -191,15 +226,12 @@ export default function LabelAnalysisScreen() {
             setDataSource("ai");
           }
         } else {
-          // No local preview or low confidence — use AI data directly
+          // No local preview or low confidence — use AI data directly. No
+          // setError for a low-confidence AI result: with labelData set, the
+          // `error && !labelData` view below can never render it, and the
+          // confidence banner is the warning.
           setLabelData(result.labelData);
           setDataSource("ai");
-
-          if (result.labelData.confidence < 0.3) {
-            setError(
-              "Could not read the label clearly. Try again with better lighting.",
-            );
-          }
         }
       } catch (err) {
         if (cancelled) return;
@@ -642,11 +674,10 @@ export default function LabelAnalysisScreen() {
         )}
 
         {/* Confidence indicator */}
-        {labelData &&
+        {confidenceTier &&
+          confidenceBannerMessage &&
           (() => {
-            const tier = getConfidenceTier(labelData.confidence);
-            if (tier === "high") return null;
-            const color = getConfidenceColor(theme, tier);
+            const color = getConfidenceColor(theme, confidenceTier);
             return (
               <View
                 style={[
@@ -661,9 +692,7 @@ export default function LabelAnalysisScreen() {
                   accessible={false}
                 />
                 <ThemedText type="small" style={{ color, flex: 1 }}>
-                  {tier === "low"
-                    ? "Low confidence — review carefully before logging."
-                    : "Some values may be inaccurate. Review before logging."}
+                  {confidenceBannerMessage}
                 </ThemedText>
               </View>
             );
