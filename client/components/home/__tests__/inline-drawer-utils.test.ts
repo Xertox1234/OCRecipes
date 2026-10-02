@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   glideToTopOffset,
+  scrollBottomPadding,
   nextOpenDrawer,
   clampDrawerHeight,
   formatTermLabel,
@@ -14,6 +15,36 @@ describe("glideToTopOffset", () => {
   });
   it("never returns a negative offset", () => {
     expect(glideToTopOffset(0, 10, 90)).toBe(0);
+  });
+});
+
+describe("scrollBottomPadding", () => {
+  // base = tab bar + FAB clearance; 336 is a typical iPhone keyboard; gap 16.
+  const BASE = 200;
+  const KEYBOARD = 336;
+  const GAP = 16;
+
+  it("keeps the base padding when no drawer is open, whatever the keyboard height", () => {
+    expect(scrollBottomPadding(BASE, KEYBOARD, false, GAP)).toBe(BASE);
+  });
+  it("keeps the base padding while no keyboard height is known yet", () => {
+    expect(scrollBottomPadding(BASE, 0, true, GAP)).toBe(BASE);
+  });
+  it("reserves the keyboard height plus the gap when a drawer is open and that is taller than the base", () => {
+    expect(scrollBottomPadding(BASE, KEYBOARD, true, GAP)).toBe(352);
+  });
+  it("takes the larger of the two rather than stacking the base on the keyboard (the keyboard covers the tab bar and FAB)", () => {
+    expect(scrollBottomPadding(BASE, KEYBOARD, true, GAP)).not.toBe(
+      BASE + KEYBOARD + GAP,
+    );
+  });
+  it("never goes below the base for a short keyboard (e.g. a hardware keyboard's suggestion bar)", () => {
+    expect(scrollBottomPadding(BASE, 120, true, GAP)).toBe(BASE);
+    // exactly at the boundary: keyboard + gap == base
+    expect(scrollBottomPadding(BASE, BASE - GAP, true, GAP)).toBe(BASE);
+  });
+  it("ignores a nonsensical negative keyboard height", () => {
+    expect(scrollBottomPadding(BASE, -5, true, GAP)).toBe(BASE);
   });
 });
 

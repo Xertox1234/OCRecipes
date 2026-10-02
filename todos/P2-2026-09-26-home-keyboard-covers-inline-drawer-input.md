@@ -1,6 +1,6 @@
 ---
 title: "Home: the keyboard covers an inline drawer's input when the page is short"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-26
 updated: 2026-09-26
