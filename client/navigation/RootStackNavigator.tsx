@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import type { NavigatorScreenParams } from "@react-navigation/native";
 import { ActivityIndicator, Pressable, View, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 
 import MainTabNavigator from "@/navigation/MainTabNavigator";
 import type { MainTabParamList } from "@/navigation/MainTabNavigator";
@@ -210,6 +211,18 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+/**
+ * Gives a native-modal screen its own BottomSheetModalProvider. A
+ * BottomSheetModal portals to the nearest provider; the app-wide one sits
+ * above NavigationContainer (App.tsx), so on iOS a sheet opened from a screen
+ * presented as "modal"/"fullScreenModal" renders beneath that modal and can't
+ * be seen or tapped. Required on every native-modal screen that can open a
+ * sheet — scripts/__tests__/native-modal-sheet-provider.test.ts enforces it.
+ */
+function withSheetProvider({ children }: { children: React.ReactElement }) {
+  return <BottomSheetModalProvider>{children}</BottomSheetModalProvider>;
+}
+
 export default function RootStackNavigator() {
   const screenOptions = useScreenOptions();
   const { isAuthenticated, isLoading, user } = useAuthContext();
@@ -308,6 +321,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="PhotoAnalysis"
             component={PhotoAnalysisScreen}
+            layout={withSheetProvider}
             options={{
               headerTitle: "Meal Analysis",
               presentation: "modal",
@@ -394,6 +408,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="CookSessionCapture"
             component={CookSessionCaptureScreen}
+            layout={withSheetProvider}
             options={{
               headerShown: false,
               presentation: "fullScreenModal",
@@ -403,6 +418,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="CookSessionReview"
             component={CookSessionReviewScreen}
+            layout={withSheetProvider}
             options={{
               headerTitle: "Review Ingredients",
               presentation: "modal",
@@ -435,6 +451,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="BatchScan"
             component={BatchScanScreen}
+            layout={withSheetProvider}
             options={{
               headerShown: false,
               presentation: "fullScreenModal",
@@ -492,6 +509,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="GroceryListsModal"
             component={GroceryListsScreen}
+            layout={withSheetProvider}
             options={({ navigation }) => ({
               headerTitle: () => (
                 <HeaderTitle title="Grocery Lists" showIcon={false} />
@@ -512,6 +530,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="PantryModal"
             component={PantryScreen}
+            layout={withSheetProvider}
             options={({ navigation }) => ({
               headerTitle: () => (
                 <HeaderTitle title="Pantry" showIcon={false} />
@@ -532,6 +551,7 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="RecipeBrowserModal"
             component={RecipeBrowserScreen}
+            layout={withSheetProvider}
             options={({ navigation }) => ({
               headerTitle: () => (
                 <HeaderTitle title="Recipes" showIcon={false} />
