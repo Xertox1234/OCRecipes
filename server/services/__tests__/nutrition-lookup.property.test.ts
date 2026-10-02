@@ -11,11 +11,7 @@
  *                    from lookupNutrition(item) for each item — for every
  *                    list, including empty lists, duplicates, and two
  *                    spellings of one cache key ("sugar", " sugar"), each
- *                    answered under its own key. This pins the fresh path
- *                    only: with a warm cache, getNutritionCacheBatch hands
- *                    the hit to the first spelling alone, so the relation
- *                    does not hold there today (todos/P2-2026-09-30-
- *                    nutrition-cache-batch-shared-key-spellings.md).
+ *                    answered under its own key.
  *   R2 fallback      when CNF resolves with calories > 0, neither USDA nor
  *                    API Ninjas is called; when CNF misses, USDA is called;
  *                    API Ninjas is called only after a USDA miss.

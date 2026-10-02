@@ -40,6 +40,7 @@ const {
   getDailyMealSuggestionCount,
   getMicronutrientCache,
   setMicronutrientCache,
+  getNutritionCacheBatch,
 } = await import("../cache");
 
 // ---------------------------------------------------------------------------
@@ -73,6 +74,27 @@ function futureDate(hoursFromNow = 24): Date {
 
 function pastDate(hoursAgo = 24): Date {
   return new Date(Date.now() - hoursAgo * 60 * 60 * 1000);
+}
+
+// Mirrors normalizeForCache in server/services/nutrition-lookup.ts, which is
+// not exported.
+function cacheKey(query: string): string {
+  return query.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+async function createTestNutritionRow(
+  tx: NodePgDatabase<typeof schema>,
+  queryKey: string,
+  data: unknown,
+  expiresAt: Date,
+) {
+  await tx.insert(schema.nutritionCache).values({
+    queryKey,
+    normalizedName: queryKey,
+    source: "cnf",
+    data,
+    expiresAt,
+  });
 }
 
 const sampleSuggestions: SuggestionData[] = [
@@ -602,6 +624,61 @@ describe("cache storage", () => {
         .from(schema.micronutrientCache)
         .where(eq(schema.micronutrientCache.queryKey, "micro_hit"));
       expect(row.hitCount).toBe(1);
+    });
+  });
+
+  // ==========================================================================
+  // NUTRITION CACHE
+  // ==========================================================================
+
+  // Distinctive "batchtest" keys: nutrition_cache.query_key is unique and a
+  // local dev database may already hold live rows for common foods.
+  describe("getNutritionCacheBatch", () => {
+    it("gives every spelling of a shared cache key the cached row", async () => {
+      const sugar = { name: "Batchtest Sugar", calories: 387 };
+      await createTestNutritionRow(tx, "batchtest sugar", sugar, futureDate());
+
+      const hits = await getNutritionCacheBatch(
+        ["batchtest sugar", " batchtest sugar", "Batchtest  SUGAR"],
+        cacheKey,
+      );
+
+      const hit = { data: sugar, source: "cache" };
+      expect(Object.fromEntries(hits)).toEqual({
+        "batchtest sugar": hit,
+        " batchtest sugar": hit,
+        "Batchtest  SUGAR": hit,
+      });
+    });
+
+    it("keeps each key's own row and omits keys with no live row", async () => {
+      const sugar = { name: "Batchtest Sugar", calories: 387 };
+      const rice = { name: "Batchtest Rice", calories: 130 };
+      await createTestNutritionRow(tx, "batchtest sugar", sugar, futureDate());
+      await createTestNutritionRow(tx, "batchtest rice", rice, futureDate());
+      await createTestNutritionRow(
+        tx,
+        "batchtest oats",
+        { name: "Batchtest Oats", calories: 389 },
+        pastDate(),
+      );
+
+      const hits = await getNutritionCacheBatch(
+        [
+          " Batchtest Sugar",
+          "batchtest rice",
+          "BATCHTEST OATS", // expired row
+          "batchtest kale", // never cached
+          "batchtest SUGAR ", // shares a key with the first item
+        ],
+        cacheKey,
+      );
+
+      expect(Object.fromEntries(hits)).toEqual({
+        " Batchtest Sugar": { data: sugar, source: "cache" },
+        "batchtest rice": { data: rice, source: "cache" },
+        "batchtest SUGAR ": { data: sugar, source: "cache" },
+      });
     });
   });
 });
