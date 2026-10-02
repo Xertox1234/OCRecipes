@@ -368,10 +368,13 @@ export async function getNutritionCacheBatch(
       ),
     );
 
-  for (const entry of cached) {
-    const index = normalizedKeys.indexOf(entry.queryKey);
-    if (index !== -1) {
-      results.set(items[index], { data: entry.data, source: "cache" });
+  // query_key is unique, so there is at most one row per key — but several
+  // items can normalise to the same key, so resolve per item, not per row.
+  const byKey = new Map(cached.map((entry) => [entry.queryKey, entry]));
+  for (let i = 0; i < items.length; i++) {
+    const hit = byKey.get(normalizedKeys[i]);
+    if (hit) {
+      results.set(items[i], { data: hit.data, source: "cache" });
     }
   }
 
