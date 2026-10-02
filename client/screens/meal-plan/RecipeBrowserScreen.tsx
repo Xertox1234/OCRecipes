@@ -745,7 +745,30 @@ export default function RecipeBrowserScreen() {
         <View style={styles.actionRow}>
           <View style={{ flex: 1 }} />
           <Pressable
-            onPress={() => navigation.navigate("RecipeEntryHub", {})}
+            onPress={() =>
+              // Root-qualified: this screen is also registered in the Profile
+              // stack and as the root "RecipeBrowserModal", where a bare
+              // "RecipeEntryHub" (or even "MealPlanTab") resolves nowhere.
+              // "Main" is visible from all three; `pop: true` returns to the
+              // existing Main instead of pushing a second one (see
+              // AllConversationsNavigationProp in types/navigation.ts).
+              // Adding a recipe from Profile therefore switches to Plan;
+              // `initial: false` keeps Plan home underneath when the Plan
+              // stack wasn't mounted yet (otherwise Add Recipe would be its
+              // only screen, with no way back to Plan home).
+              navigation.navigate(
+                "Main",
+                {
+                  screen: "MealPlanTab",
+                  params: {
+                    screen: "RecipeEntryHub",
+                    params: {},
+                    initial: false,
+                  },
+                },
+                { pop: true },
+              )
+            }
             style={[
               styles.headerAction,
               { borderColor: withOpacity(theme.text, 0.15) },

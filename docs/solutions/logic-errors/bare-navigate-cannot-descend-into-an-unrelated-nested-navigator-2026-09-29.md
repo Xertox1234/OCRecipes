@@ -138,6 +138,42 @@ the stack case because `reset` replaces the stack wholesale.
   alone with no other code) — this project has no existing precedent for rendering real (as
   opposed to mocked) React Navigation in a jsdom test, and none of the existing navigator test
   files (`ChatListScreen.test.tsx`, `MainTabNavigator.test.tsx`, etc.) attempt it.
+- **Static guard (2026-10-01):** `scripts/__tests__/navigation-route-reachability.test.ts` reads
+  the navigator files and each registered screen's own source, and requires every literal
+  `navigate/push/replace("X")` to name a route registered in that screen's navigator or an
+  ancestor. It checks each registration separately, so a screen registered in two navigators is
+  checked in both. The unresolved set must equal a short `KNOWN_UNRESOLVED` list (a ratchet both
+  ways). Scope limit: it scans the screen's own file only, not the child components or hooks it
+  renders.
+
+## Second instance: dual-registered root-modal copies (2026-10-01)
+
+Since the Profile hub redesign (#34, 2026-04-02), the Profile library tiles opened ROOT-modal
+copies of Plan-stack screens (`GroceryListsModal`, `CookbookListModal`, `PantryModal`,
+`RecipeBrowserModal`). Inside those copies, every link to a Plan-stack-only route was dropped:
+opening a grocery list, opening a cookbook, opening a list just created, and the Recipes "+".
+Same mechanism as above. The screen file was correct for its first registration and silently
+wrong for its second. The static guard found 7 such edges, all in those copies. The fix registers
+the screens inside the Profile stack (`FavouriteRecipes` precedent) and rewrites the two links
+that leave the library screens (`GroceryList` → Plan home, `RecipeBrowser` → Add Recipe) to the
+root-qualified nested form, which resolves from every registration.
+
+Two gotchas from that fix:
+
+- `navigate("MealPlanTab", …)` resolves from inside a tab's stack, but NOT from a root modal,
+  because the tab lives inside `Main`, a child of the root. `navigate("Main", { screen:
+  "MealPlanTab", params: { … } }, { pop: true })` resolves from everywhere.
+- Navigating into a tab stack that hasn't mounted yet makes the nested `screen` its ONLY
+  route, with no back button to the stack's home. Pass `initial: false` in the nested params to
+  keep the stack's initial route underneath. Measured on the simulator: without it, Profile →
+  Recipes → "+ Add" opened Add Recipe with no way back to Plan home.
+
+The same copies had a second, separate bug. A `useConfirmationModal` sheet opened from a screen
+presented with `presentation: "modal"` rendered BEHIND the native modal, because the only
+`BottomSheetModalProvider` is at `App.tsx`'s root. So "delete" did nothing visible. Moving the
+Profile tiles into the Profile stack sidesteps it for Profile only. The Coach still opens the
+root-modal copies (`CoachChat.tsx`), and they keep both bugs; those are the `KNOWN_UNRESOLVED`
+edges.
 
 ## Related Files
 
