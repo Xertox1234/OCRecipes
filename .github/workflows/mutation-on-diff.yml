@@ -7,6 +7,10 @@ name: Mutation-on-diff
 # non-excluded module and posts score + survivors to the job summary.
 # Registered targets are skipped here — their required gates cover them.
 # The job goes red only when the harness itself fails for a module.
+#
+# Selection runs FIRST, before Node setup and `npm ci`: a PR with no eligible
+# module (a docs-only PR, say) writes its summary and skips the install, the
+# run and the upload, and the job still reports green under the same name.
 
 on:
   pull_request:
@@ -46,19 +50,34 @@ jobs:
           echo "Changed files in this PR:"
           cat "$RUNNER_TEMP/changed-files.txt"
 
+      # Runs on the runner image's own Node, ahead of setup-node and `npm ci`, so
+      # selection must stay on Node built-ins and stryker.targets.mjs (a unit
+      # test runs it in a tree with no node_modules). With nothing eligible it
+      # writes the "No eligible changed modules" summary itself and sets run=false.
+      - name: Select eligible modules
+        id: select
+        run: node scripts/ci/mutation-on-diff.mjs --select-only "$RUNNER_TEMP/changed-files.txt"
+
+      # The steps below skip only on an explicit run=false, never on a missing
+      # output. mutation-non-excluded.yml gates on `== 'true'`; here a typo'd step
+      # id or a select step that set nothing must install and run, as before, not
+      # skip every PR silently.
       - uses: actions/setup-node@v5
+        if: steps.select.outputs.run != 'false'
         with:
           node-version: 24
           cache: npm
 
       - name: Install dependencies
+        if: steps.select.outputs.run != 'false'
         run: npm ci
 
       - name: Mutation-on-diff
+        if: steps.select.outputs.run != 'false'
         run: node scripts/ci/mutation-on-diff.mjs "$RUNNER_TEMP/changed-files.txt"
 
       - name: Upload reports
-        if: always()
+        if: steps.select.outputs.run != 'false' && always()
         uses: actions/upload-artifact@v7
         with:
           name: mutation-on-diff-${{ github.run_id }}

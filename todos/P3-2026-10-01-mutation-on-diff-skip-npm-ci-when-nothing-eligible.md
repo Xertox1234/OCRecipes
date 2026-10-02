@@ -1,6 +1,6 @@
 ---
 title: "Mutation-on-diff: skip npm ci when no changed module is eligible"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-10-01
 updated: 2026-10-01
