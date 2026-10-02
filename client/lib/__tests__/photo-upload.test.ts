@@ -393,10 +393,9 @@ describe("upload form-field budget (server MULTIPART_LIMITS.fields)", () => {
   const MAX_NON_FILE_FIELDS = 1;
   const PHOTO_URI = "file:///photo.jpg";
 
-  // One row per helper that calls `uploadAsync`, each called with every
-  // optional argument supplied so a conditional field (the barcode on
-  // uploadLabelForAnalysis) is counted at its maximum. `fields` is what the
-  // helper sends today.
+  // One row per helper that calls `uploadAsync`, each given every argument
+  // that becomes a form field (the intent, the barcode) so a conditional field
+  // is counted at its maximum. `fields` is what the helper sends today.
   const UPLOAD_HELPERS: {
     name: string;
     run: () => Promise<unknown>;
