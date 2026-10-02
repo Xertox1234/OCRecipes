@@ -40,6 +40,16 @@ describe("useScreenOptions", () => {
     expect(result.current.headerTransparent).toBe(false);
   });
 
+  it("gives every pushed screen a generic back title, so iOS never labels the back button with the previous screen's route name", () => {
+    // Every stack screen sets `headerTitle` to a function, which leaves the
+    // native `title` falling back to the route NAME ("GroceryLists"); iOS
+    // copies that into the next screen's visible back label, its VoiceOver
+    // label and the long-press history menu. This is the shared option all
+    // four stacks (and the root stack) pass as their `screenOptions`.
+    const { result } = renderHook(() => useScreenOptions());
+    expect(result.current.headerBackTitle).toBe("Back");
+  });
+
   it("sets contentStyle backgroundColor from theme", () => {
     const { result } = renderHook(() => useScreenOptions());
     expect(result.current.contentStyle).toEqual({
