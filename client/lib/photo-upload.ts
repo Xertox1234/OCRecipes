@@ -138,6 +138,7 @@ export async function uploadPhotoForAnalysis(
         httpMethod: "POST",
         uploadType: FileSystemUploadType.MULTIPART,
         fieldName: "photo",
+        // Form-field limit: MULTIPART_LIMITS.fields (server/routes/_upload.ts)
         parameters: { intent },
         headers: {
           Authorization: `Bearer ${token}`,
@@ -302,6 +303,7 @@ export async function uploadLabelForAnalysis(
   });
 
   try {
+    // Form-field limit: MULTIPART_LIMITS.fields (server/routes/_upload.ts)
     const parameters: Record<string, string> = {};
     if (barcode) parameters.barcode = barcode;
 
@@ -547,6 +549,7 @@ export async function uploadFrontLabelPhoto(
         httpMethod: "POST",
         uploadType: FileSystemUploadType.MULTIPART,
         fieldName: "photo",
+        // Form-field limit: MULTIPART_LIMITS.fields (server/routes/_upload.ts)
         parameters: { barcode },
         headers: {
           Authorization: `Bearer ${token}`,

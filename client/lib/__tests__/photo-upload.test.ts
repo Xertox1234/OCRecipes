@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   calculateTotals,
   uploadPhotoForAnalysis,
+  uploadLabelForAnalysis,
+  uploadRecipePhotoForAnalysis,
   uploadRecipeTextForAnalysis,
   uploadFrontLabelPhoto,
   confirmFrontLabel,
@@ -14,6 +16,7 @@ import {
   type FoodItem,
   type RecipePhotoResult,
 } from "../photo-upload";
+import * as photoUpload from "../photo-upload";
 import { ApiError } from "../api-error";
 import { uploadAsync } from "expo-file-system/legacy";
 import { tokenStorage } from "../token-storage";
@@ -377,6 +380,114 @@ describe("error code preservation", () => {
     );
     expect(thrown).toBeInstanceOf(ApiError);
     expect((thrown as ApiError).code).toBe("NOT_FOUND");
+  });
+});
+
+describe("upload form-field budget (server MULTIPART_LIMITS.fields)", () => {
+  // MULTIPART_LIMITS.fields in server/routes/_upload.ts caps every upload at
+  // this many non-file form fields; one more is rejected with a 400
+  // LIMIT_FIELD_COUNT (pinned server-side in
+  // server/routes/__tests__/_upload.test.ts). That constant is not exported, so
+  // this literal is a pin, not an import: this test will NOT notice if the
+  // server value changes, so update both together.
+  const MAX_NON_FILE_FIELDS = 1;
+  const PHOTO_URI = "file:///photo.jpg";
+
+  // One row per helper that calls `uploadAsync`, each called with every
+  // optional argument supplied so a conditional field (the barcode on
+  // uploadLabelForAnalysis) is counted at its maximum. `fields` is what the
+  // helper sends today.
+  const UPLOAD_HELPERS: {
+    name: string;
+    run: () => Promise<unknown>;
+    fields: string[];
+  }[] = [
+    {
+      name: "uploadPhotoForAnalysis",
+      run: () => uploadPhotoForAnalysis(PHOTO_URI, "log"),
+      fields: ["intent"],
+    },
+    {
+      name: "uploadLabelForAnalysis",
+      run: () => uploadLabelForAnalysis(PHOTO_URI, "0123456789012"),
+      fields: ["barcode"],
+    },
+    {
+      name: "uploadRecipePhotoForAnalysis",
+      run: () => uploadRecipePhotoForAnalysis(PHOTO_URI),
+      fields: [],
+    },
+    {
+      name: "uploadFrontLabelPhoto",
+      run: () => uploadFrontLabelPhoto(PHOTO_URI, "0123456789012"),
+      fields: ["barcode"],
+    },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(tokenStorage.get).mockResolvedValue("test-token");
+    vi.mocked(compressImage).mockResolvedValue({
+      uri: "file:///compressed.jpg",
+      width: 800,
+      height: 600,
+      sizeKB: 450,
+    });
+    vi.mocked(uploadAsync).mockResolvedValue({
+      status: 200,
+      body: "{}",
+      headers: {},
+      mimeType: null,
+    });
+  });
+
+  // Runs a helper and returns the names of the non-file form fields it asked
+  // `uploadAsync` to send. `parameters` exists only on the multipart arm of the
+  // options union, and each entry is one non-file form field.
+  async function sentFieldNames(run: () => Promise<unknown>) {
+    await run();
+    // Reach guard: a helper that bailed before uploading leaves no call to read.
+    expect(uploadAsync).toHaveBeenCalledTimes(1);
+    const options = vi.mocked(uploadAsync).mock.calls[0][2];
+    return Object.keys(
+      options && "parameters" in options ? (options.parameters ?? {}) : {},
+    );
+  }
+
+  it.each(UPLOAD_HELPERS)(
+    "$name stays within the non-file form-field budget",
+    async ({ run }) => {
+      const sent = await sentFieldNames(run);
+
+      expect(
+        sent.length,
+        `non-file fields sent: [${sent.join(", ")}]`,
+      ).toBeLessThanOrEqual(MAX_NON_FILE_FIELDS);
+    },
+  );
+
+  // Control for the budget test, which would also pass over an empty capture:
+  // this pins what each helper sends today. A deliberate field rename fails
+  // here, not in the budget test — update the row to match the server route.
+  it.each(UPLOAD_HELPERS)(
+    "$name sends its known non-file fields",
+    async ({ run, fields }) => {
+      expect(await sentFieldNames(run)).toEqual(fields);
+    },
+  );
+
+  // Pins the `upload*` naming convention only: a helper named otherwise that
+  // calls `uploadAsync` would not be caught here.
+  it("has a row for every exported upload helper", () => {
+    // uploadRecipeTextForAnalysis is a JSON POST through fetch — no multipart
+    // body, so no form fields to budget.
+    const jsonOnly = ["uploadRecipeTextForAnalysis"];
+    const exported = Object.keys(photoUpload).filter((name) =>
+      name.startsWith("upload"),
+    );
+
+    expect(exported.sort()).toEqual(
+      [...UPLOAD_HELPERS.map((helper) => helper.name), ...jsonOnly].sort(),
+    );
   });
 });
 
