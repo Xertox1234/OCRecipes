@@ -259,32 +259,37 @@ describe("HomeScreen — iOS a11y-leaf fix", () => {
 // accessibilityViewIsModal on the sheet's own content root (PR #1000); the
 // Android lever is importantForAccessibility="no-hide-descendants" on the
 // screen's OWN background content, applied only while the sheet is open.
-// The background root here is Animated.ScrollView — the shared reanimated
-// mock's mapA11yProps does NOT translate accessibilityElementsHidden/
-// importantForAccessibility to aria-hidden (only test/mocks/react-native.ts's
-// plain-component mockComponent does), so this pins the raw, untranslated
-// attribute directly instead of aria-hidden. That's still a real,
-// mutation-sensitive assertion (arguably more so — the value changes on every
-// mutation, not just presence/absence) — see docs/solutions/conventions/
-// jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md.
+// The background root here is Animated.ScrollView, which this file's local
+// reanimated double (above) renders through the shared mock's Animated.View —
+// whose mapA11yProps translates the accessibilityElementsHidden/
+// importantForAccessibility pair to aria-hidden (via ariaHiddenProps, like
+// mockComponent and Pressable), so these tests read `aria-hidden`: "true" when
+// hidden, absent when not.
+//
+// Scope limit (docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-
+// a11y-tree-hiding-2026-07-03.md): ariaHiddenProps ORs the pair, so a passing
+// read-back proves AT LEAST ONE hiding prop is set, not that the Android one
+// is. Where importantForAccessibility is the ONLY prop that can flip the
+// result — "home-scroll" sets only it, and so does the collapsed bar once it
+// is visible and the sheet is open (its accessibilityElementsHidden is
+// `!isBarVisible`, false there) — the read-back still pins the Android lever.
+// Where both props are set (the collapsed bar while it is NOT visible) it
+// cannot tell the Android lever from the iOS one; that platform is left to
+// on-device verification.
 describe("HomeScreen — Android TalkBack background trap", () => {
   it("does not hide the background content before the import sheet opens", () => {
     renderComponent(<HomeScreen />);
     expect(
-      screen
-        .getByTestId("home-scroll")
-        .getAttribute("importantforaccessibility"),
-    ).toBe("auto");
+      screen.getByTestId("home-scroll").getAttribute("aria-hidden"),
+    ).toBeNull();
   });
 
   it("hides the background content from the Android accessibility tree while the import sheet is open", () => {
     renderComponent(<HomeScreen />);
     fireEvent.click(screen.getByTestId("open-import-sheet"));
-    expect(
-      screen
-        .getByTestId("home-scroll")
-        .getAttribute("importantforaccessibility"),
-    ).toBe("no-hide-descendants");
+    expect(screen.getByTestId("home-scroll").getAttribute("aria-hidden")).toBe(
+      "true",
+    );
   });
 
   it("releases the background trap once the import sheet is dismissed — a trap that never releases makes the screen unusable to TalkBack", () => {
@@ -292,10 +297,8 @@ describe("HomeScreen — Android TalkBack background trap", () => {
     fireEvent.click(screen.getByTestId("open-import-sheet"));
     fireEvent.click(screen.getByTestId("close-import-sheet"));
     expect(
-      screen
-        .getByTestId("home-scroll")
-        .getAttribute("importantforaccessibility"),
-    ).toBe("auto");
+      screen.getByTestId("home-scroll").getAttribute("aria-hidden"),
+    ).toBeNull();
   });
 });
 
@@ -314,10 +317,8 @@ describe("HomeScreen — Android TalkBack background trap also covers the collap
     isBarVisibleHolder.value = false;
     renderComponent(<HomeScreen />);
     expect(
-      screen
-        .getByTestId("home-collapsed-bar")
-        .getAttribute("importantforaccessibility"),
-    ).toBe("no-hide-descendants");
+      screen.getByTestId("home-collapsed-bar").getAttribute("aria-hidden"),
+    ).toBe("true");
   });
 
   it("keeps the collapsed bar hidden when it is not visible and the import sheet is open — the fourth truth-table cell", () => {
@@ -325,20 +326,16 @@ describe("HomeScreen — Android TalkBack background trap also covers the collap
     renderComponent(<HomeScreen />);
     fireEvent.click(screen.getByTestId("open-import-sheet"));
     expect(
-      screen
-        .getByTestId("home-collapsed-bar")
-        .getAttribute("importantforaccessibility"),
-    ).toBe("no-hide-descendants");
+      screen.getByTestId("home-collapsed-bar").getAttribute("aria-hidden"),
+    ).toBe("true");
   });
 
   it("exposes the collapsed bar when it is visible and no sheet is open", () => {
     isBarVisibleHolder.value = true;
     renderComponent(<HomeScreen />);
     expect(
-      screen
-        .getByTestId("home-collapsed-bar")
-        .getAttribute("importantforaccessibility"),
-    ).toBe("auto");
+      screen.getByTestId("home-collapsed-bar").getAttribute("aria-hidden"),
+    ).toBeNull();
   });
 
   it("hides the visible collapsed bar from the Android accessibility tree while the import sheet is open — the gap a TalkBack user could otherwise reach behind the sheet", () => {
@@ -346,10 +343,8 @@ describe("HomeScreen — Android TalkBack background trap also covers the collap
     renderComponent(<HomeScreen />);
     fireEvent.click(screen.getByTestId("open-import-sheet"));
     expect(
-      screen
-        .getByTestId("home-collapsed-bar")
-        .getAttribute("importantforaccessibility"),
-    ).toBe("no-hide-descendants");
+      screen.getByTestId("home-collapsed-bar").getAttribute("aria-hidden"),
+    ).toBe("true");
   });
 
   it("re-exposes the visible collapsed bar once the import sheet is dismissed", () => {
@@ -358,10 +353,8 @@ describe("HomeScreen — Android TalkBack background trap also covers the collap
     fireEvent.click(screen.getByTestId("open-import-sheet"));
     fireEvent.click(screen.getByTestId("close-import-sheet"));
     expect(
-      screen
-        .getByTestId("home-collapsed-bar")
-        .getAttribute("importantforaccessibility"),
-    ).toBe("auto");
+      screen.getByTestId("home-collapsed-bar").getAttribute("aria-hidden"),
+    ).toBeNull();
   });
 });
 
