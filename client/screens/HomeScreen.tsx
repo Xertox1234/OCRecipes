@@ -285,17 +285,19 @@ export default function HomeScreen() {
     return () => subscription.remove();
   }, []);
 
+  const bottomPadding = scrollBottomPadding(
+    tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+    keyboard.height,
+    hasOpenDrawer,
+    Spacing.lg,
+  );
+
   const scrollContentContainerStyle = useMemo(
     () => ({
       paddingTop: insets.top + Spacing.lg,
-      paddingBottom: scrollBottomPadding(
-        tabBarHeight + Spacing.xl + FAB_CLEARANCE,
-        keyboard.height,
-        hasOpenDrawer,
-        Spacing.lg,
-      ),
+      paddingBottom: bottomPadding,
     }),
-    [insets.top, tabBarHeight, keyboard.height, hasOpenDrawer],
+    [insets.top, bottomPadding],
   );
 
   const handleRefresh = useCallback(() => {
@@ -360,14 +362,19 @@ export default function HomeScreen() {
     openDrawerIdRef.current = openDrawerId;
   }, [openDrawerId]);
 
-  // A keyboard show has just grown the content padding (this render committed
-  // it), so the open drawer's row can scroll further than the glide that ran when
-  // the drawer opened — on a short page that one barely moved. Glide again now.
+  // The content padding has just grown (this render committed it), so the open
+  // drawer's row can scroll further than the glide that ran when the drawer
+  // opened — on a short page that one barely moved. Glide again now. Two things
+  // grow it: a keyboard show (keyed on the show count, see `keyboard`), and a
+  // drawer opening while a keyboard height is already known — the keyboard is
+  // often still up then (a collapsed drawer's input keeps focus), so no new show
+  // event arrives, and the open handler's own glide ran before this padding did.
+  // A drawer closing also changes the padding, but then the ref is null: no glide.
   useEffect(() => {
     if (keyboard.shows === 0) return;
     const drawerId = openDrawerIdRef.current;
     if (drawerId !== null) glideRowToTop(drawerId);
-  }, [keyboard.shows, glideRowToTop]);
+  }, [keyboard.shows, bottomPadding, glideRowToTop]);
 
   // Pending drawer-switch timer (collapse-then-open). Held in a ref so a user
   // drag or screen blur during the collapse window can cancel the reopen.

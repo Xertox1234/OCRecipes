@@ -484,7 +484,9 @@ describe("HomeScreen — keyboard inset for inline drawers", () => {
 
   beforeEach(() => {
     vi.mocked(QuickLogDrawer).mockClear();
-    vi.mocked(scrollTo).mockClear();
+    // mockReset, not mockClear: the glide-ordering tests below install a
+    // scrollTo implementation, and clear() would let it leak into the next test.
+    vi.mocked(scrollTo).mockReset();
     measureHolder.value = null;
     scrollViewProps.current = null;
     authHolder.user = { subscriptionTier: "premium" };
@@ -556,6 +558,14 @@ describe("HomeScreen — keyboard inset for inline drawers", () => {
     renderComponent(<HomeScreen />);
     openQuickLog(); // opening glides once, before any keyboard exists
     vi.mocked(scrollTo).mockClear();
+    // Read the padding AT THE MOMENT scrollTo fires. On a device a glide issued
+    // before React renders the grown padding is clamped by the old content
+    // height, which is why the glide follows the commit in an effect instead of
+    // running from the keyboard listener.
+    const paddingAtGlide: number[] = [];
+    vi.mocked(scrollTo).mockImplementation(() => {
+      paddingAtGlide.push(paddingBottom());
+    });
 
     fireKeyboard("Show");
 
@@ -566,6 +576,7 @@ describe("HomeScreen — keyboard inset for inline drawers", () => {
       glideToTopOffset(0, 600, COLLAPSED_BAR),
       expect.any(Boolean),
     );
+    expect(paddingAtGlide).toEqual([KEYBOARD + Spacing.lg]);
   });
 
   it("glides again on every keyboard show, even at an unchanged keyboard height", () => {
@@ -578,6 +589,43 @@ describe("HomeScreen — keyboard inset for inline drawers", () => {
     fireKeyboard("Show");
 
     expect(scrollTo).toHaveBeenCalledTimes(2);
+  });
+
+  // The keyboard can already be up when a drawer opens (a drawer's text input
+  // keeps focus after it collapses, and a header tap does not dismiss), so no
+  // new show event will arrive to trigger the glide above. The open handler's
+  // own glide runs BEFORE the render that applies the remembered padding, so a
+  // second glide has to follow that commit.
+  it("glides again once the remembered padding commits when a drawer opens with a keyboard height already known", () => {
+    measureHolder.value = { pageY: 600 };
+    renderComponent(<HomeScreen />);
+    fireKeyboard("Show"); // no drawer open: nothing to glide, padding stays at base
+    expect(scrollTo).not.toHaveBeenCalled();
+    const paddingAtGlide: number[] = [];
+    vi.mocked(scrollTo).mockImplementation(() => {
+      paddingAtGlide.push(paddingBottom());
+    });
+
+    openQuickLog();
+
+    // [the open handler's own glide, before the padding commits; the one that
+    // follows the commit]
+    expect(paddingAtGlide).toEqual([BASE_PADDING, KEYBOARD + Spacing.lg]);
+  });
+
+  it("does not glide when the drawer closes and the padding drops back (no open drawer left to lift)", () => {
+    measureHolder.value = { pageY: 600 };
+    renderComponent(<HomeScreen />);
+    openQuickLog();
+    fireKeyboard("Show");
+    expect(paddingBottom()).toBe(KEYBOARD + Spacing.lg);
+    vi.mocked(scrollTo).mockClear();
+
+    act(() => quickLogProps().onClose());
+
+    // The padding did change, so a padding-keyed glide is the thing under test.
+    expect(paddingBottom()).toBe(BASE_PADDING);
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 
   it("listens for keyboardWillShow on iOS", () => {
