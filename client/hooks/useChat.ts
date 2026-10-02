@@ -12,6 +12,10 @@ import {
 } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { getDeviceTimezone } from "@/lib/timezone";
+import {
+  clearCoachReplyUnread,
+  noteCoachReplyFinished,
+} from "@/hooks/useCoachUnreadReplies";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 import type { SavedRecipeLinkStatus } from "@shared/schemas/saved-items";
@@ -294,7 +298,10 @@ export function useDeleteConversation() {
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/chat/conversations/${id}`);
     },
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
+      // A deleted conversation can never be opened, so nothing else would clear
+      // its "unread Coach reply" mark and the Coach tab dot would stick.
+      clearCoachReplyUnread(queryClient, id);
       void queryClient.invalidateQueries({
         queryKey: ["/api/chat/conversations"],
       });
@@ -305,8 +312,24 @@ export function useDeleteConversation() {
   });
 }
 
-export function useSendMessage(conversationId: number | null) {
+export function useSendMessage(
+  conversationId: number | null,
+  options?: {
+    /**
+     * Coach chat (ChatScreen) only. When a reply finishes while the user is
+     * NOT on that conversation's chat screen — they popped back, or switched
+     * tab — record an unread mark (Coach tab dot) and raise the "Coach
+     * replied" toast; see `useCoachUnreadReplies`. Off by default: the other
+     * consumer, RecipeChatScreen, never registers a viewed conversation, so
+     * with this on every recipe reply would flag itself unread while the user
+     * is looking at it. (Recipe/remix replies also have their own post-abort
+     * poll.)
+     */
+    notifyWhenAway?: boolean;
+  },
+) {
   const queryClient = useQueryClient();
+  const notifyWhenAway = options?.notifyWhenAway ?? false;
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingRecipe, setStreamingRecipe] =
     useState<StreamingRecipe | null>(null);
@@ -482,6 +505,33 @@ export function useSendMessage(conversationId: number | null) {
               void queryClient.invalidateQueries({
                 queryKey: ["/api/chat/conversations"],
               });
+              // Here, not in `finally`: an aborted, errored or cut-off stream
+              // is not a reply the user is waiting on. Placed after the
+              // refresh so the conversation is already marked stale by the
+              // time anyone acts on the toast.
+              //
+              // Only the session that sent the message may record or announce
+              // its reply. The stream is deliberately not aborted on leave
+              // (#1183) or on sign-out, so it can finish after logout has
+              // cleared the query cache, or after another account signed in.
+              // The token this send went out with identifies its session: it
+              // is written only at login/register and every teardown nulls it
+              // before the cache is cleared, so a late `done` sees a different
+              // token (or none) and stays quiet instead of re-creating a mark
+              // for a conversation the current user may not own.
+              if (notifyWhenAway) {
+                void tokenStorage.get().then(
+                  (current) => {
+                    if (current === token) {
+                      noteCoachReplyFinished(queryClient, effectiveId);
+                    }
+                  },
+                  () => {
+                    // Unreadable token: the session can't be told apart, so
+                    // stay quiet rather than risk a mark for someone else.
+                  },
+                );
+              }
             }
             // Server-sent application error — surface via requestError instead
             // of throwing, so callers that don't await sendMessage still see it.
@@ -637,7 +687,7 @@ export function useSendMessage(conversationId: number | null) {
         // requestError state.
       }
     },
-    [conversationId, queryClient],
+    [conversationId, queryClient, notifyWhenAway],
   );
 
   return {

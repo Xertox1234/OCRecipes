@@ -1,11 +1,20 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, render, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
+import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import {
+  getUnreadCoachReplyIds,
+  getViewedCoachConversation,
+  markCoachReplyUnread,
+  noteCoachReplyFinished,
+} from "@/hooks/useCoachUnreadReplies";
 import ChatScreen from "../ChatScreen";
 
 const {
   mockSendMessage,
+  mockUseSendMessage,
+  focusState,
   mockAcknowledge,
   mockCreateMutateAsync,
   mockSetParams,
@@ -23,6 +32,11 @@ const {
   mockPopTo: vi.fn(),
   mockCanGoBack: vi.fn(() => false),
   mockSendMessage: vi.fn(),
+  // Records the arguments ChatScreen passes to useSendMessage.
+  mockUseSendMessage: vi.fn(),
+  // Stands in for the navigator's focus: useFocusEffect below only runs its
+  // effect while this is true, and runs the cleanup when it flips to false.
+  focusState: { focused: true },
   mockAcknowledge: vi.fn(),
   mockCreateMutateAsync: vi.fn(),
   mockSetParams: vi.fn(),
@@ -61,15 +75,26 @@ vi.mock("@react-navigation/native", () => ({
     canGoBack: mockCanGoBack,
   }),
   useRoute: () => ({ params: mockRouteParams.value }),
+  // Mirrors the real hook's contract (core's useFocusEffect): run the effect
+  // while the screen is focused, run its cleanup on blur AND on unmount, and
+  // re-run when the callback's identity changes. The real one needs a
+  // NavigationContainer; `focusState` plays the navigator.
+  useFocusEffect: (effect: () => void | (() => void)) => {
+    const focused = focusState.focused;
+    React.useEffect(() => (focused ? effect() : undefined), [effect, focused]);
+  },
 }));
 
 vi.mock("@/hooks/useChat", () => ({
   useChatMessages: (conversationId: number | null) =>
     mockUseChatMessages(conversationId),
-  useSendMessage: () => ({
-    sendMessage: mockSendMessage,
-    ...mockSendMessageState.value,
-  }),
+  useSendMessage: (...args: unknown[]) => {
+    mockUseSendMessage(...args);
+    return {
+      sendMessage: mockSendMessage,
+      ...mockSendMessageState.value,
+    };
+  },
   useCreateConversation: () => ({ mutateAsync: mockCreateMutateAsync }),
 }));
 
@@ -87,6 +112,7 @@ vi.mock("@/context/ToastContext", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  focusState.focused = true;
   mockRouteParams.value = { conversationId: 42 };
   mockSendMessage.mockResolvedValue(undefined);
   mockAcknowledge.mockResolvedValue(undefined);
@@ -360,4 +386,119 @@ describe("ChatScreen — stream-interrupted toast copy", () => {
       expect.stringContaining("Partial response may be visible"),
     );
   });
+});
+
+// P2-2026-09-29: ChatScreen is the half of "Coach reply ready" that knows
+// whether the user is looking at a conversation. useSendMessage's done handler
+// (useChat.test.ts) compares against what this screen reports as on screen, so
+// these tests prove the screen is actually WIRED to that store — a passing
+// store unit test alone doesn't (docs/solutions/conventions/
+// pure-utils-extraction-tests-dont-prove-wiring-2026-07-14.md). They run the
+// real store against a real QueryClient; only the navigator's focus is faked.
+describe("ChatScreen — Coach reply ready (viewed conversation + unread marks)", () => {
+  function renderWithClient() {
+    const { queryClient, wrapper } = createQueryWrapper();
+    const utils = render(<ChatScreen />, { wrapper });
+    return { queryClient, ...utils };
+  }
+
+  it("opts useSendMessage into the reply-ready notification", () => {
+    renderWithClient();
+
+    expect(mockUseSendMessage).toHaveBeenLastCalledWith(42, {
+      notifyWhenAway: true,
+    });
+  });
+
+  it("reports its conversation as on screen while focused", () => {
+    const { queryClient } = renderWithClient();
+
+    expect(getViewedCoachConversation(queryClient)).toBe(42);
+  });
+
+  // A bottom-tab screen stays MOUNTED when its tab loses focus: this is the
+  // case an unmount-only signal misses.
+  it("stops reporting it on blur while still mounted (switched tab), and resumes on focus", () => {
+    const { queryClient, rerender } = renderWithClient();
+
+    focusState.focused = false;
+    rerender(<ChatScreen />);
+    expect(getViewedCoachConversation(queryClient)).toBeNull();
+
+    focusState.focused = true;
+    rerender(<ChatScreen />);
+    expect(getViewedCoachConversation(queryClient)).toBe(42);
+  });
+
+  it("stops reporting it when the screen unmounts (popped back)", () => {
+    const { queryClient, unmount } = renderWithClient();
+
+    unmount();
+
+    expect(getViewedCoachConversation(queryClient)).toBeNull();
+  });
+
+  it("opening the conversation clears its unread mark, and only its own", () => {
+    const { queryClient, wrapper } = createQueryWrapper();
+    markCoachReplyUnread(queryClient, 42);
+    markCoachReplyUnread(queryClient, 7);
+
+    render(<ChatScreen />, { wrapper });
+
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([7]);
+  });
+
+  it("a reply that lands while the screen is blurred is marked, and refocusing clears the mark", () => {
+    const { queryClient, rerender } = renderWithClient();
+    focusState.focused = false;
+    rerender(<ChatScreen />);
+
+    noteCoachReplyFinished(queryClient, 42);
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([42]);
+
+    focusState.focused = true;
+    rerender(<ChatScreen />);
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+  });
+
+  it("a reply that lands while the screen is focused is not marked", () => {
+    const { queryClient } = renderWithClient();
+
+    noteCoachReplyFinished(queryClient, 42);
+
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+  });
+
+  // The new-chat flow has no conversation until the first send creates one and
+  // navigation.setParams delivers its id; the focus callback re-runs then.
+  it("reports no conversation in the new-chat flow, then the created one once its id lands", () => {
+    mockRouteParams.value = undefined;
+    const { queryClient, rerender } = renderWithClient();
+    expect(getViewedCoachConversation(queryClient)).toBeNull();
+
+    mockRouteParams.value = { conversationId: 99 };
+    rerender(<ChatScreen />);
+
+    expect(getViewedCoachConversation(queryClient)).toBe(99);
+  });
+
+  it("follows the screen when it is re-pointed at another conversation", () => {
+    const { queryClient, rerender } = renderWithClient();
+
+    mockRouteParams.value = { conversationId: 7 };
+    rerender(<ChatScreen />);
+
+    expect(getViewedCoachConversation(queryClient)).toBe(7);
+  });
+
+  it.each([0, -5])(
+    "never reports a malformed conversation id (%i) as on screen",
+    (badId) => {
+      mockRouteParams.value = { conversationId: badId };
+
+      const { queryClient } = renderWithClient();
+
+      expect(getViewedCoachConversation(queryClient)).toBeNull();
+    },
+  );
 });

@@ -8,10 +8,17 @@ import {
   useChatConversations,
   useChatMessages,
   useMarkPendingRecipeTurn,
+  useDeleteConversation,
   RECIPE_TURN_POLL_INTERVAL_MS,
   RECIPE_TURN_POLL_CAP_MS,
   useSaveRecipeFromChat,
 } from "../useChat";
+import {
+  getUnreadCoachReplyIds,
+  markCoachReplyUnread,
+  subscribeToCoachReplyReady,
+  viewCoachConversation,
+} from "../useCoachUnreadReplies";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import { SSE_TIMEOUT_MS } from "@shared/constants/sse";
 
@@ -767,6 +774,324 @@ describe("useSendMessage", () => {
         await p;
       });
     });
+  });
+});
+
+// P2-2026-09-29: a Coach reply that finishes while the user is NOT on that
+// chat (popped back, or switched tab) is recorded as unread and announced,
+// so the Coach tab can show a dot and a toast can offer to open it. "Away"
+// is decided by the conversation ChatScreen reports as on screen (focus), not
+// by this hook unmounting — a tab switch leaves the screen mounted.
+describe("useSendMessage — Coach reply ready (notifyWhenAway)", () => {
+  const REPLY = ['data: {"content":"Hi"}\n', 'data: {"done":true}\n'];
+
+  // Sends one message and returns once its XHR exists, so a test can change
+  // what the user is looking at BEFORE the reply finishes.
+  async function startSend(
+    result: { current: ReturnType<typeof useSendMessage> },
+    text = "hello",
+  ) {
+    let done!: Promise<void>;
+    await act(async () => {
+      done = result.current.sendMessage(text);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    return { xhr: xhrInstance, done };
+  }
+
+  async function finish(xhr: MockXHR, done: Promise<void>, chunks = REPLY) {
+    await act(async () => {
+      xhr.simulateChunks(chunks);
+      await done;
+    });
+  }
+
+  function listen() {
+    const listener = vi.fn();
+    const unsubscribe = subscribeToCoachReplyReady(listener);
+    return { listener, unsubscribe };
+  }
+
+  beforeEach(() => {
+    mockTokenStorage.get.mockResolvedValue("token");
+  });
+
+  it("records nothing while the user is viewing that conversation", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const { listener, unsubscribe } = listen();
+    viewCoachConversation(queryClient, 5);
+    const { result } = renderHook(
+      () => useSendMessage(5, { notifyWhenAway: true }),
+      { wrapper },
+    );
+
+    const { xhr, done } = await startSend(result);
+    await finish(xhr, done);
+
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+    expect(listener).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  // ChatScreen's focus cleanup clears the viewed conversation on unmount, and
+  // this hook's unmount effect leaves an already-sent reply running (user
+  // ruling 2026-09-29) — so the reply still finishes after the user is gone.
+  it("records an unread reply when the user popped back (screen unmounted) before it finished", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const { listener, unsubscribe } = listen();
+    const leave = viewCoachConversation(queryClient, 5);
+    const { result, unmount } = renderHook(
+      () => useSendMessage(5, { notifyWhenAway: true }),
+      { wrapper },
+    );
+    const { xhr, done } = await startSend(result);
+
+    leave?.();
+    unmount();
+    await finish(xhr, done);
+
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([5]);
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith(5);
+    unsubscribe();
+  });
+
+  // The most common case: a bottom-tab screen stays MOUNTED when its tab loses
+  // focus, so the hook never unmounts — only the viewed conversation changes.
+  it("records an unread reply when the user switched tab (screen still mounted) before it finished", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const { listener, unsubscribe } = listen();
+    const leave = viewCoachConversation(queryClient, 5);
+    const { result } = renderHook(
+      () => useSendMessage(5, { notifyWhenAway: true }),
+      { wrapper },
+    );
+    const { xhr, done } = await startSend(result);
+
+    leave?.(); // blur: the hook stays mounted
+    await finish(xhr, done);
+
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([5]);
+    expect(listener).toHaveBeenCalledWith(5);
+    unsubscribe();
+  });
+
+  it("records an unread reply when the user is on a different conversation", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const { listener, unsubscribe } = listen();
+    viewCoachConversation(queryClient, 8);
+    const { result } = renderHook(
+      () => useSendMessage(5, { notifyWhenAway: true }),
+      { wrapper },
+    );
+
+    const { xhr, done } = await startSend(result);
+    await finish(xhr, done);
+
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([5]);
+    expect(listener).toHaveBeenCalledWith(5);
+    unsubscribe();
+  });
+
+  it("uses the conversation id passed to sendMessage (a chat created by the first send)", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const { listener, unsubscribe } = listen();
+    const { result } = renderHook(
+      () => useSendMessage(null, { notifyWhenAway: true }),
+      { wrapper },
+    );
+
+    let done!: Promise<void>;
+    await act(async () => {
+      done = result.current.sendMessage("hello", undefined, 99);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await finish(xhrInstance, done);
+
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([99]);
+    expect(listener).toHaveBeenCalledWith(99);
+    unsubscribe();
+  });
+
+  // RecipeChatScreen is the other consumer: it never registers a viewed
+  // conversation (and aborts on leave), so without the opt-in every one of its
+  // replies would mark itself unread while the user is looking right at it.
+  it("never records or announces a reply for a consumer that did not opt in", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    const { listener, unsubscribe } = listen();
+    const { result } = renderHook(() => useSendMessage(5), { wrapper });
+
+    const { xhr, done } = await startSend(result);
+    await finish(xhr, done);
+
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+    expect(listener).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  // The stream is deliberately NOT aborted on leave (#1183) or on sign-out, so
+  // a reply can finish after logout has cleared the cache — and after another
+  // account signed in. The token a send went out with identifies its session
+  // (set only at login/register; every teardown nulls it BEFORE the query
+  // cache is cleared), so only that session may record or announce its reply.
+  // The "popped back" test above is the positive control: same token, records.
+  describe("a reply that outlives the session that sent it", () => {
+    async function popBackThenFinishAfter(
+      queryClient: ReturnType<typeof createQueryWrapper>["queryClient"],
+      wrapper: ReturnType<typeof createQueryWrapper>["wrapper"],
+      signOut: () => void,
+    ) {
+      const leave = viewCoachConversation(queryClient, 5);
+      const { result, unmount } = renderHook(
+        () => useSendMessage(5, { notifyWhenAway: true }),
+        { wrapper },
+      );
+      const { xhr, done } = await startSend(result);
+      leave?.();
+      unmount();
+      signOut();
+      await finish(xhr, done);
+    }
+
+    it("records nothing after sign-out: the token is gone and the cache is cleared", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const { listener, unsubscribe } = listen();
+
+      await popBackThenFinishAfter(queryClient, wrapper, () => {
+        mockTokenStorage.get.mockResolvedValue(null);
+        queryClient.clear();
+      });
+
+      expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    it("records nothing when a different account signed in before it landed", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const { listener, unsubscribe } = listen();
+
+      await popBackThenFinishAfter(queryClient, wrapper, () => {
+        mockTokenStorage.get.mockResolvedValue("the-next-account's-token");
+        queryClient.clear();
+      });
+
+      expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    // Which session this is cannot be told: stay quiet rather than risk a mark
+    // for a conversation the current user does not own.
+    it("records nothing when the token cannot be read at that moment", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const { listener, unsubscribe } = listen();
+
+      await popBackThenFinishAfter(queryClient, wrapper, () => {
+        mockTokenStorage.get.mockRejectedValue(new Error("storage"));
+      });
+
+      expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+  });
+
+  describe("only a reply that actually completed counts", () => {
+    it("an aborted stream records nothing", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const { listener, unsubscribe } = listen();
+      const { result } = renderHook(
+        () => useSendMessage(5, { notifyWhenAway: true }),
+        { wrapper },
+      );
+
+      const { done } = await startSend(result);
+      await act(async () => {
+        result.current.abortStream();
+        await done;
+      });
+
+      expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    it("a network error records nothing", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const { listener, unsubscribe } = listen();
+      const { result } = renderHook(
+        () => useSendMessage(5, { notifyWhenAway: true }),
+        { wrapper },
+      );
+
+      const { xhr, done } = await startSend(result);
+      await act(async () => {
+        xhr.simulateNetworkError();
+        await done;
+      });
+
+      expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    it("a server-sent error records nothing", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const { listener, unsubscribe } = listen();
+      const { result } = renderHook(
+        () => useSendMessage(5, { notifyWhenAway: true }),
+        { wrapper },
+      );
+
+      const { xhr, done } = await startSend(result);
+      await finish(xhr, done, ['data: {"error":"Response timeout"}\n']);
+
+      expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    it("a stream that ends after some content but without the done signal records nothing", async () => {
+      const { wrapper, queryClient } = createQueryWrapper();
+      const { listener, unsubscribe } = listen();
+      const { result } = renderHook(
+        () => useSendMessage(5, { notifyWhenAway: true }),
+        { wrapper },
+      );
+
+      const { xhr, done } = await startSend(result);
+      await finish(xhr, done, ['data: {"content":"partial"}\n']);
+
+      expect(result.current.streamError).toBe(true);
+      expect(getUnreadCoachReplyIds(queryClient)).toEqual([]);
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+  });
+});
+
+describe("useDeleteConversation", () => {
+  // A deleted conversation can never be opened, so nothing else would ever
+  // clear its mark — the Coach tab dot would stick for the whole session.
+  it("clears the deleted conversation's unread mark, keeping the others", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    mockApiRequest.mockResolvedValue({ json: async () => ({}) });
+    markCoachReplyUnread(queryClient, 5);
+    markCoachReplyUnread(queryClient, 8);
+    const { result } = renderHook(() => useDeleteConversation(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync(5);
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "DELETE",
+      "/api/chat/conversations/5",
+    );
+    expect(getUnreadCoachReplyIds(queryClient)).toEqual([8]);
   });
 });
 
