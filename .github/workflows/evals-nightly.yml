@@ -1,0 +1,267 @@
+name: Evals nightly
+
+# Advisory: NOT a required check. Runs the five LLM eval suites and compares
+# each against evals/baselines/<suite>.json with three regression rules
+# (scripts/ci/eval-compare.ts). A failing scheduled run, or a regression on any
+# run, files or updates an Issue (see notify-on-failure). It never blocks a
+# merge. Baselines change only through the rebaseline=true dispatch below,
+# which opens a PR for human review.
+#
+# Cron is intentionally absent until C1 (see the Lane C plan): C0 proves the
+# job on workflow_dispatch first.
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Suite to run"
+        required: true
+        default: all
+        type: choice
+        options: [all, coach, recipe-chat, meal-suggestions, recipe-generation, photo-analysis]
+      rebaseline:
+        description: "Write fresh baselines and open a PR instead of comparing"
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: evals-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Pinned here, not in code: a default-model bump in evals/lib/judge-generic.ts
+  # must not silently move the baseline.
+  EVAL_JUDGE_MODEL: claude-sonnet-4-6
+  EVAL_SAMPLES_PER_CASE: "1"
+  EVAL_PARALLELISM: "4"
+  LOG_LEVEL: silent
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  AI_INTEGRATIONS_OPENAI_API_KEY: ${{ secrets.AI_INTEGRATIONS_OPENAI_API_KEY }}
+  # Optional secret. When unset it expands to "", and the OpenAI client falls
+  # back to its default endpoint (baseURL || default in the SDK).
+  AI_INTEGRATIONS_OPENAI_BASE_URL: ${{ secrets.AI_INTEGRATIONS_OPENAI_BASE_URL }}
+  # Stub the remaining external keys exactly as ci.yml does so a suite that
+  # touches them never hits a real endpoint.
+  USDA_API_KEY: stub
+  API_NINJAS_KEY: stub
+  # npm ci runs the prepare script, which installs the husky hooks; the
+  # rebaseline commit and push below must not run lint-staged or preflight.
+  HUSKY: "0"
+
+jobs:
+  evals:
+    name: Run and compare eval suites
+    runs-on: ubuntu-latest
+    outputs:
+      regressed: ${{ steps.compare.outputs.regressed }}
+
+    # Three of the five services import server/storage, which throws at load
+    # without DATABASE_URL, and the coach's tools query it during a run.
+    # Same service and schema setup as ci.yml's test jobs.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ocrecipes
+          POSTGRES_PASSWORD: ocrecipes
+          POSTGRES_DB: ocrecipes_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://ocrecipes:ocrecipes@localhost:5432/ocrecipes_test
+
+    steps:
+      # No persisted job token: the only push in this job is the rebaseline
+      # branch, and it must authenticate with BASELINE_PR_TOKEN. A persisted
+      # GITHUB_TOKEN would take precedence over the token in the remote URL.
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Enable pg_trgm extension
+        run: psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
+      - name: Push database schema
+        run: npm run db:push
+
+      - name: Resolve suite list
+        id: suites
+        env:
+          SUITE: ${{ inputs.suite }}
+        run: |
+          set -euo pipefail
+          if [ "$SUITE" = "all" ]; then
+            echo "list=coach recipe-chat meal-suggestions recipe-generation photo-analysis" >> "$GITHUB_OUTPUT"
+          else
+            echo "list=$SUITE" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Each suite writes evals/results/<suite>-<timestamp>.json (runner-core.ts).
+      # eval:all omits eval:photo, so the suites are invoked individually.
+      - name: Run eval suites
+        env:
+          SUITES: ${{ steps.suites.outputs.list }}
+        run: |
+          set -euo pipefail
+          declare -A SCRIPT=( [coach]=eval:coach [recipe-chat]=eval:recipe-chat [meal-suggestions]=eval:meal-suggestions [recipe-generation]=eval:recipe-generation [photo-analysis]=eval:photo )
+          for s in $SUITES; do
+            echo "::group::npm run ${SCRIPT[$s]}"
+            npm run "${SCRIPT[$s]}"
+            echo "::endgroup::"
+          done
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: eval-results-${{ github.run_id }}
+          path: evals/results/
+          if-no-files-found: warn
+
+      # eval-compare exits 0 pass, 1 regression, 2 no baseline (or bad usage),
+      # 3 no results file. Only 1 is a regression. 2 and 3 still fail the step,
+      # because a suite without a baseline must not read as green, but they do
+      # not set regressed, so a dispatch made before the first baselines exist
+      # files no regression issue.
+      - name: Compare against baselines
+        id: compare
+        if: ${{ !inputs.rebaseline }}
+        env:
+          SUITES: ${{ steps.suites.outputs.list }}
+        run: |
+          set -uo pipefail
+          regressed=false
+          incomplete=false
+          for s in $SUITES; do
+            rc=0
+            npm run --silent eval:compare -- --suite "$s" || rc=$?
+            case "$rc" in
+              0) ;;
+              1) regressed=true ;;
+              *)
+                incomplete=true
+                echo "::error::eval-compare for $s exited $rc (2 = no baseline, 3 = no results file)"
+                ;;
+            esac
+          done
+          echo "regressed=$regressed" >> "$GITHUB_OUTPUT"
+          [ "$regressed" = "false" ] && [ "$incomplete" = "false" ]
+
+      - name: Write baselines
+        if: ${{ inputs.rebaseline }}
+        env:
+          SUITES: ${{ steps.suites.outputs.list }}
+        run: |
+          set -euo pipefail
+          for s in $SUITES; do
+            npm run --silent eval:compare -- --suite "$s" --write-baseline
+          done
+          git status --short evals/baselines/
+
+      # PAT, not GITHUB_TOKEN: pushes/PRs made with GITHUB_TOKEN trigger no
+      # other workflows, so the PR would carry no required checks and be
+      # unmergeable under branch protection. BASELINE_PR_TOKEN is a fine-grained
+      # PAT (contents + pull-requests write, this repo only), user-created.
+      - name: Open rebaseline PR
+        if: ${{ inputs.rebaseline }}
+        env:
+          GH_TOKEN: ${{ secrets.BASELINE_PR_TOKEN }}
+          SUITES: ${{ steps.suites.outputs.list }}
+        run: |
+          set -euo pipefail
+          branch="baselines/evals-${{ github.run_id }}"
+          git config user.name "ocrecipes-baselines"
+          git config user.email "baselines@users.noreply.github.com"
+          git switch -c "$branch"
+          git add evals/baselines/
+          git commit -m "chore(baselines): refresh evals baselines $(date -u +%F) (run ${{ github.run_id }})" \
+            -m "Suites: ${SUITES}. Judge: ${EVAL_JUDGE_MODEL}. Review the interval shifts before merging."
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git push -u origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "chore(baselines): refresh evals baselines $(date -u +%F)" \
+            --body "Automated by evals-nightly rebaseline=true, run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Only evals/baselines/*.json change. Compare the new intervals against the previous file before merging."
+
+  # A scheduled run that fails for any reason files an issue: nobody is
+  # watching it. A dispatched run files one only on a real regression; the
+  # person who dispatched it reads the run.
+  notify-on-failure:
+    name: Notify on eval failure
+    needs: [evals]
+    if: always() && needs.evals.result == 'failure' && (github.event_name == 'schedule' || needs.evals.outputs.regressed == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update failure issue
+        uses: actions/github-script@v7
+        env:
+          REGRESSED: ${{ needs.evals.outputs.regressed }}
+        with:
+          script: |
+            const label = 'evals-regression-failure';
+            const title = 'Evals: nightly run failed';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const verdict = process.env.REGRESSED === 'true'
+              ? 'At least one suite regressed against its committed baseline. The job summary has the per-suite table.'
+              : 'The run failed before a regression verdict: a suite had no baseline or no results file, or the run step itself failed. Check the job log.';
+            const body = [
+              'The Evals nightly workflow failed.',
+              '',
+              `- ${verdict}`,
+              `- Run: ${runUrl}`,
+              '',
+              'If a regression is intentional (prompt improvement, model change), dispatch the workflow with rebaseline=true and review the resulting PR. Close this issue once the suite is green again.',
+            ].join('\n');
+
+            // Ensure the label exists before filtering/creating with it — the
+            // Issues API does not reliably auto-create an unknown label.
+            try {
+              await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name: label });
+            } catch {
+              await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name: label, color: 'd73a4a' });
+            }
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+            });
+            // Match by title, not just the label, in case the label is ever reused.
+            const existing = issues.find((issue) => issue.title === title);
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: [label],
+              });
+            }
