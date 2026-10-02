@@ -5,7 +5,14 @@
  * with a JSON reporter, then writes a step summary. Never red on score; exits
  * 1 only when the harness itself failed for a module.
  *
- *   node scripts/ci/mutation-on-diff.mjs <changed-files.txt>
+ *   node scripts/ci/mutation-on-diff.mjs [--select-only] <changed-files.txt>
+ *
+ * --select-only does the selection and nothing else: it sets the `run` step
+ * output (true when a module is eligible) and, when none is, writes the "No
+ * eligible changed modules" summary itself. The workflow runs it before
+ * setup-node and `npm ci` and skips the install and the run on `run=false`, so
+ * it imports only Node built-ins and stryker.targets.mjs and works on a
+ * checkout with no node_modules.
  *
  * The changed-file list comes from a FILE, not an env var: every process this
  * spawns inherits the env, and one oversized variable makes exec fail with
@@ -328,14 +335,40 @@ export function rowFromRun(file, run, reportText) {
   }
 }
 
-function main() {
-  const listFile = process.argv[2];
-  if (!listFile) {
-    console.error(
-      "Usage: node scripts/ci/mutation-on-diff.mjs <changed-files.txt>",
-    );
-    process.exit(2);
-  }
+/**
+ * @param {string[]} argv the arguments after the script path
+ * @returns {{ selectOnly: boolean, listFile: string } | null} null unless they
+ *   are `[--select-only] <changed-files.txt>`
+ */
+export function parseArgs(argv) {
+  const selectOnly = argv.includes("--select-only");
+  const rest = argv.filter((a) => a !== "--select-only");
+  const [listFile] = rest;
+  if (rest.length !== 1 || !listFile || listFile.startsWith("--")) return null;
+  return { selectOnly, listFile };
+}
+
+/**
+ * What the select-only step tells the workflow: whether the install and the
+ * run are needed and, when they are not, the summary to leave behind (the one
+ * a full run with nothing eligible would write).
+ *
+ * @param {ReturnType<typeof selectEligible>} sel
+ * @returns {{ run: boolean, summary: string | null }}
+ */
+export function selectOnlyOutcome(sel) {
+  const run = sel.eligible.length > 0;
+  return { run, summary: run ? null : renderSummary([], sel) };
+}
+
+/**
+ * The PR's eligible modules, from the changed-file list. Both modes use this
+ * one derivation, so the step that decides to skip the install and the run
+ * that would have found work cannot disagree.
+ *
+ * @param {string} listFile
+ */
+function selectFromListFile(listFile) {
   const changed = readFileSync(listFile, "utf8")
     .split("\n")
     .map((s) => s.trim())
@@ -343,12 +376,43 @@ function main() {
   const registeredMutatePaths = new Set(
     Object.values(MUTATION_TARGETS).flatMap((t) => t.mutate),
   );
-  const sel = selectEligible(changed, {
+  return selectEligible(changed, {
     isHardExclusion,
     isApprovedExclusion,
     registeredMutatePaths,
     exists: (p) => existsSync(p),
   });
+}
+
+/** @param {string} summary */
+function publishSummary(summary) {
+  process.stdout.write(summary);
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+  }
+}
+
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (!args) {
+    console.error(
+      "Usage: node scripts/ci/mutation-on-diff.mjs [--select-only] <changed-files.txt>",
+    );
+    process.exit(2);
+  }
+  const sel = selectFromListFile(args.listFile);
+
+  if (args.selectOnly) {
+    const { run, summary } = selectOnlyOutcome(sel);
+    if (summary !== null) publishSummary(summary);
+    if (process.env.GITHUB_OUTPUT) {
+      appendFileSync(process.env.GITHUB_OUTPUT, `run=${run}\n`);
+    }
+    console.log(
+      `select-only: ${sel.eligible.length} eligible module(s), run=${run}`,
+    );
+    return;
+  }
 
   const outDir = "reports/mutation/on-diff";
   mkdirSync(outDir, { recursive: true });
@@ -384,11 +448,7 @@ function main() {
     rows.push(rowFromRun(file, run, reportText));
   }
 
-  const summary = renderSummary(rows, sel);
-  process.stdout.write(summary);
-  if (process.env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
-  }
+  publishSummary(renderSummary(rows, sel));
   process.exit(rows.some((r) => r.result === null) ? 1 : 0);
 }
 
