@@ -11,13 +11,42 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ChatListScreen from "@/screens/ChatListScreen";
 import ChatScreen from "@/screens/ChatScreen";
 import CoachProScreen from "@/screens/CoachProScreen";
+import FavouriteRecipesScreen from "@/screens/FavouriteRecipesScreen";
+import GroceryListsScreen from "@/screens/meal-plan/GroceryListsScreen";
+import GroceryListScreen from "@/screens/meal-plan/GroceryListScreen";
+import PantryScreen from "@/screens/meal-plan/PantryScreen";
+import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
+import CookbookDetailScreen from "@/screens/meal-plan/CookbookDetailScreen";
+import CookbookCreateScreen from "@/screens/meal-plan/CookbookCreateScreen";
+import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
+import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { useTheme } from "@/hooks/useTheme";
 import { coachInitialRoute } from "./coachInitialRoute";
+import type { MealPlanStackParamList } from "./MealPlanStackNavigator";
 
-export type ChatStackParamList = {
+// The Coach's links (CoachChat, hosted by CoachPro) open these Plan-stack
+// screens INSIDE the Coach stack, the same way the Profile library tiles do
+// (see ProfileStackNavigator): a root-modal copy can't reach their
+// Plan-stack-only detail routes, so tapping a list or cookbook was silently
+// dropped. Every route these screens navigate to must be registered here or
+// in an ancestor — enforced by
+// scripts/__tests__/navigation-route-reachability.test.ts.
+type LibraryRoutes = Pick<
+  MealPlanStackParamList,
+  | "GroceryLists"
+  | "GroceryList"
+  | "Pantry"
+  | "CookbookList"
+  | "CookbookDetail"
+  | "CookbookCreate"
+  | "FavouriteRecipes"
+  | "RecipeBrowser"
+>;
+
+export type ChatStackParamList = LibraryRoutes & {
   ChatList: undefined;
   Chat: { conversationId: number } | { initialMessage: string } | undefined;
   CoachPro: { selectedConversationId?: number } | undefined;
@@ -96,6 +125,76 @@ export default function ChatStackNavigator() {
         name="CoachPro"
         component={CoachProScreen}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="GroceryLists"
+        component={GroceryListsScreen}
+        options={{
+          headerTitle: () => (
+            <HeaderTitle title="Grocery Lists" showIcon={false} />
+          ),
+        }}
+      />
+      <Stack.Screen
+        name="GroceryList"
+        component={GroceryListScreen}
+        options={{
+          headerTitle: () => (
+            <HeaderTitle title="Grocery List" showIcon={false} />
+          ),
+        }}
+      />
+      <Stack.Screen
+        name="Pantry"
+        component={PantryScreen}
+        options={{
+          headerTitle: () => <HeaderTitle title="Pantry" showIcon={false} />,
+        }}
+      />
+      <Stack.Screen
+        name="CookbookList"
+        component={CookbookListScreen}
+        options={{
+          headerTitle: () => <HeaderTitle title="Cookbooks" showIcon={false} />,
+        }}
+      />
+      <Stack.Screen
+        name="CookbookDetail"
+        component={CookbookDetailScreen}
+        options={{
+          headerTitle: () => <HeaderTitle title="Cookbook" showIcon={false} />,
+        }}
+      />
+      <Stack.Screen
+        name="CookbookCreate"
+        component={CookbookCreateScreen}
+        options={({ route }) => ({
+          headerTitle: () => (
+            <HeaderTitle
+              title={
+                route.params?.cookbookId ? "Edit Cookbook" : "New Cookbook"
+              }
+              showIcon={false}
+            />
+          ),
+        })}
+      />
+      <Stack.Screen
+        name="FavouriteRecipes"
+        component={FavouriteRecipesScreen}
+        options={{
+          headerTitle: () => (
+            <HeaderTitle title="Favourites" showIcon={false} />
+          ),
+        }}
+      />
+      <Stack.Screen
+        name="RecipeBrowser"
+        component={RecipeBrowserScreen}
+        initialParams={{}}
+        options={{
+          headerTitle: () => <HeaderTitle title="Recipes" showIcon={false} />,
+        }}
       />
     </Stack.Navigator>
   );

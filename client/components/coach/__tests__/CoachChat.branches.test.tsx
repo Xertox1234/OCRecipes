@@ -839,31 +839,32 @@ describe("CoachChat — handleBlockAction", () => {
       ["RecipeChat", { conversationId: 2 }],
     ],
     ["Scan", undefined, ["Scan", undefined]],
-    ["RecipeBrowserModal", undefined, ["RecipeBrowserModal", undefined]],
+    ["RecipeBrowserModal", undefined, ["RecipeBrowser", undefined]],
     ["QuickLog", undefined, ["QuickLog"]],
     ["DailyNutritionDetail", undefined, ["DailyNutritionDetail"]],
     ["GoalSetup", undefined, ["GoalSetup"]],
-    ["GroceryListsModal", undefined, ["GroceryListsModal"]],
-    ["PantryModal", undefined, ["PantryModal"]],
-    ["CookbookListModal", undefined, ["CookbookListModal"]],
+    // The AI's "*Modal" screen names open the Coach-stack routes.
+    ["GroceryListsModal", undefined, ["GroceryLists"]],
+    ["PantryModal", undefined, ["Pantry"]],
+    ["CookbookListModal", undefined, ["CookbookList"]],
   ])("navigate action routes to %s", (screenName, params, expectedArgs) => {
     renderWithBlock({ type: "navigate", screen: screenName, params });
     fireEvent.click(screen.getByTestId("block-action"));
     expect(state.navigate).toHaveBeenCalledWith(...expectedArgs);
   });
 
-  it("add_meal_plan navigates to RecipeBrowserModal with parsed plan days", () => {
+  it("add_meal_plan navigates to RecipeBrowser with parsed plan days", () => {
     renderWithBlock({ type: "add_meal_plan", plan: [] });
     fireEvent.click(screen.getByTestId("block-action"));
-    expect(state.navigate).toHaveBeenCalledWith("RecipeBrowserModal", {
+    expect(state.navigate).toHaveBeenCalledWith("RecipeBrowser", {
       planDays: [],
     });
   });
 
-  it("add_grocery_list navigates to GroceryListsModal", () => {
+  it("add_grocery_list navigates to GroceryLists", () => {
     renderWithBlock({ type: "add_grocery_list", items: [] });
     fireEvent.click(screen.getByTestId("block-action"));
-    expect(state.navigate).toHaveBeenCalledWith("GroceryListsModal");
+    expect(state.navigate).toHaveBeenCalledWith("GroceryLists");
   });
 
   it("set_goal navigates to GoalSetup", () => {

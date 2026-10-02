@@ -40,16 +40,11 @@ import type {
   SubstitutionResult,
 } from "@shared/types/cook-session";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
-import type { MealPlanDay } from "@shared/types/meal-plan";
 import FrontLabelConfirmScreen from "@/screens/FrontLabelConfirmScreen";
 import BatchScanScreen from "@/screens/BatchScanScreen";
 import BatchSummaryScreen from "@/screens/BatchSummaryScreen";
 import CoachChatScreen from "@/screens/CoachChatScreen";
 import RecipeChatScreen from "@/screens/RecipeChatScreen";
-import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
-import GroceryListsScreen from "@/screens/meal-plan/GroceryListsScreen";
-import PantryScreen from "@/screens/meal-plan/PantryScreen";
-import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
 import AllConversationsScreen from "@/screens/AllConversationsScreen";
 import NotebookScreen from "@/screens/NotebookScreen";
 import NotebookEntryScreen from "@/screens/NotebookEntryScreen";
@@ -192,18 +187,6 @@ export type RootStackParamList = {
     remixSourceRecipeId?: number;
     remixSourceRecipeTitle?: string;
   };
-  // Profile hub modal screens (back returns to Profile, not Plan tab)
-  CookbookListModal: undefined;
-  GroceryListsModal: undefined;
-  PantryModal: undefined;
-  RecipeBrowserModal:
-    | {
-        mealType?: string;
-        plannedDate?: string;
-        searchQuery?: string;
-        planDays?: MealPlanDay[];
-      }
-    | undefined;
   AllConversations: undefined;
   NotebookScreen: undefined;
   NotebookEntry: { entryId?: number };
@@ -485,90 +468,6 @@ export default function RootStackNavigator() {
             }}
           />
 
-          {/* Profile hub modals — back returns to Profile, not Plan tab */}
-          <Stack.Screen
-            name="CookbookListModal"
-            component={CookbookListScreen}
-            options={({ navigation }) => ({
-              headerTitle: () => (
-                <HeaderTitle title="Cookbooks" showIcon={false} />
-              ),
-              presentation: "modal",
-              headerLeft: () => (
-                <Pressable
-                  onPress={() => navigation.goBack()}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                >
-                  <Feather name="x" size={24} color={theme.text} />
-                </Pressable>
-              ),
-            })}
-          />
-          <Stack.Screen
-            name="GroceryListsModal"
-            component={GroceryListsScreen}
-            layout={withSheetProvider}
-            options={({ navigation }) => ({
-              headerTitle: () => (
-                <HeaderTitle title="Grocery Lists" showIcon={false} />
-              ),
-              presentation: "modal",
-              headerLeft: () => (
-                <Pressable
-                  onPress={() => navigation.goBack()}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                >
-                  <Feather name="x" size={24} color={theme.text} />
-                </Pressable>
-              ),
-            })}
-          />
-          <Stack.Screen
-            name="PantryModal"
-            component={PantryScreen}
-            layout={withSheetProvider}
-            options={({ navigation }) => ({
-              headerTitle: () => (
-                <HeaderTitle title="Pantry" showIcon={false} />
-              ),
-              presentation: "modal",
-              headerLeft: () => (
-                <Pressable
-                  onPress={() => navigation.goBack()}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                >
-                  <Feather name="x" size={24} color={theme.text} />
-                </Pressable>
-              ),
-            })}
-          />
-          <Stack.Screen
-            name="RecipeBrowserModal"
-            component={RecipeBrowserScreen}
-            layout={withSheetProvider}
-            options={({ navigation }) => ({
-              headerTitle: () => (
-                <HeaderTitle title="Recipes" showIcon={false} />
-              ),
-              presentation: "modal",
-              headerLeft: () => (
-                <Pressable
-                  onPress={() => navigation.goBack()}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                >
-                  <Feather name="x" size={24} color={theme.text} />
-                </Pressable>
-              ),
-            })}
-          />
           <Stack.Screen
             name="AllConversations"
             component={AllConversationsScreen}

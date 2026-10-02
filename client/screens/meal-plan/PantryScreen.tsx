@@ -152,24 +152,13 @@ export default function PantryScreen() {
   // can't reach — hide its back/close control while the sheet is presented
   // so TalkBack/VoiceOver can't swipe past the sheet to it (see
   // todos/archive/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md).
-  // This screen is dual-mounted: `MealPlanStackNavigator` gives it the
-  // native default back button (route "Pantry", no static `headerLeft`),
-  // while `RootStackNavigator` mounts it as "PantryModal" with a custom
-  // close "X" `headerLeft`. `setOptions` merges by spreading onto prior
-  // override state (verified against @react-navigation/core's
-  // useNavigationCache.js), so restoring via `headerLeft: undefined` would
-  // PERMANENTLY replace that custom close button with the native default
-  // arrow, not fall back to it — the `headerLeft` override branch below
-  // re-renders the same Pressable instead. Gating the safer
-  // `headerBackVisible` toggle on the known MealPlanStack route name (rather
-  // than gating the `headerLeft` override on "PantryModal") means a
-  // renamed/unexpected RootStack route name still gets a real header
-  // override instead of silently falling through.
-  // This copy is not merely a duplicate of RootStackNavigator.tsx's inline
-  // `headerLeft` — once this effect runs (from mount, since `isOpen` starts
-  // false), it PERMANENTLY shadows the navigator's static definition for the
-  // route's lifetime, so a future edit to the navigator's close button won't
-  // reach this route; keep the two in sync by hand.
+  // Every navigator (Plan, Profile and Coach stacks) mounts this screen as
+  // "Pantry", with the native default back button, so the first branch is
+  // the one that runs. The `else` branch is a fallback for any other route
+  // name: it draws its own close "X" `headerLeft`, as the former root-modal
+  // copy "PantryModal" did (removed 2026-10-01). `setOptions` merges by
+  // spreading onto prior override state, so that branch re-renders the
+  // Pressable rather than restoring via `headerLeft: undefined`.
   // `headerLeft: () => null` alone is NOT sufficient to hide the native back
   // control on Android here: react-native-screens only computes
   // `hideBackButton` from `headerBackVisible`, and separately derives
@@ -186,7 +175,7 @@ export default function PantryScreen() {
   // default, common state) — a duplicate-control regression, not a fix.
   // `undefined` (not the key omitted) is safe here precisely because
   // `headerBackVisible` has no static value on this route for a dynamic
-  // `undefined` to permanently shadow (unlike `headerLeft` above) — both
+  // `undefined` to permanently shadow — both
   // native reads of it test `=== false` / truthiness, so `undefined`
   // reproduces "never set" exactly.
   useEffect(() => {

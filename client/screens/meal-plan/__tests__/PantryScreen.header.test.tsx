@@ -3,11 +3,12 @@
 // Regression guard for the header/focus-trap contract added in PR #981
 // (todos/archive/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md).
 //
-// PantryScreen carries the SAME dual-mount shape as GroceryListsScreen, with
-// the same three-state requirement, and had no test file at all before this:
+// PantryScreen carries the SAME two-branch header effect as
+// GroceryListsScreen, with the same three-state requirement:
 //
-//   MealPlanStack route "Pantry"        -> plain boolean `!isOpen`
-//   RootStack modal route "PantryModal" -> three-state `isOpen ? false : undefined`
+//   route "Pantry" (every stack today) -> plain boolean `!isOpen`
+//   any other route name (fallback; was the root modal "PantryModal",
+//   removed 2026-10-01)               -> three-state `isOpen ? false : undefined`
 //
 // See GroceryListsScreen.header.test.tsx for why `undefined` (not `false`, and
 // not an omitted key) is the required closed-state value on the modal route:

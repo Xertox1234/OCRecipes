@@ -142,9 +142,11 @@ the stack case because `reset` replaces the stack wholesale.
   the navigator files and each registered screen's own source, and requires every literal
   `navigate/push/replace("X")` to name a route registered in that screen's navigator or an
   ancestor. It checks each registration separately, so a screen registered in two navigators is
-  checked in both. The unresolved set must equal a short `KNOWN_UNRESOLVED` list (a ratchet both
-  ways). Scope limit: it scans the screen's own file only, not the child components or hooks it
-  renders.
+  checked in both. The unresolved set must be empty (its `KNOWN_UNRESOLVED` allowance was
+  emptied when the Coach fix below landed). Scope limit: it scans the screen's own file only, not
+  the child components or hooks it renders, so the two library launchers (`library-config.ts`
+  for the Profile tiles, `CoachChat.tsx` for the Coach's links) are checked by name, resolving
+  each target from the launcher's own stack.
 
 ## Second instance: dual-registered root-modal copies (2026-10-01)
 
@@ -171,9 +173,15 @@ Two gotchas from that fix:
 The same copies had a second, separate bug. A `useConfirmationModal` sheet opened from a screen
 presented with `presentation: "modal"` rendered BEHIND the native modal, because the only
 `BottomSheetModalProvider` is at `App.tsx`'s root. So "delete" did nothing visible. Moving the
-Profile tiles into the Profile stack sidesteps it for Profile only. The Coach still opens the
-root-modal copies (`CoachChat.tsx`), and they keep both bugs; those are the `KNOWN_UNRESOLVED`
-edges.
+Profile tiles into the Profile stack sidesteps it for Profile only.
+
+The Coach's links (`CoachChat.tsx`, hosted only by `CoachPro` in the Coach tab) still opened the
+root-modal copies. That was fixed the same way: the library screens are registered in the Coach
+stack too, and the four root copies were deleted, since nothing else opened them. One gotcha:
+`"GroceryListsModal"` and the other `*Modal` names are also the AI's screen names
+(`NAVIGABLE_SCREENS` in `shared/schemas/coach-blocks.ts`, emitted by `server/services/coach-tools.ts`,
+and stored in past chat messages). Keep them there; `CoachChat`'s switch translates each one to the
+Coach-stack route name.
 
 ## Related Files
 

@@ -533,9 +533,8 @@ export default function RecipeBrowserScreen() {
   // Tell screen-reader users the local search results are loading. Delayed
   // 500ms to match the modal-safe pattern (docs/solutions/conventions/on-open-
   // announce-must-delay-past-modal-present-focus-shift-2026-06-25.md) — this
-  // screen is pushed plainly under "RecipeBrowser" but presented as a modal
-  // under "RecipeBrowserModal", so the delay is required on one route and
-  // harmless on the other.
+  // screen is only pushed today (its root-modal copy was removed 2026-10-01),
+  // where the delay is harmless.
   useDelayedLoadingAnnouncement(isLoading);
 
   const onPressOnlineCta = useCallback(() => {
@@ -747,12 +746,12 @@ export default function RecipeBrowserScreen() {
           <Pressable
             onPress={() =>
               // Root-qualified: this screen is also registered in the Profile
-              // stack and as the root "RecipeBrowserModal", where a bare
-              // "RecipeEntryHub" (or even "MealPlanTab") resolves nowhere.
-              // "Main" is visible from all three; `pop: true` returns to the
-              // existing Main instead of pushing a second one (see
-              // AllConversationsNavigationProp in types/navigation.ts).
-              // Adding a recipe from Profile therefore switches to Plan;
+              // and Coach stacks, where a bare "RecipeEntryHub" resolves
+              // nowhere. "Main" is visible from all three; `pop: true`
+              // returns to the existing Main instead of pushing a second one
+              // (see AllConversationsNavigationProp in types/navigation.ts).
+              // Adding a recipe from Profile or the Coach therefore switches
+              // to Plan;
               // `initial: false` keeps Plan home underneath when the Plan
               // stack wasn't mounted yet (otherwise Add Recipe would be its
               // only screen, with no way back to Plan home).

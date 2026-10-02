@@ -3,13 +3,14 @@
 // Regression guard for the header/focus-trap contract added in PR #981
 // (todos/archive/P2-2026-09-14-confirmation-modal-navigator-header-escapes-talkback-trap.md).
 //
-// GroceryListsScreen is mounted on TWO stacks, and the two branches need
+// GroceryListsScreen's header effect has two branches, and they need
 // DIFFERENT `headerBackVisible` values:
 //
-//   MealPlanStack route "GroceryLists"        -> plain boolean `!isOpen`
-//   RootStack modal route "GroceryListsModal" -> three-state `isOpen ? false : undefined`
+//   route "GroceryLists" (every stack today) -> plain boolean `!isOpen`
+//   any other route name (fallback; was the root modal "GroceryListsModal",
+//   removed 2026-10-01)                     -> three-state `isOpen ? false : undefined`
 //
-// The modal branch is the one with a custom close-"X" `headerLeft`, and it is
+// The fallback branch is the one with a custom close-"X" `headerLeft`, and it is
 // why the value must be THREE-state. Setting it to `true` in the closed state
 // (what a plain `!isOpen` produces) makes react-native-screens skip its
 // native-icon-nulling branch and render the system back arrow ALONGSIDE the

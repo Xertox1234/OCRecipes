@@ -68,6 +68,8 @@ On the old tree the test failed for exactly 7 of 29 native-modal screens:
 - PantryModal
 - RecipeBrowserModal
 
+The last three were Coach-only root copies, deleted later the same day when the Coach's links moved into the Coach stack (see `bare-navigate-cannot-descend-into-an-unrelated-nested-navigator-2026-09-29.md`). That left 4 of 25. No root screen now sets `presentation` after JSX, so the parser's control for that shape runs on an inline sample.
+
 ## Scope notes
 
 - Android native-stack `modal` is not a separate window, so this is iOS-visible. The wrapper is harmless there.
