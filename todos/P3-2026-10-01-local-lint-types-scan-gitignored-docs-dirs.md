@@ -1,9 +1,9 @@
 ---
 title: "Local check:types and lint go red from gitignored docs/ scratch dirs (tsconfig/eslint scan them), plus 3 unused-import warnings on main"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-10-01
-updated: 2026-10-01
+updated: 2026-10-02
 assignee:
 labels: [deferred, tooling, testing]
 github_issue:

@@ -10,12 +10,21 @@ module.exports = defineConfig([
   expoConfig,
   eslintPluginPrettierRecommended,
   {
+    // Global ignores (this object has no other key). ESLint never reads .gitignore, so the
+    // gitignored, local-only AI-workflow scratch dirs under docs/ must be listed here, or a
+    // stray .ts/.tsx/.cjs left in one fails `npm run lint`. Keep in sync with the `exclude`
+    // lists in tsconfig.json / tsconfig.check.json: a .ts file that tsconfig excludes but
+    // ESLint still reaches fails the type-aware block with a "not found by the project
+    // service" parse error rather than being skipped.
     ignores: [
       "dist/*",
       "server_dist/*",
       ".claude/worktrees/**",
       ".worktrees/**",
       ".stryker-tmp/**",
+      "docs/audits/**",
+      "docs/superpowers/**",
+      "docs/research/**",
     ],
   },
   {

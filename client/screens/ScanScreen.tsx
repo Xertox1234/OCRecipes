@@ -318,6 +318,7 @@ export default function ScanScreen() {
       );
     }, 700);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- depends on haptics.notification, not haptics: see the note in the array below
   }, [
     scanPhase,
     navigation,

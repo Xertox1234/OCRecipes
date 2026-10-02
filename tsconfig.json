@@ -16,5 +16,16 @@
     "allowImportingTsExtensions": true
   },
   "include": ["**/*.ts", "**/*.tsx", "**/*.mts"],
-  "exclude": ["node_modules", "build", "dist"]
+  // The three docs/ dirs are gitignored, local-only AI-workflow scratch (.gitignore:
+  // "AI-workflow history"). A stray .ts/.tsx left there would otherwise fail
+  // `npm run check:types` and the push gate's whole-program tsc. Keep this list in sync
+  // with the `ignores` in eslint.config.js and the `exclude` in tsconfig.check.json.
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "docs/audits",
+    "docs/superpowers",
+    "docs/research"
+  ]
 }
