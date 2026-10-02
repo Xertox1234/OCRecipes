@@ -65,6 +65,28 @@ vi.mock("@react-navigation/native-stack", () => ({
 vi.mock("@/screens/ChatListScreen", () => ({ default: () => null }));
 vi.mock("@/screens/ChatScreen", () => ({ default: () => null }));
 vi.mock("@/screens/CoachProScreen", () => ({ default: () => null }));
+// Library screens the Coach's links open inside this stack.
+vi.mock("@/screens/FavouriteRecipesScreen", () => ({ default: () => null }));
+vi.mock("@/screens/meal-plan/GroceryListsScreen", () => ({
+  default: () => null,
+}));
+vi.mock("@/screens/meal-plan/GroceryListScreen", () => ({
+  default: () => null,
+}));
+vi.mock("@/screens/meal-plan/PantryScreen", () => ({ default: () => null }));
+vi.mock("@/screens/meal-plan/CookbookListScreen", () => ({
+  default: () => null,
+}));
+vi.mock("@/screens/meal-plan/CookbookDetailScreen", () => ({
+  default: () => null,
+}));
+vi.mock("@/screens/meal-plan/CookbookCreateScreen", () => ({
+  default: () => null,
+}));
+vi.mock("@/screens/meal-plan/RecipeBrowserScreen", () => ({
+  default: () => null,
+}));
+vi.mock("@/components/HeaderTitle", () => ({ HeaderTitle: () => null }));
 
 vi.mock("@/hooks/useScreenOptions", () => ({
   useScreenOptions: () => ({}),

@@ -12,7 +12,8 @@ import path from "node:path";
 // route visible from where that screen is registered.
 //
 // Scope limit: only the screen's own file is scanned, not the child
-// components or hooks it renders (e.g. CoachChat's navigate calls).
+// components or hooks it renders. The two library launchers (the Profile
+// tiles and CoachChat's links) are checked by name below.
 
 const ROOT = path.resolve(__dirname, "../..");
 const NAV_DIR = "client/navigation";
@@ -27,20 +28,6 @@ const NAVIGATOR_PARENT: Record<string, string | null> = {
   ChatStackNavigator: "MainTabNavigator",
   ProfileStackNavigator: "MainTabNavigator",
 };
-
-/**
- * Known-unresolved edges, kept equal to what the tree produces (a ratchet in
- * both directions). These are the root-modal copies the Coach still opens
- * (CoachChat → "*Modal"): their inner links target Plan-stack-only routes.
- * Shrink this list when those paths are fixed; never grow it to make a new
- * dropped navigation pass.
- */
-const KNOWN_UNRESOLVED = [
-  "RootStackNavigator:CookbookListModal -> CookbookCreate",
-  "RootStackNavigator:CookbookListModal -> CookbookDetail",
-  "RootStackNavigator:CookbookListModal -> FavouriteRecipes",
-  "RootStackNavigator:GroceryListsModal -> GroceryList",
-];
 
 interface Registration {
   navigator: string;
@@ -103,6 +90,24 @@ function unresolvedEdges(reg: Registration): string[] {
     .map((t) => `${reg.navigator}:${reg.name} -> ${t}`);
 }
 
+/**
+ * Problems for every route a launcher file opens from `host`: the route must
+ * resolve the way React Navigation does (host first, then its ancestors), and
+ * the screen it lands on must reach all of its own links.
+ */
+function launcherProblems(file: string, host: string): string[] {
+  const problems: string[] = [];
+  for (const target of new Set(navigationTargets(file))) {
+    let reg: Registration | undefined;
+    for (let n: string | null = host; n && !reg; n = NAVIGATOR_PARENT[n]) {
+      reg = registrations.find((r) => r.navigator === n && r.name === target);
+    }
+    if (!reg) problems.push(`${file} -> ${target}: not reachable from ${host}`);
+    else problems.push(...unresolvedEdges(reg));
+  }
+  return problems;
+}
+
 describe("navigation route reachability", () => {
   it("parses enough of the app to mean something (denominator + known-good control)", () => {
     const screens = registrations.filter(
@@ -124,32 +129,27 @@ describe("navigation route reachability", () => {
   });
 
   it("every screen a Profile library tile opens can reach all of its own links", () => {
-    const tiles = navigationTargets(
-      "client/components/profile/library-config.ts",
-    );
-    expect(tiles.length).toBe(7);
-    const problems: string[] = [];
-    for (const tile of tiles) {
-      // Resolve the tile the way React Navigation does: nearest navigator
-      // first, walking up from the Profile stack.
-      let reg: Registration | undefined;
-      for (
-        let n: string | null = "ProfileStackNavigator";
-        n && !reg;
-        n = NAVIGATOR_PARENT[n]
-      ) {
-        reg = registrations.find((r) => r.navigator === n && r.name === tile);
-      }
-      if (!reg) problems.push(`tile -> ${tile}: not reachable from Profile`);
-      else problems.push(...unresolvedEdges(reg));
-    }
-    expect(problems).toEqual([]);
+    const file = "client/components/profile/library-config.ts";
+    expect(navigationTargets(file).length).toBe(7);
+    expect(launcherProblems(file, "ProfileStackNavigator")).toEqual([]);
   });
 
-  it("app-wide, the only unresolved links are the known Coach-only modal copies", () => {
+  it("every screen the Coach's links open can reach all of its own links", () => {
+    // CoachChat renders only inside CoachPro (Coach tab stack). Its "*Modal"
+    // switch cases are the AI's screen names, not route names — they used to
+    // open root-modal copies whose list/cookbook taps were dropped.
+    const file = "client/components/coach/CoachChat.tsx";
+    // Denominator: all 11 distinct switch targets, incl. root routes
+    // (NutritionDetail) that resolve only through the ancestor walk.
+    expect(new Set(navigationTargets(file)).size).toBe(11);
+    expect(navigationTargets(file)).toContain("NutritionDetail");
+    expect(launcherProblems(file, "ChatStackNavigator")).toEqual([]);
+  });
+
+  it("app-wide, no registered screen links to a route it cannot reach", () => {
     const unresolved = [
       ...new Set(registrations.flatMap(unresolvedEdges)),
     ].sort();
-    expect(unresolved).toEqual([...KNOWN_UNRESOLVED].sort());
+    expect(unresolved).toEqual([]);
   });
 });

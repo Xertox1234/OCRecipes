@@ -81,6 +81,7 @@ import { apiRequest } from "@/lib/query-client";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
+  ChatStackParamList,
   CoachChatNavigationProp,
   RootStackParamList,
 } from "@/types/navigation";
@@ -615,10 +616,14 @@ export default function CoachChat({
           case "Scan":
             navigation.navigate("Scan", params as RootStackParamList["Scan"]);
             break;
+          // The "*Modal" cases are the AI's screen names (NAVIGABLE_SCREENS,
+          // also stored in past messages), not route names: they open the
+          // Coach-stack copies, whose list/cookbook links resolve (a root-
+          // modal copy dropped them).
           case "RecipeBrowserModal":
             navigation.navigate(
-              "RecipeBrowserModal",
-              params as RootStackParamList["RecipeBrowserModal"],
+              "RecipeBrowser",
+              params as ChatStackParamList["RecipeBrowser"],
             );
             break;
           case "QuickLog":
@@ -631,21 +636,21 @@ export default function CoachChat({
             navigation.navigate("GoalSetup");
             break;
           case "GroceryListsModal":
-            navigation.navigate("GroceryListsModal");
+            navigation.navigate("GroceryLists");
             break;
           case "PantryModal":
-            navigation.navigate("PantryModal");
+            navigation.navigate("Pantry");
             break;
           case "CookbookListModal":
-            navigation.navigate("CookbookListModal");
+            navigation.navigate("CookbookList");
             break;
         }
       } else if (action.type === "add_meal_plan") {
         // Pass the AI-generated meal plan data through to the recipe browser
         const planDays = parsePlanDays(action.plan);
-        navigation.navigate("RecipeBrowserModal", { planDays });
+        navigation.navigate("RecipeBrowser", { planDays });
       } else if (action.type === "add_grocery_list") {
-        navigation.navigate("GroceryListsModal");
+        navigation.navigate("GroceryLists");
       } else if (action.type === "set_goal") {
         navigation.navigate("GoalSetup");
       }

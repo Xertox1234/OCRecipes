@@ -65,7 +65,8 @@ const navigateActionSchema = z.object({
 // instead widened in (kept, not stripped) because real callers rely on them.
 // RecipeBrowserModal below is `.strict()` (unknown keys REJECTED, not
 // stripped) and must stay field-identical to
-// RootStackParamList["RecipeBrowserModal"] — a hand-sync miss there fails
+// MealPlanStackParamList["RecipeBrowser"], the route CoachChat opens for
+// that screen name — a hand-sync miss there fails
 // closed (block dropped) instead of silently degrading.
 const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   NutritionDetail: z.object({ barcode: z.string() }),

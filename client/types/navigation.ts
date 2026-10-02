@@ -20,8 +20,9 @@ export type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
 
 /**
  * 3-level composite: ChatStack → MainTab → RootStack.
- * Allows CoachChat to navigate to root-level modal screens
- * (FeaturedRecipeDetail, RecipeBrowserModal, etc.).
+ * Allows CoachChat to navigate to its own stack's library screens
+ * (GroceryLists, RecipeBrowser, etc.) and to root-level screens
+ * (FeaturedRecipeDetail, NutritionDetail, etc.).
  */
 export type CoachChatNavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<ChatStackParamList, "CoachPro">,
