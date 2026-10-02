@@ -1,9 +1,9 @@
 ---
 title: "Mutation-on-diff: skip npm ci when no changed module is eligible"
-status: in-progress
+status: done
 priority: low
 created: 2026-10-01
-updated: 2026-10-01
+updated: 2026-10-02
 assignee:
 labels: [deferred, ci]
 github_issue:
@@ -46,3 +46,19 @@ The F0 replay run took 42 s end to end, with npm ci included.
 - Files: `scripts/ci/mutation-on-diff.mjs`,
   `scripts/__tests__/mutation-on-diff.test.ts`,
   `.github/workflows/mutation-on-diff.yml`.
+
+## Updates
+
+### 2026-10-02
+
+- Implemented. `scripts/ci/mutation-on-diff.mjs` gained `--select-only`;
+  the workflow selects before `setup-node` and skips `setup-node`, `npm ci`,
+  the run and the upload on an explicit `run=false` (`!= 'false'`, so a
+  missing output still installs and runs).
+- The new tests are in `scripts/__tests__/mutation-on-diff-select-only.test.ts`,
+  a new file, so the existing 491-line test file does not cross the
+  600-line audit threshold.
+- Acceptance criterion 2 (an eligible module still installs and runs) is
+  covered by the CLI test and the `!= 'false'` fallback; its first run on a
+  hosted runner is the next PR that changes a module under an eligible root.
+  This PR changes none, so its own run is the no-eligible case.
