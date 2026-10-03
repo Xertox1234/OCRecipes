@@ -35,12 +35,31 @@ import { removeFromIndex } from "../lib/search-index";
 // USER CRUD
 // ============================================================================
 
-// Exclude password from default queries — defense-in-depth against accidental leaks.
-// Only getUserForAuth / getUserByUsernameForAuth return the password hash.
-const { password: _password, ...safeUserColumns } = getTableColumns(users);
+// Exclude password AND the password-reset columns from default queries —
+// defense-in-depth against accidental leaks. Only the *ForAuth getters return
+// the password hash. The REAL guard for HTTP responses is response shaping
+// (serializeUser / explicit picks in routes); full-row paths (createUser,
+// updateUser .returning(), *ForAuth) still carry these columns — never strip
+// them here instead of shaping the response.
+const {
+  password: _password,
+  resetCodeHash: _resetCodeHash,
+  resetCodeExpiresAt: _resetCodeExpiresAt,
+  resetCodeAttempts: _resetCodeAttempts,
+  resetIssueCount: _resetIssueCount,
+  resetIssueWindowStart: _resetIssueWindowStart,
+  ...safeUserColumns
+} = getTableColumns(users);
 
-/** User row without password hash */
-export type SafeUser = Omit<User, "password">;
+type ResetColumnKey =
+  | "resetCodeHash"
+  | "resetCodeExpiresAt"
+  | "resetCodeAttempts"
+  | "resetIssueCount"
+  | "resetIssueWindowStart";
+
+/** User row without password hash or password-reset state */
+export type SafeUser = Omit<User, "password" | ResetColumnKey>;
 
 export async function getUser(id: string): Promise<SafeUser | undefined> {
   const [user] = await db

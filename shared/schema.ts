@@ -79,6 +79,25 @@ export const users = pgTable(
       .default("metric")
       .notNull(),
     tokenVersion: integer("token_version").default(0).notNull(),
+    /**
+     * Password reset (emailed 6-digit code). HMAC-SHA256 hex of `userId:code`
+     * keyed from JWT_SECRET (server/lib/password-reset-code.ts); NULL = no live
+     * code. One live code per account: issuing overwrites, a reset or a
+     * committed email change clears. NEVER returned by SafeUser.
+     */
+    resetCodeHash: text("reset_code_hash"),
+    /** Written as now() + 15 min IN SQL — compared against now() in SQL only. */
+    resetCodeExpiresAt: timestamp("reset_code_expires_at", {
+      withTimezone: true,
+    }),
+    /** Guesses (failed + in-flight) against the current code; cap 5. */
+    resetCodeAttempts: integer("reset_code_attempts").default(0).notNull(),
+    /** Codes issued in the current 24 h window — the durable issuance cap. */
+    resetIssueCount: integer("reset_issue_count").default(0).notNull(),
+    /** Start of that window; NULL = no window open. */
+    resetIssueWindowStart: timestamp("reset_issue_window_start", {
+      withTimezone: true,
+    }),
     subscriptionTier: text("subscription_tier").default("free"),
     subscriptionExpiresAt: timestamp("subscription_expires_at", {
       withTimezone: true,
