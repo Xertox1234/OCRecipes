@@ -266,9 +266,19 @@ describe("Route Helpers", () => {
       expect(result.success).toBe(false);
     });
 
-    it("rejects username longer than 30 chars", () => {
+    // The login identifier is a username OR an email (spec 2026-10-03 §4.3),
+    // so its ceiling is the max email length, not registerSchema's 30.
+    it("accepts an email-length identifier longer than 30 chars", () => {
       const result = loginSchema.safeParse({
-        username: "a".repeat(31),
+        username: `${"a".repeat(40)}@example.com`,
+        password: "password",
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects an identifier longer than 254 chars", () => {
+      const result = loginSchema.safeParse({
+        username: "a".repeat(255),
         password: "password",
       });
       expect(result.success).toBe(false);
