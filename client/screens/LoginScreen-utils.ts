@@ -37,6 +37,27 @@ const USERNAME_MIN = 3;
 const USERNAME_MAX = 30;
 const PASSWORD_MIN = 8;
 
+/**
+ * New-password rules — the client mirror of server `newPasswordSchema`
+ * (server/routes/_schemas.ts), shared by register and the reset screen.
+ * KEEP IN SYNC (manual), per the client-mirror convention.
+ */
+export function validateNewPassword(
+  password: string,
+  confirmPassword: string,
+): string | null {
+  if (password.length < PASSWORD_MIN) {
+    return `Password must be at least ${PASSWORD_MIN} characters`;
+  }
+  if (!PASSWORD_COMPLEXITY.test(password)) {
+    return "Password must contain at least one letter and one number";
+  }
+  if (password !== confirmPassword) {
+    return "Passwords do not match";
+  }
+  return null;
+}
+
 export interface AuthFormInput {
   mode: AuthMode;
   username: string;
@@ -78,15 +99,11 @@ export function validateAuthForm(input: AuthFormInput): string | null {
   if (!EMAIL_PATTERN.test(email)) {
     return "Please enter a valid email address";
   }
-  if (input.password.length < PASSWORD_MIN) {
-    return `Password must be at least ${PASSWORD_MIN} characters`;
-  }
-  if (!PASSWORD_COMPLEXITY.test(input.password)) {
-    return "Password must contain at least one letter and one number";
-  }
-  if (input.password !== input.confirmPassword) {
-    return "Passwords do not match";
-  }
+  const passwordError = validateNewPassword(
+    input.password,
+    input.confirmPassword,
+  );
+  if (passwordError) return passwordError;
   if (!input.ageConfirmed) {
     return "You must confirm you are 13 years of age or older";
   }
