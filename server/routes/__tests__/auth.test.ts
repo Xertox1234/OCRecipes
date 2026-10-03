@@ -516,7 +516,7 @@ describe("Auth Routes", () => {
       vi.mocked(emailVerificationEnabled).mockReturnValue(true);
       vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
       vi.mocked(storage.getUserByEmail).mockResolvedValue(
-        createMockUser({ id: "old2", emailVerified: true }),
+        createMockUser({ id: "old2", emailVerified: true, username: "owner2" }),
       );
 
       const res = await request(app).post("/api/auth/register").send({
@@ -529,7 +529,10 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.status).toBe("verification_pending");
       expect(storage.createUser).not.toHaveBeenCalled();
-      expect(sendSignupAttemptNotice).toHaveBeenCalled();
+      expect(sendSignupAttemptNotice).toHaveBeenCalledWith(
+        "taken@x.com",
+        "owner2",
+      );
       expect(sendVerificationEmail).not.toHaveBeenCalled();
     });
 

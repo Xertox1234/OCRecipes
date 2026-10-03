@@ -208,7 +208,7 @@ export function register(app: Express): void {
           } else {
             fireAndForget(
               "signup-attempt-notice",
-              sendSignupAttemptNotice(email),
+              sendSignupAttemptNotice(email, existingEmail.username),
             );
           }
           return sendVerificationPending(res);

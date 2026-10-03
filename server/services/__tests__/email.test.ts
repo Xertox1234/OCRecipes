@@ -265,4 +265,74 @@ describe("email service", () => {
       });
     });
   });
+
+  describe("account-security bucket", () => {
+    it("sends a reset code with the code in the body and a 15-minute note", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendPasswordResetCode } = await import("../email");
+      await sendPasswordResetCode("r@x.com", "042917");
+      const arg = mockSend.mock.calls[0][0];
+      expect(arg.to).toBe("r@x.com");
+      expect(arg.subject).toBe("Your OCRecipes password reset code");
+      expect(arg.html).toContain("042917");
+      expect(arg.html).toContain("15 minutes");
+    });
+
+    it("password-changed notice includes the escaped username and support address", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendPasswordChangedNotice } = await import("../email");
+      await sendPasswordChangedNotice("r@x.com", "<b>alice</b>");
+      const arg = mockSend.mock.calls[0][0];
+      expect(arg.subject).toBe("Your OCRecipes password was changed");
+      expect(arg.html).toContain("&lt;b&gt;alice&lt;/b&gt;");
+      expect(arg.html).toContain("support@ocrecipes.app");
+    });
+
+    it("still sends a reset code and a notice after the general bucket is exhausted", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const {
+        sendSignupAttemptNotice,
+        sendPasswordResetCode,
+        sendPasswordChangedNotice,
+      } = await import("../email");
+      for (let i = 0; i < 7; i++)
+        await sendSignupAttemptNotice("v@x.com", "victim");
+      expect(mockSend).toHaveBeenCalledTimes(5);
+      mockSend.mockClear();
+      await sendPasswordResetCode("v@x.com", "123456");
+      await sendPasswordChangedNotice("v@x.com", "victim");
+      expect(mockSend).toHaveBeenCalledTimes(2);
+    });
+
+    it("caps the account-security bucket at 10 per hour per recipient", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      const { sendPasswordResetCode } = await import("../email");
+      for (let i = 0; i < 12; i++)
+        await sendPasswordResetCode("s@x.com", "123456");
+      expect(mockSend).toHaveBeenCalledTimes(10);
+    });
+
+    it("never logs the code when a send fails", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      mockSend.mockResolvedValue({
+        data: null,
+        error: { name: "validation_error", message: "bad", statusCode: 422 },
+      });
+      const { sendPasswordResetCode } = await import("../email");
+      await sendPasswordResetCode("f@x.com", "918273");
+      expect(mockLoggerError).toHaveBeenCalled();
+      expect(JSON.stringify(mockLoggerError.mock.calls)).not.toContain(
+        "918273",
+      );
+    });
+  });
+
+  it("signup-attempt notice includes the username and points at Forgot password", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    const { sendSignupAttemptNotice } = await import("../email");
+    await sendSignupAttemptNotice("n@x.com", "alice_99");
+    const arg = mockSend.mock.calls[0][0];
+    expect(arg.html).toContain("alice_99");
+    expect(arg.html).toContain("Forgot password?");
+  });
 });
