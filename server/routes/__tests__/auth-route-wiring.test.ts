@@ -272,6 +272,14 @@ describe("every protected route is registered behind requireAuth (static guard)"
     ],
     ["POST /api/auth/resend-verification", "pre-auth email resend"],
     [
+      "POST /api/auth/forgot-password",
+      "pre-auth reset request — caller has no token; neutral response",
+    ],
+    [
+      "POST /api/auth/reset-password",
+      "pre-auth reset — emailed code carried in body",
+    ],
+    [
       "POST /webhooks/apple/notifications",
       "Apple store webhook — JWS-verified",
     ],
