@@ -18,11 +18,25 @@ export const nullableNumericStringField = z
   .nullable()
   .transform((v) => v?.toString() ?? null);
 
-// Login validation schema - lighter than registration (no format rules, just bounds)
+// Login validation schema - lighter than registration (no format rules, just
+// bounds). `username` holds EITHER a username or an email (the route branches
+// on "@"; usernames are ^[a-zA-Z0-9_]+$ so the two never collide). The field
+// name is kept so installed app versions keep working. 254 = max email length.
 export const loginSchema = z.object({
-  username: z.string().min(1, "Username is required").max(30),
+  username: z.string().trim().min(1, "Username is required").max(254),
   password: z.string().min(1, "Password is required").max(200),
 });
+
+// The one server-side password rule — register AND reset. The client keeps a
+// hand-synced mirror in client/screens/LoginScreen-utils.ts (validateNewPassword).
+export const newPasswordSchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters")
+  .max(200)
+  .regex(
+    /(?=.*[a-zA-Z])(?=.*\d)/,
+    "Password must contain at least one letter and one number",
+  );
 
 // Registration validation schema with username format and password strength
 export const registerSchema = z.object({
@@ -34,14 +48,7 @@ export const registerSchema = z.object({
       /^[a-zA-Z0-9_]+$/,
       "Username can only contain letters, numbers, and underscores",
     ),
-  password: z
-    .string()
-    .min(8, "Password must be at least 8 characters")
-    .max(200)
-    .regex(
-      /(?=.*[a-zA-Z])(?=.*\d)/,
-      "Password must contain at least one letter and one number",
-    ),
+  password: newPasswordSchema,
   email: z
     .string()
     .trim()
@@ -55,6 +62,23 @@ export const registerSchema = z.object({
       message: "You must confirm you are 13 years of age or older",
     }),
   }),
+});
+
+// Normalized identically to registerSchema.email (trim + lowercase) so the
+// per-email limiter key, the lookup, and the stored address agree.
+const resetEmail = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email("Please enter a valid email address")
+  .max(254);
+
+export const forgotPasswordSchema = z.object({ email: resetEmail });
+
+export const resetPasswordSchema = z.object({
+  email: resetEmail,
+  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code"),
+  newPassword: newPasswordSchema,
 });
 
 // Email verification: the token is a stateless JWT (URL-delivered, can be long).

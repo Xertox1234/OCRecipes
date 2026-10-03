@@ -12,6 +12,8 @@ export const ErrorCode = {
   LIMIT_REACHED: "LIMIT_REACHED",
   UNAUTHORIZED: "UNAUTHORIZED",
   EMAIL_NOT_VERIFIED: "EMAIL_NOT_VERIFIED",
+  /** Uniform reset-password failure: wrong, expired, used-up, or no code — never says which. */
+  INVALID_RESET_CODE: "INVALID_RESET_CODE",
   CONFLICT: "CONFLICT",
   INTERNAL_ERROR: "INTERNAL_ERROR",
   API_KEY_INVALID: "API_KEY_INVALID",
