@@ -220,3 +220,61 @@ describe("aggregateResults — lowestScoringCases weighted sort", () => {
     expect(result.lowestScoringCases[1].dimension).toBe("unknown_dim");
   });
 });
+
+describe("aggregateResults — dimension intervals resample cases, not samples", () => {
+  const config: SuiteConfig = {
+    suiteName: "test",
+    rubricText: "",
+    dimensions: ["safety"],
+    dimensionWeights: { safety: 1 },
+    generateResponse: async () => ({ text: "", latencyMs: 0, wordCount: 0 }),
+    formatInput: () => "",
+  };
+  const scores: Record<string, number> = { a: 6, b: 9, c: 7, d: 10, e: 5 };
+  const safety = (score: number): RubricScore[] => [
+    { dimension: "safety", score, reasoning: "" },
+  ];
+
+  it("gives the same interval for duplicated samples as for one sample per case", () => {
+    const single = Object.entries(scores).map(([id, s]) =>
+      mockCase(id, safety(s)),
+    );
+    const doubled = Object.entries(scores).flatMap(([id, s]) => [
+      mockCase(`${id}#1`, safety(s)),
+      mockCase(`${id}#2`, safety(s)),
+    ]);
+
+    const one = aggregateResults(single, config, 1);
+    const two = aggregateResults(doubled, config, 2);
+
+    expect(two.dimensionConfidenceIntervals.safety).toEqual(
+      one.dimensionConfidenceIntervals.safety,
+    );
+    expect(two.dimensionConfidenceIntervals.safety.sampleSize).toBe(5);
+  });
+
+  it("averages a case's samples before resampling", () => {
+    const cases = [
+      mockCase("a#1", safety(4)),
+      mockCase("a#2", safety(8)),
+      mockCase("b#1", safety(10)),
+      mockCase("b#2", safety(10)),
+    ];
+    const result = aggregateResults(cases, config, 2);
+    const ci = result.dimensionConfidenceIntervals.safety;
+    // Case means are 6 and 10, so every resample's mean lies in [6, 10].
+    expect(ci.sampleSize).toBe(2);
+    expect(ci.mean).toBe(8);
+    expect(ci.lower).toBeGreaterThanOrEqual(6);
+    expect(ci.upper).toBeLessThanOrEqual(10);
+  });
+
+  it("does not strip a '#n' that is part of the id when there is one sample per case", () => {
+    const cases = [
+      mockCase("case#1", safety(4)),
+      mockCase("case#2", safety(10)),
+    ];
+    const result = aggregateResults(cases, config, 1);
+    expect(result.dimensionConfidenceIntervals.safety.sampleSize).toBe(2);
+  });
+});

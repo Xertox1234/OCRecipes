@@ -222,9 +222,11 @@ export interface EvalCaseResult {
 
 /**
  * 95% bootstrap confidence interval for a dimension's mean score across cases.
- * Computed via percentile bootstrap (2.5% / 97.5% quantiles) over all
- * individual case scores (including multiple samples per case when
- * `samplesPerCase > 1`). Narrower interval = more confidence in the mean.
+ * Computed via percentile bootstrap (2.5% / 97.5% quantiles) over per-case
+ * scores. When `samplesPerCase > 1`, a case's samples are first averaged into
+ * one score, so the bootstrap resamples cases, not samples. `sampleSize` is
+ * the number of cases scored on the dimension, not the number of samples.
+ * Narrower interval = more confidence in the mean.
  */
 export interface DimensionConfidenceInterval {
   mean: number;
@@ -242,7 +244,7 @@ export interface EvalRunResult {
   samplesPerCase: number;
   assertionPassRate: number;
   dimensionAverages: Record<RubricDimension, number>;
-  /** 95% percentile-bootstrap CIs per dimension across all case samples */
+  /** 95% percentile-bootstrap CIs per dimension, resampling cases (samples pooled per case) */
   dimensionConfidenceIntervals: Record<
     RubricDimension,
     DimensionConfidenceInterval
