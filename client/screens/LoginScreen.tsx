@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -27,7 +27,12 @@ import {
   validateAuthFormFields,
   getAuthErrorMessage,
 } from "./LoginScreen-utils";
-import { useNavigation } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from "@react-navigation/native";
+import { useToast } from "@/context/ToastContext";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ApiError } from "@/lib/api-error";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -46,9 +51,12 @@ export default function LoginScreen() {
   const { login, register } = useAuthContext();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "Login">>();
+  const toast = useToast();
 
   const [mode, setMode] = useState<Mode>("login");
-  const [username, setUsername] = useState("");
+  // Prefilled with the email after a password reset (ResetPasswordScreen).
+  const [username, setUsername] = useState(route.params?.email ?? "");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [email, setEmail] = useState("");
@@ -61,6 +69,23 @@ export default function LoginScreen() {
   const [emailError, setEmailError] = useState<string | null>(null);
   // COPPA 13+ age attestation — gated by checkbox; server enforces ageConfirmed:true
   const [ageConfirmed, setAgeConfirmed] = useState(false);
+
+  const passwordReset = route.params?.passwordReset === true;
+  useEffect(() => {
+    if (!passwordReset) return;
+    toast.success("Password updated. Sign in with your new password.");
+    // Consume the flag so a re-render or return visit doesn't re-toast.
+    navigation.setParams({ passwordReset: undefined });
+  }, [passwordReset, toast, navigation]);
+
+  const openForgotPassword = () => {
+    // Forward the identifier only when it is email-shaped — a username is
+    // useless to the reset screen, which asks for the account email.
+    navigation.navigate(
+      "ForgotPassword",
+      username.includes("@") ? { email: username.trim() } : undefined,
+    );
+  };
 
   const toggleAgeConfirmed = () => {
     haptics.selection();
@@ -200,16 +225,26 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.form}>
+          {/* Sign-in accepts a username OR the account email; sign-up still
+              needs a username (registerSchema rejects an email there). */}
           <TextInput
             leftIcon="user"
-            placeholder="Username"
+            placeholder={mode === "login" ? "Username or email" : "Username"}
             value={username}
             onChangeText={setUsername}
             autoCapitalize="none"
             autoCorrect={false}
+            textContentType="username"
+            autoComplete="username"
             testID="input-username"
-            accessibilityLabel="Username"
-            accessibilityHint="Enter your username"
+            accessibilityLabel={
+              mode === "login" ? "Username or email" : "Username"
+            }
+            accessibilityHint={
+              mode === "login"
+                ? "Enter your username or email address"
+                : "Enter your username"
+            }
           />
 
           {mode === "register" ? (
@@ -247,6 +282,24 @@ export default function LoginScreen() {
             accessibilityLabel="Password"
             accessibilityHint="Enter your password"
           />
+
+          {mode === "login" ? (
+            <Pressable
+              onPress={openForgotPassword}
+              accessibilityRole="button"
+              accessibilityLabel="Forgot password?"
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              testID="link-forgot-password"
+              style={({ pressed }) => [
+                styles.forgotLink,
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
+              <ThemedText type="small" style={{ color: theme.link }}>
+                Forgot password?
+              </ThemedText>
+            </Pressable>
+          ) : null}
 
           {mode === "register" ? (
             <TextInput
@@ -429,5 +482,10 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontWeight: "600",
+  },
+  forgotLink: {
+    alignSelf: "flex-end",
+    minHeight: 44,
+    justifyContent: "center",
   },
 });

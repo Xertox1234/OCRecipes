@@ -10,6 +10,8 @@ import type { MainTabParamList } from "@/navigation/MainTabNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import LoginScreen from "@/screens/LoginScreen";
 import VerifyEmailScreen from "@/screens/VerifyEmailScreen";
+import ForgotPasswordScreen from "@/screens/ForgotPasswordScreen";
+import ResetPasswordScreen from "@/screens/ResetPasswordScreen";
 import ScanScreen from "@/screens/ScanScreen";
 import NutritionDetailScreen from "@/screens/NutritionDetailScreen";
 import PhotoIntentScreen from "@/screens/PhotoIntentScreen";
@@ -49,7 +51,16 @@ import NotebookScreen from "@/screens/NotebookScreen";
 import NotebookEntryScreen from "@/screens/NotebookEntryScreen";
 
 export type RootStackParamList = {
-  Login: undefined;
+  Login:
+    | {
+        /** Prefill the identifier (e.g. after a password reset). */
+        email?: string;
+        /** Set by ResetPassword on success → one-time success toast. */
+        passwordReset?: boolean;
+      }
+    | undefined;
+  ForgotPassword: { email?: string } | undefined;
+  ResetPassword: { email: string };
   VerifyEmail:
     | {
         token?: string;
@@ -239,6 +250,16 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="VerifyEmail"
             component={VerifyEmailScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="ForgotPassword"
+            component={ForgotPasswordScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="ResetPassword"
+            component={ResetPasswordScreen}
             options={{ headerShown: false }}
           />
         </>
