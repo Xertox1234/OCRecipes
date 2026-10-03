@@ -82,6 +82,7 @@ import { register } from "../auth";
 vi.mock("../../storage", () => ({
   storage: {
     getUserByUsernameForAuth: vi.fn(),
+    getUserByEmailForAuth: vi.fn(),
   },
 }));
 
@@ -108,6 +109,7 @@ beforeAll(async () => {
   // Default storage behavior: no user matches → every login attempt fails
   // with the generic 401. Individual tests override for success paths.
   vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(undefined);
+  vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(undefined);
 });
 
 // Every login() records the exact production store keys it will hit, so the
@@ -216,6 +218,16 @@ describe("per-account login throttling (real express-rate-limit)", () => {
     }
 
     const blocked = await login("CasedUser", "10.2.1.1");
+    expect(blocked.status).toBe(429);
+  });
+
+  it("buckets case and spacing variants of an EMAIL identifier together", async () => {
+    for (let i = 1; i <= LIMIT; i++) {
+      const res = await login("Victim@Example.com", `10.7.0.${i}`);
+      expect(res.status).toBe(401);
+    }
+
+    const blocked = await login(" victim@example.com ", "10.7.1.1");
     expect(blocked.status).toBe(429);
   });
 

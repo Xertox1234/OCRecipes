@@ -58,6 +58,7 @@ vi.mock("../../storage", () => ({
     getUserByUsername: vi.fn(),
     getUserByEmail: vi.fn(),
     getUserByUsernameForAuth: vi.fn(),
+    getUserByEmailForAuth: vi.fn(),
     getUserForAuth: vi.fn(),
     createUser: vi.fn(),
     getUser: vi.fn(),
@@ -660,6 +661,48 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.token).toBe("mock-jwt-token");
+    });
+
+    it("signs in by email (any case), looking up the lowercased email only", async () => {
+      vi.mocked(storage.getUserByEmailForAuth).mockReset();
+      vi.mocked(storage.getUserByUsernameForAuth).mockReset();
+      const hash = await bcrypt.hash("password123", 10);
+      vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(
+        createMockUser({ password: hash }),
+      );
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ username: "  Test@Example.COM ", password: "password123" });
+      expect(res.status).toBe(200);
+      expect(storage.getUserByEmailForAuth).toHaveBeenCalledWith(
+        "test@example.com",
+      );
+      expect(storage.getUserByUsernameForAuth).not.toHaveBeenCalled();
+    });
+
+    it("a plain username never reaches the email lookup (and is not lowercased)", async () => {
+      vi.mocked(storage.getUserByEmailForAuth).mockReset();
+      vi.mocked(storage.getUserByUsernameForAuth).mockReset();
+      vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(undefined);
+      await request(app)
+        .post("/api/auth/login")
+        .send({ username: "MixedCase", password: "x" });
+      expect(storage.getUserByUsernameForAuth).toHaveBeenCalledWith(
+        "MixedCase",
+      );
+      expect(storage.getUserByEmailForAuth).not.toHaveBeenCalled();
+    });
+
+    it("missing user still pays a bcrypt compare (timing parity)", async () => {
+      vi.mocked(storage.getUserByEmailForAuth).mockReset();
+      vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(undefined);
+      const spy = vi.spyOn(bcrypt, "compare");
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ username: "ghost@example.com", password: "whatever1" });
+      expect(res.status).toBe(401);
+      expect(spy).toHaveBeenCalledTimes(1);
+      spy.mockRestore();
     });
   });
 

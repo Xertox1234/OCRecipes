@@ -99,6 +99,12 @@ function sendVerificationPending(res: Response): void {
   });
 }
 
+// Fixed cost-12 bcrypt hash compared against on the missing-user login branch
+// so "no such user" costs the same ~250ms as "wrong password" (related gap 3).
+// The plaintext is irrelevant and matches nothing real.
+const DUMMY_PASSWORD_HASH =
+  "$2b$12$Dr3GzjhqTPluaG3QtTffX.SA5LiZi/05bbk8i97iK0z0QygBxFIgy";
+
 const RESET_CODE_SENT_MESSAGE =
   "If an account uses that email, we've sent a 6-digit code. It expires in 15 minutes.";
 
@@ -337,9 +343,15 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const validated = loginSchema.parse(req.body);
+        const identifier = validated.username;
 
-        const user = await storage.getUserByUsernameForAuth(validated.username);
+        // "@" ⇒ email (usernames are ^[a-zA-Z0-9_]+$). Emails are matched on
+        // the VERIFIED column, lowercased; usernames stay an exact match.
+        const user = identifier.includes("@")
+          ? await storage.getUserByEmailForAuth(identifier.toLowerCase())
+          : await storage.getUserByUsernameForAuth(identifier);
         if (!user) {
+          await bcrypt.compare(validated.password, DUMMY_PASSWORD_HASH);
           return sendError(
             res,
             401,
