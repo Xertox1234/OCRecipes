@@ -179,12 +179,28 @@ export function aggregateResults(
       entry.count > 0 ? entry.sum / entry.count : 0;
   }
 
-  const dimensionSamples: Record<string, number[]> = {};
-  for (const dim of config.dimensions) dimensionSamples[dim] = [];
+  // With samplesPerCase > 1 each case appears once per sample, its id
+  // suffixed "#n". Pool a case's samples into one mean so the bootstrap
+  // resamples cases; resampling samples would treat them as independent and
+  // narrow the interval. Mirrors perCaseMeans in scripts/ci/eval-compare.ts.
+  const dimensionCaseScores: Record<string, Map<string, number[]>> = {};
+  for (const dim of config.dimensions) dimensionCaseScores[dim] = new Map();
   for (const c of cases) {
+    const caseId =
+      samplesPerCase > 1 ? c.testCaseId.replace(/#\d+$/, "") : c.testCaseId;
     for (const score of c.rubricScores) {
-      dimensionSamples[score.dimension]?.push(score.score);
+      const byCase = dimensionCaseScores[score.dimension];
+      if (!byCase) continue;
+      const scores = byCase.get(caseId) ?? [];
+      scores.push(score.score);
+      byCase.set(caseId, scores);
     }
+  }
+  const dimensionSamples: Record<string, number[]> = {};
+  for (const dim of config.dimensions) {
+    dimensionSamples[dim] = [...dimensionCaseScores[dim].values()].map(
+      (scores) => scores.reduce((a, b) => a + b, 0) / scores.length,
+    );
   }
 
   const dimensionConfidenceIntervals = {} as Record<

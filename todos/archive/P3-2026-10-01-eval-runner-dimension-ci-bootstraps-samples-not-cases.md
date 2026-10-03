@@ -1,11 +1,11 @@
 ---
 title: "Eval runner's per-dimension confidence intervals bootstrap samples, not cases"
-status: blocked
+status: done
 blocked_reason: "Parked with Lane C of the advanced-testing plan (user 2026-10-01); the user resumes Lane C Tasks 4-5 and this todo by hand"
 human_led: true
 priority: low
 created: 2026-10-01
-updated: 2026-10-01
+updated: 2026-10-03
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -27,13 +27,17 @@ Nothing is affected today. Every suite runs one sample per case. Lane C Task 5 p
 
 ## Acceptance Criteria
 
-- [ ] `aggregateResults` pools each case's samples (strip the `#n` suffix only when `samplesPerCase > 1`) before calling `bootstrapMeanCI` per dimension
-- [ ] `sampleSize` reports cases, not samples, or the doc comment says which
-- [ ] A test with `samplesPerCase: 2` and duplicated samples gives the same interval as one sample
-- [ ] The `DimensionConfidenceInterval` doc comment in `evals/types.ts` is updated
+- [x] `aggregateResults` pools each case's samples (strip the `#n` suffix only when `samplesPerCase > 1`) before calling `bootstrapMeanCI` per dimension
+- [x] `sampleSize` reports cases, not samples, or the doc comment says which
+- [x] A test with `samplesPerCase: 2` and duplicated samples gives the same interval as one sample
+- [x] The `DimensionConfidenceInterval` doc comment in `evals/types.ts` is updated
 
 ## Implementation Notes
 
 - Files: `evals/lib/runner-core.ts` (`aggregateResults`, the `bootstrapMeanCI(dimensionSamples[dim] ...)` call), `evals/types.ts`, `evals/__tests__/runner-core.test.ts`
 - Mirror `perCaseMeans` in `scripts/ci/eval-compare.ts`
 - Changing this moves every committed baseline's dimension bounds at k > 1. Rebaseline any suite that runs with more than one sample.
+
+## Resolution (2026-10-03)
+
+Done in a human-led session (the user named this todo after seeing the `human_led` gate). `aggregateResults` now pools each case's samples per dimension before `bootstrapMeanCI`, mirroring `perCaseMeans`; `sampleSize` counts cases. No rebaseline was needed: `evals/baselines/` had no committed baselines yet (Lane C Task 4 has not run).
