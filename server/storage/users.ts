@@ -30,6 +30,7 @@ import {
   isNotNull,
 } from "drizzle-orm";
 import { removeFromIndex } from "../lib/search-index";
+import { CLEARED_RESET_CODE } from "./password-reset";
 
 // ============================================================================
 // USER CRUD
@@ -103,6 +104,23 @@ export async function getUserByUsernameForAuth(
     .select()
     .from(users)
     .where(eq(users.username, username));
+  return user || undefined;
+}
+
+/**
+ * Full user row by VERIFIED email (the `email` column), case-insensitive —
+ * login-by-email and forgot-password. NEVER matches `pending_email`: a staged,
+ * unproven address must not receive a reset code or sign anyone in.
+ * lower() on both sides tolerates a legacy row stored mixed-case and uses the
+ * users_email_lower_unique index.
+ */
+export async function getUserByEmailForAuth(
+  email: string,
+): Promise<User | undefined> {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(sql`lower(${users.email}) = lower(${email})`);
   return user || undefined;
 }
 
@@ -226,7 +244,14 @@ export async function updateUserEmail(
 ): Promise<SafeUser | undefined> {
   const [user] = await db
     .update(users)
-    .set({ email: newEmail, emailVerified: false, pendingEmail: null })
+    .set({
+      email: newEmail,
+      emailVerified: false,
+      pendingEmail: null,
+      // The verified address changed: a reset code issued to the OLD address
+      // must die here (spec §3).
+      ...CLEARED_RESET_CODE,
+    })
     .where(eq(users.id, id))
     .returning(safeUserColumns);
   return user || undefined;
@@ -316,6 +341,9 @@ export async function applyEmailVerification(
       email: sql`${users.pendingEmail}`,
       emailVerified: true,
       pendingEmail: null,
+      // Committing a change moves the verified address: kill any reset code
+      // issued to the previous one (spec §3). Branch 1 (same address) keeps it.
+      ...CLEARED_RESET_CODE,
     })
     .where(
       and(
