@@ -27,6 +27,7 @@ const { iap, apiRequest, refreshSubscription } = vi.hoisted(() => ({
     requestPurchase: vi.fn(),
     restorePurchases: vi.fn(),
     finishTransaction: vi.fn(() => Promise.resolve()),
+    refreshProducts: vi.fn(),
   },
   apiRequest: vi.fn(() => Promise.resolve(new Response("{}"))),
   refreshSubscription: vi.fn(() => Promise.resolve()),
