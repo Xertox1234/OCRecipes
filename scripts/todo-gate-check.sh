@@ -22,7 +22,7 @@
 # every downstream status-only gate then read the new value and let it through. Editing
 # `status` (or blocked_until, or human_led) to unblock a todo under any autonomous /
 # non-interactive directive is NOT a legitimate use of this repo's automation — see
-# .claude/skills/todo/SKILL.md Phase 2, .claude/skills/todo-fast/SKILL.md Phase 0, and
+# .claude/skills/todo/SKILL.md Phase 2, .claude/skills/todo-fast/SKILL.md Step 1, and
 # .claude/agents/todo-executor.md Step 2 for how the one legal override (a human
 # interactively naming this specific todo) is threaded through instead.
 #
