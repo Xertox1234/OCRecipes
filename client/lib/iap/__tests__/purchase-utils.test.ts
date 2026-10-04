@@ -158,6 +158,14 @@ describe("mapIAPError — expo-iap error codes", () => {
     expect(mapIAPError(storeError(code)).code).toBe(expected);
   });
 
+  it.each([
+    [{ code: "user-cancelled", message: "User cancelled" }, "USER_CANCELLED"],
+    [{ code: "pending", message: "Ask to Buy" }, "PENDING_APPROVAL"],
+    [{ code: "service-error", message: "Network down" }, "NETWORK"],
+  ])("maps a plain store payload %o to %s", (payload, expected) => {
+    expect(mapIAPError(payload).code).toBe(expected);
+  });
+
   it("falls back to the message for an unrecognized code", () => {
     expect(mapIAPError(storeError("service-error", "Network down")).code).toBe(
       "NETWORK",

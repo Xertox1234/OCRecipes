@@ -20,9 +20,10 @@ const ANNUAL: IAPProduct = {
   androidOfferToken: null,
 };
 
-const { holder, purchase } = vi.hoisted(() => ({
+const { holder, purchase, refreshProduct } = vi.hoisted(() => ({
   holder: { product: null as IAPProduct | null },
   purchase: vi.fn(),
+  refreshProduct: vi.fn(),
 }));
 
 vi.mock("@/lib/iap/usePurchase", () => ({
@@ -32,6 +33,7 @@ vi.mock("@/lib/iap/usePurchase", () => ({
     restore: vi.fn(),
     reset: vi.fn(),
     product: holder.product,
+    refreshProduct,
   }),
 }));
 
@@ -44,6 +46,7 @@ describe("UpgradeModal — pricing disclosure", () => {
 
   beforeEach(() => {
     purchase.mockClear();
+    refreshProduct.mockClear();
     openSpy = vi
       .spyOn(RN.Linking, "openURL")
       .mockImplementation(() => Promise.resolve(true));
@@ -89,6 +92,20 @@ describe("UpgradeModal — pricing disclosure", () => {
 
     expect(openSpy).toHaveBeenCalledWith(TERMS_URL);
     expect(openSpy).toHaveBeenCalledWith(PRIVACY_POLICY_URL);
+  });
+
+  it("asks the store again when it opens without a price", () => {
+    holder.product = null;
+    renderModal();
+
+    expect(refreshProduct).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not ask again when the price has loaded", () => {
+    holder.product = ANNUAL;
+    renderModal();
+
+    expect(refreshProduct).not.toHaveBeenCalled();
   });
 
   it("shows no price and blocks the purchase until the store answers", () => {

@@ -22,6 +22,8 @@ vi.mock("@/lib/iap/usePurchase", () => ({
     purchase: vi.fn(),
     restore: vi.fn(),
     reset: vi.fn(),
+    product: null,
+    refreshProduct: vi.fn(),
   }),
 }));
 

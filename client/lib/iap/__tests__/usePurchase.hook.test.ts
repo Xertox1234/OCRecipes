@@ -27,6 +27,7 @@ const { iap, apiRequest, refreshSubscription } = vi.hoisted(() => ({
     requestPurchase: vi.fn(),
     restorePurchases: vi.fn(),
     finishTransaction: vi.fn(() => Promise.resolve()),
+    refreshProducts: vi.fn(),
   },
   apiRequest: vi.fn(() => Promise.resolve(new Response("{}"))),
   refreshSubscription: vi.fn(() => Promise.resolve()),
@@ -68,6 +69,19 @@ describe("usePurchase.purchase", () => {
     );
     expect(iap.finishTransaction).toHaveBeenCalledWith(PURCHASE);
     expect(result.current.state.status).toBe("success");
+  });
+
+  it("treats a cancelled store sheet as cancelled, not as an error", async () => {
+    // The shape expo-iap's purchase listener actually delivers.
+    iap.requestPurchase.mockRejectedValue({
+      code: "user-cancelled",
+      message: "User cancelled",
+    });
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.purchase());
+
+    expect(result.current.state.status).toBe("cancelled");
   });
 
   it("reports the store as unavailable when no product has loaded", async () => {

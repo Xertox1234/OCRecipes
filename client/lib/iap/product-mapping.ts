@@ -97,8 +97,8 @@ function isFreePhase(micros: string): boolean {
 }
 
 /**
- * Google Play lists only the offers this user is eligible for, so an offer with
- * a free first phase means the user can start a free trial. Reads the
+ * Google Play lists only the offers this user is eligible for, so a listed
+ * free-then-recurring offer means the user can start a free trial. Reads the
  * deprecated subscriptionOfferDetailsAndroid on purpose: it is the field
  * expo-iap's own hook uses to sort a product into `subscriptions`.
  */
@@ -109,13 +109,12 @@ export function toIAPProductAndroid(
     product.subscriptionOfferDetailsAndroid;
   if (offers.length === 0) return null;
 
+  // Exactly two phases — free, then the recurring price — so "Free for N days,
+  // then <price>" is the whole story. A free phase followed by a paid intro
+  // phase would hide that middle charge; such an offer is not chosen.
   const trialOffer = offers.find((offer) => {
-    const first = offer.pricingPhases.pricingPhaseList[0];
-    return (
-      offer.pricingPhases.pricingPhaseList.length > 1 &&
-      first !== undefined &&
-      isFreePhase(first.priceAmountMicros)
-    );
+    const phases = offer.pricingPhases.pricingPhaseList;
+    return phases.length === 2 && isFreePhase(phases[0].priceAmountMicros);
   });
   const chosen =
     trialOffer ?? offers.find((offer) => !offer.offerId) ?? offers[0];

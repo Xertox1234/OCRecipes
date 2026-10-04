@@ -47,7 +47,8 @@ export function UpgradeModal({
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
-  const { state, purchase, restore, reset, product } = usePurchase();
+  const { state, purchase, restore, reset, product, refreshProduct } =
+    usePurchase();
   const autoCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevVisibleRef = useRef(false);
   const upgradeErrorMessage =
@@ -92,6 +93,17 @@ export function UpgradeModal({
       );
     }
   }, [state.status, upgradeErrorMessage]);
+
+  // A failed first load would otherwise leave "Price unavailable" and a
+  // disabled CTA until the app restarts: ask the store again whenever the
+  // paywall is shown without a product. refreshProduct has a stable identity,
+  // so a failed fetch does not re-run this effect.
+  const hasProduct = product !== null;
+  useEffect(() => {
+    if (visible && !hasProduct) {
+      refreshProduct();
+    }
+  }, [visible, hasProduct, refreshProduct]);
 
   // Reset cancelled immediately; reset error when modal re-opens
   useEffect(() => {

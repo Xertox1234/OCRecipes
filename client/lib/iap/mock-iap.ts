@@ -19,6 +19,11 @@ function mockPurchase(productId: string): IAPPurchaseResult {
   };
 }
 
+// Module-level so its identity is stable, as UseIAPResult requires.
+function refreshProducts(): void {
+  logger.info("[MockIAP] refreshProducts");
+}
+
 export function useIAP(): UseIAPResult {
   return {
     connected: true,
@@ -46,5 +51,7 @@ export function useIAP(): UseIAPResult {
       logger.info(`[MockIAP] finishTransaction: ${purchase.transactionId}`);
       return Promise.resolve();
     },
+
+    refreshProducts,
   };
 }

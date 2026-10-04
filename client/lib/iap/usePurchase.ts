@@ -147,5 +147,13 @@ export function usePurchase() {
       (item) => item.productId === PRODUCT_IDS.ANNUAL_PREMIUM,
     ) ?? null;
 
-  return { state, purchase, restore, reset, product };
+  return {
+    state,
+    purchase,
+    restore,
+    reset,
+    product,
+    // Stable identity (UseIAPResult contract), so effects can depend on it.
+    refreshProduct: iap.refreshProducts,
+  };
 }
