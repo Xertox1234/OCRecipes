@@ -1,6 +1,6 @@
 ---
 title: "iOS: toasts render beneath native-stack modals — the one Toast host sits in the root view controller's views, so toasts raised while Scan, LabelAnalysis or another modal route is up are never seen"
-status: in-progress
+status: done
 priority: medium
 created: 2026-10-02
 updated: 2026-10-02
@@ -25,9 +25,9 @@ The app's one toast host renders as a sibling of the whole navigator (`client/co
 ## Acceptance Criteria
 
 - [ ] **Pre-fix device check (decides whether this is a bug)** — agent-run on the iOS simulator (Maestro or verify-ui: screenshots + a11y snapshot) in a session with the owner present, on main's JS, signed in as a **free-tier** user (demo/demo123 is premium; see notes) with `npm run server:dev` and a real AI key: Coach tab (`tab-coach`) → "Start new chat" → send a prompt with a long answer → **Back to ChatList** → "Open scan menu" → "Scan Barcode" (or `ocrecipes://scan`) → keep Scan up past the reply plus the toast's 5 s life (time it in the control run). Expect no "Coach replied — tap to open" toast in any screenshot while Scan is up; after closing Scan, the Coach tab dot (screenshot) and the tab label "Coach, new reply" (a11y snapshot). **Positive control** — same build and steps, but switch to the Home tab (`tab-home`) instead of opening Scan: the toast appears at the top with "Open". No toast without a passing control proves nothing. Cheaper, probe-only surrogate for the modal half: the `LabelAnalysisScreen.tsx:259` error toast inside the LabelAnalysis modal (preconditions in the notes).
-- [ ] `client/context/ToastContext.tsx`: on iOS (`Platform.OS` read at render time) the host renders as `FullWindowOverlay` (`unstable_accessibilityContainerViewIsModal={false}`) > `GestureHandlerRootView` (`pointerEvents="box-none"`) > `Toast`; on Android exactly as today, with no `FullWindowOverlay` (it warns and degrades to a View there, `node_modules/react-native-screens/src/components/FullWindowOverlay.tsx:29-31`). It still mounts only while a toast shows (the `toasts.length > 0` guard), and the `key` moves from `<Toast>` (77) to the wrapper.
-- [ ] `test/mocks/react-native-screens.ts` exports a `FullWindowOverlay` double rendering a `div` (`data-testid="full-window-overlay"`) that mirrors the native accessibility default — `aria-modal="true"` unless `unstable_accessibilityContainerViewIsModal === false` — and its header's list of covered exports names it and its consumer.
-- [ ] `client/context/__tests__/ToastContext.test.tsx` (new) renders the real `ToastProvider` via `renderComponent` with a child that raises `info("Coach replied — tap to open", { action: { label: "Open", onPress } })`, and asserts:
+- [x] `client/context/ToastContext.tsx`: on iOS (`Platform.OS` read at render time) the host renders as `FullWindowOverlay` (`unstable_accessibilityContainerViewIsModal={false}`) > `GestureHandlerRootView` (`pointerEvents="box-none"`) > `Toast`; on Android exactly as today, with no `FullWindowOverlay` (it warns and degrades to a View there, `node_modules/react-native-screens/src/components/FullWindowOverlay.tsx:29-31`). It still mounts only while a toast shows (the `toasts.length > 0` guard), and the `key` moves from `<Toast>` (77) to the wrapper.
+- [x] `test/mocks/react-native-screens.ts` exports a `FullWindowOverlay` double rendering a `div` (`data-testid="full-window-overlay"`) that mirrors the native accessibility default — `aria-modal="true"` unless `unstable_accessibilityContainerViewIsModal === false` — and its header's list of covered exports names it and its consumer.
+- [x] `client/context/__tests__/ToastContext.test.tsx` (new) renders the real `ToastProvider` via `renderComponent` with a child that raises `info("Coach replied — tap to open", { action: { label: "Open", onPress } })`, and asserts:
   - iOS: the message and the "Open" button render inside `full-window-overlay`, the overlay has no `aria-modal`, and the recorded `GestureHandlerRootView` props include `pointerEvents: "box-none"`;
   - control: a bare mock `<FullWindowOverlay>` renders `aria-modal="true"` (else "no `aria-modal`" can never fail);
   - Android (`RN.Platform.OS = "android"`, restored in `afterEach`): the toast renders and no `full-window-overlay` node exists;
@@ -104,3 +104,8 @@ The app's one toast host renders as a sibling of the whole navigator (`client/co
 ### 2026-10-02
 
 - Filed from the 2026-10-02 deferred-warnings triage of the /todo sweep (#1213–#1226); claim verified against main ec26b972 by workflow wf_7d969d8d-ce1 and upheld by an adversarial re-check; filing approved by the owner 2026-10-02.
+
+### 2026-10-04
+
+- Executor (unattended) implemented the fix: `ToastHost` in `client/context/ToastContext.tsx` (iOS-only `FullWindowOverlay` > `GestureHandlerRootView pointerEvents="box-none"`), a `FullWindowOverlay` double in `test/mocks/react-native-screens.ts`, and new `client/context/__tests__/ToastContext.test.tsx`.
+- Left unchecked for the owner-present simulator session (per Risks): the pre-fix device check, the post-fix device check and the post-fix VoiceOver check.
