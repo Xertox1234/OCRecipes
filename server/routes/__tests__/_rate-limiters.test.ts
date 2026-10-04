@@ -1,7 +1,11 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import express from "express";
 import request from "supertest";
-import { resolveRateLimitMax, createRateLimiter } from "../_rate-limiters";
+import {
+  resolveRateLimitMax,
+  createRateLimiter,
+  passwordResetEmailKey,
+} from "../_rate-limiters";
 
 /**
  * E2E_RELAXED_RATE_LIMITS exists because the Maestro E2E suite reloads the
@@ -169,5 +173,26 @@ describe("loginAccountLimiter", () => {
         .send({ username: "testuser", password: "wrong" });
       expect(res.status).toBe(401);
     }
+  });
+});
+
+describe("passwordResetEmailKey", () => {
+  const key = passwordResetEmailKey("forgot-email:");
+  const req = (body: unknown) =>
+    ({
+      body,
+      headers: {},
+      ip: "203.0.113.9",
+      socket: {},
+    }) as unknown as import("express").Request;
+
+  it("keys the Zod-normalized form: spacing/case variants share a bucket", () => {
+    expect(key(req({ email: "  Foo@X.com " }))).toBe(
+      key(req({ email: "foo@x.com" })),
+    );
+    expect(key(req({ email: "foo@x.com" }))).toBe("forgot-email:foo@x.com");
+  });
+  it("falls back to the IP key when no email is present", () => {
+    expect(key(req({}))).toBe("203.0.113.9");
   });
 });

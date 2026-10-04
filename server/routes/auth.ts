@@ -22,7 +22,16 @@ import {
 import {
   sendVerificationEmail,
   sendSignupAttemptNotice,
+  sendPasswordResetCode,
+  sendPasswordChangedNotice,
 } from "../services/email";
+import {
+  generateResetCode,
+  hashResetCode,
+  resetCodeMatches,
+  DUMMY_RESET_USER_ID,
+  DUMMY_RESET_HASH,
+} from "../lib/password-reset-code";
 import { renderVerifyEmailPage } from "../lib/verify-email-page";
 import { createServiceLogger, toError } from "../lib/logger";
 import {
@@ -35,6 +44,10 @@ import {
   verifyEmailLimiter,
   resendVerificationLimiter,
   changeEmailLimiter,
+  forgotPasswordIpLimiter,
+  forgotPasswordEmailLimiter,
+  resetPasswordIpLimiter,
+  resetPasswordEmailLimiter,
 } from "./_rate-limiters";
 import {
   loginSchema,
@@ -44,6 +57,8 @@ import {
   verifyEmailSchema,
   resendVerificationSchema,
   changeEmailSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } from "./_schemas";
 import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
@@ -82,6 +97,43 @@ function sendVerificationPending(res: Response): void {
     status: "verification_pending",
     message: "Check your inbox to verify your email.",
   });
+}
+
+// Fixed cost-12 bcrypt hash compared against on the missing-user login branch
+// so "no such user" costs the same ~250ms as "wrong password" (related gap 3).
+// The plaintext is irrelevant and matches nothing real.
+const DUMMY_PASSWORD_HASH =
+  "$2b$12$Dr3GzjhqTPluaG3QtTffX.SA5LiZi/05bbk8i97iK0z0QygBxFIgy";
+
+const RESET_CODE_SENT_MESSAGE =
+  "If an account uses that email, we've sent a 6-digit code. It expires in 15 minutes.";
+
+/** The ONE reset-password failure — never says which check failed. */
+function sendInvalidResetCode(res: Response): void {
+  sendError(
+    res,
+    400,
+    "That code is incorrect or expired.",
+    ErrorCode.INVALID_RESET_CODE,
+  );
+}
+
+/**
+ * Background half of forgot-password: store the code (the DB enforces the
+ * 6-per-24h cap atomically), then email it. A cap refusal is silent on
+ * purpose — only real accounts can hit it, so surfacing it would leak
+ * existence. Runs fire-and-forget so the DB write stays out of response time.
+ * The plain code exists only here and in the email body — never logged.
+ */
+async function issueAndSendResetCode(
+  userId: string,
+  email: string,
+  codeHash: string,
+  code: string,
+): Promise<void> {
+  const issued = await storage.issuePasswordResetCode(userId, codeHash);
+  if (!issued) return;
+  await sendPasswordResetCode(email, code);
 }
 
 const logger = createServiceLogger("auth");
@@ -208,7 +260,7 @@ export function register(app: Express): void {
           } else {
             fireAndForget(
               "signup-attempt-notice",
-              sendSignupAttemptNotice(email),
+              sendSignupAttemptNotice(email, existingEmail.username),
             );
           }
           return sendVerificationPending(res);
@@ -291,9 +343,15 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const validated = loginSchema.parse(req.body);
+        const identifier = validated.username;
 
-        const user = await storage.getUserByUsernameForAuth(validated.username);
+        // "@" ⇒ email (usernames are ^[a-zA-Z0-9_]+$). Emails are matched on
+        // the VERIFIED column, lowercased; usernames stay an exact match.
+        const user = identifier.includes("@")
+          ? await storage.getUserByEmailForAuth(identifier.toLowerCase())
+          : await storage.getUserByUsernameForAuth(identifier);
         if (!user) {
+          await bcrypt.compare(validated.password, DUMMY_PASSWORD_HASH);
           return sendError(
             res,
             401,
@@ -440,6 +498,102 @@ export function register(app: Express): void {
         });
       } catch (error) {
         handleRouteError(res, error, "resend verification");
+      }
+    },
+  );
+
+  // Forgot password (spec §4.1). Public and anti-enumerating: limiters run
+  // before the lookup; both branches do one lookup + one HMAC; the store+send
+  // is fire-and-forget; the body is identical either way. Looks up the
+  // VERIFIED email column only — never pending_email.
+  app.post(
+    "/api/auth/forgot-password",
+    forgotPasswordIpLimiter,
+    forgotPasswordEmailLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const parsed = forgotPasswordSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const { email } = parsed.data;
+        const user = await storage.getUserByEmailForAuth(email);
+        const code = generateResetCode();
+        const codeHash = hashResetCode(user?.id ?? DUMMY_RESET_USER_ID, code);
+        if (user) {
+          fireAndForget(
+            "password-reset-code",
+            issueAndSendResetCode(user.id, user.email, codeHash, code),
+          );
+        }
+        res.status(200).json({
+          status: "reset_code_sent",
+          message: RESET_CODE_SENT_MESSAGE,
+        });
+      } catch (error) {
+        handleRouteError(res, error, "request password reset");
+      }
+    },
+  );
+
+  // Reset password (spec §4.2). Validation first (a weak password never uses
+  // up a code attempt); then ONE atomic UPDATE uses up an attempt for real and
+  // unknown emails alike; the HMAC compare runs on both branches. Every failure
+  // is the same 400. Success: one UPDATE commits password + tokenVersion+1 +
+  // verified + discards a staged email change + clears the code; then the
+  // tokenVersion cache is invalidated (an increment alone leaves stolen
+  // sessions alive up to 60s). No token is issued — the client signs in again.
+  app.post(
+    "/api/auth/reset-password",
+    resetPasswordIpLimiter,
+    resetPasswordEmailLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const parsed = resetPasswordSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const { email, code, newPassword } = parsed.data;
+        const reserved = await storage.reservePasswordResetAttempt(email);
+        const matches = resetCodeMatches(
+          reserved?.id ?? DUMMY_RESET_USER_ID,
+          code,
+          reserved?.resetCodeHash ?? DUMMY_RESET_HASH,
+        );
+        if (!reserved || !matches) {
+          sendInvalidResetCode(res);
+          return;
+        }
+        const newHash = await bcrypt.hash(newPassword, 12);
+        const completed = await storage.completePasswordReset(
+          reserved.id,
+          reserved.resetCodeHash,
+          newHash,
+        );
+        if (!completed) {
+          sendInvalidResetCode(res);
+          return;
+        }
+        invalidateTokenVersionCache(reserved.id);
+        fireAndForget(
+          "password-changed-notice",
+          sendPasswordChangedNotice(reserved.email, reserved.username),
+        );
+        res.status(200).json({ status: "password_reset" });
+      } catch (error) {
+        handleRouteError(res, error, "reset password");
       }
     },
   );

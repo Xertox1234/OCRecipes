@@ -12,10 +12,24 @@ import { renderComponent } from "../../../test/utils/render-component";
 import LoginScreen from "../LoginScreen";
 import { ApiError } from "@/lib/api-error";
 
-const { mockLogin, mockRegister, mockNavigate } = vi.hoisted(() => ({
+const {
+  mockLogin,
+  mockRegister,
+  mockNavigate,
+  mockSetParams,
+  mockToastSuccess,
+  mockRoute,
+} = vi.hoisted(() => ({
   mockLogin: vi.fn(),
   mockRegister: vi.fn(),
   mockNavigate: vi.fn(),
+  mockSetParams: vi.fn(),
+  mockToastSuccess: vi.fn(),
+  mockRoute: {
+    params: undefined as
+      | { email?: string; passwordReset?: boolean }
+      | undefined,
+  },
 }));
 
 vi.mock("@/context/AuthContext", () => ({
@@ -25,7 +39,15 @@ vi.mock("@/context/AuthContext", () => ({
 // render-component provides no NavigationContainer; LoginScreen now calls
 // useNavigation, so stub it with a spy we can assert against.
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: mockNavigate }),
+  useNavigation: () => ({
+    navigate: mockNavigate,
+    setParams: mockSetParams,
+  }),
+  useRoute: () => ({ params: mockRoute.params }),
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({ success: mockToastSuccess }),
 }));
 
 // react-native-keyboard-controller ships untransformed native source — passthrough.
@@ -50,7 +72,7 @@ describe("LoginScreen — auth-failure error copy (H6)", () => {
     );
     renderComponent(<LoginScreen />);
 
-    fireEvent.change(screen.getByLabelText("Username"), {
+    fireEvent.change(screen.getByLabelText("Username or email"), {
       target: { value: "demo" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -281,7 +303,7 @@ describe("LoginScreen — email field", () => {
     );
     renderComponent(<LoginScreen />);
 
-    fireEvent.change(screen.getByLabelText("Username"), {
+    fireEvent.change(screen.getByLabelText("Username or email"), {
       target: { value: "demo" },
     });
     fireEvent.change(screen.getByLabelText("Password"), {
@@ -292,5 +314,55 @@ describe("LoginScreen — email field", () => {
     await waitFor(() =>
       expect(mockNavigate).toHaveBeenCalledWith("VerifyEmail", {}),
     );
+  });
+});
+
+describe("LoginScreen — sign in by email and password reset entry", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRoute.params = undefined;
+  });
+
+  it("labels the identifier 'Username or email' in login mode and 'Username' in sign-up mode", () => {
+    renderComponent(<LoginScreen />);
+    expect(screen.getByLabelText("Username or email")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    expect(screen.getByLabelText("Username")).toBeTruthy();
+    expect(screen.queryByLabelText("Username or email")).toBeNull();
+  });
+
+  it("shows Forgot password? in login mode only and navigates with an email-shaped identifier", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: " a@b.com " },
+    });
+    fireEvent.click(screen.getByText("Forgot password?"));
+    expect(mockNavigate).toHaveBeenCalledWith("ForgotPassword", {
+      email: "a@b.com",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    expect(screen.queryByText("Forgot password?")).toBeNull();
+  });
+
+  it("does not forward a plain username as the reset email", () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.change(screen.getByLabelText("Username or email"), {
+      target: { value: "alice" },
+    });
+    fireEvent.click(screen.getByText("Forgot password?"));
+    expect(mockNavigate).toHaveBeenCalledWith("ForgotPassword", undefined);
+  });
+
+  it("after a reset: prefills the email, toasts once, and consumes the flag", () => {
+    mockRoute.params = { email: "a@b.com", passwordReset: true };
+    renderComponent(<LoginScreen />);
+    expect(
+      (screen.getByLabelText("Username or email") as HTMLInputElement).value,
+    ).toBe("a@b.com");
+    expect(mockToastSuccess).toHaveBeenCalledTimes(1);
+    expect(mockToastSuccess).toHaveBeenCalledWith(
+      "Password updated. Sign in with your new password.",
+    );
+    expect(mockSetParams).toHaveBeenCalledWith({ passwordReset: undefined });
   });
 });

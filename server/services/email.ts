@@ -2,6 +2,8 @@ import { Resend } from "resend";
 import type { CreateEmailOptions, ErrorResponse } from "resend";
 import { emailVerificationEnabled } from "../lib/email-config";
 import { createServiceLogger } from "../lib/logger";
+import { escapeHtml } from "../lib/html-escape";
+import { RESET_CODE_TTL_MINUTES } from "@shared/constants/password-reset";
 
 const logger = createServiceLogger("email");
 
@@ -102,10 +104,19 @@ const EMAIL_FROM =
 
 // In-service per-recipient throttle. The signup-attempt notice has no endpoint
 // of its own, so the per-IP register limiter cannot cap how many emails a
-// victim's inbox receives. This sliding window is THE per-recipient cap for all
-// outbound mail (notice + verification), regardless of entry point.
+// victim's inbox receives. This sliding window is THE per-recipient cap for
+// outbound mail, regardless of entry point, in two buckets. "general" (signup
+// notice + verification) is the original shared 5/hour cap. "account-security"
+// (reset code + password-changed notice) is separate: register is limited per
+// IP only, so anyone who knows an address could otherwise drain the shared
+// bucket with signup notices and silently swallow a reset code or the security
+// notice. The route + DB issuance caps keep this bucket well under 10.
 const RECIPIENT_WINDOW_MS = 60 * 60 * 1000;
-const MAX_PER_RECIPIENT = 5;
+type SendBucket = "general" | "account-security";
+const BUCKET_CAPS: Record<SendBucket, number> = {
+  general: 5,
+  "account-security": 10,
+};
 // Sweep fully-expired keys once the map grows past this many recipients. A
 // recipient touched once and never again (the enumeration case) is otherwise
 // never revisited, so delete-on-empty alone cannot bound the key set — the sweep
@@ -122,10 +133,17 @@ function sweepExpired(now: number): void {
   }
 }
 
-function canSendTo(email: string): boolean {
+// The "general" key stays the bare lowercased email (unchanged from before the
+// buckets existed); other buckets are prefixed so they never share a window.
+function bucketKey(email: string, bucket: SendBucket): string {
+  const lower = email.toLowerCase();
+  return bucket === "general" ? lower : `${bucket}:${lower}`;
+}
+
+function canSendTo(email: string, bucket: SendBucket = "general"): boolean {
   const now = Date.now();
   if (recipientSends.size > RECIPIENT_SWEEP_THRESHOLD) sweepExpired(now);
-  const key = email.toLowerCase();
+  const key = bucketKey(email, bucket);
   const times = (recipientSends.get(key) ?? []).filter(
     (t) => now - t < RECIPIENT_WINDOW_MS,
   );
@@ -134,7 +152,7 @@ function canSendTo(email: string): boolean {
     // leaving an empty array behind, then re-add below only if we send.
     recipientSends.delete(key);
   }
-  if (times.length >= MAX_PER_RECIPIENT) {
+  if (times.length >= BUCKET_CAPS[bucket]) {
     recipientSends.set(key, times);
     return false;
   }
@@ -180,7 +198,10 @@ export async function sendVerificationEmail(
   if (error) logger.error({ resendError: error }, "verification email failed");
 }
 
-export async function sendSignupAttemptNotice(to: string): Promise<void> {
+export async function sendSignupAttemptNotice(
+  to: string,
+  username: string,
+): Promise<void> {
   const resend = client();
   if (!resend || !emailVerificationEnabled()) return;
   if (!canSendTo(to)) {
@@ -192,10 +213,60 @@ export async function sendSignupAttemptNotice(to: string): Promise<void> {
     to,
     subject: "Someone tried to sign up with your email",
     html: `<p>Someone just tried to create an OCRecipes account with this email address, but you already have one.</p>
-<p>If this was you, simply <a href="${APP_URL}">log in</a> instead. If it wasn't, no action is needed — no account was created.</p>`,
+<p>Your username is <strong>${escapeHtml(username)}</strong>. You can also sign in with this email address.</p>
+<p>If this was you, simply <a href="${APP_URL}">log in</a> instead. Forgot your password? Use "Forgot password?" on the sign-in screen. If it wasn't you, no action is needed — no account was created.</p>`,
   });
   if (error)
     logger.error({ resendError: error }, "signup-attempt notice failed");
+}
+
+export async function sendPasswordResetCode(
+  to: string,
+  code: string,
+): Promise<void> {
+  const resend = client();
+  if (!resend || !emailVerificationEnabled()) return;
+  if (!canSendTo(to, "account-security")) {
+    // Never log the code — only the recipient.
+    logger.warn({ to }, "reset code throttled (account-security cap)");
+    return;
+  }
+  const error = await sendWithRetry(resend, {
+    from: EMAIL_FROM,
+    to,
+    subject: "Your OCRecipes password reset code",
+    html: `<p>Use this code to reset your OCRecipes password:</p>
+<p style="font-size:28px;font-weight:bold;letter-spacing:6px">${escapeHtml(code)}</p>
+<p>It expires in ${RESET_CODE_TTL_MINUTES} minutes. If you requested more than one code, use the one in the most recent email.</p>
+<p>If you didn't ask to reset your password, you can ignore this email — your password hasn't changed.</p>`,
+  });
+  // Log only the Resend error — the payload (which holds the code) never.
+  if (error) logger.error({ resendError: error }, "reset code email failed");
+}
+
+export async function sendPasswordChangedNotice(
+  to: string,
+  username: string,
+): Promise<void> {
+  const resend = client();
+  if (!resend || !emailVerificationEnabled()) return;
+  if (!canSendTo(to, "account-security")) {
+    logger.warn(
+      { to },
+      "password-changed notice throttled (account-security cap)",
+    );
+    return;
+  }
+  const error = await sendWithRetry(resend, {
+    from: EMAIL_FROM,
+    to,
+    subject: "Your OCRecipes password was changed",
+    html: `<p>The password for your OCRecipes account <strong>${escapeHtml(username)}</strong> was just changed, and every device was signed out.</p>
+<p>If this was you, there's nothing else to do.</p>
+<p>If this wasn't you, contact <a href="mailto:support@ocrecipes.app">support@ocrecipes.app</a> right away.</p>`,
+  });
+  if (error)
+    logger.error({ resendError: error }, "password-changed notice failed");
 }
 
 /** Test-only internals — never import from production code. */

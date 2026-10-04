@@ -30,17 +30,37 @@ import {
   isNotNull,
 } from "drizzle-orm";
 import { removeFromIndex } from "../lib/search-index";
+import { CLEARED_RESET_CODE } from "./password-reset";
 
 // ============================================================================
 // USER CRUD
 // ============================================================================
 
-// Exclude password from default queries — defense-in-depth against accidental leaks.
-// Only getUserForAuth / getUserByUsernameForAuth return the password hash.
-const { password: _password, ...safeUserColumns } = getTableColumns(users);
+// Exclude password AND the password-reset columns from default queries —
+// defense-in-depth against accidental leaks. Only the *ForAuth getters return
+// the password hash. The REAL guard for HTTP responses is response shaping
+// (serializeUser / explicit picks in routes); full-row paths (createUser,
+// updateUser .returning(), *ForAuth) still carry these columns — never strip
+// them here instead of shaping the response.
+const {
+  password: _password,
+  resetCodeHash: _resetCodeHash,
+  resetCodeExpiresAt: _resetCodeExpiresAt,
+  resetCodeAttempts: _resetCodeAttempts,
+  resetIssueCount: _resetIssueCount,
+  resetIssueWindowStart: _resetIssueWindowStart,
+  ...safeUserColumns
+} = getTableColumns(users);
 
-/** User row without password hash */
-export type SafeUser = Omit<User, "password">;
+type ResetColumnKey =
+  | "resetCodeHash"
+  | "resetCodeExpiresAt"
+  | "resetCodeAttempts"
+  | "resetIssueCount"
+  | "resetIssueWindowStart";
+
+/** User row without password hash or password-reset state */
+export type SafeUser = Omit<User, "password" | ResetColumnKey>;
 
 export async function getUser(id: string): Promise<SafeUser | undefined> {
   const [user] = await db
@@ -84,6 +104,23 @@ export async function getUserByUsernameForAuth(
     .select()
     .from(users)
     .where(eq(users.username, username));
+  return user || undefined;
+}
+
+/**
+ * Full user row by VERIFIED email (the `email` column), case-insensitive —
+ * login-by-email and forgot-password. NEVER matches `pending_email`: a staged,
+ * unproven address must not receive a reset code or sign anyone in.
+ * lower() on both sides tolerates a legacy row stored mixed-case and uses the
+ * users_email_lower_unique index.
+ */
+export async function getUserByEmailForAuth(
+  email: string,
+): Promise<User | undefined> {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(sql`lower(${users.email}) = lower(${email})`);
   return user || undefined;
 }
 
@@ -207,7 +244,14 @@ export async function updateUserEmail(
 ): Promise<SafeUser | undefined> {
   const [user] = await db
     .update(users)
-    .set({ email: newEmail, emailVerified: false, pendingEmail: null })
+    .set({
+      email: newEmail,
+      emailVerified: false,
+      pendingEmail: null,
+      // The verified address changed: a reset code issued to the OLD address
+      // must die here (spec §3).
+      ...CLEARED_RESET_CODE,
+    })
     .where(eq(users.id, id))
     .returning(safeUserColumns);
   return user || undefined;
@@ -297,6 +341,9 @@ export async function applyEmailVerification(
       email: sql`${users.pendingEmail}`,
       emailVerified: true,
       pendingEmail: null,
+      // Committing a change moves the verified address: kill any reset code
+      // issued to the previous one (spec §3). Branch 1 (same address) keeps it.
+      ...CLEARED_RESET_CODE,
     })
     .where(
       and(

@@ -4,6 +4,7 @@ import {
   validateAuthForm,
   validateAuthFormFields,
   getAuthErrorMessage,
+  validateNewPassword,
 } from "../LoginScreen-utils";
 
 describe("validateAuthForm", () => {
@@ -218,5 +219,20 @@ describe("getAuthErrorMessage", () => {
     expect(getAuthErrorMessage(new Error("network down"), "login")).toBe(
       "Incorrect username or password. Please try again.",
     );
+  });
+});
+
+describe("validateNewPassword (mirrors server newPasswordSchema)", () => {
+  it("enforces length, letter+digit, and match, in that order", () => {
+    expect(validateNewPassword("short1", "short1")).toBe(
+      "Password must be at least 8 characters",
+    );
+    expect(validateNewPassword("allletters", "allletters")).toBe(
+      "Password must contain at least one letter and one number",
+    );
+    expect(validateNewPassword("abcdefg1", "abcdefg2")).toBe(
+      "Passwords do not match",
+    );
+    expect(validateNewPassword("abcdefg1", "abcdefg1")).toBeNull();
   });
 });

@@ -197,6 +197,62 @@ export const changeEmailLimiter = createRateLimiter({
   message: "Too many email change attempts. Please wait.",
 });
 
+// --- Password reset (spec §4.1–4.2) ---
+// Email-keyed limiters run BEFORE any account lookup, so a 429 is identical
+// for real and unknown addresses (not an existence oracle) and the client may
+// show it honestly. Route middleware → they also run before Zod validation,
+// so malformed requests count against them too (intended). Keys reuse
+// normalizeUsernameKey (trim + lowercase, the same normalization as Zod's
+// resetEmail), so "  Foo@X.com " and "foo@x.com" share one bucket.
+
+/** Key on the normalized body email, else the IP key. */
+export function passwordResetEmailKey(prefix: string) {
+  return (req: Request): string => {
+    const email = normalizeUsernameKey(
+      (req.body as { email?: unknown } | undefined)?.email,
+    );
+    return email ? `${prefix}${email}` : ipKeyGenerator(req);
+  };
+}
+
+export const forgotPasswordIpLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many password reset requests, please try again later",
+  keyByUser: false,
+});
+
+export const forgotPasswordEmailLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: resolveRateLimitMax(3, process.env),
+  message: {
+    error: "Too many code requests for this email. Try again in an hour.",
+    code: "RATE_LIMITED",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: passwordResetEmailKey("forgot-email:"),
+});
+
+export const resetPasswordIpLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: "Too many password reset attempts, please try again later",
+  keyByUser: false,
+});
+
+export const resetPasswordEmailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: resolveRateLimitMax(10, process.env),
+  message: {
+    error: "Too many attempts. Please wait a few minutes and try again.",
+    code: "RATE_LIMITED",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: passwordResetEmailKey("reset-email:"),
+});
+
 // --- Store webhooks (IP-keyed; called by Apple/Google stores, not users) ---
 export const webhookRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
