@@ -1,15 +1,17 @@
 ---
 name: todo-fast
-description: Use when the user names one specific medium/high/critical todo in todos/ to be implemented now, in this session, rather than waiting for a /todo backlog sweep — including a todo gated by blocked_until or human_led that the user wants to override for one run.
+description: Use when the user names one specific medium/high/critical todo in todos/ to be implemented now, in this session, rather than waiting for a /todo backlog sweep — including a todo gated by blocked_until or human_led that the user wants to override for one run — and when resuming a /todo-fast run with `/todo-fast continue` after a compaction.
 ---
 
-You are running `/todo-fast` for exactly one todo, the file you were given. It never scans the backlog.
+You are running `/todo-fast` for one todo, the file you were given, and then for every followup todo that work generates, until none is left. It never scans the backlog. **A run is finished only when the todo AND every followup it generated is merged, or handed to the user with a reason.** It never leaves a filed followup behind.
 
-All the implementation work belongs to `.claude/agents/todo-executor.md`: pre-flight, research, advisor, implementing, verifying, reviewing, committing, codifying and opening the PR. This skill adds three things around it: a priority and gate check (with the one legal gate override), the merge, and cleanup. Never restate or re-sequence executor steps here. When the executor changes, `/todo-fast` follows automatically.
+All the implementation work belongs to `.claude/agents/todo-executor.md`: pre-flight, research, advisor, implementing, verifying, reviewing, committing, codifying and opening the PR. This skill adds four things around it: a priority and gate check (with the one legal gate override), the merge, cleanup, and the followup loop. Never restate or re-sequence executor steps here. When the executor changes, `/todo-fast` follows automatically.
+
+`/todo-fast continue` resumes a run after a compaction: go straight to Step 6.3.
 
 ## Step 1 — Priority and gate
 
-1. **Priority.** Read the todo's frontmatter. If `priority` is `low`, stop and report: "This todo is priority `low` — `/todo` already lands it on its own through the auto-merge guard path. Use `/todo` instead."
+1. **Priority.** Read the todo's frontmatter. If `priority` is `low`, stop and report: "This todo is priority `low` — `/todo` already lands it on its own through the auto-merge guard path. Use `/todo` instead." This check applies only to the todo the user named. A followup from Step 6 runs at any priority.
 
 2. **Gate check.** Run:
 
@@ -90,3 +92,47 @@ Give the executor's Step 11 report fields verbatim, plus the two lines below. If
 RUN_MODE: dispatched | in-session (gate override) | stopped at Step 1
 MERGED: <merge commit sha> | auto-merge armed | waiting on user (security label) | n/a (no PR)
 ```
+
+Then continue to Step 6. Do not end the run at this report.
+
+## Step 6 — Followups, then pause for a compaction
+
+User ruling (2026-10-04): no loose ends. Filing a followup todo during the work is fine. Leaving one behind is not. The run loops this skill over every followup the work generated, with a fresh context window for each.
+
+1. **Collect.** List the todo files the work added: every PR this todo produced (the executor's PR plus any repair PR from Step 4), excluding the archive:
+
+   ```bash
+   gh pr view <n> --json files --jq '.files[] | select(.changeType=="ADDED") | .path' | grep '^todos/P.*\.md$'
+   ```
+
+   `^todos/P` already excludes `todos/archive/` (where Step 8 moves the finished todo) and `TEMPLATE.md`. Also add any todo you filed yourself during this run. If the todo produced no merged PR (`skipped`, `blocked`, `failed`, or a security PR waiting on the user), it is not finished: collect nothing from it, record it under `handed_to_user` in 6.2, and carry on with the queue.
+
+2. **Save the run state** to `todo-fast-run.json` in your scratchpad directory. This file and the ledger note are how the run survives the compaction. Write the file every time it changes:
+
+   ```json
+   {
+     "root": "<todo the user named>",
+     "done": [{ "todo": "...", "pr": 1300, "merged": "<sha>" }],
+     "queue": ["todos/P3-...md"],
+     "handed_to_user": [{ "todo": "...", "reason": "..." }],
+     "followups_run": 0
+   }
+   ```
+
+   Append the new followups to `queue`, the finished todo to `done`, and anything not finished to `handed_to_user` with its reason. Then record a ledger note:
+
+   ```bash
+   bash .claude/hooks/ledger-note.sh VERIFIED "/todo-fast run: <root>; done <n>; queue <paths>; state <scratchpad>/todo-fast-run.json" "gh pr view <n> --json mergeCommit"
+   ```
+
+3. **Next followup.** Re-read `todo-fast-run.json`; never trust your memory of it, since a compaction may have summarized it away.
+   - **Queue empty** → go to 6.4.
+   - **`followups_run` has reached 10** → stop. Show the user what's left in `queue` and ask whether to keep going. Continue only on their yes; on a yes, the count starts again from 0.
+   - **Otherwise:**
+     - Take the first path off `queue` and add 1 to `followups_run`.
+     - Save the file.
+     - Tell the user: "`<finished todo>` is done (PR #<n> merged). Next followup: `<path>` (<k> left in the queue). Ready to compact: run `/compact`, then `/todo-fast continue`." Then end your turn. Do not start the followup in this window.
+   - **On `/todo-fast continue`:** re-read the file and run Steps 1–6 on the followup you took off the queue, at any priority. A gated followup gets the same Step 1 gate as any todo: with no human override, it goes to `handed_to_user`.
+   - **Non-interactive session** (a `/goal` loop, or a background or headless run): no one can run `/compact`, so do not pause. Report the queue and stop.
+
+4. **Run summary.** When the queue is empty, report every todo the run handled: each one's PR and merge commit, and each `handed_to_user` entry with its reason. Delete `todo-fast-run.json`. Then the run is over.
