@@ -54,6 +54,21 @@ export function buildNutrientRows(data: LabelExtractionResult): NutrientRow[] {
   ];
 }
 
+/**
+ * Scale a label value by servings consumed. Rounding convention: `decimals`
+ * 0 = whole number (calories), 1 = one decimal (nutrient rows). null/undefined
+ * pass through as null.
+ */
+export function scaleByServings(
+  value: number | null | undefined,
+  servings: number,
+  decimals: 0 | 1,
+): number | null {
+  if (value == null) return null;
+  const factor = 10 ** decimals;
+  return Math.round(value * servings * factor) / factor;
+}
+
 /** Convert LocalNutritionData to LabelExtractionResult for display */
 export function localDataToExtractionResult(
   data: LocalNutritionData,

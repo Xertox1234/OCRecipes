@@ -61,6 +61,7 @@ import {
   localDataToExtractionResult,
   shouldReplaceWithAI,
   getLogButtonPresentation,
+  scaleByServings,
 } from "./label-analysis-utils";
 import { frontLabelSavedKey } from "./FrontLabelConfirmScreen";
 
@@ -421,10 +422,7 @@ export default function LabelAnalysisScreen() {
         uploadFailed,
         isSubmitting: isConfirming || isVerifying,
         verificationMode: !!(verificationMode && verifyBarcode),
-        calories:
-          labelData?.calories != null
-            ? Math.round(labelData.calories * servings)
-            : null,
+        calories: scaleByServings(labelData?.calories, servings, 0),
       }),
     [
       sessionId,
@@ -576,10 +574,7 @@ export default function LabelAnalysisScreen() {
           />
 
           {macroRows.map((row, index) => {
-            const scaledValue =
-              row.value != null
-                ? Math.round(row.value * servings * 10) / 10
-                : null;
+            const scaledValue = scaleByServings(row.value, servings, 1);
             return (
               <Animated.View
                 key={row.label}
@@ -647,10 +642,7 @@ export default function LabelAnalysisScreen() {
 
               {showMicros &&
                 microRows.map((row) => {
-                  const scaledValue =
-                    row.value != null
-                      ? Math.round(row.value * servings * 10) / 10
-                      : null;
+                  const scaledValue = scaleByServings(row.value, servings, 1);
                   return (
                     <View
                       key={row.label}
