@@ -32,9 +32,14 @@ vi.mock("../../db", () => ({
   },
 }));
 
-const { collectUserImageUrls, filterUnreferencedImageUrls } = await import(
-  "../account-images"
-);
+const { mockDeleteImage } = vi.hoisted(() => ({ mockDeleteImage: vi.fn() }));
+vi.mock("../../lib/image-store", () => ({ deleteImage: mockDeleteImage }));
+
+const {
+  collectUserImageUrls,
+  filterUnreferencedImageUrls,
+  deleteImagesIfUnreferenced,
+} = await import("../account-images");
 
 const CDN = "https://cdn.example.test";
 let tx: NodePgDatabase<typeof schema>;
@@ -49,6 +54,17 @@ async function addCommunityRecipe(authorId: string, imageUrl: string | null) {
     instructions: ["Cook"],
     ingredients: [],
     imageUrl,
+  });
+}
+
+async function addCanonicalGallery(authorId: string, images: string[]) {
+  await tx.insert(communityRecipes).values({
+    authorId,
+    normalizedProductName: "featured",
+    title: "Featured recipe",
+    instructions: ["Cook"],
+    ingredients: [],
+    canonicalImages: images,
   });
 }
 
@@ -127,6 +143,20 @@ describe("account image cleanup storage", () => {
     });
   });
 
+  it("collects the author's featured-recipe gallery images too", async () => {
+    await addCanonicalGallery(owner.id, [
+      `${CDN}/recipe-images/g1.jpg`,
+      `${CDN}/recipe-images/g2.jpg`,
+    ]);
+
+    expect(await collectUserImageUrls(owner.id)).toEqual(
+      expect.arrayContaining([
+        { url: `${CDN}/recipe-images/g1.jpg`, kind: "recipe" },
+        { url: `${CDN}/recipe-images/g2.jpg`, kind: "recipe" },
+      ]),
+    );
+  });
+
   describe("filterUnreferencedImageUrls (run after the user's rows are gone)", () => {
     it("keeps an image nothing references any more", async () => {
       const images = [
@@ -162,6 +192,16 @@ describe("account image cleanup storage", () => {
       ]);
     });
 
+    it("drops an image that is in another user's featured-recipe gallery", async () => {
+      await addCanonicalGallery(other.id, [`${CDN}/recipe-images/gallery.jpg`]);
+
+      const result = await filterUnreferencedImageUrls([
+        { url: `${CDN}/recipe-images/gallery.jpg`, kind: "recipe" },
+      ]);
+
+      expect(result).toEqual([]);
+    });
+
     it("treats a ?v= cache-buster as the same stored image", async () => {
       await addMealPlanRecipe(other.id, `${CDN}/recipe-images/v.jpg?v=3`);
 
@@ -181,6 +221,24 @@ describe("account image cleanup storage", () => {
       await tx.delete(users).where(eq(users.id, owner.id));
 
       expect(await filterUnreferencedImageUrls(collected)).toEqual(collected);
+    });
+  });
+
+  describe("deleteImagesIfUnreferenced", () => {
+    it("deletes only the images nothing else references", async () => {
+      await addMealPlanRecipe(other.id, `${CDN}/recipe-images/kept.jpg`);
+      mockDeleteImage.mockClear();
+
+      await deleteImagesIfUnreferenced([
+        { url: `${CDN}/recipe-images/kept.jpg`, kind: "recipe" },
+        { url: `${CDN}/recipe-images/free.jpg`, kind: "recipe" },
+      ]);
+
+      expect(mockDeleteImage).toHaveBeenCalledTimes(1);
+      expect(mockDeleteImage).toHaveBeenCalledWith(
+        `${CDN}/recipe-images/free.jpg`,
+        "recipe",
+      );
     });
   });
 });

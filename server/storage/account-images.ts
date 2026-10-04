@@ -6,6 +6,7 @@ import {
   mealPlanRecipes,
 } from "@shared/schema";
 import { db } from "../db";
+import { deleteImage } from "../lib/image-store";
 import { eq, inArray, sql, type AnyColumn, type SQL } from "drizzle-orm";
 
 // Stored images an account owns beyond its avatar, so account deletion can
@@ -14,6 +15,9 @@ import { eq, inArray, sql, type AnyColumn, type SQL } from "drizzle-orm";
 // AFTER it: once the user's rows are gone, any remaining reference belongs to
 // someone else. That is what keeps a crafted meal-plan imageUrl pointing at
 // another user's image from deleting it, and keeps a shared copy's picture.
+// "Any remaining reference" covers every column that can hold a recipe-images/
+// URL, including featured recipes' canonical_images gallery. Every path that
+// deletes a client-suppliable image URL goes through deleteImagesIfUnreferenced.
 
 export interface OwnedImage {
   url: string;
@@ -41,7 +45,10 @@ export async function collectUserImageUrls(
       .from(cookbooks)
       .where(eq(cookbooks.userId, userId)),
     db
-      .select({ url: communityRecipes.imageUrl })
+      .select({
+        url: communityRecipes.imageUrl,
+        gallery: communityRecipes.canonicalImages,
+      })
       .from(communityRecipes)
       .where(eq(communityRecipes.authorId, userId)),
     db
@@ -68,7 +75,10 @@ export async function collectUserImageUrls(
     }
   };
   add(covers, "cookbook");
-  add([...community, ...planned, ...chat], "recipe");
+  const gallery = community.flatMap((r) =>
+    (r.gallery ?? []).map((url) => ({ url })),
+  );
+  add([...community, ...gallery, ...planned, ...chat], "recipe");
   return images;
 }
 
@@ -106,7 +116,16 @@ export async function filterUnreferencedImageUrls(
         .from(chatMessages)
         .where(inArray(withoutQuery(chatImageUrl), recipeKeys)),
     ]);
-    collect([...community, ...planned, ...chat], "recipe");
+    const gallery = await db.execute<{ key: string }>(
+      sql`select split_part(e, '?', 1) as key
+          from ${communityRecipes}
+          cross join lateral jsonb_array_elements_text(${communityRecipes.canonicalImages}) as e
+          where split_part(e, '?', 1) in (${sql.join(
+            recipeKeys.map((k) => sql`${k}`),
+            sql`, `,
+          )})`,
+    );
+    collect([...community, ...planned, ...chat, ...gallery.rows], "recipe");
   }
 
   if (coverKeys.length > 0) {
@@ -120,4 +139,16 @@ export async function filterUnreferencedImageUrls(
   return images.filter(
     (i) => !referenced.has(`${i.kind}:${stripQuery(i.url)}`),
   );
+}
+
+/**
+ * Delete stored images that no row references any more. Call it only after
+ * the rows that pointed at them are gone (committed), so any reference left
+ * belongs to something else and that image is kept.
+ */
+export async function deleteImagesIfUnreferenced(
+  images: OwnedImage[],
+): Promise<void> {
+  const deletable = await filterUnreferencedImageUrls(images);
+  await Promise.all(deletable.map((i) => deleteImage(i.url, i.kind)));
 }
