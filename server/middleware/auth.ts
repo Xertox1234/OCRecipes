@@ -4,6 +4,7 @@ import { isAccessTokenPayload } from "../lib/jwt-types";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { setRequestUserId } from "../lib/request-context";
+import { fireAndForget } from "../lib/fire-and-forget";
 
 // Extend Express Request type.
 // userId is declared as non-optional because all routes that access it
@@ -85,6 +86,29 @@ const sweepInterval = setInterval(
 ) as unknown as NodeJS.Timeout;
 sweepInterval.unref();
 
+// Last time this process asked storage to record app activity per user, so a
+// busy user costs one query an hour, not one per request. The real once-an-hour
+// guard is in touchLastActive's SQL; this map only skips the round trip.
+const ACTIVITY_WRITE_INTERVAL_MS = 60 * 60 * 1000;
+const lastActivityWrite = new Map<string, number>();
+
+/**
+ * Record app use for the retention cleanup without ever affecting the
+ * request: deferred so even a synchronous throw becomes a logged rejection,
+ * never a 401 from requireAuth's catch.
+ */
+function recordAppActivity(userId: string): void {
+  const now = Date.now();
+  const last = lastActivityWrite.get(userId);
+  if (last !== undefined && now - last < ACTIVITY_WRITE_INTERVAL_MS) return;
+  if (lastActivityWrite.size >= MAX_CACHE_SIZE) lastActivityWrite.clear();
+  lastActivityWrite.set(userId, now);
+  fireAndForget(
+    "record-app-activity",
+    Promise.resolve().then(() => storage.touchLastActive(userId)),
+  );
+}
+
 /** Call on logout to immediately invalidate cached tokenVersion */
 export function invalidateTokenVersionCache(userId: string): void {
   tokenVersionCache.delete(userId);
@@ -148,6 +172,8 @@ export async function requireAuth(
 
     req.userId = payload.sub;
     setRequestUserId(payload.sub);
+    // Only after the tokenVersion check: a revoked token is not app use.
+    recordAppActivity(payload.sub);
     next();
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {

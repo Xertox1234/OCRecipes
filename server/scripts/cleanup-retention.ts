@@ -125,6 +125,10 @@ export async function getActiveUserIds(
     SELECT DISTINCT c.user_id AS id
     FROM chat_conversations c
     WHERE c.updated_at > ${activeCutoff}
+    UNION
+    SELECT u.id
+    FROM users u
+    WHERE u.last_active_at > ${activeCutoff}
   `);
   // node-postgres returns rows on `.rows`; drizzle's typed `execute` returns
   // a result that exposes the rows array directly in newer versions. Handle

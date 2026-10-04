@@ -104,6 +104,12 @@ export const users = pgTable(
     }),
     /** IANA timezone string e.g. "America/Los_Angeles". NULL = not yet captured (treated as UTC). */
     timezone: text("timezone"),
+    /**
+     * Last authenticated use of the app, written at most once an hour (in SQL,
+     * against now()) by requireAuth. Retention cleanup treats a user seen in
+     * the last 30 days as active. NULL = not seen since this column shipped.
+     */
+    lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
