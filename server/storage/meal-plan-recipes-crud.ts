@@ -19,7 +19,7 @@ import {
   mealPlanToSearchable,
 } from "../lib/search-index";
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
-import { deleteImage } from "../lib/image-store";
+import { deleteImagesIfUnreferenced } from "./account-images";
 import { fireAndForget } from "../lib/fire-and-forget";
 import {
   normalizeRecipeFields,
@@ -344,13 +344,14 @@ export async function updateMealPlanRecipe(
     .returning();
   if (recipe) {
     addToIndex(mealPlanToSearchable(recipe, ingredientNames));
-    // Fire-and-forget: object-store failure must not fail the update. The
-    // "recipe" kind scopes the delete to recipe-images/ keys (imageUrl is
-    // client-suppliable — never delete outside that prefix).
+    // Fire-and-forget: object-store failure must not fail the update.
+    // imageUrl is client-suppliable, so the old URL may be another user's
+    // image: delete it only if no row references it any more. The "recipe"
+    // kind keeps the delete inside recipe-images/.
     if (previousImageUrl && previousImageUrl !== recipe.imageUrl) {
       fireAndForget(
         "meal-plan-recipe-image-replace-cleanup",
-        deleteImage(previousImageUrl, "recipe"),
+        deleteImagesIfUnreferenced([{ url: previousImageUrl, kind: "recipe" }]),
       );
     }
   }
@@ -409,12 +410,17 @@ export async function deleteMealPlanRecipe(
     removeFromIndex(`personal:${id}`);
     // Delete the stored image object AFTER the tx commits (rollback safety)
     // and fire-and-forget — an object-store failure must not break the
-    // deletion. The "recipe" kind scopes the delete to recipe-images/ keys
-    // (imageUrl is client-suppliable — never delete outside that prefix).
-    fireAndForget(
-      "meal-plan-recipe-image-cleanup",
-      deleteImage(deletedRow.imageUrl, "recipe"),
-    );
+    // deletion. imageUrl is client-suppliable, so it may be another user's
+    // image: delete it only if no row references it any more. The "recipe"
+    // kind keeps the delete inside recipe-images/.
+    if (deletedRow.imageUrl) {
+      fireAndForget(
+        "meal-plan-recipe-image-cleanup",
+        deleteImagesIfUnreferenced([
+          { url: deletedRow.imageUrl, kind: "recipe" },
+        ]),
+      );
+    }
   }
   return deletedRow !== null;
 }
