@@ -7,7 +7,7 @@ You are running `/todo-fast` for one todo, the file you were given, and then for
 
 All the implementation work belongs to `.claude/agents/todo-executor.md`: pre-flight, research, advisor, implementing, verifying, reviewing, committing, codifying and opening the PR. This skill adds four things around it: a priority and gate check (with the one legal gate override), the merge, cleanup, and the followup loop. Never restate or re-sequence executor steps here. When the executor changes, `/todo-fast` follows automatically.
 
-`/todo-fast continue` resumes a run after a compaction: go straight to Step 6.3.
+`/todo-fast continue` resumes a run after a compaction: go straight to Step 6.3's `continue` rule.
 
 ## Step 1 — Priority and gate
 
@@ -112,6 +112,7 @@ User ruling (2026-10-04): no loose ends. Filing a followup todo during the work 
    ```json
    {
      "root": "<todo the user named>",
+     "current": null,
      "done": [{ "todo": "...", "pr": 1300, "merged": "<sha>" }],
      "queue": ["todos/P3-...md"],
      "handed_to_user": [{ "todo": "...", "reason": "..." }],
@@ -119,20 +120,26 @@ User ruling (2026-10-04): no loose ends. Filing a followup todo during the work 
    }
    ```
 
-   Append the new followups to `queue`, the finished todo to `done`, and anything not finished to `handed_to_user` with its reason. Then record a ledger note:
+   - Record the todo you just finished (the root, or `current`) under `done` if its PR merged. Otherwise record it under `handed_to_user` with its reason, and include the PR URL if one exists.
+   - Set `current` to `null`.
+   - Append each new followup to `queue`, unless that path is already in `queue`, `done` or `handed_to_user`.
+
+   Then record a ledger note:
 
    ```bash
-   bash .claude/hooks/ledger-note.sh VERIFIED "/todo-fast run: <root>; done <n>; queue <paths>; state <scratchpad>/todo-fast-run.json" "gh pr view <n> --json mergeCommit"
+   bash .claude/hooks/ledger-note.sh VERIFIED "/todo-fast run: <root>; done <n>; queue <paths>; state <scratchpad>/todo-fast-run.json" "cat <scratchpad>/todo-fast-run.json"
    ```
 
 3. **Next followup.** Re-read `todo-fast-run.json`; never trust your memory of it, since a compaction may have summarized it away.
-   - **Queue empty** → go to 6.4.
-   - **`followups_run` has reached 10** → stop. Show the user what's left in `queue` and ask whether to keep going. Continue only on their yes; on a yes, the count starts again from 0.
-   - **Otherwise:**
-     - Take the first path off `queue` and add 1 to `followups_run`.
+   - **On `/todo-fast continue`:**
+     - If `current` is set, run Steps 1–6 on `current`, at any priority. Do not take another path off `queue`: `current` is the one you already took before the pause. A gated followup gets the same Step 1 gate as any todo; with no human override, it goes to `handed_to_user` in 6.2.
+     - If `current` is `null`, continue with the next bullet as if you had just finished 6.2.
+   - **After 6.2, queue empty** → go to 6.4.
+   - **After 6.2, `followups_run` has reached 10** → stop. Show the user what's left in `queue` and ask whether to keep going. On their yes, reset `followups_run` to 0 and take the next followup as below, including the pause.
+   - **After 6.2, otherwise:**
+     - Move the first path from `queue` into `current` and add 1 to `followups_run`.
      - Save the file.
-     - Tell the user: "`<finished todo>` is done (PR #<n> merged). Next followup: `<path>` (<k> left in the queue). Ready to compact: run `/compact`, then `/todo-fast continue`." Then end your turn. Do not start the followup in this window.
-   - **On `/todo-fast continue`:** re-read the file and run Steps 1–6 on the followup you took off the queue, at any priority. A gated followup gets the same Step 1 gate as any todo: with no human override, it goes to `handed_to_user`.
-   - **Non-interactive session** (a `/goal` loop, or a background or headless run): no one can run `/compact`, so do not pause. Report the queue and stop.
+     - Tell the user: "`<finished todo>` is done (PR #<n> merged). Next followup: `<current>` (<k> left in the queue). Ready to compact: run `/compact`, then `/todo-fast continue`." Then end your turn. Do not start the followup in this window.
+   - **Non-interactive session** (a `/goal` loop, or a background or headless run): no one can run `/compact`, and no one can answer the 10-followup question. Do not pause. Give the 6.4 summary with the remaining `queue` listed as not done, keep the file, and stop.
 
-4. **Run summary.** When the queue is empty, report every todo the run handled: each one's PR and merge commit, and each `handed_to_user` entry with its reason. Delete `todo-fast-run.json`. Then the run is over.
+4. **Run summary.** When the queue is empty and `current` is `null`, report every todo the run handled: each one's PR and merge commit, and each `handed_to_user` entry with its reason. Delete `todo-fast-run.json`. Then the run is over.
