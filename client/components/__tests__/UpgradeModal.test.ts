@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { PurchaseError } from "@shared/types/subscription";
 import type { IAPProduct } from "@/lib/iap/types";
 import {
   BENEFITS,
@@ -179,7 +180,7 @@ describe("getRenewalTerms", () => {
 });
 
 describe("getUpgradeErrorMessage", () => {
-  it.each([
+  it.each<[PurchaseError["code"] | undefined, string]>([
     ["NETWORK", "Network error. Check your connection and try again."],
     ["ALREADY_OWNED", "You already own this subscription."],
     [
