@@ -56,7 +56,7 @@
     <key>NSMicrophoneUsageDescription</key>
     <string>OCRecipes uses the microphone for voice food logging.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your photos</string>
+    <string>OCRecipes uses photos you choose to find ingredients, read receipts, import recipes, and set your profile picture and cookbook covers.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>OCRecipes uses speech recognition for voice food logging.</string>
     <key>RCTNewArchEnabled</key>
