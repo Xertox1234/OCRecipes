@@ -76,7 +76,7 @@ Check the rows in order and take the first that matches. Read the PR's labels wi
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | No PR (`skipped`, `blocked`, `failed`)                                                   | Nothing to merge. Go to Step 5.                                                                                                                                                                                                                                    |
 | The PR carries a `security` label                                                        | Do not merge. In an interactive session, send a `PushNotification`, then `AskUserQuestion` with the readiness assessment, and merge only on the user's explicit yes for this PR. In a non-interactive session, report `waiting on user (security label)` and stop. |
-| `MERGE_ELIGIBLE: yes (auto-merge enabled)`                                               | It lands itself on green CI. Go to Step 5.                                                                                                                                                                                                                         |
+| `MERGE_ELIGIBLE: yes (auto-merge enabled)`                                               | It lands itself on green CI. Wait until the PR is `MERGED`, reading its state rather than assuming. If a required check fails, fix forward as on the `/land` path below. Then go to Step 5.                                                                        |
 | Anything else (`held`, `review-required`, `unknown`, `yes (auto-merge enable FAILED …)`) | Invoke `/land` and merge.                                                                                                                                                                                                                                          |
 
 On the `/land` path:
@@ -90,7 +90,7 @@ Give the executor's Step 11 report fields verbatim, plus the two lines below. If
 
 ```
 RUN_MODE: dispatched | in-session (gate override) | stopped at Step 1
-MERGED: <merge commit sha> | auto-merge armed | waiting on user (security label) | n/a (no PR)
+MERGED: <merge commit sha> | waiting on user (security label) | n/a (no PR)
 ```
 
 Then continue to Step 6. Do not end the run at this report.
