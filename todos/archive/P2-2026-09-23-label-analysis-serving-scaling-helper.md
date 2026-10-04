@@ -1,6 +1,6 @@
 ---
 title: "LabelAnalysisScreen scales nutrition values by servings inline three times, with two rounding conventions"
-status: in-progress
+status: done
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23
