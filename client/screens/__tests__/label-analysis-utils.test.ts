@@ -4,6 +4,7 @@ import {
   localDataToExtractionResult,
   shouldReplaceWithAI,
   getLogButtonPresentation,
+  scaleByServings,
 } from "../label-analysis-utils";
 import type { LabelExtractionResult } from "@/lib/photo-upload";
 import type { LocalNutritionData } from "@/lib/nutrition-ocr-parser";
@@ -217,5 +218,32 @@ describe("getLogButtonPresentation", () => {
       verificationMode: true,
     });
     expect(result.label).toBe("Submit Verification");
+  });
+});
+
+describe("scaleByServings", () => {
+  it("passes null and undefined through as null", () => {
+    expect(scaleByServings(null, 2, 1)).toBeNull();
+    expect(scaleByServings(undefined, 2, 0)).toBeNull();
+  });
+
+  it("keeps zero as zero", () => {
+    expect(scaleByServings(0, 2.5, 1)).toBe(0);
+  });
+
+  it("rounds to a whole number with decimals = 0 (calories)", () => {
+    expect(scaleByServings(250, 0.5, 0)).toBe(125);
+    expect(scaleByServings(101, 0.5, 0)).toBe(51);
+    expect(scaleByServings(99, 2.5, 0)).toBe(248);
+  });
+
+  it("rounds to one decimal with decimals = 1 (nutrient rows)", () => {
+    expect(scaleByServings(3.3, 0.5, 1)).toBe(1.7);
+    expect(scaleByServings(12, 2.5, 1)).toBe(30);
+    expect(scaleByServings(7.77, 1, 1)).toBe(7.8);
+  });
+
+  it("removes float artifacts", () => {
+    expect(scaleByServings(0.1, 3, 1)).toBe(0.3);
   });
 });

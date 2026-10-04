@@ -1,6 +1,6 @@
 ---
 title: "LabelAnalysisScreen scales nutrition values by servings inline three times, with two rounding conventions"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-09-23
 updated: 2026-09-23
@@ -53,3 +53,8 @@ Keep it small — a pure util with tests.
 ### 2026-09-23
 
 - Initial creation from the 2026-09-23 front-end audit (M25).
+
+### 2026-10-04
+
+- Added `scaleByServings(value, servings, decimals: 0 | 1)` to `label-analysis-utils.ts`; used at all three sites (calories with 0 decimals, macro and micro rows with 1). Per-site output unchanged.
+- Sharing with `recalculateNutrition`: evaluated, NOT shared. It is a stateful `useCallback` that delegates to `scaleNutrition` (`client/lib/serving-size-utils.ts`), which never rounds and works on a `NutritionPer100g` object with undefined fields; the label screen scales scalar `number | null` values. No rounding convention exists there to adopt, and sharing would touch out-of-scope files.
