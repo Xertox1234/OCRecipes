@@ -110,6 +110,14 @@ describe("usePurchase.purchase", () => {
   });
 });
 
+describe("usePurchase.refreshProduct", () => {
+  it("passes the store's refresh through unchanged", () => {
+    const { result } = renderHook(() => usePurchase());
+
+    expect(result.current.refreshProduct).toBe(iap.refreshProducts);
+  });
+});
+
 describe("usePurchase.restore", () => {
   it("sends the restored token to the server", async () => {
     const { result } = renderHook(() => usePurchase());

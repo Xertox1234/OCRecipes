@@ -263,6 +263,33 @@ describe("useExpoIAP — buying", () => {
     });
   });
 
+  it("turns a plain payload from the store's own request into an Error", async () => {
+    // The store's own shape: a plain payload, not an Error.
+    storeMock.requestPurchase.mockRejectedValue({
+      code: "user-cancelled",
+      message: "User cancelled",
+    });
+    const { result } = await connectedWithProduct();
+
+    const failure: unknown = await result.current
+      .requestPurchase(result.current.products[0])
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).toMatchObject({ code: "user-cancelled" });
+  });
+
+  it("keeps refreshProducts the same function across renders", async () => {
+    // The paywall's retry effect depends on this identity: a new function each
+    // render would re-fetch on every render after a failed load.
+    const hook = await connectedWithProduct();
+    const first = hook.result.current.refreshProducts;
+
+    hook.rerender();
+
+    expect(hook.result.current.refreshProducts).toBe(first);
+  });
+
   it("rejects when the store's own request fails", async () => {
     storeMock.requestPurchase.mockImplementation(() =>
       Promise.reject(new Error("not-prepared")),
