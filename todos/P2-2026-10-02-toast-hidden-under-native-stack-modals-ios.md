@@ -1,6 +1,6 @@
 ---
 title: "iOS: toasts render beneath native-stack modals — the one Toast host sits in the root view controller's views, so toasts raised while Scan, LabelAnalysis or another modal route is up are never seen"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-02
 updated: 2026-10-02

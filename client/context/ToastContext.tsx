@@ -7,6 +7,9 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
+import { Platform } from "react-native";
+import { FullWindowOverlay } from "react-native-screens";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { Toast } from "@/components/Toast";
 import { useTheme } from "@/hooks/useTheme";
@@ -28,6 +31,19 @@ interface ToastContextType {
   error: (message: string, options?: ToastOptions) => void;
   info: (message: string, options?: ToastOptions) => void;
   dismiss: () => void;
+}
+
+/** iOS presents modal routes above the root view controller, where this
+ *  provider's host lives: lift the host onto the key window. */
+function ToastHost({ children }: { children: React.ReactElement }) {
+  if (Platform.OS !== "ios") return children;
+  return (
+    <FullWindowOverlay unstable_accessibilityContainerViewIsModal={false}>
+      <GestureHandlerRootView pointerEvents="box-none">
+        {children}
+      </GestureHandlerRootView>
+    </FullWindowOverlay>
+  );
 }
 
 const ToastContext = createContext<ToastContextType | null>(null);
@@ -73,14 +89,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
       {toasts.length > 0 && (
-        <Toast
-          key={toasts[0].id}
-          message={toasts[0].message}
-          variant={toasts[0].variant}
-          theme={theme}
-          onDismiss={dismiss}
-          action={toasts[0].action}
-        />
+        <ToastHost key={toasts[0].id}>
+          <Toast
+            message={toasts[0].message}
+            variant={toasts[0].variant}
+            theme={theme}
+            onDismiss={dismiss}
+            action={toasts[0].action}
+          />
+        </ToastHost>
       )}
     </ToastContext.Provider>
   );
