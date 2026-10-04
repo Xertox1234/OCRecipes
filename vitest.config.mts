@@ -192,6 +192,12 @@ export default defineConfig({
         import.meta.dirname,
         "./test/mocks/expo-notifications.ts",
       ),
+      // The real package loads a native module at import, which throws under
+      // Node. Reached via @/lib/token-storage <- useAuth / query-client.
+      "expo-secure-store": path.resolve(
+        import.meta.dirname,
+        "./test/mocks/expo-secure-store.ts",
+      ),
       "@sentry/react-native": path.resolve(
         import.meta.dirname,
         "./test/mocks/sentry-react-native.ts",

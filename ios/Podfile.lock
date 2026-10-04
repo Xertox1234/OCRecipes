@@ -318,6 +318,8 @@ PODS:
     - Yoga
   - ExpoNotifications (55.0.14):
     - ExpoModulesCore
+  - ExpoSecureStore (15.0.8):
+    - ExpoModulesCore
   - ExpoSpeech (14.0.8):
     - ExpoModulesCore
   - ExpoSpeechRecognition (3.1.1):
@@ -3455,6 +3457,7 @@ DEPENDENCIES:
   - ExpoLinking (from `../node_modules/expo-linking/ios`)
   - ExpoModulesCore (from `../node_modules/expo-modules-core`)
   - ExpoNotifications (from `../node_modules/expo-notifications/ios`)
+  - ExpoSecureStore (from `../node_modules/expo-secure-store/ios`)
   - ExpoSpeech (from `../node_modules/expo-speech/ios`)
   - ExpoSpeechRecognition (from `../node_modules/expo-speech-recognition/ios`)
   - ExpoSplashScreen (from `../node_modules/expo-splash-screen/ios`)
@@ -3639,6 +3642,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-modules-core"
   ExpoNotifications:
     :path: "../node_modules/expo-notifications/ios"
+  ExpoSecureStore:
+    :path: "../node_modules/expo-secure-store/ios"
   ExpoSpeech:
     :path: "../node_modules/expo-speech/ios"
   ExpoSpeechRecognition:
@@ -3861,6 +3866,7 @@ SPEC CHECKSUMS:
   ExpoLinking: 2ef632ad5013e3f1568fae9408d56ab9af5efc55
   ExpoModulesCore: 20899b4dd703e10a543ff4c50ee1543e47d90082
   ExpoNotifications: 0e3b12306933444ca6030782eaa0b1b015ee3b42
+  ExpoSecureStore: d32f751874a2ceb5aaeebeb3578e165c1ba2b24a
   ExpoSpeech: d22b56570ccfab5a27112dc9691f1ac83537de26
   ExpoSpeechRecognition: 46c21b61638bcf3478066886b52579b2f9f56ab5
   ExpoSplashScreen: bc3cffefca2716e5f22350ca109badd7e50ec14d
