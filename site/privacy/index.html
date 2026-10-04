@@ -32,7 +32,7 @@
 
 <h3>Photos, voice and text you give the app</h3>
 <ul>
-  <li><strong>Food, label, menu and receipt photos</strong> are sent for analysis and are not stored by us afterwards. Analysis results are kept in memory for up to 30 minutes so you can review them, then saved only if you log or save them.</li>
+  <li><strong>Food, label, menu and receipt photos</strong> are sent for analysis and are not stored by us afterwards. Food and label results are kept in memory for up to 30 minutes so you can review them, then saved only if you log or save them. Menu results are saved to your menu history straight away, so you can come back to them, until you delete them or your account. For each receipt scan we keep a short record: how many photos and items it had, and whether it worked.</li>
   <li><strong>Profile pictures and cookbook covers</strong> you upload are stored so we can show them.</li>
   <li><strong>Voice input</strong> is turned into text either by your phone’s speech recognition (provided by Apple or Google) or by OpenAI.</li>
   <li><strong>Conversations with the AI coach and recipe chat</strong> are stored so you can return to them. The coach may save short notes about your goals and preferences to personalize later answers. These notes can include things you tell it about how you feel.</li>
@@ -84,7 +84,7 @@
 <h2>Public and shared content</h2>
 <ul>
   <li><strong>Community recipes</strong> you publish are public by default. Other users can see them, and popular public recipes may be included in the recipe data we offer to businesses through the OCRecipes API. You can delete your recipes at any time. Deleting your account deletes them too.</li>
-  <li><strong>Nutrition label scans</strong> help verify product nutrition data. That product data is shared with other users and offered through the OCRecipes API, <strong>without your name or account attached</strong>.</li>
+  <li><strong>Nutrition label scans</strong> help verify product nutrition data. That product data is shared with other users and offered through the OCRecipes API, <strong>without your name or account attached</strong>. Because it is not linked to you, it stays in the shared product data after you delete your account.</li>
 </ul>
 
 <h2>Where your information is processed</h2>
@@ -95,8 +95,10 @@
   <li><strong>Your account and profile:</strong> until you delete your account.</li>
   <li><strong>Scanned items:</strong> deleted after 1 year.</li>
   <li><strong>Coach and recipe chats:</strong> deleted 6 months after the last message.</li>
-  <li><strong>Daily nutrition logs:</strong> deleted after 2 years.</li>
-  <li>These automatic deletions are skipped while you have an active subscription or have used the app in the last 30 days, so your history stays available while you use it.</li>
+  <li><strong>Daily nutrition logs:</strong> deleted after 2 years. An entry you logged from a scan is deleted along with that scan, after 1 year.</li>
+  <li><strong>Menu scan history:</strong> until you delete it or your account.</li>
+  <li><strong>Receipt scan records:</strong> until you delete your account.</li>
+  <li>These automatic deletions are skipped while you have an active subscription, or if in the last 30 days you have scanned or logged a food or used the coach or recipe chat. Confirming a meal from your meal plan does not count toward this.</li>
   <li><strong>Food photos:</strong> not stored after analysis.</li>
   <li><strong>Request logs and error reports:</strong> kept for a limited time for security and troubleshooting.</li>
 </ul>
