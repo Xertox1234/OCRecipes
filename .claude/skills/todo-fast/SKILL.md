@@ -68,12 +68,14 @@ The branch has been pushed by this point, so removing the worktree loses nothing
 
 User ruling (2026-10-04): `/todo-fast` PRs are reviewed, repaired, codified **and merged by the agent**, the same as `/todo` sweep PRs. This standing instruction is the "user's explicit merge instruction" that `/land`'s pipeline-PR carve-out asks for. Route on the report:
 
-| Report                                                                                   | Action                                                                                                                                            |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No PR (`skipped`, `blocked`, `failed`)                                                   | Nothing to merge. Go to Step 5.                                                                                                                   |
-| `MERGE_ELIGIBLE: yes (auto-merge enabled)`                                               | It lands itself on green CI. Go to Step 5.                                                                                                        |
-| The PR carries a `security` label                                                        | Do not merge. Send a `PushNotification`, then `AskUserQuestion` with the readiness assessment. Merge only on the user's explicit yes for this PR. |
-| Anything else (`held`, `review-required`, `unknown`, `yes (auto-merge enable FAILED …)`) | Invoke `/land` and merge.                                                                                                                         |
+Check the rows in order and take the first that matches. Read the PR's labels with `mcp__github__pull_request_read`.
+
+| Report                                                                                   | Action                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No PR (`skipped`, `blocked`, `failed`)                                                   | Nothing to merge. Go to Step 5.                                                                                                                                                                                                                                    |
+| The PR carries a `security` label                                                        | Do not merge. In an interactive session, send a `PushNotification`, then `AskUserQuestion` with the readiness assessment, and merge only on the user's explicit yes for this PR. In a non-interactive session, report `waiting on user (security label)` and stop. |
+| `MERGE_ELIGIBLE: yes (auto-merge enabled)`                                               | It lands itself on green CI. Go to Step 5.                                                                                                                                                                                                                         |
+| Anything else (`held`, `review-required`, `unknown`, `yes (auto-merge enable FAILED …)`) | Invoke `/land` and merge.                                                                                                                                                                                                                                          |
 
 On the `/land` path:
 
@@ -82,9 +84,9 @@ On the `/land` path:
 
 ## Step 5 — Report
 
-Give the executor's Step 11 report fields verbatim, plus:
+Give the executor's Step 11 report fields verbatim, plus the two lines below. If the run stopped at Step 1, there is no executor report: give `STATUS: skipped`, the `REASON_CODE` (`GATE_BLOCKED`, or `NONE` for the priority stop), the reason, and `RUN_MODE: stopped at Step 1`. Step 3 does not apply then, because no worktree exists.
 
 ```
-RUN_MODE: dispatched | in-session (gate override)
+RUN_MODE: dispatched | in-session (gate override) | stopped at Step 1
 MERGED: <merge commit sha> | auto-merge armed | waiting on user (security label) | n/a (no PR)
 ```
