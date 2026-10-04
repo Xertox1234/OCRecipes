@@ -109,12 +109,12 @@ function setupCors(app: express.Application) {
   ];
 
   const publicDomain = process.env.EXPO_PUBLIC_DOMAIN;
-  // Web frontend origin (e.g. https://ocrecipes.app). Set at web launch.
+  // Web frontend origin (e.g. https://ocrecipes.com). Set at web launch.
   // Use Bearer auth on the web client — Access-Control-Allow-Credentials can
   // be dropped once the web client is confirmed Bearer-only (no cookies). If
   // cookie/session auth is ever adopted, a fresh CORS + CSRF security pass is
   // required (see Risks in todos/P3-2026-06-10-web-frontend-cors-origin.md).
-  // Set the bare origin with no trailing slash, e.g. https://ocrecipes.app
+  // Set the bare origin with no trailing slash, e.g. https://ocrecipes.com
   const webOrigin = process.env.WEB_ORIGIN;
 
   function isAllowedOrigin(origin: string | undefined): boolean {

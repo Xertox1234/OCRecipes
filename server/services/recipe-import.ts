@@ -434,7 +434,7 @@ async function safeFetch(
     const res = await fetch(currentUrl, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (compatible; OCRecipes/1.0; +https://ocrecipes.app)",
+          "Mozilla/5.0 (compatible; OCRecipes/1.0; +https://ocrecipes.com)",
         Accept: "text/html",
       },
       redirect: "manual",

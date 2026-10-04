@@ -15,7 +15,7 @@ import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
  * production marketing-site URL.
  */
 const PRIVACY_POLICY_URL =
-  process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL ?? "https://ocrecipes.app/privacy";
+  process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL ?? "https://ocrecipes.com/privacy";
 
 const DATA_CATEGORIES = [
   {

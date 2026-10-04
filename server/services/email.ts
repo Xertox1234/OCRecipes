@@ -98,9 +98,9 @@ async function sendWithRetry(
   return lastError;
 }
 
-const APP_URL = process.env.EMAIL_VERIFY_BASE_URL ?? "https://ocrecipes.app";
+const APP_URL = process.env.EMAIL_VERIFY_BASE_URL ?? "https://ocrecipes.com";
 const EMAIL_FROM =
-  process.env.EMAIL_FROM ?? "OCRecipes <noreply@ocrecipes.app>";
+  process.env.EMAIL_FROM ?? "OCRecipes <noreply@ocrecipes.com>";
 
 // In-service per-recipient throttle. The signup-attempt notice has no endpoint
 // of its own, so the per-IP register limiter cannot cap how many emails a
@@ -263,7 +263,7 @@ export async function sendPasswordChangedNotice(
     subject: "Your OCRecipes password was changed",
     html: `<p>The password for your OCRecipes account <strong>${escapeHtml(username)}</strong> was just changed, and every device was signed out.</p>
 <p>If this was you, there's nothing else to do.</p>
-<p>If this wasn't you, contact <a href="mailto:support@ocrecipes.app">support@ocrecipes.app</a> right away.</p>`,
+<p>If this wasn't you, contact <a href="mailto:support@ocrecipes.com">support@ocrecipes.com</a> right away.</p>`,
   });
   if (error)
     logger.error({ resendError: error }, "password-changed notice failed");

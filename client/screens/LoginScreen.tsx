@@ -37,8 +37,8 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ApiError } from "@/lib/api-error";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
-const TERMS_URL = "https://ocrecipes.app/terms";
-const PRIVACY_URL = "https://ocrecipes.app/privacy";
+const TERMS_URL = "https://ocrecipes.com/terms";
+const PRIVACY_URL = "https://ocrecipes.com/privacy";
 
 const HERO_HEIGHT = Dimensions.get("window").height * 0.25;
 

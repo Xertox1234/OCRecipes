@@ -5,7 +5,7 @@
  * policies. Keep all legal URLs in this single file so they can be rotated
  * without touching screen code.
  *
- * Each URL falls back to the canonical hosted page on ocrecipes.app when the
+ * Each URL falls back to the canonical hosted page on ocrecipes.com when the
  * corresponding `EXPO_PUBLIC_*` env var is not set.
  */
 
@@ -13,7 +13,7 @@
 // hosted page instead of producing a broken empty URL.
 export const PRIVACY_POLICY_URL: string =
   process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL?.trim() ||
-  "https://ocrecipes.app/privacy";
+  "https://ocrecipes.com/privacy";
 
 export const TERMS_URL: string =
-  process.env.EXPO_PUBLIC_TERMS_URL?.trim() || "https://ocrecipes.app/terms";
+  process.env.EXPO_PUBLIC_TERMS_URL?.trim() || "https://ocrecipes.com/terms";

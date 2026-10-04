@@ -45,7 +45,7 @@ const envSchema = z.object({
 
   EXPO_PUBLIC_DOMAIN: z.string().optional(),
   // Web frontend origin for CORS allowlist (set at web launch; omit until then)
-  // Must be the bare origin with no trailing slash, e.g. https://ocrecipes.app
+  // Must be the bare origin with no trailing slash, e.g. https://ocrecipes.com
   WEB_ORIGIN: z
     .string()
     .url()

@@ -127,7 +127,7 @@ describe("verifyGooglePushToken", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.GOOGLE_PUBSUB_AUDIENCE = "https://api.ocrecipes.app";
+    process.env.GOOGLE_PUBSUB_AUDIENCE = "https://api.ocrecipes.com";
     process.env.GOOGLE_PUBSUB_SA_EMAIL =
       "pubsub@ocrecipes.iam.gserviceaccount.com";
   });
@@ -150,7 +150,7 @@ describe("verifyGooglePushToken", () => {
     );
     expect(mockVerifyIdToken).toHaveBeenCalledWith({
       idToken: "good-token",
-      audience: "https://api.ocrecipes.app",
+      audience: "https://api.ocrecipes.com",
     });
   });
 

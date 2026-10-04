@@ -55,6 +55,19 @@ describe("email service", () => {
     expect(arg.html).toContain("verify-email?token=tok123");
   });
 
+  it("defaults the sender and the verify link to ocrecipes.com", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test");
+    vi.stubEnv("EMAIL_FROM", undefined);
+    vi.stubEnv("EMAIL_VERIFY_BASE_URL", undefined);
+    const { sendVerificationEmail } = await import("../email");
+    await sendVerificationEmail("a@b.com", "tok123");
+    const arg = mockSend.mock.calls[0][0];
+    expect(arg.from).toBe("OCRecipes <noreply@ocrecipes.com>");
+    expect(arg.html).toContain(
+      "https://ocrecipes.com/verify-email?token=tok123",
+    );
+  });
+
   it("throttles to at most 5 sends per recipient", async () => {
     vi.stubEnv("RESEND_API_KEY", "re_test");
     const { sendVerificationEmail } = await import("../email");
@@ -285,7 +298,8 @@ describe("email service", () => {
       const arg = mockSend.mock.calls[0][0];
       expect(arg.subject).toBe("Your OCRecipes password was changed");
       expect(arg.html).toContain("&lt;b&gt;alice&lt;/b&gt;");
-      expect(arg.html).toContain("support@ocrecipes.app");
+      expect(arg.html).toContain("mailto:support@ocrecipes.com");
+      expect(arg.html).not.toContain("ocrecipes.app");
     });
 
     it("still sends a reset code and a notice after the general bucket is exhausted", async () => {
