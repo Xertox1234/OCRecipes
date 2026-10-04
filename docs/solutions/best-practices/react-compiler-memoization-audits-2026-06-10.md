@@ -5,7 +5,7 @@ category: best-practices
 module: client
 tags: [performance, react-compiler, react-native, expo, flatlist]
 created: '2026-06-10'
-last_updated: '2026-09-25'
+last_updated: '2026-10-03'
 source: 2026-06-10 full audit (M2 better-fix; M3/L7 false-positives)
 ---
 
@@ -67,6 +67,17 @@ check the compiler will re-report these.
   see `docs/rules/hooks.md`) only ever reports the first one found. Treat
   bailout status as presence/absence per file, never "the reason," once more
   than one construct could be at fault.
+- **The ratchet runs only in CI, so it catches what local gates pass**
+  (2026-10-03, PR #1233). `check-react-compiler-bailouts.js` is part of
+  `npm run lint` (CI's "Lint · Types · Patterns"), NOT `preflight:fast`. Two
+  new screens copied LoginScreen's `try { … } finally { setBusy(false) }`
+  submit idiom; LoginScreen is a *baselined* bailout, so the idiom looked
+  house-approved, passed every local gate, and failed CI with "2 new
+  bailout(s)". Don't copy a submit handler from a baselined file into a new
+  one. Instead of `finally`, reset the busy flag as the FIRST statement of the
+  `catch` (so a later throw in the catch can't skip it) and right after the
+  `await` on the success path. Run `node scripts/check-react-compiler-bailouts.js`
+  by hand before pushing any new component.
 
 ## Related Files
 

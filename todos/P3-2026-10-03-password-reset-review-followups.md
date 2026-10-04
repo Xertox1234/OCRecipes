@@ -28,25 +28,31 @@ Every item below was checked against the tree at the reviewed head before it was
 
 ## Acceptance Criteria
 
-- [ ] Item 1: decide between (a) correcting the four "rolling" claims to "fixed 24 h window from the first code; up to 11 in a span that crosses a boundary" and fixing the spec's per-day math, or (b) building a real sliding window. If (b), add a real-DB storage test for the boundary burst.
+- [ ] Item 1 (**owner decided 2026-10-03: fix the wording, keep the fixed window**): change the "rolling 24 h" claims in `server/storage/password-reset.ts` and `shared/constants/password-reset.ts`, and the archived P1 todo's 2026-10-03 entry, to "a fixed 24 h window from the first code; up to 11 codes in a span that crosses the window boundary". No schema change. The spec is local-only and gets corrected by hand.
 - [ ] Item 2: the archived P1 todo's Updates entry records both deliberate deviations (two login buckets per account; usernames still case-sensitive).
 - [ ] Item 3: `getResetRequestErrorMessage` maps `VALIDATION_ERROR` to "Please enter a valid email address.", with a test.
-- [ ] Item 4: the 429 copy is true for both limiters: neutral copy, or a distinct server code for the per-email limiter with the hourly copy shown only for that code. Tested.
+- [ ] Item 4 (**owner decided 2026-10-03: one neutral message**): `getResetRequestErrorMessage` maps every 429 to "Too many code requests. Please wait a while and try again." (no "this email", no "an hour"). Spec §2's copy follows. Tested. No server change.
 - [ ] Item 5: `validateResetForm` reports which field failed, and that input gets `error`/`errorMessage`. The code input is also marked on `INVALID_RESET_CODE`. Render test asserts it.
 - [ ] Item 6: the Resend announcement is hedged like the rest of the flow.
 
 ## Implementation Notes
 
-- Item 1 (a) touches only comments plus the local-only spec. (b) needs schema work: a timestamps array or a separate issue-log table, which means a new migration.
+- Item 1 touches only comments, plus the local-only spec by hand. The fixed-window behavior and its rationale are recorded in `docs/solutions/conventions/security-caps-must-be-durable-and-say-which-window-2026-10-03.md`.
 - Items 3–6 are client-only: `client/screens/ForgotPasswordScreen-utils.ts`, `client/screens/ResetPasswordScreen-utils.ts`, `client/screens/ResetPasswordScreen.tsx`, and their tests.
 - Don't use `try/finally` in the screens: React Compiler can't lower it, and `scripts/check-react-compiler-bailouts.js` fails CI.
 
 ## Scope Contract
 
-- **Mechanisms to use:** the existing screens, utils, `TextInput` `error`/`errorMessage` props, and the existing limiters. Item 1 (b) is the only place a new mechanism is allowed.
-- **Files in scope:** `server/storage/password-reset.ts`, `shared/constants/password-reset.ts`, `server/routes/_rate-limiters.ts` (item 4, only if the distinct-code option is chosen), `todos/archive/P1-2026-09-26-no-password-reset-or-account-recovery.md`, `client/screens/ForgotPasswordScreen-utils.ts`, `client/screens/ResetPasswordScreen-utils.ts`, `client/screens/ResetPasswordScreen.tsx`, the matching `__tests__` files, and a migration + storage test only if item 1 (b) is chosen.
+- **Mechanisms to use:** the existing screens, utils, `TextInput` `error`/`errorMessage` props, and the existing limiters. No new mechanisms: both open decisions were settled toward the no-new-mechanism option.
+- **Files in scope:** `server/storage/password-reset.ts` (comment only), `shared/constants/password-reset.ts` (comment only), `todos/archive/P1-2026-09-26-no-password-reset-or-account-recovery.md`, `client/screens/ForgotPasswordScreen-utils.ts`, `client/screens/ResetPasswordScreen-utils.ts`, `client/screens/ResetPasswordScreen.tsx`, and the matching `__tests__` files.
 - No other new mechanisms, files, or abstractions.
 
 ## Dependencies
 
 - PR #1233 merged.
+
+## Updates
+
+### 2026-10-03
+
+- PR #1233 merged (`d4b440c9`). The owner settled both open choices: item 1 → fix the wording (keep the fixed window), item 4 → one neutral 429 message. With no open decisions left, this todo is executable as written and needs no `human_led` gate (the confirmation reviewer's concern is resolved).
