@@ -26,7 +26,7 @@ Deep linking is configured in `client/navigation/linking.ts` and wired into `Nav
 | `ocrecipes://nutrition/:barcode`   | NutritionDetail      | Root modal                                               |
 | `ocrecipes://scan`                 | Scan                 | Root modal                                               |
 
-Universal link prefix `https://ocrecipes.app` is also registered (requires server-side AASA file for iOS).
+Universal link prefix `https://ocrecipes.com` is also registered (requires server-side AASA file for iOS).
 
 ### Adding a new deep link path
 

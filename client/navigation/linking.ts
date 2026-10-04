@@ -135,7 +135,7 @@ function stripLinkOnlyParams(state: ParsedLinkState): ParsedLinkState {
 }
 
 export const linking: LinkingOptions<RootStackParamList> = {
-  prefixes: ["ocrecipes://", "https://ocrecipes.app"],
+  prefixes: ["ocrecipes://", "https://ocrecipes.com"],
   // Every URL source — a real Linking event, a notification's data.url or
   // entryId-derived URL surfaced via getInitialURL, and a held tap replayed
   // by flushPendingNotificationUrl — funnels through this same

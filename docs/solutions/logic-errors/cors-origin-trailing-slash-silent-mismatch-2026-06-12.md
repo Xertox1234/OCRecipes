@@ -16,7 +16,7 @@ created: '2026-06-12'
 
 When a CORS allowlist entry is validated by Zod `.url()` and then compared
 with `===` against the browser's `Origin` header, a trailing slash on the env
-var (`https://ocrecipes.app/`) causes every browser request to silently fail
+var (`https://ocrecipes.com/`) causes every browser request to silently fail
 the exact-match check.
 
 Zod's `.url()` considers `https://example.com/` a valid URL (it is), so
@@ -75,7 +75,7 @@ request reaches the CORS middleware.
 - Any env var compared against an HTTP header with `===` or strict equality
   should use `.refine((v) => !v.endsWith("/"))` in its Zod schema if Zod's
   own validators (`.url()`, `.string()`) would accept the trailing-slash form.
-- Document "set the bare origin, no trailing slash, e.g. `https://ocrecipes.app`"
+- Document "set the bare origin, no trailing slash, e.g. `https://ocrecipes.com`"
   in the env var's inline comment.
 - Applies to any future `*_ORIGIN` or `*_DOMAIN` env var that feeds a
   `=== origin` check in CORS middleware.

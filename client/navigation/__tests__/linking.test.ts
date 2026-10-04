@@ -55,7 +55,8 @@ beforeEach(() => {
 describe("linking config", () => {
   it("includes both custom scheme and universal link prefixes", () => {
     expect(linking.prefixes).toContain("ocrecipes://");
-    expect(linking.prefixes).toContain("https://ocrecipes.app");
+    expect(linking.prefixes).toContain("https://ocrecipes.com");
+    expect(linking.prefixes).not.toContain("https://ocrecipes.app");
   });
 
   it("configures FeaturedRecipeDetail path with numeric parse", () => {
