@@ -17,7 +17,10 @@ import { eq, inArray, sql, type AnyColumn, type SQL } from "drizzle-orm";
 // another user's image from deleting it, and keeps a shared copy's picture.
 // "Any remaining reference" covers every column that can hold a recipe-images/
 // URL, including featured recipes' canonical_images gallery. Every path that
-// deletes a client-suppliable image URL goes through deleteImagesIfUnreferenced.
+// deletes a client-suppliable image URL runs it through
+// filterUnreferencedImageUrls first: account deletion calls it directly (the
+// avatar is deleted separately), and the meal-plan update and delete paths use
+// deleteImagesIfUnreferenced, which filters and then deletes.
 
 export interface OwnedImage {
   url: string;
