@@ -5,7 +5,7 @@ import {
   bustImageUrl,
 } from "../recipe-image-keys";
 
-const BASE = "https://cdn.ocrecipes.app";
+const BASE = "https://cdn.ocrecipes.com";
 
 describe("classifyRecipeImageUrl", () => {
   it("classifies our R2 recipe images as 'ours'", () => {

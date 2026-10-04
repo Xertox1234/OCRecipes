@@ -190,7 +190,7 @@ describe("validateEnv email verification (Resend)", () => {
   });
 
   it("throws when EMAIL_VERIFY_BASE_URL has a trailing slash (L12 — would yield //verify-email)", async () => {
-    process.env.EMAIL_VERIFY_BASE_URL = "https://ocrecipes.app/";
+    process.env.EMAIL_VERIFY_BASE_URL = "https://ocrecipes.com/";
     const { validateEnv } = await load();
     expect(() => validateEnv()).toThrow(
       /EMAIL_VERIFY_BASE_URL.*trailing slash/i,
@@ -198,7 +198,7 @@ describe("validateEnv email verification (Resend)", () => {
   });
 
   it("accepts EMAIL_VERIFY_BASE_URL without a trailing slash", async () => {
-    process.env.EMAIL_VERIFY_BASE_URL = "https://ocrecipes.app";
+    process.env.EMAIL_VERIFY_BASE_URL = "https://ocrecipes.com";
     const { validateEnv } = await load();
     expect(() => validateEnv()).not.toThrow();
   });

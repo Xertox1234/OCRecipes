@@ -150,11 +150,11 @@ are never locked out. Secrets — no `EXPO_PUBLIC_` prefix:
 RESEND_API_KEY=re_...
 
 # From address on a verified Resend sending domain.
-EMAIL_FROM="OCRecipes <noreply@ocrecipes.app>"
+EMAIL_FROM="OCRecipes <noreply@ocrecipes.com>"
 
-# Optional; defaults to https://ocrecipes.app. The verification link is
+# Optional; defaults to https://ocrecipes.com. The verification link is
 # ${EMAIL_VERIFY_BASE_URL}/verify-email?token=…
-EMAIL_VERIFY_BASE_URL=https://ocrecipes.app
+EMAIL_VERIFY_BASE_URL=https://ocrecipes.com
 ```
 
 **Turning the gate ON in prod (sequenced — see the email-verification spec §9):**
@@ -162,7 +162,7 @@ EMAIL_VERIFY_BASE_URL=https://ocrecipes.app
 1. Deploy the feature with `RESEND_API_KEY` UNSET → the gate stays off; nothing
    changes for users.
 2. Configure Resend; verify the sending domain's SPF / DKIM / DMARC. **Also
-   confirm the `https://ocrecipes.app/verify-email` universal link opens the
+   confirm the `https://ocrecipes.com/verify-email` universal link opens the
    APP, not the website** — the iOS `apple-app-site-association` (AASA) and
    Android `assetlinks.json` served at the domain must cover the `/verify-email`
    path, and the app's `associatedDomains` / intent filters must be set (native
