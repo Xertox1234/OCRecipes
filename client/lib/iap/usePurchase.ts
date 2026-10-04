@@ -46,10 +46,26 @@ export function usePurchase() {
       return;
     }
 
+    // The store's product carries the price and (on Android) the offer token a
+    // subscription needs; without it there is nothing to buy.
+    const product = iap.products.find(
+      (item) => item.productId === PRODUCT_IDS.ANNUAL_PREMIUM,
+    );
+    if (!product) {
+      safeSetState({
+        status: "error",
+        error: {
+          code: "STORE_UNAVAILABLE",
+          message: "The subscription has not loaded from the store",
+        },
+      });
+      return;
+    }
+
     safeSetState({ status: "loading" });
 
     try {
-      const result = await iap.requestPurchase(PRODUCT_IDS.ANNUAL_PREMIUM);
+      const result = await iap.requestPurchase(product);
       safeSetState({ status: "pending" });
 
       await apiRequest(
@@ -90,11 +106,21 @@ export function usePurchase() {
 
     try {
       const result = await iap.restorePurchases();
+      if (!result) {
+        safeSetState({
+          status: "error",
+          error: {
+            code: "NOTHING_TO_RESTORE",
+            message: "No purchase to restore",
+          },
+        });
+        return;
+      }
 
       await apiRequest(
         "POST",
         "/api/subscription/restore",
-        buildRestorePayload(result.transactionReceipt, platform),
+        buildRestorePayload(result.purchaseToken, platform),
       );
 
       await iap.finishTransaction(result);
@@ -114,5 +140,12 @@ export function usePurchase() {
     safeSetState({ status: "idle" });
   }, [safeSetState]);
 
-  return { state, purchase, restore, reset };
+  // The store's product: price, billing period and any free trial the paywall
+  // shows. Null until the store answers (the paywall then disables the CTA).
+  const product =
+    iap.products.find(
+      (item) => item.productId === PRODUCT_IDS.ANNUAL_PREMIUM,
+    ) ?? null;
+
+  return { state, purchase, restore, reset, product };
 }

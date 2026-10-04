@@ -24,10 +24,12 @@ if (USE_MOCK) {
   const mock = require("./mock-iap");
   _useIAP = mock.useIAP;
 } else {
-  // Real expo-iap — only resolved in production native builds
+  // Real store path — only resolved in production native builds. The adapter
+  // implements UseIAPResult on top of expo-iap, so TypeScript checks the shape
+  // (assigning expo-iap's own useIAP here never was checked, and didn't match).
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const expoIap = require("expo-iap");
-  _useIAP = expoIap.useIAP;
+  const adapter: typeof import("./expo-iap-adapter") = require("./expo-iap-adapter");
+  _useIAP = adapter.useExpoIAP;
 }
 
 export const useIAP: () => UseIAPResult = _useIAP;

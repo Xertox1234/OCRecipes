@@ -95,7 +95,7 @@ describe("isSupportedPlatform", () => {
 describe("buildReceiptPayload", () => {
   it("builds correct upgrade request shape", () => {
     const purchase = {
-      transactionReceipt: "receipt-data-123",
+      purchaseToken: "receipt-data-123",
       productId: "com.ocrecipes.premium.monthly",
       transactionId: "txn-456",
     };
@@ -112,7 +112,7 @@ describe("buildReceiptPayload", () => {
 
   it("works with android platform", () => {
     const purchase = {
-      transactionReceipt: "android-receipt",
+      purchaseToken: "android-receipt",
       productId: "premium_yearly",
       transactionId: "txn-789",
     };
@@ -136,5 +136,31 @@ describe("buildRestorePayload", () => {
     const result = buildRestorePayload("android-restore", "android");
     expect(result.platform).toBe("android");
     expect(result.receipt).toBe("android-restore");
+  });
+});
+
+describe("mapIAPError — expo-iap error codes", () => {
+  function storeError(code: string, message = "store said no"): Error {
+    return Object.assign(new Error(message), { code });
+  }
+
+  it.each([
+    ["user-cancelled", "USER_CANCELLED"],
+    ["network-error", "NETWORK"],
+    ["already-owned", "ALREADY_OWNED"],
+    ["item-unavailable", "STORE_UNAVAILABLE"],
+    ["iap-not-available", "STORE_UNAVAILABLE"],
+    ["billing-unavailable", "STORE_UNAVAILABLE"],
+    ["service-disconnected", "STORE_UNAVAILABLE"],
+    ["not-prepared", "STORE_UNAVAILABLE"],
+    ["pending", "PENDING_APPROVAL"],
+  ])("maps code %s to %s, whatever the message says", (code, expected) => {
+    expect(mapIAPError(storeError(code)).code).toBe(expected);
+  });
+
+  it("falls back to the message for an unrecognized code", () => {
+    expect(mapIAPError(storeError("service-error", "Network down")).code).toBe(
+      "NETWORK",
+    );
   });
 });
