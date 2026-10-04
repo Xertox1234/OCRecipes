@@ -89,6 +89,21 @@ describe("tokenStorage.get — fresh install", () => {
     expect(asyncStore.has(MARKER_KEY)).toBe(true);
   });
 
+  it("tries the drop again next launch when the Keychain delete fails", async () => {
+    // Writing the marker after a failed delete would make the next launch trust
+    // the stale token and sign in as the previous install's account.
+    secure.set(SECURE_KEY, "token-from-previous-install");
+    secureMock.deleteItemAsync.mockRejectedValueOnce(new Error("keychain"));
+    const tokenStorage = await loadTokenStorage();
+
+    expect(await tokenStorage.get()).toBeNull();
+    expect(asyncStore.has(MARKER_KEY)).toBe(false);
+
+    const nextLaunch = await loadTokenStorage();
+    expect(await nextLaunch.get()).toBeNull();
+    expect(secure.has(SECURE_KEY)).toBe(false);
+  });
+
   it("reads the Keychain once the install has been seen before", async () => {
     asyncStore.set(MARKER_KEY, "1");
     secure.set(SECURE_KEY, "current-token");
@@ -191,6 +206,44 @@ describe("tokenStorage.set", () => {
 
     expect(secure.get(SECURE_KEY)).toBe("fresh-login");
     expect(await tokenStorage.get()).toBe("fresh-login");
+  });
+
+  it("keeps a token when the first read starts in the same tick, right after set()", async () => {
+    // set() must not pause before claiming the cache: a get() started in that
+    // pause would run the fresh-install delete over the new login.
+    secure.set(SECURE_KEY, "token-from-previous-install");
+    const tokenStorage = await loadTokenStorage();
+
+    const login = tokenStorage.set("fresh-login");
+    const read = tokenStorage.get();
+    await Promise.all([login, read]);
+
+    expect(await tokenStorage.get()).toBe("fresh-login");
+    expect(secure.get(SECURE_KEY)).toBe("fresh-login");
+  });
+
+  it("stays logged out when the first read starts in the same tick, right after clear()", async () => {
+    asyncStore.set(MARKER_KEY, "1");
+    secure.set(SECURE_KEY, "current-token");
+    // Hold the delete until the next macrotask, so a read that slipped in
+    // first would see (and cache) the token the logout is removing.
+    secureMock.deleteItemAsync.mockImplementationOnce(
+      (key: string) =>
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            secure.delete(key);
+            resolve();
+          }, 0);
+        }),
+    );
+    const tokenStorage = await loadTokenStorage();
+
+    const logout = tokenStorage.clear();
+    const read = tokenStorage.get();
+    await Promise.all([logout, read]);
+
+    expect(await tokenStorage.get()).toBeNull();
+    expect(secure.has(SECURE_KEY)).toBe(false);
   });
 
   it("removes an old copy, so the next launch cannot swap it back in", async () => {
