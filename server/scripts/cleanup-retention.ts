@@ -16,9 +16,10 @@
  *   - In `NODE_ENV=production`, the job refuses to run unless
  *     `RETENTION_CLEANUP_ENABLED=true`. Same safety pattern as
  *     `seed-recipes.ts::--allow-prod-seed`.
- *   - Active users — anyone with an unexpired subscription OR a chat /
- *     scan signal in the last `ACTIVE_USER_WINDOW_DAYS` — are exempt
- *     from purges. Their old data is preserved.
+ *   - Active users — anyone with an unexpired subscription OR any use of
+ *     the app (users.last_active_at), a chat or a scan in the last
+ *     `ACTIVE_USER_WINDOW_DAYS` — are exempt from purges. Their old data
+ *     is preserved.
  *   - Deletes run in batches of `BATCH_SIZE` rows, looping until a
  *     batch returns fewer rows than the limit. This keeps each
  *     transaction short.
@@ -98,6 +99,8 @@ function assertAllowedIdentifier(name: string): void {
  *   - they have a chat conversation updated within
  *     ACTIVE_USER_WINDOW_DAYS
  *   - they have a scanned item from within ACTIVE_USER_WINDOW_DAYS
+ *   - they used the app (any authenticated request, recorded in
+ *     users.last_active_at) within ACTIVE_USER_WINDOW_DAYS
  *
  * The result is a `Set<string>` for O(1) membership checks during
  * per-user filtering. We materialise the IDs (rather than joining at
