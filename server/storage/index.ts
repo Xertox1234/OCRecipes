@@ -10,6 +10,7 @@
 
 import * as users from "./users";
 import * as passwordReset from "./password-reset";
+import * as accountImages from "./account-images";
 import * as nutrition from "./nutrition";
 import * as mealPlans from "./meal-plans";
 import * as groceryLists from "./grocery-lists";
@@ -62,6 +63,8 @@ export const storage = {
   issuePasswordResetCode: passwordReset.issuePasswordResetCode,
   reservePasswordResetAttempt: passwordReset.reservePasswordResetAttempt,
   completePasswordReset: passwordReset.completePasswordReset,
+  collectUserImageUrls: accountImages.collectUserImageUrls,
+  filterUnreferencedImageUrls: accountImages.filterUnreferencedImageUrls,
   createUser: users.createUser,
   updateUser: users.updateUser,
   updateUserEmail: users.updateUserEmail,

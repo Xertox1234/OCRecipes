@@ -69,6 +69,8 @@ vi.mock("../../storage", () => ({
     getSubscriptionStatus: vi.fn(),
     getEffectiveTierForUser: vi.fn(),
     deleteUser: vi.fn(),
+    collectUserImageUrls: vi.fn().mockResolvedValue([]),
+    filterUnreferencedImageUrls: vi.fn().mockResolvedValue([]),
     applyEmailVerification: vi.fn(),
   },
 }));
@@ -1400,6 +1402,85 @@ describe("Auth Routes", () => {
         "/api/avatars/1-123.jpg",
         "avatar",
       );
+    });
+
+    it("removes the account's cookbook covers and recipe images that nothing else references", async () => {
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("correctpassword", 10);
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(
+        createMockUser({ password: hash }),
+      );
+      vi.mocked(storage.deleteUser).mockResolvedValue(true);
+      const cover = {
+        url: "https://cdn.test/cookbook-covers/a.jpg",
+        kind: "cookbook" as const,
+      };
+      const recipe = {
+        url: "https://cdn.test/recipe-images/b.jpg",
+        kind: "recipe" as const,
+      };
+      vi.mocked(storage.collectUserImageUrls).mockResolvedValueOnce([
+        cover,
+        recipe,
+      ]);
+      vi.mocked(storage.filterUnreferencedImageUrls).mockResolvedValueOnce([
+        cover,
+        recipe,
+      ]);
+      mockDeleteImage.mockClear();
+
+      const res = await request(app)
+        .delete("/api/auth/account")
+        .set("Authorization", "Bearer mock-token")
+        .send({ password: "correctpassword" });
+
+      expect(res.status).toBe(200);
+      await vi.waitFor(() => {
+        expect(mockDeleteImage).toHaveBeenCalledWith(cover.url, "cookbook");
+        expect(mockDeleteImage).toHaveBeenCalledWith(recipe.url, "recipe");
+      });
+      // Collected while the rows exist; filtered once they are gone, so a
+      // remaining reference can only be another account's.
+      const collectOrder = vi.mocked(storage.collectUserImageUrls).mock
+        .invocationCallOrder[0];
+      const deleteOrder = vi.mocked(storage.deleteUser).mock
+        .invocationCallOrder[0];
+      const filterOrder = vi.mocked(storage.filterUnreferencedImageUrls).mock
+        .invocationCallOrder[0];
+      expect(storage.collectUserImageUrls).toHaveBeenCalledWith("1");
+      expect(collectOrder).toBeLessThan(deleteOrder);
+      expect(deleteOrder).toBeLessThan(filterOrder);
+      expect(storage.filterUnreferencedImageUrls).toHaveBeenCalledWith([
+        cover,
+        recipe,
+      ]);
+    });
+
+    it("leaves an image alone when another account still references it", async () => {
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("correctpassword", 10);
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(
+        createMockUser({ password: hash }),
+      );
+      vi.mocked(storage.deleteUser).mockResolvedValue(true);
+      const shared = {
+        url: "https://cdn.test/recipe-images/shared.jpg",
+        kind: "recipe" as const,
+      };
+      vi.mocked(storage.collectUserImageUrls).mockResolvedValueOnce([shared]);
+      vi.mocked(storage.filterUnreferencedImageUrls).mockResolvedValueOnce([]);
+      mockDeleteImage.mockClear();
+
+      const res = await request(app)
+        .delete("/api/auth/account")
+        .set("Authorization", "Bearer mock-token")
+        .send({ password: "correctpassword" });
+
+      expect(res.status).toBe(200);
+      await vi.waitFor(() =>
+        expect(storage.filterUnreferencedImageUrls).toHaveBeenCalled(),
+      );
+      expect(mockDeleteImage).not.toHaveBeenCalledWith(shared.url, "recipe");
     });
   });
 
