@@ -1,4 +1,13 @@
+import type { IAPProduct } from "@/lib/iap/types";
 import { BENEFITS, getCtaLabel, isCtaDisabled } from "../upgrade-modal-utils";
+
+const WITH_TRIAL: IAPProduct = {
+  productId: "com.ocrecipes.premium.annual",
+  displayPrice: "$29.99",
+  period: { count: 1, unit: "year" },
+  introOffer: { kind: "free-trial", length: { count: 3, unit: "day" } },
+  androidOfferToken: null,
+};
 
 describe("upgrade-modal-utils", () => {
   describe("BENEFITS", () => {
@@ -33,12 +42,12 @@ describe("upgrade-modal-utils", () => {
       expect(getCtaLabel("success")).toBe("Welcome to Premium!");
     });
 
-    it('returns "Start 3-Day Free Trial" for idle state', () => {
-      expect(getCtaLabel("idle")).toBe("Start 3-Day Free Trial");
+    it('returns "Start 3-Day Free Trial" for idle state when the store reports the trial', () => {
+      expect(getCtaLabel("idle", WITH_TRIAL)).toBe("Start 3-Day Free Trial");
     });
 
-    it('returns "Start 3-Day Free Trial" for error state', () => {
-      expect(getCtaLabel("error")).toBe("Start 3-Day Free Trial");
+    it('returns "Start 3-Day Free Trial" for error state when the store reports the trial', () => {
+      expect(getCtaLabel("error", WITH_TRIAL)).toBe("Start 3-Day Free Trial");
     });
   });
 

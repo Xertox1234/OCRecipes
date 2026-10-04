@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
   AccessibilityInfo,
+  Linking,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,25 +21,22 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { usePurchase } from "@/lib/iap/usePurchase";
 import { isPurchaseInProgress } from "@/lib/subscription/type-guards";
-import { BENEFITS, getCtaLabel, isCtaDisabled } from "./upgrade-modal-utils";
+import { logger } from "@/lib/logger";
+import { PRIVACY_POLICY_URL, TERMS_URL } from "@/constants/legal";
+import {
+  BENEFITS,
+  getCtaLabel,
+  getPriceLine,
+  getRenewalTerms,
+  getTrialLine,
+  getUpgradeErrorMessage,
+  isCtaDisabled,
+} from "./upgrade-modal-utils";
 
 interface UpgradeModalProps {
   visible: boolean;
   onClose: () => void;
   onUpgrade?: () => void;
-}
-
-function getUpgradeErrorMessage(code: string | undefined): string {
-  switch (code) {
-    case "NETWORK":
-      return "Network error. Check your connection and try again.";
-    case "ALREADY_OWNED":
-      return "You already own this subscription.";
-    case "STORE_UNAVAILABLE":
-      return "The store is currently unavailable. Try again later.";
-    default:
-      return "Could not complete the upgrade. Please try again.";
-  }
 }
 
 export function UpgradeModal({
@@ -49,7 +47,7 @@ export function UpgradeModal({
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
-  const { state, purchase, restore, reset } = usePurchase();
+  const { state, purchase, restore, reset, product } = usePurchase();
   const autoCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevVisibleRef = useRef(false);
   const upgradeErrorMessage =
@@ -57,6 +55,13 @@ export function UpgradeModal({
 
   const accentColor = theme.success;
   const inProgress = isPurchaseInProgress(state);
+  const ctaLabel = getCtaLabel(state.status, product);
+  const ctaDisabled = isCtaDisabled(state.status, product !== null);
+  const trialLine = getTrialLine(product);
+  const renewalTerms = getRenewalTerms(
+    product,
+    Platform.OS === "android" ? "android" : "ios",
+  );
 
   // Auto-close on success after 1.5s
   useEffect(() => {
@@ -131,6 +136,14 @@ export function UpgradeModal({
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     void restore();
   }, [haptics, restore]);
+
+  const openLegalUrl = (url: string) => {
+    haptics.selection();
+    // Call openURL directly: canOpenURL gives false negatives for HTTP(S) on iOS.
+    Linking.openURL(url).catch((error: unknown) => {
+      logger.warn("Failed to open legal URL", { url, error });
+    });
+  };
 
   const handleClose = useCallback(() => {
     if (!inProgress) {
@@ -250,21 +263,31 @@ export function UpgradeModal({
               ))}
             </Card>
 
+            {/* Price — from the store's live product, never a fixed string */}
+            <ThemedText type="h4" style={styles.priceText}>
+              {getPriceLine(product)}
+            </ThemedText>
+            {trialLine ? (
+              <ThemedText
+                type="small"
+                style={[styles.trialText, { color: theme.textSecondary }]}
+              >
+                {trialLine}
+              </ThemedText>
+            ) : null}
+
             {/* CTA */}
             <Pressable
               onPress={handleUpgrade}
-              disabled={isCtaDisabled(state.status)}
-              accessibilityLabel="Start 3-day free trial"
+              disabled={ctaDisabled}
+              accessibilityLabel={ctaLabel}
               accessibilityRole="button"
+              accessibilityState={{ disabled: ctaDisabled }}
               style={({ pressed }) => [
                 styles.ctaButton,
                 {
                   backgroundColor: accentColor,
-                  opacity: isCtaDisabled(state.status)
-                    ? 0.6
-                    : pressed
-                      ? 0.85
-                      : 1,
+                  opacity: ctaDisabled ? 0.6 : pressed ? 0.85 : 1,
                 },
               ]}
             >
@@ -275,7 +298,7 @@ export function UpgradeModal({
                   type="body"
                   style={[styles.ctaText, { color: theme.buttonText }]}
                 >
-                  {getCtaLabel(state.status)}
+                  {ctaLabel}
                 </ThemedText>
               )}
             </Pressable>
@@ -320,6 +343,42 @@ export function UpgradeModal({
                 Restore Purchases
               </ThemedText>
             </Pressable>
+
+            {/* Auto-renewal terms (App Store guideline 3.1.2) */}
+            {renewalTerms ? (
+              <ThemedText
+                type="caption"
+                style={[styles.termsText, { color: theme.textSecondary }]}
+              >
+                {renewalTerms}
+              </ThemedText>
+            ) : null}
+            <View style={styles.legalLinks}>
+              <Pressable
+                onPress={() => openLegalUrl(TERMS_URL)}
+                accessibilityRole="link"
+                accessibilityLabel="Terms of Service"
+                accessibilityHint="Opens our Terms of Service in your browser"
+                hitSlop={8}
+                style={styles.legalLink}
+              >
+                <ThemedText type="small" style={{ color: theme.link }}>
+                  Terms of Service
+                </ThemedText>
+              </Pressable>
+              <Pressable
+                onPress={() => openLegalUrl(PRIVACY_POLICY_URL)}
+                accessibilityRole="link"
+                accessibilityLabel="Privacy Policy"
+                accessibilityHint="Opens our Privacy Policy in your browser"
+                hitSlop={8}
+                style={styles.legalLink}
+              >
+                <ThemedText type="small" style={{ color: theme.link }}>
+                  Privacy Policy
+                </ThemedText>
+              </Pressable>
+            </View>
           </ScrollView>
         </View>
       </View>
@@ -387,6 +446,14 @@ const styles = StyleSheet.create({
   benefitLabel: {
     flex: 1,
   },
+  priceText: {
+    textAlign: "center",
+    marginBottom: Spacing.xs,
+  },
+  trialText: {
+    textAlign: "center",
+    marginBottom: Spacing.md,
+  },
   ctaButton: {
     width: "100%",
     paddingVertical: Spacing.md,
@@ -417,5 +484,19 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.4,
+  },
+  termsText: {
+    textAlign: "center",
+    marginTop: Spacing.md,
+  },
+  legalLinks: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: Spacing.lg,
+    marginTop: Spacing.sm,
+  },
+  legalLink: {
+    minHeight: 44,
+    justifyContent: "center",
   },
 });

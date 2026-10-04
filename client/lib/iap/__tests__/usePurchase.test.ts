@@ -106,7 +106,7 @@ describe("mapIAPError", () => {
 describe("buildReceiptPayload", () => {
   it("builds correct payload structure", () => {
     const purchase = {
-      transactionReceipt: "receipt-data-123",
+      purchaseToken: "receipt-data-123",
       productId: "com.ocrecipes.premium.annual",
       transactionId: "txn-456",
     };
@@ -121,9 +121,9 @@ describe("buildReceiptPayload", () => {
     });
   });
 
-  it("maps transactionReceipt to receipt field", () => {
+  it("maps purchaseToken to receipt field", () => {
     const purchase = {
-      transactionReceipt: "my-receipt",
+      purchaseToken: "my-receipt",
       productId: "prod-1",
       transactionId: "txn-1",
     };
@@ -135,7 +135,7 @@ describe("buildReceiptPayload", () => {
 
   it("preserves productId and transactionId", () => {
     const purchase = {
-      transactionReceipt: "r",
+      purchaseToken: "r",
       productId: "com.test.product",
       transactionId: "txn-test-123",
     };
