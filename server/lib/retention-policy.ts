@@ -21,8 +21,9 @@
  *
  * Active-user guard:
  *   - The cleanup job MUST NOT delete data for users with an active
- *     subscription. Users with a recent activity signal (chat or scan
- *     within `ACTIVE_USER_WINDOW_DAYS`) are also exempt. See
+ *     subscription. Users with a recent activity signal (any use of the
+ *     app, a scan or a chat within `ACTIVE_USER_WINDOW_DAYS`) are also
+ *     exempt. See
  *     `cleanup-retention.ts::getActiveUserIds` for the implementation.
  */
 
@@ -44,8 +45,8 @@ export const DAILY_LOGS_RETENTION_DAYS = 730;
  */
 
 /**
- * A user counts as "active" if they have a chat or scan signal within
- * this window. Active users are exempt from retention purges so a paying
+ * A user counts as "active" if they used the app (users.last_active_at),
+ * scanned or chatted within this window. Active users are exempt from retention purges so a paying
  * customer who briefly stops using the app doesn't lose history.
  */
 export const ACTIVE_USER_WINDOW_DAYS = 30;
