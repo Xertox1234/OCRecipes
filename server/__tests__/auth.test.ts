@@ -14,10 +14,15 @@ import { storage } from "../storage";
 // Never mock the module under test here. (vi.mock is hoisted above imports,
 // so the storage import above still resolves to this mock.)
 vi.mock("../storage", () => ({
-  storage: { getUser: vi.fn() },
+  storage: { getUser: vi.fn(), touchLastActive: vi.fn() },
 }));
 
 const mockGetUser = vi.mocked(storage.getUser);
+const mockTouchLastActive = vi.mocked(storage.touchLastActive);
+
+// The activity write runs in the background after next(); let it start
+// before asserting whether it happened.
+const flushBackground = () => new Promise((r) => setImmediate(r));
 
 // JWT_SECRET is set by test/setup.ts before this module loads.
 const JWT_SECRET = process.env.JWT_SECRET as string;
@@ -71,6 +76,8 @@ describe("Auth Middleware", () => {
   beforeEach(() => {
     mockGetUser.mockReset();
     mockGetUser.mockResolvedValue(userRow("default-user", 0));
+    mockTouchLastActive.mockReset();
+    mockTouchLastActive.mockResolvedValue(undefined);
   });
 
   describe("requireAuth — header validation", () => {
@@ -312,6 +319,87 @@ describe("Auth Middleware", () => {
 
       await callAuth(makeReq(`Bearer ${token}`), makeRes()).promise;
       expect(mockGetUser).toHaveBeenCalledTimes(2); // cache cleared → re-read
+    });
+  });
+
+  describe("requireAuth — records app activity for retention", () => {
+    it("records activity for a request with a valid token", async () => {
+      const userId = nextUserId();
+      mockGetUser.mockResolvedValue(userRow(userId, 0));
+      await callAuth(
+        makeReq(`Bearer ${generateToken(userId, 0, true)}`),
+        makeRes(),
+      ).promise;
+      await flushBackground();
+
+      expect(mockTouchLastActive).toHaveBeenCalledWith(userId);
+    });
+
+    it("does not record activity for a revoked token", async () => {
+      const userId = nextUserId();
+      mockGetUser.mockResolvedValue(userRow(userId, 1));
+      await callAuth(
+        makeReq(`Bearer ${generateToken(userId, 0, true)}`),
+        makeRes(),
+      ).promise;
+      await flushBackground();
+
+      expect(mockTouchLastActive).not.toHaveBeenCalled();
+    });
+
+    it("does not record activity for an invalid token", async () => {
+      await callAuth(makeReq("Bearer not-a-jwt"), makeRes()).promise;
+      await flushBackground();
+
+      expect(mockTouchLastActive).not.toHaveBeenCalled();
+    });
+
+    it("writes at most once per hour per user from this process", async () => {
+      const userId = nextUserId();
+      mockGetUser.mockResolvedValue(userRow(userId, 0));
+      const token = generateToken(userId, 0, true);
+
+      await callAuth(makeReq(`Bearer ${token}`), makeRes()).promise;
+      await callAuth(makeReq(`Bearer ${token}`), makeRes()).promise;
+      await flushBackground();
+
+      expect(mockTouchLastActive).toHaveBeenCalledTimes(1);
+    });
+
+    it("lets the request through when the activity write fails", async () => {
+      const userId = nextUserId();
+      mockGetUser.mockResolvedValue(userRow(userId, 0));
+      mockTouchLastActive.mockRejectedValue(new Error("db down"));
+      const res = makeRes();
+      const { next, promise } = callAuth(
+        makeReq(`Bearer ${generateToken(userId, 0, true)}`),
+        res,
+      );
+      await promise;
+      await flushBackground();
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it("lets the request through when the activity write throws synchronously", async () => {
+      // e.g. a route test whose storage mock lacks touchLastActive: a sync
+      // throw must never reach requireAuth's catch and turn into a 401.
+      const userId = nextUserId();
+      mockGetUser.mockResolvedValue(userRow(userId, 0));
+      mockTouchLastActive.mockImplementation(() => {
+        throw new TypeError("touchLastActive is not a function");
+      });
+      const res = makeRes();
+      const { next, promise } = callAuth(
+        makeReq(`Bearer ${generateToken(userId, 0, true)}`),
+        res,
+      );
+      await promise;
+      await flushBackground();
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalled();
     });
   });
 

@@ -30,6 +30,7 @@ const userDefaults: User = {
   subscriptionTier: "free",
   subscriptionExpiresAt: null,
   timezone: null,
+  lastActiveAt: null,
   createdAt: new Date("2024-01-01"),
 };
 

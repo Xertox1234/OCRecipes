@@ -58,6 +58,7 @@ export const storage = {
   getUserByUsername: users.getUserByUsername,
   getUserByEmail: users.getUserByEmail,
   getUserForAuth: users.getUserForAuth,
+  touchLastActive: users.touchLastActive,
   getUserByUsernameForAuth: users.getUserByUsernameForAuth,
   getUserByEmailForAuth: users.getUserByEmailForAuth,
   issuePasswordResetCode: passwordReset.issuePasswordResetCode,

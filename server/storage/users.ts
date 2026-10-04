@@ -408,6 +408,23 @@ export async function incrementTokenVersion(
 }
 
 /**
+ * Record that the user used the app now, for the retention cleanup's "used
+ * the app in the last 30 days" check. The once-an-hour guard is in SQL against
+ * now(), so writes stay bounded across restarts and multiple instances.
+ */
+export async function touchLastActive(userId: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ lastActiveAt: sql`now()` })
+    .where(
+      and(
+        eq(users.id, userId),
+        sql`(${users.lastActiveAt} IS NULL OR ${users.lastActiveAt} < now() - interval '1 hour')`,
+      ),
+    );
+}
+
+/**
  * Permanently delete a user and all associated data.
  * Relies on ON DELETE CASCADE foreign keys to clean up child tables.
  * Community recipes (which use SET NULL) are explicitly deleted first.
