@@ -23,7 +23,8 @@ const SECURE_OPTIONS: SecureStore.SecureStoreOptions = {
 let cachedToken: string | null = null;
 let cacheInitialized = false;
 // The first read in flight, shared by concurrent callers. set() and clear()
-// wait for it, so its fresh-install delete can never remove a newer token.
+// wait until none is in flight, then claim the cache with no await in between,
+// so a read can neither delete a newer token nor overwrite the cache after them.
 let pendingLoad: Promise<string | null> | null = null;
 
 async function markInstallSeen(): Promise<void> {
@@ -67,20 +68,16 @@ async function loadToken(): Promise<string | null> {
   if (!installSeen) {
     try {
       await SecureStore.deleteItemAsync(TOKEN_KEY, SECURE_OPTIONS);
+      // Only once the stale token is gone: a marker written after a failed
+      // delete would make the next launch trust it.
+      await markInstallSeen();
     } catch (error) {
       logger.error("Failed to drop token from a previous install:", error);
     }
-    await markInstallSeen();
     return null;
   }
 
   return SecureStore.getItemAsync(TOKEN_KEY, SECURE_OPTIONS);
-}
-
-async function waitForPendingLoad(): Promise<void> {
-  if (pendingLoad) {
-    await pendingLoad;
-  }
 }
 
 export const tokenStorage = {
@@ -112,7 +109,10 @@ export const tokenStorage = {
     if (!token || typeof token !== "string") {
       throw new Error("Token must be a non-empty string");
     }
-    await waitForPendingLoad();
+    // No await between the last check and the cache write below.
+    while (pendingLoad) {
+      await pendingLoad;
+    }
     cachedToken = token;
     cacheInitialized = true;
     try {
@@ -134,7 +134,10 @@ export const tokenStorage = {
   },
 
   async clear(): Promise<void> {
-    await waitForPendingLoad();
+    // No await between the last check and the cache write below.
+    while (pendingLoad) {
+      await pendingLoad;
+    }
     cachedToken = null;
     cacheInitialized = true;
     try {
