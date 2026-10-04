@@ -259,6 +259,21 @@ describe("tokenStorage.set", () => {
     expect(await nextLaunch.get()).toBe("newer-token");
   });
 
+  it("leaves the install unmarked when a fresh-install login cannot be saved", async () => {
+    // The stale-token drop failed and this login's write failed too: a marker
+    // written now would make the next launch sign in as the previous install.
+    secure.set(SECURE_KEY, "token-from-previous-install");
+    secureMock.deleteItemAsync.mockRejectedValueOnce(new Error("keychain"));
+    secureMock.setItemAsync.mockRejectedValueOnce(new Error("keychain"));
+    const tokenStorage = await loadTokenStorage();
+    await tokenStorage.get();
+
+    await tokenStorage.set("fresh-login");
+    const nextLaunch = await loadTokenStorage();
+
+    expect(await nextLaunch.get()).toBeNull();
+  });
+
   it("keeps the session when the Keychain write fails", async () => {
     secureMock.setItemAsync.mockRejectedValueOnce(new Error("keychain"));
     const tokenStorage = await loadTokenStorage();

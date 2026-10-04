@@ -117,6 +117,10 @@ export const tokenStorage = {
     cacheInitialized = true;
     try {
       await SecureStore.setItemAsync(TOKEN_KEY, token, SECURE_OPTIONS);
+      // Only once the write succeeded: it replaced any token a deleted copy of
+      // the app left behind. After a failed write that stale token may still be
+      // there, and the marker would make the next launch trust it.
+      await markInstallSeen();
     } catch (error) {
       // The in-memory cache is already set, so the current session works; a
       // failed write only means the token won't survive a cold start. Surface
@@ -130,7 +134,6 @@ export const tokenStorage = {
     } catch (error) {
       logger.error("Failed to clear legacy token:", error);
     }
-    await markInstallSeen();
   },
 
   async clear(): Promise<void> {
