@@ -1,6 +1,6 @@
 ---
 title: "FrontLabelConfirm: the low-confidence banner is never announced to screen readers (the AI-update toast reaches TalkBack only), and the upload/save error banners are silent on TalkBack"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-10-02
 updated: 2026-10-02
