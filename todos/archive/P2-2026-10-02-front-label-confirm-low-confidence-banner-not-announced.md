@@ -1,6 +1,6 @@
 ---
 title: "FrontLabelConfirm: the low-confidence banner is never announced to screen readers (the AI-update toast reaches TalkBack only), and the upload/save error banners are silent on TalkBack"
-status: backlog
+status: done
 priority: medium
 created: 2026-10-02
 updated: 2026-10-02
@@ -28,19 +28,19 @@ The low/medium-confidence banner in `client/screens/FrontLabelConfirmScreen.tsx:
 
 ## Acceptance Criteria
 
-- [ ] **Copy computed once.** The screen derives `confidenceBannerMessage` in render. It is null unless `dataSource === "ai"` and the tier of `data.confidence` is low or medium. The banner renders it in place of the inline ternary (`:316-318`). Both visible strings stay byte-identical to today's.
-- [ ] **One announce on the upgrade.** In `FrontLabelConfirmScreen.test.tsx`, a new describe uses a `sessionId: null` route with a resolved upload. Each row first `findByText`s what will be spoken (the denominator), then asserts the exact string via `waitFor` and `toHaveBeenCalledTimes(1)`. Rows 1-3 fail on main:
+- [x] **Copy computed once.** The screen derives `confidenceBannerMessage` in render. It is null unless `dataSource === "ai"` and the tier of `data.confidence` is low or medium. The banner renders it in place of the inline ternary (`:316-318`). Both visible strings stay byte-identical to today's.
+- [x] **One announce on the upgrade.** In `FrontLabelConfirmScreen.test.tsx`, a new describe uses a `sessionId: null` route with a resolved upload. Each row first `findByText`s what will be spoken (the denominator), then asserts the exact string via `waitFor` and `toHaveBeenCalledTimes(1)`. Rows 1-3 fail on main:
   1. Toast and low banner: "Updated with AI analysis. Low confidence — review carefully before saving".
   2. No toast and medium banner (the AI confirms a medium local preview): "Some details may be inaccurate — review before saving".
   3. Toast and high tier: "Updated with AI analysis".
   4. No toast and high tier: `announceForAccessibility` is never called. Before asserting that, the "Verifying with AI — Confirm will enable shortly" hint is gone, which proves the upgrade happened.
-- [ ] **Ungated on Android.** Row 1 with `RN.Platform.OS = "android"` announces the same string exactly once. The OS is restored in `afterEach`. Fails on main.
-- [ ] **No repeat.** After row 1's announce, an unrelated `rerender` leaves the count at 1.
-- [ ] **No live region and no role on the announced surfaces.** The toast's `accessibilityLiveRegion="polite"` (`:272`) and the banner's `accessibilityRole="alert"` (`:307`) are removed. A test asserts both `aria-live` and `role` are null on every node of both surfaces: the toast text and its `Animated.View`, and the banner text and its `View` (the every-node rule, solution doc `:126-132`). Fails on main: the toast container has `aria-live="polite"` and the banner container has `role="alert"`.
-- [ ] **Mount decision pinned.** With `route.params.sessionId` set and `data.confidence: 0.3`, the banner renders (`findByText`) and the announcer stays silent. That is the edge-only default (see Implementation Notes). If the executor takes the mount-announce alternative instead, this test asserts one announce of the banner copy, and the PR body says which branch was chosen.
-- [ ] **Upload error: one announce per platform.** With a `sessionId: null` route and an upload rejecting with a plain `Error`, the error is announced exactly once by one announcer on each platform. On iOS, `announceForAccessibility` is called once with "Could not analyze front label. Please try again.". On Android, the error's container has `aria-live="assertive"` and `announceForAccessibility` is not called. The Android assertions fail on main.
-- [ ] **Save error: one announce per platform, once per failure.** With `sessionId: "session-1"` and `confirmFrontLabel` rejecting, tapping "Looks Good" shows "Failed to save product details". It gets the same two-platform assertions as the upload error. A second failed tap announces once more on iOS, for a total of 2. The Android assertions fail on main.
-- [ ] The existing Retake and temp-photo-cleanup tests (`FrontLabelConfirmScreen.test.tsx:46-157`) pass unchanged.
+- [x] **Ungated on Android.** Row 1 with `RN.Platform.OS = "android"` announces the same string exactly once. The OS is restored in `afterEach`. Fails on main.
+- [x] **No repeat.** After row 1's announce, an unrelated `rerender` leaves the count at 1.
+- [x] **No live region and no role on the announced surfaces.** The toast's `accessibilityLiveRegion="polite"` (`:272`) and the banner's `accessibilityRole="alert"` (`:307`) are removed. A test asserts both `aria-live` and `role` are null on every node of both surfaces: the toast text and its `Animated.View`, and the banner text and its `View` (the every-node rule, solution doc `:126-132`). Fails on main: the toast container has `aria-live="polite"` and the banner container has `role="alert"`.
+- [x] **Mount decision pinned.** With `route.params.sessionId` set and `data.confidence: 0.3`, the banner renders (`findByText`) and the announcer stays silent. That is the edge-only default (see Implementation Notes). If the executor takes the mount-announce alternative instead, this test asserts one announce of the banner copy, and the PR body says which branch was chosen.
+- [x] **Upload error: one announce per platform.** With a `sessionId: null` route and an upload rejecting with a plain `Error`, the error is announced exactly once by one announcer on each platform. On iOS, `announceForAccessibility` is called once with "Could not analyze front label. Please try again.". On Android, the error's container has `aria-live="assertive"` and `announceForAccessibility` is not called. The Android assertions fail on main.
+- [x] **Save error: one announce per platform, once per failure.** With `sessionId: "session-1"` and `confirmFrontLabel` rejecting, tapping "Looks Good" shows "Failed to save product details". It gets the same two-platform assertions as the upload error. A second failed tap announces once more on iOS, for a total of 2. The Android assertions fail on main.
+- [x] The existing Retake and temp-photo-cleanup tests (`FrontLabelConfirmScreen.test.tsx:46-157`) pass unchanged.
 
 ## Implementation Notes
 
@@ -133,3 +133,7 @@ The low/medium-confidence banner in `client/screens/FrontLabelConfirmScreen.tsx:
 ### 2026-10-02
 
 - Filed from the 2026-10-02 deferred-warnings triage of the /todo sweep (#1213–#1226); claim verified against main ec26b972 by workflow wf_7d969d8d-ce1 and upheld by an adversarial re-check; filing approved by the owner 2026-10-02.
+
+### 2026-10-04
+
+- Implemented by todo executor: edge-only mount default chosen (no mount announce); error banners routed through InlineError.

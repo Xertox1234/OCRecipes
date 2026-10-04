@@ -4,7 +4,6 @@ import {
   View,
   ScrollView,
   Image,
-  Platform,
   AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,6 +22,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
+import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 
@@ -158,10 +158,8 @@ export default function FrontLabelConfirmScreen() {
       .catch((err: Error) => {
         if (cancelled) return;
         const message = frontLabelErrorMessage(err);
+        // InlineError announces it (iOS effect + Android assertive live region).
         setUploadError(message);
-        if (Platform.OS === "ios") {
-          AccessibilityInfo.announceForAccessibility(message);
-        }
       });
 
     return () => {
@@ -170,6 +168,41 @@ export default function FrontLabelConfirmScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on mount
   }, []);
+
+  // Computed once: rendered by the banner and spoken by the upgrade announcer.
+  const confidenceTier =
+    dataSource === "ai" ? getConfidenceTier(data.confidence) : null;
+  const confidenceBannerMessage =
+    confidenceTier === "low"
+      ? "Low confidence — review carefully before saving"
+      : confidenceTier === "medium"
+        ? "Some details may be inaccurate — review before saving"
+        : null;
+
+  // One merged announce on the local -> AI upgrade. The toast and the banner
+  // have no edge of their own: showUpdatedToast turns true only in the same
+  // callback as setDataSource("ai"), so they land in the same commit as the
+  // edge and a separate announce would collide on iOS
+  // (docs/solutions/logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md).
+  // `data` has no writer after the upload callback: a later writer would NOT
+  // be re-announced. The announce is ungated because neither surface has a
+  // live region (or role) — do not add one, TalkBack would speak it twice.
+  // The toast's 3-second hide cannot re-announce: the guard is the
+  // dataSource edge. This needs its own prev-value ref (silent on mount), not
+  // dataSourceRef, which is already "ai" by the time this effect runs.
+  const prevDataSourceRef = useRef(dataSource);
+  useEffect(() => {
+    const upgraded =
+      dataSource === "ai" && prevDataSourceRef.current === "local";
+    prevDataSourceRef.current = dataSource;
+    if (!upgraded) return;
+    const parts: string[] = [];
+    if (showUpdatedToast) parts.push("Updated with AI analysis");
+    if (confidenceBannerMessage) parts.push(confidenceBannerMessage); // caution last
+    if (parts.length > 0) {
+      AccessibilityInfo.announceForAccessibility(parts.join(". "));
+    }
+  }, [dataSource, showUpdatedToast, confidenceBannerMessage]);
 
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
@@ -196,10 +229,8 @@ export default function FrontLabelConfirmScreen() {
         err,
         "Failed to save product details",
       );
+      // InlineError announces it (iOS effect + Android assertive live region).
       setConfirmError(message);
-      if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility(message);
-      }
     },
     // The onError above already sets a visible confirmError on failure.
     meta: { silentError: true },
@@ -269,7 +300,6 @@ export default function FrontLabelConfirmScreen() {
           <Animated.View
             entering={FadeInUp}
             style={[styles.toast, { backgroundColor: theme.accentSolid }]}
-            accessibilityLiveRegion="polite"
           >
             <ThemedText style={styles.toastText}>
               Updated with AI analysis
@@ -278,33 +308,19 @@ export default function FrontLabelConfirmScreen() {
         )}
 
         {/* Upload error */}
-        {uploadError && (
-          <View
-            style={[
-              styles.errorBanner,
-              { backgroundColor: withOpacity(theme.error, 0.12) },
-            ]}
-            accessibilityRole="alert"
-          >
-            <ThemedText style={[styles.errorText, { color: theme.error }]}>
-              {uploadError}
-            </ThemedText>
-          </View>
-        )}
+        <InlineError message={uploadError} />
 
         {/* Confidence warning */}
-        {dataSource === "ai" &&
+        {confidenceTier &&
+          confidenceBannerMessage &&
           (() => {
-            const tier = getConfidenceTier(data.confidence);
-            if (tier === "high") return null;
-            const color = getConfidenceColor(theme, tier);
+            const color = getConfidenceColor(theme, confidenceTier);
             return (
               <View
                 style={[
                   styles.warningBanner,
                   { backgroundColor: withOpacity(color, 0.12) },
                 ]}
-                accessibilityRole="alert"
               >
                 <Feather
                   name="alert-triangle"
@@ -313,9 +329,7 @@ export default function FrontLabelConfirmScreen() {
                   accessible={false}
                 />
                 <ThemedText style={[styles.warningText, { color }]}>
-                  {tier === "low"
-                    ? "Low confidence — review carefully before saving"
-                    : "Some details may be inaccurate — review before saving"}
+                  {confidenceBannerMessage}
                 </ThemedText>
               </View>
             );
@@ -386,19 +400,7 @@ export default function FrontLabelConfirmScreen() {
           </ThemedText>
         )}
 
-        {confirmError && (
-          <View
-            style={[
-              styles.errorBanner,
-              { backgroundColor: withOpacity(theme.error, 0.12) },
-            ]}
-            accessibilityRole="alert"
-          >
-            <ThemedText style={[styles.errorText, { color: theme.error }]}>
-              {confirmError}
-            </ThemedText>
-          </View>
-        )}
+        <InlineError message={confirmError} />
       </ScrollView>
 
       {/* Action buttons */}
@@ -502,13 +504,6 @@ const styles = StyleSheet.create({
   warningText: {
     fontSize: 13,
     flex: 1,
-  },
-  errorBanner: {
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.md,
-  },
-  errorText: {
-    fontSize: 13,
   },
   dataCard: {
     gap: Spacing.sm,

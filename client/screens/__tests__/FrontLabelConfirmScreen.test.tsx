@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import FrontLabelConfirmScreen from "../FrontLabelConfirmScreen";
 
@@ -12,6 +13,7 @@ const {
   mockRoute,
   mockDeleteAsync,
   mockUploadFrontLabelPhoto,
+  mockConfirmFrontLabel,
 } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
   mockPop: vi.fn(),
@@ -20,6 +22,7 @@ const {
   mockRoute: { params: {} as Record<string, unknown> },
   mockDeleteAsync: vi.fn().mockResolvedValue(undefined),
   mockUploadFrontLabelPhoto: vi.fn(),
+  mockConfirmFrontLabel: vi.fn(),
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -34,7 +37,7 @@ vi.mock("@react-navigation/native", () => ({
 
 vi.mock("@/lib/photo-upload", () => ({
   uploadFrontLabelPhoto: mockUploadFrontLabelPhoto,
-  confirmFrontLabel: vi.fn(),
+  confirmFrontLabel: mockConfirmFrontLabel,
 }));
 
 // FrontLabelConfirmScreen deletes its captured temp photo on unmount — the
@@ -153,5 +156,216 @@ describe("FrontLabelConfirmScreen — captured temp photo cleanup", () => {
     renderComponent(<FrontLabelConfirmScreen />);
 
     expect(mockDeleteAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("FrontLabelConfirmScreen — accessibility announcements", () => {
+  const originalOS = RN.Platform.OS;
+  const TOAST = "Updated with AI analysis";
+  const LOW = "Low confidence — review carefully before saving";
+  const MEDIUM = "Some details may be inaccurate — review before saving";
+  const UPLOAD_ERROR = "Could not analyze front label. Please try again.";
+  const SAVE_ERROR = "Failed to save product details";
+
+  const localData = (confidence: number) => ({
+    brand: "Acme",
+    productName: "Test Product",
+    netWeight: "12 oz",
+    claims: [] as string[],
+    confidence,
+  });
+
+  let announce: ReturnType<typeof vi.spyOn>;
+
+  const setRoute = (sessionId: string | null, confidence = 0.9) => {
+    mockRoute.params = {
+      imageUri: "file:///front.jpg",
+      barcode: "0778918011332",
+      sessionId,
+      data: localData(confidence),
+    };
+  };
+
+  beforeEach(() => {
+    mockUploadFrontLabelPhoto.mockReset();
+    mockConfirmFrontLabel.mockReset();
+    mockDeleteAsync.mockResolvedValue(undefined);
+    announce = vi
+      .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+  });
+
+  // Restore in afterEach, not the test body: vitest runs with retry: 2.
+  afterEach(() => {
+    RN.Platform.OS = originalOS;
+    announce.mockRestore();
+  });
+
+  const expectNoLiveRegionOrRole = (text: HTMLElement) => {
+    for (const node of [text, text.parentElement!]) {
+      expect(node.getAttribute("aria-live")).toBeNull();
+      expect(node.getAttribute("role")).toBeNull();
+    }
+  };
+
+  describe("local -> AI upgrade", () => {
+    it.each([
+      {
+        name: "toast and low banner",
+        aiBrand: "Acme Foods",
+        aiConfidence: 0.3,
+        localConfidence: 0.9,
+        visible: [TOAST, LOW],
+        spoken: `${TOAST}. ${LOW}`,
+      },
+      {
+        name: "no toast and medium banner (AI confirms a medium local preview)",
+        aiBrand: "Acme",
+        aiConfidence: 0.6,
+        localConfidence: 0.6,
+        visible: [MEDIUM],
+        spoken: MEDIUM,
+      },
+      {
+        name: "toast and high tier",
+        aiBrand: "Acme Foods",
+        aiConfidence: 0.9,
+        localConfidence: 0.9,
+        visible: [TOAST],
+        spoken: TOAST,
+      },
+    ])(
+      "announces once: $name",
+      async ({ aiBrand, aiConfidence, localConfidence, visible, spoken }) => {
+        setRoute(null, localConfidence);
+        mockUploadFrontLabelPhoto.mockResolvedValue({
+          sessionId: "session-ai",
+          data: { ...localData(aiConfidence), brand: aiBrand },
+        });
+
+        const { rerender } = renderComponent(<FrontLabelConfirmScreen />);
+
+        // Denominator: what will be spoken is on screen.
+        for (const text of visible) await screen.findByText(text);
+
+        await waitFor(() => expect(announce).toHaveBeenCalledWith(spoken));
+        expect(announce).toHaveBeenCalledTimes(1);
+
+        // No repeat on an unrelated re-render.
+        rerender(<FrontLabelConfirmScreen />);
+        expect(announce).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it("stays silent for a high-tier upgrade with no toast", async () => {
+      setRoute(null, 0.9);
+      mockUploadFrontLabelPhoto.mockResolvedValue({
+        sessionId: "session-ai",
+        data: localData(0.6),
+      });
+
+      renderComponent(<FrontLabelConfirmScreen />);
+      // The upgrade happened: the "Verifying with AI" hint is gone.
+      await screen.findByLabelText("Confirm and save product details");
+      expect(screen.queryByText(/Verifying with AI/)).toBeNull();
+      expect(announce).not.toHaveBeenCalled();
+    });
+
+    it("announces the same string once on Android (ungated)", async () => {
+      RN.Platform.OS = "android";
+      setRoute(null, 0.9);
+      mockUploadFrontLabelPhoto.mockResolvedValue({
+        sessionId: "session-ai",
+        data: { ...localData(0.3), brand: "Acme Foods" },
+      });
+
+      renderComponent(<FrontLabelConfirmScreen />);
+      await screen.findByText(LOW);
+
+      await waitFor(() =>
+        expect(announce).toHaveBeenCalledWith(`${TOAST}. ${LOW}`),
+      );
+      expect(announce).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves no live region or role on the toast or the banner", async () => {
+      setRoute(null, 0.9);
+      mockUploadFrontLabelPhoto.mockResolvedValue({
+        sessionId: "session-ai",
+        data: { ...localData(0.3), brand: "Acme Foods" },
+      });
+
+      renderComponent(<FrontLabelConfirmScreen />);
+      const toast = await screen.findByText(TOAST);
+      const banner = await screen.findByText(LOW);
+
+      expectNoLiveRegionOrRole(toast);
+      expectNoLiveRegionOrRole(banner);
+    });
+  });
+
+  it("renders the banner but stays silent when mounted with a session (edge-only)", async () => {
+    setRoute("session-1", 0.3);
+
+    renderComponent(<FrontLabelConfirmScreen />);
+
+    await screen.findByText(LOW);
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  describe("error banners", () => {
+    it("announces an upload error once on iOS", async () => {
+      setRoute(null);
+      mockUploadFrontLabelPhoto.mockRejectedValue(new Error("boom"));
+
+      renderComponent(<FrontLabelConfirmScreen />);
+      const text = await screen.findByText(UPLOAD_ERROR);
+
+      await waitFor(() => expect(announce).toHaveBeenCalledWith(UPLOAD_ERROR));
+      expect(announce).toHaveBeenCalledTimes(1);
+      expect(text.parentElement!.getAttribute("aria-live")).toBe("assertive");
+    });
+
+    it("relies on the assertive live region, not an announce, on Android (upload error)", async () => {
+      RN.Platform.OS = "android";
+      setRoute(null);
+      mockUploadFrontLabelPhoto.mockRejectedValue(new Error("boom"));
+
+      renderComponent(<FrontLabelConfirmScreen />);
+      const text = await screen.findByText(UPLOAD_ERROR);
+
+      expect(text.parentElement!.getAttribute("aria-live")).toBe("assertive");
+      expect(announce).not.toHaveBeenCalled();
+    });
+
+    it("announces each save failure once on iOS", async () => {
+      setRoute("session-1");
+      mockConfirmFrontLabel.mockRejectedValue(new Error("boom"));
+
+      renderComponent(<FrontLabelConfirmScreen />);
+
+      fireEvent.click(screen.getByText("Looks Good"));
+      const text = await screen.findByText(SAVE_ERROR);
+      await waitFor(() => expect(announce).toHaveBeenCalledTimes(1));
+      expect(announce).toHaveBeenCalledWith(SAVE_ERROR);
+      expect(text.parentElement!.getAttribute("aria-live")).toBe("assertive");
+
+      fireEvent.click(screen.getByText("Looks Good"));
+      await waitFor(() => expect(announce).toHaveBeenCalledTimes(2));
+    });
+
+    it("relies on the assertive live region, not an announce, on Android (save error)", async () => {
+      RN.Platform.OS = "android";
+      setRoute("session-1");
+      mockConfirmFrontLabel.mockRejectedValue(new Error("boom"));
+
+      renderComponent(<FrontLabelConfirmScreen />);
+
+      fireEvent.click(screen.getByText("Looks Good"));
+      const text = await screen.findByText(SAVE_ERROR);
+
+      expect(text.parentElement!.getAttribute("aria-live")).toBe("assertive");
+      expect(announce).not.toHaveBeenCalled();
+    });
   });
 });
