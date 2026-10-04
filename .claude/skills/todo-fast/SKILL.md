@@ -112,6 +112,7 @@ User ruling (2026-10-04): no loose ends. Filing a followup todo during the work 
    ```json
    {
      "root": "<todo the user named>",
+     "base": "<BASE_BRANCH from the root's Step 2>",
      "current": null,
      "done": [{ "todo": "...", "pr": 1300, "merged": "<sha>" }],
      "queue": ["todos/P3-...md"],
@@ -132,12 +133,13 @@ User ruling (2026-10-04): no loose ends. Filing a followup todo during the work 
 
 3. **Next followup.** Re-read `todo-fast-run.json`; never trust your memory of it, since a compaction may have summarized it away.
    - **On `/todo-fast continue`:**
-     - If `current` is set, run Steps 1–6 on `current`, at any priority. Do not take another path off `queue`: `current` is the one you already took before the pause. A gated followup gets the same Step 1 gate as any todo; with no human override, it goes to `handed_to_user` in 6.2.
+     - If `current` is set, run Steps 1–6 on `current`, at any priority, using the file's `base` as `BASE_BRANCH` (never re-derive it from whatever branch the shared checkout is on now). Do not take another path off `queue`: `current` is the one you already took before the pause. A gated followup gets the same Step 1 gate as any todo; with no human override, it goes to `handed_to_user` in 6.2.
      - If `current` is `null`, continue with the next bullet as if you had just finished 6.2.
    - **After 6.2, queue empty** → go to 6.4.
    - **After 6.2, `followups_run` has reached 10** → stop. Show the user what's left in `queue` and ask whether to keep going. On their yes, reset `followups_run` to 0 and take the next followup as below, including the pause.
    - **After 6.2, otherwise:**
-     - Move the first path from `queue` into `current` and add 1 to `followups_run`.
+     - Sync local `base` with the block in `.claude/skills/todo/SKILL.md` Phase 0 step 4 (ff-only, and it never touches a branch another session has checked out). The followup's file exists only on the merged base, and the executor's worktree starts from the local copy.
+     - Move the first path from `queue` into `current` and add 1 to `followups_run`. If `git cat-file -e <base>:<path>` fails, the base still lacks the file: put the path under `handed_to_user` with reason `not on <base> after sync` instead, and take the next one.
      - Save the file.
      - Tell the user: "`<finished todo>` is done (PR #<n> merged). Next followup: `<current>` (<k> left in the queue). Ready to compact: run `/compact`, then `/todo-fast continue`." Then end your turn. Do not start the followup in this window.
    - **Non-interactive session** (a `/goal` loop, or a background or headless run): no one can run `/compact`, and no one can answer the 10-followup question. Do not pause. Give the 6.4 summary with the remaining `queue` listed as not done, keep the file, and stop.
