@@ -12,6 +12,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.williamtower.ocrecipes",
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "OCRecipes needs camera access to scan barcodes and nutrition labels.",
         "NSMicrophoneUsageDescription": "OCRecipes uses the microphone for voice food logging.",
         "NSPhotoLibraryUsageDescription": "OCRecipes uses photos you choose to find ingredients, read receipts, import recipes, and set your profile picture and cookbook covers.",
