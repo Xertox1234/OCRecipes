@@ -22,6 +22,11 @@
 // try/catch + optional-chaining check — screensEnabled() returning false here
 // makes bottom-tabs fall back to plain Views, which is fine for jsdom tests).
 //
+// Also FullWindowOverlay (consumed by client/context/ToastContext.tsx's
+// ToastHost). The double mirrors the native accessibility default: the
+// container is accessibility-modal (aria-modal="true") unless
+// unstable_accessibilityContainerViewIsModal === false.
+//
 // NOT covered: BottomTabs / BottomTabsScreen, imported by
 // @react-navigation/bottom-tabs' `./unstable` subpath entry point (a separate
 // export from its default `.` entry). Confirmed unreachable today — no file
@@ -75,3 +80,22 @@ export const enableScreens = () => {};
 export const enableFreeze = () => {};
 export const freezeEnabled = () => false;
 export const isSearchBarAvailableForCurrentPlatform = () => false;
+
+export function FullWindowOverlay({
+  children,
+  unstable_accessibilityContainerViewIsModal,
+}: {
+  children?: React.ReactNode;
+  unstable_accessibilityContainerViewIsModal?: boolean;
+}) {
+  return React.createElement(
+    "div",
+    {
+      "data-testid": "full-window-overlay",
+      ...(unstable_accessibilityContainerViewIsModal === false
+        ? {}
+        : { "aria-modal": "true" }),
+    },
+    children,
+  );
+}
