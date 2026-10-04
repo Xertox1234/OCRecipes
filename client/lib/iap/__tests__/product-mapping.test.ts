@@ -233,6 +233,30 @@ describe("toIAPProductAndroid", () => {
     });
   });
 
+  it("does not call a free-then-paid-intro offer a plain free trial", () => {
+    // "Free for 3 days, then $29.99 per year" would hide the paid middle phase.
+    const product = toIAPProductAndroid(
+      androidSubscription([
+        androidOffer(
+          [{ price: "$29.99", micros: "29990000", period: "P1Y" }],
+          null,
+          "base-token",
+        ),
+        androidOffer(
+          [
+            { price: "Free", micros: "0", period: "P3D" },
+            { price: "$0.99", micros: "990000", period: "P1M" },
+            { price: "$29.99", micros: "29990000", period: "P1Y" },
+          ],
+          "trial-then-intro",
+          "three-phase-token",
+        ),
+      ]),
+    );
+    expect(product?.introOffer).toBeNull();
+    expect(product?.androidOfferToken).toBe("base-token");
+  });
+
   it("returns null when Google lists no offers", () => {
     expect(toIAPProductAndroid(androidSubscription([]))).toBeNull();
   });

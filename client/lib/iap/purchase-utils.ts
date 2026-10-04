@@ -14,15 +14,34 @@ const STORE_UNAVAILABLE_CODES = new Set([
   "not-prepared",
 ]);
 
-function errorCode(error: Error): string | null {
-  const code: unknown = (error as Error & { code?: unknown }).code;
-  return typeof code === "string" ? code : null;
+/**
+ * The code and message of a store error. expo-iap's purchase listener forwards
+ * the native event payload unchanged — a plain { code, message } object, not
+ * an Error — so both shapes are read.
+ */
+function errorParts(
+  error: unknown,
+): { code: string | null; message: string } | null {
+  if (typeof error !== "object" || error === null) return null;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  if (
+    !(error instanceof Error) &&
+    code === undefined &&
+    message === undefined
+  ) {
+    return null;
+  }
+  return {
+    code: typeof code === "string" ? code : null,
+    message: typeof message === "string" ? message : "",
+  };
 }
 
 /** Maps IAP errors to our PurchaseError type: by expo-iap code first, then message. */
 export function mapIAPError(error: unknown): PurchaseError {
-  if (error instanceof Error) {
-    const code = errorCode(error);
+  const parts = errorParts(error);
+  if (parts) {
+    const { code } = parts;
     if (code === "user-cancelled") {
       return { code: "USER_CANCELLED", message: "Purchase cancelled" };
     }
@@ -55,7 +74,7 @@ export function mapIAPError(error: unknown): PurchaseError {
       };
     }
 
-    const msg = error.message.toLowerCase();
+    const msg = parts.message.toLowerCase();
 
     if (msg.includes("user-cancelled") || msg.includes("user cancelled")) {
       return { code: "USER_CANCELLED", message: "Purchase cancelled" };
@@ -82,7 +101,11 @@ export function mapIAPError(error: unknown): PurchaseError {
       };
     }
 
-    return { code: "UNKNOWN", message: error.message, originalError: error };
+    return {
+      code: "UNKNOWN",
+      message: parts.message || "An unexpected error occurred",
+      originalError: error,
+    };
   }
 
   return {

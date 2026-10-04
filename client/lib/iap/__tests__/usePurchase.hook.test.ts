@@ -70,6 +70,19 @@ describe("usePurchase.purchase", () => {
     expect(result.current.state.status).toBe("success");
   });
 
+  it("treats a cancelled store sheet as cancelled, not as an error", async () => {
+    // The shape expo-iap's purchase listener actually delivers.
+    iap.requestPurchase.mockRejectedValue({
+      code: "user-cancelled",
+      message: "User cancelled",
+    });
+    const { result } = renderHook(() => usePurchase());
+
+    await act(() => result.current.purchase());
+
+    expect(result.current.state.status).toBe("cancelled");
+  });
+
   it("reports the store as unavailable when no product has loaded", async () => {
     iap.products = [];
     const { result } = renderHook(() => usePurchase());

@@ -38,4 +38,6 @@ export interface UseIAPResult {
   /** Resolves null when the store has no purchase of ours to restore. */
   restorePurchases: () => Promise<IAPPurchaseResult | null>;
   finishTransaction: (purchase: IAPPurchaseResult) => Promise<void>;
+  /** Asks the store for the product again, e.g. after a failed first load. Stable identity. */
+  refreshProducts: () => void;
 }

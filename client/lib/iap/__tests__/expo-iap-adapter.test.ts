@@ -160,6 +160,16 @@ describe("useExpoIAP — loading the subscription", () => {
   });
 });
 
+describe("useExpoIAP — refreshing", () => {
+  it("does not ask the store before it is connected", () => {
+    const { result } = renderHook(() => useExpoIAP());
+
+    act(() => result.current.refreshProducts());
+
+    expect(storeMock.fetchProducts).not.toHaveBeenCalled();
+  });
+});
+
 describe("useExpoIAP — buying", () => {
   it("resolves with the purchase the store reports", async () => {
     const { result } = await connectedWithProduct();
@@ -228,12 +238,29 @@ describe("useExpoIAP — buying", () => {
           failure = error;
         });
     });
-    const error = Object.assign(new Error("cancelled"), {
-      code: "user-cancelled",
-    });
-    act(() => callbacks.onPurchaseError?.(error));
+    // expo-iap forwards the native event payload unchanged: a plain
+    // { code, message } object, not an Error (build/index.js
+    // purchaseErrorListener). The adapter turns it into an Error keeping the code.
+    const payload = { code: "user-cancelled", message: "User cancelled" };
+    act(() => callbacks.onPurchaseError?.(payload as unknown as Error));
 
-    await waitFor(() => expect(failure).toBe(error));
+    await waitFor(() => expect(failure).toBeInstanceOf(Error));
+    expect(failure).toMatchObject({
+      code: "user-cancelled",
+      message: "User cancelled",
+    });
+  });
+
+  it("asks the store again when refreshProducts is called", async () => {
+    const { result } = await connectedWithProduct();
+    storeMock.fetchProducts.mockClear();
+
+    act(() => result.current.refreshProducts());
+
+    expect(storeMock.fetchProducts).toHaveBeenCalledWith({
+      skus: [SKU],
+      type: "subs",
+    });
   });
 
   it("rejects when the store's own request fails", async () => {

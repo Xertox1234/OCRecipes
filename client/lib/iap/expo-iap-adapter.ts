@@ -2,7 +2,7 @@
 // 3.x. Loaded only outside __DEV__ (see ./index.ts), because importing
 // expo-iap loads its native module. TypeScript checks this module against
 // UseIAPResult, which the old direct `useIAP` assignment never did.
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getAvailablePurchases,
   isEligibleForIntroOfferIOS,
@@ -28,6 +28,23 @@ interface PendingPurchase {
 
 function storeError(code: string, message: string): Error {
   return Object.assign(new Error(message), { code });
+}
+
+/**
+ * expo-iap's purchase listener forwards the native event payload unchanged — a
+ * plain { code, message } object despite the PurchaseError type — so turn it
+ * into an Error that keeps the store's code.
+ */
+function toStoreError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  const { code, message } = (error ?? {}) as {
+    code?: unknown;
+    message?: unknown;
+  };
+  return storeError(
+    typeof code === "string" ? code : "unknown",
+    typeof message === "string" ? message : "Purchase failed",
+  );
 }
 
 async function resolveProduct(
@@ -101,18 +118,24 @@ export function useExpoIAP(): UseIAPResult {
       }
     },
     onPurchaseError: (error) => {
-      settle({ error });
+      settle({ error: toStoreError(error) });
     },
   });
 
   const { connected, fetchProducts, subscriptions } = iap;
 
-  useEffect(() => {
+  // useCallback on purpose: the paywall's retry effect depends on this
+  // identity, and a new function each render would re-fetch on every render.
+  const refreshProducts = useCallback(() => {
     if (!connected) return;
     fetchProducts({ skus: [SKU], type: "subs" }).catch((error: unknown) => {
       logger.error("Failed to load the subscription from the store:", error);
     });
   }, [connected, fetchProducts]);
+
+  useEffect(() => {
+    refreshProducts();
+  }, [refreshProducts]);
 
   useEffect(() => {
     const subscription = subscriptions.find((item) => item.id === SKU);
@@ -132,6 +155,7 @@ export function useExpoIAP(): UseIAPResult {
   return {
     connected,
     products,
+    refreshProducts,
 
     requestPurchase(product) {
       return new Promise<IAPPurchaseResult>((resolve, reject) => {
@@ -157,7 +181,7 @@ export function useExpoIAP(): UseIAPResult {
             request: { apple: { sku: product.productId }, google },
           })
           .catch((error: unknown) => {
-            settle({ error });
+            settle({ error: toStoreError(error) });
           });
       });
     },
