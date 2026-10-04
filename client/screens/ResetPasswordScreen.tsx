@@ -69,19 +69,22 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
       return;
     }
     setBusy(true);
+    // No try/finally: React Compiler cannot lower a `finally` and would skip
+    // this component (scripts/check-react-compiler-bailouts.js), so `busy` is
+    // reset on each path instead.
     try {
       await resetPasswordRequest(email, code, password);
+      setBusy(false);
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       navigation.reset({
         index: 0,
         routes: [{ name: "Login", params: { email, passwordReset: true } }],
       });
     } catch (err) {
+      setBusy(false);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       // InlineError announces the message itself — no second announce here.
       setError(getResetErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -91,16 +94,16 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
     setResending(true);
     try {
       await requestResetCode(email);
+      setResending(false);
       const sentAt = Date.now();
       setLastSentAt(sentAt);
       setNow(sentAt);
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       AccessibilityInfo.announceForAccessibility("A new code has been sent.");
     } catch (err) {
+      setResending(false);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       setError(getResetRequestErrorMessage(err));
-    } finally {
-      setResending(false);
     }
   };
 

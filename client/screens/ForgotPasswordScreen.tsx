@@ -46,8 +46,12 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
       return;
     }
     setBusy(true);
+    // No try/finally: React Compiler cannot lower a `finally` and would skip
+    // this component (scripts/check-react-compiler-bailouts.js), so `busy` is
+    // reset on each path instead.
     try {
       await requestResetCode(email);
+      setBusy(false);
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       AccessibilityInfo.announceForAccessibility(
         "If an account uses that email, we've sent a 6-digit code.",
@@ -56,10 +60,9 @@ export default function ForgotPasswordScreen({ route, navigation }: Props) {
       // to a screen that would send another code.
       navigation.replace("ResetPassword", { email: email.trim() });
     } catch (err) {
+      setBusy(false);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       setError(getResetRequestErrorMessage(err));
-    } finally {
-      setBusy(false);
     }
   };
 
