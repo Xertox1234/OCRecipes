@@ -37,6 +37,9 @@ const USERNAME_MIN = 3;
 const USERNAME_MAX = 30;
 const PASSWORD_MIN = 8;
 
+/** Exported so the reset screen can tell a mismatch (confirm field) apart. */
+export const PASSWORD_MISMATCH_MESSAGE = "Passwords do not match";
+
 /**
  * New-password rules — the client mirror of server `newPasswordSchema`
  * (server/routes/_schemas.ts), shared by register and the reset screen.
@@ -53,7 +56,7 @@ export function validateNewPassword(
     return "Password must contain at least one letter and one number";
   }
   if (password !== confirmPassword) {
-    return "Passwords do not match";
+    return PASSWORD_MISMATCH_MESSAGE;
   }
   return null;
 }

@@ -6,6 +6,7 @@ import {
   validateAuthFormFields,
   getAuthErrorMessage,
   validateNewPassword,
+  PASSWORD_MISMATCH_MESSAGE,
 } from "../LoginScreen-utils";
 
 describe("validateUsername (mirrors registerSchema)", () => {
@@ -249,5 +250,12 @@ describe("validateNewPassword (mirrors server newPasswordSchema)", () => {
       "Passwords do not match",
     );
     expect(validateNewPassword("abcdefg1", "abcdefg1")).toBeNull();
+  });
+
+  it("returns the exported mismatch constant, so callers can match on it", () => {
+    expect(PASSWORD_MISMATCH_MESSAGE).toBe("Passwords do not match");
+    expect(validateNewPassword("abcdefg1", "abcdefg2")).toBe(
+      PASSWORD_MISMATCH_MESSAGE,
+    );
   });
 });

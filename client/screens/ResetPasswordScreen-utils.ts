@@ -8,7 +8,10 @@ import {
   RESET_CODE_LENGTH,
   RESET_RESEND_COOLDOWN_SECONDS,
 } from "@shared/constants/password-reset";
-import { validateNewPassword } from "./LoginScreen-utils";
+import {
+  PASSWORD_MISMATCH_MESSAGE,
+  validateNewPassword,
+} from "./LoginScreen-utils";
 
 /**
  * The ONE failure message for a rejected code. Deliberately never says the
@@ -21,8 +24,6 @@ export const INVALID_RESET_CODE_MESSAGE =
 export function normalizeResetCode(raw: string): string {
   return raw.replace(/\D/g, "").slice(0, RESET_CODE_LENGTH);
 }
-
-const PASSWORD_MISMATCH_MESSAGE = "Passwords do not match";
 
 export type ResetFormField = "code" | "password" | "confirm";
 
