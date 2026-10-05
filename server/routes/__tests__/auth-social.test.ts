@@ -440,6 +440,19 @@ describe("POST /api/auth/social/complete-sign-up", () => {
       .post("/api/auth/social/complete-sign-up")
       .send({ ticket: "t", username: "new_name", ageConfirmed: true });
     expect(res.status).toBe(409);
+    expect(res.body.code).toBe("CONFLICT");
+  });
+  it("409 EMAIL_IN_USE when the email was registered meanwhile", async () => {
+    const err = Object.assign(new Error("dup"), {
+      code: "23505",
+      constraint: "users_email_lower_unique",
+    });
+    vi.mocked(storage.createUserWithIdentity).mockRejectedValue(err);
+    const res = await request(app())
+      .post("/api/auth/social/complete-sign-up")
+      .send({ ticket: "t", username: "new_name", ageConfirmed: true });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("EMAIL_IN_USE");
   });
   it("400 INVALID_SIGN_IN_TICKET for a spent ticket", async () => {
     vi.mocked(storage.createUserWithIdentity).mockResolvedValue(undefined);

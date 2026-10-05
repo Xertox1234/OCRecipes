@@ -60,7 +60,7 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       const outcome = chooseUsernameErrorOutcome(err);
       if (outcome.kind === "restart") {
-        toast.error("That took too long — please start again.");
+        toast.error(outcome.message);
         navigation.navigate("Login");
         return;
       }
