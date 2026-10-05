@@ -56,7 +56,7 @@ describe("providerRowState", () => {
     const m: SignInMethods = { password: false, google: null, apple: relay };
     const s = providerRowState(m, "apple", "ios", APPLE_ONLY);
     expect(s).toMatchObject({ kind: "disconnect", enabled: false });
-    expect(s.kind === "disconnect" && s.hint).toMatch(
+    expect(s.kind === "disconnect" && !s.enabled && s.hint).toMatch(
       /another sign-in method/i,
     );
   });
