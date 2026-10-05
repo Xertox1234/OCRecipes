@@ -11,7 +11,9 @@ export interface AppleConfig {
 }
 
 /** A provider is "configured" only when every var it needs is present. */
-export function getSocialConfig(env: NodeJS.ProcessEnv = process.env): {
+export function getSocialConfig(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): {
   google: GoogleConfig | null;
   apple: AppleConfig | null;
 } {
