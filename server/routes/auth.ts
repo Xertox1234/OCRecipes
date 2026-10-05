@@ -759,7 +759,10 @@ export function register(app: Express): void {
           return sendError(res, 401, "User not found", ErrorCode.UNAUTHORIZED);
         }
 
-        res.json(serializeUser(user));
+        res.json({
+          ...serializeUser(user),
+          signInMethods: await storage.getSignInMethods(user.id),
+        });
       } catch (error) {
         handleRouteError(res, error, "fetch current user");
       }

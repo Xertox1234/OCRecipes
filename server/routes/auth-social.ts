@@ -12,12 +12,15 @@ import { handleRouteError, formatZodError } from "./_helpers";
 import {
   socialAuthLimiter,
   createSocialLinkAccountLimiter,
+  crudRateLimit,
 } from "./_rate-limiters";
 import {
   socialNonceSchema,
   socialSignInSchema,
   completeSocialSignUpSchema,
   socialLinkSchema,
+  connectIdentitySchema,
+  providerParamSchema,
 } from "./_schemas";
 import { serializeUser } from "./auth";
 import { emailVerificationEnabled } from "../lib/email-config";
@@ -34,8 +37,15 @@ import {
   isAuthoritative,
   type PolicyAccount,
 } from "../lib/social-identity/linking-policy";
-import { exchangeAppleCode } from "../lib/social-identity/apple-tokens";
-import { encryptToken } from "../lib/social-identity/token-crypto";
+import {
+  exchangeAppleCode,
+  revokeAppleToken,
+} from "../lib/social-identity/apple-tokens";
+import {
+  encryptToken,
+  decryptToken,
+} from "../lib/social-identity/token-crypto";
+import { reportError } from "../lib/error-reporter";
 import { signInGate, secondFactor } from "../lib/social-identity/sign-in-gates";
 import { suggestUsername } from "../lib/social-identity/suggest-username";
 import type {
@@ -163,6 +173,23 @@ function displayNameFrom(fullName?: {
 
 const isTaken = async (u: string) =>
   isReservedUsername(u) || Boolean(await storage.getUserByUsername(u));
+
+/** Best-effort: never throws. Used by disconnect and account deletion. */
+export async function revokeAppleIdentities(
+  identities: { provider: string; appleRefreshTokenEnc: string | null }[],
+): Promise<void> {
+  const cfg = getSocialConfig().apple;
+  for (const i of identities) {
+    if (i.provider !== "apple" || !i.appleRefreshTokenEnc) continue;
+    try {
+      if (!cfg) throw new Error("Apple not configured; cannot revoke");
+      await revokeAppleToken(decryptToken(i.appleRefreshTokenEnc), cfg);
+    } catch (err) {
+      logger.error({ err: toError(err) }, "apple token revoke failed");
+      reportError(err, "apple-token-revoke");
+    }
+  }
+}
 
 export function register(app: Express): void {
   app.get("/api/auth/social/config", (_req: Request, res: Response) => {
@@ -540,6 +567,132 @@ export function register(app: Express): void {
       } catch (error) {
         if (error instanceof HttpFailure) return fail(res, error);
         handleRouteError(res, error, "link provider");
+      }
+    },
+  );
+
+  // Connect a provider to the signed-in account (Profile → Sign-in methods).
+  app.post(
+    "/api/auth/identities",
+    requireAuth,
+    crudRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const parsed = connectIdentitySchema.safeParse(req.body);
+        if (!parsed.success) {
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        const body = parsed.data;
+        const claims = await verifyProviderToken(
+          body.provider,
+          body.idToken,
+          body.nonce,
+        );
+        if (!(await storage.consumeNonce(body.nonce, "link", req.userId))) {
+          throw new HttpFailure(
+            401,
+            ErrorCode.INVALID_PROVIDER_TOKEN,
+            "Sign-in could not be verified",
+          );
+        }
+        const existing = await storage.findIdentity(
+          claims.provider,
+          claims.sub,
+        );
+        if (existing && existing.userId !== req.userId) {
+          const label = claims.provider === "google" ? "Google" : "Apple";
+          throw new HttpFailure(
+            409,
+            ErrorCode.IDENTITY_IN_USE,
+            `This ${label} account is already used by another OCRecipes account.`,
+          );
+        }
+        const mine = await storage.listIdentities(req.userId);
+        if (existing || mine.some((i) => i.provider === claims.provider)) {
+          throw new HttpFailure(
+            409,
+            ErrorCode.PROVIDER_ALREADY_CONNECTED,
+            "Already connected.",
+          );
+        }
+        const appleTokenEnc =
+          claims.provider === "apple"
+            ? await appleRefreshTokenFor(body.authorizationCode)
+            : null;
+        try {
+          await storage.insertIdentity({
+            userId: req.userId,
+            provider: claims.provider,
+            providerSubject: claims.sub,
+            email: claims.email,
+            isPrivateRelay: claims.isPrivateRelay,
+            appleRefreshTokenEnc: appleTokenEnc,
+          });
+        } catch (err) {
+          if (isUniqueViolation(err)) {
+            throw new HttpFailure(
+              409,
+              ErrorCode.PROVIDER_ALREADY_CONNECTED,
+              "Already connected.",
+            );
+          }
+          throw err;
+        }
+        res.json({ signInMethods: await storage.getSignInMethods(req.userId) });
+      } catch (error) {
+        if (error instanceof HttpFailure) return fail(res, error);
+        handleRouteError(res, error, "connect provider");
+      }
+    },
+  );
+
+  app.delete(
+    "/api/auth/identities/:provider",
+    requireAuth,
+    crudRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const provider = providerParamSchema.safeParse(req.params.provider);
+        if (!provider.success) {
+          return sendError(
+            res,
+            400,
+            "Unknown provider",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        const methods = await storage.getSignInMethods(req.userId);
+        if (!methods[provider.data]) {
+          return sendError(res, 404, "Not connected", ErrorCode.NOT_FOUND);
+        }
+        const remaining =
+          Number(methods.password) +
+          Number(methods.google !== null) +
+          Number(methods.apple !== null);
+        if (remaining <= 1) {
+          return sendError(
+            res,
+            409,
+            "Set a password with “Forgot password” before disconnecting your only sign-in method.",
+            ErrorCode.LAST_SIGN_IN_METHOD,
+          );
+        }
+        if (provider.data === "apple") {
+          await revokeAppleIdentities(
+            (await storage.listIdentities(req.userId)).filter(
+              (i) => i.provider === "apple",
+            ),
+          );
+        }
+        await storage.deleteIdentity(req.userId, provider.data);
+        res.json({ signInMethods: await storage.getSignInMethods(req.userId) });
+      } catch (error) {
+        handleRouteError(res, error, "disconnect provider");
       }
     },
   );

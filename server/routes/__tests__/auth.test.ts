@@ -72,6 +72,7 @@ vi.mock("../../storage", () => ({
     collectUserImageUrls: vi.fn().mockResolvedValue([]),
     filterUnreferencedImageUrls: vi.fn().mockResolvedValue([]),
     applyEmailVerification: vi.fn(),
+    getSignInMethods: vi.fn(),
   },
 }));
 
@@ -1122,6 +1123,24 @@ describe("Auth Routes", () => {
       expect(res.body.id).toBe("1");
       expect(res.body).not.toHaveProperty("password");
       expect(res.body.subscriptionTier).toBe("free");
+    });
+
+    it("includes the account's sign-in methods", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
+      const methods = {
+        password: false,
+        google: null,
+        apple: { email: "x@privaterelay.appleid.com", isPrivateRelay: true },
+      };
+      vi.mocked(storage.getSignInMethods).mockResolvedValue(methods);
+
+      const res = await request(app)
+        .get("/api/auth/me")
+        .set("Authorization", "Bearer mock-token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.signInMethods).toEqual(methods);
+      expect(storage.getSignInMethods).toHaveBeenCalledWith("1");
     });
 
     it("returns 401 if user not found", async () => {
