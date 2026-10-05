@@ -155,9 +155,8 @@ describe("identities storage", () => {
     });
 
     it("completeLinkFromTicket inserts the identity, can verify the email, and burns the ticket", async () => {
-      const target = await createTestUser(getTestTx(), {
-        emailVerified: false,
-      });
+      // emailVerified defaults to false.
+      const target = await createTestUser(getTestTx());
       const ticket = await ids.createPendingSignIn({
         ...baseTicket,
         kind: "link",

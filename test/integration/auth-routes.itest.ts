@@ -164,7 +164,7 @@ describe("auth routes — real Express app, real requireAuth, real test DB", () 
       expect(row.email).toBe(creds.email.toLowerCase());
       // Real bcrypt hash, not the storage-test placeholder.
       expect(row.password).not.toBe("hashed_password_placeholder");
-      expect(row.password.startsWith("$2")).toBe(true);
+      expect(row.password?.startsWith("$2")).toBe(true);
     });
   });
 
