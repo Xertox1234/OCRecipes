@@ -94,6 +94,21 @@ describe("identities storage", () => {
       const { nonce } = await ids.issueNonce("link", a.id);
       expect(await ids.consumeNonce(nonce, "link", b.id)).toBe(false);
     });
+
+    it("a signed-in caller cannot consume a PUBLIC link nonce (connect needs one bound to them)", async () => {
+      const a = await createTestUser(getTestTx());
+      const { nonce } = await ids.issueNonce("link", null);
+      expect(await ids.consumeNonce(nonce, "link", a.id)).toBe(false);
+      // Still usable by the unauthenticated Connect prompt it was minted for.
+      expect(await ids.consumeNonce(nonce, "link", null)).toBe(true);
+    });
+
+    it("an unauthenticated caller cannot consume a user-bound link nonce", async () => {
+      const a = await createTestUser(getTestTx());
+      const { nonce } = await ids.issueNonce("link", a.id);
+      expect(await ids.consumeNonce(nonce, "link", null)).toBe(false);
+      expect(await ids.consumeNonce(nonce, "link", a.id)).toBe(true);
+    });
   });
 
   describe("createUserWithIdentity", () => {
