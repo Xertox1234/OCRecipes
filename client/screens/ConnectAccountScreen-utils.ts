@@ -49,9 +49,19 @@ function codeOf(err: unknown): { code?: string; status?: number } {
   return err instanceof ApiError ? { code: err.code, status: err.status } : {};
 }
 
-export function connectErrorOutcome(err: unknown): ScreenErrorOutcome {
+// A link ticket also dies after 5 wrong passwords (same code as expiry), so
+// this copy must not blame the clock.
+const CONNECT_RESTART: ScreenErrorOutcome = {
+  kind: "restart",
+  message: "That sign-in can't be finished — please start again.",
+};
+
+export function connectErrorOutcome(
+  err: unknown,
+  mode: "password" | "provider",
+): ScreenErrorOutcome {
   const { code, status } = codeOf(err);
-  if (code === "INVALID_SIGN_IN_TICKET") return RESTART;
+  if (code === "INVALID_SIGN_IN_TICKET") return CONNECT_RESTART;
   if (code === "SECOND_FACTOR_REQUIRED") {
     return inline(
       "This account uses two-step sign-in. Sign in with your password first, then connect from Settings.",
@@ -62,7 +72,17 @@ export function connectErrorOutcome(err: unknown): ScreenErrorOutcome {
       "Too many attempts. Please wait a few minutes and try again.",
     );
   }
-  if (status === 401) return inline("Incorrect password. Please try again.");
+  // Provider mode answers UNAUTHORIZED when the Apple ID isn't the one linked
+  // to this account; only password mode's UNAUTHORIZED is a wrong password.
+  if (
+    code === "INVALID_PROVIDER_TOKEN" ||
+    (code === "UNAUTHORIZED" && mode === "provider")
+  ) {
+    return inline("That sign-in couldn't be confirmed. Please try again.");
+  }
+  if (code === "UNAUTHORIZED") {
+    return inline("Incorrect password. Please try again.");
+  }
   return inline("Something went wrong. Please try again.");
 }
 

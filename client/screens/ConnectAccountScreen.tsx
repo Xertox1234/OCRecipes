@@ -48,10 +48,10 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
     NATIVE_PROVIDERS,
   );
 
-  const fail = (err: unknown) => {
+  const fail = (err: unknown, via: "password" | "provider") => {
     setBusy(false);
     haptics.notification(Haptics.NotificationFeedbackType.Error);
-    const outcome = connectErrorOutcome(err);
+    const outcome = connectErrorOutcome(err, via);
     if (outcome.kind === "restart") {
       toast.error(outcome.message);
       navigation.navigate("Login");
@@ -73,7 +73,7 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
       await linkWithPassword(ticket, password);
       haptics.notification(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
-      fail(err);
+      fail(err, "password");
     }
   };
 
@@ -86,7 +86,7 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
       // A cancelled sheet resolves without signing in: re-enable the button.
       setBusy(false);
     } catch (err) {
-      fail(err);
+      fail(err, "provider");
     }
   };
 
