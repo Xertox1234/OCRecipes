@@ -279,6 +279,23 @@ describe("every protected route is registered behind requireAuth (static guard)"
       "POST /api/auth/reset-password",
       "pre-auth reset — emailed code carried in body",
     ],
+    ["GET /api/auth/social/config", "which sign-in providers are enabled"],
+    [
+      "POST /api/auth/social/nonce",
+      "sign_in nonces are public; reauth (and link with a bearer) runs requireAuth inside",
+    ],
+    [
+      "POST /api/auth/social",
+      "Google/Apple sign-in — provider ID token in body",
+    ],
+    [
+      "POST /api/auth/social/complete-sign-up",
+      "social sign-up — one-use ticket in body",
+    ],
+    [
+      "POST /api/auth/social/link",
+      "connect prompt — ticket plus password or provider proof",
+    ],
     [
       "POST /webhooks/apple/notifications",
       "Apple store webhook — JWS-verified",

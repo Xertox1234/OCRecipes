@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import { MulterError } from "multer";
 import { logger } from "./lib/logger";
 import { register as registerAuth } from "./routes/auth";
+import { register as registerAuthSocial } from "./routes/auth-social";
 import { register as registerProfile } from "./routes/profile";
 import { register as registerNutrition } from "./routes/nutrition";
 import { register as registerPhotos } from "./routes/photos";
@@ -62,6 +63,7 @@ export function registerRoutes(app: Express): Server {
 
   // Register all route modules
   registerAuth(app);
+  registerAuthSocial(app);
   registerProfile(app);
   registerNutrition(app);
   registerPhotos(app);
