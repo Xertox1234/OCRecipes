@@ -9,6 +9,7 @@
     "docs/audits",
     "docs/superpowers",
     "docs/research",
+    ".superpowers",
     "**/__tests__/**",
     "**/*.test.ts",
     "**/*.test.tsx",

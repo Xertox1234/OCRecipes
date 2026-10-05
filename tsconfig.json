@@ -26,6 +26,7 @@
     "dist",
     "docs/audits",
     "docs/superpowers",
-    "docs/research"
+    "docs/research",
+    ".superpowers"
   ]
 }

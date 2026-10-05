@@ -19,6 +19,8 @@ created: 2026-10-02
    - `tsconfig.check.json` `exclude` (a child `exclude` replaces the parent's instead of merging, so repeat the entries)
    - `eslint.config.js` global-ignores object (the object whose only key is `ignores`, entries written `dir/**`; an object that also has `files` is not global)
 
+   A dot-directory such as `.superpowers/` (gitignored plugin session scratch) needs the ESLint `ignores` entry (`.superpowers/**`) even though tsc skips it on its own (`**` never descends into dot-directories): ESLint's flat config does lint dot-directories, so its type-aware block reports "not found by the project service" for every `.ts`/`.mts` there. The tsconfig entries (`.superpowers`) only keep the three lists in sync.
+
 2. Land the tsconfig and ESLint edits together. With `typescript-eslint`'s `projectService`, a `.ts`/`.tsx` that tsconfig excludes but ESLint still reaches fails with "was not found by the project service" (a parse error) instead of being skipped; a `.cjs` is unaffected. A reviewer reproduced this with the new tsconfig plus the old ESLint config: 12 of 12 ts/tsx fixtures gave that error.
 
 3. Prove the change with a **two-sided probe**: broken fixtures for each directory and each extension (`.ts`, `.tsx`, `.cjs`) at the real nesting depth, plus a **control** under a non-excluded sibling (`docs/zz-probe-control/`) that must still fail. Run it before and after. Measured here: before the fix `tsc --noEmit` exited 2 with 8 TS2322 errors (both tsconfigs) and ESLint flagged 12 files; after, only the control failed (2 tsc errors, 3 ESLint files).
