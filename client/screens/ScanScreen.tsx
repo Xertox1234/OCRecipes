@@ -45,6 +45,7 @@ import {
 import { useAutoAdvanceTimer } from "@/camera/hooks/useAutoAdvanceTimer";
 
 import { scanPhaseReducer } from "@/camera/reducers/scan-phase-reducer";
+import type { ScanAction } from "@/camera/types/scan-phase";
 import { CoachHint } from "@/camera/components/CoachHint";
 import { ScanReticle } from "@/camera/components/ScanReticle";
 import { StepPill } from "@/camera/components/StepPill";
@@ -130,7 +131,9 @@ export default function ScanScreen() {
   const verifyBarcode = route.params?.verifyBarcode;
   const toast = useToast();
 
-  const [scanPhase, dispatch] = useReducer(scanPhaseReducer, { type: "IDLE" });
+  const [scanPhase, rawDispatch] = useReducer(scanPhaseReducer, {
+    type: "IDLE",
+  });
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [flashCount, setFlashCount] = useState(0);
   const [sonarVisible, setSonarVisible] = useState(false);
@@ -160,10 +163,16 @@ export default function ScanScreen() {
   const hasLockedRef = useRef(false);
   const sessionNavigatedRef = useRef(false);
   const scanPhaseRef = useRef(scanPhase);
-  // Render-time mirror (docs/rules/hooks.md): onBarcodeScanned reads this ref
-  // synchronously at native-camera-frame cadence, so an effect-based mirror's
-  // post-paint lag would replay a stale phase for a frame after every dispatch.
-  scanPhaseRef.current = scanPhase;
+  // Dispatch wrapper (docs/rules/hooks.md "wrap the setter"): onBarcodeScanned
+  // reads scanPhaseRef synchronously at native-camera-frame cadence, so the ref
+  // must advance at dispatch time — neither an effect mirror (post-paint lag)
+  // nor a render-body write (opts the component out of React Compiler) works.
+  // It relies on scanPhaseReducer staying pure: the reducer runs here and again
+  // inside React, and both must agree.
+  const dispatch = useCallback((action: ScanAction) => {
+    scanPhaseRef.current = scanPhaseReducer(scanPhaseRef.current, action);
+    rawDispatch(action);
+  }, []);
   const reducedMotionRef = useRef(reducedMotion);
   const isCapturingRef = useRef(false);
   // Re-entrancy guard for onSmartPhotoConfirm: it is async (on-device OCR for
@@ -198,7 +207,7 @@ export default function ScanScreen() {
   const resetScan = useCallback(() => {
     cleanupPendingUris();
     dispatch({ type: "RESET" });
-  }, [cleanupPendingUris]);
+  }, [cleanupPendingUris, dispatch]);
   // Backstop for the case ScanScreen unmounts (the scan modal dismissed)
   // without the blur effect below running first. Idempotent: cleanupPendingUris
   // clears the set after running, and deleteAsync is idempotent itself.
@@ -217,7 +226,7 @@ export default function ScanScreen() {
       hasLockedRef.current = false;
       dispatch({ type: "CAMERA_READY" });
     }
-  }, [isFocused]);
+  }, [isFocused, dispatch]);
 
   // Reset when screen loses focus — also cleans up any temp capture file the
   // abandoned phase was holding (resetScan; see pendingTempUrisRef above).
@@ -372,7 +381,7 @@ export default function ScanScreen() {
     setConfirmCard(null);
     hasLockedRef.current = false;
     dispatch({ type: "CAMERA_READY" });
-  }, []);
+  }, [dispatch]);
 
   // Announce loading state transitions to screen readers (iOS VoiceOver only —
   // Android TalkBack is handled by accessibilityLiveRegion on the loading view).
@@ -416,7 +425,9 @@ export default function ScanScreen() {
 
   const fetchProductInfo = useCallback(
     async (barcode: string) => {
-      try {
+      // Body hoisted into an inner function: React Compiler cannot lower value
+      // blocks (`?.`, `&&`, ternaries) inside a try/catch.
+      const loadProduct = async () => {
         const res = await apiRequest(
           "GET",
           `/api/nutrition/barcode/${barcode}`,
@@ -455,12 +466,15 @@ export default function ScanScreen() {
         ) {
           haptics.notification(Haptics.NotificationFeedbackType.Warning);
         }
+      };
+      try {
+        await loadProduct();
       } catch (err) {
         logger.error("[fetchProductInfo] product info fetch failed", err);
         // Non-critical — ProductChip renders without product data
       }
     },
-    [haptics, returnAfterLog, navigation],
+    [dispatch, haptics, returnAfterLog, navigation],
   );
 
   const onBarcodeScanned = useCallback(
@@ -531,7 +545,7 @@ export default function ScanScreen() {
         dispatch({ type: "BARCODE_LOST" });
       }, 800);
     },
-    [isFocused, screenWidth, screenHeight, fetchProductInfo, haptics],
+    [isFocused, screenWidth, screenHeight, fetchProductInfo, haptics, dispatch],
   );
 
   const onShutterPress = useCallback(async () => {
@@ -558,7 +572,10 @@ export default function ScanScreen() {
     if (isCapturingRef.current) return;
     isCapturingRef.current = true;
 
-    try {
+    // The body lives in an inner function so the guard reset below is a
+    // catch-and-rethrow rather than a try/finally (React Compiler cannot lower
+    // a TryStatement without a catch clause).
+    const runCapture = async () => {
       if (capturePlan.route === "smart") {
         const photo = await cameraRef.current?.takePicture();
         if (!photo) {
@@ -600,7 +617,7 @@ export default function ScanScreen() {
           let localOCRText: string | undefined;
           try {
             const ocrResult = await recognizeTextFromPhoto(photo.uri);
-            localOCRText = ocrResult.text || undefined;
+            if (ocrResult.text) localOCRText = ocrResult.text;
           } catch (err) {
             logger.error(
               "[ScanScreen label OCR] recognition failed; navigating without preview",
@@ -659,7 +676,7 @@ export default function ScanScreen() {
         let ocrText = "";
         try {
           const ocrResult = await recognizeTextFromPhoto(photo.uri);
-          ocrText = ocrResult.text ?? "";
+          if (ocrResult.text != null) ocrText = ocrResult.text;
         } catch (err) {
           // OCR failure is non-fatal: the STEP2 photo is still captured and the
           // session proceeds. We fall back to empty text intentionally — the
@@ -677,10 +694,16 @@ export default function ScanScreen() {
         // STEP2_CONFIRMED (front-label capture) — no OCR needed
         dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri });
       }
-    } finally {
+    };
+    try {
+      await runCapture();
+    } catch (err) {
       isCapturingRef.current = false;
+      throw err;
     }
+    isCapturingRef.current = false;
   }, [
+    dispatch,
     isLabelMode,
     isFrontLabelMode,
     verifyBarcode,
@@ -947,8 +970,10 @@ export default function ScanScreen() {
           if (isConfirmingRef.current) return;
           isConfirmingRef.current = true;
           setIsSmartConfirming(true);
-          try {
-            const { classification, imageUri } = scanPhase;
+          const { classification, imageUri } = scanPhase;
+          // Inner function + catch-and-rethrow instead of try/finally (React
+          // Compiler cannot lower a TryStatement without a catch clause).
+          const runSmartConfirm = async () => {
             const action = await resolveSmartConfirmAction({
               classification,
               imageUri,
@@ -1044,10 +1069,16 @@ export default function ScanScreen() {
                 );
               }
             }
-          } finally {
+          };
+          try {
+            await runSmartConfirm();
+          } catch (err) {
             isConfirmingRef.current = false;
             setIsSmartConfirming(false);
+            throw err;
           }
+          isConfirmingRef.current = false;
+          setIsSmartConfirming(false);
         }}
         onRetry={resetScan}
       />

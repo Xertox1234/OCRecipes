@@ -1,9 +1,9 @@
 ---
 title: "ScanScreen stays skipped by React Compiler even without the #1226 lint directive — two try/finally blocks, a render-body ref write and value blocks inside try each opt it out; hoist the try bodies, wrap dispatch, shrink the bailout baseline"
-status: backlog
+status: done
 priority: low
 created: 2026-10-02
-updated: 2026-10-02
+updated: 2026-10-05
 assignee:
 labels: [deferred, performance, camera]
 github_issue:
@@ -40,21 +40,21 @@ React Compiler skips 79 files, and `client/screens/ScanScreen.tsx` is one of the
 
 ## Acceptance Criteria
 
-- [ ] Pre-flight (see Dependencies). All three must hold, otherwise stop and report that the bundle has not merged:
+- [x] Pre-flight (see Dependencies). All three must hold, otherwise stop and report that the bundle has not merged:
   - `grep -c eslint-disable client/screens/ScanScreen.tsx` prints `0`;
   - the SESSION_COMPLETE effect's deps list `haptics,` (not `haptics.notification,`);
   - the probe prints exactly the two TryStatement errors.
-- [ ] Red, recorded in the PR before any production edit: the probe prints `ok = 0` for ScanScreen and `ok = 1` for the control `client/components/ThemedText.tsx`.
-- [ ] Characterization tests (a)-(c) from the Notes (shutter double tap + re-arm; shutter re-arm after a failed capture; smart-confirm double tap, busy state and re-arm) are added to `client/screens/__tests__/ScanScreen.test.tsx` FIRST. They pass on the unrefactored file and still pass after the refactor.
-- [ ] Red-green test (d) for the dispatch wrapper (seven barcode frames in ONE synchronous `act` lock the barcode). It FAILS on the unrefactored file; record that failure. If it passes there, the burst never reached the stale-ref state: stop and report, and do not weaken the test. It passes after the refactor.
-- [ ] After the four fixes, the probe prints `ok = 1 | non-success = 0` for ScanScreen.
-- [ ] `dispatch` is listed in the six deps arrays named in fix (b), and the push gate's type-aware ESLint reports nothing for the file. No `eslint-disable` of any kind is added: a react-hooks one brings back the `Suppression` bailout.
-- [ ] `npx vitest run client/screens/__tests__/ScanScreen.test.tsx` passes with every existing test unchanged, including the ones that exercise this code: the first-render barcode-lock test, the confirm-card haptic pair, the `fetchProductInfo` liveness pair, the two `onSmartPhotoConfirm` navigate tests, and the front-label, label-mode and OCR-text tests.
-- [ ] Baseline:
+- [x] Red, recorded in the PR before any production edit: the probe prints `ok = 0` for ScanScreen and `ok = 1` for the control `client/components/ThemedText.tsx`.
+- [x] Characterization tests (a)-(c) from the Notes (shutter double tap + re-arm; shutter re-arm after a failed capture; smart-confirm double tap, busy state and re-arm) are added to `client/screens/__tests__/ScanScreen.test.tsx` FIRST. They pass on the unrefactored file and still pass after the refactor.
+- [x] Red-green test (d) for the dispatch wrapper (seven barcode frames in ONE synchronous `act` lock the barcode). It FAILS on the unrefactored file; record that failure. If it passes there, the burst never reached the stale-ref state: stop and report, and do not weaken the test. It passes after the refactor.
+- [x] After the four fixes, the probe prints `ok = 1 | non-success = 0` for ScanScreen.
+- [x] `dispatch` is listed in the six deps arrays named in fix (b), and the push gate's type-aware ESLint reports nothing for the file. No `eslint-disable` of any kind is added: a react-hooks one brings back the `Suppression` bailout.
+- [x] `npx vitest run client/screens/__tests__/ScanScreen.test.tsx` passes with every existing test unchanged, including the ones that exercise this code: the first-render barcode-lock test, the confirm-card haptic pair, the `fetchProductInfo` liveness pair, the two `onSmartPhotoConfirm` navigate tests, and the front-label, label-mode and OCR-text tests.
+- [x] Baseline:
   - `node scripts/check-react-compiler-bailouts.js` lists ScanScreen under "no longer bail out (fixed!)".
   - After `--update-baseline`, `git diff scripts/react-compiler-bailout-baseline.json` is exactly one removed line, `"client/screens/ScanScreen.tsx",` (79 → 78 entries). Surface any other diff line in the PR as a separate finding.
   - A re-run without flags exits 0 with "0 new".
-- [ ] The "Render-time mirror" comment at 163-165 is rewritten for the wrapper, and says the wrapper relies on `scanPhaseReducer` staying pure.
+- [x] The "Render-time mirror" comment at 163-165 is rewritten for the wrapper, and says the wrapper relies on `scanPhaseReducer` staying pure.
 - [ ] Owner-present simulator review (owner request 2026-10-02; never unattended, never handed to the owner alone). On the iOS Simulator dev build, which runs the compiler (`app.json:61`), press the shutter in default and label mode: once, twice rapidly, and again after the outcome is dismissed. The simulator has no camera (`client/camera/components/CameraView.ios.tsx:211-213` shows "Camera unavailable"), so each capture is expected, not yet observed, to end in the "Capture failed" alert via `takePicture` returning `null`. Pass = one outcome per double tap and a shutter that responds again; record what was seen in the PR. Without the owner, leave this box unchecked and say so.
 
 ## Implementation Notes
@@ -161,3 +161,7 @@ React Compiler skips 79 files, and `client/screens/ScanScreen.tsx` is one of the
 ### 2026-10-02
 
 - Filed from the 2026-10-02 deferred-warnings triage of the /todo sweep (#1213–#1226); claim verified against main ec26b972 by workflow wf_7d969d8d-ce1 and upheld by an adversarial re-check; filing approved by the owner 2026-10-02.
+
+### 2026-10-05
+
+- Implemented by a /todo executor: probe red (ScanScreen ok = 0, two TryStatement errors; ThemedText control ok = 1) then green (ok = 1); test (d) failed on the unrefactored file (barcode never fetched) and passes after; (a)-(c) passed before and after. Baseline 79 to 78 entries (one removed line). Owner-present simulator review NOT done (needs the owner present); box left unchecked.

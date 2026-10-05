@@ -68,7 +68,6 @@
   "client/screens/ReceiptCaptureScreen.tsx",
   "client/screens/ReceiptReviewScreen.tsx",
   "client/screens/RecipeChatScreen.tsx",
-  "client/screens/ScanScreen.tsx",
   "client/screens/SettingsScreen.tsx",
   "client/screens/TasteProfileScreen.tsx",
   "client/screens/VerifyEmailScreen.tsx",
