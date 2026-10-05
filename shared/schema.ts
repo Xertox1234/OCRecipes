@@ -58,7 +58,12 @@ export const users = pgTable(
      * are the TOCTOU-safe arbiter) — see P3-2026-06-24-change-email-staging.
      */
     pendingEmail: text("pending_email"),
-    password: text("password").notNull(),
+    /**
+     * bcrypt hash, or NULL for an account created through Google/Apple that has
+     * never set a password. Password login treats NULL as a wrong password (same
+     * 401 + dummy bcrypt compare). A password reset sets one.
+     */
+    password: text("password"),
     displayName: text("display_name"),
     avatarUrl: text("avatar_url"),
     dailyCalorieGoal: integer("daily_calorie_goal").default(
@@ -141,6 +146,104 @@ export const users = pgTable(
     dailyFatGoalNonNeg: check(
       "users_daily_fat_goal_gte0",
       sql`${table.dailyFatGoal} >= 0`,
+    ),
+  }),
+);
+
+/**
+ * One row per linked Google/Apple login. Matched ONLY on (provider,
+ * provider_subject) — never on email (emails change; Apple's may be a relay).
+ * See docs/superpowers/specs/2026-10-04-sign-in-with-google-and-apple-design.md §3.2.
+ */
+export const userIdentities = pgTable(
+  "user_identities",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    provider: text("provider").notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    /** Display only — never used for matching. */
+    email: text("email"),
+    isPrivateRelay: boolean("is_private_relay").default(false).notNull(),
+    /** AES-256-GCM ciphertext (server/lib/social-identity/token-crypto.ts). Apple only. */
+    appleRefreshTokenEnc: text("apple_refresh_token_enc"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (table) => ({
+    providerSubjectUnique: uniqueIndex(
+      "user_identities_provider_subject_unique",
+    ).on(table.provider, table.providerSubject),
+    userProviderUnique: uniqueIndex("user_identities_user_provider_unique").on(
+      table.userId,
+      table.provider,
+    ),
+    userIdIdx: index("user_identities_user_id_idx").on(table.userId),
+    providerCheck: check(
+      "user_identities_provider_check",
+      sql`${table.provider} in ('google', 'apple')`,
+    ),
+  }),
+);
+
+/** One-use sign-in nonces. Only the SHA-256 hex of the raw nonce is stored. */
+export const authNonces = pgTable(
+  "auth_nonces",
+  {
+    nonceHash: text("nonce_hash").primaryKey(),
+    purpose: text("purpose").notNull(),
+    /** NULL for public nonces; the signed-in user for bound ones (checked at consume). */
+    userId: varchar("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => ({
+    purposeCheck: check(
+      "auth_nonces_purpose_check",
+      sql`${table.purpose} in ('sign_in', 'link', 'reauth')`,
+    ),
+    expiresIdx: index("auth_nonces_expires_at_idx").on(table.expiresAt),
+  }),
+);
+
+/**
+ * A verified provider identity waiting on ChooseUsername or the Connect prompt.
+ * The client holds only the raw ticket; we store its SHA-256 hex.
+ */
+export const pendingSocialSignIns = pgTable(
+  "pending_social_sign_ins",
+  {
+    ticketHash: text("ticket_hash").primaryKey(),
+    kind: text("kind").notNull(),
+    provider: text("provider").notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    email: text("email").notNull(),
+    isPrivateRelay: boolean("is_private_relay").default(false).notNull(),
+    /** isAuthoritative(claims) at verification time (linking-policy.ts). */
+    providerAuthoritative: boolean("provider_authoritative").notNull(),
+    displayName: text("display_name"),
+    appleRefreshTokenEnc: text("apple_refresh_token_enc"),
+    targetUserId: varchar("target_user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    /** Wrong-password attempts on the Connect prompt; capped at 5. */
+    attempts: integer("attempts").default(0).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => ({
+    kindCheck: check(
+      "pending_social_sign_ins_kind_check",
+      sql`${table.kind} in ('sign_up', 'link')`,
+    ),
+    expiresIdx: index("pending_social_sign_ins_expires_at_idx").on(
+      table.expiresAt,
     ),
   }),
 );
@@ -1254,6 +1357,10 @@ export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type UserIdentity = typeof userIdentities.$inferSelect;
+export type InsertUserIdentity = typeof userIdentities.$inferInsert;
+export type AuthNonce = typeof authNonces.$inferSelect;
+export type PendingSocialSignIn = typeof pendingSocialSignIns.$inferSelect;
 export type InsertScannedItem = z.infer<typeof insertScannedItemSchema>;
 export type ScannedItem = typeof scannedItems.$inferSelect;
 export type InsertDailyLog = z.infer<typeof insertDailyLogSchema>;
