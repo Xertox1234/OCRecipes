@@ -10,6 +10,7 @@
 
 import * as users from "./users";
 import * as passwordReset from "./password-reset";
+import * as identities from "./identities";
 import * as accountImages from "./account-images";
 import * as nutrition from "./nutrition";
 import * as mealPlans from "./meal-plans";
@@ -46,6 +47,12 @@ export type { UpdatableUserFields } from "./users";
 // "../users" directly). These two ARE load-bearing: server/routes/auth.ts
 // imports both from "../storage", matching the BatchStorageError precedent below.
 export { ReservedUsernameError, isReservedUsername } from "./users";
+export type {
+  NoncePurpose,
+  ProviderName,
+  SignInMethods,
+  PendingSignInInput,
+} from "./identities";
 export type { FeaturedRecipe } from "./community";
 export type { PersonalRecipeBrief } from "./meal-plans";
 export { BatchStorageError } from "./batch";
@@ -64,6 +71,21 @@ export const storage = {
   issuePasswordResetCode: passwordReset.issuePasswordResetCode,
   reservePasswordResetAttempt: passwordReset.reservePasswordResetAttempt,
   completePasswordReset: passwordReset.completePasswordReset,
+  // Google / Apple identities
+  issueNonce: identities.issueNonce,
+  consumeNonce: identities.consumeNonce,
+  createPendingSignIn: identities.createPendingSignIn,
+  getPendingSignIn: identities.getPendingSignIn,
+  reservePendingLinkAttempt: identities.reservePendingLinkAttempt,
+  completeLinkFromTicket: identities.completeLinkFromTicket,
+  createUserWithIdentity: identities.createUserWithIdentity,
+  findIdentity: identities.findIdentity,
+  listIdentities: identities.listIdentities,
+  insertIdentity: identities.insertIdentity,
+  deleteIdentity: identities.deleteIdentity,
+  setAppleRefreshToken: identities.setAppleRefreshToken,
+  touchIdentity: identities.touchIdentity,
+  getSignInMethods: identities.getSignInMethods,
   collectUserImageUrls: accountImages.collectUserImageUrls,
   filterUnreferencedImageUrls: accountImages.filterUnreferencedImageUrls,
   createUser: users.createUser,
