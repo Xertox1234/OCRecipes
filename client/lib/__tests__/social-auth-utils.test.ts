@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { visibleProviders, canDisconnect } from "../social-auth-utils";
+import {
+  visibleProviders,
+  canDisconnect,
+  socialSignInErrorMessage,
+} from "../social-auth-utils";
+import { ApiError } from "@/lib/api-error";
 
 describe("visibleProviders", () => {
   it("iOS: apple first, google only alongside apple (guideline 4.8)", () => {
@@ -54,5 +59,27 @@ describe("canDisconnect", () => {
         "apple",
       ),
     ).toBe(true);
+  });
+});
+
+describe("socialSignInErrorMessage", () => {
+  it.each([
+    ["PROVIDER_EXCHANGE_FAILED", /couldn.t finish/i],
+    ["PROVIDER_EMAIL_REQUIRED", /email/i],
+    ["EMAIL_NOT_VERIFIED", /verify your email/i],
+    ["SECOND_FACTOR_REQUIRED", /two-step/i],
+    ["RATE_LIMITED", /too many/i],
+  ])("%s → specific static copy", (code, re) => {
+    expect(socialSignInErrorMessage(new ApiError("raw", code))).toMatch(re);
+  });
+
+  it("never echoes the server message", () => {
+    expect(
+      socialSignInErrorMessage(new ApiError("secret detail", "WHATEVER")),
+    ).not.toContain("secret detail");
+  });
+
+  it("falls back to generic copy for unknown errors", () => {
+    expect(socialSignInErrorMessage(new Error("x"))).toMatch(/try again/i);
   });
 });
