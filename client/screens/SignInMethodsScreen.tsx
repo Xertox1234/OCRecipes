@@ -102,6 +102,15 @@ export default function SignInMethodsScreen() {
     }
   };
 
+  const disconnect = async (provider: SocialProvider) => {
+    try {
+      setMethods(await disconnectProvider(provider));
+      toast.success(`${label(provider)} disconnected`);
+    } catch (err) {
+      toast.error(identityErrorMessage(err));
+    }
+  };
+
   const askDisconnect = (provider: SocialProvider) => {
     const name = label(provider);
     confirm({
@@ -109,13 +118,8 @@ export default function SignInMethodsScreen() {
       message: `You won't be able to sign in with ${name} anymore.`,
       confirmLabel: "Disconnect",
       destructive: true,
-      onConfirm: async () => {
-        try {
-          setMethods(await disconnectProvider(provider));
-          toast.success(`${name} disconnected`);
-        } catch (err) {
-          toast.error(identityErrorMessage(err));
-        }
+      onConfirm: () => {
+        void disconnect(provider);
       },
     });
   };

@@ -139,11 +139,9 @@ describe("SignInMethodsScreen", () => {
     renderComponent(<SignInMethodsScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Disconnect Apple" }));
     expect(h.confirm).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      await h.confirm.mock.calls[0][0].onConfirm();
-    });
+    act(() => h.confirm.mock.calls[0][0].onConfirm());
+    await waitFor(() => expect(h.setMethods).toHaveBeenCalledWith(next));
     expect(h.disconnectProvider).toHaveBeenCalledWith("apple");
-    expect(h.setMethods).toHaveBeenCalledWith(next);
   });
 
   it("setting up a password signs out via the confirm sheet", async () => {
@@ -152,9 +150,7 @@ describe("SignInMethodsScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Set up a password" }));
     const opts = h.confirm.mock.calls[0][0];
     expect(opts.message).toMatch(/Forgot password\?/);
-    await act(async () => {
-      await opts.onConfirm();
-    });
+    act(() => opts.onConfirm());
     expect(h.logout).toHaveBeenCalled();
   });
 });
