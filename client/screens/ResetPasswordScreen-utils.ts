@@ -22,15 +22,32 @@ export function normalizeResetCode(raw: string): string {
   return raw.replace(/\D/g, "").slice(0, RESET_CODE_LENGTH);
 }
 
+const PASSWORD_MISMATCH_MESSAGE = "Passwords do not match";
+
+export type ResetFormField = "code" | "password" | "confirm";
+
+export interface ResetFormError {
+  field: ResetFormField;
+  message: string;
+}
+
+/** First failing field + its message, or null when the form is valid. */
 export function validateResetForm(input: {
   code: string;
   password: string;
   confirmPassword: string;
-}): string | null {
+}): ResetFormError | null {
   if (input.code.length !== RESET_CODE_LENGTH) {
-    return "Enter the 6-digit code from the email";
+    return { field: "code", message: "Enter the 6-digit code from the email" };
   }
-  return validateNewPassword(input.password, input.confirmPassword);
+  const message = validateNewPassword(input.password, input.confirmPassword);
+  if (!message) return null;
+  // validateNewPassword checks length and complexity (password field) before
+  // the mismatch (confirm field), so a mismatch message means the password
+  // itself passed.
+  const field: ResetFormField =
+    message === PASSWORD_MISMATCH_MESSAGE ? "confirm" : "password";
+  return { field, message };
 }
 
 /** Static copy keyed on ApiError.code/status — never error.message. */

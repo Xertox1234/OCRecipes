@@ -13,7 +13,12 @@ describe("ForgotPasswordScreen-utils", () => {
   it("a 429 gets the honest hourly-limit copy", () => {
     expect(
       getResetRequestErrorMessage(new ApiError("x", "RATE_LIMITED", 429)),
-    ).toBe("Too many code requests for this email. Try again in an hour.");
+    ).toBe("Too many code requests. Please wait a while and try again.");
+  });
+  it("a server VALIDATION_ERROR says the email is invalid, not 'try again'", () => {
+    expect(
+      getResetRequestErrorMessage(new ApiError("x", "VALIDATION_ERROR", 400)),
+    ).toBe("Please enter a valid email address.");
   });
   it("anything else gets generic copy (never the raw server message)", () => {
     expect(

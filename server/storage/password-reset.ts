@@ -25,7 +25,9 @@ export const CLEARED_RESET_CODE = {
 
 /**
  * Store a new reset code (overwriting any live one) IF the account is under
- * the durable issuance cap: RESET_CODE_DAILY_ISSUE_CAP codes per rolling 24 h.
+ * the durable issuance cap: RESET_CODE_DAILY_ISSUE_CAP codes per fixed 24 h
+ * window from the first code (up to 11 codes in a span that crosses the
+ * window boundary).
  * One atomic UPDATE enforces the cap and writes the code, so it survives
  * deploys and concurrent requests. Expiry is computed on the DB clock.
  * Returns false when the cap is hit (nothing stored) — callers stay silent,
