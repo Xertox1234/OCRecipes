@@ -166,7 +166,7 @@ describe("AllConversationsScreen — Coach and Recipes tabs", () => {
       "Main",
       {
         screen: "CoachTab",
-        params: { screen: "Chat", params: { conversationId: 9 } },
+        params: { screen: "Chat", params: { conversationId: 9 }, pop: true },
       },
       { pop: true },
     );

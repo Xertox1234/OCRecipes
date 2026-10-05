@@ -20,6 +20,7 @@ import {
   viewCoachConversation,
 } from "@/hooks/useCoachUnreadReplies";
 import MainTabNavigator from "../MainTabNavigator";
+import { getChatRouteId } from "../chatRouteId";
 
 /**
  * Pins the wiring seam a pure `getTabContentA11y` unit test can't cover:
@@ -369,7 +370,10 @@ describe("MainTabNavigator — Coach reply ready toast", () => {
       "Main",
       {
         screen: "CoachTab",
-        params: { screen: "Chat", params: { conversationId: 5 } },
+        // The nested `pop` is the one the Coach stack sees (the outer one stops
+        // at the root stack); with `getId` on Chat it pops back to an existing
+        // Chat for that conversation instead of moving it to the top.
+        params: { screen: "Chat", params: { conversationId: 5 }, pop: true },
       },
       { pop: true },
     );
@@ -457,6 +461,119 @@ describe("MainTabNavigator — Coach reply ready toast", () => {
         routerOptions,
       )!;
       expect(names(withoutPop)).toEqual(["Main", "Scan", "Main"]);
+    });
+  });
+
+  // Same recipe one level down: the nested action the Coach stack receives is
+  // derived FROM THE TAPPED ARGS the way useNavigationBuilder does (name =
+  // params.screen, params = params.params, pop = params.pop). The
+  // `routeGetIdList: {}` runs are the denominator: they reproduce the re-point
+  // the `getId` fix removes.
+  describe("against the real Coach StackRouter", () => {
+    const routeNames = ["ChatList", "Chat", "CoachPro", "GroceryLists"];
+    const withGetId = {
+      routeNames,
+      routeParamList: {},
+      routeGetIdList: { Chat: getChatRouteId },
+    };
+    const withoutGetId = { ...withGetId, routeGetIdList: {} };
+    const router = StackRouter({});
+    const names = (state: { routes: { name: string }[] }) =>
+      state.routes.map((route) => route.name);
+
+    async function nestedAction(stripPop = false) {
+      const { queryClient } = renderWithClient();
+      act(() => {
+        noteCoachReplyFinished(queryClient, 5);
+      });
+      await settle();
+      openAction().onPress();
+      const [, params] = mockNavigationRef.navigate.mock.calls[0] as [
+        string,
+        { params: { screen: string; params: object; pop?: boolean } },
+      ];
+      const nested = params.params;
+      return CommonActions.navigate({
+        name: nested.screen,
+        params: nested.params,
+        pop: stripPop ? undefined : nested.pop,
+      });
+    }
+
+    // Build a Coach stack by dispatching real navigate actions.
+    function stackOf(...steps: [string, object | undefined][]) {
+      let state = router.getInitialState(withGetId);
+      for (const [name, params] of steps) {
+        const next = router.getStateForAction(
+          state,
+          CommonActions.navigate(name, params),
+          withGetId,
+        );
+        // A pushed route is always a full state; narrow on `stale`.
+        if (!next || next.stale !== false) {
+          throw new Error(`expected ${name} to be pushed`);
+        }
+        state = next;
+      }
+      if (state.stale !== false) throw new Error("expected a full state");
+      return state;
+    }
+
+    it("a different conversation is pushed, leaving the current Chat untouched", async () => {
+      const state = stackOf(["Chat", { conversationId: 7 }]);
+      const action = await nestedAction();
+
+      const next = router.getStateForAction(state, action, withGetId)!;
+
+      expect(names(next)).toEqual(["ChatList", "Chat", "Chat"]);
+      expect(next.routes[1].key).toBe(state.routes[1].key);
+      expect(next.routes[1].params).toEqual({ conversationId: 7 });
+      expect(next.routes[2].params).toEqual({ conversationId: 5 });
+    });
+
+    it("control (no getId): the same action re-points the current Chat in place", async () => {
+      const state = stackOf(["Chat", { conversationId: 7 }]);
+      const action = await nestedAction();
+
+      const next = router.getStateForAction(state, action, withoutGetId)!;
+
+      expect(names(next)).toEqual(["ChatList", "Chat"]);
+      expect(next.routes[1].key).toBe(state.routes[1].key);
+      expect(next.routes[1].params).toEqual({ conversationId: 5 });
+    });
+
+    it("the same conversation reuses its route (no duplicate)", async () => {
+      const state = stackOf(["Chat", { conversationId: 5 }]);
+      const action = await nestedAction();
+
+      const next = router.getStateForAction(state, action, withGetId)!;
+
+      expect(names(next)).toEqual(["ChatList", "Chat"]);
+      expect(next.routes[1].key).toBe(state.routes[1].key);
+      expect(next.routes[1].params).toEqual({ conversationId: 5 });
+    });
+
+    it("pop is forwarded: pops back to the existing Chat, discarding what sits above it", async () => {
+      const state = stackOf(
+        ["Chat", { conversationId: 5 }],
+        ["GroceryLists", undefined],
+      );
+      expect(names(state)).toEqual(["ChatList", "Chat", "GroceryLists"]);
+      const action = await nestedAction();
+
+      const next = router.getStateForAction(state, action, withGetId)!;
+
+      expect(names(next)).toEqual(["ChatList", "Chat"]);
+      expect(next.routes[1].key).toBe(state.routes[1].key);
+      expect(next.routes[1].params).toEqual({ conversationId: 5 });
+
+      // Control: with the nested pop stripped the route is MOVED to the top.
+      const stripped = router.getStateForAction(
+        state,
+        await nestedAction(true),
+        withGetId,
+      )!;
+      expect(names(stripped)).toEqual(["ChatList", "GroceryLists", "Chat"]);
     });
   });
 

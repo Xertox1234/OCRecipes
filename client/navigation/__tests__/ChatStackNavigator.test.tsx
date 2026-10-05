@@ -3,6 +3,7 @@ import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import ChatStackNavigator from "../ChatStackNavigator";
+import { getChatRouteId } from "../chatRouteId";
 
 /**
  * Pins the call site that `coachInitialRoute.test.ts` cannot cover: the pure
@@ -23,16 +24,22 @@ import ChatStackNavigator from "../ChatStackNavigator";
  * for the render-test pattern this follows (first navigator instance).
  */
 
-const { mockUsePremiumFeature, premiumContextState, registeredScreenNames } =
-  vi.hoisted(() => ({
-    mockUsePremiumFeature: vi.fn(),
-    premiumContextState: {
-      isPremiumResolved: true,
-      isError: false,
-      refreshSubscription: vi.fn(),
-    },
-    registeredScreenNames: [] as string[],
-  }));
+const {
+  mockUsePremiumFeature,
+  premiumContextState,
+  registeredScreenNames,
+  registeredGetIds,
+} = vi.hoisted(() => ({
+  mockUsePremiumFeature: vi.fn(),
+  premiumContextState: {
+    isPremiumResolved: true,
+    isError: false,
+    refreshSubscription: vi.fn(),
+  },
+  registeredScreenNames: [] as string[],
+  // name -> the `getId` prop that screen was registered with (if any).
+  registeredGetIds: new Map<string, unknown>(),
+}));
 
 vi.mock("@react-navigation/native-stack", () => ({
   createNativeStackNavigator: () => ({
@@ -52,8 +59,9 @@ vi.mock("@react-navigation/native-stack", () => ({
     // `initialRouteName` actually points at a screen that still exists —
     // without this, deleting/renaming the CoachPro Stack.Screen entry while
     // initialRouteName still says "CoachPro" would go undetected.
-    Screen: ({ name }: { name: string }) => {
+    Screen: ({ name, getId }: { name: string; getId?: unknown }) => {
       registeredScreenNames.push(name);
+      if (getId !== undefined) registeredGetIds.set(name, getId);
       return null;
     },
   }),
@@ -113,6 +121,7 @@ vi.mock("@/hooks/useTheme", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   registeredScreenNames.length = 0;
+  registeredGetIds.clear();
   premiumContextState.isPremiumResolved = true;
   premiumContextState.isError = false;
   premiumContextState.refreshSubscription = vi.fn();
@@ -186,5 +195,16 @@ describe("ChatStackNavigator — isPremiumResolved mount guard", () => {
     expect(
       screen.queryByRole("button", { name: /retry loading coach/i }),
     ).toBeNull();
+  });
+});
+
+describe("ChatStackNavigator — Chat gets one route instance per conversation", () => {
+  it("registers getChatRouteId as Chat's getId, and on no other screen", () => {
+    mockUsePremiumFeature.mockReturnValue(false);
+
+    renderComponent(<ChatStackNavigator />);
+
+    expect(registeredGetIds.get("Chat")).toBe(getChatRouteId);
+    expect([...registeredGetIds.keys()]).toEqual(["Chat"]);
   });
 });
