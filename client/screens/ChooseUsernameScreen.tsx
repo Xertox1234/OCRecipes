@@ -11,6 +11,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { TextInput } from "@/components/TextInput";
 import { InlineError } from "@/components/InlineError";
+import { LegalConsentCaption } from "@/components/LegalConsentCaption";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
@@ -60,7 +61,7 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       const outcome = chooseUsernameErrorOutcome(err);
       if (outcome.kind === "restart") {
-        toast.error("That took too long — please start again.");
+        toast.error(outcome.message);
         navigation.navigate("Login");
         return;
       }
@@ -131,6 +132,11 @@ export default function ChooseUsernameScreen({ route, navigation }: Props) {
               I confirm I am 13 years of age or older
             </ThemedText>
           </Pressable>
+          <LegalConsentCaption
+            onLinkError={() =>
+              setError("Unable to open that link. Please try again later.")
+            }
+          />
 
           <Button
             onPress={onSubmit}

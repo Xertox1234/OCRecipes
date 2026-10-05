@@ -53,7 +53,7 @@ export default function ConnectAccountScreen({ route, navigation }: Props) {
     haptics.notification(Haptics.NotificationFeedbackType.Error);
     const outcome = connectErrorOutcome(err);
     if (outcome.kind === "restart") {
-      toast.error("That took too long — please start again.");
+      toast.error(outcome.message);
       navigation.navigate("Login");
       return;
     }

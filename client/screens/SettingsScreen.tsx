@@ -29,6 +29,8 @@ import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { useToast } from "@/context/ToastContext";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
+import { useSignInMethods } from "@/hooks/useSignInMethods";
+import type { DeleteAccountProof } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/query-client";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -60,6 +62,7 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
   { id: "goals", icon: "target", label: "Nutrition Goals" },
   { id: "coachReminders", icon: "bell", label: "Coach Reminders" },
   { id: "subscription", icon: "credit-card", label: "Subscription" },
+  { id: "signInMethods", icon: "key", label: "Sign-in methods" },
   { id: "changeEmail", icon: "mail", label: "Change Email" },
   { id: "exportData", icon: "download", label: "Export My Data" },
   { id: "signout", icon: "log-out", label: "Sign Out", danger: true },
@@ -84,6 +87,11 @@ export default function SettingsScreen() {
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const {
+    methods: signInMethods,
+    isError: signInMethodsError,
+    refetch: refetchSignInMethods,
+  } = useSignInMethods();
   const [showChangeEmailModal, setShowChangeEmailModal] = useState(false);
   const { confirm, ConfirmationModal, behindContentA11yProps, isOpen } =
     useConfirmationModal();
@@ -98,11 +106,13 @@ export default function SettingsScreen() {
   }, [isOpen, navigation]);
 
   const handleDeleteAccount = useCallback(
-    async (password: string) => {
+    async (proof: DeleteAccountProof) => {
       // deleteAccount throws on failure (e.g. wrong password). Let the modal
       // surface the error and keep itself open — only close on success.
-      await deleteAccount(password);
-      setShowDeleteAccountModal(false);
+      // false = the Apple sheet was cancelled: nothing deleted, stay open.
+      const deleted = await deleteAccount(proof);
+      if (deleted) setShowDeleteAccountModal(false);
+      return deleted;
       // No explicit navigation needed: the root navigator gate switches to
       // the auth stack when `isAuthenticated` flips to false.
     },
@@ -210,7 +220,22 @@ export default function SettingsScreen() {
             setShowUpgradeModal(true);
           }
           break;
+        case "signInMethods":
+          navigation.navigate("SignInMethods");
+          break;
         case "changeEmail":
+          // Changing the email re-auths with the password; an Apple-only
+          // account has none, so the modal could only ever fail.
+          if (signInMethods && !signInMethods.password) {
+            confirm({
+              title: "Set up a password first",
+              message:
+                "Changing your email needs your password. Set one up in Sign-in methods.",
+              confirmLabel: "Open Sign-in methods",
+              onConfirm: () => navigation.navigate("SignInMethods"),
+            });
+            break;
+          }
           setShowChangeEmailModal(true);
           break;
         case "exportData":
@@ -238,11 +263,22 @@ export default function SettingsScreen() {
           });
           break;
         case "deleteAccount":
+          if (signInMethodsError) refetchSignInMethods();
           setShowDeleteAccountModal(true);
           break;
       }
     },
-    [haptics, navigation, isPremium, logout, handleExportData, confirm],
+    [
+      haptics,
+      navigation,
+      isPremium,
+      logout,
+      handleExportData,
+      confirm,
+      signInMethods,
+      signInMethodsError,
+      refetchSignInMethods,
+    ],
   );
 
   const visibleItems = SETTINGS_ITEMS.filter(
@@ -522,6 +558,8 @@ export default function SettingsScreen() {
         onClose={() => setShowDeleteAccountModal(false)}
         onConfirm={handleDeleteAccount}
         showSubscriptionWarning={isPremium}
+        signInMethods={signInMethods}
+        loadError={signInMethodsError}
       />
 
       <ChangeEmailModal

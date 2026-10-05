@@ -474,15 +474,22 @@ export function register(app: Express): void {
             );
           }
           if (isUniqueViolation(err)) {
+            // Someone registered this email between /social and now: the
+            // client restarts sign-in, which then offers to connect it.
             const constraint = uniqueViolationConstraint(err) ?? "";
-            return sendError(
-              res,
-              409,
-              constraint.includes("email")
-                ? "An account with this email already exists."
-                : "Username already exists",
-              ErrorCode.CONFLICT,
-            );
+            return constraint.includes("email")
+              ? sendError(
+                  res,
+                  409,
+                  "An account with this email already exists.",
+                  ErrorCode.EMAIL_IN_USE,
+                )
+              : sendError(
+                  res,
+                  409,
+                  "Username already exists",
+                  ErrorCode.CONFLICT,
+                );
           }
           throw err;
         }

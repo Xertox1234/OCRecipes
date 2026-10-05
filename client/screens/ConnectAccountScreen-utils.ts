@@ -32,10 +32,13 @@ export function connectPromptMode(
 /** What a failed submit on ChooseUsername / ConnectAccount should do. */
 export type ScreenErrorOutcome =
   | { kind: "inline"; message: string }
-  /** The ticket expired or was spent: toast and send them back to Login. */
-  | { kind: "restart" };
+  /** The ticket can't be used any more: toast `message`, back to Login. */
+  | { kind: "restart"; message: string };
 
-const RESTART: ScreenErrorOutcome = { kind: "restart" };
+const RESTART: ScreenErrorOutcome = {
+  kind: "restart",
+  message: "That took too long — please start again.",
+};
 const inline = (message: string): ScreenErrorOutcome => ({
   kind: "inline",
   message,
@@ -66,6 +69,15 @@ export function connectErrorOutcome(err: unknown): ScreenErrorOutcome {
 export function chooseUsernameErrorOutcome(err: unknown): ScreenErrorOutcome {
   const { code, status } = codeOf(err);
   if (code === "INVALID_SIGN_IN_TICKET") return RESTART;
+  // The email got an account after this sign-in started; signing in again
+  // now lands on the Connect prompt instead.
+  if (code === "EMAIL_IN_USE") {
+    return {
+      kind: "restart",
+      message:
+        "An account with this email already exists. Sign in again to connect it.",
+    };
+  }
   if (status === 409) return inline("That username is taken — try another.");
   if (code === "RATE_LIMITED" || status === 429) {
     return inline(

@@ -172,7 +172,13 @@ function mockComponent(
 
 export const View = mockComponent("div", "View");
 
-export const Text = mockComponent("span", "Text");
+const TextBase = mockComponent("span", "Text");
+// A pressable Text (inline link) clicks like a Pressable: onPress → onClick.
+export const Text = React.forwardRef<unknown, Record<string, unknown>>(
+  ({ onPress, ...rest }, ref) =>
+    React.createElement(TextBase, { ref, onClick: onPress, ...rest }),
+);
+Text.displayName = "Text";
 
 export const Pressable = React.forwardRef<unknown, Record<string, unknown>>(
   (

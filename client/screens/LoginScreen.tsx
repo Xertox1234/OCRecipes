@@ -1,12 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  StyleSheet,
-  View,
-  Pressable,
-  Image,
-  Dimensions,
-  Linking,
-} from "react-native";
+import { StyleSheet, View, Pressable, Image, Dimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
@@ -14,6 +7,7 @@ import { Feather } from "@expo/vector-icons";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { ThemedText } from "@/components/ThemedText";
+import { LegalConsentCaption } from "@/components/LegalConsentCaption";
 import { InlineError } from "@/components/InlineError";
 import { SocialSignInButtons } from "@/components/SocialSignInButtons";
 import { ThemedView } from "@/components/ThemedView";
@@ -37,9 +31,6 @@ import { useToast } from "@/context/ToastContext";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ApiError } from "@/lib/api-error";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
-
-const TERMS_URL = "https://ocrecipes.com/terms";
-const PRIVACY_URL = "https://ocrecipes.com/privacy";
 
 const HERO_HEIGHT = Dimensions.get("window").height * 0.25;
 
@@ -93,21 +84,9 @@ export default function LoginScreen() {
     setAgeConfirmed((prev) => !prev);
   };
 
-  const openExternalUrl = async (url: string) => {
-    try {
-      await Linking.openURL(url);
-    } catch {
-      setError("Unable to open that link. Please try again later.");
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
-    }
-  };
-
-  const openTerms = () => {
-    void openExternalUrl(TERMS_URL);
-  };
-
-  const openPrivacy = () => {
-    void openExternalUrl(PRIVACY_URL);
+  const showLinkError = () => {
+    setError("Unable to open that link. Please try again later.");
+    haptics.notification(Haptics.NotificationFeedbackType.Error);
   };
 
   const handleSubmit = async () => {
@@ -357,32 +336,7 @@ export default function LoginScreen() {
                   I confirm I am 13 years of age or older
                 </ThemedText>
               </Pressable>
-              <ThemedText
-                type="caption"
-                style={[styles.tosText, { color: theme.textSecondary }]}
-              >
-                By continuing, you agree to our{" "}
-                <ThemedText
-                  type="caption"
-                  style={[styles.tosLink, { color: theme.link }]}
-                  accessibilityRole="link"
-                  accessibilityLabel="Terms of Service"
-                  onPress={openTerms}
-                >
-                  Terms of Service
-                </ThemedText>{" "}
-                and{" "}
-                <ThemedText
-                  type="caption"
-                  style={[styles.tosLink, { color: theme.link }]}
-                  accessibilityRole="link"
-                  accessibilityLabel="Privacy Policy"
-                  onPress={openPrivacy}
-                >
-                  Privacy Policy
-                </ThemedText>
-                .
-              </ThemedText>
+              <LegalConsentCaption onLinkError={showLinkError} />
             </View>
           ) : null}
 
@@ -487,13 +441,6 @@ const styles = StyleSheet.create({
   },
   ageCheckboxLabel: {
     flexShrink: 1,
-  },
-  tosText: {
-    lineHeight: 18,
-  },
-  tosLink: {
-    fontWeight: "600",
-    textDecorationLine: "underline",
   },
   footer: {
     flexDirection: "row",

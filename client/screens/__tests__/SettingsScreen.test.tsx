@@ -9,13 +9,47 @@ import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { ConfirmOptions } from "@/components/ConfirmationModal";
 
-const { mockConfirm, mockLogout } = vi.hoisted(() => ({
+const {
+  mockConfirm,
+  mockLogout,
+  mockDeleteAccount,
+  mockNavigate,
+  mockRefetch,
+  me,
+  changeEmailModal,
+  deleteModal,
+} = vi.hoisted(() => ({
   mockConfirm: vi.fn<(options: ConfirmOptions) => void>(),
   mockLogout: vi.fn(),
+  mockDeleteAccount: vi.fn(),
+  mockNavigate: vi.fn(),
+  mockRefetch: vi.fn(),
+  me: {
+    methods: undefined as unknown,
+    isError: false,
+  },
+  changeEmailModal: { visible: false },
+  deleteModal: {
+    props: null as null | {
+      visible: boolean;
+      signInMethods: unknown;
+      loadError?: boolean;
+      onConfirm: (proof: unknown) => Promise<boolean>;
+    },
+  },
+}));
+
+vi.mock("@/hooks/useSignInMethods", () => ({
+  useSignInMethods: () => ({
+    methods: me.methods,
+    isError: me.isError,
+    refetch: mockRefetch,
+    setMethods: vi.fn(),
+  }),
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn(), setOptions: vi.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate, setOptions: vi.fn() }),
 }));
 
 vi.mock("@react-navigation/bottom-tabs", () => ({
@@ -54,7 +88,7 @@ vi.mock("@/hooks/useHaptics", () => ({
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({
     logout: mockLogout,
-    deleteAccount: vi.fn(),
+    deleteAccount: mockDeleteAccount,
     changeEmail: vi.fn(),
     updateUser: vi.fn().mockResolvedValue(undefined),
     user: { id: 1, username: "testuser", measurementUnit: "metric" },
@@ -84,10 +118,16 @@ vi.mock("@/components/UpgradeModal", () => ({
   UpgradeModal: () => null,
 }));
 vi.mock("@/components/DeleteAccountModal", () => ({
-  DeleteAccountModal: () => null,
+  DeleteAccountModal: (props: NonNullable<typeof deleteModal.props>) => {
+    deleteModal.props = props;
+    return null;
+  },
 }));
 vi.mock("@/components/ChangeEmailModal", () => ({
-  ChangeEmailModal: () => null,
+  ChangeEmailModal: (props: { visible: boolean }) => {
+    changeEmailModal.visible = props.visible;
+    return null;
+  },
 }));
 
 vi.mock("@/components/ConfirmationModal", () => ({
@@ -103,6 +143,13 @@ vi.mock("@/components/ConfirmationModal", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  me.methods = {
+    password: false,
+    google: null,
+    apple: { email: null, isPrivateRelay: true },
+  };
+  me.isError = false;
+  changeEmailModal.visible = false;
 });
 
 describe("SettingsScreen sign-out confirmation", () => {
@@ -207,5 +254,69 @@ describe("SettingsScreen data export error copy", () => {
         "Could not export your data. Please try again.",
       );
     });
+  });
+});
+
+describe("SettingsScreen delete account", () => {
+  async function openDeleteModal() {
+    renderComponent(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete Account" }));
+    await waitFor(() => expect(deleteModal.props?.visible).toBe(true));
+  }
+
+  it("passes the account's sign-in methods to the modal", async () => {
+    await openDeleteModal();
+    expect(deleteModal.props?.signInMethods).toMatchObject({ password: false });
+  });
+
+  it("a cancelled Apple confirmation keeps the modal open", async () => {
+    mockDeleteAccount.mockResolvedValue(false);
+    await openDeleteModal();
+    await act(async () => {
+      await deleteModal.props?.onConfirm({ provider: "apple" });
+    });
+    expect(mockDeleteAccount).toHaveBeenCalledWith({ provider: "apple" });
+    expect(deleteModal.props?.visible).toBe(true);
+  });
+
+  it("closes once the account is deleted", async () => {
+    mockDeleteAccount.mockResolvedValue(true);
+    await openDeleteModal();
+    await act(async () => {
+      await deleteModal.props?.onConfirm({ provider: "apple" });
+    });
+    expect(deleteModal.props?.visible).toBe(false);
+  });
+});
+
+describe("SettingsScreen change email without a password", () => {
+  it("points a password-less account to Sign-in methods instead of a password prompt", () => {
+    renderComponent(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Change Email" }));
+    expect(changeEmailModal.visible).toBe(false);
+    const opts = mockConfirm.mock.calls[0][0];
+    expect(opts.title).toMatch(/password first/i);
+    act(() => opts.onConfirm());
+    expect(mockNavigate).toHaveBeenCalledWith("SignInMethods");
+  });
+
+  it("a password account still gets the change-email modal", async () => {
+    me.methods = { password: true, google: null, apple: null };
+    renderComponent(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Change Email" }));
+    await waitFor(() => expect(changeEmailModal.visible).toBe(true));
+    expect(mockConfirm).not.toHaveBeenCalled();
+  });
+});
+
+describe("SettingsScreen sign-in methods failed to load", () => {
+  it("retries the load when Delete Account opens, and tells the modal", async () => {
+    me.methods = undefined;
+    me.isError = true;
+    renderComponent(<SettingsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete Account" }));
+    await waitFor(() => expect(deleteModal.props?.visible).toBe(true));
+    expect(mockRefetch).toHaveBeenCalled();
+    expect(deleteModal.props?.loadError).toBe(true);
   });
 });

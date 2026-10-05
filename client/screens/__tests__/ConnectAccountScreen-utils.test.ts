@@ -46,7 +46,7 @@ describe("connectErrorOutcome", () => {
   it("an expired ticket restarts sign-in", () => {
     expect(
       connectErrorOutcome(new ApiError("raw", "INVALID_SIGN_IN_TICKET", 400)),
-    ).toEqual({ kind: "restart" });
+    ).toEqual({ kind: "restart", message: expect.stringMatching(/too long/i) });
   });
   it("never shows the server message", () => {
     const out = connectErrorOutcome(new ApiError("secret", "X", 500));
@@ -66,7 +66,15 @@ describe("chooseUsernameErrorOutcome", () => {
       chooseUsernameErrorOutcome(
         new ApiError("raw", "INVALID_SIGN_IN_TICKET", 400),
       ),
-    ).toEqual({ kind: "restart" });
+    ).toEqual({ kind: "restart", message: expect.stringMatching(/too long/i) });
+  });
+  it("EMAIL_IN_USE → restart so the next sign-in offers to connect", () => {
+    const out = chooseUsernameErrorOutcome(
+      new ApiError("raw", "EMAIL_IN_USE", 409),
+    );
+    expect(out.kind).toBe("restart");
+    expect(out.kind === "restart" && out.message).toMatch(/already exists/i);
+    expect(out.kind === "restart" && out.message).not.toMatch(/username/i);
   });
   it("anything else → generic copy", () => {
     const out = chooseUsernameErrorOutcome(new Error("x"));
