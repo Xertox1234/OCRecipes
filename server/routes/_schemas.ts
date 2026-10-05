@@ -64,6 +64,53 @@ export const registerSchema = z.object({
   }),
 });
 
+// ── Sign in with Google / Apple ────────────────────────────────────────────
+const providerEnum = z.enum(["google", "apple"]);
+const tokenField = z.string().min(1).max(8192);
+const ticketField = z.string().min(1).max(200);
+const nonceField = z.string().min(1).max(200);
+
+export const socialNonceSchema = z.object({
+  purpose: z.enum(["sign_in", "link", "reauth"]),
+});
+
+export const socialSignInSchema = z.object({
+  provider: providerEnum,
+  idToken: tokenField,
+  nonce: nonceField,
+  authorizationCode: z.string().min(1).max(2048).optional(),
+  fullName: z
+    .object({
+      givenName: z.string().max(100).nullable(),
+      familyName: z.string().max(100).nullable(),
+    })
+    .optional(),
+});
+
+// Reuses registerSchema's rules so a social sign-up can never pick a username
+// (or skip the COPPA attestation) that password registration would refuse.
+export const completeSocialSignUpSchema = z.object({
+  ticket: ticketField,
+  username: registerSchema.shape.username,
+  ageConfirmed: registerSchema.shape.ageConfirmed,
+});
+
+export const socialLinkSchema = z.union([
+  z.object({ ticket: ticketField, password: z.string().min(1).max(200) }),
+  z.object({
+    ticket: ticketField,
+    provider: providerEnum,
+    idToken: tokenField,
+    nonce: nonceField,
+  }),
+]);
+
+export const connectIdentitySchema = socialSignInSchema.omit({
+  fullName: true,
+});
+
+export const providerParamSchema = providerEnum;
+
 // Normalized identically to registerSchema.email (trim + lowercase) so the
 // per-email limiter key, the lookup, and the stored address agree.
 const resetEmail = z

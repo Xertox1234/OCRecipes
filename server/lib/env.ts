@@ -92,6 +92,27 @@ const envSchema = z.object({
   APPLE_ROOT_CA_DIR: z.string().optional(),
   RECEIPT_VALIDATION_STUB: z.string().optional(),
 
+  // Sign in with Google / Apple — a provider is enabled only when all its vars
+  // are set (server/lib/social-identity/config.ts). APPLE_BUNDLE_ID is shared
+  // with IAP above.
+  GOOGLE_OAUTH_WEB_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_APP_CLIENT_IDS: z.string().optional(),
+  APPLE_TEAM_ID: z.string().optional(),
+  APPLE_SIGN_IN_KEY_ID: z.string().optional(),
+  APPLE_SIGN_IN_PRIVATE_KEY: z
+    .string()
+    .refine((v) => v.includes("BEGIN PRIVATE KEY"), {
+      message: "APPLE_SIGN_IN_PRIVATE_KEY must be the .p8 PEM contents",
+    })
+    .optional(),
+  IDENTITY_TOKEN_ENC_KEY: z
+    .string()
+    .refine((v) => Buffer.from(v, "base64").length === 32, {
+      message:
+        "IDENTITY_TOKEN_ENC_KEY must be 32 bytes, base64 (openssl rand -base64 32)",
+    })
+    .optional(),
+
   // Google IAP (optional)
   GOOGLE_PACKAGE_NAME: z.string().optional(),
   GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().optional(),

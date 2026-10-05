@@ -1,5 +1,9 @@
 export { createMockUser, createMockUserProfile } from "./user";
 export {
+  createMockUserIdentity,
+  createMockPendingSocialSignIn,
+} from "./identity";
+export {
   createMockScannedItem,
   createMockDailyLog,
   createMockNutritionCache,

@@ -37,6 +37,7 @@ const baseTicket = {
   email: "new@gmail.com",
   isPrivateRelay: false,
   providerAuthoritative: true,
+  emailVerified: true,
   displayName: "New Person",
   appleRefreshTokenEnc: null,
 };
@@ -112,6 +113,21 @@ describe("identities storage", () => {
       expect(
         await ids.createUserWithIdentity(ticket, "other_name"),
       ).toBeUndefined();
+    });
+
+    it("leaves the account unverified when the provider did not verify the email", async () => {
+      const ticket = await ids.createPendingSignIn({
+        ...baseTicket,
+        emailVerified: false,
+        providerAuthoritative: false,
+        kind: "sign_up",
+        targetUserId: null,
+      });
+      const user = await ids.createUserWithIdentity(
+        ticket,
+        "unverified_person",
+      );
+      expect(user?.emailVerified).toBe(false);
     });
 
     it("keeps the ticket when the username is taken", async () => {
