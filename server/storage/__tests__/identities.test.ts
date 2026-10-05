@@ -172,6 +172,59 @@ describe("identities storage", () => {
     });
   });
 
+  describe("sweepExpiredPendingSignIns", () => {
+    const apple = (sub: string, token: string | null) => ({
+      ...baseTicket,
+      provider: "apple" as const,
+      providerSubject: sub,
+      appleRefreshTokenEnc: token,
+      kind: "sign_up" as const,
+      targetUserId: null,
+    });
+    const expire = (ticket: string) =>
+      getTestTx()
+        .update(pendingSocialSignIns)
+        .set({ expiresAt: sql`now() - interval '1 minute'` })
+        .where(eq(pendingSocialSignIns.ticketHash, sha256Hex(ticket)));
+
+    it("deletes expired tickets and returns the Apple tokens nobody else holds", async () => {
+      const gone = await ids.createPendingSignIn(apple("a-1", "v1:tok-1"));
+      const noToken = await ids.createPendingSignIn(apple("a-3", null));
+      await expire(gone);
+      await expire(noToken);
+      // Creating a ticket must not silently drop expired ones (and their tokens).
+      const live = await ids.createPendingSignIn(apple("a-2", "v1:tok-2"));
+
+      expect(await ids.sweepExpiredPendingSignIns()).toEqual(["v1:tok-1"]);
+      expect(await ids.getPendingSignIn(live, "sign_up")).toBeDefined();
+      const left = await getTestTx()
+        .select({ h: pendingSocialSignIns.ticketHash })
+        .from(pendingSocialSignIns);
+      expect(left.map((r) => r.h)).toEqual([sha256Hex(live)]);
+    });
+
+    it("keeps the token of an Apple ID that has since been linked", async () => {
+      // Revoking any token can end the whole Apple authorization for the app.
+      const user = await createTestUser(getTestTx());
+      await ids.insertIdentity({
+        userId: user.id,
+        provider: "apple",
+        providerSubject: "a-1",
+        email: null,
+        isPrivateRelay: false,
+        appleRefreshTokenEnc: "v1:stored",
+      });
+      await expire(await ids.createPendingSignIn(apple("a-1", "v1:old")));
+      expect(await ids.sweepExpiredPendingSignIns()).toEqual([]);
+    });
+
+    it("keeps the token of an Apple ID that is mid-sign-in on a newer ticket", async () => {
+      await expire(await ids.createPendingSignIn(apple("a-1", "v1:old")));
+      await ids.createPendingSignIn(apple("a-1", "v1:new"));
+      expect(await ids.sweepExpiredPendingSignIns()).toEqual([]);
+    });
+  });
+
   describe("link tickets", () => {
     it("allows at most 5 reserved attempts", async () => {
       const target = await createTestUser(getTestTx());

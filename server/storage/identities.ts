@@ -39,6 +39,8 @@ export interface PendingSignInInput {
 const NONCE_TTL = sql`now() + interval '10 minutes'`;
 const TICKET_TTL = sql`now() + interval '15 minutes'`;
 const MAX_LINK_ATTEMPTS = 5;
+// Bounded: the sweep runs on a public sign-in request.
+const SWEEP_BATCH = 50;
 
 export async function issueNonce(
   purpose: NoncePurpose,
@@ -86,12 +88,45 @@ export async function consumeNonce(
   return rows.length === 1;
 }
 
+/**
+ * Delete up to SWEEP_BATCH expired tickets. Returns the encrypted Apple
+ * refresh tokens they carried that are safe to revoke: revoking can end the
+ * person's whole Apple authorization for the app, so a token is kept off the
+ * list when its Apple ID is linked to an account or has a newer live ticket.
+ * (The CTE's outer query sees the pre-delete snapshot; the swept rows are
+ * expired, so `expires_at > now()` excludes them.)
+ */
+export async function sweepExpiredPendingSignIns(): Promise<string[]> {
+  const t = pendingSocialSignIns;
+  const result = await db.execute<{ token: string }>(sql`
+    with swept as (
+      delete from ${t}
+      where ${t.ticketHash} in (
+        select ${t.ticketHash} from ${t}
+        where ${t.expiresAt} < now()
+        limit ${SWEEP_BATCH}
+      )
+      returning ${t.provider} as provider,
+        ${t.providerSubject} as subject,
+        ${t.appleRefreshTokenEnc} as token
+    )
+    select s.token from swept s
+    where s.provider = 'apple' and s.token is not null
+      and not exists (
+        select 1 from ${userIdentities} i
+        where i.provider = s.provider and i.provider_subject = s.subject
+      )
+      and not exists (
+        select 1 from ${t} p
+        where p.provider = s.provider and p.provider_subject = s.subject
+          and p.expires_at > now()
+      )`);
+  return result.rows.map((r) => r.token);
+}
+
 export async function createPendingSignIn(
   input: PendingSignInInput,
 ): Promise<string> {
-  await db
-    .delete(pendingSocialSignIns)
-    .where(lt(pendingSocialSignIns.expiresAt, sql`now()`));
   const ticket = randomToken();
   await db.insert(pendingSocialSignIns).values({
     ...input,
