@@ -1,6 +1,6 @@
 ---
 title: 'NutritionDetail still shows the "Add product details" CTA after the front label was saved — read the #1220 query-cache signal in a focus effect'
-status: in-progress
+status: done
 priority: low
 created: 2026-10-02
 updated: 2026-10-02
@@ -95,3 +95,7 @@ Not in scope: re-reading the server flag (no endpoint refreshes it per user; the
 ### 2026-10-02
 
 - Filed from the 2026-10-02 deferred-warnings triage of the /todo sweep (#1213–#1226); claim verified against main ec26b972 by workflow wf_7d969d8d-ce1 and upheld by an adversarial re-check; filing approved by the owner 2026-10-02.
+
+### 2026-10-04
+
+- Implemented by todo executor: focus-effect read of the #1220 saved signal in NutritionDetailScreen, plus three tests.

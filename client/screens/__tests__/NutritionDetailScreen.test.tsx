@@ -1176,18 +1176,6 @@ describe("NutritionDetailScreen — verification panel (2b characterisation)", (
   });
 });
 
-/**
- * Slice 2c — NutritionSummaryCard + NutritionPanel replace the calorie card and
- * the Additional Nutrients list.
- *
- * These are the assertions the pure tests structurally cannot make. The
- * serving-invariance guarantee lives in the CALL SITE's choice of band source:
- * `nutrition-band-source.ts`'s own tests prove `buildPanelRows` reads
- * `validatedData` when handed it, but nothing there executes the screen, so a
- * screen that passed the serving-scaled `nutrition` in as `validatedData`
- * would leave every pure test green while over-warning on every product the
- * user re-portions.
- */
 describe("NutritionDetailScreen — front-label CTA after save", () => {
   function renderWithClient() {
     mockRoute.params = { barcode: "06772408", ocrText: null };
@@ -1231,6 +1219,18 @@ describe("NutritionDetailScreen — front-label CTA after save", () => {
   });
 });
 
+/**
+ * Slice 2c — NutritionSummaryCard + NutritionPanel replace the calorie card and
+ * the Additional Nutrients list.
+ *
+ * These are the assertions the pure tests structurally cannot make. The
+ * serving-invariance guarantee lives in the CALL SITE's choice of band source:
+ * `nutrition-band-source.ts`'s own tests prove `buildPanelRows` reads
+ * `validatedData` when handed it, but nothing there executes the screen, so a
+ * screen that passed the serving-scaled `nutrition` in as `validatedData`
+ * would leave every pure test green while over-warning on every product the
+ * user re-portions.
+ */
 describe("NutritionDetailScreen — nutrition panel wiring (slice 2c)", () => {
   /**
    * A 100 ml drink serving, so per-100 and per-serving coincide at quantity 1
