@@ -20,7 +20,7 @@ const WORKFLOWS = path.resolve(__dirname, "..", "..", ".github", "workflows");
 // `gated`: one `== 'true'` per step that needs the install — setup-node,
 // install, each Stryker target and the report upload.
 const GATES = [
-  { file: "mutation-non-excluded.yml", gated: 11 },
+  { file: "mutation-non-excluded.yml", gated: 12 },
   { file: "mutation-goal-safety.yml", gated: 4 },
 ] as const;
 

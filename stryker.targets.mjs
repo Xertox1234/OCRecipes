@@ -104,12 +104,15 @@ export const MUTATION_TARGETS = {
     testInclude: [
       "client/components/nutrition/__tests__/nutrition-band-source.test.ts",
     ],
-    // No breakThreshold yet — baseline with `npm run mutation:explore --
-    // client/components/nutrition/nutrition-band-source.ts
-    // client/components/nutrition/__tests__/nutrition-band-source.test.ts`
-    // before setting one (task-2 brief, step 6). The likeliest defect here is
-    // a branch inversion (`itemId === undefined` the wrong way round, or
-    // `valuesArePer100` flipped), which coarse fixtures cannot see.
+    breakThreshold: 85,
+    // Baseline 88.89% (40 killed, 5 survived, 0 no-coverage/timeout; 2026-10-04,
+    // `MUTATION_TARGET=nutrition-band-source npm run test:mutation`), floor set 3
+    // points below for runner timeout variance. The two predicted branch
+    // inversions (`itemId === undefined`, `valuesArePer100`) were both killed;
+    // the 5 survivors are an optional-chain drop (`input.nutrition?.`), a
+    // `typeof sourceValue === "number"` guard, the `row.group === "benefit"`
+    // branch test, the `{ band, hasValue }` object literal, and the unbanded
+    // `else` block.
   },
 };
 

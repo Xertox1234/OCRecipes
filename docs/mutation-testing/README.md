@@ -33,13 +33,9 @@ no longer registered or approved.)
 
 Two required, self-scoping gates run Stryker only when a target or the harness changes:
 
-- **`mutation-non-excluded.yml`** — every target in `stryker.targets.mjs` except the
-  Hard-Exclusion ones (the current non-excluded set, as of 2026-07-05:
-  `macro-gap-context`, `verification-consensus`, `cook-session-merge`,
-  `chat-history-truncate`, `notebook-budget`, `carousel-builder`,
-  `subscription-tier-cache`). This list has drifted from the workflow before — treat
-  `stryker.targets.mjs` (registry) and `docs/mutation-testing/baselines.md` (achieved
-  scores + residual notes) as the source of truth, not this bullet.
+- **`mutation-non-excluded.yml`** — every target in `stryker.targets.mjs` that has no
+  Hard-Exclusion path; `test/stryker-targets.test.ts` (drift block) fails CI if a registered
+  target is not wired into exactly one gate.
 - **`mutation-goal-safety.yml`** — `goal-calculator` (break=100), under the read-only protocol.
 
 A target gets a `breakThreshold` only after a stable baseline; Stryker exits non-zero when
