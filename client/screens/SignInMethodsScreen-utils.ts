@@ -83,7 +83,12 @@ export function identityErrorMessage(err: unknown): string {
   if (code === "RATE_LIMITED" || status === 429) {
     return "Too many attempts. Please wait a while and try again.";
   }
-  if (status === 401) return "Incorrect password. Please try again.";
+  // Connect re-auths the password first, then verifies the provider token:
+  // both are 401s, so only UNAUTHORIZED is the password's fault.
+  if (code === "INVALID_PROVIDER_TOKEN") {
+    return "That sign-in couldn't be confirmed. Please try again.";
+  }
+  if (code === "UNAUTHORIZED") return "Incorrect password. Please try again.";
   return "Something went wrong. Please try again.";
 }
 

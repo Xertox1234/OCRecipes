@@ -94,9 +94,15 @@ describe("identityErrorMessage", () => {
     ["PROVIDER_ALREADY_CONNECTED", 409, /already connected/i],
     ["LAST_SIGN_IN_METHOD", 400, /another sign-in method/i],
     ["UNAUTHORIZED", 401, /incorrect password/i],
+    ["INVALID_PROVIDER_TOKEN", 401, /couldn't be confirmed/i],
     ["RATE_LIMITED", 429, /too many/i],
   ])("%s → static copy", (code, status, re) => {
     expect(identityErrorMessage(new ApiError("raw", code, status))).toMatch(re);
+  });
+  it("a provider-token 401 never blames the password", () => {
+    expect(
+      identityErrorMessage(new ApiError("x", "INVALID_PROVIDER_TOKEN", 401)),
+    ).not.toMatch(/password/i);
   });
   it("never shows the server message", () => {
     expect(identityErrorMessage(new ApiError("secret", "X", 500))).not.toMatch(
