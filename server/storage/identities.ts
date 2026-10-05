@@ -9,7 +9,7 @@ import {
   type UserIdentity,
 } from "@shared/schema";
 import { db } from "../db";
-import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { randomToken, sha256Hex } from "../lib/social-identity/nonce";
 import { isReservedUsername, ReservedUsernameError } from "./users";
 
@@ -54,9 +54,12 @@ export async function issueNonce(
 }
 
 /**
- * Atomic check-and-burn. A `reauth` nonce must be bound to exactly this user.
- * A `link`/`sign_in` nonce issued publicly (user_id NULL) is accepted from
- * anyone; one bound to a user is accepted only from that user.
+ * Atomic check-and-burn. The nonce's binding must match the caller EXACTLY:
+ * a public nonce (user_id NULL) only from an unauthenticated caller
+ * (`userId` null), a bound nonce only from that user. So a nonce minted by
+ * the public Connect prompt can never be replayed on a signed-in route
+ * (POST /api/auth/identities), and vice versa. A `reauth` nonce is always
+ * bound, so it is never consumable with `userId` null.
  */
 export async function consumeNonce(
   nonce: string,
@@ -64,13 +67,11 @@ export async function consumeNonce(
   userId: string | null,
 ): Promise<boolean> {
   const owner =
-    purpose === "reauth"
-      ? userId === null
+    userId === null
+      ? purpose === "reauth"
         ? sql`false`
-        : eq(authNonces.userId, userId)
-      : userId === null
-        ? isNull(authNonces.userId)
-        : or(isNull(authNonces.userId), eq(authNonces.userId, userId));
+        : isNull(authNonces.userId)
+      : eq(authNonces.userId, userId);
   const rows = await db
     .delete(authNonces)
     .where(
