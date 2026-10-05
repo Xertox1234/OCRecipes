@@ -1,6 +1,6 @@
 ---
 title: "nutrition-band-source is a registered Stryker target that no mutation workflow runs, and no test ties stryker.targets.mjs to the required gates' hard-coded regexes"
-status: backlog
+status: done
 priority: low
 created: 2026-10-02
 updated: 2026-10-02

@@ -23,6 +23,7 @@ threshold is enforced until a target has a stable baseline here.
 | 2026-07-05 | carousel-builder (after)         | 93.15% | 68     | 3        | 2           | 0       |
 | 2026-06-27 | subscription-tier-cache (before) | 71.88% | 23     | 4        | 5           | 0       |
 | 2026-07-05 | subscription-tier-cache (after)  | 93.75% | 30     | 2        | 0           | 0       |
+| 2026-10-04 | nutrition-band-source            | 88.89% | 40     | 5        | 0           | 0       |
 | 2026-06-27 | recipe-normalization (rejected)  | 66.19% | 139    | 71       | 0           | 0       |
 | 2026-06-27 | cooking-adjustment (rejected)    | 51.94% | 67     | 61       | 1           | 0       |
 
