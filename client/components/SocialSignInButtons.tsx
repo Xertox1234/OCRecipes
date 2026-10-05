@@ -14,6 +14,7 @@ import {
   visibleProviders,
 } from "@/lib/social-auth-utils";
 import { NATIVE_PROVIDERS } from "@/lib/social-sign-in";
+import { ApiError } from "@/lib/api-error";
 import type { SocialProvider, SocialSignInResult } from "@shared/types/auth";
 
 interface Props {
@@ -21,6 +22,8 @@ interface Props {
   onResult: (result: SocialSignInResult) => void;
   /** Static, user-facing copy for a failed attempt. */
   onError: (message: string) => void;
+  /** The account exists but its email isn't verified (as password login routes it). */
+  onUnverifiedEmail?: () => void;
 }
 
 /**
@@ -28,7 +31,11 @@ interface Props {
  * form, followed by an "or" divider. Renders nothing when no provider is both
  * configured on the server and available on this platform.
  */
-export function SocialSignInButtons({ onResult, onError }: Props) {
+export function SocialSignInButtons({
+  onResult,
+  onError,
+  onUnverifiedEmail,
+}: Props) {
   const config = useSocialConfig();
   const { signInWithProvider } = useAuthContext();
   const { theme, isDark } = useTheme();
@@ -64,6 +71,14 @@ export function SocialSignInButtons({ onResult, onError }: Props) {
       if (result) onResult(result);
     } catch (err) {
       done();
+      if (
+        onUnverifiedEmail &&
+        err instanceof ApiError &&
+        err.code === "EMAIL_NOT_VERIFIED"
+      ) {
+        onUnverifiedEmail();
+        return;
+      }
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       onError(socialSignInErrorMessage(err));
     }

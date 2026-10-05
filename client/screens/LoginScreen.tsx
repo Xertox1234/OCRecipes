@@ -223,6 +223,8 @@ export default function LoginScreen() {
             }
           }}
           onError={setError}
+          // Same as password login: no email to prefill.
+          onUnverifiedEmail={() => navigation.navigate("VerifyEmail", {})}
         />
 
         <View style={styles.form}>

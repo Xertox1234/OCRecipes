@@ -221,6 +221,25 @@ export async function revokeAppleIdentities(
   }
 }
 
+/**
+ * Fire-and-forget: clear expired sign-in tickets and revoke the Apple tokens
+ * abandoned on them, so an unfinished sign-up doesn't leave OCRecipes under
+ * "Apps using Apple ID". Never throws, never delays the request.
+ */
+function sweepAbandonedTickets(): void {
+  storage
+    .sweepExpiredPendingSignIns()
+    .then((tokens) =>
+      revokeAppleIdentities(
+        tokens.map((t) => ({ provider: "apple", appleRefreshTokenEnc: t })),
+      ),
+    )
+    .catch((err: unknown) => {
+      logger.error({ err: toError(err) }, "sign-in ticket sweep failed");
+      reportError(err, "sign-in-ticket-sweep");
+    });
+}
+
 export function register(app: Express): void {
   app.get("/api/auth/social/config", (_req: Request, res: Response) => {
     const cfg = getSocialConfig();
@@ -424,6 +443,8 @@ export function register(app: Express): void {
           targetUserId:
             decision.kind === "link_required" ? decision.userId : null,
         });
+        // After the insert, so this sign-in's own Apple ID counts as live.
+        sweepAbandonedTickets();
 
         if (decision.kind === "choose_username") {
           const seed =

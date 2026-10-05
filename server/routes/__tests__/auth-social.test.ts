@@ -10,7 +10,11 @@ import {
   verifyAppleIdToken,
   TokenVerificationError,
 } from "../../lib/social-identity/verify";
-import { exchangeAppleCode } from "../../lib/social-identity/apple-tokens";
+import {
+  exchangeAppleCode,
+  revokeAppleToken,
+} from "../../lib/social-identity/apple-tokens";
+import { encryptToken } from "../../lib/social-identity/token-crypto";
 import { secondFactor } from "../../lib/social-identity/sign-in-gates";
 import { emailVerificationEnabled } from "../../lib/email-config";
 import {
@@ -31,6 +35,7 @@ vi.mock("../../storage", () => ({
     setAppleRefreshToken: vi.fn(),
     touchIdentity: vi.fn(),
     createPendingSignIn: vi.fn(),
+    sweepExpiredPendingSignIns: vi.fn(),
     getPendingSignIn: vi.fn(),
     reservePendingLinkAttempt: vi.fn(),
     completeLinkFromTicket: vi.fn(),
@@ -101,6 +106,7 @@ beforeEach(() => {
   vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(undefined);
   vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
   vi.mocked(storage.createPendingSignIn).mockResolvedValue("ticket-1");
+  vi.mocked(storage.sweepExpiredPendingSignIns).mockResolvedValue([]);
 });
 afterEach(() => {
   for (const k of ENV_KEYS) {
@@ -366,6 +372,115 @@ describe("POST /api/auth/social", () => {
       expect.stringMatching(/^v1:/),
     );
     expect(storage.touchIdentity).toHaveBeenCalledWith("i1", "u1");
+  });
+
+  it("returning Apple user without a stored token still signs in when the exchange fails", async () => {
+    vi.mocked(verifyAppleIdToken).mockResolvedValue({
+      ...gmailClaims,
+      provider: "apple",
+      email: null,
+    });
+    vi.mocked(storage.findIdentity).mockResolvedValue(
+      createMockUserIdentity({
+        id: "i1",
+        userId: "u1",
+        provider: "apple",
+        appleRefreshTokenEnc: null,
+      }),
+    );
+    vi.mocked(exchangeAppleCode).mockRejectedValue(new Error("apple down"));
+    const user = createMockUser({ id: "u1", emailVerified: true });
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+    vi.mocked(storage.getUser).mockResolvedValue(user);
+    const res = await request(app()).post("/api/auth/social").send({
+      provider: "apple",
+      idToken: "t",
+      nonce: "n",
+      authorizationCode: "c",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("signed_in");
+    expect(exchangeAppleCode).toHaveBeenCalled();
+    expect(storage.setAppleRefreshToken).not.toHaveBeenCalled();
+  });
+
+  it("a linked Apple user stopped at a 403 gate never has a token revoked", async () => {
+    // Revoking can end the whole Apple authorization of a real account.
+    vi.spyOn(secondFactor, "requiresSecondFactor").mockReturnValue(true);
+    vi.mocked(verifyAppleIdToken).mockResolvedValue({
+      ...gmailClaims,
+      provider: "apple",
+      email: null,
+    });
+    vi.mocked(storage.findIdentity).mockResolvedValue(
+      createMockUserIdentity({
+        id: "i1",
+        userId: "u1",
+        provider: "apple",
+        appleRefreshTokenEnc: null,
+      }),
+    );
+    vi.mocked(exchangeAppleCode).mockResolvedValue("fresh-refresh");
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(
+      createMockUser({ id: "u1", emailVerified: true }),
+    );
+    const res = await request(app()).post("/api/auth/social").send({
+      provider: "apple",
+      idToken: "t",
+      nonce: "n",
+      authorizationCode: "c",
+    });
+    expect(res.status).toBe(403);
+    expect(storage.setAppleRefreshToken).not.toHaveBeenCalled();
+    expect(revokeAppleToken).not.toHaveBeenCalled();
+  });
+
+  it("issuing a ticket sweeps expired ones and revokes the Apple tokens they held", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    vi.mocked(storage.sweepExpiredPendingSignIns).mockResolvedValue([
+      encryptToken("abandoned-refresh"),
+    ]);
+    const res = await request(app()).post("/api/auth/social").send(body);
+    expect(res.body.status).toBe("choose_username");
+    await vi.waitFor(() =>
+      expect(revokeAppleToken).toHaveBeenCalledWith(
+        "abandoned-refresh",
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("sweeps only after this request's ticket exists, so its Apple ID counts as live", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    await request(app()).post("/api/auth/social").send(body);
+    const created = vi.mocked(storage.createPendingSignIn).mock
+      .invocationCallOrder[0];
+    const swept = vi.mocked(storage.sweepExpiredPendingSignIns).mock
+      .invocationCallOrder[0];
+    expect(swept).toBeGreaterThan(created);
+  });
+
+  it("a failing sweep never blocks the sign-in", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    vi.mocked(storage.sweepExpiredPendingSignIns).mockRejectedValue(
+      new Error("db hiccup"),
+    );
+    const res = await request(app()).post("/api/auth/social").send(body);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("choose_username");
+    expect(revokeAppleToken).not.toHaveBeenCalled();
+  });
+
+  it("a signed-in returning user triggers no sweep", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    vi.mocked(storage.findIdentity).mockResolvedValue(
+      createMockUserIdentity({ id: "i1", userId: "u1", provider: "google" }),
+    );
+    const user = createMockUser({ id: "u1", emailVerified: true });
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(user);
+    vi.mocked(storage.getUser).mockResolvedValue(user);
+    await request(app()).post("/api/auth/social").send(body);
+    expect(storage.sweepExpiredPendingSignIns).not.toHaveBeenCalled();
   });
 
   it("first Apple sign-in stores the name and encrypted refresh token on the ticket", async () => {

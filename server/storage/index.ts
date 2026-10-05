@@ -75,6 +75,7 @@ export const storage = {
   issueNonce: identities.issueNonce,
   consumeNonce: identities.consumeNonce,
   createPendingSignIn: identities.createPendingSignIn,
+  sweepExpiredPendingSignIns: identities.sweepExpiredPendingSignIns,
   getPendingSignIn: identities.getPendingSignIn,
   reservePendingLinkAttempt: identities.reservePendingLinkAttempt,
   completeLinkFromTicket: identities.completeLinkFromTicket,

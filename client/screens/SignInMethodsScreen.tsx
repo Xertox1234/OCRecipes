@@ -103,9 +103,10 @@ export default function SignInMethodsScreen() {
     try {
       const next = await connectProvider(connecting, password);
       setBusy(false);
-      const name = label(connecting);
-      setConnecting(null);
+      // null = the Apple sheet was cancelled: keep the prompt open to retry.
       if (next) {
+        const name = label(connecting);
+        setConnecting(null);
         setMethods(next);
         toast.success(`${name} connected`);
       }
