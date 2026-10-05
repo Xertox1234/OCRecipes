@@ -808,7 +808,7 @@ describe("useAuth", () => {
       mockApiRequest.mockResolvedValue({});
 
       await act(async () => {
-        await result.current.deleteAccount("correct-password");
+        await result.current.deleteAccount({ password: "correct-password" });
       });
 
       expect(mockApiRequest).toHaveBeenCalledWith(
@@ -1230,6 +1230,112 @@ describe("useAuth", () => {
         },
       );
       expect(mockTokenStorage.set).toHaveBeenCalledWith("sess-4");
+    });
+
+    it("connectProvider: bound link nonce, Apple code included, password as proof", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-c", nonceHash: "hash-c" });
+      mockGetProviderToken.mockResolvedValue({
+        idToken: "id-c",
+        authorizationCode: "code-c",
+        fullName: { givenName: "A", familyName: "B" },
+      });
+      const methods = {
+        password: true,
+        google: null,
+        apple: { email: null, isPrivateRelay: true },
+      };
+      jsonOnce({ signInMethods: methods });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.connectProvider("apple", "pw-1");
+      });
+      expect(mockGetProviderToken).toHaveBeenCalledWith("apple", "hash-c");
+      expect(mockApiRequest).toHaveBeenNthCalledWith(
+        1,
+        "POST",
+        "/api/auth/social/nonce",
+        { purpose: "link" },
+      );
+      expect(mockApiRequest).toHaveBeenNthCalledWith(
+        2,
+        "POST",
+        "/api/auth/identities",
+        {
+          provider: "apple",
+          nonce: "raw-c",
+          idToken: "id-c",
+          authorizationCode: "code-c",
+          proof: { password: "pw-1" },
+        },
+      );
+      expect(out).toEqual(methods);
+    });
+
+    it("connectProvider: a cancelled sheet posts nothing and returns null", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-c", nonceHash: "hash-c" });
+      mockGetProviderToken.mockResolvedValue(null);
+      let out: unknown = "unset";
+      await act(async () => {
+        out = await result.current.connectProvider("apple", "pw-1");
+      });
+      expect(out).toBeNull();
+      expect(mockApiRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it("disconnectProvider: deletes that identity and returns the new methods", async () => {
+      const { result } = await ready();
+      const methods = { password: true, google: null, apple: null };
+      jsonOnce({ signInMethods: methods });
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.disconnectProvider("apple");
+      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "DELETE",
+        "/api/auth/identities/apple",
+      );
+      expect(out).toEqual(methods);
+    });
+
+    it("deleteAccount({ provider }): reauth nonce, fresh Apple token, then deletes", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-r", nonceHash: "hash-r" });
+      mockGetProviderToken.mockResolvedValue({ idToken: "id-r" });
+      mockApiRequest.mockResolvedValueOnce({});
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.deleteAccount({ provider: "apple" });
+      });
+      expect(mockApiRequest).toHaveBeenNthCalledWith(
+        1,
+        "POST",
+        "/api/auth/social/nonce",
+        { purpose: "reauth" },
+      );
+      expect(mockGetProviderToken).toHaveBeenCalledWith("apple", "hash-r");
+      expect(mockApiRequest).toHaveBeenNthCalledWith(
+        2,
+        "DELETE",
+        "/api/auth/account",
+        { provider: "apple", nonce: "raw-r", idToken: "id-r" },
+      );
+      expect(out).toBe(true);
+      expect(mockTokenStorage.clear).toHaveBeenCalled();
+    });
+
+    it("deleteAccount({ provider }): a cancelled sheet deletes nothing and returns false", async () => {
+      const { result } = await ready();
+      jsonOnce({ nonce: "raw-r", nonceHash: "hash-r" });
+      mockGetProviderToken.mockResolvedValue(null);
+      let out: unknown;
+      await act(async () => {
+        out = await result.current.deleteAccount({ provider: "apple" });
+      });
+      expect(out).toBe(false);
+      expect(mockApiRequest).toHaveBeenCalledTimes(1);
+      expect(mockTokenStorage.clear).not.toHaveBeenCalled();
     });
   });
 });

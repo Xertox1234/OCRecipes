@@ -10,6 +10,7 @@ import {
 } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import type {
+  SignInMethods,
   SocialProvider,
   SocialSignInResult,
   User,
@@ -106,6 +107,10 @@ async function clearDurableLocalState(): Promise<boolean> {
   }
   return ok;
 }
+
+export type DeleteAccountProof =
+  | { password: string }
+  | { provider: SocialProvider };
 
 /**
  * apiRequest sends the stored bearer when there is one, so a signed-in caller
@@ -457,11 +462,27 @@ export function useAuth() {
    * confirms deletion, local-cleanup failures (token storage, AsyncStorage)
    * are swallowed — the account is gone, so we must NOT surface a retryable
    * error to the user. Auth state is always cleared on success.
+   *
+   * An account without a password confirms with a fresh provider sign-in
+   * instead; resolves false (nothing deleted) when that sheet is cancelled.
    */
-  const deleteAccount = useCallback(async (password: string) => {
+  const deleteAccount = useCallback(async (proof: DeleteAccountProof) => {
     // Surface server-side errors (wrong password, network, etc.) to the caller
     // — the account is still intact and the user can retry.
-    await apiRequest("DELETE", "/api/auth/account", { password });
+    if ("password" in proof) {
+      await apiRequest("DELETE", "/api/auth/account", {
+        password: proof.password,
+      });
+    } else {
+      const { nonce, nonceHash } = await fetchNonce("reauth");
+      const token = await getProviderToken(proof.provider, nonceHash);
+      if (!token) return false;
+      await apiRequest("DELETE", "/api/auth/account", {
+        provider: proof.provider,
+        nonce,
+        idToken: token.idToken,
+      });
+    }
 
     // Server confirmed deletion. Any local-cleanup failures past this point
     // must NOT propagate — the account no longer exists, so retrying would
@@ -477,7 +498,49 @@ export function useAuth() {
     // the right-to-erasure path too.
     await clearDurableLocalState();
     setState({ user: null, isLoading: false, isAuthenticated: false });
+    return true;
   }, []);
+
+  /**
+   * Add a Google/Apple sign-in to the signed-in account. The server wants the
+   * password as proof (owner ruling: same bar as deleting the account) and a
+   * link nonce bound to this session. Resolves null when the sheet is
+   * cancelled; otherwise the account's updated sign-in methods.
+   */
+  const connectProvider = useCallback(
+    async (
+      provider: SocialProvider,
+      password: string,
+    ): Promise<SignInMethods | null> => {
+      const { nonce, nonceHash } = await fetchNonce("link");
+      const token = await getProviderToken(provider, nonceHash);
+      if (!token) return null;
+      const res = await apiRequest("POST", "/api/auth/identities", {
+        provider,
+        nonce,
+        idToken: token.idToken,
+        // Apple: exchanged server-side for the refresh token that account
+        // deletion revokes.
+        authorizationCode: token.authorizationCode,
+        proof: { password },
+      });
+      return ((await res.json()) as { signInMethods: SignInMethods })
+        .signInMethods;
+    },
+    [],
+  );
+
+  const disconnectProvider = useCallback(
+    async (provider: SocialProvider): Promise<SignInMethods> => {
+      const res = await apiRequest(
+        "DELETE",
+        `/api/auth/identities/${provider}`,
+      );
+      return ((await res.json()) as { signInMethods: SignInMethods })
+        .signInMethods;
+    },
+    [],
+  );
 
   const updateUser = useCallback(
     async (updates: Partial<User>) => {
@@ -542,5 +605,7 @@ export function useAuth() {
     completeSocialSignUp,
     linkWithPassword,
     linkWithProvider,
+    connectProvider,
+    disconnectProvider,
   };
 }

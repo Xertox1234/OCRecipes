@@ -1,6 +1,7 @@
 import React, { createContext, useContext, ReactNode } from "react";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth, type DeleteAccountProof } from "@/hooks/useAuth";
 import type {
+  SignInMethods,
   SocialProvider,
   SocialSignInResult,
   User,
@@ -21,7 +22,8 @@ interface AuthContextType {
   >;
   logout: () => Promise<void>;
   expireSession: () => Promise<void>;
-  deleteAccount: (password: string) => Promise<void>;
+  /** False when the confirming provider sheet was cancelled (nothing deleted). */
+  deleteAccount: (proof: DeleteAccountProof) => Promise<boolean>;
   updateUser: (updates: Partial<User>) => Promise<User | undefined>;
   changeEmail: (
     newEmail: string,
@@ -40,6 +42,12 @@ interface AuthContextType {
   ) => Promise<void>;
   linkWithPassword: (ticket: string, password: string) => Promise<void>;
   linkWithProvider: (ticket: string, provider: SocialProvider) => Promise<void>;
+  /** Null when the provider sheet was cancelled. */
+  connectProvider: (
+    provider: SocialProvider,
+    password: string,
+  ) => Promise<SignInMethods | null>;
+  disconnectProvider: (provider: SocialProvider) => Promise<SignInMethods>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);

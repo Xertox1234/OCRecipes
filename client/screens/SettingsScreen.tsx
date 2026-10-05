@@ -60,6 +60,7 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
   { id: "goals", icon: "target", label: "Nutrition Goals" },
   { id: "coachReminders", icon: "bell", label: "Coach Reminders" },
   { id: "subscription", icon: "credit-card", label: "Subscription" },
+  { id: "signInMethods", icon: "key", label: "Sign-in methods" },
   { id: "changeEmail", icon: "mail", label: "Change Email" },
   { id: "exportData", icon: "download", label: "Export My Data" },
   { id: "signout", icon: "log-out", label: "Sign Out", danger: true },
@@ -209,6 +210,9 @@ export default function SettingsScreen() {
           } else {
             setShowUpgradeModal(true);
           }
+          break;
+        case "signInMethods":
+          navigation.navigate("SignInMethods");
           break;
         case "changeEmail":
           setShowChangeEmailModal(true);

@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import ProfileScreen from "@/screens/ProfileScreen";
 import SettingsScreen from "@/screens/SettingsScreen";
+import SignInMethodsScreen from "@/screens/SignInMethodsScreen";
 import SavedItemsScreen from "@/screens/SavedItemsScreen";
 import HistoryScreen from "@/screens/HistoryScreen";
 import ItemDetailScreen from "@/screens/ItemDetailScreen";
@@ -41,6 +42,7 @@ type LibraryRoutes = Pick<
 export type ProfileStackParamList = LibraryRoutes & {
   Profile: undefined;
   Settings: undefined;
+  SignInMethods: undefined;
   SavedItems: undefined;
   ScanHistory: { showAll?: boolean } | undefined;
   ItemDetail: { itemId: number };
@@ -68,6 +70,18 @@ export default function ProfileStackNavigator() {
         component={SettingsScreen}
         options={{
           headerTitle: () => <HeaderTitle title="Settings" showIcon={false} />,
+        }}
+      />
+      <Stack.Screen
+        name="SignInMethods"
+        component={SignInMethodsScreen}
+        options={{
+          // Static title too, so iOS never shows the route name in the back
+          // button or history menu (function headerTitle alone leaks it).
+          title: "Sign-in methods",
+          headerTitle: () => (
+            <HeaderTitle title="Sign-in methods" showIcon={false} />
+          ),
         }}
       />
       <Stack.Screen
