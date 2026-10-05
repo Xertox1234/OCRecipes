@@ -1,6 +1,6 @@
 ---
 title: "Coach Chat: navigating to a different conversationId re-points the current Chat instance (no getId on the Chat screen; the nested pop never reaches the Coach stack) — the Coach-replied toast's Open can show the other chat's draft and in-flight reply"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-10-02
 updated: 2026-10-02

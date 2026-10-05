@@ -170,7 +170,11 @@ export default function AllConversationsScreen() {
                       screen: "CoachPro",
                       params: { selectedConversationId: conv.id },
                     }
-                  : { screen: "Chat", params: { conversationId: conv.id } },
+                  : {
+                      screen: "Chat",
+                      params: { conversationId: conv.id },
+                      pop: true,
+                    },
               },
               { pop: true },
             );

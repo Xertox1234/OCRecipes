@@ -10,6 +10,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ChatListScreen from "@/screens/ChatListScreen";
 import ChatScreen from "@/screens/ChatScreen";
+import { getChatRouteId } from "@/navigation/chatRouteId";
 import CoachProScreen from "@/screens/CoachProScreen";
 import FavouriteRecipesScreen from "@/screens/FavouriteRecipesScreen";
 import GroceryListsScreen from "@/screens/meal-plan/GroceryListsScreen";
@@ -119,6 +120,7 @@ export default function ChatStackNavigator() {
       <Stack.Screen
         name="Chat"
         component={ChatScreen}
+        getId={getChatRouteId}
         options={{ headerTitle: "NutriCoach" }}
       />
       <Stack.Screen
