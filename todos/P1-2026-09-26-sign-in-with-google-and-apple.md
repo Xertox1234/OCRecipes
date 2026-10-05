@@ -1,9 +1,9 @@
 ---
 title: "Add Sign in with Google and Sign in with Apple — essential login options (and Apple's guideline 4.8 requires Apple alongside Google)"
-status: backlog
+status: in-progress
 priority: high
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-10-05
 assignee:
 labels: [security, api, react-native]
 github_issue:
@@ -77,3 +77,14 @@ This also bears on the owner's lockout (`P1-2026-09-26-no-password-reset-or-acco
 ### 2026-09-26
 
 - Filed at the user's request ("essential upgrades"). Apple guideline 4.8 and the account-deletion token-revocation guidance were checked against Apple's published pages.
+
+### 2026-10-05
+
+- **Apple half shipped (server + Apple-only client), merged to main as #1260 → #1261 → #1262 → #1263 → #1265 → #1267 → #1268** (merge commits; tip `8aebb150`). Spec and plan: `docs/superpowers/specs/2026-10-04-sign-in-with-google-and-apple-design.md`, `docs/superpowers/plans/2026-10-04-sign-in-with-google-and-apple.md` (local only).
+- Prod migration `migrations/0017_sign_in_with_apple.sql` applied by the owner before the merge.
+- Owner rulings: connecting a sign-in method needs re-auth (password); client ships Apple-only first, Google button later.
+- Deferred minors: `todos/P3-2026-10-05-sign-in-with-apple-deferred-minors.md`.
+- **Still open (keep this todo open until done):**
+  - Owner: Apple Sign in key (.p8) → Railway `APPLE_TEAM_ID`, `APPLE_SIGN_IN_KEY_ID`, `APPLE_SIGN_IN_PRIVATE_KEY`, `IDENTITY_TOKEN_ENC_KEY`; confirm Sign in with Apple is enabled on App ID `com.williamtower.ocrecipes` (the bundle the iOS project builds) and Railway `APPLE_BUNDLE_ID` matches; register ocrecipes.com for Apple's Private Email Relay.
+  - Owner: runtime 1.4.0 build + device smoke test (Apple sign-up, connect, disconnect, Apple-only delete; Apple sheet over an open modal).
+  - Google: Cloud OAuth clients (Web/iOS/Android) + Universal Sign In license and registry token, then the Google button (client work not started).
