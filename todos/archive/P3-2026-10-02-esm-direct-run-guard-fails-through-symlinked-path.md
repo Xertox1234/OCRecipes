@@ -1,6 +1,6 @@
 ---
 title: "ESM direct-run guard no-ops through a symlinked path — compare realpaths on both sides in the six guarded scripts and add a symlink-launch test"
-status: in-progress
+status: done
 priority: low
 created: 2026-10-02
 updated: 2026-10-02
@@ -111,3 +111,7 @@ Verification without the whole suite: `npx vitest run scripts/__tests__/mutation
 ### 2026-10-02
 
 - Filed from the 2026-10-02 deferred-warnings triage of the /todo sweep (#1213–#1226); claim verified against main ec26b972 by workflow wf_7d969d8d-ce1 and upheld by an adversarial re-check; filing approved by the owner 2026-10-02.
+
+### 2026-10-04
+
+- Implemented by todo-executor: six guards now compare realpaths on both sides; symlink spawn test added (observed red against the old guard: `GITHUB_OUTPUT` empty, exit 0, then green); convention doc updated.
