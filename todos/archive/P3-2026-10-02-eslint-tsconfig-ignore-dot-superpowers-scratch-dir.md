@@ -1,6 +1,6 @@
 ---
 title: "Local npm run lint fails on gitignored .superpowers/ scratch .ts files (4 parsing errors) — add the dot-dir to the eslint ignores and tsconfig excludes like #1226 did for docs/"
-status: backlog
+status: done
 priority: low
 created: 2026-10-02
 updated: 2026-10-02
@@ -21,10 +21,10 @@ Found by the `/todo` orchestrator's Phase 5 verification on 2026-10-02, right af
 
 ## Acceptance Criteria
 
-- [ ] `eslint.config.js` top-level `ignores` lists `.superpowers/**` (next to `.claude/worktrees/**` and `.worktrees/**`), so `npm run lint` skips it. Two-sided probe: a `.ts` with an obvious violation under `.superpowers/probe-<unique>/` fails lint before the change and is skipped after; a control under a non-ignored dir still fails. Give fixtures distinct basenames (the fixture trap recorded in the #1226 solution doc).
-- [ ] `tsconfig.json` and `tsconfig.check.json` `exclude` list `.superpowers` for consistency with the eslint ignores (tsc already skips dot-dirs through its `**` semantics; the entry documents intent and keeps the three lists in sync, as #1226's comments require).
-- [ ] From a checkout that still contains `.superpowers/sdd/…/*.ts`, `npm run lint` exits 0 with 0 errors and `npm run check:types` exits 0.
-- [ ] `docs/solutions/best-practices/exclude-gitignored-scratch-dirs-from-tsc-and-eslint-together-2026-10-02.md` gains one sentence: dot-directories need the eslint `ignores` entry even though tsc skips them on its own.
+- [x] `eslint.config.js` top-level `ignores` lists `.superpowers/**` (next to `.claude/worktrees/**` and `.worktrees/**`), so `npm run lint` skips it. Two-sided probe: a `.ts` with an obvious violation under `.superpowers/probe-<unique>/` fails lint before the change and is skipped after; a control under a non-ignored dir still fails. Give fixtures distinct basenames (the fixture trap recorded in the #1226 solution doc).
+- [x] `tsconfig.json` and `tsconfig.check.json` `exclude` list `.superpowers` for consistency with the eslint ignores (tsc already skips dot-dirs through its `**` semantics; the entry documents intent and keeps the three lists in sync, as #1226's comments require).
+- [x] From a checkout that still contains `.superpowers/sdd/…/*.ts`, `npm run lint` exits 0 with 0 errors and `npm run check:types` exits 0.
+- [x] `docs/solutions/best-practices/exclude-gitignored-scratch-dirs-from-tsc-and-eslint-together-2026-10-02.md` gains one sentence: dot-directories need the eslint `ignores` entry even though tsc skips them on its own.
 
 ## Implementation Notes
 
@@ -52,3 +52,7 @@ Found by the `/todo` orchestrator's Phase 5 verification on 2026-10-02, right af
 ### 2026-10-02
 
 - Initial creation, filed by the `/todo` orchestrator after its Phase 5 verification.
+
+### 2026-10-04
+
+- Executed: added `.superpowers/**` to eslint global ignores and `.superpowers` to both tsconfig excludes; one sentence added to the #1226 solution doc. Two-sided probe: dot-dir `.ts` fixture gave "not found by the project service" before, is ignored after; control under `zz-probe-control/` still fails (no-var). Ignored-dir sweep found no other `.ts` holders needing entries.

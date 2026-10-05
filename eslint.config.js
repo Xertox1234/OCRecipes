@@ -21,6 +21,7 @@ module.exports = defineConfig([
       "server_dist/*",
       ".claude/worktrees/**",
       ".worktrees/**",
+      ".superpowers/**",
       ".stryker-tmp/**",
       "docs/audits/**",
       "docs/superpowers/**",
