@@ -84,6 +84,14 @@ export function createRateLimiter(options: {
 }
 
 // --- Auth (IP-keyed, no userId available) ---
+// Public Google/Apple endpoints — IP-keyed (no userId before sign-in).
+export const socialAuthLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: "Too many sign-in attempts, please try again later",
+  keyByUser: false,
+});
+
 export const loginLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 10,
