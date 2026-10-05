@@ -20,6 +20,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -128,10 +129,9 @@ describe("mutation-on-diff.mjs on a tree with no node_modules", () => {
   /**
    * `fixtures` are created empty under the tree (cwd for the run, which is how
    * the script resolves "does this file exist"); `changed` is the PR's list.
-   * realpath: on macOS os.tmpdir() is /var/..., but Node resolves the script to
-   * /private/var/..., which makes its run-directly check false and the script
-   * exit 0 having done nothing; the assertions on its output would then fail,
-   * not pass over an empty run.
+   * realpath: on macOS os.tmpdir() is /var/... (a symlink to /private/var), so
+   * the tree is made real to keep path prefixes comparable and to leave the
+   * explicit link in the symlink test as the only symlink layer.
    */
   function makeTree(fixtures: string[], changed: string[]): Tree {
     const root = realpathSync(
@@ -225,6 +225,46 @@ describe("mutation-on-diff.mjs on a tree with no node_modules", () => {
     expect(r.summary).toBe("");
     expect(r.stdout).not.toContain(NO_ELIGIBLE);
     expect(r.ranHarness).toBe(false);
+  });
+
+  it("still runs when launched through a symlinked path", () => {
+    const tree = makeTree(
+      [
+        "server/lib/fixture-pure.ts",
+        "server/lib/__tests__/fixture-pure.test.ts",
+      ],
+      ["server/lib/fixture-pure.ts"],
+    );
+    // An explicit link, so the regime holds on Linux CI too (os.tmpdir() has no
+    // symlink there): the loader realpaths the script, argv[1] keeps the link.
+    const linkDir = mkdtempSync(path.join(tmpdir(), "mutation-link-"));
+    dirs.push(linkDir);
+    const link = path.join(linkDir, "repo");
+    symlinkSync(tree.root, link);
+    expect(realpathSync(link)).not.toBe(link);
+    const res = spawnSync(
+      process.execPath,
+      [
+        path.join(link, "scripts", "ci", "mutation-on-diff.mjs"),
+        "--select-only",
+        tree.list,
+      ],
+      {
+        cwd: tree.root,
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: tree.output,
+          GITHUB_STEP_SUMMARY: tree.summary,
+        },
+        encoding: "utf8",
+        timeout: 30_000,
+      },
+    );
+    expect(res.status).toBe(0);
+    // Positive output: a script that never ran would leave this empty.
+    expect(read(tree.output)).toBe("run=true\n");
+    expect(read(tree.summary)).toBe("");
+    expect(existsSync(path.join(tree.root, "reports"))).toBe(false);
   });
 
   it("applies the registry's rules: registered and Hard-Exclusion modules do not count", () => {

@@ -25,8 +25,8 @@
  *    misclassification by dispatching both anyway.
  */
 
-import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 export type SchedulerTag = "independent" | "must-run-alone";
 
@@ -210,9 +210,20 @@ export function selectDispatchable(input: SchedulerInput): QueueItem[] {
 
 // Only run the CLI when invoked directly — importing this module (e.g. from
 // the test suite) must not read stdin or call process.exit.
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+// Realpath BOTH sides: the ESM loader realpaths the main module (import.meta.url)
+// but process.argv[1] keeps the path as given, so a launch through a symlink
+// (macOS /var -> /private/var) made the old href comparison false and the
+// script exited 0 having done nothing.
+const isMain = (() => {
+  try {
+    return (
+      realpathSync(fileURLToPath(import.meta.url)) ===
+      realpathSync(process.argv[1])
+    );
+  } catch {
+    return false;
+  }
+})();
+if (isMain) {
   process.exit(main());
 }
