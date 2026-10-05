@@ -51,16 +51,21 @@ export function SocialSignInButtons({ onResult, onError }: Props) {
     inFlight.current = true;
     setBusy(true);
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    const done = () => {
+      inFlight.current = false;
+      setBusy(false);
+    };
+    // No try/finally: React Compiler cannot lower a `finally` and would skip
+    // this component (scripts/check-react-compiler-bailouts.js).
     try {
       const result = await signInWithProvider(provider);
+      done();
       // null = the person cancelled the sheet: show nothing.
       if (result) onResult(result);
     } catch (err) {
+      done();
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       onError(socialSignInErrorMessage(err));
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
     }
   };
 

@@ -15,6 +15,7 @@ import { Feather } from "@expo/vector-icons";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { ThemedText } from "@/components/ThemedText";
 import { InlineError } from "@/components/InlineError";
+import { SocialSignInButtons } from "@/components/SocialSignInButtons";
 import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
 import { TextInput } from "@/components/TextInput";
@@ -223,6 +224,27 @@ export default function LoginScreen() {
               : "Create an account to get started"}
           </ThemedText>
         </View>
+
+        {/* Continue with Apple (Google later), in both modes. signed_in needs
+            no action — the root navigator switches stacks on its own. */}
+        <SocialSignInButtons
+          onResult={(r) => {
+            setError("");
+            if (r.status === "choose_username") {
+              navigation.navigate("ChooseUsername", {
+                ticket: r.ticket,
+                suggestedUsername: r.suggestedUsername,
+              });
+            } else if (r.status === "link_required") {
+              navigation.navigate("ConnectAccount", {
+                ticket: r.ticket,
+                methods: r.methods,
+                email: r.email,
+              });
+            }
+          }}
+          onError={setError}
+        />
 
         <View style={styles.form}>
           {/* Sign-in accepts a username OR the account email; sign-up still

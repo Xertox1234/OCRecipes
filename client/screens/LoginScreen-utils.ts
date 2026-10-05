@@ -73,6 +73,21 @@ export interface AuthFormInput {
  * (only "fields present") — the server is the authority and a generic failure
  * avoids a username-enumeration oracle.
  */
+/**
+ * Username rule shared by password sign-up and the Google/Apple
+ * ChooseUsername screen (mirrors registerSchema). Expects a trimmed value.
+ */
+export function validateUsername(username: string): string | null {
+  if (username.length < USERNAME_MIN || username.length > USERNAME_MAX) {
+    return `Username must be between ${USERNAME_MIN} and ${USERNAME_MAX} characters`;
+  }
+  if (!USERNAME_PATTERN.test(username)) {
+    // Name the email trap explicitly — it is by far the most common cause.
+    return "Username can only contain letters, numbers, and underscores (it can't be an email address)";
+  }
+  return null;
+}
+
 export function validateAuthForm(input: AuthFormInput): string | null {
   const username = input.username.trim();
 
@@ -85,13 +100,8 @@ export function validateAuthForm(input: AuthFormInput): string | null {
   }
 
   // --- register-only rules (mirror registerSchema) ---
-  if (username.length < USERNAME_MIN || username.length > USERNAME_MAX) {
-    return `Username must be between ${USERNAME_MIN} and ${USERNAME_MAX} characters`;
-  }
-  if (!USERNAME_PATTERN.test(username)) {
-    // Name the email trap explicitly — it is by far the most common cause.
-    return "Username can only contain letters, numbers, and underscores (it can't be an email address)";
-  }
+  const usernameError = validateUsername(username);
+  if (usernameError) return usernameError;
   const email = input.email.trim();
   if (!email) {
     return "Please enter your email address";
