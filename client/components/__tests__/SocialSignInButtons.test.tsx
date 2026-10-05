@@ -102,6 +102,24 @@ describe("SocialSignInButtons", () => {
     expect(onError.mock.calls[0][0]).not.toContain("raw server text");
   });
 
+  it("an unverified account goes to verify-email, not an error line", async () => {
+    mockSignInWithProvider.mockRejectedValue(
+      new ApiError("Email not verified", "EMAIL_NOT_VERIFIED", 403),
+    );
+    const onError = vi.fn();
+    const onUnverifiedEmail = vi.fn();
+    renderComponent(
+      <SocialSignInButtons
+        onResult={vi.fn()}
+        onError={onError}
+        onUnverifiedEmail={onUnverifiedEmail}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Continue with Apple"));
+    await waitFor(() => expect(onUnverifiedEmail).toHaveBeenCalledTimes(1));
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it("ignores a second press while a sign-in is in flight", async () => {
     let resolve: (v: null) => void = () => {};
     mockSignInWithProvider.mockReturnValue(
