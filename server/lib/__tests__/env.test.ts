@@ -197,6 +197,18 @@ describe("validateEnv email verification (Resend)", () => {
     );
   });
 
+  it("throws when IDENTITY_TOKEN_ENC_KEY is not 32 bytes", async () => {
+    process.env.IDENTITY_TOKEN_ENC_KEY = Buffer.alloc(16).toString("base64");
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).toThrow(/IDENTITY_TOKEN_ENC_KEY.*32 bytes/);
+  });
+
+  it("throws when APPLE_SIGN_IN_PRIVATE_KEY is not a PEM", async () => {
+    process.env.APPLE_SIGN_IN_PRIVATE_KEY = "not-a-key";
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).toThrow(/APPLE_SIGN_IN_PRIVATE_KEY/);
+  });
+
   it("accepts EMAIL_VERIFY_BASE_URL without a trailing slash", async () => {
     process.env.EMAIL_VERIFY_BASE_URL = "https://ocrecipes.com";
     const { validateEnv } = await load();
