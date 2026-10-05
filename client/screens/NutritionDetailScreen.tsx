@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -9,7 +9,13 @@ import {
   TextInput as RNTextInput,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+  RouteProp,
+} from "@react-navigation/native";
+import { useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
@@ -24,6 +30,7 @@ import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { getServingContextLabel } from "@/screens/nutrition-detail-utils";
 import { partitionScanFlags } from "@/screens/nutrition-detail-flags-utils";
+import { frontLabelSavedKey } from "./FrontLabelConfirmScreen";
 import { ProductHero } from "@/components/nutrition/ProductHero";
 import { FlagSections } from "@/components/nutrition/FlagSections";
 import { NutritionSummaryCard } from "@/components/nutrition/NutritionSummaryCard";
@@ -244,6 +251,23 @@ export default function NutritionDetailScreen() {
     dbNutrition,
     logGate,
   } = useNutritionLookup({ barcode, imageUri, ocrText });
+
+  // `hasFrontLabelData` is a per-lookup snapshot. The front-label flow (the
+  // CTA -> Scan -> FrontLabelConfirm) pop(2)s back onto this still-mounted
+  // screen, and FrontLabelConfirm publishes the save to the query cache first,
+  // so read it on regaining focus. Assigned (not only set true) so a changed
+  // `barcode` param self-corrects; idempotent, so a refire is harmless
+  // (docs/solutions/conventions/usefocuseffect-refires-on-callback-identity-change-while-focused-2026-09-25.md).
+  const queryClient = useQueryClient();
+  const [frontLabelSavedHere, setFrontLabelSavedHere] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!barcode) return;
+      setFrontLabelSavedHere(
+        queryClient.getQueryData<boolean>(frontLabelSavedKey(barcode)) === true,
+      );
+    }, [queryClient, barcode]),
+  );
 
   // The sticky log bar's MEASURED height, reported through its `onLayout` and
   // spent as the ScrollView's bottom padding. Measured rather than a constant
@@ -584,7 +608,7 @@ export default function NutritionDetailScreen() {
         {barcode && nutrition && (
           <VerificationPanel
             verificationLevel={verificationLevel}
-            hasFrontLabelData={hasFrontLabelData}
+            hasFrontLabelData={hasFrontLabelData || frontLabelSavedHere}
             onAddProductDetails={() =>
               navigation.navigate("Scan", {
                 mode: "front-label",

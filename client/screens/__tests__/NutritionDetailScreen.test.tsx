@@ -10,10 +10,12 @@
 // the render tree — only the Additional Nutrients card is exercised.
 import React from "react";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { act, fireEvent } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
+import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 import NutritionDetailScreen from "../NutritionDetailScreen";
+import { frontLabelSavedKey } from "../FrontLabelConfirmScreen";
 import { deriveLogGate, type LogGate } from "../nutrition-detail-utils";
 import { buildNutritionDetailParams } from "../scan-screen-utils";
 import { Spacing } from "@/constants/theme";
@@ -27,15 +29,19 @@ import type { ScanPhase } from "@/camera/types/scan-phase";
  * `mockNavigate` is hoisted (not a fresh `vi.fn()` per `useNavigation()` call)
  * so a test can assert against a stable reference — see the verification-panel
  * CTA test below. */
-const { mockUseNutritionLookup, mockRoute, mockNavigate } = vi.hoisted(() => ({
-  mockUseNutritionLookup: vi.fn(),
-  // Inline literal, not a const: `vi.hoisted` runs before module-level
-  // bindings are initialised, so a reference here would be a TDZ error.
-  mockRoute: {
-    params: { imageUri: "file:///manual.jpg" } as Record<string, unknown>,
-  },
-  mockNavigate: vi.fn(),
-}));
+const { mockUseNutritionLookup, mockRoute, mockNavigate, focusEffectCb } =
+  vi.hoisted(() => ({
+    mockUseNutritionLookup: vi.fn(),
+    // Inline literal, not a const: `vi.hoisted` runs before module-level
+    // bindings are initialised, so a reference here would be a TDZ error.
+    mockRoute: {
+      params: { imageUri: "file:///manual.jpg" } as Record<string, unknown>,
+    },
+    mockNavigate: vi.fn(),
+    // Captures the screen's useFocusEffect callback so a test can simulate a
+    // refocus; never auto-fires, so tests that do not invoke it are unaffected.
+    focusEffectCb: { current: null as (() => void) | null },
+  }));
 
 const IMAGE_ROUTE_PARAMS: Record<string, unknown> = {
   imageUri: "file:///manual.jpg",
@@ -44,6 +50,7 @@ const IMAGE_ROUTE_PARAMS: Record<string, unknown> = {
 afterEach(() => {
   mockRoute.params = IMAGE_ROUTE_PARAMS;
   mockNavigate.mockClear();
+  focusEffectCb.current = null;
 });
 
 /**
@@ -71,6 +78,19 @@ vi.mock("react-native-safe-area-context", () => ({
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: mockNavigate }),
   useRoute: () => mockRoute,
+  useFocusEffect: (cb: () => void) => {
+    focusEffectCb.current = cb;
+  },
+}));
+
+// frontLabelSavedKey import pulls FrontLabelConfirmScreen's graph in; both
+// modules hit native code at import time under jsdom.
+vi.mock("@/lib/photo-upload", () => ({
+  uploadFrontLabelPhoto: vi.fn(),
+  confirmFrontLabel: vi.fn(),
+}));
+vi.mock("expo-file-system/legacy", () => ({
+  deleteAsync: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/hooks/useNutritionLookup", () => ({
@@ -1153,6 +1173,49 @@ describe("NutritionDetailScreen — verification panel (2b characterisation)", (
       mode: "label",
       verifyBarcode: "06772408",
     });
+  });
+});
+
+describe("NutritionDetailScreen — front-label CTA after save", () => {
+  function renderWithClient() {
+    mockRoute.params = { barcode: "06772408", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ productName: "Cherry Coke" }),
+      verificationLevel: "verified",
+      hasFrontLabelData: false,
+    });
+    const { queryClient, wrapper } = createQueryWrapper();
+    const utils = render(<NutritionDetailScreen />, { wrapper });
+    return { queryClient, ...utils };
+  }
+
+  it("hides the CTA once the user returns from saving this product's front label", () => {
+    const { queryClient, queryByText } = renderWithClient();
+    expect(queryByText("Add product details")).toBeTruthy();
+
+    queryClient.setQueryData(frontLabelSavedKey("06772408"), true);
+    // Vacuity control: the screen must register a focus effect at all.
+    expect(focusEffectCb.current).toBeTypeOf("function");
+    act(() => focusEffectCb.current?.());
+
+    expect(queryByText("Add product details")).toBeNull();
+  });
+
+  it("keeps the CTA on a refocus with no save", () => {
+    const { queryByText } = renderWithClient();
+    expect(focusEffectCb.current).toBeTypeOf("function");
+    act(() => focusEffectCb.current?.());
+
+    expect(queryByText("Add product details")).toBeTruthy();
+  });
+
+  it("keeps the CTA when the saved front label belongs to another barcode", () => {
+    const { queryClient, queryByText } = renderWithClient();
+    queryClient.setQueryData(frontLabelSavedKey("0000000000017"), true);
+    expect(focusEffectCb.current).toBeTypeOf("function");
+    act(() => focusEffectCb.current?.());
+
+    expect(queryByText("Add product details")).toBeTruthy();
   });
 });
 
