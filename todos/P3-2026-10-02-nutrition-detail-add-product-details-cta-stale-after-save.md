@@ -1,6 +1,6 @@
 ---
 title: 'NutritionDetail still shows the "Add product details" CTA after the front label was saved — read the #1220 query-cache signal in a focus effect'
-status: backlog
+status: in-progress
 priority: low
 created: 2026-10-02
 updated: 2026-10-02
