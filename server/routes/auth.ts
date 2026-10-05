@@ -64,7 +64,7 @@ import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches, DUMMY_PASSWORD_HASH } from "../lib/password-check";
 import { serializeUser } from "./_serialize-user";
-import { verifyProviderToken, revokeAppleIdentities } from "./auth-social";
+import { reauthenticate, revokeAppleIdentities } from "./auth-social";
 
 export { serializeUser };
 
@@ -799,48 +799,13 @@ export function register(app: Express): void {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
-        if ("password" in validated) {
-          if (!(await passwordMatches(validated.password, user.password))) {
-            return sendError(
-              res,
-              401,
-              "Invalid credentials",
-              ErrorCode.UNAUTHORIZED,
-            );
-          }
-        } else {
-          // Re-auth with a FRESH provider token: the nonce must be a reauth
-          // nonce bound to this user, and the identity must already be
-          // linked to this account. Every failure is the same 401.
-          let claims;
-          try {
-            claims = await verifyProviderToken(
-              validated.provider,
-              validated.idToken,
-              validated.nonce,
-            );
-          } catch {
-            return sendError(
-              res,
-              401,
-              "Invalid credentials",
-              ErrorCode.UNAUTHORIZED,
-            );
-          }
-          const nonceOk = await storage.consumeNonce(
-            validated.nonce,
-            "reauth",
-            req.userId,
+        if (!(await reauthenticate(req.userId, user.password, validated))) {
+          return sendError(
+            res,
+            401,
+            "Invalid credentials",
+            ErrorCode.UNAUTHORIZED,
           );
-          const owned = await storage.findIdentity(claims.provider, claims.sub);
-          if (!nonceOk || !owned || owned.userId !== req.userId) {
-            return sendError(
-              res,
-              401,
-              "Invalid credentials",
-              ErrorCode.UNAUTHORIZED,
-            );
-          }
         }
 
         // Revoke Apple tokens BEFORE the delete cascades the identity rows

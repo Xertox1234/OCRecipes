@@ -1,7 +1,16 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+} from "vitest";
 import express from "express";
 import request from "supertest";
 import crypto from "node:crypto";
+import bcrypt from "bcrypt";
 import { storage } from "../../storage";
 import { register } from "../auth-social";
 import { generateToken } from "../../middleware/auth";
@@ -33,6 +42,7 @@ vi.mock("../../storage", () => ({
     getSignInMethods: vi.fn(),
     getPendingSignIn: vi.fn(),
     getUser: vi.fn(),
+    getUserForAuth: vi.fn(),
   },
 }));
 vi.mock("express-rate-limit");
@@ -75,6 +85,11 @@ const gmailClaims = {
 };
 
 let auth: { Authorization: string };
+let passwordHash: string;
+
+beforeAll(async () => {
+  passwordHash = await bcrypt.hash("right-pass1", 4);
+});
 
 beforeEach(() => {
   savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
@@ -91,6 +106,9 @@ beforeEach(() => {
   vi.mocked(storage.getUser).mockResolvedValue(
     createMockUser({ id: "u1", tokenVersion: 0, emailVerified: true }),
   );
+  vi.mocked(storage.getUserForAuth).mockResolvedValue(
+    createMockUser({ id: "u1", tokenVersion: 0, password: passwordHash }),
+  );
   vi.mocked(storage.consumeNonce).mockResolvedValue(true);
   vi.mocked(storage.findIdentity).mockResolvedValue(undefined);
   vi.mocked(storage.listIdentities).mockResolvedValue([]);
@@ -104,7 +122,95 @@ afterEach(() => {
 });
 
 describe("POST /api/auth/identities", () => {
-  const body = { provider: "google", idToken: "t", nonce: "n" };
+  // Owner ruling 2026-10-05: connecting a sign-in method needs the same
+  // re-auth proof as deleting the account.
+  const proof = { password: "right-pass1" };
+  const body = { provider: "google", idToken: "t", nonce: "n", proof };
+
+  it("400 without a re-auth proof, verifying nothing", async () => {
+    const res = await request(app())
+      .post("/api/auth/identities")
+      .set(auth)
+      .send({ provider: "google", idToken: "t", nonce: "n" });
+    expect(res.status).toBe(400);
+    expect(verifyGoogleIdToken).not.toHaveBeenCalled();
+    expect(storage.insertIdentity).not.toHaveBeenCalled();
+  });
+
+  it("401 with a wrong password, connecting nothing", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    const res = await request(app())
+      .post("/api/auth/identities")
+      .set(auth)
+      .send({ ...body, proof: { password: "wrong-pass1" } });
+    expect(res.status).toBe(401);
+    expect(storage.insertIdentity).not.toHaveBeenCalled();
+  });
+
+  it("401 for a social-only account offering a password", async () => {
+    vi.mocked(storage.getUserForAuth).mockResolvedValue(
+      createMockUser({ id: "u1", password: null }),
+    );
+    const res = await request(app())
+      .post("/api/auth/identities")
+      .set(auth)
+      .send(body);
+    expect(res.status).toBe(401);
+    expect(storage.insertIdentity).not.toHaveBeenCalled();
+  });
+
+  it("accepts a fresh token of an ALREADY-linked provider as proof (reauth nonce bound to the caller)", async () => {
+    vi.mocked(verifyAppleIdToken).mockResolvedValue({
+      ...gmailClaims,
+      provider: "apple",
+      sub: "a-1",
+    });
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
+    vi.mocked(storage.findIdentity).mockImplementation(async (provider) =>
+      provider === "apple"
+        ? createMockUserIdentity({
+            userId: "u1",
+            provider: "apple",
+            providerSubject: "a-1",
+          })
+        : undefined,
+    );
+    vi.mocked(storage.getSignInMethods).mockResolvedValue({
+      password: false,
+      google: { email: "me@gmail.com" },
+      apple: { email: null, isPrivateRelay: true },
+    });
+    const res = await request(app())
+      .post("/api/auth/identities")
+      .set(auth)
+      .send({
+        ...body,
+        proof: { provider: "apple", idToken: "a-tok", nonce: "r" },
+      });
+    expect(res.status).toBe(200);
+    expect(storage.consumeNonce).toHaveBeenCalledWith("r", "reauth", "u1");
+    expect(storage.insertIdentity).toHaveBeenCalled();
+  });
+
+  it("refuses a provider proof whose identity belongs to someone else", async () => {
+    vi.mocked(verifyAppleIdToken).mockResolvedValue({
+      ...gmailClaims,
+      provider: "apple",
+      sub: "a-9",
+    });
+    vi.mocked(storage.findIdentity).mockResolvedValue(
+      createMockUserIdentity({ userId: "someone-else", provider: "apple" }),
+    );
+    const res = await request(app())
+      .post("/api/auth/identities")
+      .set(auth)
+      .send({
+        ...body,
+        proof: { provider: "apple", idToken: "a-tok", nonce: "r" },
+      });
+    expect(res.status).toBe(401);
+    expect(storage.insertIdentity).not.toHaveBeenCalled();
+  });
 
   it("401 without a session", async () => {
     const res = await request(app()).post("/api/auth/identities").send(body);
@@ -191,6 +297,7 @@ describe("POST /api/auth/identities", () => {
         idToken: "t",
         nonce: "n",
         authorizationCode: "c",
+        proof,
       });
     expect(res.status).toBe(502);
     expect(storage.insertIdentity).not.toHaveBeenCalled();
