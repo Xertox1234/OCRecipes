@@ -9,7 +9,10 @@ import {
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { handleRouteError, formatZodError } from "./_helpers";
-import { socialAuthLimiter } from "./_rate-limiters";
+import {
+  socialAuthLimiter,
+  createSocialLinkAccountLimiter,
+} from "./_rate-limiters";
 import {
   socialNonceSchema,
   socialSignInSchema,
@@ -43,6 +46,14 @@ import { createServiceLogger, toError } from "../lib/logger";
 import type { User } from "@shared/schema";
 
 const logger = createServiceLogger("auth-social");
+
+// Spec §4.4: the password branch of /social/link is a password-guessing
+// surface, so failed attempts are also throttled per TARGET ACCOUNT. The
+// per-ticket cap (5) alone is not enough: tickets can be re-minted.
+const socialLinkAccountLimiter = createSocialLinkAccountLimiter(
+  async (ticket) =>
+    (await storage.getPendingSignIn(ticket, "link"))?.targetUserId ?? null,
+);
 
 class HttpFailure extends Error {
   constructor(
@@ -233,6 +244,22 @@ export function register(app: Express): void {
           );
         }
 
+        // An unlinked identity must come with an address the provider has
+        // verified. Spec §3.1: a new account is verified only when the
+        // provider verified it, and password registration answers an
+        // unverified address with an emailed code and no session — we have
+        // no such path here. And an unverified address proves nothing, so it
+        // must not reveal that an account exists (link_required) or earn
+        // password guesses against it. Apple always verifies; this is rare
+        // Google accounts. Checked BEFORE the email lookup.
+        if (!linked && !claims.emailVerified) {
+          throw new HttpFailure(
+            400,
+            ErrorCode.PROVIDER_EMAIL_REQUIRED,
+            "Your account's email address isn't verified with your provider. Verify it there, or sign in with your password.",
+          );
+        }
+
         let emailAccount: PolicyAccount | null = null;
         let emailUser: User | undefined;
         if (!linked && claims.email) {
@@ -325,20 +352,6 @@ export function register(app: Express): void {
             throw err;
           }
           return res.json(await issueSession(user.id));
-        }
-
-        // Spec §3.1: a provider-created account is verified only when the
-        // provider verified the address. Password registration answers an
-        // unverified address with an emailed code and no session; we have no
-        // such path here, so refuse rather than create an unverified account
-        // and hand it a session. (Apple always verifies; this is rare Google
-        // accounts.)
-        if (decision.kind === "choose_username" && !claims.emailVerified) {
-          throw new HttpFailure(
-            400,
-            ErrorCode.PROVIDER_EMAIL_REQUIRED,
-            "Your account's email address isn't verified with your provider. Verify it there, or create an account with a password.",
-          );
         }
 
         const ticket = await storage.createPendingSignIn({
@@ -434,6 +447,7 @@ export function register(app: Express): void {
   app.post(
     "/api/auth/social/link",
     socialAuthLimiter,
+    socialLinkAccountLimiter,
     async (req: Request, res: Response) => {
       try {
         const parsed = socialLinkSchema.safeParse(req.body);

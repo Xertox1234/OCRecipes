@@ -207,6 +207,27 @@ describe("POST /api/auth/social", () => {
     expect(storage.createPendingSignIn).not.toHaveBeenCalled();
   });
 
+  it("an unverified provider email never reaches an existing account (no ticket, no lookup)", async () => {
+    vi.mocked(verifyGoogleIdToken).mockResolvedValue({
+      ...gmailClaims,
+      email: "victim@example.org",
+      emailVerified: false,
+    });
+    vi.mocked(storage.getUserByEmailForAuth).mockResolvedValue(
+      createMockUser({
+        id: "victim",
+        email: "victim@example.org",
+        emailVerified: true,
+      }),
+    );
+    const res = await request(app()).post("/api/auth/social").send(body);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("PROVIDER_EMAIL_REQUIRED");
+    expect(res.body.status).toBeUndefined();
+    expect(storage.getUserByEmailForAuth).not.toHaveBeenCalled();
+    expect(storage.createPendingSignIn).not.toHaveBeenCalled();
+  });
+
   it("the sign-up ticket carries the provider's email_verified claim", async () => {
     vi.mocked(verifyGoogleIdToken).mockResolvedValue(gmailClaims);
     await request(app()).post("/api/auth/social").send(body);
