@@ -228,6 +228,8 @@ export const pendingSocialSignIns = pgTable(
     isPrivateRelay: boolean("is_private_relay").default(false).notNull(),
     /** isAuthoritative(claims) at verification time (linking-policy.ts). */
     providerAuthoritative: boolean("provider_authoritative").notNull(),
+    /** The provider's email_verified claim; the new account's emailVerified (sign-up). */
+    emailVerified: boolean("email_verified").notNull(),
     displayName: text("display_name"),
     appleRefreshTokenEnc: text("apple_refresh_token_enc"),
     targetUserId: varchar("target_user_id").references(() => users.id, {

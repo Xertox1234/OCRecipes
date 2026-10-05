@@ -29,6 +29,8 @@ export interface PendingSignInInput {
   email: string;
   isPrivateRelay: boolean;
   providerAuthoritative: boolean;
+  /** Provider email_verified claim — becomes users.emailVerified on sign-up. */
+  emailVerified: boolean;
   displayName: string | null;
   appleRefreshTokenEnc: string | null;
   targetUserId: string | null;
@@ -199,7 +201,7 @@ export async function createUserWithIdentity(
         username,
         email: t.email,
         password: null,
-        emailVerified: true,
+        emailVerified: t.emailVerified,
         displayName: t.displayName,
       })
       .returning();
