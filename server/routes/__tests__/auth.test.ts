@@ -73,6 +73,9 @@ vi.mock("../../storage", () => ({
     filterUnreferencedImageUrls: vi.fn().mockResolvedValue([]),
     applyEmailVerification: vi.fn(),
     getSignInMethods: vi.fn(),
+    findIdentity: vi.fn(),
+    listIdentities: vi.fn().mockResolvedValue([]),
+    consumeNonce: vi.fn(),
   },
 }));
 

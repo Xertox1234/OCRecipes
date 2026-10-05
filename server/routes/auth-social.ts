@@ -22,7 +22,7 @@ import {
   connectIdentitySchema,
   providerParamSchema,
 } from "./_schemas";
-import { serializeUser } from "./auth";
+import { serializeUser } from "./_serialize-user";
 import { emailVerificationEnabled } from "../lib/email-config";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import { passwordMatches } from "../lib/password-check";
