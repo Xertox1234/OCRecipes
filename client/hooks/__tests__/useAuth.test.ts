@@ -3,6 +3,8 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { AUTH_STORAGE_KEY } from "@/lib/durable-owner";
+
 import { useAuth } from "../useAuth";
 
 // Create mock storage and functions that survive vi.mock hoisting
@@ -691,6 +693,16 @@ describe("useAuth", () => {
   });
 
   describe("logout", () => {
+    // One test below overrides AsyncStorage.removeItem to inject a failure.
+    // clearAllMocks() clears call history, not the implementation, so restore
+    // the factory default here.
+    afterEach(() => {
+      vi.mocked(AsyncStorage.removeItem).mockImplementation((key: string) => {
+        delete mockAsyncStorage[key];
+        return Promise.resolve();
+      });
+    });
+
     it("clears token, AsyncStorage, and resets state", async () => {
       mockTokenStorage.get.mockResolvedValue("valid-token");
       mockFetch.mockResolvedValue({
@@ -784,6 +796,54 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(false);
       expect(result.current.user).toBeNull();
       expect(mockTokenStorage.clear).toHaveBeenCalled();
+    });
+
+    it("still sweeps local state and signs out if removing the auth blob rejects", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+      // The valid-token mount already ran the durable sweep (owner reconcile),
+      // so clear call history here or the sweep assertions below would pass
+      // from the mount alone.
+      mockClearOfflineQueue.mockClear();
+      mockClearHomeActionsState.mockClear();
+      mockQueryClient.clear.mockClear();
+      vi.mocked(AsyncStorage.removeItem).mockClear();
+
+      mockApiRequest.mockResolvedValue({});
+      // Reject for the auth blob only, so the sweep's own removals still succeed.
+      vi.mocked(AsyncStorage.removeItem).mockImplementation((key: string) => {
+        if (key === AUTH_STORAGE_KEY) {
+          return Promise.reject(new Error("disk full"));
+        }
+        delete mockAsyncStorage[key];
+        return Promise.resolve();
+      });
+
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      // Positive control: the injected failure actually fired.
+      expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(
+        AUTH_STORAGE_KEY,
+      );
+      expect(mockClearOfflineQueue).toHaveBeenCalled();
+      expect(mockQueryClient.clear).toHaveBeenCalled();
+      expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(
+        "@ocrecipes_query_cache",
+      );
+      // Order: the auth blob goes before the sweep's own removals.
+      const removeCalls = vi.mocked(AsyncStorage.removeItem).mock.calls;
+      expect(removeCalls[0][0]).toBe(AUTH_STORAGE_KEY);
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.user).toBeNull();
     });
   });
 
