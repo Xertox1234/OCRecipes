@@ -21,6 +21,7 @@ import {
   socialLinkSchema,
   connectIdentitySchema,
   providerParamSchema,
+  type ReauthProof,
 } from "./_schemas";
 import { serializeUser } from "./_serialize-user";
 import { emailVerificationEnabled } from "../lib/email-config";
@@ -173,6 +174,34 @@ function displayNameFrom(fullName?: {
 
 const isTaken = async (u: string) =>
   isReservedUsername(u) || Boolean(await storage.getUserByUsername(u));
+
+/**
+ * Re-auth for sensitive account actions (delete account, connect a sign-in
+ * method). A password must match (NULL never does); a provider token must
+ * verify, burn a `reauth` nonce bound to `userId`, and belong to an identity
+ * ALREADY linked to this account. Any failure is just `false` — callers answer
+ * with one generic 401.
+ */
+export async function reauthenticate(
+  userId: string,
+  passwordHash: string | null,
+  proof: ReauthProof,
+): Promise<boolean> {
+  if ("password" in proof) return passwordMatches(proof.password, passwordHash);
+  let claims: ProviderClaims;
+  try {
+    claims = await verifyProviderToken(
+      proof.provider,
+      proof.idToken,
+      proof.nonce,
+    );
+  } catch {
+    return false;
+  }
+  const nonceOk = await storage.consumeNonce(proof.nonce, "reauth", userId);
+  const owned = await storage.findIdentity(claims.provider, claims.sub);
+  return nonceOk && owned !== undefined && owned.userId === userId;
+}
 
 /** Best-effort: never throws. Used by disconnect and account deletion. */
 export async function revokeAppleIdentities(
@@ -588,6 +617,20 @@ export function register(app: Express): void {
           );
         }
         const body = parsed.data;
+        // Prove it is really the account holder BEFORE touching the new
+        // provider token (owner ruling 2026-10-05).
+        const me = await storage.getUserForAuth(req.userId);
+        if (
+          !me ||
+          !(await reauthenticate(req.userId, me.password, body.proof))
+        ) {
+          return sendError(
+            res,
+            401,
+            "Invalid credentials",
+            ErrorCode.UNAUTHORIZED,
+          );
+        }
         const claims = await verifyProviderToken(
           body.provider,
           body.idToken,

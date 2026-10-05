@@ -64,6 +64,22 @@ export const registerSchema = z.object({
   }),
 });
 
+// Re-auth proof for sensitive account actions (delete account, connect a new
+// sign-in method): the current password, OR a fresh Google/Apple token for an
+// identity ALREADY linked to this account (social-only accounts have no
+// password). The provider branch needs a `reauth` nonce bound to the caller.
+export const reauthProofSchema = z.union([
+  z.object({ password: z.string().min(1, "Password is required") }),
+  z.object({
+    provider: z.enum(["google", "apple"]),
+    idToken: z.string().min(1).max(8192),
+    nonce: z.string().min(1).max(200),
+  }),
+]);
+export type ReauthProof = z.infer<typeof reauthProofSchema>;
+
+export const deleteAccountSchema = reauthProofSchema;
+
 // ── Sign in with Google / Apple ────────────────────────────────────────────
 const providerEnum = z.enum(["google", "apple"]);
 const tokenField = z.string().min(1).max(8192);
@@ -105,9 +121,12 @@ export const socialLinkSchema = z.union([
   }),
 ]);
 
-export const connectIdentitySchema = socialSignInSchema.omit({
-  fullName: true,
-});
+// Owner ruling 2026-10-05: adding a sign-in method needs the same proof as
+// deleting the account, so a briefly-borrowed session cannot plant a
+// permanent login that survives a password reset.
+export const connectIdentitySchema = socialSignInSchema
+  .omit({ fullName: true })
+  .extend({ proof: reauthProofSchema });
 
 export const providerParamSchema = providerEnum;
 
@@ -144,17 +163,6 @@ export const resendVerificationSchema = z.object({
 });
 
 // Account deletion validation schema
-// Delete-account re-auth: the current password, OR a fresh Google/Apple
-// token for an identity linked to this account (social-only accounts have no
-// password).
-export const deleteAccountSchema = z.union([
-  z.object({ password: z.string().min(1, "Password is required") }),
-  z.object({
-    provider: z.enum(["google", "apple"]),
-    idToken: z.string().min(1).max(8192),
-    nonce: z.string().min(1).max(200),
-  }),
-]);
 
 // Email change: `newEmail` is normalized identically to registerSchema (the
 // storage layer + lower(email) unique index assume a trim+lowercase'd value);
